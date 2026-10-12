@@ -375,7 +375,7 @@ Once the repository is on GitHub, connect each service to it:
 
 ```bash
 for s in api worker web; do
-  railway service source connect --repo noob-master-cell/spanlight --branch main --service $s
+  railway service source connect --repo dheerajkarwasra/spanlight --branch main --service $s
 done
 ```
 

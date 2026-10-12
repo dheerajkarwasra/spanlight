@@ -20,7 +20,7 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
     Start the stack with one `docker compose up`, add three lines to your Python app, and watch the trace arrive. [Quickstart](/docs/quickstart/)
   </Card>
   <Card title="Python SDK" icon="seti:python">
-    `@observe`, spans and wrappers for the OpenAI and Anthropic clients. Spans are batched in the background and never break your app. [Python SDK](/docs/python-sdk/)
+    `@observe`, spans and wrappers for the OpenAI and Anthropic clients. Spans are batched in the background, so tracing never waits on the network or breaks your app. [Python SDK](/docs/python-sdk/)
   </Card>
   <Card title="OpenTelemetry" icon="puzzle">
     Point any OpenTelemetry GenAI exporter at the OTLP endpoint, in JSON or protobuf. [OTLP](/docs/otlp/)

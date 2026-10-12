@@ -22,7 +22,7 @@ Detect with rules, and keep every rule a pure function of a loaded context.
 
 ## Consequences
 
-- **Detectors test with fixtures.** A test builds a handful of span rows, calls `run` and compares the findings, with no database, clock or network. The cases that matter (the threshold, one call below the minimum sample, a fault-injected span) are a few lines each.
+- **Detectors can be tested with fixtures.** A test only needs a handful of span rows, a call to `run` and a comparison of the findings, with no database, clock or network; the threshold, one call below the minimum sample and a fault-injected span are each a few lines. These tests are not yet written.
 - **No model in the hot path.** Detection costs one set of queries per project every 15 minutes and no provider spend. Insights keep appearing when no provider key is configured.
 - **Coverage is only what has been written.** A problem without a rule produces no insight. Adding one means a new detector module and a catalogue entry, not a prompt.
 - **Thresholds are not tuned per project.** A project with unusual traffic can see a finding it considers normal, or miss one. It can mute an insight; changing a threshold needs a release.

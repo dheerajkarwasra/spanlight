@@ -66,7 +66,7 @@ All three profiles run on a GitHub-hosted standard `ubuntu-latest` runner: 4 vCP
 
 ## Results
 
-`realistic` profile, run [37952458454](https://github.com/noob-master-cell/spanlight/actions/runs/37952458454) on 2026-10-09 at commit `2f533e4`: a GitHub-hosted `ubuntu-latest` runner (4 vCPU, 15.6 GiB, image ubuntu24 20261004.327.1), PostgreSQL 17.11, k6 2.3.0, with 1 000 000 spans in 286 612 traces stored. Every threshold passed.
+`realistic` profile, run [37952458454](https://github.com/dheerajkarwasra/spanlight/actions/runs/37952458454) on 2026-10-09 at commit `2f533e4`: a GitHub-hosted `ubuntu-latest` runner (4 vCPU, 15.6 GiB, image ubuntu24 20261004.327.1), PostgreSQL 17.11, k6 2.3.0, with 1 000 000 spans in 286 612 traces stored. Every threshold passed.
 
 | Scenario           | Rate                             | Median  | p95      | p99      | Target (p95) | Failed requests | Dropped iterations |
 | ------------------ | -------------------------------- | ------- | -------- | -------- | ------------ | --------------- | ------------------ |
@@ -76,7 +76,7 @@ All three profiles run on a GitHub-hosted standard `ubuntu-latest` runner: 4 vCP
 
 ### Gateway overhead
 
-Run [37997565780](https://github.com/noob-master-cell/spanlight/actions/runs/37997565780) on 2026-10-10 at commit `38568be`, same runner type and stack (1 000 000 spans stored), 50 requests a second for 60 s per scenario. The threshold passed.
+Run [37997565780](https://github.com/dheerajkarwasra/spanlight/actions/runs/37997565780) on 2026-10-10 at commit `38568be`, same runner type and stack (1 000 000 spans stored), 50 requests a second for 60 s per scenario. The threshold passed.
 
 | Scenario                                        | Median  | p95         | p99     | Failed requests    | Dropped iterations |
 | ----------------------------------------------- | ------- | ----------- | ------- | ------------------ | ------------------ |

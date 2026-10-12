@@ -25,8 +25,10 @@ When you create a key you choose its scopes and, optionally, an expiry.
 | --- | --- |
 | `ingest:write` | Sending traces to `POST /v1/traces` and `POST /v1/otlp/traces`. This is the default. |
 | `traces:read` | Reading the project's traces, sessions, filters and metrics through the dashboard API. |
+| `scores:write` | Sending [scores](/docs/scores/) to `POST /v1/scores`, for example with `spanlight.score()`. |
+| `prompts:read` | Reading [prompts](/docs/prompts/) from `GET /v1/prompts/{name}`, for example with `spanlight.prompts.get()`. |
 
-Only these two scopes do anything today. Give an application the narrowest scope it needs: an SDK in production needs only `ingest:write`, and a reporting job needs only `traces:read`. A key used outside its scopes gets `403 KEY_SCOPE`. A key past its expiry gets `401 KEY_EXPIRED`, on ingestion and on reads. Keys created before scopes existed keep `ingest:write` and never expire.
+Give an application the narrowest scopes it needs: an SDK that only sends traces needs only `ingest:write`, a reporting job needs only `traces:read`, and an application that fetches prompts or records scores adds `prompts:read` or `scores:write`. **A key keeps the scopes it was created with**, so a key made before scores and prompts existed cannot use them: create a new key that has the scope, and revoke the old one when nothing uses it. Tick them in the key dialog under **Settings, Project, API keys**, where all four are offered, or send them in the `scopes` list of `POST /api/v1/projects/{project_id}/keys` (see the [API conventions](/docs/api/conventions/)). A key used outside its scopes gets `403 KEY_SCOPE`. A key past its expiry gets `401 KEY_EXPIRED`, on ingestion and on reads. Keys created before scopes existed keep `ingest:write` and never expire.
 
 A key can read only its own project. Any other project answers `404`, exactly like a project that does not exist.
 

@@ -7,8 +7,8 @@ sidebar:
 
 The `spanlight` package traces LLM applications. It needs Python 3.10 or newer and `httpx`; `openai` and `anthropic` are optional extras.
 
-- **Low overhead.** Spans are queued in memory and sent in batches from a background thread, so your code never waits on the network.
-- **Never breaks your app.** SDK failures are logged and swallowed. Exceptions from your code and from the providers are recorded and re-raised unchanged.
+- **Low overhead.** Tracing never waits on the network: spans are queued in memory and sent in batches from a background thread.
+- **Tracing never breaks your app.** SDK failures are logged and swallowed. Exceptions from your code and from the providers are recorded and re-raised unchanged. (`prompts.get` is the one call that can block and raise; see Prompts in the [package README](https://github.com/dheerajkarwasra/spanlight/blob/main/sdks/python/README.md#prompts).)
 - **Typed.** The package ships `py.typed` and passes `mypy --strict`.
 
 ## Install
@@ -20,7 +20,7 @@ pip install "spanlight[anthropic]"          # or spanlight[openai], or both
 Plain `pip install spanlight` is enough if you only use `@observe` and `span`. To run the code on `main` instead of the last release:
 
 ```bash
-pip install "spanlight[anthropic] @ git+https://github.com/noob-master-cell/spanlight#subdirectory=sdks/python"
+pip install "spanlight[anthropic] @ git+https://github.com/dheerajkarwasra/spanlight#subdirectory=sdks/python"
 ```
 
 ## Configure
@@ -108,7 +108,7 @@ The server redacts common secret patterns from payloads on ingestion, and a proj
 
 ## Delivery guarantees
 
-A batch goes out when it reaches `batch_size` spans or after `flush_interval` seconds. Network errors, `429` and `5xx` are retried with jittered exponential backoff, and `Retry-After` is honoured. Other `4xx` responses are not retried; they are logged to the `spanlight` logger, as are spans the server rejects. Ingestion is idempotent, so a retried batch never double-counts. See what the SDK is doing with:
+A batch goes out when it reaches `batch_size` spans or after `flush_interval` seconds. Network errors, `429` and `5xx` are retried with jittered exponential backoff, and `Retry-After` is honoured. Other `4xx` responses are not retried; they are logged to the `spanlight` logger, as are spans the server rejects. Ingestion is idempotent by design: a retried batch upserts the same rows, so it does not double-count. See what the SDK is doing with:
 
 ```python
 import logging
@@ -126,6 +126,10 @@ executor.submit(context.run, do_work, item)
 
 `spanlight.get_current_trace_id()` returns the current trace id so you can put it in your logs.
 
+## Prompts and scores
+
+`spanlight.prompts.get("support/answer")` fetches a prompt version by label from Spanlight, with a cache, a stale copy when the server is unreachable and an optional local fallback, and `spanlight_prompt=compiled` links the span to the version it used. `spanlight.score(trace_id, "helpfulness", 0.8)` attaches a score to a trace. Prompts need an API key with the `prompts:read` scope and scores one with `scores:write`. See [Prompts](/docs/prompts/) and [Scores](/docs/scores/).
+
 ## More
 
-The [package README](https://github.com/noob-master-cell/spanlight/blob/main/sdks/python/README.md) lists the limitations of the wrappers and links a complete [example](https://github.com/noob-master-cell/spanlight/blob/main/sdks/python/examples/support_bot.py).
+The [package README](https://github.com/dheerajkarwasra/spanlight/blob/main/sdks/python/README.md) lists the limitations of the wrappers and links a complete [example](https://github.com/dheerajkarwasra/spanlight/blob/main/sdks/python/examples/support_bot.py).

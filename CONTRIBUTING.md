@@ -19,7 +19,7 @@ You need Python 3.12+ and [uv](https://docs.astral.sh/uv/) (the SDK supports 3.1
 
 ## Checks
 
-Run the checks for what you touched before you open a pull request. CI runs all of them on every pull request and on pushes to `main`.
+Run the checks for what you touched before you open a pull request. CI runs all of them on every pull request and on pushes to `main`. The suite is being brought back to green after the 0.3 to 0.5 work; see the CI badge for the current state.
 
 ```bash
 # Backend, which needs Postgres. See Test database below
@@ -92,7 +92,7 @@ Reviewers check these. Modules already past a size limit are split when a change
 **Tests**
 
 - Every pure module has unit tests whose names read as sentences (`test_unknown_models_cost_null_never_zero`).
-- Every router and job has integration tests on the real Postgres fixture. Each resource has one authorization-matrix test: every role, a non-member, and an API key where the route accepts one.
+- Every router and job should have integration tests on the real Postgres fixture; the gateway, alerts, budgets, Doctor and evals packages do not yet, and tests for them are welcome. Each resource has one authorization-matrix test: every role, a non-member, and an API key where the route accepts one.
 - Never mock the unit under test. Fake providers and third parties at the transport, for example with `httpx.MockTransport`.
 - Frontend: Vitest for logic and components, Playwright with axe for each new user flow.
 
@@ -136,7 +136,7 @@ For the maintainer. A release is a pushed tag. `.github/workflows/release.yml` r
 
 | Tag                                                     | Publishes                                                                                                                                 |
 | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `v<semver>`, for example `v0.2.0` or `v0.2.0-rc.1`      | Server images `ghcr.io/noob-master-cell/spanlight:<version>` and `ghcr.io/noob-master-cell/spanlight-web:<version>`, and a GitHub Release |
+| `v<semver>`, for example `v0.2.0` or `v0.2.0-rc.1`      | Server images `ghcr.io/dheerajkarwasra/spanlight:<version>` and `ghcr.io/dheerajkarwasra/spanlight-web:<version>`, and a GitHub Release |
 | `sdk-python-v<semver>`, for example `sdk-python-v0.1.0` | The `spanlight` package on PyPI                                                                                                           |
 
 **Server images.** Image tags have no `v`: tag `v0.2.0` gives `:0.2.0`. The job builds both images, scans them, pushes the version tag, signs the image digests with cosign (keyless), moves `latest`, then attaches signed CycloneDX SBOMs to a GitHub Release with generated notes. `latest` moves only for a non-pre-release (a version with no `-`), and only after signing. A tag that is not `v<semver>` fails at the first step.
@@ -148,7 +148,7 @@ For the maintainer. A release is a pushed tag. `.github/workflows/release.yml` r
 **One-time owner setup.**
 
 1. Create a GitHub environment named `pypi` (Settings, Environments).
-2. On PyPI, add a pending trusted publisher: project `spanlight`, owner `noob-master-cell`, repository `spanlight`, workflow `release.yml`, environment `pypi`. No PyPI token exists anywhere.
+2. On PyPI, add a pending trusted publisher: project `spanlight`, owner `dheerajkarwasra`, repository `spanlight`, workflow `release.yml`, environment `pypi`. No PyPI token exists anywhere.
 3. After the first server release, GHCR creates `spanlight` and `spanlight-web` as private packages. Make both public (package page, Package settings, Change visibility), or nobody else can pull them.
 4. Enable private vulnerability reporting (Settings → Security → Private vulnerability reporting). Without it, the report links in `SECURITY.md` and the issue chooser return 404.
 
@@ -172,8 +172,8 @@ if [ "$failed" = 1 ]; then false; else echo "SCAN PASSED: both images"; fi
 ```bash
 cosign verify \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  --certificate-identity-regexp '^https://github\.com/noob-master-cell/spanlight/\.github/workflows/release\.yml@refs/tags/v' \
-  ghcr.io/noob-master-cell/spanlight:0.2.0
+  --certificate-identity-regexp '^https://github\.com/dheerajkarwasra/spanlight/\.github/workflows/release\.yml@refs/tags/v' \
+  ghcr.io/dheerajkarwasra/spanlight:0.2.0
 ```
 
 Each SBOM on the GitHub Release has a Sigstore bundle: `cosign verify-blob --bundle sbom-spanlight.cdx.json.sigstore.json` with the same two certificate flags, then `sbom-spanlight.cdx.json`.

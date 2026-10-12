@@ -17,6 +17,7 @@ Step-by-step procedures for running a self-hosted Spanlight: Docker Compose (`de
 | Alerts do not arrive, deliveries are stuck or failed, evaluation is late, a webhook secret must change | [alerts.md](alerts.md) |
 | The Doctor finds nothing or errors, a project's detector runs time out, an insight needs muting, the explanation budget is spent | [detectors.md](detectors.md) |
 | Running the LLM gateway: embedded or standalone, key rotation, cache purge, the overhead panel | [gateway.md](gateway.md) |
+| Seeding the demo's prompt, dataset, judge and experiments | [demo-evals.md](demo-evals.md) |
 
 ## Services at a glance
 

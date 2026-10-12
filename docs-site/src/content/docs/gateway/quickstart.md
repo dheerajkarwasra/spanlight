@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-The gateway is an HTTP proxy for LLM providers. Your application keeps using the official OpenAI or Anthropic client; you change its `base_url` and its API key. Every call then becomes a trace in Spanlight with the prompt, completion, tokens, latency and cost, and the gateway can retry, fall back to another provider, cache answers and inject faults on the way.
+The gateway is an HTTP proxy for LLM providers. Your application keeps using the official OpenAI or Anthropic client; you change its `base_url` and its API key. Each call is then recorded as a trace in Spanlight with the prompt, completion, tokens, latency and cost (the span is written after the answer is sent; the [gateway runbook](/docs/runbooks/gateway/) names the metric that counts any that could not be), and the gateway can retry, fall back to another provider, cache answers and inject faults on the way.
 
 Nothing is translated: an OpenAI-style request goes to an OpenAI-style provider (`openai` or `openai_compatible` credentials) and a Messages request goes to Anthropic. The response is forwarded as the provider sent it, streams included.
 

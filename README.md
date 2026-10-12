@@ -1,17 +1,17 @@
 # Spanlight
 
-[![CI](https://github.com/noob-master-cell/spanlight/actions/workflows/ci.yml/badge.svg)](https://github.com/noob-master-cell/spanlight/actions/workflows/ci.yml) [![CodeQL](https://github.com/noob-master-cell/spanlight/actions/workflows/codeql.yml/badge.svg)](https://github.com/noob-master-cell/spanlight/actions/workflows/codeql.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/dheerajkarwasra/spanlight/actions/workflows/ci.yml/badge.svg)](https://github.com/dheerajkarwasra/spanlight/actions/workflows/ci.yml) [![CodeQL](https://github.com/dheerajkarwasra/spanlight/actions/workflows/codeql.yml/badge.svg)](https://github.com/dheerajkarwasra/spanlight/actions/workflows/codeql.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Open-source observability for LLM applications.** Add three lines to your Python app, or change one `base_url`, and see every LLM call: prompts and completions, latency, time to first token, token usage, cost and errors, grouped into traces and user sessions.
+**Open-source observability for LLM applications.** Add three lines to your Python app, or change one `base_url`, and see each LLM call: prompts and completions, latency, time to first token, token usage, cost and errors, grouped into traces and user sessions.
 
 - **Real traffic only.** Instrument your app with the Python SDK, point any OpenTelemetry GenAI exporter at the OTLP endpoint, or send calls through the gateway.
-- **A gateway for OpenAI and Anthropic.** It is built so the official SDKs work against it unchanged, streaming and tool calls included (the contract suite that proves it is part of the 0.3 testing). It adds encrypted provider credentials, weighted routes with retries and fallbacks, per-key rate limits, an exact-match response cache, and an Integration Lab that injects the failures real providers produce (429s, 5xx, timeouts, cut-off streams) on non-production keys.
-- **Cost you can trust.** Prices are versioned per model. A model with no known price shows as _unknown_, never as $0.
+- **A gateway for OpenAI and Anthropic.** It is built so the official SDKs work against it unchanged, streaming and tool calls included; a contract suite against recorded provider responses is planned for the 0.3 release. It adds encrypted provider credentials, weighted routes with retries and fallbacks, per-key rate limits, an exact-match response cache, and an Integration Lab that injects the failures real providers produce (429s, 5xx, timeouts, cut-off streams) on non-production keys.
+- **Cost you can check.** Prices are versioned per model. A model with no known price shows as _unknown_, never as $0. Cache-write premiums and long-context price tiers are not modelled yet.
 - **Built for teams.** Organizations, projects, roles, invites, scoped API keys, personal access tokens and an audit log.
-- **Private by design.** Postgres row-level security isolates every project. Secrets are redacted from payloads before storage, and payload capture can be switched off per project.
+- **Private by design.** Postgres row-level security isolates every project's traces, spans and derived data; the rest is guarded by permission checks. Secrets are redacted from payloads before storage, and payload capture can be switched off per project.
 - **Self-hosted on one database.** Postgres is the only datastore, the job queue included. One `docker compose up`, or [deploy to Railway](docs/deploy/railway.md).
 
-**Status:** pre-1.0. Tracing, the dashboard, sessions, teams and the Python SDK work end to end. The 0.2 hardening work (email verification and password reset, GitHub and Google sign-in, two-factor authentication, token scopes, exports, backups, hourly rollups) is built into the API and the dashboard, and is unreleased. The 0.3 gateway and Integration Lab are built and in testing. See the [changelog](CHANGELOG.md).
+**Status:** pre-1.0. Tracing, the dashboard, sessions, teams and the Python SDK work end to end. The 0.2 hardening work (email verification and password reset, GitHub and Google sign-in, two-factor authentication, token scopes, exports, backups, hourly rollups) is built into the API and the dashboard, and is unreleased. The 0.3 gateway and Integration Lab, the 0.4 alerts and budgets, and the 0.5 Doctor, releases and users are built and unreleased. See the [changelog](CHANGELOG.md).
 
 ## Quickstart
 
@@ -29,7 +29,7 @@ Open http://localhost:8080, create an account, and follow the setup wizard to cr
 The SDK is not on PyPI yet; install it from the repository (Python 3.10 or newer):
 
 ```bash
-pip install "spanlight[anthropic] @ git+https://github.com/noob-master-cell/spanlight#subdirectory=sdks/python"
+pip install "spanlight[anthropic] @ git+https://github.com/dheerajkarwasra/spanlight#subdirectory=sdks/python"
 ```
 
 Use the `openai` extra for OpenAI.
@@ -75,7 +75,7 @@ The wizard shows your first trace live as it arrives. From there you have an ove
                                                └──▶ OpenAI / Anthropic / OpenAI-compatible
 ```
 
-One Docker image runs all three roles. Ingestion is synchronous and idempotent, so SDK retries never double-count. The gateway runs inside the api by default and can run as its own service with `GATEWAY_MODE=standalone`; every gateway call becomes one span through the same ingestion path. An S3-compatible store is optional and holds exports and nightly backups.
+One Docker image runs all three roles. Ingestion is synchronous and idempotent by design: a replayed batch upserts the same rows and totals are recomputed, so SDK retries do not double-count. The gateway runs inside the api by default and can run as its own service with `GATEWAY_MODE=standalone`; each gateway call is recorded as one span through the same ingestion path, written after the answer is sent, and a span that cannot be written is counted in `spanlight_gateway_record_failures_total`. An S3-compatible store is optional and holds exports and nightly backups.
 
 | Path                           | What it is                                                                                         |
 | ------------------------------ | -------------------------------------------------------------------------------------------------- |
@@ -91,7 +91,7 @@ One Docker image runs all three roles. Ingestion is synchronous and idempotent, 
 - [Postgres is the only datastore](docs/decisions/0001-postgres-only-storage.md), which keeps operations simple, with a stated path to scale.
 - [Server-side sessions, hashed API keys](docs/decisions/0002-sessions-not-jwt.md): revocation takes effect immediately.
 - [Row-level security for tenant isolation](docs/decisions/0003-row-level-security.md): a forgotten filter fails closed.
-- [Synchronous, idempotent ingestion](docs/decisions/0004-synchronous-idempotent-ingestion.md): SDK retries never double-count.
+- [Synchronous, idempotent ingestion](docs/decisions/0004-synchronous-idempotent-ingestion.md): a replayed batch upserts the same rows, so SDK retries do not double-count.
 - [Versioned API paths](docs/decisions/0005-public-api-under-api-v1.md): the dashboard API lives under `/api/v1`.
 - [Hourly rollups with bucketed histograms](docs/decisions/0006-hourly-rollups-with-bucketed-histograms.md): long-window charts stay fast and still report percentiles.
 - [Postgres-backed rate limiting](docs/decisions/0007-postgres-backed-rate-limiting.md): one limit shared by every API replica.
@@ -123,7 +123,7 @@ Backend tests need a real Postgres (`TEST_DATABASE_URL`); see [backend/README.md
 
 ## What's next
 
-Alerts and budgets (the gateway already has the hook to block a call when a budget is spent), automated diagnosis of client behaviour, prompts and evals, and a JavaScript SDK. Open an issue to discuss priorities.
+Prompts, datasets and evals are in development and unreleased. After them: a JavaScript SDK, per-project detector thresholds and semantic caching. Open an issue to discuss priorities.
 
 ## License
 

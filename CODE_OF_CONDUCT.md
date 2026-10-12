@@ -36,7 +36,7 @@ This Code of Conduct applies within all community spaces, and also applies when 
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement by contacting the maintainer, [@noob-master-cell](https://github.com/noob-master-cell), through GitHub. Use the contact details on the maintainer's GitHub profile, and do not post the details of an incident in a public issue or pull request. All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement by contacting the maintainer, [@dheerajkarwasra](https://github.com/dheerajkarwasra), through GitHub. Use the contact details on the maintainer's GitHub profile, and do not post the details of an incident in a public issue or pull request. All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the reporter of any incident.
 

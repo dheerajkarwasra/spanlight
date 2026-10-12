@@ -1,11 +1,11 @@
 ---
 title: Budgets and the weekly digest
-description: Cap spend per project, gateway key, end user or model, notify or block gateway calls, and get a weekly summary by email.
+description: Set spend limits per project, gateway key, end user or model, notify or block gateway calls, and get a weekly summary by email.
 sidebar:
   order: 2
 ---
 
-A **budget** caps how much a scope may spend in a day or a month. When the spend passes the amount, Spanlight sends a `budget.exceeded` notification to the budget's [channels](/docs/alerts/#channels), and a budget set to **block** also makes the [gateway](/docs/gateway/quickstart/) refuse further calls in that scope. Manage budgets under **Budgets** in a project.
+A **budget** watches how much a scope spends in a day or a month. When the spend passes the amount, Spanlight sends a `budget.exceeded` notification to the budget's [channels](/docs/alerts/#channels), and a budget set to **block** also makes the [gateway](/docs/gateway/quickstart/) refuse further calls in that scope. Manage budgets under **Budgets** in a project.
 
 Anyone who can see the project can read its budgets; only organization **admins and owners** can create, edit or delete them. A project can have up to 50, each with up to 10 channels, and budget names are unique within the project.
 

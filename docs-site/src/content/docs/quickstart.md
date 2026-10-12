@@ -10,7 +10,7 @@ This takes about ten minutes and ends with a trace from your own code in the das
 ## 1. Start the platform
 
 ```bash
-git clone https://github.com/noob-master-cell/spanlight.git
+git clone https://github.com/dheerajkarwasra/spanlight.git
 cd spanlight
 cp deploy/.env.example deploy/.env
 ```

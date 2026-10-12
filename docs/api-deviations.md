@@ -46,6 +46,8 @@ original design; everything else is a clarification.
   `RATE_LIMITED` (429, with `Retry-After`), `INVALID_JSON` / `INVALID_OTLP` / `BAD_REQUEST` (400),
   `INTERNAL_ERROR` (500), `SERVICE_UNAVAILABLE` (503, with `Retry-After`, the database could not take or
   finish the request in time).
+- The codes of prompts, scores, datasets, review queues, evaluators and experiments are listed in the section
+  "Prompts, scores, datasets, evaluators and experiments" below.
 - Validation `errors[].field` is the dotted path without the `body.`/`query.` prefix (e.g. `password`).
 - **NUL in a text parameter is a 422** (added 2026-10-10). Postgres text cannot hold NUL, so a query or path value with
   one could not be bound. The insights, releases and users parameters refuse it as `422 VALIDATION_ERROR` with the
@@ -66,7 +68,8 @@ original design; everything else is a clarification.
 - **Request body limit:** every `/api/v1` request body is limited to **1 MiB**. Over the limit is `413
   PAYLOAD_TOO_LARGE`, answered without reading the body when `Content-Length` already declares too much, and
   while reading when the body is chunked or understates its length. Ingestion (`/v1/traces`,
-  `/v1/otlp/traces`) is outside this limit and keeps its own 5 MB.
+  `/v1/otlp/traces`, `/v1/scores`) is outside this limit and keeps its own 5 MB. The dataset upload route
+  (`POST …/datasets/{dataset_id}/items/upload`) has its own limit of 5 MB of file plus 64 KB of multipart framing.
 
 ## Auth, CSRF, sessions
 
@@ -600,7 +603,8 @@ key can read its own project through the dashboard API.
 |---|---|
 | `ingest:write` | `POST /v1/traces` and `POST /v1/otlp/traces` |
 | `traces:read` | the read routes listed below, for the key's own project |
-| `scores:write`, `prompts:read` | reserved: accepted when creating a key, but no route uses them yet |
+| `scores:write` | `POST /v1/scores` (added 2026-10-11) |
+| `prompts:read` | `GET /v1/prompts/{name}` (added 2026-10-11) |
 
 - **Creating a key.** `POST /api/v1/projects/{project_id}/keys` takes `{"name", "scopes"?, "expires_at"?}`.
   `scopes` is a non-empty list of the values above and defaults to `["ingest:write"]`; repeated values are
@@ -1334,3 +1338,224 @@ Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anth
   segments even when percent-encoded, so the id has a one-character escape: the client prefixes `~` when the id is `.`
   or `..` or starts with `~`, and the route strips exactly one leading `~` before the lookup (`~~a` names the user
   `~a`, `~.` names `.`, `a` names `a`). A path with NUL is `422 VALIDATION_ERROR`.
+
+## Prompts, scores, datasets, evaluators and experiments (added 2026-10-11)
+
+These routes follow the conventions above (problem+json, keyset pagination, decimal-string money, `null` for an
+unknown value). Dashboard routes are under `/api/v1/projects/{project_id}`; `POST /v1/scores` and
+`GET /v1/prompts/{name}` are key-authenticated routes beside the ingestion ones. Permissions: viewers read;
+members hold `prompts:write`, `datasets:write`, `scores:write`, `annotations:write` and `experiments:run`;
+`evaluators:write` is admin and owner only (a judge spends money unattended). A personal access token with the
+`read` scope can use none of the write permissions.
+
+**New problem codes.** `NAME_TAKEN`, `KIND_MISMATCH`, `NO_CHANGES`, `PROMPT_IN_USE`, `DATASET_IN_USE`,
+`SCORE_CONFIG_IN_USE`, `RUN_IN_PROGRESS`, `ITEM_NOT_ASSIGNED_TO_YOU`, `ITEM_NOT_PENDING` (all 409);
+`LABEL_RESERVED`, `DATASET_FULL`, `SCORE_NOT_IN_QUEUE`, `SCORE_REQUIRED`, `UNKNOWN_SCORE_CONFIG`,
+`SCORE_FILTER_NEEDS_NAME`, `BUDGET_REQUIRED`, `RULE_NEEDS_EXPECTED_OUTPUT`, `CHANNEL_KIND`,
+`JUDGE_TEMPLATE_VARIABLES`, `EVALUATOR_MODEL_UNPRICED`, `EXPERIMENT_MODEL_UNPRICED`, `TARGET_OVERRIDE_INVALID`
+(all 422); `UNSUPPORTED_FILE` (415); `EVALUATOR_BUDGET_EXCEEDED` (402); `EVALUATOR_FAILED` (502).
+
+### Prompts
+
+- **Names.** A prompt name is 1 to 128 characters, case-sensitive and unique in the project (`409 NAME_TAKEN`). It
+  is segments joined by `/`; every segment matches `[A-Za-z0-9][A-Za-z0-9_.-]*`. A segment starting with a letter or
+  digit means `.` and `..` can never be a segment, which matters because HTTP clients and browsers resolve those
+  before sending. A segment may not be `versions` or `labels`, the words that follow a name in the routes, so
+  `a/versions/b` is never ambiguous (`422 VALIDATION_ERROR`). The database repeats both rules in a CHECK.
+- **The `~` escape.** The dashboard routes strip exactly one leading `~` from the name segment before the lookup,
+  the same helper the Users routes use. No valid prompt name starts with `~` or `.`, so the escape is never needed
+  for one; it is kept so the two families of routes behave alike. The key route `GET /v1/prompts/{name}` does not
+  strip it.
+- **A prompt keeps its kind.** A version whose `template.kind` differs from the prompt's is `409 KIND_MISMATCH`.
+  `POST /prompts` repeats the kind as `kind`, and `kind` must equal `template.kind` (`422`).
+- **No duplicate versions.** A new version whose `template` and `model_config` equal the latest version's is
+  `409 NO_CHANGES`. At most 100 versions per prompt per UTC day; the 101st is `429 RATE_LIMITED` with `Retry-After`
+  set to the seconds until midnight UTC.
+- **Versions are immutable.** The database rejects any `UPDATE` of a `prompt_versions` row; a delete of the whole
+  prompt cascades. `variables` is filled by the server and cannot be sent.
+- **Labels.** A label is `[a-z0-9][a-z0-9_-]{0,31}`. `PUT …/labels/latest` is `422 LABEL_RESERVED`: `latest` always
+  means the highest version. Pointing a label at a version of another prompt, or deleting a label that does not
+  exist, is `404`.
+- **`PROMPT_IN_USE`.** Deleting a prompt is `409 PROMPT_IN_USE` while an evaluator's `config.prompt_version_id` or an
+  experiment's `config.target.prompt_version_id` names one of its versions.
+- **Reading with a key.** `GET /v1/prompts/{name}?label=|version=` needs the `prompts:read` scope (`403 KEY_SCOPE`
+  without it) and shares the per-key request limit with ingestion. `label` defaults to `production`. **`latest`
+  is accepted here as a read alias** for the highest version, although it cannot be set as a label. `label` and `version`
+  together are `422 VALIDATION_ERROR`. An unknown name, label or version, and a name that exists only in another project,
+  are `404 NOT_FOUND`. The response is `{name, version, version_id, kind, template, variables, model_config, labels}`
+  with `ETag: "<version_id>-<label hash>"` and `Cache-Control: private, max-age=60`; a matching `If-None-Match` (weak or
+  strong, a list, or `*`) is an empty `304` with the same headers. **The spec's ETag was the version id alone;** the
+  body lists the version's labels, so the tag adds the first 12 hex digits of the SHA-256 of the sorted labels, and
+  moving a label onto or off the served version changes it.
+- **Compiled size.** A compiled prompt (the text, or all messages together) is at most 256 KB of UTF-8, checked before
+  anything is rendered, so a small template repeating a large variable cannot allocate hundreds of megabytes. Past it
+  the server raises `TemplateTooLargeError` (the SDK raises the same name): a playground config gets the error
+  `prompt_too_large`, an experiment item the item error `prompt_too_large`, and a judge run fails with
+  `judge_prompt_too_large`. The shared template fixture has no case near the cap.
+- **`GET /prompt-versions/{version_id}`.** The dashboard route that reads a version by its id, with the name of its
+  prompt (`project:read`). Evaluators and experiments store version ids, so a client needs it to show their names. A
+  version of another project's prompt is `404`.
+- **Usage.** `GET …/versions/{version}/usage` covers the last 7 days of raw spans. `cost_usd` and `p95_ms` are
+  `null` when unknown; `has_unpriced` says some LLM calls had no cost, which makes `cost_usd` a lower bound.
+- **Spans.** A span may carry `prompt_version_id` (native JSON ingestion only). There is no foreign key: the id of a
+  version the server has not seen, or that was deleted, is stored as sent. `GET …/traces` accepts
+  `prompt_version_id` to keep traces with a span of that version.
+- **The SDK's one exception.** `spanlight.prompts.get` raises `PromptUnavailableError` (a plain `Exception`) when
+  nothing is cached, the fetch failed (including `401`, `404` and `5xx`) and no valid `fallback` was passed, and also,
+  without a request, for a name that is empty or has an empty, `.` or `..` segment. Every other SDK call still
+  never raises into your code.
+
+### Scores
+
+- **Implicit score configs.** A score with a name that has no config creates one (`implicit: true`) with the type
+  the first score implies: `string_value` is categorical, a JSON `true`/`false` boolean, any other number numeric,
+  with no range and no category list. Two first scores racing agree on one config (the loser re-reads it). Editing
+  a config, or creating one in the dashboard, makes it explicit. `POST /score-configs` for a name that already has
+  a config, implicit or not, is `409 NAME_TAKEN`.
+- **Config changes.** `PATCH /score-configs/{id}` takes `data_type`, `min_value`, `max_value`, `categories` and
+  `description` (not `name`), and the result is validated as a whole config. Changing `data_type`, or deleting the
+  config, is `409 SCORE_CONFIG_IN_USE` while any score carries the name. A new range or list applies to new scores
+  only. Review queues keep config ids without a foreign key; deleting a config that a queue lists is also
+  `409 SCORE_CONFIG_IN_USE`, since its items could never be completed.
+- **At most 500 score names per project.** A score whose new name would create the project's 501st config is rejected on
+  its own (`name: too many score names in this project (at most 500)`), and so is `POST /score-configs`
+  (`422 VALIDATION_ERROR`). `GET /score-configs` stays unpaginated and returns at most 500 configs; concurrent writers
+  can pass the cap by a few rows, which the list then leaves out.
+- **NUL and lone surrogates.** NUL is removed from `string_value`, `comment` and `span_id` before validation, and a lone
+  UTF-16 surrogate is replaced by `?`, because PostgreSQL refuses both and one bad score would otherwise fail its batch's
+  insert. A `string_value` that is empty afterwards is rejected on its own. Judge reasoning gets the same treatment.
+- **Primary key and client ids.** A score's key is `(project_id, id)`, not `id` alone. With a global key, two tenants
+  who happened to choose the same `id` would collide invisibly (row-level security hides the other tenant's row, so
+  `ON CONFLICT DO NOTHING` would silently drop the second score). A client-supplied `id` (a UUID) makes a retry
+  idempotent: a repeat counts as `accepted` and stores nothing. On `POST /traces/{trace_id}/scores` a repeated `id`
+  returns the stored score as it is, even if it belongs to another trace or author.
+- **Values.** Score values are JSON numbers with at most four decimals within ±1e9, and are serialised as JSON
+  numbers (not strings) in every response. A JSON boolean is accepted in `value` and stored as `1` or `0`; it makes
+  an implicit config boolean, and a boolean config also accepts the numbers `0` and `1`. Exactly one of `value` and
+  `string_value` is allowed. A name is 1 to 64 characters `[a-z0-9][a-z0-9_.-]*`.
+- **Batch results.** `POST /v1/scores` takes 1 to 1000 scores. An empty, oversize or misshapen body is `422`. A
+  score that fails validation is listed in `rejected` as `{index, reason}` with `reason` written
+  `<field>: <message>`, and never fails the others. The body is read after the key is checked, bounded like span
+  ingestion and may be gzip or deflate encoded. The `trace_id` need not exist yet (a score may arrive first), but
+  `POST /traces/{trace_id}/scores` on the dashboard is `404` for a trace the project does not have.
+- **Traces flag.** `traces.has_scores` is set when a score is written and never cleared, so after the last score of a
+  trace is deleted `has_scores=true` still keeps the trace. It is a filter hint. A trace upsert keeps the flag when
+  it is already set, and a small sweep inside the rollup job (every 5 minutes, scores of the last 15 minutes) sets it on
+  traces whose first score raced the trace's own ingestion, so the flag can lag by a few minutes.
+- **Retention.** Scores, online evaluator runs and review-queue items follow the project's `retention_days`, deleted by
+  the hourly retention job on the traces' cutoff (by `created_at`, or `started_at` for runs), since a comment or a judge's
+  reasoning can quote the trace. Online runs are kept until their UTC month ends because the evaluator's budget sums
+  them, and queued or running ones are left to the reaper. Datasets, experiments and their items are kept.
+- **Trace filters.** `score_min`, `score_max` and `score_value` apply to the **latest** score of `score_name` (highest
+  `created_at`, ties by the higher id) and are `422 SCORE_FILTER_NEEDS_NAME` without `score_name`. `has_scores` is
+  true or false. A trace in the list carries `has_scores` and up to 10 `scores` (`name`, `value`, `string_value`).
+- **Deleting a score.** Your own `human` score, or any score as a project admin; others are `403 FORBIDDEN`. Deleting
+  a score is logged but has no audit action.
+
+### Datasets and review queues
+
+- **Names.** Prompt, score-config, dataset, annotation-queue, evaluator and experiment names are each unique per
+  project (`409 NAME_TAKEN`). Dataset names are trimmed and 1 to 100 characters; `GET /datasets?name=` is an exact
+  match, the handle the CLI and the Action use.
+- **Dataset limits.** 10 000 items per dataset (`422 DATASET_FULL`, nothing stored); `input` and `expected_output`
+  at most 64 KB each and `metadata` at most 8 KB as compact JSON; NUL is removed from strings. `input` may be any JSON
+  except `null`.
+- **Upload.** `.jsonl` or `.csv` (`415 UNSUPPORTED_FILE`), UTF-8 with an optional byte order mark. The file is at most 5 MB:
+  **`413 PAYLOAD_TOO_LARGE`** past that (the request body limit of this one route is 5 MB plus 64 KB). A bad line is not an
+  error of the request: it is reported in `rejected` as `{line, reason}` (at most 100), and the rest is accepted. A reason
+  never repeats the line. CSV needs a header with `input`; an unreadable record ends the file there. Parsing runs in a
+  thread pool and stops once a dataset would be full.
+- **From traces.** `POST …/items/from-traces` takes 1 to 200 trace ids (32 hex digits, upper case accepted and lowered;
+  a malformed id is `422` for the request) and lists each trace that gave no item in `rejected`
+  (`trace not found`, `no llm span`, `span not found`, `no payload stored`) instead of failing the request. Adding
+  traces to a **review queue** differs: if any trace id is not a trace of the project, the **whole batch is refused**
+  (`422 VALIDATION_ERROR` naming each unknown trace) and nothing is queued.
+- **In use.** `DELETE /datasets/{id}` is `409 DATASET_IN_USE` while an experiment names the dataset.
+- **Queues.** A queue lists 1 to 20 score configs (`422 UNKNOWN_SCORE_CONFIG` for one the project lacks) and all of them are
+  required when an item is completed (`422 SCORE_REQUIRED`; a name outside them is `422 SCORE_NOT_IN_QUEUE`). A trace (or
+  a trace and span) already in the queue is skipped and counted in `skipped_duplicates`.
+- **Claim.** `POST …/claim` gives the lowest-id `pending` item that is unassigned, already the caller's, or claimed over
+  30 minutes ago, or `204` when there is none. Completing, skipping and releasing need the item to be the caller's
+  (`409 ITEM_NOT_ASSIGNED_TO_YOU`) and still `pending` (**`409 ITEM_NOT_PENDING`**). A completion that fails writes no
+  score.
+- **Row-level security through the parent.** Tables without a `project_id` (prompt versions and labels, dataset items,
+  queue items, evaluator runs, experiment runs and items) have no `project_id` column, so their policies are `EXISTS`
+  subqueries through the parent that does (prompts, datasets, queues, evaluators, experiments), plus the usual worker
+  bypass. Like every project table they have row-level security both enabled and forced, so a forgotten filter returns
+  nothing instead of another tenant's rows.
+
+### Evaluators
+
+- **Shape.** `config` is a discriminated union on `kind`: `heuristic` (with a `check` holding one `rule`), `llm_judge`
+  (`prompt_version_id`, `credential_id`, `model`, `max_tokens` 1 to 4096 defaulting to 256, `temperature` unset by default)
+  or `webhook` (`channel_id`). A name follows the score-name rule, because the scores it writes carry it.
+  `PATCH` takes `name`, `enabled`, `sampling_rate`, `filters`, `monthly_budget_usd` and a partial `config` that merges
+  into the stored one and cannot change `kind`.
+- **`judge_template` alternative.** When creating or patching a judge, `judge_template` (`relevance`, `faithfulness`,
+  `toxicity` or `format_compliance`) may be sent **instead of** `prompt_version_id` (exactly one of them). The server saves
+  the built-in template as the chat prompt `judges/<name>` version 1 on first use and stores that version's id, so a
+  stored judge always names a prompt version.
+- **Checks.** A judge needs a positive `monthly_budget_usd` (`422 BUDGET_REQUIRED`), a chat prompt version of the project
+  using only the variables `input`, `output` and `expected_output` (`422 JUDGE_TEMPLATE_VARIABLES`), an Anthropic or
+  OpenAI credential of the organization, and a model with a positive price (`422 EVALUATOR_MODEL_UNPRICED`).
+  `exact_match` and `levenshtein` with `sampling_rate > 0` are `422 RULE_NEEDS_EXPECTED_OUTPUT`. Yes/no rules (`regex`,
+  `json_valid`, `contains`, `exact_match`) write boolean scores; `length` and `levenshtein` numeric ones.
+  **`levenshtein` compares at most 2 000 characters of each side** (the spec said 10 000): the pure-Python distance
+  takes about 9 seconds at 10 000, and it runs in a thread so it never blocks the worker's event loop. A webhook evaluator on a
+  channel that is not a webhook channel of the organization is `422 CHANNEL_KIND`. A prompt version, credential or
+  channel the caller cannot see is `404`, never a hint that it exists elsewhere.
+- **`evaluator_runs.source` and uniqueness.** A run's `source` is `online`, `test` or `experiment`. A partial unique
+  index on `(evaluator_id, trace_id, coalesce(span_id, ''))` **where `source = 'online'`** makes a rescan of the
+  sampler's overlapping windows queue nothing twice, while tests and experiment items may repeat a trace. All three
+  sources write real run rows, so every judge call counts against the evaluator's monthly budget.
+- **Budget.** The month is the UTC calendar month by `started_at`. Before a judge call the run reserves an estimate
+  (`ceil(ASCII characters / 3) + non-ASCII characters` input tokens plus `max_tokens` output tokens, at the model's price) under
+  an advisory lock per evaluator. Admitted when settled spend + reservations of running runs + the estimate
+  ≤ the budget; otherwise the run is `failed` with `budget_exceeded` and no request is sent. A `running` run with no heartbeat
+  for 10 minutes becomes `failed`, `abandoned`, charged its reservation. `GET …/budget` returns `monthly_budget_usd`,
+  `spent_usd`, `reserved_usd`, `remaining_usd` (null without a budget) and `month_start`.
+- **Test.** `POST …/{id}/test` with `{trace_id}` evaluates the trace's last LLM span now and returns `{scores, cost_usd,
+  reasoning}` without storing scores. A judge's test reserves like a sampled run. Over budget it is
+  **`402 EVALUATOR_BUDGET_EXCEEDED`**; any other failure is **`502 EVALUATOR_FAILED`** with the run's error code in `error`.
+  `404` for a trace not in the project; `422` for one with no LLM span or no stored input or output.
+- **Sampling volume.** `EVAL_SAMPLER_MAX_RUNS_PER_CYCLE` defaults to 50 runs per evaluator per minute (evaluation jobs
+  share the worker's short-job lane with alerts and rollups), and a judge whose committed spend already reaches its
+  monthly budget is not sampled at all. A queued online run whose job died is failed `abandoned` by the reaper instead of
+  staying queued for ever (the trace is not sampled again for that evaluator).
+- **Never sampled.** The sampler skips traces in the environments `evals`, `playground`, `experiments` and `doctor` and
+  traces tagged `spanlight:judge`, and traces that ran longer than an hour. Online runs have no expected output.
+- **Webhook evaluators.** The request carries `X-Spanlight-Timestamp` and `X-Spanlight-Signature` (the alert webhook
+  signature, same secret) but no event or delivery header: there is one attempt and no retry.
+
+### Experiments and the playground
+
+- **Targets.** `config.target` is `{kind: "prompt_version", prompt_version_id, credential_id, model, params?}` or
+  `{kind: "messages", credential_id, model, messages, params?}`. `max_cost_usd` is above 0 and at most 1000 (default 5);
+  `max_items` defaults to 1000 and may not exceed `EXPERIMENT_MAX_ITEMS` (`422`). An unpriced model is
+  `422 EXPERIMENT_MODEL_UNPRICED`. An experiment cannot be edited or deleted.
+- **One run at a time.** `POST …/{id}/runs` answers `202` with a `queued` run and supports `Idempotency-Key`. A second
+  run while one is queued or running is **`409 RUN_IN_PROGRESS`**, enforced by a partial unique index. A run whose worker died is
+  failed (`abandoned`) first, so it does not block new runs forever.
+- **`target_override`.** The optional body `{"target_override": {"prompt_version_id"}}` runs a prompt-version experiment with
+  another version of the **same prompt**, keeping its credential, model and parameters; anything else is
+  **`422 TARGET_OVERRIDE_INVALID`**. Every run stores its effective target (`experiment_runs.target`) and returns it as `target`.
+- **Run `number`.** Runs have a stored `number`: 1, 2, 3 in the order they started, unique per experiment and never reused.
+  The experiment list carries `run_count` and `last_run`.
+- **Cost limit.** The limit covers the target's calls only and is reserved: before each item, the cost so far plus the
+  estimates of the calls in flight plus this item's estimate must stay within `max_cost_usd`, else the run ends `failed`
+  with `cost_cap_reached` and its stored items stay. Attached evaluators spend under their own monthly budgets; an
+  evaluator over budget leaves that item's score out and does not fail the item or the run.
+- **Totals.** `cost_usd` is the sum of the known item costs, `null` when none is known, and `has_unpriced` says it is a lower bound.
+  Latency percentiles are nearest-rank over answered items. A numeric score reports `mean` and `count`; a categorical one
+  reports `categories` counts and a `null` mean. Run lists carry the totals stored when each run ended (`null` before); one
+  run's read computes them live.
+- **Compare.** `GET …/runs/{a}/compare/{b}` returns deltas `b − a` at four decimals; for a boolean score the values count as 1
+  and 0. Higher is better for every score, so a positive delta is an improvement. A categorical score has no delta (equal is
+  `unchanged`). An item present in one run has a `null` side and no deltas and is listed after matched items.
+  `cost_delta_usd` and `latency_p95_delta_ms` are `null` when either side is unknown. Either run unfinished is
+  **`409 RUN_IN_PROGRESS`**; a run that is not a run of this experiment is `404`.
+- **Playground.** `POST …/playground/runs` (`experiments:run`, supports `Idempotency-Key`) takes 1 to 3 configs and
+  answers `200` with one result per config. One failing config yields `error` on its own result only (`BUDGET_EXCEEDED`,
+  `missing_variables: a, b`, or the failure); `ttft_ms` is always `null`. A credential outside the organization or a version outside
+  the project is `404` for the request. It is limited to 30 runs a minute per user (`429 RATE_LIMITED`) and has no spend cap
+  beyond the project's blocking budgets.

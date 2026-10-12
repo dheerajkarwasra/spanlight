@@ -92,7 +92,7 @@ The live demo is fed by real model calls under a monthly budget. It is on by def
 | --- | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | secret | unset | Anthropic API key for the demo workspace's live model calls. |
 | `DEMO_ENABLED` | boolean | unset | Force the demo workspace on or off. Unset means on exactly when `ANTHROPIC_API_KEY` is set. |
-| `DEMO_MONTHLY_BUDGET_USD` | decimal | `1.00` | Month-to-date spending cap for the demo's model calls, in US dollars. The demo job checks it before every provider call. |
+| `DEMO_MONTHLY_BUDGET_USD` | decimal | `1.00` | Month-to-date spending limit for the demo's model calls, in US dollars. The demo job checks it before every run (two provider calls). |
 
 ### LLM gateway
 
@@ -128,6 +128,16 @@ Detectors read each project's recent spans every 15 minutes and turn what they f
 | `EXPLAIN_MODEL` | string | `claude-sonnet-5-5` | Claude model that explains an insight. It must have a price, or explanations answer `409 EXPLAIN_MODEL_UNPRICED`. |
 | `EXPLAIN_MONTHLY_BUDGET_USD` | decimal (min 0) | `1.00` | Most an organization may spend on explanations per UTC month, in US dollars. `0` turns explanations off (`409 NOT_CONFIGURED`). |
 | `USER_STATS_ENABLED` | boolean | `true` | Schedule the refresh of per-user daily statistics behind the Users page. Off, the page stops updating. |
+
+### Evaluations
+
+Evaluators score traces: heuristics run locally, LLM judges call a model through one of the organization's provider credentials under each evaluator's monthly budget, and webhooks ask your own service. Online evaluation samples recent spans every minute; experiments run a dataset through a prompt and score every item.
+
+| Variable | Type | Default | Description |
+| --- | --- | --- | --- |
+| `EVALS_ENABLED` | boolean | `true` | Schedule online evaluation, which samples recent spans for every enabled evaluator once a minute. Off, evaluators run only inside experiments and test runs. |
+| `EVAL_SAMPLER_MAX_RUNS_PER_CYCLE` | integer (min 1, max 10000) | `50` | Most evaluation runs one evaluator gets per one-minute sampling cycle. Spans past it are not sampled in that cycle. An LLM judge whose monthly budget is used up is not sampled at all. |
+| `EXPERIMENT_MAX_ITEMS` | integer (min 1, max 100000) | `1000` | Ceiling for an experiment's `max_items`: the most dataset items one experiment run processes. |
 
 ### API request limits
 

@@ -24,7 +24,7 @@ The API and worker connect as `spanlight_app`, a role that is neither a superuse
 Requirements: Docker with the Compose plugin.
 
 ```bash
-git clone https://github.com/noob-master-cell/spanlight.git
+git clone https://github.com/dheerajkarwasra/spanlight.git
 cd spanlight
 cp deploy/.env.example deploy/.env       # fill in POSTGRES_PASSWORD, APP_DB_PASSWORD and SECRET_KEY
 docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build

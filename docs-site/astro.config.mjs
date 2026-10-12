@@ -19,7 +19,7 @@ export default defineConfig({
       favicon: '/favicon.svg',
       logo: { src: './src/assets/logo.svg', alt: 'Spanlight' },
       social: [
-        { icon: 'github', label: 'GitHub', href: 'https://github.com/noob-master-cell/spanlight' },
+        { icon: 'github', label: 'GitHub', href: 'https://github.com/dheerajkarwasra/spanlight' },
       ],
       customCss: ['./src/styles/custom.css'],
       // The runbooks include PromQL queries; the bundled highlighter has no grammar for it.
@@ -32,6 +32,18 @@ export default defineConfig({
         },
         { label: 'Alerts', items: ['alerts', 'budgets', 'webhooks'] },
         { label: 'Doctor', items: ['doctor', 'releases-and-users'] },
+        {
+          label: 'Evals',
+          items: [
+            'prompts',
+            'playground',
+            'datasets',
+            'scores',
+            'evaluators',
+            'experiments',
+            'eval-gate',
+          ],
+        },
         {
           label: 'Gateway',
           items: [

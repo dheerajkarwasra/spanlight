@@ -6,7 +6,7 @@ Spanlight stores prompts, completions and API keys for the people who run it, so
 
 Report vulnerabilities privately through GitHub private vulnerability reporting:
 
-**<https://github.com/noob-master-cell/spanlight/security/advisories/new>**
+**<https://github.com/dheerajkarwasra/spanlight/security/advisories/new>**
 
 Do not open a public issue, pull request or discussion for a vulnerability. No email address is published for security reports; the form above is the only channel.
 
@@ -32,7 +32,7 @@ If you plan to publish your own write-up, please wait until the fix is released 
 
 ## Supported versions
 
-Spanlight is pre-1.0. Only the latest `0.x` release is supported, for the server images (`ghcr.io/noob-master-cell/spanlight` and `ghcr.io/noob-master-cell/spanlight-web`) and for the `spanlight` Python SDK on PyPI. Fixes are released as a new version; they are not backported to older `0.x` releases.
+Spanlight is pre-1.0. Only the latest `0.x` release is supported, for the server images (`ghcr.io/dheerajkarwasra/spanlight` and `ghcr.io/dheerajkarwasra/spanlight-web`) and for the `spanlight` Python SDK on PyPI. Fixes are released as a new version; they are not backported to older `0.x` releases.
 
 | Version | Supported |
 |---|---|
@@ -50,7 +50,7 @@ In scope:
 
 Out of scope:
 
-- Exhausting the public demo's Anthropic budget. The demo's Anthropic spend is capped at $1 per month, and it stops generating traffic when the cap is reached, by design.
+- Exhausting the public demo's Anthropic budget. The demo's Anthropic spend is limited to about $1 per month: the job checks recorded month-to-date spend before each run and stops once it is reached, by design.
 - Vulnerabilities in third-party services and software (GitHub, Railway, PyPI, Anthropic, Postgres, Caddy). Report those to their owners. A way Spanlight misuses one of them is in scope.
 - Weaknesses that depend on an operator's own configuration, such as serving the dashboard over plain HTTP, a weak `SECRET_KEY`, or a reverse proxy that does not set the headers the deploy docs ask for.
 - Denial of service by sending large volumes of traffic, and social engineering of the maintainer or other users.

@@ -143,4 +143,4 @@ Timestamps are ISO-8601 with an offset, or integer Unix nanoseconds. The respons
 {"accepted": 1, "rejected": []}
 ```
 
-Each span is validated on its own, so one bad span appears in `rejected` (with its index, span id and reason) without failing the batch. A span that is sent again with the same ids updates the stored one, so retrying a batch is always safe. The limits, the key scope and the rate limit are the same as for OTLP. Validation rules, limits and the merge rules for trace fields are listed under [ingestion in the API conventions](/docs/api/conventions/#ingestion-post-v1traces).
+Each span is validated on its own, so one bad span appears in `rejected` (with its index, span id and reason) without failing the batch. A span that is sent again with the same ids updates the stored one, so retrying a batch does not double-count by design. The limits, the key scope and the rate limit are the same as for OTLP. Validation rules, limits and the merge rules for trace fields are listed under [ingestion in the API conventions](/docs/api/conventions/#ingestion-post-v1traces).

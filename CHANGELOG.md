@@ -2,6 +2,62 @@
 
 All notable changes to Spanlight are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project is pre-1.0, so minor versions may change behaviour; breaking changes are called out.
 
+## [0.6.0] - Unreleased
+
+Prompts, datasets and evals: manage prompts as versions, score traces by hand or automatically, and compare a change on your own test cases before it ships.
+
+### Added
+
+- **Prompt registry.** Named prompts, `text` or `chat`, with immutable numbered versions and movable labels such as `production`. Templates use `{{variable}}` and are checked identically by the server, the dashboard and the SDK. A prompt can get 100 versions a day, saving an identical version is refused, and a prompt that an evaluator or experiment uses cannot be deleted. Each version shows its use over the last 7 days (traces, LLM calls, cost, p95 duration).
+- **Prompts for your application.** `GET /v1/prompts/{name}?label=` or `?version=` with an API key that has the new `prompts:read` scope, answered with an `ETag` so an unchanged prompt is a `304`. Spans can carry the id of the prompt version they used (`prompt_version_id`), Traces can be filtered by it, and trace detail links to it.
+- **Playground.** Run a prompt version or typed messages on up to three credential and model configurations side by side. Every run is a real provider call, recorded as a trace in the `playground` environment; the playground has no spend cap of its own beyond the project's blocking budgets, and is limited to 30 runs a minute per person.
+- **Scores.** Numeric, boolean and categorical scores on a trace or a span, from the API (`POST /v1/scores`, scope `scores:write`, up to 1000 per request with per-score rejection), by hand on the trace page, or from evaluators. Score configs (type, range, categories) are optional: the first score with a name creates an implicit one. Traces can be filtered by score (`score_name` with `score_min`, `score_max` or `score_value`, and `has_scores`), and the trace list shows each trace's latest scores.
+- **Annotation queues.** Queue traces for review under Review. Reviewers claim the next item (an abandoned claim is freed after 30 minutes), give one score per config of the queue, skip or release it, and can work entirely from the keyboard.
+- **Datasets.** Build a dataset from traces or upload `.jsonl` and `.csv` files (up to 5 MB and 10 000 items per dataset), with bad lines reported by line number instead of failing the file. Items can be edited, and the recorded output of a trace is offered only as a starting point for the expected output.
+- **Evaluators.** Score traces automatically: heuristic rules (`regex`, `json_valid`, `length`, `contains`, `exact_match`, `levenshtein`), an LLM judge with four built-in templates (`relevance`, `faithfulness`, `toxicity`, `format_compliance`; every score is 0 to 1, higher is better) or your own chat prompt, and signed webhook evaluators. Online sampling runs every minute over traces that ended 30 seconds to 5 minutes ago, never samples Spanlight's own traces (`evals`, `playground`, `experiments` and `doctor` environments, and judge calls), and queues each trace at most once.
+- **Judge budgets.** A judge needs a monthly budget and reserves the most a call could cost before it makes the call, under a lock, so concurrent runs cannot both pass the limit; a run that does not fit is marked `budget_exceeded` and sends no request. The budget covers sampled runs, tests and experiment use, and a meter shows spent, reserved and remaining.
+- **Experiments.** Replay a dataset through a prompt version or typed messages, score every answer, and compare two runs item by item with deltas, an improved and regressed count, cost and p95 duration. A run can override the prompt version, so one experiment compares versions of a prompt. A cost limit reserves the estimate of every call in flight, so a run never starts an item that could pass it.
+- **Eval gate.** The `eval-gate` GitHub Action and `python -m spanlight._experiments` run a prompt over a dataset in CI and fail the build when a mean score falls below a threshold.
+- **Demo.** `spanlight demo seed-evals` creates a prompt with two versions, a 50-item dataset from the demo's recorded traffic, a budgeted judge and a two-run experiment.
+- **Screens and navigation.** Prompts, Playground, Datasets, Review, Evaluators and Experiments under a new Improve group in the sidebar (`G P`, `G L`, `G N`, `G Q`, `G E`, `G X`), scores on trace and span detail, and a Scores column on Traces.
+- **Roles and audit.** Members can create prompts, score configs, datasets, annotation queues and experiments, add scores and start experiment runs; evaluators are admin and owner only, because a judge spends money unattended. The main changes to them are recorded in the audit log (`prompt.*`, `score_config.*`, `dataset.*`, `annotation_queue.*`, `evaluator.*`, `experiment.*`).
+- **Operations.** New Prometheus metrics (`spanlight_scores_written_total`, `spanlight_prompt_reads_total`, `spanlight_evaluator_runs_total`, `spanlight_evaluator_cost_usd_total`, `spanlight_experiment_items_total`) feed an Evaluations row on the Grafana dashboard. Prices include `claude-haiku-5-5`, the model the demo uses.
+
+### Changed
+
+- **The `prompts:read` and `scores:write` key scopes now do something.** They were accepted but reserved. Existing keys keep their scopes, so a key made for sending traces cannot read prompts or send scores: create a new key with the scope.
+- **Native JSON ingestion accepts `prompt_version_id` on a span.** Older servers ignore it. OTLP has no field for it.
+- **Trace summaries carry `has_scores` and a few latest `scores`**, and `GET .../traces/filters` lists `score_names`.
+- **Dataset uploads may be 5 MB.** Every other `/api/v1` body is still limited to 1 MiB; the limit for the upload route is checked while the body streams.
+
+### Security
+
+- A judge's input is passed as marked data and the model is told to treat it as data, which reduces and does not remove prompt injection. Scores are advice, not proof; this is stated in the documentation.
+- Judge spend is bounded by a reservation per evaluator rather than a check after the fact, and an unpriced model never runs.
+- Webhook evaluators use the same vetted client as alert webhooks (https only, no private addresses unless `WEBHOOK_ALLOW_PRIVATE_TARGETS`, no redirects), are signed with the channel's secret, make one attempt with a 30 second limit, and never put the URL or the secret in a run's error or a log line.
+- A `regex` rule runs with a 1 second time limit on at most 10 000 characters, so a pattern that backtracks without end fails its run instead of holding a worker.
+- Dataset files are parsed with fixed limits (5 MB, 64 KB per value, 10 000 items), in a thread pool, and an error never repeats the content of a line.
+- The new tables are protected by row-level security like traces: child tables (prompt versions, labels, dataset items, queue items, evaluator runs, experiment runs and items) are filtered through their parent. Scores are keyed by project and id, so a client-chosen id cannot collide with, or hide behind, another project's.
+
+### SDK
+
+- **`spanlight.prompts.get(name, label="production", *, version=None, fallback=None)`** fetches a prompt with a revalidating cache. After the cache time it serves the stale copy if the server fails, then the `fallback`, and raises `PromptUnavailableError`, the SDK's one deliberate exception, only with neither. `Prompt.compile(**variables)` follows the server's template rules and raises `MissingVariablesError` or `InvalidTemplateError`.
+- **Span linking.** `spanlight_prompt=compiled` on `wrap_openai` and `wrap_anthropic` calls, `with compiled:` for everything inside a block, and `spanlight.no_prompt()` to keep a task unlinked.
+- **`spanlight.score(trace_id, name, value, *, span_id=None, comment=None)`** sends a score in the background with the spans, with an id per call so a retry cannot store it twice. It never raises.
+- **Experiment runner** `python -m spanlight._experiments`, behind the eval-gate Action.
+
+### Settings
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `EVALS_ENABLED` | `true` | Schedule online evaluation. Off, evaluators run only in experiments and tests. |
+| `EVAL_SAMPLER_MAX_RUNS_PER_CYCLE` | `50` | Most runs one evaluator gets per one-minute sampling cycle. |
+| `EXPERIMENT_MAX_ITEMS` | `1000` | Ceiling for an experiment's `max_items`. |
+
+### Migrations
+
+Run `spanlight migrate` (or restart the stack) after upgrading. Migrations 0500 to 0506 add prompts, versions and labels, the span-to-version link, scores and score configs, datasets, annotation queues, evaluators and their runs, and experiments, runs and items. Migrations 0501 and 0502 build their indexes on `spans` and `traces` `CONCURRENTLY`: writes continue, and on a large table the build takes a few minutes and extra disk. 0502 also adds `traces.has_scores`; a retry of a failed `CONCURRENTLY` build drops its half-built index first.
+
 ## [0.5.0] - Unreleased
 
 The Doctor: Spanlight reads your traces, opens findings about how your application calls LLMs, and shows what changed between releases and who drives cost.
@@ -15,7 +71,7 @@ The Doctor: Spanlight reads your traces, opens findings about how your applicati
 - **Explain with Claude.** An opt-in button on an insight asks Claude to explain the finding from its evidence. Admins and owners only, capped per organization at `EXPLAIN_MONTHLY_BUDGET_USD` a month with the cost reserved up front, shown under an "Advisory" label as plain text. Only redacted excerpts of at most five example traces are sent, through the organization's own Anthropic credential and traced into the project.
 - **Releases.** Set a release with the SDK, the OTLP `service.version` attribute or the gateway header `x-spanlight-release`. The Releases page lists releases in a range and compares two: deltas, model mix, error classes and new error messages, with exact percentiles over a range of up to 30 days.
 - **Users.** The Users page ranks end users (the SDK `user_id`, OTLP `user.id` or `x-spanlight-user`) by cost, errors or traces over whole UTC days, with a daily chart and recent sessions for each. Statistics are refreshed every 15 minutes. Releases and Users can also be read with a project API key that has the `traces:read` scope.
-- **Lab example clients.** `examples/` holds a deliberately naive client and a corrected one that run the Integration Lab scenarios against the gateway. The naive client opens the matching finding for each scenario and the corrected one opens none.
+- **Lab example clients.** `examples/` holds a deliberately naive client and a corrected one that run the Integration Lab scenarios against the gateway. The naive client opens the matching finding for each scenario and the corrected one is written to open none.
 - **Doctor screens.** Doctor (list and detail with evidence, fix, verification and actions), Releases, Users, a health tile on Overview, insight badges on traces, an error-class filter on Traces and an Insight notifications setting in Settings, Project.
 - **Operations.** `GET /api/v1/projects/{id}/detector-runs` shows what each detector did on its last passes. New Prometheus metrics (`spanlight_detector_runs_total`, `spanlight_detector_duration_seconds`, `spanlight_insights_open`, `spanlight_detector_projects_skipped_total`) feed a Doctor row on the Grafana dashboard. A new runbook covers detector runs, a project that times out, muting and the explanation budget.
 
@@ -52,7 +108,7 @@ Alerts and budgets: get told when error rate, latency, volume or cost crosses a 
 - **Alert channels.** Organization-wide channels for email, Slack incoming webhooks, signed webhooks and PagerDuty (Events API v2). Email goes only to verified members of the organization. A channel can be tested, and its delivery log shows every send with its status, attempts and last error; a failed delivery can be retried by hand. Slack URLs, PagerDuty routing keys and webhook signing secrets are encrypted with `CREDENTIALS_KEYS`, never returned, and a webhook's secret is shown once, when it is created or rotated.
 - **Signed webhooks.** Each request carries `X-Spanlight-Event`, `X-Spanlight-Delivery`, `X-Spanlight-Timestamp` and an HMAC-SHA256 `X-Spanlight-Signature`, with a documented verification procedure and test vector. Failures are retried with backoff for up to 8 attempts.
 - **Alert rules.** Threshold rules and anomaly rules (a band of a chosen number of standard deviations around the average of the previous windows) on error rate, p95 latency, p95 time to first token, LLM calls, tokens and cost, filtered by environment, provider or model, with a 7-day preview before you save. Rules are evaluated every 60 seconds with a cooldown after each resolve, can be muted for up to 30 days, and their events can be acknowledged. A metric with no data never fires or resolves a rule.
-- **Budgets.** Daily or monthly (UTC) spend caps per project, gateway key, end user or model, each set to notify or to block. A budget notifies its channels when its spend passes the amount and again when it recovers.
+- **Budgets.** Daily or monthly (UTC) spend limits per project, gateway key, end user or model, each set to notify or to block. A budget notifies its channels when its spend passes the amount and again when it recovers.
 - **Blocking budgets.** The gateway answers `402 BUDGET_EXCEEDED`, in the OpenAI or Anthropic error shape, to calls in the scope of a blocking budget that is exceeded. Ingestion is never blocked. Blocking lags spend by up to one evaluation, about a minute.
 - **Weekly digest.** Every Monday at 08:00 UTC, members with a verified email get one summary per project of spend, LLM calls, error rate, p95 latency, top models by cost and alerts fired. It can be turned off per project in project settings and needs an email provider.
 - **Dashboard screens.** Alerts (Rules and Channels) and Budgets, with the rule editor and preview, mute and acknowledge, the event timeline, and the delivery log.
@@ -96,7 +152,7 @@ The LLM gateway and the Integration Lab: point the official OpenAI or Anthropic 
 
 ### Added
 
-- **LLM gateway.** `POST /gw/v1/chat/completions`, `POST /gw/v1/responses`, `POST /gw/v1/messages` and `GET /gw/v1/models` accept OpenAI and Anthropic requests, streaming and tool calls included, and forward the provider's answer unchanged. Errors come back in the provider's own shape with a stable `spanlight_code`. Each call becomes one `llm` span with the gateway's route, target, attempts and overhead, and can join a trace you already started with the `x-spanlight-*` headers.
+- **LLM gateway.** `POST /gw/v1/chat/completions`, `POST /gw/v1/responses`, `POST /gw/v1/messages` and `GET /gw/v1/models` accept OpenAI and Anthropic requests, streaming and tool calls included, and forward the provider's answer unchanged. Errors come back in the provider's own shape with a stable `spanlight_code`. Each call is recorded as one `llm` span with the gateway's route, target, attempts and overhead, written after the answer is sent (a span that cannot be written is counted in `spanlight_gateway_record_failures_total`), and can join a trace you already started with the `x-spanlight-*` headers.
 - **Provider credentials.** Organization owners store OpenAI, Anthropic and OpenAI-compatible API keys. Keys are encrypted with `CREDENTIALS_KEYS`, never returned, and can be checked, rotated and re-sealed under a new master key with `spanlight reseal-credentials`. The gateway refuses to connect to private, loopback, link-local and other reserved addresses, on every connection, unless `GATEWAY_ALLOW_INSECURE_BASE_URLS` is set for a local model server.
 - **Routes.** Weighted targets, per-target model aliases, retries with backoff and `Retry-After`, fallbacks to the next target, and a time budget for the whole call. Every save is a numbered version with revert, and a stale edit is refused with `409 ROUTE_VERSION_CONFLICT`.
 - **Gateway keys and limits.** Project-scoped `spl_gw_…` keys, accepted as a bearer token or `x-api-key`, with a route, an environment, requests and tokens per minute, an allowed-model list and default tags. `GATEWAY_ORG_RPM_CEILING` caps an organization across its keys.

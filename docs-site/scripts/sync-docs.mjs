@@ -24,7 +24,7 @@ const SITE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPO = path.resolve(SITE, '..');
 const DOCS = path.join(SITE, 'src/content/docs');
 const BASE = '/docs';
-const GITHUB = 'https://github.com/noob-master-cell/spanlight';
+const GITHUB = 'https://github.com/dheerajkarwasra/spanlight';
 
 const GENERATED = ['runbooks', 'security', 'deploy', 'api', 'changelog.md'];
 
