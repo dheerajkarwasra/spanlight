@@ -1,6 +1,6 @@
 # Spanlight
 
-[![CI](https://github.com/dheerajkarwasra/spanlight/actions/workflows/ci.yml/badge.svg)](https://github.com/dheerajkarwasra/spanlight/actions/workflows/ci.yml) [![CodeQL](https://github.com/dheerajkarwasra/spanlight/actions/workflows/codeql.yml/badge.svg)](https://github.com/dheerajkarwasra/spanlight/actions/workflows/codeql.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/dheerajkarwasra/spanlight/actions/workflows/ci.yml/badge.svg)](https://github.com/dheerajkarwasra/spanlight/actions/workflows/ci.yml) [![CodeQL](https://github.com/dheerajkarwasra/spanlight/actions/workflows/codeql.yml/badge.svg)](https://github.com/dheerajkarwasra/spanlight/actions/workflows/codeql.yml) [![PyPI](https://img.shields.io/pypi/v/spanlight.svg)](https://pypi.org/project/spanlight/) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Open-source observability for LLM applications.** Add three lines to your Python app, or change one `base_url`, and see each LLM call: prompts and completions, latency, time to first token, token usage, cost and errors, grouped into traces and user sessions.
 
@@ -26,10 +26,10 @@ Open http://localhost:8080, create an account, and follow the setup wizard to cr
 
 ### 2. Instrument your app
 
-The SDK is not on PyPI yet; install it from the repository (Python 3.10 or newer):
+Install the SDK from PyPI (Python 3.10 or newer):
 
 ```bash
-pip install "spanlight[anthropic] @ git+https://github.com/dheerajkarwasra/spanlight#subdirectory=sdks/python"
+pip install "spanlight[anthropic]"
 ```
 
 Use the `openai` extra for OpenAI.

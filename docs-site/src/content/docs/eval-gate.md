@@ -89,7 +89,7 @@ A run has a cost cap (`max-cost-usd`, 5 USD by default) and reads at most 1 000 
 The Action is a thin wrapper around a module of the Python SDK, so the same gate runs in any CI:
 
 ```bash
-pip install "spanlight @ git+https://github.com/dheerajkarwasra/spanlight@main#subdirectory=sdks/python"
+pip install spanlight
 
 export SPANLIGHT_TOKEN=spl_pat_...
 python -m spanlight._experiments \
