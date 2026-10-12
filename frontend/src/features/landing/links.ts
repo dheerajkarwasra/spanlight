@@ -58,7 +58,6 @@ export const DOCS_LINKS = {
   experiments: docsLink("experiments/"),
   alerts: docsLink("alerts/"),
   changelog: docsLink("changelog/"),
-  security: docsLink("security/"),
   securityPolicy: docsLink("security/policy/"),
 } as const;
 

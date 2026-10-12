@@ -9,18 +9,46 @@ import {
   repositoryLink,
 } from "./links";
 
-/** Every page of the docs site, keyed by its source path ("…/content/docs/gateway/lab.md"). */
+/**
+ * The hand-written pages of the docs site ("…/content/docs/gateway/lab.md"). The folders that
+ * docs-site/scripts/sync-docs.mjs generates at build time are git-ignored and left out: a copy on
+ * a developer's disk may come from an internal document that the published build never has.
+ */
 const DOCS_PAGES = Object.keys(
-  import.meta.glob("../../../../docs-site/src/content/docs/**/*.{md,mdx}"),
+  import.meta.glob([
+    "../../../../docs-site/src/content/docs/**/*.{md,mdx}",
+    "!../../../../docs-site/src/content/docs/{api,deploy,runbooks,security}/**",
+    "!../../../../docs-site/src/content/docs/changelog.md",
+  ]),
 );
 
-/** The docs-site source file a "/docs/…/" link is served from, or undefined if none. */
-function docsPageFor(href: string): string | undefined {
+/** Generated pages the landing page links, with the published source each is built from. */
+const GENERATED_PAGES: Readonly<Record<string, string>> = {
+  "/docs/api/": "backend/openapi.json",
+  "/docs/changelog/": "CHANGELOG.md",
+  "/docs/security/policy/": "SECURITY.md",
+};
+
+/** The repository files those generated pages come from, found on disk. */
+const GENERATED_SOURCES = Object.keys(
+  import.meta.glob([
+    "../../../../backend/openapi.json",
+    "../../../../CHANGELOG.md",
+    "../../../../SECURITY.md",
+  ]),
+);
+
+/** Whether a "/docs/…/" link is served by a hand-written page or a generated one. */
+function docsPageExists(href: string): boolean {
+  const generatedFrom = GENERATED_PAGES[href];
+  if (generatedFrom !== undefined) {
+    return GENERATED_SOURCES.some((source) => source.endsWith(`/${generatedFrom}`));
+  }
   const slug = href.replace(/^\/docs\//, "").replace(/\/$/, "");
   const candidates = slug
     ? [`${slug}.md`, `${slug}.mdx`, `${slug}/index.md`, `${slug}/index.mdx`]
     : ["index.md", "index.mdx"];
-  return DOCS_PAGES.find((page) =>
+  return DOCS_PAGES.some((page) =>
     candidates.some((candidate) => page.endsWith(`/content/docs/${candidate}`)),
   );
 }
@@ -88,7 +116,7 @@ describe("landing links", () => {
       ...Object.values(DOCS_LINKS),
       ...NAV_LINKS.map((link) => link.href).filter((href) => href.startsWith("/docs/")),
     ];
-    const missing = docsHrefs.filter((href) => docsPageFor(href) === undefined);
+    const missing = docsHrefs.filter((href) => !docsPageExists(href));
     expect(missing).toEqual([]);
   });
 

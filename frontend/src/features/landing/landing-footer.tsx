@@ -62,7 +62,7 @@ const COLUMNS: readonly FooterColumnData[] = [
       { label: "GitHub", href: EXTERNAL_LINKS.github },
       { label: "Changelog", href: DOCS_LINKS.changelog },
       { label: "Contributing", href: EXTERNAL_LINKS.contributing },
-      { label: "Security", href: DOCS_LINKS.security },
+      { label: "Security", href: DOCS_LINKS.securityPolicy },
       { label: "License (MIT)", href: EXTERNAL_LINKS.license },
       { label: "PyPI package", href: PYPI_URL },
     ],
