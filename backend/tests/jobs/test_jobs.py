@@ -191,19 +191,42 @@ async def test_scheduler_dedupes_per_period(
         same_period = await schedule_periodic(db, settings, now + timedelta(seconds=20))
         again = await schedule_periodic(db, settings, now + timedelta(minutes=5))
         later = await schedule_periodic(db, settings, now + timedelta(minutes=25))
+    # Every periodic job the test settings enable (demo, alerts, digest, detectors, user stats).
     assert sorted(first) == [
         "backup_database",
         "cleanup_sessions",
         "deliver_notifications",
         "demo_traffic",
+        "evaluate_alerts",
+        "prune_gateway_cache",
+        "refresh_user_stats",
         "retention",
         "rollup_hourly",
+        "run_detectors",
+        "sample_for_evaluation",
+        "weekly_digest",
     ]
     assert same_period == []
-    # The 30-second job and the 5-minute rollup job have a new period five minutes on.
-    assert sorted(again) == ["deliver_notifications", "rollup_hourly"]
-    # A new 30-minute period for demo traffic too; the hourly jobs are already queued.
-    assert sorted(later) == ["deliver_notifications", "demo_traffic", "rollup_hourly"]
+    # Five minutes on (13:15): new periods for the 30-second, 1-minute, 5-minute and 15-minute
+    # jobs; the hourly, daily, weekly and 30-minute jobs are already queued.
+    assert sorted(again) == [
+        "deliver_notifications",
+        "evaluate_alerts",
+        "refresh_user_stats",
+        "rollup_hourly",
+        "run_detectors",
+        "sample_for_evaluation",
+    ]
+    # At 13:35 a new 30-minute period for demo traffic too.
+    assert sorted(later) == [
+        "deliver_notifications",
+        "demo_traffic",
+        "evaluate_alerts",
+        "refresh_user_stats",
+        "rollup_hourly",
+        "run_detectors",
+        "sample_for_evaluation",
+    ]
 
     async with session_factory() as db:
         demo = await db.scalar(select(Job).where(Job.kind == "demo_traffic").limit(1))
@@ -280,6 +303,7 @@ async def test_cleanup_removes_expired_sessions_and_old_rows(
         "throttle_events_deleted": 0,
         "email_tokens_deleted": 0,
         "idempotency_keys_deleted": 0,
+        "rate_limit_buckets_deleted": 0,
     }
     assert (await live.get("/api/v1/auth/me")).status_code == 200
 

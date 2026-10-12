@@ -38,6 +38,8 @@ function makeTrace(
     has_unpriced: false,
     models: [],
     error_message: null,
+    has_scores: false,
+    scores: [],
     error_class: null,
     ...overrides,
   };

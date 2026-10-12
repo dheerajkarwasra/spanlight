@@ -4,6 +4,7 @@ The inventory is built from the routers, not from a list in this file, so a rout
 covered the day it exists. A route that forgets to say what it does with a key fails here.
 """
 
+import re
 import uuid
 
 import httpx
@@ -13,9 +14,14 @@ from fastapi.routing import APIRoute
 from app.api import v1
 from scripts.update_openapi import build_app
 from tests.helpers import bearer
-from tests.keys.conftest import World
+from tests.keys.conftest import END_USER, RELEASES, World
+
+# Every test here walks all routes with one credential: see `unthrottled_reads`.
+pytestmark = pytest.mark.usefixtures("unthrottled_reads", "release_and_user_data")
 
 SKIPPED_METHODS = {"HEAD", "OPTIONS"}
+# A path parameter with a Starlette converter, such as `{name:path}`.
+CONVERTER = re.compile(r"\{(\w+):\w+\}")
 
 # The only routes an API key may use, and only with `traces:read`, for its own project. Adding to
 # this set is the decision to let keys into a route: it belongs in a review, not in a refactor.
@@ -27,6 +33,14 @@ KEY_READABLE = {
     ("GET", "/api/v1/projects/{project_id}/metrics/overview"),
     ("GET", "/api/v1/projects/{project_id}/metrics/timeseries"),
     ("GET", "/api/v1/projects/{project_id}/metrics/models"),
+    # The Phase 1 spec lists it with the metrics routes (docs/api-deviations.md, "Prices").
+    ("GET", "/api/v1/projects/{project_id}/unpriced-models"),
+    # Phase 4: releases and end users, for a CI job that checks a release after a deploy
+    # (docs/api-deviations.md, "Releases" and "Users").
+    ("GET", "/api/v1/projects/{project_id}/releases"),
+    ("GET", "/api/v1/projects/{project_id}/releases/compare"),
+    ("GET", "/api/v1/projects/{project_id}/users"),
+    ("GET", "/api/v1/projects/{project_id}/users/{external_user_id:path}"),
 }
 
 
@@ -39,6 +53,11 @@ def _declared_routes() -> set[tuple[str, str]]:
                 (method, f"/api/v1{route.path}") for method in route.methods - SKIPPED_METHODS
             )
     return routes
+
+
+def _without_converters(path: str) -> str:
+    """`/prompts/{name:path}` as OpenAPI spells it: `/prompts/{name}`."""
+    return CONVERTER.sub(r"{\1}", path)
 
 
 def _documented_routes() -> set[tuple[str, str]]:
@@ -56,7 +75,10 @@ def test_the_inventory_matches_what_the_api_serves() -> None:
 
     assert len(declared) >= 40  # a broken walk must not pass by finding nothing
     assert declared >= KEY_READABLE
-    assert declared == _documented_routes()
+    # OpenAPI drops path converters (`{name:path}` is documented as `{name}`).
+    assert {(method, _without_converters(path)) for method, path in declared} == (
+        _documented_routes()
+    )
 
 
 def _fill(template: str, world: World, *, project_id: str, trace_id: str) -> str:
@@ -65,9 +87,11 @@ def _fill(template: str, world: World, *, project_id: str, trace_id: str) -> str
         "org_id": world.workspace.org_id,
         "trace_id": trace_id,
         "provider": "github",
+        "external_user_id": END_USER,
     }
-    names = [part[1:-1] for part in template.split("/") if part.startswith("{")]
-    return template.format(**{name: values.get(name, str(uuid.uuid4())) for name in names})
+    path = _without_converters(template)
+    names = [part[1:-1] for part in path.split("/") if part.startswith("{")]
+    return path.format(**{name: values.get(name, str(uuid.uuid4())) for name in names})
 
 
 def _is_key_scope(response: httpx.Response) -> bool:
@@ -77,6 +101,15 @@ def _is_key_scope(response: httpx.Response) -> bool:
     )
 
 
+def _params(path: str) -> dict[str, str] | None:
+    """The query a route needs before it looks at anything else."""
+    if path.endswith("/invites/preview"):
+        return {"token": "x"}
+    if path.endswith("/releases/compare"):
+        return dict(zip(("a", "b"), RELEASES, strict=True))
+    return None
+
+
 async def _call(
     client: httpx.AsyncClient, method: str, path: str, **headers: str
 ) -> httpx.Response:
@@ -84,7 +117,7 @@ async def _call(
         method,
         path,
         json={} if method in {"POST", "PUT", "PATCH", "DELETE"} else None,
-        params={"token": "x"} if path.endswith("/invites/preview") else None,
+        params=_params(path),
         headers=headers,
     )
     assert "set-cookie" not in response.headers, (method, path)

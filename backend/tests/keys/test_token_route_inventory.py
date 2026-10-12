@@ -27,7 +27,11 @@ from tests.keys.test_key_route_inventory import (
     _call,
     _declared_routes,
     _fill,
+    _params,
 )
+
+# Every test here walks all routes with one credential: see `unthrottled_reads`.
+pytestmark = pytest.mark.usefixtures("unthrottled_reads", "release_and_user_data")
 
 Route = tuple[str, str]
 
@@ -49,6 +53,80 @@ WRITE_GUARDED: set[Route] = {
     ("DELETE", "/api/v1/projects/{project_id}"),
     ("POST", "/api/v1/projects/{project_id}/keys"),
     ("DELETE", "/api/v1/projects/{project_id}/keys/{key_id}"),
+    # Phases 2-5: gateway, alerts, budgets, the Doctor, prompts, scores, datasets, annotation,
+    # evaluators and experiments. Every one is a non-GET method, refused to a read token whatever
+    # its permission. Some do not mutate (`alert-rules/preview`, `insights/{id}/explain`, an
+    # evaluator test) but run work a read-only credential must not start.
+    ("DELETE", "/api/v1/orgs/{org_id}/alert-channels/{channel_id}"),
+    ("DELETE", "/api/v1/orgs/{org_id}/credentials/{credential_id}"),
+    ("DELETE", "/api/v1/orgs/{org_id}/price-overrides/{override_id}"),
+    ("DELETE", "/api/v1/projects/{project_id}/alert-rules/{rule_id}"),
+    ("DELETE", "/api/v1/projects/{project_id}/annotation-queues/{queue_id}"),
+    ("DELETE", "/api/v1/projects/{project_id}/budgets/{budget_id}"),
+    ("DELETE", "/api/v1/projects/{project_id}/datasets/{dataset_id}"),
+    ("DELETE", "/api/v1/projects/{project_id}/datasets/{dataset_id}/items/{item_id}"),
+    ("DELETE", "/api/v1/projects/{project_id}/evaluators/{evaluator_id}"),
+    ("DELETE", "/api/v1/projects/{project_id}/gateway/fault-profiles/{profile_id}"),
+    ("DELETE", "/api/v1/projects/{project_id}/gateway/keys/{key_id}"),
+    ("DELETE", "/api/v1/projects/{project_id}/gateway/routes/{route_id}"),
+    ("DELETE", "/api/v1/projects/{project_id}/prompts/{name:path}"),
+    ("DELETE", "/api/v1/projects/{project_id}/prompts/{name:path}/labels/{label}"),
+    ("DELETE", "/api/v1/projects/{project_id}/score-configs/{config_id}"),
+    ("DELETE", "/api/v1/projects/{project_id}/scores/{score_id}"),
+    ("PATCH", "/api/v1/orgs/{org_id}/alert-channels/{channel_id}"),
+    ("PATCH", "/api/v1/projects/{project_id}/alert-rules/{rule_id}"),
+    ("PATCH", "/api/v1/projects/{project_id}/budgets/{budget_id}"),
+    ("PATCH", "/api/v1/projects/{project_id}/datasets/{dataset_id}"),
+    ("PATCH", "/api/v1/projects/{project_id}/datasets/{dataset_id}/items/{item_id}"),
+    ("PATCH", "/api/v1/projects/{project_id}/evaluators/{evaluator_id}"),
+    ("PATCH", "/api/v1/projects/{project_id}/gateway/fault-profiles/{profile_id}"),
+    ("PATCH", "/api/v1/projects/{project_id}/gateway/keys/{key_id}"),
+    ("PATCH", "/api/v1/projects/{project_id}/score-configs/{config_id}"),
+    ("POST", "/api/v1/orgs/{org_id}/alert-channels"),
+    ("POST", "/api/v1/orgs/{org_id}/alert-channels/{channel_id}/deliveries/{delivery_id}/retry"),
+    ("POST", "/api/v1/orgs/{org_id}/alert-channels/{channel_id}/test"),
+    ("POST", "/api/v1/orgs/{org_id}/credentials"),
+    ("POST", "/api/v1/orgs/{org_id}/credentials/{credential_id}/check"),
+    ("POST", "/api/v1/orgs/{org_id}/credentials/{credential_id}/rotate"),
+    ("POST", "/api/v1/orgs/{org_id}/price-overrides"),
+    ("POST", "/api/v1/projects/{project_id}/alert-events/{event_id}/acknowledge"),
+    ("POST", "/api/v1/projects/{project_id}/alert-rules"),
+    ("POST", "/api/v1/projects/{project_id}/alert-rules/preview"),
+    ("POST", "/api/v1/projects/{project_id}/alert-rules/{rule_id}/mute"),
+    ("POST", "/api/v1/projects/{project_id}/annotation-queues"),
+    ("POST", "/api/v1/projects/{project_id}/annotation-queues/{queue_id}/claim"),
+    ("POST", "/api/v1/projects/{project_id}/annotation-queues/{queue_id}/items"),
+    ("POST", "/api/v1/projects/{project_id}/annotation-queues/{queue_id}/items/{item_id}/complete"),
+    ("POST", "/api/v1/projects/{project_id}/annotation-queues/{queue_id}/items/{item_id}/release"),
+    ("POST", "/api/v1/projects/{project_id}/annotation-queues/{queue_id}/items/{item_id}/skip"),
+    ("POST", "/api/v1/projects/{project_id}/budgets"),
+    ("POST", "/api/v1/projects/{project_id}/datasets"),
+    ("POST", "/api/v1/projects/{project_id}/datasets/{dataset_id}/items"),
+    ("POST", "/api/v1/projects/{project_id}/datasets/{dataset_id}/items/from-traces"),
+    ("POST", "/api/v1/projects/{project_id}/datasets/{dataset_id}/items/upload"),
+    ("POST", "/api/v1/projects/{project_id}/evaluators"),
+    ("POST", "/api/v1/projects/{project_id}/evaluators/{evaluator_id}/test"),
+    ("POST", "/api/v1/projects/{project_id}/experiments"),
+    ("POST", "/api/v1/projects/{project_id}/experiments/{experiment_id}/runs"),
+    ("POST", "/api/v1/projects/{project_id}/exports"),
+    ("POST", "/api/v1/projects/{project_id}/gateway/cache/purge"),
+    ("POST", "/api/v1/projects/{project_id}/gateway/fault-profiles"),
+    ("POST", "/api/v1/projects/{project_id}/gateway/keys"),
+    ("POST", "/api/v1/projects/{project_id}/gateway/routes"),
+    ("POST", "/api/v1/projects/{project_id}/gateway/routes/{route_id}/default"),
+    ("POST", "/api/v1/projects/{project_id}/gateway/routes/{route_id}/revert"),
+    ("POST", "/api/v1/projects/{project_id}/insights/{insight_id}/acknowledge"),
+    ("POST", "/api/v1/projects/{project_id}/insights/{insight_id}/explain"),
+    ("POST", "/api/v1/projects/{project_id}/insights/{insight_id}/mute"),
+    ("POST", "/api/v1/projects/{project_id}/insights/{insight_id}/resolve"),
+    ("POST", "/api/v1/projects/{project_id}/insights/{insight_id}/unmute"),
+    ("POST", "/api/v1/projects/{project_id}/playground/runs"),
+    ("POST", "/api/v1/projects/{project_id}/prompts"),
+    ("POST", "/api/v1/projects/{project_id}/prompts/{name:path}/versions"),
+    ("POST", "/api/v1/projects/{project_id}/score-configs"),
+    ("POST", "/api/v1/projects/{project_id}/traces/{trace_id}/scores"),
+    ("PUT", "/api/v1/projects/{project_id}/gateway/routes/{route_id}"),
+    ("PUT", "/api/v1/projects/{project_id}/prompts/{name:path}/labels/{label}"),
 }
 
 # The refusals a credential or its scope can cause. A route that merely rejects a made-up body
@@ -102,7 +180,8 @@ def test_every_route_has_exactly_one_kind() -> None:
     # Together the kinds are every route, and no route is in two of them.
     assert set().union(*KINDS.values()) == _declared_routes()
     assert sum(len(routes) for routes in KINDS.values()) == len(_declared_routes())
-    assert KINDS["user"] == {("GET", "/api/v1/auth/me")}
+    # The caller's own account, and the global price table any signed-in user may read.
+    assert KINDS["user"] == {("GET", "/api/v1/auth/me"), ("GET", "/api/v1/prices")}
     assert KINDS["guarded"] >= WRITE_GUARDED
     assert KINDS["guarded"] - WRITE_GUARDED >= KEY_READABLE
     # A broken walk must not pass by finding nothing.
@@ -131,6 +210,12 @@ async def tokens(world: World, browser_factory: Any) -> Tokens:
 
 
 def _outcome(response: httpx.Response) -> tuple[int, str | None]:
+    # Every refusal is problem+json. A route that streams another format (the audit log's CSV
+    # export) answered the request, so its body has no code to read.
+    if not response.headers.get("content-type", "").startswith(
+        ("application/json", "application/problem+json")
+    ):
+        return response.status_code, None
     body = response.json() if response.content else None
     return response.status_code, body.get("code") if isinstance(body, dict) else None
 
@@ -179,8 +264,9 @@ async def test_a_token_reaches_every_guarded_route_as_its_user_within_its_scope(
         checks = {
             "read token": _outcome(read_own)[1] == "TOKEN_SCOPE"
             if write_only
-            else _outcome(read_own)[1] not in REFUSALS | {"FORBIDDEN"},
-            "write token": _outcome(write_own)[1] not in REFUSALS | {"FORBIDDEN"},
+            else _outcome(read_own)[1] not in REFUSALS | {"FORBIDDEN", "INTERNAL_ERROR"},
+            # Getting through must mean the route answered, not that it crashed.
+            "write token": _outcome(write_own)[1] not in REFUSALS | {"FORBIDDEN", "INTERNAL_ERROR"},
             # Not a member of the org: the same 404 as for an org that does not exist, whatever
             # the route and whatever the scope. It comes before the scope check.
             "stranger": _outcome(stranger) == (404, "NOT_FOUND"),
@@ -205,7 +291,9 @@ async def test_a_token_reads_everything_a_read_key_can_and_more(
             (world.other_project_id, world.other_trace_id),
         ):
             path = _fill(template, world, project_id=project_id, trace_id=trace_id)
-            response = await bare_client.request(method, path, headers=bearer(tokens.read))
+            response = await bare_client.request(
+                method, path, params=_params(path), headers=bearer(tokens.read)
+            )
             assert response.status_code == 200, (path, response.text)
 
 

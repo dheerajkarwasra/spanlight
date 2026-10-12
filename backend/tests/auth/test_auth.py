@@ -21,6 +21,8 @@ async def test_signup_sets_cookies_and_me_returns_user(browser_factory: Any) -> 
         "memberships": [],
         "has_password": True,
         "totp_enabled": False,
+        # The test server sends no email, so no verification link could ever arrive.
+        "email_verification_required": False,
     }
     assert set(browser.user) == {"id", "email", "name", "created_at", "email_verified"}
 

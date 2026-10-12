@@ -1,7 +1,11 @@
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
+
+// Route pages are lazy chunks. In a full parallel run the first test to open one pays the cold
+// transform cost, which can pass Testing Library's 1 s default (seen at 993 ms and 1139 ms).
+configure({ asyncUtilTimeout: 5000 });
 
 afterEach(() => {
   cleanup();

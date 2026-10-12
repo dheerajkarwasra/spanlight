@@ -96,9 +96,15 @@ async def test_a_new_identity_starts_with_its_timestamps_set(
 def test_downgrade_refuses_to_strand_users_without_a_password(
     app_database_url: str,
 ) -> None:
-    """Going back would need a password for every user; it fails, and changes nothing."""
+    """Going back would need a password for every user; it fails, and changes nothing.
+
+    Later migrations build indexes `CONCURRENTLY`, which commits mid-downgrade, so a single
+    downgrade from head cannot be atomic. The database is first stepped down to 0005, the
+    revision that adds the table; the refused step from there must leave it exactly as it was.
+    """
     engine = create_engine(app_database_url)
     try:
+        downgrade_to(app_database_url, "0005")
         with engine.begin() as connection:
             connection.execute(
                 text(
@@ -114,13 +120,21 @@ def test_downgrade_refuses_to_strand_users_without_a_password(
                     text("SELECT version_num FROM alembic_version")
                 ).scalar()
                 table = connection.execute(text("SELECT to_regclass('oauth_identities')")).scalar()
-            assert revision == head_revision()
+                stranded = connection.execute(
+                    text("SELECT count(*) FROM users WHERE email = 'oauth-only@example.com'")
+                ).scalar()
+            assert revision == "0005"
             assert table == "oauth_identities"
+            assert stranded == 1
         finally:
             with engine.begin() as connection:
                 connection.execute(text("DELETE FROM users WHERE email = 'oauth-only@example.com'"))
     finally:
+        upgrade_to_head(app_database_url)
+        with engine.connect() as connection:
+            revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
         engine.dispose()
+    assert revision == head_revision()
 
 
 def test_downgrade_drops_the_oauth_audit_events_and_the_actions_they_used(

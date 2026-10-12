@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { API_KEY_PLACEHOLDER, buildSnippets, type Snippet, type SnippetId } from "./snippets";
+import {
+  API_KEY_PLACEHOLDER,
+  buildSnippets,
+  GATEWAY_KEY_PLACEHOLDER,
+  type Snippet,
+  type SnippetId,
+} from "./snippets";
 
 const HOST = "https://spanlight.example.com";
 const SECRET = "spl_live_abc123";
@@ -13,8 +19,13 @@ function snippet(snippets: Snippet[], id: SnippetId): string {
   return found.blocks.map((block) => block.code).join("\n");
 }
 
+/** Every tab that sends spans with the project's ingest key; the gateway tab uses its own key. */
+function ingestSnippets(snippets: Snippet[]): Snippet[] {
+  return snippets.filter((item) => item.id !== "gateway");
+}
+
 describe("buildSnippets", () => {
-  it("returns the five tabs in order", () => {
+  it("returns the six tabs in order, with the no-SDK gateway tab last", () => {
     const snippets = buildSnippets({ apiKey: null, host: HOST });
     expect(snippets.map((item) => item.label)).toEqual([
       "Python SDK",
@@ -22,6 +33,7 @@ describe("buildSnippets", () => {
       "Anthropic",
       "OpenTelemetry",
       "curl",
+      "No SDK",
     ]);
   });
 
@@ -34,18 +46,32 @@ describe("buildSnippets", () => {
 
   it("uses the placeholder when no key was created", () => {
     const snippets = buildSnippets({ apiKey: null, host: HOST });
-    for (const item of snippets) {
+    for (const item of ingestSnippets(snippets)) {
       expect(snippet(snippets, item.id)).toContain(API_KEY_PLACEHOLDER);
     }
   });
 
   it("inserts the real secret and host everywhere", () => {
     const snippets = buildSnippets({ apiKey: SECRET, host: HOST });
-    for (const item of snippets) {
+    for (const item of ingestSnippets(snippets)) {
       const code = snippet(snippets, item.id);
       expect(code).toContain(SECRET);
       expect(code).toContain(HOST);
       expect(code).not.toContain(API_KEY_PLACEHOLDER);
+    }
+  });
+
+  it("points the no-SDK tab at the gateway with a gateway key, never the ingest key", () => {
+    for (const apiKey of [null, SECRET]) {
+      const snippets = buildSnippets({ apiKey, host: `${HOST}/` });
+      const gateway = snippet(snippets, "gateway");
+      expect(gateway).toContain(`base_url="${HOST}/gw/v1"`);
+      expect(gateway).toContain(`base_url="${HOST}/gw"`);
+      expect(gateway).toContain(`"${HOST}/gw/v1/chat/completions"`);
+      expect(gateway).toContain(GATEWAY_KEY_PLACEHOLDER);
+      expect(gateway).not.toContain(API_KEY_PLACEHOLDER);
+      expect(gateway).not.toContain(SECRET);
+      expect(gateway).not.toContain("import spanlight");
     }
   });
 

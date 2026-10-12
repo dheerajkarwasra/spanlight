@@ -47,6 +47,7 @@ function makeSpan({
     attributes: {},
     truncated: false,
     finish_reason: null,
+    prompt_version_id: null,
   };
 }
 

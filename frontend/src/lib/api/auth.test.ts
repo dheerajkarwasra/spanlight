@@ -36,10 +36,10 @@ describe("authApi.login", () => {
     onUnauthorized.mockReset();
   });
 
-  it("resolves with the user when the password is enough", async () => {
+  it("resolves with a signed_in outcome carrying the user when the password is enough", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ status: "signed_in", user: USER }));
 
-    await expect(authApi.login(CREDENTIALS)).resolves.toEqual(USER);
+    await expect(authApi.login(CREDENTIALS)).resolves.toEqual({ status: "signed_in", user: USER });
 
     const [url, init] = fetchMock.mock.calls[0] ?? [];
     expect(url).toBe("/api/v1/auth/login");

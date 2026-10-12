@@ -1,17 +1,17 @@
 """The public demo: visitor sessions and the real-traffic demo job.
 
-The demo job is exercised with the real Anthropic SDK on a mock HTTP
-transport (no network, no spend), so the response parsing and usage
-recording are the production code paths.
+The demo job is exercised through the real in-process gateway on a mock
+upstream transport (no network, no spend), so the request, response parsing,
+span writing and usage recording are the production code paths.
 """
 
+import base64
 import json
+import secrets
 from decimal import Decimal
 from typing import Any
 
-import anthropic
 import httpx
-import httpx2
 import pytest
 from pydantic import SecretStr
 from sqlalchemy import func, select
@@ -20,7 +20,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import Settings
 from app.db.models import Span, Trace
 from app.db.rls import bypass_rls
+from app.gateway.http import build_http_client
 from app.jobs.context import TaskContext
+from app.jobs.outcome import JobOutcome
 from app.jobs.queue import ClaimedJob, claim_next, enqueue
 from app.jobs.tasks import demo_traffic
 from app.main import create_app
@@ -112,48 +114,70 @@ def _anthropic_reply(text: str, input_tokens: int, output_tokens: int) -> dict[s
 
 @pytest.fixture
 def mock_anthropic(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """Answers the gateway's upstream Messages calls; records each request body sent."""
     requests: list[dict[str, Any]] = []
     replies = [
         _anthropic_reply("billing", 40, 1),
         _anthropic_reply("Refunds are prorated and issued within 5 business days.", 120, 18),
     ]
 
-    def handler(request: httpx2.Request) -> httpx2.Response:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "api.anthropic.com"
         requests.append(json.loads(request.content))
-        return httpx2.Response(200, json=replies[len(requests) - 1])
+        return httpx.Response(200, json=replies[len(requests) - 1])
 
-    def make_client(api_key: str) -> anthropic.AsyncAnthropic:
-        return anthropic.AsyncAnthropic(
-            api_key=api_key,
-            http_client=anthropic.DefaultAsyncHttpxClient(transport=httpx2.MockTransport(handler)),
-        )
+    async def resolve(_host: str, _port: int) -> list[str]:
+        return ["160.79.104.10"]  # a public address, so the egress check passes offline
 
-    monkeypatch.setattr(demo_traffic, "make_client", make_client)
+    def make_http_client(settings: Settings) -> httpx.AsyncClient:
+        return build_http_client(settings, transport=httpx.MockTransport(handler), resolver=resolve)
+
+    monkeypatch.setattr(demo_traffic, "make_http_client", make_http_client)
     return requests
+
+
+def _keyed(settings: Settings, **extra: Any) -> Settings:
+    """Settings the demo job runs with: an Anthropic key and a keyring to seal it with."""
+    return settings.model_copy(
+        update={
+            "anthropic_api_key": SecretStr("sk-ant-test-key-1234567890"),
+            "credentials_keys": SecretStr(
+                f"v1:{base64.b64encode(secrets.token_bytes(32)).decode()}"
+            ),
+            **extra,
+        }
+    )
 
 
 async def test_demo_traffic_records_real_usage(
     session_factory: SessionFactory, settings: Settings, mock_anthropic: list[dict[str, Any]]
 ) -> None:
-    keyed = settings.model_copy(
-        update={"anthropic_api_key": SecretStr("sk-ant-test-key-1234567890")}
+    outcome = await demo_traffic.run_demo_traffic(
+        await _context(session_factory, _keyed(settings)), {}
     )
-    await demo_traffic.run_demo_traffic(await _context(session_factory, keyed), {})
 
+    assert outcome is JobOutcome.OK
     assert [request["model"] for request in mock_anthropic] == ["claude-haiku-4-5"] * 2
     async with session_factory() as db:
         await bypass_rls(db)
-        spans = {span.name: span for span in (await db.scalars(select(Span))).all()}
+        spans = (await db.scalars(select(Span).order_by(Span.started_at))).all()
         trace = (await db.scalars(select(Trace))).one()
 
-    assert set(spans) == {"support-bot", "classify", "faq-lookup", "answer"}
-    answer = spans["answer"]
+    by_name = {span.name: span for span in spans if span.kind.value != "llm"}
+    assert set(by_name) == {"support-bot", "faq-lookup"}
+    root = by_name["support-bot"]
+    assert by_name["faq-lookup"].kind.value == "retrieval"
+    assert by_name["faq-lookup"].parent_span_id == root.span_id
+    # The two LLM calls went through the gateway, which wrote their spans into the same trace.
+    classify, answer = [span for span in spans if span.kind.value == "llm"]
+    assert [classify.name, answer.name] == ["messages claude-haiku-4-5-20251001"] * 2
+    assert classify.parent_span_id == answer.parent_span_id == root.span_id
+    assert {span.trace_id for span in spans} == {root.trace_id}
+    assert (classify.input_tokens, classify.output_tokens) == (40, 1)
     assert (answer.input_tokens, answer.output_tokens) == (120, 18)
     assert answer.model == "claude-haiku-4-5-20251001"
     # 120 * $1 + 18 * $5 per 1M tokens
     assert answer.cost_usd == Decimal("0.00021000")
-    assert spans["faq-lookup"].kind.value == "retrieval"
-    assert spans["classify"].parent_span_id == spans["support-bot"].span_id
     assert trace.environment == "demo" and "billing" in trace.tags
     # classify: 40 * $1 + 1 * $5; answer: 120 * $1 + 18 * $5 (per 1M tokens)
     assert trace.cost_usd == Decimal("0.00025500")
@@ -162,16 +186,13 @@ async def test_demo_traffic_records_real_usage(
 async def test_demo_traffic_respects_monthly_budget(
     session_factory: SessionFactory, settings: Settings, mock_anthropic: list[dict[str, Any]]
 ) -> None:
-    keyed = settings.model_copy(
-        update={
-            "anthropic_api_key": SecretStr("sk-ant-test-key-1234567890"),
-            "demo_monthly_budget_usd": Decimal("0.0002"),
-        }
-    )
-    await demo_traffic.run_demo_traffic(await _context(session_factory, keyed), {})
+    keyed = _keyed(settings, demo_monthly_budget_usd=Decimal("0.0002"))
+    first = await demo_traffic.run_demo_traffic(await _context(session_factory, keyed), {})
+    assert first is JobOutcome.OK
     assert await _span_count(session_factory) == 4  # the first run spends $0.000255
 
-    await demo_traffic.run_demo_traffic(await _context(session_factory, keyed), {})
+    second = await demo_traffic.run_demo_traffic(await _context(session_factory, keyed), {})
+    assert second is JobOutcome.SKIPPED_BUDGET
     assert await _span_count(session_factory) == 4  # budget reached: skipped, no API calls
     assert len(mock_anthropic) == 2
 

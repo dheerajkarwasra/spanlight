@@ -1,8 +1,11 @@
-"""The notification outbox: written in the producer's transaction, delivered one row at a time."""
+"""The notification outbox: written in the producer's transaction, delivered one row at a time.
+
+Rows are claimed under a committed lease with a fencing token (`lease.py`), sent with no
+transaction open and settled only by the holder of the current fence (`delivery.py`).
+"""
 
 import asyncio
 import uuid
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -18,18 +21,17 @@ from app.jobs.tasks import TASKS
 from app.jobs.tasks.cleanup import cleanup
 from app.jobs.worker import TASK_TIMEOUT_SECONDS, Worker
 from app.notifications import NotificationKind, enqueue
-from app.notifications.jobs import (
+from app.notifications.delivery import SEND_TIMEOUT
+from app.notifications.jobs import RUN_BUDGET, deliver_due, run_deliver_notifications
+from app.notifications.lease import (
+    LEASE_DURATION,
     MAX_ATTEMPTS,
-    RUN_BUDGET,
-    SEND_TIMEOUT,
-    DeliveryOutcome,
-    _record_unstorable_outcome,
-    deliver_due,
+    OutboxLeaseLost,
+    claim,
+    mark_failed,
     retry_delay,
-    run_deliver_notifications,
 )
-from app.notifications.outbox import claim_next_due
-from app.notifications.registry import DelivererRegistry
+from app.notifications.registry import DelivererRegistry, DeliveryError
 
 SessionFactory = async_sessionmaker[AsyncSession]
 
@@ -129,17 +131,22 @@ async def test_enqueue_then_claim_returns_row(session_factory: SessionFactory) -
         )
         await db.commit()
 
+    now = datetime.now(UTC) + timedelta(minutes=1)  # the row is due from its enqueue time
     async with session_factory() as db:
-        claimed = await claim_next_due(db, FAR_FUTURE)
+        claimed = await claim(db, now)
 
     assert claimed is not None and claimed.id == row_id
     assert claimed.kind == "email"
     assert claimed.channel_id is None
     assert claimed.target == {"to": "ada@example.com"}
     assert claimed.payload == {"subject": "Welcome", "body": "Hello Ada"}
-    assert claimed.status is NotificationStatus.PENDING
     assert claimed.attempts == 0
-    assert claimed.sent_at is None and claimed.last_error is None
+    assert claimed.fence == 1
+    # The claim is committed: the row stays pending, leased to this claim until it is settled.
+    row = await _row(session_factory, row_id)
+    assert row.status is NotificationStatus.PENDING
+    assert (row.fence, row.lease_until) == (1, now + LEASE_DURATION)
+    assert row.sent_at is None and row.last_error is None
 
 
 async def test_enqueue_stores_the_channel_id(session_factory: SessionFactory) -> None:
@@ -159,7 +166,7 @@ async def test_enqueue_belongs_to_the_callers_transaction(session_factory: Sessi
         await db.rollback()
 
     async with session_factory() as db:
-        assert await claim_next_due(db, FAR_FUTURE) is None
+        assert await claim(db, FAR_FUTURE) is None
 
 
 async def test_enqueue_fails_at_the_call_site_when_the_payload_cannot_be_stored(
@@ -179,7 +186,7 @@ async def test_claim_ignores_rows_that_are_not_due_or_not_pending(
     await _insert(session_factory, status=NotificationStatus.SENT, sent_at=T0)
 
     async with session_factory() as db:
-        assert await claim_next_due(db, T0) is None
+        assert await claim(db, T0) is None
 
 
 def test_retry_delay_doubles_from_30_seconds_and_is_capped_at_one_hour() -> None:
@@ -203,7 +210,8 @@ async def test_failed_delivery_backs_off(session_factory: SessionFactory) -> Non
         row = await _row(session_factory, row_id)
         assert (row.attempts, row.status) == (attempt, NotificationStatus.PENDING)
         assert row.next_attempt_at == clock.current + delay
-        assert row.last_error == "RuntimeError: smtp down"
+        # Only the class name: an exception's text can quote a URL, and a webhook URL is a secret.
+        assert row.last_error == "RuntimeError"
         assert row.payload["body"].startswith("Open ")  # still needed for the next attempt
 
         # Not due one second early, due exactly when the delay has passed.
@@ -222,7 +230,7 @@ async def test_failed_delivery_backs_off(session_factory: SessionFactory) -> Non
     assert len(deliverer.calls) == 8
 
 
-async def test_a_retry_that_succeeds_is_sent_and_keeps_the_last_error(
+async def test_a_retry_that_succeeds_is_sent_and_clears_the_last_error(
     session_factory: SessionFactory,
 ) -> None:
     row_id = await _insert(session_factory, subject="Welcome")
@@ -237,20 +245,31 @@ async def test_a_retry_that_succeeds_is_sent_and_keeps_the_last_error(
     row = await _row(session_factory, row_id)
     assert run.sent == 1
     assert (row.status, row.attempts, row.sent_at) == (NotificationStatus.SENT, 2, clock.current)
-    assert row.last_error == "ConnectionError: reset"  # history for whoever investigates
+    assert row.last_error is None  # a sent row has no error; the delivery log kept the attempt
 
 
-async def test_error_text_is_the_class_name_and_message_truncated_to_500_characters(
+async def test_any_other_exception_is_recorded_as_its_class_name_only(
     session_factory: SessionFactory,
 ) -> None:
     row_id = await _insert(session_factory)
-    deliverer = RecordingDeliverer(error=ValueError("x" * 2000))
+    secret_url = "https://hooks.slack.com/services/T000/B000/secret"
+    deliverer = RecordingDeliverer(error=ValueError(f"cannot reach {secret_url}"))
 
     await deliver_due(session_factory, _registry(deliverer), now=Clock(T0))
 
-    error = (await _row(session_factory, row_id)).last_error
-    assert error is not None and len(error) == 500
-    assert error.startswith("ValueError: xxx")
+    assert (await _row(session_factory, row_id)).last_error == "ValueError"
+
+
+async def test_a_delivery_error_message_is_kept_and_truncated_to_500_characters(
+    session_factory: SessionFactory,
+) -> None:
+    """A `DeliveryError`'s message was written by the deliverer to be stored, so it is kept."""
+    row_id = await _insert(session_factory)
+    deliverer = RecordingDeliverer(error=DeliveryError("x" * 2000))
+
+    await deliver_due(session_factory, _registry(deliverer), now=Clock(T0))
+
+    assert (await _row(session_factory, row_id)).last_error == "x" * 500
 
 
 async def test_a_slow_deliverer_times_out_and_is_retried(session_factory: SessionFactory) -> None:
@@ -296,8 +315,8 @@ async def test_one_failing_row_does_not_stop_the_rest_of_the_batch(
 @pytest.mark.parametrize(
     ("message", "stored"),
     [
-        ("a\x00b", "RuntimeError: a\\x00b"),
-        ("a\udc80b", "RuntimeError: a\\udc80b"),
+        ("a\x00b", "a\\x00b"),
+        ("a\udc80b", "a\\udc80b"),
     ],
     ids=["nul-byte", "lone-surrogate"],
 )
@@ -307,7 +326,7 @@ async def test_error_text_postgres_cannot_store_is_escaped_and_the_next_row_stil
     """A deliverer that echoes bad text (a provider's reply) must not wedge the outbox."""
     poison = await _insert(session_factory, subject="poison", due=T0)
     innocent = await _insert(session_factory, subject="innocent", due=T0 + timedelta(seconds=1))
-    deliverer = RecordingDeliverer(error=RuntimeError(message), only_for_subject="poison")
+    deliverer = RecordingDeliverer(error=DeliveryError(message), only_for_subject="poison")
 
     run = await deliver_due(
         session_factory, _registry(deliverer), now=Clock(T0 + timedelta(minutes=1))
@@ -336,78 +355,69 @@ async def test_an_exception_that_cannot_be_printed_is_still_recorded(
     )
 
     assert run.retried == 1
-    assert (await _row(session_factory, row_id)).last_error == (
-        "UnprintableError: <message unavailable>"
-    )
+    # Its text is never asked for: an exception that is not a `DeliveryError` is its class name.
+    assert (await _row(session_factory, row_id)).last_error == "UnprintableError"
 
 
-@pytest.fixture
-async def reject_forbidden_error_text(session_factory: SessionFactory) -> AsyncIterator[None]:
-    """A real constraint that makes one error text unstorable, standing in for any such value."""
-    async with session_factory() as db:
-        await db.execute(
-            text(
-                "ALTER TABLE notification_outbox ADD CONSTRAINT test_no_forbidden_error_text "
-                "CHECK (last_error IS NULL OR last_error NOT LIKE '%forbidden%')"
-            )
-        )
-        await db.commit()
-    yield
-    async with session_factory() as db:
-        await db.execute(
-            text("ALTER TABLE notification_outbox DROP CONSTRAINT test_no_forbidden_error_text")
-        )
-        await db.commit()
+class LeaseStealingDeliverer:
+    """Sends, but meanwhile another worker re-claims the row: its lease ran out mid-send."""
+
+    def __init__(self, session_factory: SessionFactory, steal_at: datetime) -> None:
+        self.session_factory = session_factory
+        self.steal_at = steal_at
+        self.subjects: list[str] = []
+
+    async def deliver(self, target: dict[str, Any], payload: dict[str, Any]) -> None:
+        self.subjects.append(payload["subject"])
+        if payload["subject"] == "stolen":
+            async with self.session_factory() as db:
+                taken = await claim(db, self.steal_at)
+            assert taken is not None and taken.id == uuid.UUID(target["delivery_id"])
+        raise RuntimeError("smtp down")
 
 
-@pytest.mark.parametrize(
-    ("attempts_before", "status", "retried", "failed"),
-    [(0, NotificationStatus.PENDING, 1, 0), (7, NotificationStatus.FAILED, 0, 1)],
-    ids=["retry", "final-attempt"],
-)
-async def test_a_row_whose_outcome_cannot_be_stored_still_advances(
+async def test_a_worker_that_lost_its_lease_never_settles_the_row_and_goes_on(
     session_factory: SessionFactory,
-    reject_forbidden_error_text: None,
-    attempts_before: int,
-    status: NotificationStatus,
-    retried: int,
-    failed: int,
 ) -> None:
-    """If recording an outcome fails for any reason, no row may stay at the head of the queue."""
+    """The newer claim owns the row: the old worker's outcome is dropped, not written over it."""
     clock = Clock(T0 + timedelta(minutes=1))
-    stuck = await _insert(session_factory, subject="stuck", due=T0, attempts=attempts_before)
+    stolen = await _insert(session_factory, subject="stolen", due=T0)
     after = await _insert(session_factory, subject="after", due=T0 + timedelta(seconds=1))
-    deliverer = RecordingDeliverer(error=RuntimeError("forbidden"), only_for_subject="stuck")
-
-    run = await deliver_due(session_factory, _registry(deliverer), now=clock)
-
-    assert (run.sent, run.retried, run.failed) == (1, retried, failed)
-    assert deliverer.subjects == ["stuck", "after"]  # not sent again within the run
-    row = await _row(session_factory, stuck)
-    assert (row.attempts, row.status) == (attempts_before + 1, status)
-    assert row.last_error is not None
-    assert row.last_error.startswith("outcome could not be recorded (")
-    assert "forbidden" not in row.last_error
-    if status is NotificationStatus.PENDING:
-        assert row.next_attempt_at == clock.current + timedelta(seconds=30)
-        assert row.payload["body"].startswith("Open ")  # a retry still has to send it
-    else:
-        assert row.payload == {"subject": "stuck"}  # the link does not outlive the row
-    assert (await _row(session_factory, after)).status is NotificationStatus.SENT
-
-
-async def test_the_fallback_write_leaves_a_row_another_worker_already_settled(
-    session_factory: SessionFactory,
-) -> None:
-    """Its update is conditional on the attempt count it saw, so it cannot double-count."""
-    row_id = await _insert(session_factory, attempts=3)
-
-    outcome = await _record_unstorable_outcome(
-        session_factory, row_id, "email", 2, Clock(T0), ValueError("late")
+    deliverer = LeaseStealingDeliverer(
+        session_factory, clock.current + LEASE_DURATION + timedelta(seconds=1)
     )
+    registry = DelivererRegistry()
+    registry.register(NotificationKind.EMAIL, deliverer)
+
+    run = await deliver_due(session_factory, registry, now=clock)
+
+    assert (run.sent, run.retried, run.failed, run.lost) == (0, 1, 0, 1)
+    assert deliverer.subjects == ["stolen", "after"]
+    row = await _row(session_factory, stolen)
+    # Untouched by the run apart from the second claim: no attempt counted, no error written.
+    assert (row.status, row.attempts, row.last_error, row.fence) == (
+        NotificationStatus.PENDING,
+        0,
+        None,
+        2,
+    )
+    assert (await _row(session_factory, after)).attempts == 1
+
+
+async def test_a_stale_fence_cannot_record_a_failure(session_factory: SessionFactory) -> None:
+    """The settle is conditional on the fence it claimed with, so it cannot double-count."""
+    row_id = await _insert(session_factory, attempts=3)
+    async with session_factory() as db:
+        first = await claim(db, T0)
+    async with session_factory() as db:
+        second = await claim(db, T0 + LEASE_DURATION + timedelta(seconds=1))
+    assert first is not None and second is not None and second.fence == first.fence + 1
+
+    async with session_factory() as db:
+        with pytest.raises(OutboxLeaseLost):
+            await mark_failed(db, row_id, first.fence, "late", permanent=False, now=T0)
 
     row = await _row(session_factory, row_id)
-    assert outcome is DeliveryOutcome.RETRY
     assert (row.attempts, row.status, row.last_error) == (3, NotificationStatus.PENDING, None)
 
 
@@ -418,24 +428,23 @@ class PayloadMutatingDeliverer:
         payload["subject"] = {"not", "json"}
 
 
-async def test_a_sent_row_whose_reduced_payload_cannot_be_stored_is_retried_not_stuck(
+async def test_the_stored_payload_is_reduced_from_the_row_not_from_what_the_deliverer_holds(
     session_factory: SessionFactory,
 ) -> None:
+    """Settling never writes the payload back from Python, so a deliverer cannot change it."""
     row_id = await _insert(session_factory)
     clock = Clock(T0)
 
     run = await deliver_due(
         session_factory,
-        _registry(PayloadMutatingDeliverer()),
-        now=clock,  # type: ignore[arg-type]
+        _registry(PayloadMutatingDeliverer()),  # type: ignore[arg-type]
+        now=clock,
     )
 
     row = await _row(session_factory, row_id)
-    assert (run.sent, run.retried) == (0, 1)
-    assert (row.attempts, row.status) == (1, NotificationStatus.PENDING)
-    assert row.sent_at is None and row.payload["body"].startswith("Open ")  # nothing half-saved
-    assert row.last_error == "outcome could not be recorded (TypeError)"
-    assert row.next_attempt_at == clock.current + timedelta(seconds=30)
+    assert run.sent == 1
+    assert (row.attempts, row.status, row.sent_at) == (1, NotificationStatus.SENT, clock.current)
+    assert row.payload == {"subject": "Welcome"}
 
 
 async def test_two_claimers_never_share_a_row(session_factory: SessionFactory) -> None:
@@ -443,18 +452,44 @@ async def test_two_claimers_never_share_a_row(session_factory: SessionFactory) -
     second_id = await _insert(session_factory, due=T0 + timedelta(seconds=1))
     now = T0 + timedelta(minutes=1)
 
-    # Three open transactions: each holds its row lock until the end of the block, which is
-    # exactly the state two workers are in while they send. Without SKIP LOCKED the second and
-    # third claim would block on the first row, hence the timeout.
-    async with session_factory() as one, session_factory() as two, session_factory() as three:
-        async with asyncio.timeout(10):
-            claimed_one = await claim_next_due(one, now)
-            claimed_two = await claim_next_due(two, now)
-            claimed_three = await claim_next_due(three, now)
+    # A claim commits its lease, so a row stays taken after the claiming transaction ends:
+    # exactly the state of two workers that are sending with no transaction open.
+    async with asyncio.timeout(10):
+        async with session_factory() as one:
+            claimed_one = await claim(one, now)
+        async with session_factory() as two:
+            claimed_two = await claim(two, now)
+        async with session_factory() as three:
+            claimed_three = await claim(three, now)
 
     assert claimed_one is not None and claimed_two is not None
     assert {claimed_one.id, claimed_two.id} == {first_id, second_id}
     assert claimed_three is None
+
+    # A lease that ran out (its worker died) is claimed again, under a new fence.
+    async with session_factory() as four:
+        reclaimed = await claim(four, now + LEASE_DURATION + timedelta(seconds=1))
+    assert reclaimed is not None and reclaimed.id == first_id
+    assert reclaimed.fence == claimed_one.fence + 1
+
+
+async def test_a_claim_skips_a_row_another_transaction_is_claiming(
+    session_factory: SessionFactory,
+) -> None:
+    first_id = await _insert(session_factory, due=T0)
+    second_id = await _insert(session_factory, due=T0 + timedelta(seconds=1))
+    now = T0 + timedelta(minutes=1)
+
+    # Without SKIP LOCKED the claim would wait on the locked row, hence the timeout.
+    async with session_factory() as holder:
+        await holder.execute(
+            select(NotificationOutbox).where(NotificationOutbox.id == first_id).with_for_update()
+        )
+        async with asyncio.timeout(10), session_factory() as other:
+            claimed = await claim(other, now)
+        await holder.rollback()
+
+    assert claimed is not None and claimed.id == second_id
 
 
 async def test_concurrent_runs_deliver_each_row_exactly_once(
@@ -535,7 +570,7 @@ async def test_failed_payload_is_reduced_to_subject(session_factory: SessionFact
     first = await _row(session_factory, with_subject)
     assert (first.status, first.sent_at) == (NotificationStatus.FAILED, None)
     assert first.payload == {"subject": "Reset your password"}
-    assert first.last_error == "RuntimeError: smtp down"  # the reduction touches nothing else
+    assert first.last_error == "RuntimeError"  # the reduction touches nothing else
     assert (await _row(session_factory, without_subject)).payload == {}
 
 

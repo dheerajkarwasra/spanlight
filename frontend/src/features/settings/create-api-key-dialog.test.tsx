@@ -49,7 +49,14 @@ describe("CreateApiKeyDialog", () => {
     await user.type(screen.getByLabelText("Name"), "  production-api ");
     await user.click(screen.getByRole("button", { name: "Create key" }));
 
-    expect(createKey).toHaveBeenCalledWith("proj_1", "production-api");
+    // The form sends the trimmed name, the default scope and the default 90-day expiry.
+    expect(createKey).toHaveBeenCalledTimes(1);
+    const [projectId, input] = createKey.mock.calls[0] ?? [];
+    expect(projectId).toBe("proj_1");
+    expect(input?.name).toBe("production-api");
+    expect(input?.scopes).toEqual(["ingest:write"]);
+    const expiresIn = new Date(input?.expires_at ?? "").getTime() - Date.now();
+    expect(Math.abs(expiresIn - 90 * 24 * 3_600_000)).toBeLessThan(60_000);
     expect(await screen.findByText(SECRET)).toBeInTheDocument();
     expect(screen.getByText(`SPANLIGHT_API_KEY=${SECRET}`)).toBeInTheDocument();
 

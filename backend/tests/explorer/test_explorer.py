@@ -230,6 +230,8 @@ async def test_filters(workspace: Workspace, seeded: dict[str, str]) -> None:
         "releases": ["v1"],
         "models": ["claude-haiku-4-5", "gpt-4o-mini", "unknown-llm"],
         "tags": ["beta"],
+        # Phase 5: names of scores on the project's traces; this seed has none.
+        "score_names": [],
     }
 
 

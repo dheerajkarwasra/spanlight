@@ -777,17 +777,17 @@ async def test_password_login_for_a_user_without_a_password_still_hashes_somethi
     providers: FakeProviders,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # `verify_password(None, …)` verifies a dummy hash, so the answer takes as long as one for a
-    # real account and does not tell a caller that this address has no password.
+    # `verify_password_async(None, …)` verifies a dummy hash, so the answer takes as long as one
+    # for a real account and does not tell a caller that this address has no password.
     await _oauth_only_browser(oauth_client, providers, "ada@example.com")
     seen: list[str | None] = []
-    real = auth_routes.verify_password
+    real = auth_routes.verify_password_async
 
-    def spy(password_hash: str | None, password: str) -> bool:
+    async def spy(password_hash: str | None, password: str) -> bool:
         seen.append(password_hash)
-        return real(password_hash, password)
+        return await real(password_hash, password)
 
-    monkeypatch.setattr(auth_routes, "verify_password", spy)
+    monkeypatch.setattr(auth_routes, "verify_password_async", spy)
     async with _make_client(oauth_app) as anonymous:
         await anonymous.post(LOGIN, json={"email": "ada@example.com", "password": "x" * 12})
 

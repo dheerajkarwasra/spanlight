@@ -83,7 +83,9 @@ describe("roleWithArticle", () => {
 
 describe("roleHint", () => {
   it("leads with the role name", () => {
-    expect(roleHint("member")).toBe("Member: view data and create or revoke their own API keys.");
+    expect(roleHint("member")).toBe(
+      "Member: create their own API keys, score traces, review queues, and manage prompts, datasets, playground runs and experiments.",
+    );
     expect(roleHint("viewer")).toBe("Viewer: read-only access to traces and metrics.");
   });
 });

@@ -54,6 +54,13 @@ function renderList(keys: ApiKey[]) {
   );
 }
 
+/** The text of every "Last used …" cell inside a row. */
+function lastUsedTexts(row: HTMLElement): string[] {
+  return Array.from(row.querySelectorAll("span"))
+    .map((element) => element.textContent.replace(/\s+/g, " ").trim())
+    .filter((text) => text.startsWith("Last used ") && text !== "Last used");
+}
+
 describe("ApiKeyList", () => {
   it("lets a member revoke only their own active keys", () => {
     renderList([
@@ -78,8 +85,11 @@ describe("ApiKeyList", () => {
   });
 
   it("says when a key has never been used", () => {
-    renderList([makeKey({ name: "fresh" })]);
+    renderList([makeKey({ name: "fresh", last_used_at: null })]);
 
-    expect(screen.getByText("Never used")).toBeInTheDocument();
+    // The "Last used" column reads "Never" for a key nothing has called yet (both the wide-row
+    // cell and the narrow-row summary line).
+    const row = within(screen.getByRole("list", { name: "API keys" })).getByRole("listitem");
+    expect(lastUsedTexts(row)).toEqual(["Last used Never", "Last used Never"]);
   });
 });

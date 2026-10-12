@@ -3,15 +3,45 @@
 import httpx
 import pytest
 from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.api.health import WORKER_HEARTBEAT_MAX_AGE_SECONDS
 from app.config import Settings
+from app.jobs.worker_heartbeat import beat
 
 
-async def test_live_and_ready(client: httpx.AsyncClient) -> None:
+async def test_live_and_ready(
+    client: httpx.AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
     assert (await client.get("/health/live")).json() == {"status": "ok"}
+
+    # WORKER_REQUIRED is on by default: with no worker heartbeat the api is not ready.
+    no_worker = await client.get("/health/ready")
+    assert no_worker.status_code == 503
+    assert no_worker.json() == {
+        "status": "unavailable",
+        "database": "ok",
+        "migrations": "ok",
+        "worker_heartbeat_age_s": None,
+        "outbox_backlog": 0,
+        "alert_evaluation_lag_s": None,
+        "gateway_mode": "embedded",
+    }
+
+    await beat(session_factory, "test-worker", "test")
     ready = await client.get("/health/ready")
     assert ready.status_code == 200
-    assert ready.json() == {"status": "ok", "database": "ok", "migrations": "ok"}
+    body = ready.json()
+    age = body.pop("worker_heartbeat_age_s")
+    assert isinstance(age, float) and 0 <= age < WORKER_HEARTBEAT_MAX_AGE_SECONDS
+    assert body == {
+        "status": "ok",
+        "database": "ok",
+        "migrations": "ok",
+        "outbox_backlog": 0,
+        "alert_evaluation_lag_s": None,
+        "gateway_mode": "embedded",
+    }
 
 
 async def test_metrics_requires_bearer_token(client: httpx.AsyncClient) -> None:

@@ -14,13 +14,15 @@ function sample(id: CodeSample["id"]): CodeSample {
 }
 
 describe("code samples", () => {
-  it("offers Python, OpenAI and OTLP tabs in order", () => {
+  it("offers Python, OpenAI, OTLP and Gateway tabs in order", () => {
     expect(CODE_SAMPLE_IDS.map((id) => CODE_SAMPLES[id].label)).toEqual([
       "Python",
       "OpenAI",
       "OTLP",
+      "Gateway",
     ]);
     expect(isCodeSampleId("otlp")).toBe(true);
+    expect(isCodeSampleId("gateway")).toBe(true);
     expect(isCodeSampleId("curl")).toBe(false);
     expect(isCodeSampleId("toString")).toBe(false);
   });
@@ -58,5 +60,16 @@ describe("code samples", () => {
     const text = codeToText(sample("otlp").lines);
     expect(text).toContain("/v1/otlp/traces");
     expect(text).toContain("Authorization=Bearer%20<YOUR_API_KEY>");
+  });
+
+  it("shows the no-SDK gateway sample with a gateway key placeholder, not an ingest key", () => {
+    const gateway = sample("gateway");
+    const text = codeToText(gateway.lines);
+    expect(text).toContain("/gw/v1");
+    expect(text).toContain("<YOUR_GATEWAY_KEY>");
+    expect(text).not.toContain("import spanlight");
+    expect(text).not.toContain("<YOUR_API_KEY>");
+    expect(gateway.compactLines).toBeDefined();
+    expect(codeToText(visibleLines(gateway, true))).toContain("<YOUR_GATEWAY_KEY>");
   });
 });

@@ -19,7 +19,6 @@ from fastapi import Body, Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from prometheus_client import REGISTRY
 from sqlalchemy import text
-from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.background import BackgroundTask
 from starlette.types import Receive, Scope, Send
@@ -940,9 +939,12 @@ async def test_a_busy_idempotency_pool_fails_fast_and_leaves_other_requests_alon
         async with tight_app.state.idempotency_engine.connect():  # the pool's only connection
             assert (await ada.get("/api/v1/auth/me")).status_code == 200
             started = time.monotonic()
-            with pytest.raises(PoolTimeoutError):
-                await post(ada)
+            # The pool timeout surfaces as the documented "database is behind" 503, not a crash.
+            busy = await post(ada)
             assert time.monotonic() - started < 3
+            assert busy.status_code == 503
+            assert busy.json()["code"] == "SERVICE_UNAVAILABLE"
+            assert int(busy.headers["Retry-After"]) > 0
         assert probe.runs == 0
 
         assert (await post(ada)).status_code == 201
