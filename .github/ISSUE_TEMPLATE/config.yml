@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a security vulnerability
-    url: https://github.com/noob-master-cell/spanlight/security/advisories/new
+    url: https://github.com/dheerajkarwasra/spanlight/security/advisories/new
     about: Report it privately here. Do not open a public issue. The policy is in SECURITY.md.
   - name: Read the README first
-    url: https://github.com/noob-master-cell/spanlight#readme
+    url: https://github.com/dheerajkarwasra/spanlight#readme
     about: Quickstart, architecture and the commands for running Spanlight locally.

@@ -33,6 +33,7 @@ from ._common import (
     finish_with_error,
     get_field,
     patch_method,
+    pop_prompt,
     start_llm_span,
     wrap_async_method,
     wrap_sync_method,
@@ -87,8 +88,9 @@ def _instrument(client: Any, spanlight: Spanlight | None) -> None:
     def wrap_stream_helper(original: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(original)
         def stream(*args: Any, **kwargs: Any) -> Any:
+            prompt = pop_prompt(kwargs)
             manager = original(*args, **kwargs)
-            return manager_cls(manager, endpoint, get_client, kwargs)
+            return manager_cls(manager, endpoint, get_client, kwargs, prompt)
 
         setattr(stream, WRAPPED_MARKER, True)
         return stream
@@ -253,11 +255,13 @@ class _StreamManagerBase:
         endpoint: MessagesEndpoint,
         get_client: ClientGetter,
         request: dict[str, Any],
+        prompt: Any = None,
     ) -> None:
         self._manager = manager
         self._endpoint = endpoint
         self._get_client = get_client
         self._request = {**request, "stream": True}
+        self._prompt = prompt
         self._span: Span | None = None
         self._proxy: SyncStreamProxy | AsyncStreamProxy | None = None
 
@@ -296,7 +300,7 @@ class _SyncStreamManager(_StreamManagerBase):
     """Traced replacement for ``anthropic.lib.streaming.MessageStreamManager``."""
 
     def __enter__(self) -> Any:
-        self._span = start_llm_span(self._get_client, self._endpoint, self._request)
+        self._span = start_llm_span(self._get_client, self._endpoint, self._request, self._prompt)
         try:
             message_stream = self._manager.__enter__()
         except BaseException as exc:
@@ -321,7 +325,7 @@ class _AsyncStreamManager(_StreamManagerBase):
     """Traced replacement for ``anthropic.lib.streaming.AsyncMessageStreamManager``."""
 
     async def __aenter__(self) -> Any:
-        self._span = start_llm_span(self._get_client, self._endpoint, self._request)
+        self._span = start_llm_span(self._get_client, self._endpoint, self._request, self._prompt)
         try:
             message_stream = await self._manager.__aenter__()
         except BaseException as exc:

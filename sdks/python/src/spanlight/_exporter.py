@@ -1,4 +1,4 @@
-"""Background batching exporter for ``POST /v1/traces``.
+"""Background batching exporter for ``POST /v1/traces`` and ``POST /v1/scores``.
 
 Design goals, in priority order:
 
@@ -11,6 +11,10 @@ Design goals, in priority order:
 3. **Deliver what we can.** Batches are retried with jittered exponential
    backoff on network errors, ``429`` and ``5xx``, honouring ``Retry-After``.
    Other ``4xx`` responses are permanent failures and are logged, not retried.
+
+Spans and scores share one queue (and so one ``max_queue`` bound). Each cycle
+takes up to ``batch_size`` items, sends the spans first and the scores after,
+so a score recorded after its span never reaches the server before it.
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -39,11 +44,27 @@ SpanPayload = dict[str, JsonValue]
 _MAX_LOGGED_REJECTIONS = 10
 
 
+@dataclass(frozen=True)
+class _Target:
+    """One endpoint the exporter delivers to."""
+
+    url: str
+    body_key: str  # the list's key in the request body, and the plural noun in logs
+    id_field: str  # the payload field logged when the server rejects an item
+
+
+_SPANS = "spans"
+_SCORES = "scores"
+_Item = tuple[str, SpanPayload]
+
+
 class BatchExporter:
-    """Queue spans in memory and ship them to the ingestion API in batches.
+    """Queue spans and scores in memory and ship them to the ingestion API in batches.
 
     Args:
         url: Full ingestion URL, e.g. ``http://localhost:8000/v1/traces``.
+        scores_url: Full score ingestion URL, e.g. ``http://localhost:8000/v1/scores``.
+            Without it, scores are dropped.
         api_key: Project API key sent as a Bearer token.
         batch_size: Maximum spans per request. A full batch is sent at once.
         flush_interval: Maximum seconds a span waits before being sent.
@@ -66,6 +87,7 @@ class BatchExporter:
         *,
         url: str,
         api_key: str,
+        scores_url: str | None = None,
         batch_size: int = 100,
         flush_interval: float = 2.0,
         max_queue: int = 10_000,
@@ -78,7 +100,10 @@ class BatchExporter:
         base_backoff: float = 0.5,
         max_backoff: float = 30.0,
     ) -> None:
-        self._url = url
+        self._targets: dict[str, _Target] = {_SPANS: _Target(url, _SPANS, "span_id")}
+        if scores_url is not None:
+            self._targets[_SCORES] = _Target(scores_url, _SCORES, "id")
+        self._scores_unsupported_logged = False
         self._headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -99,7 +124,7 @@ class BatchExporter:
         self._max_backoff = max_backoff
 
         self._condition = threading.Condition()
-        self._queue: deque[SpanPayload] = deque()
+        self._queue: deque[_Item] = deque()
         self._in_flight = 0
         self._flush_requested = False
         self._closed = False
@@ -118,21 +143,31 @@ class BatchExporter:
 
     @property
     def dropped_count(self) -> int:
-        """Spans discarded because the queue was full."""
+        """Spans and scores discarded because the queue was full."""
         return self._dropped
 
     @property
     def failed_count(self) -> int:
-        """Spans lost because their batch could not be delivered."""
+        """Spans and scores lost because their batch could not be delivered."""
         return self._failed
 
     @property
     def sent_count(self) -> int:
-        """Spans delivered and accepted by the server."""
+        """Spans and scores delivered and accepted by the server."""
         return self._sent
 
     def export(self, span: SpanPayload) -> None:
         """Enqueue one serialized span. Never blocks on I/O and never raises."""
+        self._enqueue(_SPANS, span)
+
+    def export_score(self, score: SpanPayload) -> None:
+        """Enqueue one serialized score. Never blocks on I/O and never raises."""
+        if _SCORES not in self._targets:
+            logger.debug("No score endpoint configured; dropping a score")
+            return
+        self._enqueue(_SCORES, score)
+
+    def _enqueue(self, kind: str, payload: SpanPayload) -> None:
         try:
             self._check_fork()
             with self._condition:
@@ -143,15 +178,15 @@ class BatchExporter:
                     self._dropped += 1
                     if self._dropped == 1:
                         logger.warning(
-                            "Spanlight queue is full (%d spans); dropping oldest spans",
+                            "Spanlight queue is full (%d items); dropping the oldest",
                             self._max_queue,
                         )
-                self._queue.append(span)
+                self._queue.append((kind, payload))
                 if len(self._queue) >= self._batch_size:
                     self._condition.notify_all()
             self._ensure_worker()
         except Exception:
-            logger.debug("Failed to enqueue span", exc_info=True)
+            logger.debug("Failed to enqueue %s", kind, exc_info=True)
 
     def flush(self, timeout: float | None = None) -> bool:
         """Send everything queued so far and wait until it is delivered.
@@ -235,16 +270,16 @@ class BatchExporter:
             if batch is None:
                 return
             try:
-                self._send_batch(batch)
-            except Exception:
-                self._failed += len(batch)
-                logger.warning("Unexpected error exporting %d spans", len(batch), exc_info=True)
+                for kind in (_SPANS, _SCORES):
+                    payloads = [payload for item_kind, payload in batch if item_kind == kind]
+                    if payloads:
+                        self._send_guarded(self._targets[kind], payloads)
             finally:
                 with self._condition:
                     self._in_flight -= len(batch)
                     self._condition.notify_all()
 
-    def _next_batch(self) -> list[SpanPayload] | None:
+    def _next_batch(self) -> list[_Item] | None:
         """Block until a batch is due; return ``None`` when the exporter is closed."""
         with self._condition:
             deadline = time.monotonic() + self._flush_interval
@@ -274,35 +309,40 @@ class BatchExporter:
             self._client = httpx.Client(transport=self._transport, timeout=self._timeout)
         return self._client
 
-    def _send_batch(self, batch: list[SpanPayload]) -> None:
+    def _send_guarded(self, target: _Target, batch: list[SpanPayload]) -> None:
+        """Send one target's part of a cycle; a crash here never stops the next part."""
+        try:
+            self._send_batch(target, batch)
+        except Exception:
+            self._failed += len(batch)
+            logger.warning(
+                "Unexpected error exporting %d %s", len(batch), target.body_key, exc_info=True
+            )
+
+    def _send_batch(self, target: _Target, batch: list[SpanPayload]) -> None:
         if not batch:
             return
-        body = json.dumps({"spans": batch}, separators=(",", ":"), default=str).encode()
+        body = json.dumps({target.body_key: batch}, separators=(",", ":"), default=str).encode()
         if self._gzip:
             body = gzip.compress(body)
 
         for attempt in range(self._max_retries + 1):
             retry_after: float | None = None
             try:
-                response = self._http_client().post(self._url, content=body, headers=self._headers)
+                response = self._http_client().post(target.url, content=body, headers=self._headers)
             except httpx.HTTPError as exc:
                 failure = f"{type(exc).__name__}: {exc}"
             else:
                 status = response.status_code
                 if 200 <= status < 300:
-                    self._handle_success(response, len(batch))
+                    self._handle_success(target, response, batch)
                     return
                 if status == 413 and len(batch) > 1:
-                    self._split_and_send(batch)
+                    self._split_and_send(target, batch)
                     return
                 if not _is_retryable(status):
                     self._failed += len(batch)
-                    logger.error(
-                        "Spanlight rejected a batch of %d spans: HTTP %d %s",
-                        len(batch),
-                        status,
-                        _short_body(response),
-                    )
+                    self._log_rejected_batch(target, response, len(batch))
                     return
                 failure = f"HTTP {status}"
                 retry_after = parse_retry_after(response.headers.get("Retry-After"))
@@ -310,8 +350,9 @@ class BatchExporter:
             if attempt >= self._max_retries or self._abort_retries.is_set():
                 self._failed += len(batch)
                 logger.warning(
-                    "Dropping %d spans after %d attempts (%s)",
+                    "Dropping %d %s after %d attempts (%s)",
                     len(batch),
+                    target.body_key,
                     attempt + 1,
                     failure,
                 )
@@ -320,13 +361,33 @@ class BatchExporter:
             logger.debug("Export failed (%s); retrying in %.2fs", failure, delay)
             self._sleep(delay)
 
-    def _split_and_send(self, batch: list[SpanPayload]) -> None:
+    def _split_and_send(self, target: _Target, batch: list[SpanPayload]) -> None:
         """Retry an oversized (HTTP 413) batch as two smaller ones."""
         middle = len(batch) // 2
-        self._send_batch(batch[:middle])
-        self._send_batch(batch[middle:])
+        self._send_batch(target, batch[:middle])
+        self._send_batch(target, batch[middle:])
 
-    def _handle_success(self, response: httpx.Response, batch_size: int) -> None:
+    def _log_rejected_batch(self, target: _Target, response: httpx.Response, size: int) -> None:
+        if target.body_key == _SCORES and response.status_code == 404:
+            # A server older than score ingestion: say so once instead of on every batch.
+            if not self._scores_unsupported_logged:
+                self._scores_unsupported_logged = True
+                logger.warning(
+                    "This Spanlight server does not accept scores (HTTP 404); dropping them"
+                )
+            return
+        logger.error(
+            "Spanlight rejected a batch of %d %s: HTTP %d %s",
+            size,
+            target.body_key,
+            response.status_code,
+            _short_body(response),
+        )
+
+    def _handle_success(
+        self, target: _Target, response: httpx.Response, batch: list[SpanPayload]
+    ) -> None:
+        batch_size = len(batch)
         try:
             result: Any = response.json()
         except ValueError:
@@ -340,16 +401,20 @@ class BatchExporter:
         self._sent += batch_size - len(rejected)
         self._failed += len(rejected)
         logger.warning(
-            "Spanlight rejected %d of %d spans",
+            "Spanlight rejected %d of %d %s",
             len(rejected),
             batch_size,
+            target.body_key,
         )
         for item in rejected[:_MAX_LOGGED_REJECTIONS]:
             if isinstance(item, dict):
+                index = item.get("index")
+                sent = batch[index] if isinstance(index, int) and 0 <= index < batch_size else {}
                 logger.warning(
-                    "  span %s (index %s): %s",
-                    item.get("span_id"),
-                    item.get("index"),
+                    "  %s %s (index %s): %s",
+                    target.body_key[:-1],
+                    item.get(target.id_field) or sent.get(target.id_field),
+                    index,
                     item.get("reason"),
                 )
 

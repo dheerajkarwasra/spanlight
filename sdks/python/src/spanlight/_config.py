@@ -12,6 +12,8 @@ from dataclasses import dataclass
 
 DEFAULT_HOST = "http://localhost:8000"
 INGEST_PATH = "/v1/traces"
+SCORES_PATH = "/v1/scores"
+PROMPTS_PATH = "/v1/prompts"
 
 _FALSE_VALUES = frozenset({"0", "false", "no", "off"})
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
@@ -34,6 +36,7 @@ class SpanlightConfig:
         timeout: Per-request HTTP timeout in seconds.
         max_retries: Retries per batch for retryable failures.
         shutdown_timeout: Seconds the interpreter-exit flush may take.
+        prompt_cache_ttl: Seconds a fetched prompt is served before it is revalidated.
     """
 
     api_key: str | None
@@ -48,11 +51,22 @@ class SpanlightConfig:
     timeout: float
     max_retries: int
     shutdown_timeout: float
+    prompt_cache_ttl: float
 
     @property
     def ingest_url(self) -> str:
         """Full URL of the batch ingestion endpoint."""
         return self.host.rstrip("/") + INGEST_PATH
+
+    @property
+    def scores_url(self) -> str:
+        """Full URL of the score ingestion endpoint."""
+        return self.host.rstrip("/") + SCORES_PATH
+
+    @property
+    def prompts_url(self) -> str:
+        """Full URL of the prompt collection; a prompt name is appended to it."""
+        return self.host.rstrip("/") + PROMPTS_PATH
 
 
 def parse_bool(raw: str | None, default: bool) -> bool:
@@ -96,6 +110,7 @@ def resolve_config(
     timeout: float,
     max_retries: int,
     shutdown_timeout: float,
+    prompt_cache_ttl: float = 60.0,
 ) -> SpanlightConfig:
     """Merge explicit arguments with ``SPANLIGHT_*`` environment variables.
 
@@ -119,4 +134,5 @@ def resolve_config(
         timeout=max(timeout, 0.1),
         max_retries=max(max_retries, 0),
         shutdown_timeout=max(shutdown_timeout, 0.0),
+        prompt_cache_ttl=max(prompt_cache_ttl, 0.0),
     )

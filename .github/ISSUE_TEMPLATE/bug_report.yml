@@ -9,7 +9,7 @@ body:
         Thanks for reporting a bug. A clear report is usually fixed faster than a vague one.
 
         **Security problems do not belong here.** Report a vulnerability privately through
-        [GitHub private vulnerability reporting](https://github.com/noob-master-cell/spanlight/security/advisories/new).
+        [GitHub private vulnerability reporting](https://github.com/dheerajkarwasra/spanlight/security/advisories/new).
   - type: input
     id: version
     attributes:

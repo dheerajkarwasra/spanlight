@@ -1,0 +1,723 @@
+{
+  "cases": [
+    {
+      "name": "plain text no variables",
+      "template": {
+        "kind": "text",
+        "text": "Hello world"
+      },
+      "variables": {},
+      "expect": {
+        "text": "Hello world",
+        "variables_used": [],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "empty text",
+      "template": {
+        "kind": "text",
+        "text": ""
+      },
+      "variables": {},
+      "expect": {
+        "text": "",
+        "variables_used": [],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "single variable",
+      "template": {
+        "kind": "text",
+        "text": "Hi {{name}}!"
+      },
+      "variables": {
+        "name": "Ada"
+      },
+      "expect": {
+        "text": "Hi Ada!",
+        "variables_used": [
+          "name"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "repeated variable",
+      "template": {
+        "kind": "text",
+        "text": "{{a}} and {{a}}"
+      },
+      "variables": {
+        "a": "x"
+      },
+      "expect": {
+        "text": "x and x",
+        "variables_used": [
+          "a"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "whitespace inside braces",
+      "template": {
+        "kind": "text",
+        "text": "{{ a }}|{{  b}}|{{c   }}"
+      },
+      "variables": {
+        "a": "1",
+        "b": "2",
+        "c": "3"
+      },
+      "expect": {
+        "text": "1|2|3",
+        "variables_used": [
+          "a",
+          "b",
+          "c"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "tab inside braces",
+      "template": {
+        "kind": "text",
+        "text": "{{\ta\t}}"
+      },
+      "variables": {
+        "a": "1"
+      },
+      "expect": {
+        "text": "1",
+        "variables_used": [
+          "a"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "adjacent variables",
+      "template": {
+        "kind": "text",
+        "text": "{{a}}{{b}}"
+      },
+      "variables": {
+        "a": "x",
+        "b": "y"
+      },
+      "expect": {
+        "text": "xy",
+        "variables_used": [
+          "a",
+          "b"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "value contains braces",
+      "template": {
+        "kind": "text",
+        "text": "say {{a}}"
+      },
+      "variables": {
+        "a": "{{b}}"
+      },
+      "expect": {
+        "text": "say {{b}}",
+        "variables_used": [
+          "a"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "value contains its own placeholder",
+      "template": {
+        "kind": "text",
+        "text": "{{a}}"
+      },
+      "variables": {
+        "a": "{{a}}"
+      },
+      "expect": {
+        "text": "{{a}}",
+        "variables_used": [
+          "a"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "unicode text and value",
+      "template": {
+        "kind": "text",
+        "text": "héllo {{n}} 你好"
+      },
+      "variables": {
+        "n": "日本語 🎉"
+      },
+      "expect": {
+        "text": "héllo 日本語 🎉 你好",
+        "variables_used": [
+          "n"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "empty value",
+      "template": {
+        "kind": "text",
+        "text": "[{{a}}]"
+      },
+      "variables": {
+        "a": ""
+      },
+      "expect": {
+        "text": "[]",
+        "variables_used": [
+          "a"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "multiline template",
+      "template": {
+        "kind": "text",
+        "text": "line1 {{a}}\nline2 {{b}}\n"
+      },
+      "variables": {
+        "a": "1",
+        "b": "2"
+      },
+      "expect": {
+        "text": "line1 1\nline2 2\n",
+        "variables_used": [
+          "a",
+          "b"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "value with newline",
+      "template": {
+        "kind": "text",
+        "text": "{{a}}"
+      },
+      "variables": {
+        "a": "x\ny"
+      },
+      "expect": {
+        "text": "x\ny",
+        "variables_used": [
+          "a"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "first appearance order",
+      "template": {
+        "kind": "text",
+        "text": "{{z}} {{a}} {{z}} {{m}}"
+      },
+      "variables": {
+        "z": "1",
+        "a": "2",
+        "m": "3"
+      },
+      "expect": {
+        "text": "1 2 1 3",
+        "variables_used": [
+          "z",
+          "a",
+          "m"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "extra variables are listed sorted",
+      "template": {
+        "kind": "text",
+        "text": "{{a}}"
+      },
+      "variables": {
+        "a": "1",
+        "c": "3",
+        "b": "2"
+      },
+      "expect": {
+        "text": "1",
+        "variables_used": [
+          "a"
+        ],
+        "unused_variables": [
+          "b",
+          "c"
+        ]
+      }
+    },
+    {
+      "name": "lone closing braces are literal",
+      "template": {
+        "kind": "text",
+        "text": "a }} b {{x}}"
+      },
+      "variables": {
+        "x": "1"
+      },
+      "expect": {
+        "text": "a }} b 1",
+        "variables_used": [
+          "x"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "single brace is literal",
+      "template": {
+        "kind": "text",
+        "text": "{ {{x}} } {x}"
+      },
+      "variables": {
+        "x": "1"
+      },
+      "expect": {
+        "text": "{ 1 } {x}",
+        "variables_used": [
+          "x"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "underscore and digits in name",
+      "template": {
+        "kind": "text",
+        "text": "{{_a1}} {{A_b2}}"
+      },
+      "variables": {
+        "_a1": "1",
+        "A_b2": "2"
+      },
+      "expect": {
+        "text": "1 2",
+        "variables_used": [
+          "_a1",
+          "A_b2"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "name of 64 characters",
+      "template": {
+        "kind": "text",
+        "text": "{{aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}}"
+      },
+      "variables": {
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "ok"
+      },
+      "expect": {
+        "text": "ok",
+        "variables_used": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "variables are case sensitive",
+      "template": {
+        "kind": "text",
+        "text": "{{a}} {{A}}"
+      },
+      "variables": {
+        "a": "1",
+        "A": "2"
+      },
+      "expect": {
+        "text": "1 2",
+        "variables_used": [
+          "a",
+          "A"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "dollar and backslash in value",
+      "template": {
+        "kind": "text",
+        "text": "{{a}}"
+      },
+      "variables": {
+        "a": "$1 \\1 \\g<0>"
+      },
+      "expect": {
+        "text": "$1 \\1 \\g<0>",
+        "variables_used": [
+          "a"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "chat compiles each message",
+      "template": {
+        "kind": "chat",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are {{role}}."
+          },
+          {
+            "role": "user",
+            "content": "Question: {{q}}"
+          }
+        ]
+      },
+      "variables": {
+        "role": "a poet",
+        "q": "why?"
+      },
+      "expect": {
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a poet."
+          },
+          {
+            "role": "user",
+            "content": "Question: why?"
+          }
+        ],
+        "variables_used": [
+          "role",
+          "q"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "chat variable shared across messages",
+      "template": {
+        "kind": "chat",
+        "messages": [
+          {
+            "role": "system",
+            "content": "{{x}}"
+          },
+          {
+            "role": "user",
+            "content": "{{x}}"
+          },
+          {
+            "role": "assistant",
+            "content": "done"
+          }
+        ]
+      },
+      "variables": {
+        "x": "v"
+      },
+      "expect": {
+        "messages": [
+          {
+            "role": "system",
+            "content": "v"
+          },
+          {
+            "role": "user",
+            "content": "v"
+          },
+          {
+            "role": "assistant",
+            "content": "done"
+          }
+        ],
+        "variables_used": [
+          "x"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "chat extra variables",
+      "template": {
+        "kind": "chat",
+        "messages": [
+          {
+            "role": "user",
+            "content": "{{a}}"
+          }
+        ]
+      },
+      "variables": {
+        "a": "1",
+        "b": "2"
+      },
+      "expect": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "1"
+          }
+        ],
+        "variables_used": [
+          "a"
+        ],
+        "unused_variables": [
+          "b"
+        ]
+      }
+    },
+    {
+      "name": "chat order across messages",
+      "template": {
+        "kind": "chat",
+        "messages": [
+          {
+            "role": "system",
+            "content": "{{b}}"
+          },
+          {
+            "role": "user",
+            "content": "{{a}} {{b}}"
+          }
+        ]
+      },
+      "variables": {
+        "a": "1",
+        "b": "2"
+      },
+      "expect": {
+        "messages": [
+          {
+            "role": "system",
+            "content": "2"
+          },
+          {
+            "role": "user",
+            "content": "1 2"
+          }
+        ],
+        "variables_used": [
+          "b",
+          "a"
+        ],
+        "unused_variables": []
+      }
+    },
+    {
+      "name": "missing one variable",
+      "template": {
+        "kind": "text",
+        "text": "{{a}}"
+      },
+      "variables": {},
+      "expect": {
+        "error": "missing_variables",
+        "names": [
+          "a"
+        ]
+      }
+    },
+    {
+      "name": "missing all names sorted",
+      "template": {
+        "kind": "text",
+        "text": "{{b}} {{a}} {{c}}"
+      },
+      "variables": {
+        "c": "1"
+      },
+      "expect": {
+        "error": "missing_variables",
+        "names": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "name": "chat missing across messages",
+      "template": {
+        "kind": "chat",
+        "messages": [
+          {
+            "role": "system",
+            "content": "{{y}}"
+          },
+          {
+            "role": "user",
+            "content": "{{x}}"
+          }
+        ]
+      },
+      "variables": {},
+      "expect": {
+        "error": "missing_variables",
+        "names": [
+          "x",
+          "y"
+        ]
+      }
+    },
+    {
+      "name": "unclosed brace",
+      "template": {
+        "kind": "text",
+        "text": "hello {{name"
+      },
+      "variables": {},
+      "expect": {
+        "error": "invalid_template"
+      }
+    },
+    {
+      "name": "unclosed brace on a line before a closing one",
+      "template": {
+        "kind": "text",
+        "text": "{{a\nb}}"
+      },
+      "variables": {},
+      "expect": {
+        "error": "invalid_template"
+      }
+    },
+    {
+      "name": "invalid name with dash",
+      "template": {
+        "kind": "text",
+        "text": "{{a-b}}"
+      },
+      "variables": {},
+      "expect": {
+        "error": "invalid_template"
+      }
+    },
+    {
+      "name": "invalid name starting with digit",
+      "template": {
+        "kind": "text",
+        "text": "{{1a}}"
+      },
+      "variables": {},
+      "expect": {
+        "error": "invalid_template"
+      }
+    },
+    {
+      "name": "empty braces",
+      "template": {
+        "kind": "text",
+        "text": "{{}}"
+      },
+      "variables": {},
+      "expect": {
+        "error": "invalid_template"
+      }
+    },
+    {
+      "name": "whitespace only braces",
+      "template": {
+        "kind": "text",
+        "text": "{{   }}"
+      },
+      "variables": {},
+      "expect": {
+        "error": "invalid_template"
+      }
+    },
+    {
+      "name": "name with inner space",
+      "template": {
+        "kind": "text",
+        "text": "{{a b}}"
+      },
+      "variables": {},
+      "expect": {
+        "error": "invalid_template"
+      }
+    },
+    {
+      "name": "name longer than 64 characters",
+      "template": {
+        "kind": "text",
+        "text": "{{aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}}"
+      },
+      "variables": {},
+      "expect": {
+        "error": "invalid_template"
+      }
+    },
+    {
+      "name": "triple braces",
+      "template": {
+        "kind": "text",
+        "text": "{{{a}}}"
+      },
+      "variables": {},
+      "expect": {
+        "error": "invalid_template"
+      }
+    },
+    {
+      "name": "chat with an invalid message",
+      "template": {
+        "kind": "chat",
+        "messages": [
+          {
+            "role": "user",
+            "content": "ok"
+          },
+          {
+            "role": "user",
+            "content": "{{"
+          }
+        ]
+      },
+      "variables": {},
+      "expect": {
+        "error": "invalid_template"
+      }
+    },
+    {
+      "name": "text template with messages",
+      "template": {
+        "kind": "text",
+        "text": "a",
+        "messages": [
+          {
+            "role": "user",
+            "content": "b"
+          }
+        ]
+      },
+      "variables": {},
+      "expect": {
+        "error": "invalid_template"
+      }
+    },
+    {
+      "name": "chat template without messages",
+      "template": {
+        "kind": "chat",
+        "messages": []
+      },
+      "variables": {},
+      "expect": {
+        "error": "invalid_template"
+      }
+    }
+  ]
+}

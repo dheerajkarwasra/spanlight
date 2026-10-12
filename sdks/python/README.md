@@ -2,14 +2,15 @@
 
 Tracing for LLM applications. Instrument your code with a decorator, wrap your
 OpenAI or Anthropic client, and every request shows up in
-[Spanlight](https://github.com/noob-master-cell/spanlight/blob/main/README.md) with latency, tokens, cost, errors and the
+[Spanlight](https://github.com/dheerajkarwasra/spanlight/blob/main/README.md) with latency, tokens, cost, errors and the
 full prompt and completion.
 
-- **Low overhead.** Spans are queued in memory and sent in batches from a
-  background thread. Your code never waits on the network.
-- **Never breaks your app.** SDK failures are logged and swallowed. Exceptions
-  from your code and from the providers are recorded and re-raised exactly as
-  they were.
+- **Low overhead.** Tracing never waits on the network: spans are queued in
+  memory and sent in batches from a background thread.
+- **Tracing never breaks your app.** SDK failures are logged and swallowed.
+  Exceptions from your code and from the providers are recorded and re-raised
+  exactly as they were. (`prompts.get` is the one call that can block and
+  raise; see [Prompts](#prompts).)
 - **One dependency.** Only `httpx` is required. `openai` and `anthropic` are
   optional extras.
 - **Typed.** Ships `py.typed` and passes `mypy --strict`.
@@ -29,7 +30,7 @@ To run the code on `main` instead of the last release, install from the
 repository's `sdks/python` subdirectory:
 
 ```bash
-pip install "spanlight[anthropic] @ git+https://github.com/noob-master-cell/spanlight#subdirectory=sdks/python"
+pip install "spanlight[anthropic] @ git+https://github.com/dheerajkarwasra/spanlight#subdirectory=sdks/python"
 ```
 
 Python 3.10 or newer is required.
@@ -145,6 +146,123 @@ with client.messages.stream(
 `wrap_anthropic` instruments `messages.create` (including `stream=True`) and
 `messages.stream` on both `Anthropic` and `AsyncAnthropic`.
 
+## Prompts
+
+Keep prompts in Spanlight and fetch them by label, so a new version ships
+without a deploy. The API key needs the `prompts:read` scope.
+
+```python
+import spanlight
+from openai import OpenAI
+
+spanlight.init()
+client = spanlight.wrap_openai(OpenAI())
+
+prompt = spanlight.prompts.get(
+    "support/answer",  # label "production" by default
+    fallback=[{"role": "user", "content": "Answer briefly: {{question}}"}],
+)
+compiled = prompt.compile(question="How do refunds work?")
+
+completion = client.chat.completions.create(
+    model=prompt.model_config.get("model", "gpt-4o-mini"),
+    messages=compiled.messages,
+    spanlight_prompt=compiled,  # links the span to this prompt version
+)
+```
+
+`get(name, label="production", *, version=None, fallback=None)` returns a
+`Prompt` with `name`, `version`, `version_id`, `kind` (`text` or `chat`),
+`template`, `variables` and `model_config`. Pass `version=3` to pin a number
+instead of a label.
+
+- **Caching.** A fetched prompt is served from memory for `prompt_cache_ttl`
+  seconds (60 by default), then revalidated with `If-None-Match`, so an
+  unchanged prompt costs a `304`. Concurrent first calls for the same prompt
+  make one request.
+- **Outages.** After the TTL, if the server cannot be reached or answers with
+  an error, the cached copy keeps being served and one warning per prompt per
+  minute is logged. With nothing cached, `fallback` (a text template or a list
+  of `{"role", "content"}` messages) is used and the prompt has
+  `version=None`. With neither, `get` raises `PromptUnavailableError`, the one
+  exception the SDK raises on purpose. A failed fetch is remembered for a few
+  seconds, so concurrent callers do not each wait out the timeout, and while
+  one caller revalidates an expired prompt the others get the cached copy.
+- **Disabled SDK.** `enabled=False` turns off tracing and scores, but
+  `prompts.get` still calls the server when an API key is set. Pass no key (and
+  a `fallback`) to keep tests offline.
+- **Blocking.** `get` is synchronous. In `async` code a cache miss blocks the
+  event loop for up to `timeout`; call it at startup or through
+  `asyncio.to_thread`.
+
+`Prompt.compile(**variables)` fills in `{{name}}` variables (spaces inside the
+braces are allowed; values are inserted as they are and never expanded again).
+Values are strings; numbers and booleans are converted with `str()`, and any
+other type raises `TypeError`.
+The result has `text` for a text prompt, `messages` (plain dicts for the OpenAI
+and Anthropic SDKs) for a chat prompt, and `unused_variables` for variables you
+passed that the template does not use. A missing variable raises
+`MissingVariablesError` naming all of them; a malformed template raises
+`InvalidTemplateError`.
+
+To link spans to a prompt version, pass `spanlight_prompt=compiled` to a
+wrapped OpenAI or Anthropic call (the keyword is removed before the provider
+sees it), or enter the compiled prompt; every span started inside the block is
+linked:
+
+```python
+with compiled:
+    answer = run_agent(compiled.messages)
+```
+
+The link is a `contextvars` value, so it follows the same rules as the current
+span: an `asyncio` task created inside the block keeps the link for its whole
+life, and a thread pool worker does not see it unless you copy the context.
+Start long-lived work inside `with spanlight.no_prompt():` to keep its spans
+unlinked. Passing a fallback (`version=None`) as `spanlight_prompt=` clears the
+link for that call.
+
+## Scores
+
+Attach quality scores to a trace, or to one of its spans, from your code:
+
+```python
+trace_id = spanlight.get_current_trace_id()
+spanlight.score(trace_id, "helpfulness", 0.8)
+spanlight.score(trace_id, "resolved", True, comment="user said thanks")
+spanlight.score(trace_id, "tone", "friendly", span_id=span.span_id)
+```
+
+A number makes a numeric score, `True`/`False` a boolean score and a string a
+categorical one. Scores are sent in the background with the spans, after the
+spans of the same batch, and each gets a unique id so a retried request never
+stores one twice. `score` never raises. The API key needs the `scores:write`
+scope; a server that predates scores answers `404`, which is logged once.
+
+## Experiments in CI
+
+The SDK includes the runner behind the `eval-gate` GitHub Action. It runs a
+prompt version over a dataset on the server, scores the answers with your
+evaluators and exits non-zero when a score is below its threshold:
+
+```bash
+export SPANLIGHT_TOKEN=spl_pat_...   # a personal access token with the write scope
+python -m spanlight._experiments \
+  --host https://spanlight.example.com --project-id <project id> \
+  --dataset support-questions --prompt support/answer@production \
+  --evaluators relevance,format --fail-below relevance=0.8,format=1 \
+  --credential-id <credential id> --model claude-haiku-5-5
+```
+
+`--prompt` is `name`, `name@label` or `name:version`. Also pass `--credential-id`
+and `--model` (with the evaluators they select the experiment), and optionally
+`--max-cost-usd` to cap a new experiment's runs. Exit code `0` means
+every threshold held, `1` a score was below its threshold and `2` the run could
+not be set up, failed or timed out (`--timeout`, 1800 seconds by default). The
+host must be `https://` unless it is localhost. Each
+run makes real provider calls. In a GitHub workflow use the
+`.github/actions/eval-gate` Action instead of calling the module yourself.
+
 ## What gets recorded
 
 For every LLM call:
@@ -182,7 +300,7 @@ options. Use `tracer.observe`, `tracer.span` and
 | `host`             | `SPANLIGHT_HOST`        | `http://localhost:8000` | Base URL of the Spanlight API                                            |
 | `environment`      | `SPANLIGHT_ENVIRONMENT` | none                    | Attached to every trace, for example `production`                        |
 | `release`          | `SPANLIGHT_RELEASE`     | none                    | Your app version or git SHA                                              |
-| `enabled`          | `SPANLIGHT_ENABLED`     | `true`                  | `false`/`0`/`no`/`off` turns the SDK into a no-op                        |
+| `enabled`          | `SPANLIGHT_ENABLED`     | `true`                  | `false`/`0`/`no`/`off` turns tracing and scores into a no-op             |
 | `flush_interval`   |                         | `2.0`                   | Seconds a span may wait before it is sent                                |
 | `batch_size`       |                         | `100`                   | Spans per request (max 1000)                                             |
 | `max_queue`        |                         | `10000`                 | Buffered spans. When the buffer is full, the oldest spans are dropped.   |
@@ -190,6 +308,7 @@ options. Use `tracer.observe`, `tracer.span` and
 | `timeout`          |                         | `10.0`                  | HTTP timeout per request, in seconds                                     |
 | `max_retries`      |                         | `5`                     | Retries for network errors, 429 and 5xx                                  |
 | `shutdown_timeout` |                         | `5.0`                   | Time budget for the flush at interpreter exit                            |
+| `prompt_cache_ttl` |                         | `60.0`                  | Seconds a fetched prompt is served before it is revalidated              |
 
 ### `@observe(name=None, kind="chain", capture_input=True, capture_output=True)`
 
@@ -224,7 +343,7 @@ anywhere inside the trace. Tags accumulate across calls.
 
 ### `flush(timeout=None) -> bool` and `shutdown(timeout=None)`
 
-`flush` blocks until every span ended so far has been sent. `shutdown` flushes
+`flush` blocks until every span ended and score recorded so far has been sent. `shutdown` flushes
 and then stops the background thread.
 
 ### Context propagation
@@ -264,7 +383,7 @@ logging.getLogger("spanlight").setLevel(logging.DEBUG)
 
 ## Example
 
-[`examples/support_bot.py`](https://github.com/noob-master-cell/spanlight/blob/main/sdks/python/examples/support_bot.py) is a small three-step
+[`examples/support_bot.py`](https://github.com/dheerajkarwasra/spanlight/blob/main/sdks/python/examples/support_bot.py) is a small three-step
 support bot (classify, retrieve, answer with streaming). It runs against
 Anthropic or OpenAI, whichever key you have set:
 

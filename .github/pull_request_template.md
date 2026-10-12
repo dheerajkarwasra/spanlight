@@ -22,8 +22,8 @@
 - [ ] Copy and layout match the approved frame
 - [ ] Docs page or runbook updated when the task adds user- or operator-facing surface
 
-The checklist is the [review gate](https://github.com/noob-master-cell/spanlight/blob/main/CONTRIBUTING.md#review-gate) in CONTRIBUTING.md.
-The [engineering standards](https://github.com/noob-master-cell/spanlight/blob/main/CONTRIBUTING.md#engineering-standards) there explain what each item means.
+The checklist is the [review gate](https://github.com/dheerajkarwasra/spanlight/blob/main/CONTRIBUTING.md#review-gate) in CONTRIBUTING.md.
+The [engineering standards](https://github.com/dheerajkarwasra/spanlight/blob/main/CONTRIBUTING.md#engineering-standards) there explain what each item means.
 
 ## How I tested
 

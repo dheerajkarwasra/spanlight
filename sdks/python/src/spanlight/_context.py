@@ -17,6 +17,9 @@ from contextvars import ContextVar, Token
 from ._span import Span
 
 _current_span: ContextVar[Span | None] = ContextVar("spanlight_current_span", default=None)
+_current_prompt_version_id: ContextVar[str | None] = ContextVar(
+    "spanlight_current_prompt_version_id", default=None
+)
 
 
 def get_current_span() -> Span | None:
@@ -56,3 +59,21 @@ def restore_current_span(token: Token[Span | None], previous: Span | None) -> No
         _current_span.reset(token)
     except ValueError:
         _current_span.set(previous)
+
+
+def get_current_prompt_version_id() -> str | None:
+    """Return the prompt version id spans started now are linked to, if any."""
+    return _current_prompt_version_id.get()
+
+
+def set_current_prompt_version_id(version_id: str | None) -> Token[str | None]:
+    """Link spans started from now on to ``version_id``; returns a token to undo it."""
+    return _current_prompt_version_id.set(version_id)
+
+
+def restore_current_prompt_version_id(token: Token[str | None], previous: str | None) -> None:
+    """Undo :func:`set_current_prompt_version_id`, by value when the token is foreign."""
+    try:
+        _current_prompt_version_id.reset(token)
+    except ValueError:
+        _current_prompt_version_id.set(previous)

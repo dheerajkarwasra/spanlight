@@ -1,4 +1,4 @@
-"""The :class:`Spanlight` client: configuration, span creation and export."""
+"""The :class:`Spanlight` client: configuration, span creation, export, prompts and scores."""
 
 from __future__ import annotations
 
@@ -12,8 +12,15 @@ from typing import Any, ParamSpec, TypeVar, overload
 import httpx
 
 from ._config import SpanlightConfig, resolve_config
-from ._context import get_current_span, restore_current_span, set_current_span
+from ._context import (
+    get_current_prompt_version_id,
+    get_current_span,
+    restore_current_span,
+    set_current_span,
+)
 from ._exporter import BatchExporter
+from ._prompt_client import PromptClient
+from ._scores import ScoreValue, build_score
 from ._span import Span, SpanKind, TraceState, normalize_kind
 
 logger = logging.getLogger("spanlight")
@@ -48,7 +55,8 @@ class Spanlight:
         host: Base URL of the Spanlight API.
         environment: Deployment environment, e.g. ``"production"``.
         release: Application version, e.g. a git SHA.
-        enabled: Set ``False`` to turn the SDK into a no-op.
+        enabled: Set ``False`` to turn tracing and scores into a no-op. Prompts are
+            still fetched when an API key is set, because they are application data.
         flush_interval: Maximum seconds a span waits before it is sent.
         batch_size: Maximum spans per request (capped at 1000).
         max_queue: Maximum spans buffered in memory; oldest dropped first.
@@ -56,6 +64,7 @@ class Spanlight:
         timeout: HTTP timeout per request, in seconds.
         max_retries: Retries per batch for network errors, 429 and 5xx.
         shutdown_timeout: Seconds allowed for the final flush at exit.
+        prompt_cache_ttl: Seconds a fetched prompt is served before it is revalidated.
         transport: Custom ``httpx`` transport (advanced; mainly for tests).
     """
 
@@ -74,6 +83,7 @@ class Spanlight:
         timeout: float = 10.0,
         max_retries: int = 5,
         shutdown_timeout: float = 5.0,
+        prompt_cache_ttl: float = 60.0,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self.config: SpanlightConfig = resolve_config(
@@ -89,8 +99,17 @@ class Spanlight:
             timeout=timeout,
             max_retries=max_retries,
             shutdown_timeout=shutdown_timeout,
+            prompt_cache_ttl=prompt_cache_ttl,
         )
         self._exporter: BatchExporter | None = None
+        self.prompts: PromptClient = PromptClient(
+            base_url=self.config.prompts_url,
+            api_key=self.config.api_key,
+            timeout=self.config.timeout,
+            cache_ttl=self.config.prompt_cache_ttl,
+            transport=transport,
+        )
+        """Fetches prompts from Spanlight: ``client.prompts.get("support/answer")``."""
 
         if self.config.enabled and not self.config.api_key:
             logger.warning(
@@ -101,6 +120,7 @@ class Spanlight:
             self._exporter = BatchExporter(
                 url=self.config.ingest_url,
                 api_key=self.config.api_key,
+                scores_url=self.config.scores_url,
                 batch_size=self.config.batch_size,
                 flush_interval=self.config.flush_interval,
                 max_queue=self.config.max_queue,
@@ -165,7 +185,7 @@ class Spanlight:
                     release=self.config.release,
                 )
                 parent_span_id = None
-            return Span(
+            span = Span(
                 name=name,
                 kind=normalize_kind(kind),
                 trace=trace,
@@ -173,6 +193,10 @@ class Spanlight:
                 on_end=self._export_span,
                 recording=self.enabled,
             )
+            prompt_version_id = get_current_prompt_version_id()
+            if prompt_version_id is not None:
+                span.set_prompt_version(prompt_version_id)
+            return span
         except Exception:
             logger.debug("Failed to start span %r", name, exc_info=True)
             return _non_recording_span(name)
@@ -256,11 +280,47 @@ class Spanlight:
         update_trace(name=name, user_id=user_id, session_id=session_id, tags=tags)
 
     # ------------------------------------------------------------------ #
+    # Scores
+    # ------------------------------------------------------------------ #
+
+    def score(
+        self,
+        trace_id: str,
+        name: str,
+        value: ScoreValue,
+        *,
+        span_id: str | None = None,
+        comment: str | None = None,
+    ) -> None:
+        """Record a score on a trace (or one of its spans). Never raises.
+
+        Scores are sent in the background with the spans, after the spans
+        of the same cycle. A ``bool`` becomes a boolean score, a ``str`` a
+        categorical one, any other number a numeric one.
+
+        Args:
+            trace_id: The trace to score, e.g. ``spanlight.get_current_trace_id()``.
+            name: The score name, e.g. ``"helpfulness"``.
+            value: The score: a number, ``True``/``False`` or a category.
+            span_id: Score one span of the trace instead of the whole trace.
+            comment: Free-text note shown next to the score.
+        """
+        exporter = self._exporter
+        if exporter is None:
+            return
+        try:
+            payload = build_score(trace_id, name, value, span_id=span_id, comment=comment)
+            if payload is not None:
+                exporter.export_score(payload)
+        except Exception:
+            logger.debug("Failed to record score %r", name, exc_info=True)
+
+    # ------------------------------------------------------------------ #
     # Lifecycle
     # ------------------------------------------------------------------ #
 
     def flush(self, timeout: float | None = None) -> bool:
-        """Block until every span ended so far has been sent.
+        """Block until every span ended and score recorded so far has been sent.
 
         Call this at the end of short-lived scripts, serverless handlers and
         tests. Long-running servers do not need it.
@@ -281,6 +341,7 @@ class Spanlight:
         Args:
             timeout: Maximum seconds to spend; defaults to ``shutdown_timeout``.
         """
+        self.prompts.close()
         exporter = self._exporter
         if exporter is None:
             return

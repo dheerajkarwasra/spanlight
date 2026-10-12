@@ -13,6 +13,7 @@ import logging
 import re
 import threading
 import time
+import uuid
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any, Literal, get_args
 
@@ -145,6 +146,7 @@ class Span:
         self.time_to_first_token_ms: float | None = None
         self.request_hash: str | None = None
         self.finish_reason: str | None = None
+        self.prompt_version_id: str | None = None
         self.input: JsonValue = None
         self.output: JsonValue = None
         self.attributes: dict[str, JsonValue] = {}
@@ -238,6 +240,22 @@ class Span:
         if self._mutable and (reason is None or isinstance(reason, str)):
             self.finish_reason = reason[:_MAX_FINISH_REASON] if reason else None
 
+    def set_prompt_version(self, version_id: str | None) -> None:
+        """Link the span to the prompt version it used; ``None`` removes the link.
+
+        :class:`~spanlight.CompiledPrompt` does this for you. A value that is
+        not a UUID is ignored, because the server would reject the span.
+        """
+        if not self._mutable:
+            return
+        if version_id is None:
+            self.prompt_version_id = None
+            return
+        try:
+            self.prompt_version_id = str(uuid.UUID(str(version_id)))
+        except ValueError:
+            logger.debug("Ignoring malformed prompt version id %r", version_id)
+
     def mark_first_token(self) -> None:
         """Record time-to-first-token as "now"; only the first call counts."""
         if self._mutable and self.time_to_first_token_ms is None:
@@ -286,7 +304,7 @@ class Span:
         }
         if any(count is not None for count in token_counts.values()):
             usage = {key: count for key, count in token_counts.items() if count is not None}
-        return {
+        payload: dict[str, JsonValue] = {
             "trace_id": self.trace_id,
             "span_id": self.span_id,
             "parent_span_id": self.parent_span_id,
@@ -307,6 +325,10 @@ class Span:
             "attributes": dict(self.attributes),
             "trace": self.trace.to_payload(),
         }
+        # Sent only when set, so payloads for servers that predate prompts stay unchanged.
+        if self.prompt_version_id is not None:
+            payload["prompt_version_id"] = self.prompt_version_id
+        return payload
 
     def __repr__(self) -> str:
         return (

@@ -120,6 +120,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: uv run --no-project --with pyyaml python scripts/check-release-workflow.py
       - run: uv run --no-project --with pyyaml bash scripts/check-repo-files.sh
+      - run: scripts/check-template-fixtures.sh
       - run: scripts/check-links.sh ./*.md backend/README.md frontend/README.md sdks/python/README.md docs/api-deviations.md docs/decisions/*.md docs/deploy/railway.md docs/performance.md backend/load/README.md
 
   docker:

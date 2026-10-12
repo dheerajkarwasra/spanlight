@@ -37,6 +37,10 @@ _EXCLUDED_REQUEST_KEYS = frozenset(
 _SENTINEL_TYPE_NAMES = frozenset({"NotGiven", "Omit"})
 _RAW_RESPONSE_HEADER = "x-stainless-raw-response"
 
+# Keyword a wrapped call accepts to link its span to a compiled prompt. It is removed from the
+# call before the provider SDK sees it.
+PROMPT_KWARG = "spanlight_prompt"
+
 
 class StreamAccumulator(ABC):
     """Collects streamed events and writes the final result onto a span."""
@@ -153,12 +157,31 @@ def record_provider_error(span: Span, error: BaseException) -> None:
         span.set_attribute("provider.request_id", request_id)
 
 
+def pop_prompt(kwargs: dict[str, Any]) -> Any:
+    """Remove and return the ``spanlight_prompt=`` keyword, so it never reaches the provider."""
+    return kwargs.pop(PROMPT_KWARG, None)
+
+
+def link_prompt(span: Span, prompt: Any) -> None:
+    """Link ``span`` to the version of a :class:`~spanlight.CompiledPrompt`.
+
+    A fallback prompt (no version) clears any link inherited from an enclosing
+    ``with compiled:`` block, because the call did not use that version.
+    """
+    version_id = getattr(prompt, "prompt_version_id", None)
+    span.set_prompt_version(version_id if isinstance(version_id, str) else None)
+
+
 def start_llm_span(
     get_client: ClientGetter,
     endpoint: Endpoint,
     kwargs: Mapping[str, Any],
+    prompt: Any = None,
 ) -> Span | None:
-    """Start an ``llm`` span for a provider call, or ``None`` to run untraced."""
+    """Start an ``llm`` span for a provider call, or ``None`` to run untraced.
+
+    ``prompt`` is the call's ``spanlight_prompt=`` value, already removed from ``kwargs``.
+    """
     try:
         if is_raw_response_call(kwargs):
             return None
@@ -173,6 +196,8 @@ def start_llm_span(
         span.set_input(request)
         if kwargs.get("stream") is True:
             span.set_attribute("request.stream", True)
+        if prompt is not None:
+            link_prompt(span, prompt)
         return span
     except Exception:
         logger.debug("Failed to start LLM span", exc_info=True)
@@ -227,7 +252,8 @@ def wrap_sync_method(
 
     @functools.wraps(original)
     def traced(*args: Any, **kwargs: Any) -> Any:
-        span = start_llm_span(get_client, endpoint, kwargs)
+        prompt = pop_prompt(kwargs)
+        span = start_llm_span(get_client, endpoint, kwargs, prompt)
         if span is None:
             return original(*args, **kwargs)
         try:
@@ -250,7 +276,8 @@ def wrap_async_method(
 
     @functools.wraps(original)
     async def traced(*args: Any, **kwargs: Any) -> Any:
-        span = start_llm_span(get_client, endpoint, kwargs)
+        prompt = pop_prompt(kwargs)
+        span = start_llm_span(get_client, endpoint, kwargs, prompt)
         if span is None:
             return await original(*args, **kwargs)
         try:

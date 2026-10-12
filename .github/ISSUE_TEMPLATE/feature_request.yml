@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for the idea. Please check the [roadmap](https://github.com/noob-master-cell/spanlight#roadmap)
+        Thanks for the idea. Please check the [roadmap](https://github.com/dheerajkarwasra/spanlight#roadmap)
         first: it may already be planned, and the phase it belongs to affects when it can land.
   - type: textarea
     id: problem

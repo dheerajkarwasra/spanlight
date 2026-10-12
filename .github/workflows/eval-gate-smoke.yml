@@ -1,0 +1,45 @@
+name: Eval gate smoke
+
+# Run by hand to check the eval-gate Action against the demo instance.
+on:
+  workflow_dispatch:
+    inputs:
+      dataset:
+        description: Dataset to run
+        required: true
+        default: support-questions
+      prompt:
+        description: Prompt reference (name, name@label or name:version)
+        required: true
+        default: support/answer@production
+      evaluators:
+        description: Comma-separated evaluator names
+        required: true
+        default: relevance
+      fail-below:
+        description: Thresholds, for example relevance=0.5
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: ./.github/actions/eval-gate
+        with:
+          host: ${{ secrets.SPANLIGHT_DEMO_HOST }}
+          token: ${{ secrets.SPANLIGHT_DEMO_PAT }}
+          project-id: ${{ secrets.SPANLIGHT_DEMO_PROJECT_ID }}
+          dataset: ${{ inputs.dataset }}
+          prompt: ${{ inputs.prompt }}
+          evaluators: ${{ inputs.evaluators }}
+          fail-below: ${{ inputs.fail-below }}
+          credential-id: ${{ secrets.SPANLIGHT_DEMO_CREDENTIAL_ID }}
+          model: claude-haiku-5-5
+          max-cost-usd: '0.50'
+          sdk-ref: ${{ github.sha }}

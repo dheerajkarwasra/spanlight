@@ -11,6 +11,9 @@ import httpx
 
 from ._client import SpanContext, Spanlight
 from ._decorator import build_observe
+from ._prompt_client import Fallback
+from ._prompts import Prompt
+from ._scores import ScoreValue
 from ._span import SpanKind
 
 logger = logging.getLogger("spanlight")
@@ -36,6 +39,7 @@ def init(
     timeout: float = 10.0,
     max_retries: int = 5,
     shutdown_timeout: float = 5.0,
+    prompt_cache_ttl: float = 60.0,
     transport: httpx.BaseTransport | None = None,
 ) -> Spanlight:
     """Configure the global client used by :func:`observe`, :func:`span` and the wrappers.
@@ -60,6 +64,7 @@ def init(
         timeout=timeout,
         max_retries=max_retries,
         shutdown_timeout=shutdown_timeout,
+        prompt_cache_ttl=prompt_cache_ttl,
         transport=transport,
     )
     with _client_lock:
@@ -138,6 +143,43 @@ def observe(
         capture_input=capture_input,
         capture_output=capture_output,
     )
+
+
+class _GlobalPrompts:
+    """``spanlight.prompts``: the prompt client of whichever global client is current."""
+
+    def get(
+        self,
+        name: str,
+        label: str = "production",
+        *,
+        version: int | None = None,
+        fallback: Fallback | None = None,
+    ) -> Prompt:
+        """Fetch a prompt with the global client. See :meth:`PromptClient.get`."""
+        return get_client().prompts.get(name, label, version=version, fallback=fallback)
+
+    def __repr__(self) -> str:
+        return "spanlight.prompts"
+
+
+prompts = _GlobalPrompts()
+"""Fetch prompts with the global client: ``spanlight.prompts.get("support/answer")``."""
+
+
+def score(
+    trace_id: str,
+    name: str,
+    value: ScoreValue,
+    *,
+    span_id: str | None = None,
+    comment: str | None = None,
+) -> None:
+    """Record a score with the global client. See :meth:`Spanlight.score`."""
+    try:
+        get_client().score(trace_id, name, value, span_id=span_id, comment=comment)
+    except Exception:
+        logger.debug("score() failed", exc_info=True)
 
 
 def flush(timeout: float | None = None) -> bool:
