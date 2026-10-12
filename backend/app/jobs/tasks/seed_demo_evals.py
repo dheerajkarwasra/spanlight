@@ -17,8 +17,6 @@ from typing import Any
 import structlog
 
 from app.jobs.context import TaskContext
-from app.services.demo import ensure_demo_workspace
-from app.services.demo_evals import seed_evals
 
 logger = structlog.get_logger(__name__)
 
@@ -28,6 +26,12 @@ SEED_TIMEOUT_S = 120
 
 
 async def run_seed_demo_evals(context: TaskContext, _: dict[str, Any]) -> None:
+    # Imported here: the seed's data module reads the demo bot's prompt from
+    # app.jobs.tasks.demo_flow, which loads this package and so this module; a top-level import
+    # is circular.
+    from app.services.demo import ensure_demo_workspace  # noqa: PLC0415
+    from app.services.demo_evals import seed_evals  # noqa: PLC0415
+
     async with asyncio.timeout(SEED_TIMEOUT_S):
         async with context.session_factory() as db:
             workspace = await ensure_demo_workspace(db)
