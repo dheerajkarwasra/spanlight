@@ -5,6 +5,7 @@
  */
 
 import type { User } from "./identity-types";
+import type { ScoreSummary } from "./scores";
 
 export interface Project {
   id: string;
@@ -98,6 +99,10 @@ export interface TraceSummary {
   error_message: string | null;
   /** The same span's error class; null when nothing failed or it failed before classification. */
   error_class: ErrorClass | null;
+  /** True once the trace has any score, from a person, the SDK or an evaluator. */
+  has_scores: boolean;
+  /** The latest score of each name, most recently scored first; at most 10 names. */
+  scores: ScoreSummary[];
 }
 
 export interface Span {
@@ -126,6 +131,8 @@ export interface Span {
   truncated: boolean;
   /** Canonical finish reason; the raw value is in `attributes`. Null when unknown. */
   finish_reason: FinishReason | null;
+  /** The prompt version that produced this call; null when it was not linked to one. */
+  prompt_version_id: string | null;
 }
 
 export interface TraceDetail extends TraceSummary {
@@ -250,4 +257,6 @@ export interface FilterOptions {
   releases: string[];
   models: string[];
   tags: string[];
+  /** Score names written in the last 30 days. */
+  score_names: string[];
 }

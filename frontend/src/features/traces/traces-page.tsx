@@ -9,6 +9,7 @@ import { useProjectFilters } from "@/features/shell/project-context";
 import { formatInteger } from "@/lib/format";
 import { rangePhrase } from "@/lib/time-range";
 
+import { BulkSelectionBar } from "./bulk-selection-bar";
 import { recallOpenedTrace, rememberTracesSearch } from "./last-traces-search";
 import { loadedSummary, tracesNoun } from "./list-summary";
 import { useTraceCountQuery, useTraceListQuery } from "./trace-queries";
@@ -18,6 +19,7 @@ import { TracesEmptyState } from "./traces-empty-state";
 import { TracesTable, TracesTableSkeleton } from "./traces-table";
 import { TracesToolbar } from "./traces-toolbar";
 import { useTraceFilters } from "./use-trace-filters";
+import { useTraceSelection } from "./use-trace-selection";
 
 export function TracesPage() {
   const filters = useTraceFilters();
@@ -30,6 +32,7 @@ export function TracesPage() {
   }, [search]);
 
   const traces = tracesQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  const selection = useTraceSelection(traces);
   const isRefreshing =
     tracesQuery.isFetching && !tracesQuery.isFetchingNextPage && !tracesQuery.isPending;
   const stale = tracesQuery.isPlaceholderData;
@@ -99,7 +102,12 @@ export function TracesPage() {
     return (
       <>
         <Card className="@container hidden flex-col p-2 md:flex">
-          <TracesTable traces={traces} selectedTraceId={selectedTraceId} stale={stale} />
+          <TracesTable
+            traces={traces}
+            selectedTraceId={selectedTraceId}
+            stale={stale}
+            selection={selection}
+          />
           {loadMoreError ?? <ListFooter layout="card" {...footerProps} />}
         </Card>
         <div className="flex flex-col gap-4 md:hidden">
@@ -130,6 +138,7 @@ export function TracesPage() {
         onClearFilters={filters.clearFilters}
       />
       {renderBody()}
+      <BulkSelectionBar selection={selection} />
     </div>
   );
 }

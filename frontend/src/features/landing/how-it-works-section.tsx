@@ -54,7 +54,7 @@ export function HowItWorksSection() {
         id="how-it-works-title"
         overline="How it works"
         title="From zero to traces in three steps"
-        description="No agents to deploy and no proxy in the request path. The SDK sends spans in the background."
+        description="No agents to deploy, and the SDK adds no proxy to the request path. It sends spans in the background."
       />
 
       <div className="mx-auto mt-9 grid max-w-[1200px] grid-cols-1 gap-9 lg:mt-14 xl:grid-cols-12 xl:gap-5">

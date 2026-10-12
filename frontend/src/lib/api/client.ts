@@ -94,7 +94,9 @@ async function send(
   const headers = new Headers(options.headers);
   headers.set("Accept", accept);
 
-  if (options.body !== undefined) {
+  // A FormData body carries its own multipart Content-Type, boundary included.
+  const isForm = options.body instanceof FormData;
+  if (options.body !== undefined && !isForm) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -111,7 +113,10 @@ async function send(
       method,
       headers,
       credentials: "same-origin",
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body:
+        options.body === undefined || isForm
+          ? (options.body as FormData | undefined)
+          : JSON.stringify(options.body),
       signal: options.signal,
     });
   } catch (error) {
@@ -224,6 +229,10 @@ export const api = {
   /** `body` is for the deletions that ask for a typed confirmation. */
   delete(path: string, body?: unknown): Promise<void> {
     return request<undefined>("DELETE", path, { body });
+  },
+  /** Sends a multipart form, e.g. a dataset file. The browser sets the Content-Type. */
+  upload<T>(path: string, form: FormData): Promise<T> {
+    return request<T>("POST", path, { body: form });
   },
   /** Fetches a file as a blob, e.g. a CSV export. Failures throw the same errors as JSON calls. */
   download(path: string, query?: QueryParams, signal?: AbortSignal): Promise<DownloadedFile> {

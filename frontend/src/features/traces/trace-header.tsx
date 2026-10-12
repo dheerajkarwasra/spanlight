@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 import { CopyButton } from "@/components/copy-button";
 import { CostValue } from "@/components/cost-value";
 import { UnknownValue } from "@/components/unknown-value";
-import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectParams } from "@/features/shell/project-context";
@@ -17,6 +16,8 @@ import { InsightBadges } from "./insight-badges";
 import { recallTracesSearch } from "./last-traces-search";
 import { failedSpanCount } from "./span-tree";
 import { TraceStatusBadge } from "./status";
+import { TraceActions } from "./trace-actions";
+import { TraceAttributeChips } from "./trace-attribute-chips";
 
 export function BackToTracesLink() {
   const { orgId, projectId } = useProjectParams();
@@ -49,6 +50,7 @@ export function TraceHeader({ trace }: { trace: TraceDetail }) {
         </h1>
         <TraceStatusBadge errorCount={trace.error_count} />
         <InsightBadges traceId={trace.trace_id} />
+        <TraceActions trace={trace} />
       </div>
 
       <div className="flex min-w-0 items-center gap-1.5">
@@ -122,89 +124,6 @@ function Stat({ label, children }: { label: string; children: ReactNode }) {
     <div className="flex min-w-0 flex-col gap-1 px-5 lg:border-l lg:border-rail-tile lg:first:border-l-0">
       <dt className="text-xs font-medium text-rail-muted-foreground">{label}</dt>
       <dd className="flex min-w-0 items-baseline gap-2 text-card whitespace-nowrap">{children}</dd>
-    </div>
-  );
-}
-
-/** Release, user, session and tags as chips; chips for values the SDK didn't send are omitted. */
-function TraceAttributeChips({ trace }: { trace: TraceDetail }) {
-  const { orgId, projectId } = useProjectParams();
-  const hasAny =
-    trace.release !== null ||
-    trace.external_user_id !== null ||
-    trace.session_id !== null ||
-    trace.tags.length > 0;
-  if (!hasAny) {
-    return null;
-  }
-
-  return (
-    <dl className="flex flex-wrap items-center gap-2">
-      {trace.release !== null ? (
-        <Chip label="Release">
-          <span title={trace.release} className="truncate font-mono text-label text-foreground">
-            {trace.release}
-          </span>
-        </Chip>
-      ) : null}
-      {trace.external_user_id !== null ? (
-        <Chip label="User">
-          <Link
-            to="/$orgId/$projectId/traces"
-            params={{ orgId, projectId }}
-            search={{ user: trace.external_user_id }}
-            title={`Show traces from user ${trace.external_user_id}`}
-            className="truncate rounded-sm font-mono text-label text-accent hover:underline"
-          >
-            {trace.external_user_id}
-          </Link>
-        </Chip>
-      ) : null}
-      {trace.session_id !== null ? (
-        <Chip label="Session">
-          <Link
-            to="/$orgId/$projectId/sessions/$sessionId"
-            params={{ orgId, projectId, sessionId: trace.session_id }}
-            title={`Open session ${trace.session_id}`}
-            className="truncate rounded-sm font-mono text-label text-accent hover:underline"
-          >
-            {trace.session_id}
-          </Link>
-        </Chip>
-      ) : null}
-      {trace.tags.length > 0 ? (
-        <Chip label="Tags" className="py-1">
-          <span className="flex flex-wrap gap-1">
-            {trace.tags.map((tag) => (
-              <Badge key={tag} variant="accent">
-                {tag}
-              </Badge>
-            ))}
-          </span>
-        </Chip>
-      ) : null}
-    </dl>
-  );
-}
-
-function Chip({
-  label,
-  className,
-  children,
-}: {
-  label: string;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex max-w-full min-w-0 items-center gap-1.5 rounded-full bg-surface-muted px-3 py-1",
-        className,
-      )}
-    >
-      <dt className="shrink-0 text-xs font-medium text-muted-foreground">{label}</dt>
-      <dd className="flex min-w-0">{children}</dd>
     </div>
   );
 }

@@ -8,7 +8,7 @@ test.describe("landing page", () => {
 
     await expect(page).toHaveURL(/\/$/);
     await expect(
-      page.getByRole("heading", { level: 1, name: "See every LLM call clearly." }),
+      page.getByRole("heading", { level: 1, name: "See each LLM call clearly." }),
     ).toBeVisible();
 
     const nav = page.getByRole("navigation", { name: "Main" });

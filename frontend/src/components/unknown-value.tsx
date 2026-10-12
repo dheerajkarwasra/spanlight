@@ -12,11 +12,17 @@ const TONE_CLASSES: Record<UnknownTone, string> = {
 };
 
 interface UnknownValueProps {
-  /** Why the value is missing, e.g. "No price for this model". */
+  /**
+   * Why the value is missing, e.g. "No price for this model". A reason that already leads with
+   * its own clause ("Unknown: …", "Not measured: …") is read out as written.
+   */
   reason: string;
   tone?: UnknownTone;
   className?: string;
 }
+
+/** "Unknown: …", "Not measured: …": a short capitalised clause and a colon. */
+const LEADING_CLAUSE = /^[A-Z][a-z]*(?: [a-z]+){0,2}:/;
 
 /** The shared placeholder for unknown metrics: an em dash with an explanation. */
 export function UnknownValue({ reason, tone = "default", className }: UnknownValueProps) {
@@ -24,7 +30,7 @@ export function UnknownValue({ reason, tone = "default", className }: UnknownVal
     <Tooltip content={reason}>
       <span
         tabIndex={0}
-        aria-label={`Unknown: ${reason}`}
+        aria-label={LEADING_CLAUSE.test(reason) ? reason : `Unknown: ${reason}`}
         className={cn(
           "cursor-help rounded-sm underline decoration-dotted underline-offset-4",
           TONE_CLASSES[tone],

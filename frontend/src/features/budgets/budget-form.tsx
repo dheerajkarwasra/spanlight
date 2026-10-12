@@ -65,7 +65,7 @@ export function BudgetForm({ budget, onPendingChange, onSaved }: BudgetFormProps
     <form onSubmit={submit.onSubmit} noValidate className="grid gap-[22px]">
       <DialogHeading
         title={budget ? `Edit ${budget.name}` : "Create budget"}
-        description="Set a spend cap and choose what happens when it's reached."
+        description="Set a spend limit and choose what happens when it is passed."
         showClose={submit.pending ? "disabled" : true}
       />
       {submit.problem ? (

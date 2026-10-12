@@ -1,11 +1,11 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 
 import { Logo } from "@/components/logo";
 import { cn } from "@/lib/utils";
 
 import { OpenCriticalBadge } from "./nav-badge";
-import { NAV_ITEMS, type NavItem } from "./nav-items";
+import { NAV_GROUPS, type NavGroup, type NavItem } from "./nav-items";
 import { useProjectParams, useProjectQuery } from "./project-context";
 import { ProjectSwitcher } from "./project-switcher";
 import { isBlockedByTwoFactor } from "./two-factor-gate";
@@ -75,6 +75,44 @@ function LockedSettingsLink({ label, onNavigate }: { label: string; onNavigate?:
   );
 }
 
+interface NavGroupItemsProps {
+  group: NavGroup;
+  settingsLocked: boolean;
+  onNavigate: (() => void) | undefined;
+}
+
+/** One group of rail links. A labelled group nests its own list under an overline heading. */
+function NavGroupItems({ group, settingsLocked, onNavigate }: NavGroupItemsProps) {
+  const params = useProjectParams();
+  const headingId = useId();
+
+  const links = group.items.map(({ label, to, badge }) => (
+    <li key={to}>
+      {settingsLocked && to === SETTINGS_PATH ? (
+        <LockedSettingsLink label={label} onNavigate={onNavigate} />
+      ) : (
+        <Link to={to} params={params} {...RAIL_LINK} onClick={onNavigate}>
+          {railLabel(label, badge)}
+        </Link>
+      )}
+    </li>
+  ));
+
+  if (group.heading === null) {
+    return <>{links}</>;
+  }
+  return (
+    <li className="mt-3">
+      <p id={headingId} className="px-4 pb-1.5 text-overline text-rail-subtle-foreground uppercase">
+        {group.heading}
+      </p>
+      <ul aria-labelledby={headingId} className="flex flex-col gap-1">
+        {links}
+      </ul>
+    </li>
+  );
+}
+
 /**
  * The floating dark rail (Figma "App/Rail"): logo, project switcher, pill navigation with a
  * lime active state, the "Connect your app" tile and the account tile.
@@ -101,16 +139,13 @@ export function Sidebar({ onNavigate, headerAction, className }: SidebarProps) {
 
       <nav aria-label="Main">
         <ul className="flex flex-col gap-1">
-          {NAV_ITEMS.map(({ label, to, badge }) => (
-            <li key={to}>
-              {settingsLocked && to === SETTINGS_PATH ? (
-                <LockedSettingsLink label={label} onNavigate={onNavigate} />
-              ) : (
-                <Link to={to} params={params} {...RAIL_LINK} onClick={onNavigate}>
-                  {railLabel(label, badge)}
-                </Link>
-              )}
-            </li>
+          {NAV_GROUPS.filter((group) => group.items.length > 0).map((group, index) => (
+            <NavGroupItems
+              key={group.heading ?? index}
+              group={group}
+              settingsLocked={settingsLocked}
+              onNavigate={onNavigate}
+            />
           ))}
         </ul>
       </nav>

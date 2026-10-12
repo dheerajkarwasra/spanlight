@@ -19,6 +19,8 @@ interface FieldSelectProps {
   value: string;
   onChange: (value: string) => void;
   options: readonly FieldSelectOption[];
+  /** Shown while `value` is empty. */
+  placeholder?: string;
   /** Wired by `FormField`. */
   id?: string;
   "aria-invalid"?: boolean;
@@ -31,6 +33,7 @@ export function FieldSelect({
   value,
   onChange,
   options,
+  placeholder,
   id,
   "aria-invalid": ariaInvalid,
   "aria-describedby": ariaDescribedBy,
@@ -44,7 +47,7 @@ export function FieldSelect({
         aria-describedby={ariaDescribedBy}
         className="aria-invalid:border-[1.5px] aria-invalid:border-danger"
       >
-        <SelectValue />
+        <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
         {options.map((option) => (

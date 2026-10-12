@@ -3,3 +3,5 @@ node_modules
 playwright-report
 test-results
 package-lock.json
+# Byte-identical copy of the backend's shared template fixture (scripts/check-template-fixtures.sh).
+src/features/prompts/template-cases.json

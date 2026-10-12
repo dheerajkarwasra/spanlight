@@ -2,13 +2,14 @@ import { ErrorState } from "@/components/error-state";
 import { ReadOnlyNote } from "@/components/read-only-note";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ScoreConfigsCard } from "@/features/scores";
 import { useCurrentOrg, usePermission, useProjectQuery } from "@/features/shell";
 
 import { ProjectDangerZone } from "./project-danger-zone";
 import { ProjectSettingsForm } from "./project-settings-form";
 
 /**
- * General and Data settings, then the "Danger zone". Deleting a project needs `project:delete`
+ * General and Data settings, the project's score configs, then the "Danger zone". Deleting a project needs `project:delete`
  * (admins and owners), and the public demo's project can't be deleted, so neither sees the card.
  */
 export function ProjectSettingsPage() {
@@ -38,7 +39,9 @@ export function ProjectSettingsPage() {
   return (
     <div className="flex flex-col gap-5">
       {canEdit ? null : (
-        <ReadOnlyNote>Only admins and owners can change project settings.</ReadOnlyNote>
+        <ReadOnlyNote>
+          Only admins and owners can change the General and Data settings.
+        </ReadOnlyNote>
       )}
       {/* Keyed by project so switching projects starts a fresh form. */}
       <ProjectSettingsForm
@@ -46,6 +49,7 @@ export function ProjectSettingsPage() {
         project={projectQuery.data}
         canEdit={canEdit}
       />
+      <ScoreConfigsCard />
       {canDelete ? <ProjectDangerZone project={projectQuery.data} /> : null}
     </div>
   );

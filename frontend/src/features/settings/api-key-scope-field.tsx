@@ -14,9 +14,9 @@ interface ApiKeyScopeFieldProps {
 }
 
 /**
- * Figma "Scopes": exactly the two checkboxes the API supports today, `ingest:write` and
- * `traces:read`. At least one must stay checked; with none, the dialog says so and its Create
- * button is disabled.
+ * Figma "Scopes": one checkbox per scope the API supports (`ingest:write`, `traces:read`,
+ * `scores:write`, `prompts:read`). At least one must stay checked; with none, the dialog says so
+ * and its Create button is disabled.
  */
 export function ApiKeyScopeField({ selected, onChange }: ApiKeyScopeFieldProps) {
   const labelId = useId();

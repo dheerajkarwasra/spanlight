@@ -25,7 +25,7 @@ interface ExportSummaryProps {
  * traces match, read-only. The times are the viewer's local time, as in the trace list.
  */
 export function ExportSummary({ draft, problem }: ExportSummaryProps) {
-  const { filters, rangeLabel, rows } = draft;
+  const { filters, rangeLabel, rows, notApplied } = draft;
   const entries = exportFilterEntries(filters);
   const start = formatExportInstant(filters.from);
   const end = formatExportInstant(filters.to);
@@ -100,6 +100,12 @@ export function ExportSummary({ draft, problem }: ExportSummaryProps) {
           Uses the filters and time range from the trace list. Change them on the Traces page.
         </p>
       )}
+      {notApplied.length > 0 ? (
+        <p className="flex items-start gap-1.5 text-xs leading-[1.4] font-medium text-warning">
+          <CircleAlert aria-hidden className="mt-px size-3.5 shrink-0" />
+          {`Exports don’t apply ${notApplied.join(", ")} yet, so the file also includes the traces ${notApplied.length === 1 ? "that filter hides" : "those filters hide"}.`}
+        </p>
+      ) : null}
     </div>
   );
 }

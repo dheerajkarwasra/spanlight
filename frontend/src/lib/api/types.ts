@@ -25,6 +25,8 @@ export interface ProblemDetails {
   errors?: ProblemFieldError[];
   /** An RFC 9457 extension member of `409 ROUTE_VERSION_CONFLICT`. */
   current_version?: number;
+  /** An RFC 9457 extension member of `502 EVALUATOR_FAILED`: the run's error code. */
+  error?: string;
 }
 
 export type * from "./identity-types";

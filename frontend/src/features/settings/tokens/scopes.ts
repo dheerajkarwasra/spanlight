@@ -29,10 +29,7 @@ interface KeyScopeOption {
   description: string;
 }
 
-/**
- * API key scopes the UI offers. The server also accepts `scores:write` and `prompts:read`, which
- * have no route yet, so they are not listed. The order here is the order scopes are sent in.
- */
+/** API key scopes, as the key dialog offers them. The order here is the order scopes are sent in. */
 export const KEY_SCOPE_OPTIONS: readonly KeyScopeOption[] = [
   {
     value: "ingest:write",
@@ -43,6 +40,16 @@ export const KEY_SCOPE_OPTIONS: readonly KeyScopeOption[] = [
     value: "traces:read",
     title: "Read traces and metrics through the API",
     description: "For scripts and dashboards. Only this project's data.",
+  },
+  {
+    value: "scores:write",
+    title: "Send scores",
+    description: "For spanlight.score() and POST /v1/scores, e.g. user feedback.",
+  },
+  {
+    value: "prompts:read",
+    title: "Read prompts",
+    description: "For spanlight.prompts.get(): fetch a prompt version by label.",
   },
 ];
 

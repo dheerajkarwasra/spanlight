@@ -4,7 +4,7 @@
  * REPOSITORY_URL is the public repository. Every GitHub and docs link below is derived
  * from it, so moving the repository means changing this one line.
  */
-export const REPOSITORY_URL = "https://github.com/noob-master-cell/spanlight";
+export const REPOSITORY_URL = "https://github.com/dheerajkarwasra/spanlight";
 
 /** Branch that file links open on. */
 const DEFAULT_BRANCH = "main";

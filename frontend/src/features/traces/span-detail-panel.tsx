@@ -5,18 +5,20 @@ import { JsonViewer } from "@/components/json-viewer";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SpanScores } from "@/features/scores";
 import type { Span } from "@/lib/api";
-import { formatDuration, formatInteger, formatTimestamp } from "@/lib/format";
+import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import { payloadToClipboardText } from "./chat-messages";
-import { MetaField } from "./meta-field";
 import { PayloadView } from "./payload-view";
+import { PromptVersionRef } from "./prompt-version-ref";
 import { SpanKindBadge } from "./span-kind";
+import { SpanMetadata } from "./span-metadata";
 import { SpanStatusBadge } from "./status";
 import { TruncatedBadge } from "./truncated-badge";
 
-const SPAN_DETAIL_TABS = ["io", "metadata", "raw"] as const;
+const SPAN_DETAIL_TABS = ["io", "metadata", "raw", "scores"] as const;
 export type SpanDetailTab = (typeof SPAN_DETAIL_TABS)[number];
 
 function isSpanDetailTab(value: string): value is SpanDetailTab {
@@ -31,11 +33,19 @@ interface SpanDetailPanelProps {
   /** The open tab, kept by the page so it survives selecting another span. */
   tab: SpanDetailTab;
   onTabChange: (tab: SpanDetailTab) => void;
+  /** The trace the span belongs to, for its Scores tab. */
+  traceId: string;
   className?: string;
 }
 
-/** Figma "Span detail": header, then Input / Output, Metadata and Raw JSON tabs. */
-export function SpanDetailPanel({ span, tab, onTabChange, className }: SpanDetailPanelProps) {
+/** Figma "Span detail": header, then Input / Output, Metadata, Raw JSON and Scores tabs. */
+export function SpanDetailPanel({
+  span,
+  tab,
+  onTabChange,
+  traceId,
+  className,
+}: SpanDetailPanelProps) {
   return (
     <Card className={cn("flex min-w-0 flex-col gap-4 p-5 sm:p-6", className)}>
       <section aria-label={`Span ${span.name}`} className="flex min-w-0 flex-col gap-4">
@@ -59,6 +69,9 @@ export function SpanDetailPanel({ span, tab, onTabChange, className }: SpanDetai
             <TabsTrigger value="raw" className={TAB_TRIGGER}>
               Raw JSON
             </TabsTrigger>
+            <TabsTrigger value="scores" className={TAB_TRIGGER}>
+              Scores
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="io" className="flex flex-col gap-2.5">
             <PayloadView label="Input" value={span.input} spanTruncated={span.truncated} />
@@ -72,6 +85,9 @@ export function SpanDetailPanel({ span, tab, onTabChange, className }: SpanDetai
               <CopyButton value={payloadToClipboardText(span)} label="Copy span JSON" showLabel />
             </div>
             <JsonViewer value={span} defaultExpandDepth={1} className="rounded-input px-3 py-3.5" />
+          </TabsContent>
+          <TabsContent value="scores">
+            <SpanScores traceId={traceId} spanId={span.span_id} />
           </TabsContent>
         </Tabs>
       </section>
@@ -103,6 +119,7 @@ function SpanDetailHeader({ span }: { span: Span }) {
             </span>
           </>
         ) : null}
+        {span.prompt_version_id ? <PromptVersionRef versionId={span.prompt_version_id} /> : null}
       </div>
       {span.status === "error" ? (
         <div
@@ -116,76 +133,6 @@ function SpanDetailHeader({ span }: { span: Span }) {
         </div>
       ) : null}
     </header>
-  );
-}
-
-/** Figma "Panel / Metadata": timing and IDs, then the custom attributes as JSON. */
-function SpanMetadata({ span }: { span: Span }) {
-  const attributeCount = Object.keys(span.attributes).length;
-
-  return (
-    <div className="flex flex-col gap-5">
-      <dl className="flex flex-col">
-        <MetaField layout="inline" label="Started">
-          <span className="tabular">{formatTimestamp(span.started_at)}</span>
-        </MetaField>
-        <MetaField layout="inline" label="Ended">
-          <span className="tabular">{formatTimestamp(span.ended_at)}</span>
-        </MetaField>
-        <MetaField layout="inline" label="Duration">
-          <span className="tabular">{formatDuration(span.duration_ms)}</span>
-        </MetaField>
-        <MetaField
-          layout="inline"
-          label="Span ID"
-          mono
-          copyValue={span.span_id}
-          copyLabel="Copy span ID"
-        >
-          {span.span_id}
-        </MetaField>
-        {span.parent_span_id ? (
-          <MetaField
-            layout="inline"
-            label="Parent span ID"
-            mono
-            copyValue={span.parent_span_id}
-            copyLabel="Copy parent span ID"
-          >
-            {span.parent_span_id}
-          </MetaField>
-        ) : (
-          <MetaField layout="inline" label="Parent span ID">
-            <span className="text-muted-foreground">None (root span)</span>
-          </MetaField>
-        )}
-      </dl>
-
-      <section aria-label="Attributes" className="flex flex-col gap-2">
-        <div className="flex h-7 items-center gap-1.5">
-          <h3 className="text-sm font-medium text-foreground">Attributes</h3>
-          <span className="text-xs font-medium text-subtle-foreground tabular">
-            {formatInteger(attributeCount)}
-          </span>
-          {attributeCount > 0 ? (
-            <CopyButton
-              value={payloadToClipboardText(span.attributes)}
-              label="Copy attributes"
-              className="ml-auto size-7"
-            />
-          ) : null}
-        </div>
-        {attributeCount === 0 ? (
-          <p className="text-sm text-muted-foreground">No custom attributes on this span.</p>
-        ) : (
-          <JsonViewer
-            value={span.attributes}
-            defaultExpandDepth={3}
-            className="rounded-input px-3 py-3.5"
-          />
-        )}
-      </section>
-    </div>
   );
 }
 

@@ -18,10 +18,26 @@ export type Permission =
   | "gateway:write"
   | "credentials:manage"
   | "alerts:write"
-  | "insights:manage";
+  | "insights:manage"
+  | "scores:write"
+  | "annotations:write"
+  | "prompts:write"
+  | "datasets:write"
+  | "experiments:run"
+  | "evaluators:write";
 
 const VIEWER: Permission[] = ["org:read", "project:read"];
-const MEMBER: Permission[] = [...VIEWER, "key:create", "key:revoke_own", "export:create"];
+const MEMBER: Permission[] = [
+  ...VIEWER,
+  "key:create",
+  "key:revoke_own",
+  "export:create",
+  "scores:write",
+  "annotations:write",
+  "prompts:write",
+  "datasets:write",
+  "experiments:run",
+];
 const ADMIN: Permission[] = [
   ...MEMBER,
   "key:revoke_any",
@@ -33,6 +49,7 @@ const ADMIN: Permission[] = [
   "gateway:write",
   "alerts:write",
   "insights:manage",
+  "evaluators:write",
 ];
 const OWNER: Permission[] = [...ADMIN, "org:delete", "org:security", "credentials:manage"];
 
@@ -62,6 +79,15 @@ export const ROLE_LABELS: Record<Role, string> = {
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   owner: "Full access, including deleting the organization.",
   admin: "Manage projects, members, all API keys and the audit log.",
-  member: "View data and create or revoke their own API keys.",
+  member:
+    "Create their own API keys, score traces, review queues, and manage prompts, datasets, playground runs and experiments.",
   viewer: "Read-only access to traces and metrics.",
 };
+
+/**
+ * The one sentence for a write the caller's role does not allow, e.g. "Your role can't change
+ * prompts. Ask an admin or the owner for member access." Only for member-level writes.
+ */
+export function roleBlockedCopy(action: string): string {
+  return `Your role can't ${action}. Ask an admin or the owner for member access.`;
+}

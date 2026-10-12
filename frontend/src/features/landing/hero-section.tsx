@@ -37,7 +37,7 @@ export function HeroSection({ onTryDemo, demoPending }: HeroSectionProps) {
           className="flex animate-fade-up flex-col items-center font-extrabold text-foreground [animation-delay:60ms]"
         >
           <span className="text-[42px] leading-[1.04] tracking-[-0.04em] md:text-[64px] lg:text-[88px]">
-            See every{" "}
+            See each{" "}
             <span className="mx-auto mt-1 block w-fit rounded-[16px] bg-lime px-3.5 pb-0.5 text-lime-foreground md:mt-0 md:inline-block md:rounded-[20px] md:px-4 lg:rounded-[26px] lg:px-[22px] lg:pb-1">
               LLM call
             </span>

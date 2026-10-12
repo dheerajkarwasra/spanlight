@@ -68,8 +68,8 @@ export function BudgetsPage() {
         />
         <p className="flex items-center gap-2 px-1 pt-2 text-xs font-medium text-muted-foreground">
           <Info aria-hidden className="size-3.5 shrink-0" />
-          Blocking budgets stop gateway calls once they are spent. Traces sent with the SDK are
-          never blocked.
+          Blocking budgets refuse gateway calls once an evaluation (every minute) finds them spent.
+          Traces sent with the SDK are never blocked.
         </p>
       </SectionCard>
     </div>
@@ -108,7 +108,7 @@ function BudgetsContent({ query, canWrite, readOnlyId, createButton }: BudgetsCo
       <EmptyState
         icon={Wallet}
         title="No budgets"
-        description="Cap spend per project, gateway key, end user or model. Blocking budgets stop gateway calls once they are spent."
+        description="Set spend limits per project, gateway key, end user or model. Blocking budgets refuse gateway calls once an evaluation (every minute) finds them spent."
         action={canWrite ? createButton : undefined}
         className="rounded-tile bg-surface-muted"
       />

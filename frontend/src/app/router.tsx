@@ -16,7 +16,10 @@ import { authSearchSchema, safeNextPath } from "@/features/auth/search";
 import { SignupPage } from "@/features/auth/signup-page";
 import { TwoFactorPage } from "@/features/auth/two-factor-page";
 import { doctorSearchSchema } from "@/features/doctor/search";
+import { compareSearchSchema, experimentSearchSchema } from "@/features/experiments/search";
 import { onboardingSearchSchema } from "@/features/onboarding/search";
+import { playgroundSearchSchema } from "@/features/playground/search";
+import { promptDetailSearchSchema, promptsSearchSchema } from "@/features/prompts/search";
 import { releasesSearchSchema } from "@/features/releases/search";
 import { AppShell } from "@/features/shell/app-shell";
 import { resolveHomeDestination } from "@/features/shell/home-redirect";
@@ -363,6 +366,170 @@ const gatewayLabRoute = createRoute({
   component: lazyRouteComponent(() => import("@/features/gateway/lab/lab-page"), "GatewayLabPage"),
 });
 
+const promptsRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/prompts",
+  validateSearch: promptsSearchSchema,
+  head: () => pageTitle("Prompts"),
+  component: lazyRouteComponent(() => import("@/features/prompts/prompts-page"), "PromptsPage"),
+});
+
+/** `$name` is the prompt name with its slashes, escaped like the API path (`toPathPromptName`). */
+const promptDetailRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/prompts/$name",
+  validateSearch: promptDetailSearchSchema,
+  head: () => pageTitle("Prompt"),
+  component: lazyRouteComponent(
+    () => import("@/features/prompts/prompt-detail-page"),
+    "PromptDetailPage",
+  ),
+});
+
+const playgroundRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/playground",
+  validateSearch: playgroundSearchSchema,
+  head: () => pageTitle("Playground"),
+  component: lazyRouteComponent(
+    () => import("@/features/playground/playground-page"),
+    "PlaygroundPage",
+  ),
+});
+
+const datasetsRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/datasets",
+  head: () => pageTitle("Datasets"),
+  component: lazyRouteComponent(() => import("@/features/datasets/datasets-page"), "DatasetsPage"),
+});
+
+const datasetDetailRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/datasets/$datasetId",
+  head: () => pageTitle("Dataset"),
+  component: lazyRouteComponent(
+    () => import("@/features/datasets/dataset-detail-page"),
+    "DatasetDetailPage",
+  ),
+});
+
+const queuesRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/queues",
+  head: () => pageTitle("Review"),
+  component: lazyRouteComponent(() => import("@/features/annotations/queues-page"), "QueuesPage"),
+});
+
+const queueDetailRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/queues/$queueId",
+  head: () => pageTitle("Review queue"),
+  component: lazyRouteComponent(
+    () => import("@/features/annotations/queue-detail-page"),
+    "QueueDetailPage",
+  ),
+});
+
+/** Work mode: the app shell drops its rail and top bar on this route (see `AppShell`). */
+const annotateRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/annotate/$queueId",
+  head: () => pageTitle("Reviewing"),
+  component: lazyRouteComponent(
+    () => import("@/features/annotations/annotate-page"),
+    "AnnotatePage",
+  ),
+});
+
+const experimentsRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/experiments",
+  head: () => pageTitle("Experiments"),
+  component: lazyRouteComponent(
+    () => import("@/features/experiments/experiments-page"),
+    "ExperimentsPage",
+  ),
+});
+
+const newExperimentRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/experiments/new",
+  head: () => pageTitle("New experiment"),
+  component: lazyRouteComponent(
+    () => import("@/features/experiments/new-experiment-page"),
+    "NewExperimentPage",
+  ),
+});
+
+/** `?a=&b=` are the runs ticked for comparison. */
+const experimentDetailRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/experiments/$experimentId",
+  validateSearch: experimentSearchSchema,
+  head: () => pageTitle("Experiment"),
+  component: lazyRouteComponent(
+    () => import("@/features/experiments/experiment-detail-page"),
+    "ExperimentDetailPage",
+  ),
+});
+
+/** `?a=` baseline run, `?b=` candidate run, `?score=` the score the items sort by. */
+const experimentCompareRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/experiments/$experimentId/compare",
+  validateSearch: compareSearchSchema,
+  head: () => pageTitle("Compare runs"),
+  component: lazyRouteComponent(() => import("@/features/experiments/compare-page"), "ComparePage"),
+});
+
+const experimentRunRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/experiments/$experimentId/runs/$runId",
+  head: () => pageTitle("Experiment run"),
+  component: lazyRouteComponent(() => import("@/features/experiments/run-detail"), "RunDetailPage"),
+});
+
+const evaluatorsRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/evaluators",
+  head: () => pageTitle("Evaluators"),
+  component: lazyRouteComponent(
+    () => import("@/features/evaluators/evaluators-page"),
+    "EvaluatorsPage",
+  ),
+});
+
+const newEvaluatorRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/evaluators/new",
+  head: () => pageTitle("New evaluator"),
+  component: lazyRouteComponent(
+    () => import("@/features/evaluators/evaluator-form-page"),
+    "NewEvaluatorPage",
+  ),
+});
+
+const evaluatorDetailRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/evaluators/$evaluatorId",
+  head: () => pageTitle("Evaluator"),
+  component: lazyRouteComponent(
+    () => import("@/features/evaluators/evaluator-detail-page"),
+    "EvaluatorDetailPage",
+  ),
+});
+
+const editEvaluatorRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/evaluators/$evaluatorId/edit",
+  head: () => pageTitle("Edit evaluator"),
+  component: lazyRouteComponent(
+    () => import("@/features/evaluators/evaluator-form-page"),
+    "EditEvaluatorPage",
+  ),
+});
+
 const alertsRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/alerts",
@@ -521,6 +688,23 @@ const routeTree = rootRoute.addChildren([
       gatewayRouteEditorRoute,
       gatewayCredentialsRoute,
       gatewayLabRoute,
+      promptsRoute,
+      promptDetailRoute,
+      playgroundRoute,
+      datasetsRoute,
+      datasetDetailRoute,
+      queuesRoute,
+      queueDetailRoute,
+      annotateRoute,
+      evaluatorsRoute,
+      newEvaluatorRoute,
+      evaluatorDetailRoute,
+      editEvaluatorRoute,
+      experimentsRoute,
+      newExperimentRoute,
+      experimentDetailRoute,
+      experimentCompareRoute,
+      experimentRunRoute,
       alertsRoute,
       alertChannelsRoute,
       alertRuleRoute,

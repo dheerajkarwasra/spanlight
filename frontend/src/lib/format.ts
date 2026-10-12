@@ -174,3 +174,8 @@ export function pluralNoun(count: number, singular: string, plural = `${singular
 export function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return `${formatInteger(count) ?? String(count)} ${pluralNoun(count, singular, plural)}`;
 }
+
+/** "support/answer v3": a prompt version as every screen names it. */
+export function formatPromptVersion(name: string, version: number): string {
+  return `${name} v${String(version)}`;
+}

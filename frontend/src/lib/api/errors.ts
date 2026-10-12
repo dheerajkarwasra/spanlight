@@ -10,6 +10,8 @@ export class ApiError extends Error {
   readonly fieldErrors: ProblemFieldError[];
   /** `409 ROUTE_VERSION_CONFLICT` only: the version the route is at now. Null on every other error. */
   readonly currentVersion: number | null;
+  /** `502 EVALUATOR_FAILED` only: why the run failed, e.g. `verdict_unparseable`. Null otherwise. */
+  readonly runError: string | null;
 
   constructor(status: number, problem: ProblemDetails) {
     const title = problem.title ?? defaultTitle(status);
@@ -22,6 +24,7 @@ export class ApiError extends Error {
     this.requestId = problem.request_id ?? null;
     this.fieldErrors = problem.errors ?? [];
     this.currentVersion = problem.current_version ?? null;
+    this.runError = typeof problem.error === "string" ? problem.error : null;
   }
 
   get isNotFound(): boolean {

@@ -8,7 +8,7 @@ import { ValueOrUnknown } from "@/components/unknown-value";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectParams } from "@/features/shell/project-context";
-import { useTraceQuery } from "@/features/traces/trace-queries";
+import { useTraceQuery } from "@/features/traces";
 import { errorMessage, type TraceDetail, type TraceSummary } from "@/lib/api";
 import { formatDuration, formatTimestamp, shortId } from "@/lib/format";
 

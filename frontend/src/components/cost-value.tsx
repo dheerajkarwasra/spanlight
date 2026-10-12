@@ -7,6 +7,9 @@ import { cn } from "@/lib/utils";
 
 export const NO_PRICE_REASON = "No price for this model";
 export const LOWER_BOUND_REASON = "Some spans have no price; total is a lower bound";
+/** A cost of provider calls that is truly unknown: no price for the model, or no usage. */
+export const UNPRICED_OR_NO_USAGE_REASON =
+  "Unknown: this model has no price or the provider returned no usage.";
 
 interface CostValueProps {
   cost: string | number | null;

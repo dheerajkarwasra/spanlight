@@ -107,17 +107,6 @@ export function TagBadges({ tags, max = 2 }: { tags: string[]; max?: number }) {
   );
 }
 
-export function EnvironmentBadge({ environment }: { environment: string | null }) {
-  if (environment === null || environment === "") {
-    return <span className="text-muted-foreground">—</span>;
-  }
-  return (
-    <Badge title={environment} className="max-w-full min-w-0">
-      <span className="truncate">{environment}</span>
-    </Badge>
-  );
-}
-
 /** Exact below 10,000, compact above, so the column stays narrow. */
 function formatTokenCount(value: number): string {
   const formatted = value < 10_000 ? formatInteger(value) : formatCompact(value);

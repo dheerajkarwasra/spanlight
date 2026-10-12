@@ -13,6 +13,16 @@ export const traceFiltersSchema = projectSearchSchema.extend({
   user: z.string().optional().catch(undefined),
   session: z.string().optional().catch(undefined),
   q: z.string().optional().catch(undefined),
+  /** Traces with a score of this name; narrow it with `score_min`/`score_max` or `score_value`. */
+  score: z.string().optional().catch(undefined),
+  score_min: z.number().optional().catch(undefined),
+  score_max: z.number().optional().catch(undefined),
+  /** A categorical score's value. */
+  score_value: z.string().optional().catch(undefined),
+  /** Any score at all. */
+  has_scores: z.boolean().optional().catch(undefined),
+  /** The prompt version id (a UUID) the trace was produced by. */
+  prompt_version: z.string().optional().catch(undefined),
 });
 
 export type TraceFilters = z.infer<typeof traceFiltersSchema>;

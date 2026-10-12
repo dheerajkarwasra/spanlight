@@ -2,7 +2,7 @@
  * Pulls the human-readable exchange out of one trace ("turn") for the session
  * conversation view. Pure functions only — no React here.
  */
-import { messageText, parseChatPayload, type ChatMessage } from "@/features/traces/chat-messages";
+import { messageText, parseChatPayload, type ChatMessage } from "@/features/traces";
 import type { Span } from "@/lib/api";
 
 export interface TurnConversation {

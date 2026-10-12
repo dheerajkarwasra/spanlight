@@ -40,6 +40,14 @@ export interface TraceListQuery extends TimeWindow {
   session_id?: string | undefined;
   tag?: string | undefined;
   q?: string | undefined;
+  prompt_version_id?: string | undefined;
+  /** Traces with a score of this name; narrow it with the range or value below. */
+  score_name?: string | undefined;
+  score_min?: number | undefined;
+  score_max?: number | undefined;
+  /** A categorical score's value. */
+  score_value?: string | undefined;
+  has_scores?: boolean | undefined;
   limit?: number | undefined;
   cursor?: string | null | undefined;
 }

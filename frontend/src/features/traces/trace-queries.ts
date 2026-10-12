@@ -13,6 +13,9 @@ export function toTraceListQuery(
   window: { from: string; to: string },
   environment: string | undefined,
 ): Omit<TraceListQuery, "cursor"> {
+  // A range or value needs its score name (the API refuses it alone), so a URL without one sends
+  // neither.
+  const named = search.score !== undefined && search.score !== "";
   return {
     from: window.from,
     to: window.to,
@@ -25,6 +28,12 @@ export function toTraceListQuery(
     session_id: search.session,
     tag: search.tag,
     q: search.q,
+    score_name: search.score,
+    score_min: named ? search.score_min : undefined,
+    score_max: named ? search.score_max : undefined,
+    score_value: named ? search.score_value : undefined,
+    has_scores: search.has_scores,
+    prompt_version_id: search.prompt_version,
     limit: TRACE_PAGE_SIZE,
   };
 }

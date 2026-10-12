@@ -19,40 +19,14 @@ import { isApiError, isTwoFactorRequired } from "@/lib/api";
 import { writeLastProject } from "@/lib/last-project";
 
 import { CommandPalette } from "./command-palette";
+import { FocusShell } from "./focus-shell";
 import { useProjectParams, useProjectQuery } from "./project-context";
 import { Sidebar } from "./sidebar";
-import {
-  DEFAULT_TIME_RANGE_OPTIONS,
-  GATEWAY_TIME_RANGE_OPTIONS,
-  type TimeRangeOptions,
-  USERS_TIME_RANGE_OPTIONS,
-} from "./time-range-options";
 import { MobileAppBar, MobileDataFilters, Topbar } from "./topbar";
 import { TwoFactorRequired } from "./two-factor-required";
 import { useOnAccountSettingsPath, useOnSecurityPath, useTwoFactorGate } from "./two-factor-gate";
+import { useDataFilters } from "./use-data-filters";
 import { useKeyboardShortcuts } from "./use-keyboard-shortcuts";
-
-/**
- * Pages that show time-windowed data get the range and environment controls. The gateway overview
- * (the exact `/gateway` route, not Keys, Routes, Credentials or Lab) offers only the windows its
- * endpoint accepts; the end-user pages get the range without the environment filter.
- */
-function useDataFilters(): TimeRangeOptions | null {
-  const matchRoute = useMatchRoute();
-  if (matchRoute({ to: "/$orgId/$projectId/gateway", fuzzy: false })) {
-    return GATEWAY_TIME_RANGE_OPTIONS;
-  }
-  // Fuzzy, so the user detail page (`/users/$userId`) gets the same control.
-  if (matchRoute({ to: "/$orgId/$projectId/users", fuzzy: true })) {
-    return USERS_TIME_RANGE_OPTIONS;
-  }
-  const windowed =
-    matchRoute({ to: "/$orgId/$projectId/overview" }) ||
-    matchRoute({ to: "/$orgId/$projectId/traces" }) ||
-    matchRoute({ to: "/$orgId/$projectId/sessions" }) ||
-    matchRoute({ to: "/$orgId/$projectId/releases" });
-  return windowed ? DEFAULT_TIME_RANGE_OPTIONS : null;
-}
 
 /**
  * The signed-in layout.
@@ -68,6 +42,15 @@ function useDataFilters(): TimeRangeOptions | null {
  * spacing and a 1440px max width. Pages should not add their own outer padding.
  */
 export function AppShell() {
+  const matchRoute = useMatchRoute();
+  // Review work mode is a focus screen: the page draws its own frame, without rail or top bar.
+  if (matchRoute({ to: "/$orgId/$projectId/annotate/$queueId" })) {
+    return <FocusShell />;
+  }
+  return <ChromeShell />;
+}
+
+function ChromeShell() {
   const params = useProjectParams();
   const projectQuery = useProjectQuery();
   const [paletteOpen, setPaletteOpen] = useState(false);

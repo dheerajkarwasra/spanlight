@@ -14,6 +14,11 @@ export interface ExportDraft {
   rangeLabel: string;
   /** How many traces match, or null when that is not known. */
   rows: number | null;
+  /**
+   * List filters an export cannot apply yet (the score filter, "has scores", the prompt
+   * version), as their chips read: the file includes the traces they hide.
+   */
+  notApplied: string[];
 }
 
 /**
@@ -22,7 +27,7 @@ export interface ExportDraft {
  * says nothing rather than a wrong number (the same rule as the list's own footer).
  */
 export function useExportDraft(): ExportDraft {
-  const { search, hasFacetFilters } = useTraceFilters();
+  const { search, hasFacetFilters, activeFilters } = useTraceFilters();
   const { range, environment } = useProjectFilters();
   const countQuery = useTraceCountQuery();
 
@@ -30,5 +35,11 @@ export function useExportDraft(): ExportDraft {
     filters: toExportFilters(range, environment, search),
     rangeLabel: RANGE_LABELS[range.value],
     rows: !hasFacetFilters && countQuery.data !== undefined ? countQuery.data : null,
+    notApplied: [
+      ...activeFilters
+        .filter((filter) => filter.key === "score" || filter.key === "has_scores")
+        .map((filter) => `${filter.label.toLowerCase()}: ${filter.value}`),
+      ...(search.prompt_version ? ["prompt version"] : []),
+    ],
   };
 }

@@ -1,7 +1,13 @@
 import {
   BellRing,
+  ClipboardCheck,
+  Database,
+  FileText,
+  FlaskConical,
+  FlaskRound,
   GitCompareArrows,
   LayoutDashboard,
+  ListChecks,
   ListTree,
   MessagesSquare,
   Settings,
@@ -24,6 +30,12 @@ export interface NavItem {
     | "/$orgId/$projectId/gateway"
     | "/$orgId/$projectId/alerts"
     | "/$orgId/$projectId/budgets"
+    | "/$orgId/$projectId/prompts"
+    | "/$orgId/$projectId/playground"
+    | "/$orgId/$projectId/datasets"
+    | "/$orgId/$projectId/queues"
+    | "/$orgId/$projectId/evaluators"
+    | "/$orgId/$projectId/experiments"
     | "/$orgId/$projectId/settings";
   icon: LucideIcon;
   shortcut: string;
@@ -31,26 +43,81 @@ export interface NavItem {
   badge?: "open-critical";
 }
 
-export const NAV_ITEMS: NavItem[] = [
-  { label: "Overview", to: "/$orgId/$projectId/overview", icon: LayoutDashboard, shortcut: "G O" },
-  { label: "Traces", to: "/$orgId/$projectId/traces", icon: ListTree, shortcut: "G T" },
-  { label: "Sessions", to: "/$orgId/$projectId/sessions", icon: MessagesSquare, shortcut: "G S" },
+export interface NavGroup {
+  /** Shown above the group in the rail; null for the plain, unlabelled run of pages. */
+  heading: string | null;
+  items: NavItem[];
+}
+
+/** The Improve pages: prompts, playground, datasets, review queues, evaluators, experiments. */
+const IMPROVE_ITEMS: NavItem[] = [
+  { label: "Prompts", to: "/$orgId/$projectId/prompts", icon: FileText, shortcut: "G P" },
   {
-    label: "Doctor",
-    to: "/$orgId/$projectId/doctor",
-    icon: Stethoscope,
-    shortcut: "G D",
-    badge: "open-critical",
+    label: "Playground",
+    to: "/$orgId/$projectId/playground",
+    icon: FlaskConical,
+    shortcut: "G L",
+  },
+  { label: "Datasets", to: "/$orgId/$projectId/datasets", icon: Database, shortcut: "G N" },
+  { label: "Review", to: "/$orgId/$projectId/queues", icon: ClipboardCheck, shortcut: "G Q" },
+  {
+    label: "Evaluators",
+    to: "/$orgId/$projectId/evaluators",
+    icon: ListChecks,
+    shortcut: "G E",
   },
   {
-    label: "Releases",
-    to: "/$orgId/$projectId/releases",
-    icon: GitCompareArrows,
-    shortcut: "G R",
+    label: "Experiments",
+    to: "/$orgId/$projectId/experiments",
+    icon: FlaskRound,
+    shortcut: "G X",
   },
-  { label: "Users", to: "/$orgId/$projectId/users", icon: Users, shortcut: "G U" },
-  { label: "Gateway", to: "/$orgId/$projectId/gateway", icon: Waypoints, shortcut: "G G" },
-  { label: "Alerts", to: "/$orgId/$projectId/alerts", icon: BellRing, shortcut: "G A" },
-  { label: "Budgets", to: "/$orgId/$projectId/budgets", icon: Wallet, shortcut: "G B" },
-  { label: "Settings", to: "/$orgId/$projectId/settings", icon: Settings, shortcut: "G ," },
 ];
+
+export const NAV_GROUPS: NavGroup[] = [
+  {
+    heading: null,
+    items: [
+      {
+        label: "Overview",
+        to: "/$orgId/$projectId/overview",
+        icon: LayoutDashboard,
+        shortcut: "G O",
+      },
+      { label: "Traces", to: "/$orgId/$projectId/traces", icon: ListTree, shortcut: "G T" },
+      {
+        label: "Sessions",
+        to: "/$orgId/$projectId/sessions",
+        icon: MessagesSquare,
+        shortcut: "G S",
+      },
+      {
+        label: "Doctor",
+        to: "/$orgId/$projectId/doctor",
+        icon: Stethoscope,
+        shortcut: "G D",
+        badge: "open-critical",
+      },
+      {
+        label: "Releases",
+        to: "/$orgId/$projectId/releases",
+        icon: GitCompareArrows,
+        shortcut: "G R",
+      },
+      { label: "Users", to: "/$orgId/$projectId/users", icon: Users, shortcut: "G U" },
+    ],
+  },
+  { heading: "Improve", items: IMPROVE_ITEMS },
+  {
+    heading: null,
+    items: [
+      { label: "Gateway", to: "/$orgId/$projectId/gateway", icon: Waypoints, shortcut: "G G" },
+      { label: "Alerts", to: "/$orgId/$projectId/alerts", icon: BellRing, shortcut: "G A" },
+      { label: "Budgets", to: "/$orgId/$projectId/budgets", icon: Wallet, shortcut: "G B" },
+      { label: "Settings", to: "/$orgId/$projectId/settings", icon: Settings, shortcut: "G ," },
+    ],
+  },
+];
+
+/** Every page in rail order, groups flattened: the command palette and the shortcuts read this. */
+export const NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap((group) => group.items);

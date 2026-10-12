@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ScoresPanel } from "@/features/scores";
 import { useProjectParams } from "@/features/shell/project-context";
 import { isApiError, type TraceDetail } from "@/lib/api";
 
@@ -122,6 +123,7 @@ function TraceBody({ trace }: { trace: TraceDetail }) {
             onSelect={selectSpan}
           />
           {selectedSpan ? <SpanUsageCard span={selectedSpan} /> : null}
+          <ScoresPanel traceId={trace.trace_id} />
         </>
       }
       right={
@@ -131,6 +133,7 @@ function TraceBody({ trace }: { trace: TraceDetail }) {
             span={selectedSpan}
             tab={tab}
             onTabChange={setTab}
+            traceId={trace.trace_id}
             className={DETAIL_VIEWPORT_HEIGHT}
           />
         ) : null

@@ -46,7 +46,7 @@ export function FeaturesSection() {
         />
         <FeatureTile
           overline="Cost"
-          title="Cost you can trust"
+          title="Cost you can check"
           description={{
             mobile:
               "Per-call cost from a versioned price table. Unknown prices show as —, never $0.",
@@ -68,9 +68,9 @@ export function FeaturesSection() {
           title="Drop-in Python SDK"
           description={{
             mobile:
-              "Three lines to trace OpenAI and Anthropic clients. Batched in the background, never blocking your app.",
+              "Three lines to trace OpenAI and Anthropic clients. Spans are batched in the background; SDK errors are swallowed.",
             desktop:
-              "Three lines to trace OpenAI and Anthropic clients. Spans are batched in the background, so tracing never blocks or breaks your app.",
+              "Three lines to trace OpenAI and Anthropic clients. Spans are batched in the background, so tracing never waits on the network, and SDK failures are logged and swallowed.",
           }}
           illustration={<SdkIllustration />}
           className="xl:col-span-5 xl:min-h-[510px]"
@@ -88,9 +88,9 @@ export function FeaturesSection() {
           title="Private by design"
           description={{
             mobile:
-              "Projects are isolated by Postgres row-level security. Secrets are redacted on ingest; payload capture can be switched off.",
+              "Trace data is isolated by Postgres row-level security. Secrets are redacted on ingest; payload capture can be switched off.",
             desktop:
-              "Every project is isolated by Postgres row-level security. Secrets are redacted on ingest, and payload capture can be switched off per project.",
+              "Trace data is isolated by Postgres row-level security. Secrets are redacted on ingest, and payload capture can be switched off per project.",
           }}
           illustration={<PrivacyIllustration />}
           className="md:col-span-2 xl:col-span-12 xl:min-h-[261px]"

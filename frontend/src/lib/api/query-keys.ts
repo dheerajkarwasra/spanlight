@@ -1,4 +1,8 @@
 import type { AlertEventQuery, AlertRulePreviewInput } from "./alerts-types";
+import type { QueueItemListQuery } from "./annotations";
+import type { DatasetListQuery, ItemListQuery } from "./datasets";
+import type { EvaluatorRunListQuery } from "./evaluators";
+import type { PromptListQuery } from "./prompts";
 import type { AuditFilters } from "./orgs";
 import type { MetricsQuery, SessionListQuery, TimeWindow, TraceListQuery } from "./projects";
 import type {
@@ -50,6 +54,10 @@ export const queryKeys = {
     const all = ["project", projectId] as const;
     const gateway = [...all, "gateway"] as const;
     const doctor = [...all, "doctor"] as const;
+    const prompts = [...all, "prompts"] as const;
+    const datasets = [...all, "datasets"] as const;
+    const annotations = [...all, "annotation-queues"] as const;
+    const evaluators = [...all, "evaluators"] as const;
     return {
       all,
       detail: [...all, "detail"] as const,
@@ -95,6 +103,67 @@ export const queryKeys = {
         route: (routeId: string) => [...gateway, "route", routeId] as const,
         versions: (routeId: string) => [...gateway, "route", routeId, "versions"] as const,
         faultProfiles: [...gateway, "fault-profiles"] as const,
+      },
+      prompts: {
+        /** Every prompt query of the project: invalidate with this. */
+        all: prompts,
+        list: (query: Omit<PromptListQuery, "cursor">) => [...prompts, "list", query] as const,
+        /** One prompt with its labels; `name` is the real name, slashes included. */
+        detail: (name: string) => [...prompts, "prompt", name] as const,
+        versions: (name: string) => [...prompts, "prompt", name, "versions"] as const,
+        version: (name: string, version: number) =>
+          [...prompts, "prompt", name, "version", version] as const,
+        usage: (name: string, version: number) =>
+          [...prompts, "prompt", name, "version", version, "usage"] as const,
+        /** The plain first page the pickers read; the limit rides in the key. */
+        picker: (limit: number) => [...prompts, "picker", limit] as const,
+        /**
+         * A prompt's versions as one plain page, for pickers. Under `versions(name)` so a new
+         * version refreshes it, but never the same entry as the paged list of the prompt screen.
+         */
+        versionsPicker: (name: string, limit: number) =>
+          [...prompts, "prompt", name, "versions", "picker", limit] as const,
+        /** One version looked up by its id (`/prompt-versions/{id}`). */
+        versionById: (versionId: string) => [...prompts, "version-by-id", versionId] as const,
+      },
+      scoreConfigs: [...all, "score-configs"] as const,
+      /** The scores of one trace. */
+      traceScores: (traceId: string) => [...all, "trace", traceId, "scores"] as const,
+      datasets: {
+        all: datasets,
+        list: (query: Omit<DatasetListQuery, "cursor">) => [...datasets, "list", query] as const,
+        detail: (datasetId: string) => [...datasets, "dataset", datasetId] as const,
+        items: (datasetId: string, query: Omit<ItemListQuery, "cursor"> = {}) =>
+          [...datasets, "dataset", datasetId, "items", query] as const,
+      },
+      annotations: {
+        all: annotations,
+        list: [...annotations, "list"] as const,
+        detail: (queueId: string) => [...annotations, "queue", queueId] as const,
+        items: (queueId: string, query: Omit<QueueItemListQuery, "cursor"> = {}) =>
+          [...annotations, "queue", queueId, "items", query] as const,
+      },
+      evaluators: {
+        all: evaluators,
+        list: [...evaluators, "list"] as const,
+        detail: (evaluatorId: string) => [...evaluators, "evaluator", evaluatorId] as const,
+        runs: (evaluatorId: string, query: Omit<EvaluatorRunListQuery, "cursor"> = {}) =>
+          [...evaluators, "evaluator", evaluatorId, "runs", query] as const,
+        budget: (evaluatorId: string) =>
+          [...evaluators, "evaluator", evaluatorId, "budget"] as const,
+      },
+      experiments: {
+        /** Every experiment query of the project: invalidate with this. */
+        all: [...all, "experiments"] as const,
+        list: [...all, "experiments", "list"] as const,
+        detail: (experimentId: string) => [...all, "experiments", experimentId] as const,
+        runs: (experimentId: string) => [...all, "experiments", experimentId, "runs"] as const,
+        run: (experimentId: string, runId: string) =>
+          [...all, "experiments", experimentId, "run", runId] as const,
+        items: (experimentId: string, runId: string) =>
+          [...all, "experiments", experimentId, "run", runId, "items"] as const,
+        compare: (experimentId: string, runA: string, runB: string) =>
+          [...all, "experiments", experimentId, "compare", runA, runB] as const,
       },
     };
   },
