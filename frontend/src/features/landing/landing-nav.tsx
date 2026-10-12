@@ -3,6 +3,7 @@ import { Menu } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { Logo } from "@/components/logo";
+import { GithubMark } from "@/features/auth";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -12,7 +13,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 
-import { NAV_LINKS } from "./links";
+import { EXTERNAL_LINKS, NAV_LINKS } from "./links";
 
 interface LandingNavProps {
   onTryDemo: () => void;
@@ -20,7 +21,7 @@ interface LandingNavProps {
 }
 
 /**
- * Floating pill navigation (Figma "Nav bar"): logo, section links and the sign-in / demo
+ * Floating pill navigation (Figma "Nav bar"): logo, section links, GitHub and the sign-in / demo
  * actions on desktop; logo and a menu button that opens a sheet on smaller screens.
  */
 export function LandingNav({ onTryDemo, demoPending }: LandingNavProps) {
@@ -34,12 +35,12 @@ export function LandingNav({ onTryDemo, demoPending }: LandingNavProps) {
         </div>
 
         <nav aria-label="Main" className="hidden lg:block">
-          <ul className="flex items-center gap-9">
+          <ul className="flex items-center gap-6 xl:gap-9">
             {NAV_LINKS.map((link) => (
               <li key={link.label}>
                 <a
                   href={link.href}
-                  className="rounded-sm text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  className="rounded-sm text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground"
                 >
                   {link.label}
                 </a>
@@ -49,6 +50,11 @@ export function LandingNav({ onTryDemo, demoPending }: LandingNavProps) {
         </nav>
 
         <div className="hidden flex-1 items-center justify-end gap-1.5 lg:flex">
+          <Button asChild variant="ghost" size="icon">
+            <a href={EXTERNAL_LINKS.github} aria-label="Spanlight on GitHub">
+              <GithubMark className="size-[18px]" />
+            </a>
+          </Button>
           <Button asChild variant="ghost">
             <Link to="/login">Sign in</Link>
           </Button>
@@ -115,6 +121,15 @@ function MobileMenu({ onTryDemo, demoPending }: LandingNavProps) {
                 </a>
               </li>
             ))}
+            <li>
+              <a
+                href={EXTERNAL_LINKS.github}
+                className="flex h-12 items-center gap-2.5 rounded-lg px-3 text-lg font-semibold text-foreground transition-colors hover:bg-surface-hover"
+              >
+                <GithubMark className="size-5" />
+                GitHub
+              </a>
+            </li>
           </ul>
         </nav>
 

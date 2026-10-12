@@ -47,9 +47,9 @@ export function HeroSection({ onTryDemo, demoPending }: HeroSectionProps) {
           </span>
         </h1>
 
-        <p className="max-w-[340px] animate-fade-up text-lg text-muted-foreground [animation-delay:120ms] md:max-w-[700px] lg:text-[19px] lg:leading-[1.55]">
-          Trace prompts, completions, latency, tokens and cost across OpenAI, Anthropic and any
-          OpenTelemetry app. Self-host on Postgres in minutes.
+        <p className="max-w-[340px] animate-fade-up text-lg text-muted-foreground [animation-delay:120ms] md:max-w-[760px] lg:text-[19px] lg:leading-[1.55]">
+          Trace every LLM call, let the Doctor find what’s wrong, version prompts, score answers,
+          fail CI when quality drops and cap spend at the gateway. Open source, on one Postgres.
         </p>
 
         <div className="flex w-full animate-fade-up flex-col items-center gap-[22px] pt-1.5 [animation-delay:180ms] lg:gap-5 lg:pt-3">

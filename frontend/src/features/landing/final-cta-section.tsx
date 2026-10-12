@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 
-import { EXTERNAL_LINKS } from "./links";
+import { DOCS_LINKS } from "./links";
 import { MeshBlob } from "./mesh-blob";
 
 interface FinalCtaSectionProps {
@@ -45,7 +45,7 @@ export function FinalCtaSection({ onTryDemo, demoPending }: FinalCtaSectionProps
           Try the live demo
         </Button>
         <Button asChild size="lg">
-          <a href={EXTERNAL_LINKS.docs}>Read the docs</a>
+          <a href={DOCS_LINKS.quickstart}>Read the docs</a>
         </Button>
       </div>
     </section>

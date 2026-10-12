@@ -58,8 +58,60 @@ test.describe("landing page", () => {
     await expect(page).toHaveURL(/#how-it-works$/);
   });
 
+  test("the header and footer link the docs, the repository and PyPI", async ({ page }) => {
+    await page.goto("/");
+
+    const header = page.getByRole("banner");
+    await expect(header.getByRole("link", { name: "Docs" })).toHaveAttribute(
+      "href",
+      "/docs/quickstart/",
+    );
+    await expect(header.getByRole("link", { name: "Spanlight on GitHub" })).toHaveAttribute(
+      "href",
+      /^https:\/\/github\.com\/[^/]+\/spanlight$/,
+    );
+
+    const footer = page.getByRole("navigation", { name: "Footer" });
+    await expect(footer.getByRole("link", { name: "Evaluators" })).toHaveAttribute(
+      "href",
+      "/docs/evaluators/",
+    );
+    await expect(footer.getByRole("link", { name: "Experiments" })).toHaveAttribute(
+      "href",
+      "/docs/experiments/",
+    );
+    await expect(footer.getByRole("link", { name: "Eval gate (CI)" })).toHaveAttribute(
+      "href",
+      "/docs/eval-gate/",
+    );
+    await expect(footer.getByRole("link", { name: "PyPI package" })).toHaveAttribute(
+      "href",
+      "https://pypi.org/project/spanlight/",
+    );
+
+    const contentinfo = page.getByRole("contentinfo");
+    await expect(contentinfo.getByRole("link", { name: "Report an issue" })).toHaveAttribute(
+      "href",
+      /\/spanlight\/issues$/,
+    );
+    await expect(contentinfo.getByRole("link", { name: "Security policy" })).toHaveAttribute(
+      "href",
+      "/docs/security/policy/",
+    );
+  });
+
   test("the landing page is accessible", async ({ page }) => {
     await page.goto("/");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expectNoAxeViolations(page);
+  });
+
+  test("the landing page is accessible in the dark theme", async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem("spanlight-theme", "dark");
+    });
+    await page.goto("/");
+    await expect(page.locator("html")).toHaveClass(/dark/);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await expectNoAxeViolations(page);
   });

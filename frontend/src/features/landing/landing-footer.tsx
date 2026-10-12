@@ -1,20 +1,80 @@
 import { Link } from "@tanstack/react-router";
-import type { ReactNode } from "react";
 
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 
-import { EXTERNAL_LINKS, SECTION_IDS } from "./links";
+import { DOCS_LINKS, EXTERNAL_LINKS, PYPI_URL, SECTION_IDS } from "./links";
 
 const LINK_CLASS =
   "rounded-sm text-sm whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground";
+
+const BOTTOM_LINK_CLASS =
+  "rounded-sm underline-offset-2 transition-colors hover:text-foreground hover:underline";
+
+/** A footer entry: a plain link, an in-app route, or the "start the demo" action. */
+type FooterItem =
+  | { label: string; href: string }
+  | { label: string; to: "/login" | "/signup" }
+  | { label: string; action: "demo" };
+
+interface FooterColumnData {
+  heading: string;
+  items: readonly FooterItem[];
+}
+
+const COLUMNS: readonly FooterColumnData[] = [
+  {
+    heading: "Product",
+    items: [
+      { label: "Features", href: `#${SECTION_IDS.features}` },
+      { label: "Beyond tracing", href: `#${SECTION_IDS.beyondTracing}` },
+      { label: "How it works", href: `#${SECTION_IDS.howItWorks}` },
+      { label: "Live demo", action: "demo" },
+      { label: "Sign in", to: "/login" },
+      { label: "Get started", to: "/signup" },
+    ],
+  },
+  {
+    heading: "Developers",
+    items: [
+      { label: "Quickstart", href: DOCS_LINKS.quickstart },
+      { label: "Python SDK", href: DOCS_LINKS.pythonSdk },
+      { label: "OpenTelemetry", href: DOCS_LINKS.otlp },
+      { label: "API reference", href: DOCS_LINKS.apiReference },
+      { label: "Eval gate (CI)", href: DOCS_LINKS.evalGate },
+      { label: "Self-hosting", href: DOCS_LINKS.selfHosting },
+    ],
+  },
+  {
+    heading: "Guides",
+    items: [
+      { label: "Gateway", href: DOCS_LINKS.gateway },
+      { label: "The Doctor", href: DOCS_LINKS.doctor },
+      { label: "Prompts", href: DOCS_LINKS.prompts },
+      { label: "Evaluators", href: DOCS_LINKS.evaluators },
+      { label: "Experiments", href: DOCS_LINKS.experiments },
+      { label: "Alerts and budgets", href: DOCS_LINKS.alerts },
+    ],
+  },
+  {
+    heading: "Project",
+    items: [
+      { label: "GitHub", href: EXTERNAL_LINKS.github },
+      { label: "Changelog", href: DOCS_LINKS.changelog },
+      { label: "Contributing", href: EXTERNAL_LINKS.contributing },
+      { label: "Security", href: DOCS_LINKS.security },
+      { label: "License (MIT)", href: EXTERNAL_LINKS.license },
+      { label: "PyPI package", href: PYPI_URL },
+    ],
+  },
+];
 
 interface LandingFooterProps {
   onTryDemo: () => void;
   demoPending: boolean;
 }
 
-/** Footer card with link columns and the oversized wordmark (Figma "Section/Footer"). */
+/** Footer card with link columns and the oversized wordmark (Figma "Section/Footer", v3). */
 export function LandingFooter({ onTryDemo, demoPending }: LandingFooterProps) {
   const year = new Date().getFullYear();
 
@@ -25,8 +85,8 @@ export function LandingFooter({ onTryDemo, demoPending }: LandingFooterProps) {
           <div className="flex flex-col items-start gap-4 lg:w-[340px] lg:gap-[18px]">
             <Logo />
             <p className="text-sm text-muted-foreground">
-              Open-source observability for LLM applications. Trace, measure and debug every model
-              call.
+              Open-source LLM observability: traces, diagnoses, prompts, evals and a gateway on one
+              Postgres.
             </p>
             <Button asChild>
               <a href={EXTERNAL_LINKS.github}>Star on GitHub</a>
@@ -34,62 +94,37 @@ export function LandingFooter({ onTryDemo, demoPending }: LandingFooterProps) {
           </div>
 
           <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-7">
-            <FooterColumn heading="Product">
-              <a href={`#${SECTION_IDS.features}`} className={LINK_CLASS}>
-                Features
-              </a>
-              <a href={`#${SECTION_IDS.howItWorks}`} className={LINK_CLASS}>
-                How it works
-              </a>
-              <button
-                type="button"
-                onClick={onTryDemo}
-                disabled={demoPending}
-                aria-busy={demoPending || undefined}
-                className={`${LINK_CLASS} cursor-pointer text-left disabled:cursor-progress`}
+            {COLUMNS.map((column) => (
+              <div
+                key={column.heading}
+                className="flex w-[136px] flex-col gap-3.5 md:w-[140px] xl:w-[160px]"
               >
-                Live demo
-              </button>
-              <Link to="/login" className={LINK_CLASS}>
-                Sign in
-              </Link>
-            </FooterColumn>
-            <FooterColumn heading="Developers">
-              <a href={EXTERNAL_LINKS.docs} className={LINK_CLASS}>
-                Documentation
-              </a>
-              <a href={EXTERNAL_LINKS.pythonSdk} className={LINK_CLASS}>
-                Python SDK
-              </a>
-              <a href={EXTERNAL_LINKS.otlp} className={LINK_CLASS}>
-                OpenTelemetry (OTLP)
-              </a>
-              <a href={EXTERNAL_LINKS.apiReference} className={LINK_CLASS}>
-                API reference
-              </a>
-            </FooterColumn>
-            <FooterColumn heading="Project">
-              <a href={EXTERNAL_LINKS.github} className={LINK_CLASS}>
-                GitHub
-              </a>
-              <a href={EXTERNAL_LINKS.license} className={LINK_CLASS}>
-                MIT license
-              </a>
-              <a href={EXTERNAL_LINKS.selfHosting} className={LINK_CLASS}>
-                Self-hosting guide
-              </a>
-              <a href={EXTERNAL_LINKS.security} className={LINK_CLASS}>
-                Security
-              </a>
-            </FooterColumn>
+                <h2 className="text-sm font-semibold text-foreground">{column.heading}</h2>
+                <ul className="flex flex-col items-start gap-3.5">
+                  {column.items.map((item) => (
+                    <li key={item.label}>
+                      <FooterLink item={item} onTryDemo={onTryDemo} demoPending={demoPending} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </nav>
         </div>
 
         <div className="h-px bg-border" />
 
         <div className="flex flex-col gap-1.5 text-xs leading-[1.4] font-medium text-subtle-foreground md:flex-row md:justify-between md:text-label md:leading-[1.4]">
-          <p>© {year} Spanlight · MIT licensed</p>
-          <p>Built with Python, Postgres and React</p>
+          <p>© {year} Spanlight · MIT</p>
+          <p className="flex items-center gap-2">
+            <a href={EXTERNAL_LINKS.issues} className={BOTTOM_LINK_CLASS}>
+              Report an issue
+            </a>
+            <span aria-hidden>·</span>
+            <a href={DOCS_LINKS.securityPolicy} className={BOTTOM_LINK_CLASS}>
+              Security policy
+            </a>
+          </p>
         </div>
 
         {/*
@@ -106,15 +141,30 @@ export function LandingFooter({ onTryDemo, demoPending }: LandingFooterProps) {
   );
 }
 
-function FooterColumn({ heading, children }: { heading: string; children: ReactNode[] }) {
+function FooterLink({ item, onTryDemo, demoPending }: { item: FooterItem } & LandingFooterProps) {
+  if ("action" in item) {
+    return (
+      <button
+        type="button"
+        onClick={onTryDemo}
+        disabled={demoPending}
+        aria-busy={demoPending || undefined}
+        className={`${LINK_CLASS} cursor-pointer text-left disabled:cursor-progress`}
+      >
+        {item.label}
+      </button>
+    );
+  }
+  if ("to" in item) {
+    return (
+      <Link to={item.to} className={LINK_CLASS}>
+        {item.label}
+      </Link>
+    );
+  }
   return (
-    <div className="flex w-[140px] flex-col gap-3.5 xl:w-[180px]">
-      <h2 className="text-sm font-semibold text-foreground">{heading}</h2>
-      <ul className="flex flex-col items-start gap-3.5">
-        {children.map((child, index) => (
-          <li key={index}>{child}</li>
-        ))}
-      </ul>
-    </div>
+    <a href={item.href} className={LINK_CLASS}>
+      {item.label}
+    </a>
   );
 }

@@ -68,9 +68,9 @@ export function FeaturesSection() {
           title="Drop-in Python SDK"
           description={{
             mobile:
-              "Three lines to trace OpenAI and Anthropic clients. Spans are batched in the background; SDK errors are swallowed.",
+              "pip install spanlight, wrap your client, fetch versioned prompts and send scores. SDK failures never reach your code.",
             desktop:
-              "Three lines to trace OpenAI and Anthropic clients. Spans are batched in the background, so tracing never waits on the network, and SDK failures are logged and swallowed.",
+              "pip install spanlight and wrap your OpenAI or Anthropic client. Fetch versioned prompts, send scores with spanlight.score(), and let spans batch in the background; SDK failures never reach your code.",
           }}
           illustration={<SdkIllustration />}
           className="xl:col-span-5 xl:min-h-[510px]"
@@ -78,7 +78,7 @@ export function FeaturesSection() {
         <FeatureTile
           overline="OpenTelemetry"
           title="OpenTelemetry native"
-          description="Send OTLP/HTTP with gen_ai.* semantic conventions from any language."
+          description="Send OTLP/HTTP from any language. gen_ai.* attributes become prompts, models, tokens and cost."
           illustration={<OtelIllustration />}
           className="xl:col-span-3 xl:min-h-[510px]"
         />

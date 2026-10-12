@@ -18,14 +18,14 @@ const STEPS: readonly Step[] = [
     detail: "docker compose up -d",
   },
   {
-    title: "Add three lines of code",
+    title: "Add three lines, or one base URL",
     description: {
       mobile:
-        "Initialize the SDK and wrap your OpenAI or Anthropic client, or send OTLP from any language.",
+        "Wrap your OpenAI or Anthropic client, send OTLP from any language, or point your client at the gateway.",
       desktop:
-        "Initialize the SDK and wrap your OpenAI or Anthropic client. Or point any OpenTelemetry exporter at /v1/otlp/traces.",
+        "Wrap your OpenAI or Anthropic client, point an OpenTelemetry exporter at /v1/otlp/traces, or set your client’s base URL to the gateway.",
     },
-    detail: { mobile: "spanlight.init()", desktop: "spanlight.wrap_anthropic(Anthropic())" },
+    detail: 'pip install "spanlight[anthropic]"',
   },
   {
     title: "Watch traces arrive live",
@@ -54,7 +54,7 @@ export function HowItWorksSection() {
         id="how-it-works-title"
         overline="How it works"
         title="From zero to traces in three steps"
-        description="No agents to deploy, and the SDK adds no proxy to the request path. It sends spans in the background."
+        description="Send traces with the SDK, any OpenTelemetry exporter or the gateway. Only the gateway sits in the request path, and only if you choose it."
       />
 
       <div className="mx-auto mt-9 grid max-w-[1200px] grid-cols-1 gap-9 lg:mt-14 xl:grid-cols-12 xl:gap-5">

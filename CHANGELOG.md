@@ -29,6 +29,7 @@ Prompts, datasets and evals: manage prompts as versions, score traces by hand or
 - **Native JSON ingestion accepts `prompt_version_id` on a span.** Older servers ignore it. OTLP has no field for it.
 - **Trace summaries carry `has_scores` and a few latest `scores`**, and `GET .../traces/filters` lists `score_names`.
 - **Dataset uploads may be 5 MB.** Every other `/api/v1` body is still limited to 1 MiB; the limit for the upload route is checked while the body streams.
+- **The landing page covers the whole product and shows the real one.** A new "Beyond tracing" section presents the Doctor, the gateway, prompts and playground, evals, and alerts and budgets, each with a real screenshot from the live demo; the hero shows the real experiment comparison instead of a drawn preview with made-up numbers. Screenshots follow the site theme and are captured by `frontend/scripts/capture-landing.ts`. The copy now covers prompts, scores, the CI eval gate and `pip install spanlight`. The nav links the quickstart and GitHub, and the rebuilt footer links Product, Developers, Guides and Project pages (evaluators and experiments are separate guides now); a test checks that every documentation link points at a page that exists.
 
 ### Security
 

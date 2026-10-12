@@ -13,13 +13,15 @@ interface FeatureTileProps {
   tone?: "surface" | "ink";
   /** `split` puts copy and illustration side by side on wide screens (Private by design). */
   layout?: "stacked" | "split";
+  /** True when the illustration is a real screenshot with its own alt text, not decoration. */
+  illustrationIsContent?: boolean;
   className?: string;
 }
 
 /**
  * Bento feature tile (Figma "Landing/Feature tile"): overline, title and description on top,
- * the illustration pinned to the bottom. Illustrations are decorative markup, hidden from
- * assistive tech; the description carries the meaning.
+ * the illustration pinned to the bottom. Drawn illustrations are decorative markup, hidden from
+ * assistive tech; the description carries the meaning. Screenshots are content and stay visible.
  */
 export function FeatureTile({
   overline,
@@ -28,6 +30,7 @@ export function FeatureTile({
   illustration,
   tone = "surface",
   layout = "stacked",
+  illustrationIsContent = false,
   className,
 }: FeatureTileProps) {
   const ink = tone === "ink";
@@ -54,7 +57,7 @@ export function FeatureTile({
         </p>
       </div>
       <div
-        aria-hidden
+        aria-hidden={illustrationIsContent ? undefined : true}
         className={cn(
           "flex min-w-0 flex-1 flex-col justify-end",
           layout === "split" && "xl:justify-center",

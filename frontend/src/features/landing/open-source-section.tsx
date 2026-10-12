@@ -3,7 +3,7 @@ import { Fragment } from "react";
 import { CopyButton } from "@/components/copy-button";
 import { Button } from "@/components/ui/button";
 
-import { EXTERNAL_LINKS, SECTION_IDS } from "./links";
+import { DOCS_LINKS, EXTERNAL_LINKS, SECTION_IDS } from "./links";
 import { MeshBlob } from "./mesh-blob";
 import { ResponsiveCopy } from "./responsive-copy";
 
@@ -17,7 +17,7 @@ const SERVICES = [
   { name: "web", status: "Started" },
 ] as const;
 
-const FACTS = ["MIT licensed", "Postgres 17", "5 services"] as const;
+const FACTS = ["MIT licensed", "Postgres 17", "5 services", "eval-gate Action"] as const;
 
 /** The dark open-source band: self-hosting pitch, copyable command and a terminal mock-up. */
 export function OpenSourceSection() {
@@ -56,8 +56,14 @@ export function OpenSourceSection() {
             <span className="text-lime">Yours.</span>
           </h2>
           <p className="text-base leading-[1.55] text-rail-muted-foreground md:text-lg">
-            API, worker, Postgres and dashboard ship as one Docker Compose stack. Your prompts and
-            traces stay on infrastructure you control.
+            <ResponsiveCopy
+              copy={{
+                mobile:
+                  "MIT licensed. API, worker and dashboard run on one Postgres as one Docker Compose stack, and the eval-gate Action fails a pull request when quality drops.",
+                desktop:
+                  "MIT licensed. The API, worker and dashboard run on one Postgres as a single Docker Compose stack, and the eval-gate GitHub Action fails a pull request when quality drops. Your prompts and traces stay on infrastructure you control.",
+              }}
+            />
           </p>
 
           <div className="flex items-center gap-3 rounded-full border border-rail-tile bg-rail-tile py-1.5 pr-1.5 pl-4 lg:gap-4 lg:py-2 lg:pr-2 lg:pl-5">
@@ -77,7 +83,7 @@ export function OpenSourceSection() {
               <a href={EXTERNAL_LINKS.github}>Star on GitHub</a>
             </Button>
             <Button asChild size="lg">
-              <a href={EXTERNAL_LINKS.docs}>Read the docs</a>
+              <a href={DOCS_LINKS.selfHosting}>Read the docs</a>
             </Button>
           </div>
         </div>
