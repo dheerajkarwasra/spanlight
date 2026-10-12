@@ -29,7 +29,7 @@ from app.db.models import Dataset, ExperimentRun, ExperimentRunStatus, ProviderC
 from app.db.rls import bind_project
 from app.evals import experiment_queries
 from app.evals import service as evaluators
-from app.evals.config import EvaluatorSpec, JudgeConfig
+from app.evals.config import EvaluatorSpec, JudgeConfigIn
 from app.evals.experiment_config import (
     ExperimentConfig,
     ExperimentSpec,
@@ -192,7 +192,7 @@ async def _seed_judge(
     )
     spec = EvaluatorSpec(
         name=data.EVALUATOR_NAME,
-        config=JudgeConfig(
+        config=JudgeConfigIn(
             kind="llm_judge",
             prompt_version_id=version.id,
             credential_id=credential.id,
