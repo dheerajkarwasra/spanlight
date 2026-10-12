@@ -32,6 +32,12 @@ class Permission(enum.StrEnum):
     CREDENTIALS_MANAGE = "credentials:manage"
     ALERTS_WRITE = "alerts:write"
     INSIGHTS_MANAGE = "insights:manage"
+    SCORES_WRITE = "scores:write"
+    ANNOTATIONS_WRITE = "annotations:write"
+    PROMPTS_WRITE = "prompts:write"
+    DATASETS_WRITE = "datasets:write"
+    EXPERIMENTS_RUN = "experiments:run"
+    EVALUATORS_WRITE = "evaluators:write"
 
 
 PermissionClass = Literal["read", "write"]
@@ -58,6 +64,12 @@ PERMISSION_CLASSES: dict[Permission, PermissionClass] = {
     Permission.CREDENTIALS_MANAGE: "write",
     Permission.ALERTS_WRITE: "write",
     Permission.INSIGHTS_MANAGE: "write",
+    Permission.SCORES_WRITE: "write",
+    Permission.ANNOTATIONS_WRITE: "write",
+    Permission.PROMPTS_WRITE: "write",
+    Permission.DATASETS_WRITE: "write",
+    Permission.EXPERIMENTS_RUN: "write",
+    Permission.EVALUATORS_WRITE: "write",
 }
 
 
@@ -66,7 +78,16 @@ def permission_class(permission: Permission) -> PermissionClass:
 
 
 _VIEWER = frozenset({Permission.ORG_READ, Permission.PROJECT_READ})
-_MEMBER = _VIEWER | {Permission.KEY_CREATE, Permission.KEY_REVOKE_OWN, Permission.EXPORT_CREATE}
+_MEMBER = _VIEWER | {
+    Permission.KEY_CREATE,
+    Permission.KEY_REVOKE_OWN,
+    Permission.EXPORT_CREATE,
+    Permission.SCORES_WRITE,
+    Permission.ANNOTATIONS_WRITE,
+    Permission.PROMPTS_WRITE,
+    Permission.DATASETS_WRITE,
+    Permission.EXPERIMENTS_RUN,
+}
 _ADMIN = _MEMBER | {
     Permission.KEY_REVOKE_ANY,
     Permission.PROJECT_WRITE,
@@ -77,6 +98,7 @@ _ADMIN = _MEMBER | {
     Permission.GATEWAY_WRITE,
     Permission.ALERTS_WRITE,
     Permission.INSIGHTS_MANAGE,
+    Permission.EVALUATORS_WRITE,
 }
 _OWNER = _ADMIN | {Permission.ORG_DELETE, Permission.ORG_SECURITY, Permission.CREDENTIALS_MANAGE}
 

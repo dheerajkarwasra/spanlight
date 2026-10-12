@@ -9,6 +9,7 @@ and never from a domain module. Importing the package registers every table on
 """
 
 from app.db.models.alerts import AlertChannel, AlertChannelKind, AlertEvent, AlertRule, AlertState
+from app.db.models.annotations import AnnotationQueue, AnnotationQueueItem
 from app.db.models.auth import (
     EmailToken,
     EmailTokenKind,
@@ -20,7 +21,21 @@ from app.db.models.auth import (
 )
 from app.db.models.base import Base
 from app.db.models.budgets import Budget
+from app.db.models.datasets import Dataset, DatasetItem
 from app.db.models.end_users import UserStatsDaily
+from app.db.models.evals import (
+    Evaluator,
+    EvaluatorKind,
+    EvaluatorRun,
+    EvaluatorRunSource,
+    EvaluatorRunStatus,
+)
+from app.db.models.experiments import (
+    Experiment,
+    ExperimentItem,
+    ExperimentRun,
+    ExperimentRunStatus,
+)
 from app.db.models.exports import Export, ExportFormat, ExportKind, ExportStatus
 from app.db.models.gateway import (
     FaultProfile,
@@ -55,7 +70,9 @@ from app.db.models.platform import (
 )
 from app.db.models.pricing import ModelPrice, PriceOverride
 from app.db.models.projects import ApiKey, Project
+from app.db.models.prompts import Prompt, PromptKind, PromptLabel, PromptVersion
 from app.db.models.rollups import SpanRollupHourly, TraceRollupHourly
+from app.db.models.scores import Score, ScoreConfig
 from app.db.models.telemetry import Span, SpanKind, SpanStatus, Trace
 
 __all__ = [
@@ -64,14 +81,27 @@ __all__ = [
     "AlertEvent",
     "AlertRule",
     "AlertState",
+    "AnnotationQueue",
+    "AnnotationQueueItem",
     "ApiKey",
     "AuditAction",
     "AuditEvent",
     "Base",
     "Budget",
+    "Dataset",
+    "DatasetItem",
     "DetectorRun",
     "EmailToken",
     "EmailTokenKind",
+    "Evaluator",
+    "EvaluatorKind",
+    "EvaluatorRun",
+    "EvaluatorRunSource",
+    "EvaluatorRunStatus",
+    "Experiment",
+    "ExperimentItem",
+    "ExperimentRun",
+    "ExperimentRunStatus",
     "Export",
     "ExportFormat",
     "ExportKind",
@@ -100,10 +130,16 @@ __all__ = [
     "PersonalAccessToken",
     "PriceOverride",
     "Project",
+    "Prompt",
+    "PromptKind",
+    "PromptLabel",
+    "PromptVersion",
     "ProviderCredential",
     "ProviderKind",
     "RateLimitBucket",
     "RecoveryCode",
+    "Score",
+    "ScoreConfig",
     "Session",
     "Span",
     "SpanKind",

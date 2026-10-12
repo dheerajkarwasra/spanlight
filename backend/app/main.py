@@ -10,9 +10,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.alerts.channels import register_channel_deliverers
-from app.api import gw, health, ingest, v1
+from app.api import gw, health, ingest, scores_ingest, v1
 from app.api.deps import Clock, utcnow
 from app.api.gw_errors import install_gateway_error_handlers
+from app.api.v1.prompts_read import key_router as prompt_read_router
 from app.config import Settings, get_settings
 from app.core.body_limit import BodyLimitMiddleware
 from app.core.egress import Resolver
@@ -29,7 +30,7 @@ from app.core.tracing import configure_tracing, shutdown_tracing
 from app.db.session import create_engine, create_session_factory
 from app.gateway.http import build_http_client
 from app.gateway.runtime import GatewayRuntime, build_runtime, close_runtime
-from app.insights.explain_settle import drain_settling
+from app.gateway.settle_helpers import drain_settling
 from app.notifications.defaults import register_default_deliverers
 from app.pricing.cost import sync_seed_prices
 
@@ -136,7 +137,13 @@ def create_app(
     app.add_middleware(BearerRequestMiddleware)
     app.add_middleware(RequestContextMiddleware)
 
-    for router in (v1.router, ingest.router, health.router):
+    for router in (
+        v1.router,
+        ingest.router,
+        scores_ingest.router,
+        prompt_read_router,
+        health.router,
+    ):
         app.include_router(router)
     # In `standalone` and `disabled` mode `/gw/*` stays unmounted and answers 404 problem+json.
     if embedded_gateway:

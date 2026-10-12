@@ -9,6 +9,7 @@ spanlight migrate
 spanlight ensure-app-role --role spanlight_app   # password from APP_DB_PASSWORD
 spanlight rollups backfill --project <uuid> --from 2026-09-01 --to 2026-10-01
 spanlight alerts evaluate [--dry-run] [--json]
+spanlight demo seed-evals
 spanlight backup now
 spanlight backup list
 spanlight restore --key backups/2026/10/09/spanlight-20261009T030000Z.dump   # RESTORE_TARGET_URL
@@ -30,6 +31,7 @@ from app.auth import totp_service
 from app.backups.retention import BACKUP_PREFIX
 from app.backups.service import BackupError, RestoreError, restore_backup, run_backup
 from app.cli_alerts import alerts_app
+from app.cli_demo import demo_app
 from app.config import get_settings
 from app.core.crypto import CryptoNotConfigured
 from app.core.security import MIN_PASSWORD_LENGTH, hash_password
@@ -49,6 +51,7 @@ app = typer.Typer(help="Spanlight administration.", no_args_is_help=True)
 rollups_app = typer.Typer(help="Hourly metric rollups.", no_args_is_help=True)
 app.add_typer(rollups_app, name="rollups")
 app.add_typer(alerts_app, name="alerts")
+app.add_typer(demo_app, name="demo")
 backup_app = typer.Typer(help="Database backups in object storage.", no_args_is_help=True)
 app.add_typer(backup_app, name="backup")
 

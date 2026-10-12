@@ -67,6 +67,14 @@ def _require_crypto(settings: Settings) -> None:
         raise CryptoNotConfigured("CREDENTIALS_KEYS is not set")
 
 
+async def org_credential(
+    db: AsyncSession, org_id: uuid.UUID, credential_id: uuid.UUID
+) -> ProviderCredential | None:
+    """The organization's credential with this id, for callers outside the gateway (judges, the
+    playground, experiments); None when the organization has none of that id."""
+    return await queries.get_credential(db, org_id, credential_id)
+
+
 async def create_credential(
     db: AsyncSession,
     org_id: uuid.UUID,

@@ -11,8 +11,8 @@ import enum
 class KeyScope(enum.StrEnum):
     INGEST_WRITE = "ingest:write"  # POST /v1/traces and /v1/otlp/traces
     TRACES_READ = "traces:read"  # the dashboard read routes, for the key's own project
-    SCORES_WRITE = "scores:write"  # reserved: no route yet
-    PROMPTS_READ = "prompts:read"  # reserved: no route yet
+    SCORES_WRITE = "scores:write"  # POST /v1/scores
+    PROMPTS_READ = "prompts:read"  # GET /v1/prompts/{name}
 
 
 # What a key gets when its creator names no scopes: the only thing keys could do before scopes.

@@ -146,6 +146,14 @@ GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         ),
     ),
     (
+        "Evaluations",
+        "Evaluators score traces: heuristics run locally, LLM judges call a model through one "
+        "of the organization's provider credentials under each evaluator's monthly budget, and "
+        "webhooks ask your own service. Online evaluation samples recent spans every minute; "
+        "experiments run a dataset through a prompt and score every item.",
+        ("evals_enabled", "eval_sampler_max_runs_per_cycle", "experiment_max_items"),
+    ),
+    (
         "API request limits",
         "A request that would otherwise wait on a busy database fails fast with `503` and "
         "`Retry-After` instead of queueing behind slow work. The worker, exports and deleting an "
@@ -273,8 +281,8 @@ DESCRIPTIONS: dict[str, str] = {
         "set."
     ),
     "demo_monthly_budget_usd": (
-        "Month-to-date spending cap for the demo's model calls, in US dollars. The demo job "
-        "checks it before every provider call."
+        "Month-to-date spending limit for the demo's model calls, in US dollars. The demo job "
+        "checks it before every run (two provider calls)."
     ),
     "gateway_mode": (
         "Where the gateway runs. `embedded` serves it from the API process, `standalone` leaves "
@@ -329,6 +337,19 @@ DESCRIPTIONS: dict[str, str] = {
     "user_stats_enabled": (
         "Schedule the refresh of per-user daily statistics behind the Users page. Off, the page "
         "stops updating."
+    ),
+    "evals_enabled": (
+        "Schedule online evaluation, which samples recent spans for every enabled evaluator "
+        "once a minute. Off, evaluators run only inside experiments and test runs."
+    ),
+    "eval_sampler_max_runs_per_cycle": (
+        "Most evaluation runs one evaluator gets per one-minute sampling cycle. Spans past it "
+        "are not sampled in that cycle. An LLM judge whose monthly budget is used up is not "
+        "sampled at all."
+    ),
+    "experiment_max_items": (
+        "Ceiling for an experiment's `max_items`: the most dataset items one experiment run "
+        "processes."
     ),
     "api_pool_timeout_seconds": (
         "Seconds an API request waits for a connection from the main pool. Past it the request "

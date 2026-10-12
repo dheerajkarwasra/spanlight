@@ -51,7 +51,7 @@ async def lock_by_fingerprint(
         .order_by(Insight.fingerprint)
         .with_for_update()
     )
-    return {fingerprint: status for fingerprint, status in rows.tuples()}
+    return {fingerprint: status for fingerprint, status in rows}
 
 
 def _active_mute(now: datetime) -> ColumnElement[bool]:

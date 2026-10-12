@@ -28,7 +28,7 @@ async def list_keys(
         .where(GatewayKey.project_id == project_id)
         .order_by(GatewayKey.created_at.desc(), GatewayKey.id.desc())
     )
-    return [(key, creator) for key, creator in rows.tuples()]
+    return [(key, creator) for key, creator in rows]
 
 
 async def get_key_with_creator(

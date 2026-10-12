@@ -37,7 +37,7 @@ async def list_rules(
     rows = await db.execute(
         _people_rules(project_id).order_by(firing_first, AlertRule.name, AlertRule.id)
     )
-    return [(rule, state) for rule, state in rows.tuples()]
+    return [(rule, state) for rule, state in rows]
 
 
 async def get_rule(
@@ -131,7 +131,7 @@ async def list_events(
         )
     query = query.order_by(AlertEvent.started_at.desc(), AlertEvent.id.desc()).limit(limit + 1)
     rows = await db.execute(query)
-    return [(event, rule, user) for event, rule, user in rows.tuples()]
+    return [(event, rule, user) for event, rule, user in rows]
 
 
 async def get_event(

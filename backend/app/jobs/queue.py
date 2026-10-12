@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import ColumnElement, exists, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,6 +70,16 @@ async def enqueue(
         .returning(Job.id)
     )
     return (await db.execute(statement)).scalar_one_or_none() is not None
+
+
+def job_may_still_run(dedupe_key: ColumnElement[str]) -> ColumnElement[bool]:
+    """A SQL condition: the job with this dedupe key is queued or running, so it may still run.
+    For a caller that must tell work whose job died (one attempt, worker gone) from work that is
+    only waiting."""
+    return exists().where(
+        Job.dedupe_key == dedupe_key,
+        Job.status.in_([JobStatus.QUEUED, JobStatus.RUNNING]),
+    )
 
 
 _EXPIRE_EXHAUSTED = text(

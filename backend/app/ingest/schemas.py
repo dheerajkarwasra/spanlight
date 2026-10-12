@@ -6,6 +6,7 @@ Each span is validated independently so one bad span is reported in
 
 from datetime import UTC, datetime
 from typing import Annotated, Any
+from uuid import UUID
 
 from pydantic import (
     AfterValidator,
@@ -140,6 +141,9 @@ class SpanIn(BaseModel):
     request_hash: RequestHash = None
     # The provider's raw value; the server stores its canonical form (`app.ingest.finish_reason`).
     finish_reason: Text64 | None = None
+    # The prompt version the SDK fetched for this call. Not checked against the server's
+    # versions: an id it has not seen (or one deleted since) is stored as sent.
+    prompt_version_id: UUID | None = None
 
 
 class IngestBatchIn(BaseModel):

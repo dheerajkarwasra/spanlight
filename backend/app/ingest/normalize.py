@@ -6,6 +6,7 @@ per-project payload capture toggle, and cost calculation.
 """
 
 import json
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -65,6 +66,7 @@ class NormalizedSpan:
     truncated: bool
     request_hash: str | None
     finish_reason: str | None
+    prompt_version_id: uuid.UUID | None
     trace: TraceFields
 
 
@@ -105,6 +107,7 @@ def normalize_span(
         # From the input as received, before the payload capture setting drops it.
         request_hash=span.request_hash or request_hash(span.model, span.input),
         finish_reason=canonical_finish_reason(raw_finish_reason(span.finish_reason, attributes)),
+        prompt_version_id=span.prompt_version_id,
         trace=_trace_fields(span),
     )
 

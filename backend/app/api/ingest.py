@@ -68,7 +68,7 @@ def _payload_too_large() -> ProblemError:
     )
 
 
-async def _read_body(request: Request) -> bytes:
+async def read_ingest_body(request: Request) -> bytes:
     """The body (decompressed), at most MAX_BODY_BYTES, with failures as problem+json."""
     try:
         return await read_bounded_body(request, MAX_BODY_BYTES)
@@ -93,7 +93,8 @@ def _check_span_count(count: int) -> None:
         )
 
 
-def _parse_json(body: bytes) -> Any:
+def parse_ingest_json(body: bytes) -> Any:
+    """The body parsed strictly as JSON, with a parse failure as `400 INVALID_JSON`."""
     try:
         return parse_json_body(body)
     except InvalidJsonError as exc:
@@ -133,7 +134,7 @@ async def _store(
 
 @router.post("/v1/traces", response_model=IngestResponse)
 async def ingest_native(request: Request, key: AuthenticatedKey, db: DbSession) -> IngestResponse:
-    document = _parse_json(await _read_body(request))
+    document = parse_ingest_json(await read_ingest_body(request))
     try:
         batch = IngestBatchIn.model_validate(document)
     except ValueError as exc:
@@ -149,13 +150,13 @@ async def ingest_native(request: Request, key: AuthenticatedKey, db: DbSession) 
 @router.post("/v1/otlp/traces")
 async def ingest_otlp(request: Request, key: AuthenticatedKey, db: DbSession) -> Response:
     content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
-    body = await _read_body(request)
+    body = await read_ingest_body(request)
 
     try:
         if content_type == PROTOBUF_CONTENT_TYPE:
             spans = otlp.decode_protobuf(body)
         elif content_type == "application/json":
-            spans = otlp.decode_json(_parse_json(body))
+            spans = otlp.decode_json(parse_ingest_json(body))
         else:
             raise ProblemError(
                 415,

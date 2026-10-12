@@ -157,6 +157,14 @@ class Settings(BaseSettings):
     explain_monthly_budget_usd: Decimal = Field(default=Decimal("1.00"), ge=0)
     user_stats_enabled: bool = True
 
+    # Evaluations. `evals_enabled` schedules online evaluation (sampling recent spans for the
+    # enabled evaluators every minute); off, evaluators only run from experiments and test runs.
+    # `eval_sampler_max_runs_per_cycle` caps the runs one evaluator gets per cycle, and
+    # `experiment_max_items` is the ceiling of an experiment's `max_items`.
+    evals_enabled: bool = True
+    eval_sampler_max_runs_per_cycle: int = Field(default=50, ge=1, le=10_000)
+    experiment_max_items: int = Field(default=1000, ge=1, le=100_000)
+
     sentry_dsn: str | None = None
 
     # Tracing of the app's own requests, queries and outbound calls. Set the base URL of an OTLP
@@ -226,6 +234,9 @@ class Settings(BaseSettings):
         "explain_model",
         "explain_monthly_budget_usd",
         "user_stats_enabled",
+        "evals_enabled",
+        "eval_sampler_max_runs_per_cycle",
+        "experiment_max_items",
         "otel_service_name",
         mode="before",
     )

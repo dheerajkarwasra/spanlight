@@ -93,27 +93,25 @@ async def load_key_context(db: AsyncSession, key: GatewayKey) -> KeyContext | No
             func.jsonb_build_object("credential_id", cast(ProviderCredential.id, Text))
         )
     )
-    rows = (
-        await db.execute(
-            select(Project, GatewayRoute, ProviderCredential, FaultProfile)
-            .join(
-                GatewayRoute,
-                and_(GatewayRoute.project_id == Project.id, GatewayRoute.id == key.route_id),
-            )
-            .outerjoin(
-                FaultProfile,
-                and_(
-                    FaultProfile.project_id == Project.id,
-                    FaultProfile.id == key.fault_profile_id,
-                ),
-            )
-            .outerjoin(
-                ProviderCredential,
-                and_(ProviderCredential.org_id == Project.org_id, targeted),
-            )
-            .where(Project.id == key.project_id)
+    rows = await db.execute(
+        select(Project, GatewayRoute, ProviderCredential, FaultProfile)
+        .join(
+            GatewayRoute,
+            and_(GatewayRoute.project_id == Project.id, GatewayRoute.id == key.route_id),
         )
-    ).tuples()
+        .outerjoin(
+            FaultProfile,
+            and_(
+                FaultProfile.project_id == Project.id,
+                FaultProfile.id == key.fault_profile_id,
+            ),
+        )
+        .outerjoin(
+            ProviderCredential,
+            and_(ProviderCredential.org_id == Project.org_id, targeted),
+        )
+        .where(Project.id == key.project_id)
+    )
     found = list(rows)
     if not found:
         # The project or the route went away since `find_key`.

@@ -12,11 +12,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, text
+from sqlalchemy import exists, func, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Span, Trace
+from app.db.models import Score, Span, Trace
 from app.ingest.normalize import NormalizedSpan
 
 
@@ -88,6 +88,11 @@ async def _upsert_traces(
                 "tags": sorted(trace.tags),
                 "started_at": trace.started_at,
                 "ended_at": trace.ended_at,
+                # A score may have arrived before its trace. On conflict the flag is OR-ed in,
+                # so a later batch also heals a flag a racing score write missed.
+                "has_scores": exists().where(
+                    Score.project_id == project_id, Score.trace_id == trace.trace_id
+                ),
             }
             for trace in traces
         ]
@@ -107,6 +112,7 @@ async def _upsert_traces(
             ),
             "started_at": func.least(Trace.started_at, excluded.started_at),
             "ended_at": func.greatest(Trace.ended_at, excluded.ended_at),
+            "has_scores": Trace.has_scores | excluded.has_scores,
         },
     )
     await session.execute(statement)
@@ -135,6 +141,7 @@ _SPAN_COLUMNS = (
     "truncated",
     "request_hash",
     "finish_reason",
+    "prompt_version_id",
 )
 
 

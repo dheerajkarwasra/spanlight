@@ -29,7 +29,7 @@ async def open_counts(db: AsyncSession, project_id: uuid.UUID) -> dict[Severity,
         .where(Insight.project_id == project_id, Insight.status.in_(OPEN_STATUSES))
         .group_by(Insight.severity)
     )
-    return {Severity(severity): int(count) for severity, count in rows.tuples()}
+    return {Severity(severity): int(count) for severity, count in rows}
 
 
 async def top_open(db: AsyncSession, project_id: uuid.UUID, limit: int) -> list[OpenInsightRow]:
@@ -47,7 +47,7 @@ async def top_open(db: AsyncSession, project_id: uuid.UUID, limit: int) -> list[
     )
     return [
         OpenInsightRow(kind=kind, severity=Severity(severity), title=title)
-        for kind, severity, title in rows.tuples()
+        for kind, severity, title in rows
     ]
 
 

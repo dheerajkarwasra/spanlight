@@ -50,6 +50,8 @@ SEED_PRICES: tuple[SeedPrice, ...] = (
     _price("anthropic", "claude-opus-5-5", "4.00", "20.00", "0.20"),
     _price("anthropic", "claude-sonnet-5", "2.00", "10.00", "0.20"),
     _price("anthropic", "claude-sonnet-5-5", "2.00", "10.00", "0.20"),
+    # Prompts over 100K tokens bill $0.50/$2.50 per MTok; that tier is not modelled.
+    _price("anthropic", "claude-haiku-5-5", "0.10", "0.50", "0.01"),
     # OpenAI. Cached = cached-input rate.
     _price("openai", "gpt-4o", "2.50", "10.00", "1.25"),
     _price("openai", "gpt-4o-mini", "0.15", "0.60", "0.075"),

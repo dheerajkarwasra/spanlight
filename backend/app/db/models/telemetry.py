@@ -63,6 +63,8 @@ class Trace(Base):
     output_tokens: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
     cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 8))
     has_unpriced: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    # Set by the score write path once the trace has a score (migration 0502); never cleared.
+    has_scores: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
 
 
 class Span(Base):
@@ -126,6 +128,15 @@ class Span(Base):
             "started_at",
             postgresql_where=text("request_hash IS NOT NULL"),
         ),
+        # The spans of one prompt version (usage, explorer filter). Partial: most spans carry no
+        # version. Migration 0501 creates it.
+        Index(
+            "spans_project_prompt_version_idx",
+            "project_id",
+            "prompt_version_id",
+            text("started_at DESC"),
+            postgresql_where=text("prompt_version_id IS NOT NULL"),
+        ),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
@@ -165,6 +176,9 @@ class Span(Base):
     # in `attributes`. Migration 0401 holds the CHECK on its values.
     request_hash: Mapped[str | None] = mapped_column(Text)
     finish_reason: Mapped[str | None] = mapped_column(Text)
+    # The prompt version the SDK fetched for this call; a plain uuid without a foreign key, since
+    # the id may be one the server has not seen. Migration 0501 adds it and its partial index.
+    prompt_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID)
     # The gateway key the call came through; None for spans from native or OTLP ingestion.
     # A plain uuid without a foreign key (migration 0202 says why).
     source_key_id: Mapped[uuid.UUID | None] = mapped_column(UUID)

@@ -17,6 +17,8 @@ application, the idempotency middleware, which reads the body to fingerprint it,
 too.
 """
 
+import re
+
 from starlette.exceptions import HTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -24,6 +26,10 @@ from app.core.errors import problem_response
 
 MAX_API_BODY_BYTES = 1024 * 1024
 API_PREFIX = "/api/v1/"
+# A dataset upload may be 5 MB of file (`app.datasets.schemas.MAX_UPLOAD_BYTES`) plus the multipart
+# framing. The route checks the file size exactly; this keeps the cut-off while the body streams.
+UPLOAD_BODY_BYTES = 5 * 1024 * 1024 + 64 * 1024
+UPLOAD_PATH = re.compile(r"^/api/v1/projects/[^/]+/datasets/[^/]+/items/upload$")
 
 
 def _detail(limit: int) -> str:
@@ -31,7 +37,8 @@ def _detail(limit: int) -> str:
 
 
 class BodyLimitMiddleware:
-    """Refuses (413) request bodies over `max_bytes` on paths under `prefix`."""
+    """Refuses (413) request bodies over `max_bytes` on paths under `prefix`; the dataset upload
+    route has its own, larger limit."""
 
     def __init__(
         self, app: ASGIApp, max_bytes: int = MAX_API_BODY_BYTES, prefix: str = API_PREFIX
@@ -45,9 +52,10 @@ class BodyLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
+        limit = UPLOAD_BODY_BYTES if UPLOAD_PATH.match(scope["path"]) else self.max_bytes
         declared = _content_length(scope)
-        if declared is not None and declared > self.max_bytes:
-            response = problem_response(413, "PAYLOAD_TOO_LARGE", _detail(self.max_bytes))
+        if declared is not None and declared > limit:
+            response = problem_response(413, "PAYLOAD_TOO_LARGE", _detail(limit))
             await response(scope, receive, send)
             return
 
@@ -58,8 +66,8 @@ class BodyLimitMiddleware:
             message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
-                if received > self.max_bytes:
-                    raise HTTPException(status_code=413, detail=_detail(self.max_bytes))
+                if received > limit:
+                    raise HTTPException(status_code=413, detail=_detail(limit))
             return message
 
         await self.app(scope, counting_receive, send)

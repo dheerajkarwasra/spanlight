@@ -1581,6 +1581,133 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 32,
+      "type": "row",
+      "title": "Evaluations",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 78,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 33,
+      "type": "timeseries",
+      "title": "Evaluator runs by kind and outcome",
+      "description": "Evaluator runs per second, by evaluator kind (heuristic, llm_judge, webhook) and outcome: done; failed (the run row holds the error code); budget_exceeded (a judge's monthly budget could not cover the call, so no request was made); evaluator_disabled; skipped (already started or ended). The sampler adds skipped_cap (over EVAL_SAMPLER_MAX_RUNS_PER_CYCLE in one cycle) and skipped_no_payload (the span's payload was not stored); its windows overlap, so one trace can be counted in several cycles. Scraped from the worker and the api (test runs).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 79,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 15,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (kind, outcome) (rate(spanlight_evaluator_runs_total[$__rate_interval]))",
+          "legendFormat": "{{kind}} / {{outcome}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "type": "timeseries",
+      "title": "Judge spend per hour",
+      "description": "US dollars evaluator runs were charged per hour, by evaluator kind (only judges spend). A run holds an estimate while its call runs and is charged the call's priced usage when it settles, so this is settled spend. Each judge's monthly budget and what is left of it are on the evaluator's page in the dashboard; a rising budget_exceeded rate in the panel beside this one means a budget is used up. Scraped from the worker and the api (test runs).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 79,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 15,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (kind) (increase(spanlight_evaluator_cost_usd_total[1h]))",
+          "legendFormat": "{{kind}}",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",

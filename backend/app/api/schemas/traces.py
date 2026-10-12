@@ -1,11 +1,13 @@
 """Traces, spans, sessions and the filter options offered for them."""
 
+import uuid
 from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel
 
 from app.api.schemas.common import Money
+from app.api.schemas.scores import ScoreSummaryOut
 from app.db.models import SpanKind, SpanStatus
 from app.ingest.error_class import ErrorClass
 
@@ -32,6 +34,10 @@ class TraceSummaryOut(BaseModel):
     """Earliest failed span's status message; null if nothing failed or no message was sent."""
     error_class: ErrorClass | None
     """The same span's error class; null if nothing failed or it failed before classification."""
+    has_scores: bool
+    scores: list[ScoreSummaryOut]
+    """The latest score of each name, most recently scored first; at most 10 names. The full
+    list is `GET /traces/{trace_id}/scores`."""
 
 
 class SpanOut(BaseModel):
@@ -60,6 +66,8 @@ class SpanOut(BaseModel):
     finish_reason: str | None
     """Canonical: `stop`, `length`, `tool_calls`, `content_filter` or `other`; the raw value is
     the `finish_reason` attribute (or the provider's own attribute)."""
+    prompt_version_id: uuid.UUID | None
+    """The prompt version the SDK reported, as sent; the server may not know the id."""
 
 
 class TraceDetailOut(TraceSummaryOut):
@@ -80,3 +88,4 @@ class FiltersOut(BaseModel):
     releases: list[str]
     models: list[str]
     tags: list[str]
+    score_names: list[str]

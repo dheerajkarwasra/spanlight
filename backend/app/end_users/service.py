@@ -18,6 +18,7 @@ from app.api.schemas.traces import SessionSummaryOut
 from app.api.window import TimeWindow
 from app.core.errors import not_found
 from app.core.pagination import decode_value_cursor, encode_value_cursor
+from app.core.wire import unescape_path_name
 from app.end_users import queries
 from app.end_users.days import DayTotals, UserTotals, day_bounds, fill_days, midnight, total
 from app.end_users.queries import UserSort
@@ -127,17 +128,9 @@ def _session(row: Row[Any]) -> SessionSummaryOut:
     )
 
 
-USER_ID_ESCAPE = "~"
-
-
 def unescape_user_id(wire_id: str) -> str:
-    """The end user id a detail URL names: the path segment without one leading `~`.
-
-    Browsers resolve `.` and `..` path segments (even percent-encoded) before sending, so the
-    dashboard prefixes `~` to an id that is `.` or `..` or that starts with `~`; stripping exactly
-    one `~` here maps every wire id back to exactly one stored id.
-    """
-    return wire_id.removeprefix(USER_ID_ESCAPE)
+    """The end user id a detail URL names (see `app.core.wire.unescape_path_name`)."""
+    return unescape_path_name(wire_id)
 
 
 async def user_detail(

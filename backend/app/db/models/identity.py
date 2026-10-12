@@ -74,6 +74,23 @@ class AuditAction(enum.StrEnum):
     INSIGHT_MUTE = "insight.mute"
     INSIGHT_UNMUTE = "insight.unmute"
     INSIGHT_EXPLAIN = "insight.explain"
+    PROMPT_CREATE = "prompt.create"
+    PROMPT_VERSION_CREATE = "prompt.version_create"
+    PROMPT_LABEL_SET = "prompt.label_set"
+    PROMPT_LABEL_DELETE = "prompt.label_delete"
+    PROMPT_DELETE = "prompt.delete"
+    SCORE_CONFIG_CREATE = "score_config.create"
+    SCORE_CONFIG_UPDATE = "score_config.update"
+    SCORE_CONFIG_DELETE = "score_config.delete"
+    DATASET_CREATE = "dataset.create"
+    DATASET_DELETE = "dataset.delete"
+    ANNOTATION_QUEUE_CREATE = "annotation_queue.create"
+    ANNOTATION_QUEUE_DELETE = "annotation_queue.delete"
+    EVALUATOR_CREATE = "evaluator.create"
+    EVALUATOR_UPDATE = "evaluator.update"
+    EVALUATOR_DELETE = "evaluator.delete"
+    EXPERIMENT_CREATE = "experiment.create"
+    EXPERIMENT_RUN = "experiment.run"
 
 
 class User(Base):

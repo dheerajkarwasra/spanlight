@@ -56,6 +56,11 @@ WEEKLY_DIGEST = PeriodicJob(
 RUN_DETECTORS = PeriodicJob("run_detectors", timedelta(minutes=15), max_attempts=1)
 # Recomputes yesterday's and today's per-user daily stats. A single attempt, like the detectors.
 REFRESH_USER_STATS = PeriodicJob("refresh_user_stats", timedelta(minutes=15), max_attempts=1)
+# Reaps abandoned judge runs and, with EVALS_ENABLED, queues runs for recently ended traces.
+# Always scheduled: test and experiment runs reserve budget even with online evaluation off, so
+# their abandoned reservations must still be released. A single attempt: the next cycle's window
+# overlaps this one, so it is the retry.
+SAMPLE_FOR_EVALUATION = PeriodicJob("sample_for_evaluation", timedelta(seconds=60), max_attempts=1)
 
 
 def period_start(job: PeriodicJob, now: datetime) -> datetime:
@@ -79,6 +84,7 @@ def periodic_jobs(settings: Settings) -> list[PeriodicJob]:
         DELIVER_NOTIFICATIONS,
         ROLLUP_HOURLY,
         BACKUP_DATABASE,
+        SAMPLE_FOR_EVALUATION,
     ]
     if settings.is_demo_enabled:
         jobs.append(DEMO_TRAFFIC)

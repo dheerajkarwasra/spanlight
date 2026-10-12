@@ -26,7 +26,7 @@ def _with_state(project_id: uuid.UUID) -> Select[Budget, AlertState]:
 async def list_budgets(db: AsyncSession, project_id: uuid.UUID) -> list[BudgetRow]:
     """The project's budgets with their rule's state, by name. Unpaginated: at most 50."""
     rows = await db.execute(_with_state(project_id).order_by(Budget.name, Budget.id))
-    return [(budget, state) for budget, state in rows.tuples()]
+    return [(budget, state) for budget, state in rows]
 
 
 async def get_budget(

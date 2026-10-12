@@ -49,6 +49,9 @@ TASK_TIMEOUT_OVERRIDES: Mapping[str, float] = {
     # Streaming up to 100 000 traces with their spans to object storage; it extends its lease
     # after every batch.
     "create_export": 60 * 60.0,
+    # An experiment run: up to 1 000 items, four provider calls in flight, each followed by its
+    # evaluators; it extends its lease before every call and every 20 seconds.
+    "run_experiment": 3 * 60 * 60.0,
 }
 # Kinds that run in the long-job slot.
 LONG_KINDS: frozenset[str] = frozenset(TASK_TIMEOUT_OVERRIDES)

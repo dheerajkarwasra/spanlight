@@ -18,13 +18,11 @@ away) and under `shielded`, so cancelling the request does not cancel the settle
 Every kept row gets an `insight.explain` audit event. Prompts and answers are never logged.
 """
 
-import asyncio
 import uuid
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +32,7 @@ from app.db.models import AuditAction, InsightExplanation, ProviderCredential, P
 from app.db.rls import bind_project
 from app.gateway.context import GatewayContext, GatewayRequest, GatewayResult, GatewayServices
 from app.gateway.recorder import DirectSpans
+from app.gateway.settle_helpers import may_have_billed
 from app.insights import explain_queries
 from app.insights.explain import answer_text
 from app.insights.service import Actor
@@ -44,12 +43,6 @@ logger = structlog.get_logger(__name__)
 
 PROVIDER = ProviderKind.ANTHROPIC
 MAX_TEXT_CHARS = 20_000  # the column's CHECK; 600 output tokens stay far below it
-
-# Settlements still running after their request was cancelled. Holding a reference keeps the
-# task from being collected before it finishes; the app's shutdown drains them.
-_settling: set["asyncio.Task[Any]"] = set()
-
-DRAIN_TIMEOUT_SECONDS = 10.0
 
 
 @dataclass(frozen=True)
@@ -70,41 +63,6 @@ class Reservation:
     insight_id: uuid.UUID
     actor: Actor
     worst_case: Decimal
-
-
-async def shielded[T](work: Coroutine[Any, Any, T]) -> T:
-    """Run `work` to the end even when the awaiting request is cancelled."""
-    task = asyncio.ensure_future(work)
-    _settling.add(task)
-    task.add_done_callback(_settled)
-    return await asyncio.shield(task)
-
-
-def _settled(task: "asyncio.Task[Any]") -> None:
-    """Forget a finished settlement and log a failure nobody may be awaiting any more.
-
-    The request that started it may have been cancelled, so its exception would otherwise
-    surface only as asyncio's unstructured "never retrieved" message. The expected outcomes
-    (`502 EXPLAIN_FAILED`, `404`) are `ProblemError`s and are not logged here.
-    """
-    _settling.discard(task)
-    if task.cancelled():
-        return
-    error = task.exception()
-    if error is not None and not isinstance(error, ProblemError):
-        logger.error("insight_explain_settle_failed", error_type=type(error).__name__)
-
-
-async def drain_settling() -> None:
-    """Wait up to `DRAIN_TIMEOUT_SECONDS` for settlements still running; for the app's shutdown,
-    before the database engine is disposed. One that does not finish in time stays a reservation,
-    which the cleanup job later completes at its worst-case cost."""
-    pending = set(_settling)
-    if not pending:
-        return
-    _, unfinished = await asyncio.wait(pending, timeout=DRAIN_TIMEOUT_SECONDS)
-    if unfinished:
-        logger.warning("insight_explain_settle_unfinished", settlements=len(unfinished))
 
 
 async def settle(
@@ -217,21 +175,6 @@ def _real_cost(prepared: Prepared, result: GatewayResult, now: datetime) -> Deci
         cached_tokens=usage.cached_tokens,
     )
     return prepared.worst_case if priced is None else priced.cost_usd
-
-
-def may_have_billed(result: GatewayResult) -> bool:
-    """Whether the provider may have generated (and billed) anything for the call.
-
-    True when it reported usage, or when any attempt was sent and did not end in an HTTP error
-    status (a timeout, a connection error, an unreadable or usage-less answer). False only when
-    nothing was sent (no attempt, or a `blocked` one) or every attempt got a 4xx/5xx status.
-    """
-    if result.usage is not None:
-        return True
-    return any(
-        attempt.error != "blocked" and (attempt.status is None or attempt.status < 400)
-        for attempt in result.attempts
-    )
 
 
 def _log_failure(reservation: Reservation, result: GatewayResult) -> None:

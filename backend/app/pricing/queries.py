@@ -101,4 +101,4 @@ async def list_overrides(
             PriceOverride.id,
         )
     )
-    return [(override, creator) for override, creator in rows.tuples()]
+    return [(override, creator) for override, creator in rows]

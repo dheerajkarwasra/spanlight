@@ -1,7 +1,14 @@
 """Delete traces (and, by cascade, their spans) past each project's retention, with the
-project's resolved insights, its old detector runs and its old per-user daily stats."""
+project's resolved insights, its old detector runs and its old per-user daily stats.
+
+Evaluation data that describes traces goes with them, on the same cutoff: scores (a comment or a
+judge's reasoning can quote the trace), online evaluator runs and review-queue items. Online runs
+are kept until their month ends, because the evaluator's monthly budget sums them, and runs still
+queued or running are left to the reaper. Datasets, experiments and their items are curated by
+people and are kept."""
 
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -12,6 +19,7 @@ from sqlalchemy.sql.elements import TextClause
 
 from app.db.models import Project
 from app.db.rls import bypass_rls
+from app.evals.budget import month_start
 from app.jobs.context import TaskContext
 from app.rollups.compute import floor_hour
 
@@ -86,17 +94,61 @@ _DELETE_USER_STATS = text(
 )
 
 
+_DELETE_SCORES = text(
+    """
+    DELETE FROM scores
+    WHERE (project_id, id) IN (
+        SELECT project_id, id
+        FROM scores
+        WHERE project_id = :project_id AND created_at < :cutoff
+        LIMIT :batch_size
+    )
+    """
+)
+_DELETE_ONLINE_EVALUATOR_RUNS = text(
+    """
+    DELETE FROM evaluator_runs
+    WHERE id IN (
+        SELECT r.id
+        FROM evaluator_runs r
+        JOIN evaluators e ON e.id = r.evaluator_id
+        WHERE e.project_id = :project_id
+          AND r.source = 'online'
+          AND r.status NOT IN ('queued', 'running')
+          AND r.started_at < :cutoff
+        LIMIT :batch_size
+    )
+    """
+)
+_DELETE_QUEUE_ITEMS = text(
+    """
+    DELETE FROM annotation_queue_items
+    WHERE id IN (
+        SELECT i.id
+        FROM annotation_queue_items i
+        JOIN annotation_queues q ON q.id = i.queue_id
+        WHERE q.project_id = :project_id AND i.created_at < :cutoff
+        LIMIT :batch_size
+    )
+    """
+)
+
+
 async def run_retention(context: TaskContext, _: dict[str, Any]) -> None:
     now = datetime.now(UTC)
     deleted = await apply_retention(context.session_factory, now=now)
     insights, runs = await apply_insight_retention(context.session_factory, now=now)
     user_stats = await apply_user_stats_retention(context.session_factory, now=now)
+    evals = await apply_eval_retention(context.session_factory, now=now)
     logger.info(
         "retention_applied",
         traces_deleted=deleted,
         insights_deleted=insights,
         detector_runs_deleted=runs,
         user_stats_deleted=user_stats,
+        scores_deleted=evals.scores,
+        evaluator_runs_deleted=evals.evaluator_runs,
+        queue_items_deleted=evals.queue_items,
     )
 
 
@@ -171,6 +223,40 @@ async def apply_user_stats_retention(
             cutoff=now - timedelta(days=retention_days),
         )
     return deleted
+
+
+@dataclass(slots=True)
+class EvalRetention:
+    scores: int = 0
+    evaluator_runs: int = 0
+    queue_items: int = 0
+
+
+async def apply_eval_retention(
+    session_factory: async_sessionmaker[AsyncSession], *, now: datetime
+) -> EvalRetention:
+    """Delete scores, finished online evaluator runs and review-queue items older than each
+    project's retention cutoff. Runs of the current month stay: the budget reads them."""
+    async with session_factory() as db:
+        projects = (await db.execute(select(Project.id, Project.retention_days))).all()
+
+    done = EvalRetention()
+    budget_month = month_start(now)
+    for project_id, retention_days in projects:
+        cutoff = now - timedelta(days=retention_days)
+        done.scores += await _delete_in_batches(
+            session_factory, _DELETE_SCORES, project_id=project_id, cutoff=cutoff
+        )
+        done.evaluator_runs += await _delete_in_batches(
+            session_factory,
+            _DELETE_ONLINE_EVALUATOR_RUNS,
+            project_id=project_id,
+            cutoff=min(cutoff, budget_month),
+        )
+        done.queue_items += await _delete_in_batches(
+            session_factory, _DELETE_QUEUE_ITEMS, project_id=project_id, cutoff=cutoff
+        )
+    return done
 
 
 async def _delete_in_batches(

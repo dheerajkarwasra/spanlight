@@ -27,7 +27,7 @@ async def list_profiles(
         .where(FaultProfile.project_id == project_id)
         .order_by(FaultProfile.name, FaultProfile.id)
     )
-    return [(profile, creator) for profile, creator in rows.tuples()]
+    return [(profile, creator) for profile, creator in rows]
 
 
 async def get_profile_with_creator(
@@ -81,7 +81,7 @@ async def attached_key_ids(
         .order_by(GatewayKey.created_at.desc(), GatewayKey.id.desc())
     )
     attached: dict[uuid.UUID, list[uuid.UUID]] = defaultdict(list)
-    for profile_id, key_id in rows.tuples():
+    for profile_id, key_id in rows:
         if profile_id is not None:
             attached[profile_id].append(key_id)
     return attached

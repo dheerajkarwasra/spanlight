@@ -7,12 +7,12 @@ payloads) passes through `redact_text` or `redact_json` before it is added, and 
 cut to `MAX_EXCERPT_CHARS`, its payloads to `MAX_PAYLOAD_CHARS` each. A project that does not
 capture payloads has none to add.
 
-`worst_case_input_tokens` is the budget's estimate of the prompt's size (characters ÷ 3, rounded
-up), and `answer_text` reads the text of the model's answer.
+`worst_case_input_tokens` is the budget's estimate of the prompt's size (`app.pricing.tokens`:
+3 ASCII characters per token, every other character one token, the rule the LLM judges use), and
+`answer_text` reads the text of the model's answer.
 """
 
 import json
-import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -22,6 +22,7 @@ from app.db.models import Insight
 from app.gateway.context import GatewayRequest
 from app.gateway.trace_headers import TraceHeaders
 from app.insights.catalogue import KindInfo
+from app.pricing.tokens import estimate_text_tokens
 
 SYSTEM_PROMPT = (
     "You are the Spanlight Doctor. Explain the finding below to the engineer who owns this "
@@ -37,7 +38,6 @@ MAX_EXCERPTS = 5
 MAX_EXCERPT_CHARS = 2048
 MAX_PAYLOAD_CHARS = 1024
 MAX_STATUS_MESSAGE_CHARS = 300
-CHARS_PER_TOKEN = 3
 UNKNOWN = "unknown"
 
 
@@ -135,12 +135,11 @@ def render_excerpt(excerpt: TraceExcerpt) -> str:
 
 
 def worst_case_input_tokens(request: GatewayRequest) -> int:
-    """The prompt's size in tokens at worst: its characters ÷ 3, rounded up."""
+    """The prompt's estimated size in tokens (see `app.pricing.tokens`)."""
     body = request.body
-    characters = len(str(body.get("system", "")))
-    for message in body.get("messages", []):
-        characters += len(str(message.get("content", "")))
-    return math.ceil(characters / CHARS_PER_TOKEN)
+    parts = [str(body.get("system", ""))]
+    parts.extend(str(message.get("content", "")) for message in body.get("messages", []))
+    return estimate_text_tokens("".join(parts))
 
 
 def answer_text(body: bytes | None) -> str | None:

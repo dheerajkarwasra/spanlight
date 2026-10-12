@@ -28,7 +28,7 @@ async def list_credentials(
         .where(ProviderCredential.org_id == org_id)
         .order_by(ProviderCredential.created_at.desc(), ProviderCredential.id.desc())
     )
-    return [(credential, creator) for credential, creator in rows.tuples()]
+    return [(credential, creator) for credential, creator in rows]
 
 
 async def get_credential(

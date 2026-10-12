@@ -24,6 +24,8 @@ dependencies = [
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
     "pyotp>=2.10.0",
+    "python-multipart>=0.0.20",
+    "regex>=2026.9.29",
     "sentry-sdk>=2.71.0",
     "sqlalchemy[asyncio]>=2.0",
     "structlog>=26.1.0",
@@ -51,6 +53,7 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "ruff>=0.16.10",
+    "types-regex>=2026.9.29.20261005",
 ]
 
 [tool.pytest.ini_options]

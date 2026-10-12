@@ -18,6 +18,9 @@ because the budget it gets is whatever the smaller ones left over.
 Spans older than 48 hours are not revisited except at the old end of that gap. A span that
 arrives later than that, in the middle of the history, is missing from the rollups until
 someone runs ``spanlight rollups backfill`` for its hours.
+
+After the rollups, the run also heals ``traces.has_scores`` flags a score/ingest race left unset
+(``app.scores.repair``); it shares this job rather than adding a job kind for a small sweep.
 """
 
 import time
@@ -33,6 +36,7 @@ from app.core.observability import ROLLUP_DURATION
 from app.db.rls import bypass_rls
 from app.jobs.context import TaskContext
 from app.rollups.compute import backfill_rollups, compute_rollups, floor_hour
+from app.scores.repair import repair_has_scores
 
 logger = structlog.get_logger(__name__)
 
@@ -78,13 +82,24 @@ _BACKFILL_CANDIDATES = text(
 
 async def run_rollup_hourly(context: TaskContext, _: dict[str, Any]) -> None:
     started = time.perf_counter()
+    now = datetime.now(UTC)
     try:
-        projects, backfilled = await roll_up_all(
-            context.session_factory, now=datetime.now(UTC), context=context
-        )
+        projects, backfilled = await roll_up_all(context.session_factory, now=now, context=context)
     finally:
         ROLLUP_DURATION.observe(time.perf_counter() - started)
     logger.info("rollups_recomputed", projects=projects, backfilled_rows=backfilled)
+    # Piggybacks on this five-minute job: a small sweep, and a missed run is caught by the next.
+    # Its failure is logged, never raised: the rollups above are committed and must not be
+    # reported as a failed job.
+    try:
+        async with context.session_factory() as db:
+            repaired = await repair_has_scores(db, now)
+            await db.commit()
+    except Exception as exc:
+        logger.error("has_scores_repair_failed", error_type=type(exc).__name__, exc_info=exc)
+        return
+    if repaired:
+        logger.info("has_scores_repaired", traces=repaired)
 
 
 async def roll_up_all(

@@ -22,6 +22,7 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.text import without_nul
 from app.db.rls import bind_project
 from app.ingest.jsondepth import MAX_JSON_DEPTH, exceeds_depth
 from app.ingest.normalize import NormalizedSpan, SpanRejectedError, normalize_span
@@ -82,20 +83,10 @@ def parse_json_body(body: bytes) -> Any:
         raise InvalidJsonError(_TOO_DEEP) from exc
     if exceeds_depth(parsed):
         raise InvalidJsonError(_TOO_DEEP)
-    return _strip_nul(parsed)
+    return without_nul(parsed)
 
 
 _TOO_DEEP = f"request body is nested more than {MAX_JSON_DEPTH} levels deep"
-
-
-def _strip_nul(value: Any) -> Any:
-    if isinstance(value, str):
-        return value.replace("\x00", "")
-    if isinstance(value, list):
-        return [_strip_nul(item) for item in value]
-    if isinstance(value, dict):
-        return {_strip_nul(key): _strip_nul(item) for key, item in value.items()}
-    return value
 
 
 async def ingest_spans(

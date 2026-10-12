@@ -4,6 +4,10 @@ from app.alerts.digest_job import run_weekly_digest
 from app.alerts.jobs import run_evaluate_alerts
 from app.backups.jobs import run_backup_database
 from app.end_users.jobs import run_refresh_user_stats
+from app.evals.experiment_queries import RUN_JOB as EXPERIMENT_RUN_JOB
+from app.evals.experiment_run import run_run_experiment
+from app.evals.jobs import run_run_evaluator, run_sample_for_evaluation
+from app.evals.reservation import RUN_JOB
 from app.exports.jobs import run_create_export
 from app.exports.purge import PURGE_JOB, run_purge_project_objects
 from app.gateway.jobs import run_prune_gateway_cache
@@ -28,5 +32,8 @@ TASKS: dict[str, TaskHandler] = {
     "weekly_digest": run_weekly_digest,
     "run_detectors": run_detectors,
     "refresh_user_stats": run_refresh_user_stats,
+    "sample_for_evaluation": run_sample_for_evaluation,
+    RUN_JOB: run_run_evaluator,
+    EXPERIMENT_RUN_JOB: run_run_experiment,
     PURGE_JOB: run_purge_project_objects,
 }

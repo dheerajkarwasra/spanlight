@@ -26,7 +26,7 @@ async def list_routes(
         .where(GatewayRoute.project_id == project_id)
         .order_by(GatewayRoute.name, GatewayRoute.id)
     )
-    return [(route, updater) for route, updater in rows.tuples()]
+    return [(route, updater) for route, updater in rows]
 
 
 async def get_route(
@@ -119,7 +119,7 @@ async def list_route_versions(
         )
         .order_by(GatewayRouteVersion.version.desc())
     )
-    return [(version, updater) for version, updater in rows.tuples()]
+    return [(version, updater) for version, updater in rows]
 
 
 async def get_route_version(

@@ -6,6 +6,7 @@ and also filter on `project_id` explicitly, which keeps index usage obvious.
 
 import uuid
 from datetime import timedelta
+from decimal import Decimal
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
@@ -22,13 +23,16 @@ from app.api.schemas import (
     TraceDetailOut,
     TraceSummaryOut,
 )
+from app.api.schemas.scores import ScoreSummaryOut
 from app.api.window import Window
 from app.core.errors import not_found
 from app.core.pagination import DEFAULT_PAGE_SIZE, PageLimit, decode_cursor, encode_cursor
 from app.core.permissions import Permission
-from app.db.models import Span, Trace
+from app.db.models import Score, Span, Trace
+from app.explorer.score_filters import check_score_filters, score_conditions
 from app.explorer.trace_queries import escape_like, has_span, summary_select, trace_spans
 from app.ingest.error_class import ErrorClass
+from app.scores.queries import ScoreSummary, latest_scores_by_name
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["traces"])
 
@@ -42,7 +46,11 @@ MAX_ERROR_MESSAGE_LENGTH = 500
 
 
 def _summary(
-    trace: Trace, models: list[str] | None, error_message: str | None, error_class: str | None
+    trace: Trace,
+    models: list[str] | None,
+    error_message: str | None,
+    error_class: str | None,
+    scores: list[ScoreSummary],
 ) -> TraceSummaryOut:
     return TraceSummaryOut(
         trace_id=trace.trace_id,
@@ -64,7 +72,23 @@ def _summary(
         models=sorted(models or []),
         error_message=error_message[:MAX_ERROR_MESSAGE_LENGTH] if error_message else None,
         error_class=ErrorClass(error_class) if error_class else None,
+        has_scores=trace.has_scores,
+        scores=[ScoreSummaryOut(**score._asdict()) for score in scores],
     )
+
+
+def _span_conditions(
+    model: str | None, error_class: ErrorClass | None, prompt_version_id: uuid.UUID | None
+) -> list[ColumnElement[bool]]:
+    """The filters a trace passes when at least one of its spans matches."""
+    conditions: list[ColumnElement[bool]] = []
+    if model is not None:
+        conditions.append(Span.model == model)
+    if error_class is not None:
+        conditions.append(Span.error_class == error_class.value)
+    if prompt_version_id is not None:
+        conditions.append(Span.prompt_version_id == prompt_version_id)
+    return conditions
 
 
 @router.get("/traces", response_model=Page[TraceSummaryOut])
@@ -78,6 +102,12 @@ async def list_traces(
     model: OptionalText = None,
     status: Literal["ok", "error"] | None = None,
     error_class: ErrorClass | None = None,
+    prompt_version_id: uuid.UUID | None = None,
+    score_name: OptionalText = None,
+    score_min: Decimal | None = None,
+    score_max: Decimal | None = None,
+    score_value: OptionalText = None,
+    has_scores: bool | None = None,
     user_id: OptionalText = None,
     session_id: OptionalText = None,
     tag: OptionalText = None,
@@ -86,6 +116,7 @@ async def list_traces(
     cursor: Annotated[str | None, Query()] = None,
 ) -> Page[TraceSummaryOut]:
     project = access.require_project()
+    check_score_filters(score_name, score_min, score_max, score_value)
     query = (
         summary_select()
         .where(
@@ -111,10 +142,10 @@ async def list_traces(
         query = query.where(Trace.error_count > 0)
     elif status == "ok":
         query = query.where(Trace.error_count == 0)
-    if model is not None:
-        query = query.where(has_span(Span.model == model))
-    if error_class is not None:
-        query = query.where(has_span(Span.error_class == error_class.value))
+    for condition in _span_conditions(model, error_class, prompt_version_id):
+        query = query.where(has_span(condition))
+    for condition in score_conditions(score_name, score_min, score_max, score_value, has_scores):
+        query = query.where(condition)
     if q:
         query = query.where(
             or_(
@@ -137,8 +168,9 @@ async def list_traces(
     if len(rows) > limit:
         last = page[-1][0]
         next_cursor = encode_cursor(last.started_at, last.trace_id)
+    scores = await latest_scores_by_name(db, project.id, [row[0].trace_id for row in page])
     return Page[TraceSummaryOut](
-        items=[_summary(*row) for row in page],
+        items=[_summary(*row, scores.get(row[0].trace_id, [])) for row in page],
         next_cursor=next_cursor,
     )
 
@@ -157,7 +189,8 @@ async def get_trace(
     ).one_or_none()
     if row is None:
         raise not_found()
-    summary = _summary(*row)
+    scores = await latest_scores_by_name(db, project.id, [row[0].trace_id])
+    summary = _summary(*row, scores.get(row[0].trace_id, []))
     spans = await trace_spans(db, project.id, summary.trace_id)
     return TraceDetailOut(
         **summary.model_dump(),
@@ -253,4 +286,7 @@ async def list_filter_values(
             Span.model, Span.project_id == project.id, Span.started_at >= since
         ),
         tags=list(tags.all()),
+        score_names=await distinct_values(
+            Score.name, Score.project_id == project.id, Score.created_at >= since
+        ),
     )

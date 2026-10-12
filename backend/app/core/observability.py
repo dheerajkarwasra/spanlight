@@ -126,3 +126,36 @@ DETECTOR_PROJECTS_SKIPPED = Counter(
     "spanlight_detector_projects_skipped_total",
     "Projects a run_detectors pass did not start because its run budget ran out.",
 )
+SCORES_WRITTEN = Counter(
+    "spanlight_scores_written_total",
+    "Score rows inserted by the score write path, by source (api, human, eval). A retried score "
+    "that was already stored is not counted.",
+    ["source"],
+)
+PROMPT_READS = Counter(
+    "spanlight_prompt_reads_total",
+    "Prompt reads by API key, by outcome (hit, not_modified, not_found).",
+    ["outcome"],
+)
+EVALUATOR_RUNS = Counter(
+    "spanlight_evaluator_runs_total",
+    "Evaluator runs, by evaluator kind (heuristic, llm_judge, webhook) and outcome: done, failed, "
+    "budget_exceeded, evaluator_disabled, skipped (already started or ended), abandoned (failed "
+    "by the reaper, charged its reservation), and from the "
+    "sampler skipped_cap (over the per-cycle cap) and skipped_no_payload (no stored payload). "
+    "The sampler's windows overlap, so a trace it skips may be counted in several cycles.",
+    ["kind", "outcome"],
+)
+EVALUATOR_COST = Counter(
+    "spanlight_evaluator_cost_usd_total",
+    "US dollars evaluator runs were charged when they settled or were reaped, by evaluator kind "
+    "(only judges "
+    "spend). Each evaluator's monthly budget is in the dashboard, not in a metric.",
+    ["kind"],
+)
+EXPERIMENT_ITEMS = Counter(
+    "spanlight_experiment_items_total",
+    "Experiment items stored, by outcome: done (the target answered) or error (a missing "
+    "variable, a provider failure or a broken call).",
+    ["outcome"],
+)

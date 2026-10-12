@@ -37,6 +37,7 @@ from app.db.models import InsightExplanation, Project
 from app.gateway.context import GatewayServices
 from app.gateway.execute import execute
 from app.gateway.recorder import DirectSpans
+from app.gateway.settle_helpers import shielded
 from app.insights import explain_queries, queries
 from app.insights.catalogue import KIND_INFO
 from app.insights.explain import (
@@ -52,7 +53,6 @@ from app.insights.explain_settle import (
     Reservation,
     settle,
     settle_abandoned,
-    shielded,
 )
 from app.insights.service import Actor
 from app.pricing.cost import load_price_book
