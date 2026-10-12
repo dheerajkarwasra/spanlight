@@ -24,9 +24,10 @@ from app.gateway.http import build_http_client
 from app.jobs.context import TaskContext
 from app.jobs.outcome import JobOutcome
 from app.jobs.queue import ClaimedJob, claim_next, enqueue
-from app.jobs.tasks import demo_traffic
+from app.jobs.tasks import TASKS, demo_traffic, seed_demo_evals
 from app.main import create_app
 from app.services.demo import ensure_demo_workspace
+from app.services.demo_evals import NoAnthropicCredentialError
 
 SessionFactory = async_sessionmaker[AsyncSession]
 
@@ -204,3 +205,20 @@ async def test_demo_workspace_is_idempotent(session_factory: SessionFactory) -> 
         await db.commit()
     assert first.project.id == second.project.id
     assert first.user.id == second.user.id
+
+
+async def test_seed_demo_evals_job_is_registered() -> None:
+    assert TASKS["seed_demo_evals"] is seed_demo_evals.run_seed_demo_evals
+
+
+async def test_seed_demo_evals_job_fails_without_the_demo_credential(
+    session_factory: SessionFactory, settings: Settings
+) -> None:
+    # No ANTHROPIC_API_KEY in the test settings, so the demo org never got its credential: the
+    # job fails (the worker stores the reason on the job) and writes nothing.
+    async with session_factory() as db:
+        await ensure_demo_workspace(db)
+        await db.commit()
+    context = await _context(session_factory, settings)
+    with pytest.raises(NoAnthropicCredentialError):
+        await seed_demo_evals.run_seed_demo_evals(context, {})

@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 
+import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.datasets import queries as dataset_queries
@@ -43,6 +44,8 @@ from app.prompts import service as prompts
 from app.prompts.schemas import PromptCreate, VersionCreate
 from app.services import demo_evals_data as data
 from app.services.demo import DemoWorkspace
+
+logger = structlog.get_logger(__name__)
 
 
 class NoAnthropicCredentialError(Exception):
@@ -83,12 +86,17 @@ async def seed_evals(db: AsyncSession, workspace: DemoWorkspace, now: datetime) 
     actor = Actor(org_id=workspace.org.id, user_id=workspace.user.id, ip=None)
     created: dict[str, uuid.UUID] = {}
     versions = await _seed_prompt(db, workspace, created, now)
+    logger.info("demo_seed_step_done", step="prompt")
     dataset = await _seed_dataset(db, workspace, created, now)
+    logger.info("demo_seed_step_done", step="dataset")
     evaluator_id = await _seed_judge(db, workspace, actor, credential, created, now)
+    logger.info("demo_seed_step_done", step="judge")
     experiment_id = await _seed_experiment(
         db, workspace, actor, versions, (dataset, credential, evaluator_id), created, now
     )
+    logger.info("demo_seed_step_done", step="experiment")
     runs, waiting = await _seed_runs(db, workspace, actor, experiment_id, versions, now)
+    logger.info("demo_seed_step_done", step="runs")
     items = await dataset_queries.count_items(db, dataset.id)
     return SeedReport(created=created, runs=runs, items=items, waiting=waiting)
 

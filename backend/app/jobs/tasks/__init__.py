@@ -16,6 +16,7 @@ from app.jobs.context import TaskHandler
 from app.jobs.tasks.cleanup import run_cleanup_sessions
 from app.jobs.tasks.demo_traffic import run_demo_traffic
 from app.jobs.tasks.retention import run_retention
+from app.jobs.tasks.seed_demo_evals import SEED_DEMO_EVALS_JOB, run_seed_demo_evals
 from app.notifications.jobs import run_deliver_notifications
 from app.rollups.jobs import run_rollup_hourly
 
@@ -36,4 +37,5 @@ TASKS: dict[str, TaskHandler] = {
     RUN_JOB: run_run_evaluator,
     EXPERIMENT_RUN_JOB: run_run_experiment,
     PURGE_JOB: run_purge_project_objects,
+    SEED_DEMO_EVALS_JOB: run_seed_demo_evals,
 }
