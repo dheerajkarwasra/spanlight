@@ -3,19 +3,20 @@
 Its two LLM calls go through the gateway (`execute`) with the trace headers of the trace the flow
 started, so the gateway's `llm` spans land in it, under the root span. Each call's span is
 written before the flow goes on (`DirectSpans`, not the background recorder): the job's monthly
-cap counts the costs on stored spans, so a paid call whose span could not be stored ends the flow
-with `DemoSpendUnrecordedError` and no further provider call. The flow collects the spans it
-writes itself, the root `chain` span and the `faq-lookup` retrieval span, for the job to ingest.
+cap counts the costs on stored spans, so a paid call whose span could not be stored, or never
+produced one, ends the flow with `DemoSpendUnrecordedError` and no further provider call. The
+flow collects the spans it writes itself, the root `chain` span and the `faq-lookup` retrieval
+span, for the job to ingest.
 """
 
 import dataclasses
 import json
 import secrets
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
-from app.gateway.context import GatewayContext, GatewayRequest, GatewayResult
+from app.gateway.context import Clock, GatewayContext, GatewayRequest, GatewayResult
 from app.gateway.execute import execute
 from app.gateway.recorder import DirectSpans
 from app.gateway.trace_headers import TraceHeaders
@@ -64,6 +65,10 @@ ANSWER_SYSTEM = (
 
 class DemoCallError(Exception):
     """A demo LLM call that did not succeed. The message is the gateway span's status line."""
+
+
+class DemoBudgetBlockedError(DemoCallError):
+    """A demo LLM call that a firing project `block` budget stopped before the provider."""
 
 
 class DemoSpendUnrecordedError(Exception):
@@ -158,7 +163,7 @@ async def _call_claude(
     )
     flow.llm_calls += 1
     result = await execute(request, gateway)
-    if not await spans.write(gateway):
+    if not await spans.write(gateway, require_span=True):
         flow.error = DemoSpendUnrecordedError(
             f"the span of demo call {flow.llm_calls} was not stored"
         )
@@ -166,7 +171,9 @@ async def _call_claude(
     text = answer_text(result)
     if text is None:
         reason = status_message(result) or f"{result.status} unreadable answer"
-        flow.error = DemoCallError(reason)
+        flow.error = (DemoBudgetBlockedError if result.budget is not None else DemoCallError)(
+            reason
+        )
     return text
 
 
@@ -175,7 +182,7 @@ async def run_support_flow(gateway: GatewayContext, question: str) -> FlowRecord
     gateway = dataclasses.replace(gateway, span_sink=spans)
     flow = FlowRecorder(question=question)
     root_span_id = new_span_id()
-    started = datetime.now(UTC)
+    started = gateway.clock()
     answer: str | None = None
 
     classification = await _call_claude(
@@ -192,7 +199,7 @@ async def run_support_flow(gateway: GatewayContext, question: str) -> FlowRecord
         category = word if word in CATEGORIES else "other"
         flow.tags.append(category)
 
-        faq_entry = _faq_lookup(flow, root_span_id, category)
+        faq_entry = _faq_lookup(flow, root_span_id, category, gateway.clock)
         answer = await _call_claude(
             gateway,
             spans,
@@ -203,13 +210,13 @@ async def run_support_flow(gateway: GatewayContext, question: str) -> FlowRecord
             max_tokens=300,
         )
 
-    flow.add(_root_span(flow, root_span_id, started, answer))
+    flow.add(_root_span(flow, root_span_id, started, gateway.clock(), answer))
     return flow
 
 
-def _faq_lookup(flow: FlowRecorder, root_span_id: str, category: str) -> str:
+def _faq_lookup(flow: FlowRecorder, root_span_id: str, category: str, clock: Clock) -> str:
     """The FAQ entry for `category`, recorded as the `faq-lookup` retrieval span."""
-    started = datetime.now(UTC)
+    started = clock()
     entry = FAQ[category]
     flow.add(
         {
@@ -219,7 +226,7 @@ def _faq_lookup(flow: FlowRecorder, root_span_id: str, category: str) -> str:
             "kind": "retrieval",
             "status": "ok",
             "start_time": _iso(started),
-            "end_time": _iso(datetime.now(UTC)),
+            "end_time": _iso(clock()),
             "input": {"category": category},
             "output": {"entry": entry},
         }
@@ -228,7 +235,7 @@ def _faq_lookup(flow: FlowRecorder, root_span_id: str, category: str) -> str:
 
 
 def _root_span(
-    flow: FlowRecorder, root_span_id: str, started: datetime, answer: str | None
+    flow: FlowRecorder, root_span_id: str, started: datetime, ended: datetime, answer: str | None
 ) -> dict[str, Any]:
     root: dict[str, Any] = {
         "span_id": root_span_id,
@@ -236,7 +243,7 @@ def _root_span(
         "kind": "chain",
         "status": "error" if flow.error else "ok",
         "start_time": _iso(started),
-        "end_time": _iso(datetime.now(UTC)),
+        "end_time": _iso(ended),
         "input": {"question": flow.question},
         "output": {"answer": answer} if answer is not None else None,
     }

@@ -17,11 +17,12 @@ from decimal import Decimal
 from typing import Literal
 
 import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.observability import EVALUATOR_COST, EVALUATOR_RUNS
 from app.db.rls import bind_project
 from app.evals.reservation import BUDGET_EXCEEDED, settle_run
-from app.evals.run_queries import fail_unreserved_run
+from app.evals.run_queries import fail_unreserved_run, run_status
 from app.evals.runner_build import RunnerDeps
 from app.evals.schemas import EvalResult
 from app.scores.schemas import ScoreIn
@@ -32,6 +33,8 @@ logger = structlog.get_logger(__name__)
 
 EVALUATOR_DISABLED = "evaluator_disabled"
 ABANDONED = "abandoned"
+# The run row was deleted while it ran (its evaluator or project was deleted).
+RUN_DELETED = "run_deleted"
 
 RunStatus = Literal["done", "failed", "skipped"]
 
@@ -75,7 +78,7 @@ async def settle_success(
             db, ref.run_id, succeeded=True, cost_usd=result.cost_usd, error=None, now=deps.clock()
         )
         if not settled:
-            return RunOutcome("failed", error=ABANDONED)
+            return await _unsettled(db, ref, result.cost_usd)
         if store_scores and result.scores:
             written = await write_scores(
                 db,
@@ -105,9 +108,20 @@ async def settle_failure(
         settled = await settle_run(
             db, ref.run_id, succeeded=False, cost_usd=charge, error=error, now=deps.clock()
         )
-    if not settled:
-        return RunOutcome("failed", error=ABANDONED)
+        if not settled:
+            return await _unsettled(db, ref, charge)
     return RunOutcome("failed", charge, error)
+
+
+async def _unsettled(db: AsyncSession, ref: RunRef, charge: Decimal) -> RunOutcome:
+    """The outcome of a run that was no longer running when it came to settle. Either it ended
+    without this attempt (the reaper failed it, charging its reservation, or another attempt
+    settled it): `abandoned`, counted there. Or its row is gone, deleted with its evaluator or
+    project while the call was out: `run_deleted`, failed with what it would have been charged,
+    since nothing else counts it."""
+    if await run_status(db, ref.run_id) is None:
+        return RunOutcome("failed", charge, RUN_DELETED)
+    return RunOutcome("failed", error=ABANDONED)
 
 
 async def fail_unstarted(deps: RunnerDeps, ref: RunRef, error: str) -> RunOutcome:
@@ -119,8 +133,10 @@ async def fail_unstarted(deps: RunnerDeps, ref: RunRef, error: str) -> RunOutcom
 
 
 def observe(ref: RunRef, outcome: RunOutcome, started: float) -> None:
-    """Count the run and log `evaluator_run_finished`."""
-    EVALUATOR_RUNS.labels(kind=ref.kind, outcome=outcome.label).inc()
+    """Count the run and log `evaluator_run_finished`. An `abandoned` run ended without this
+    attempt and was counted (and charged) where it ended, so it is only logged here."""
+    if outcome.error != ABANDONED:
+        EVALUATOR_RUNS.labels(kind=ref.kind, outcome=outcome.label).inc()
     if outcome.cost_usd > 0:
         EVALUATOR_COST.labels(kind=ref.kind).inc(float(outcome.cost_usd))
     logger.info(

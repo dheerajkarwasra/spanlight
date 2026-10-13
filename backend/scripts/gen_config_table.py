@@ -304,8 +304,13 @@ DESCRIPTIONS: dict[str, str] = {
         "has been sent, and each write holds a connection."
     ),
     "gateway_record_backlog": (
-        "Most gateway spans waiting or being written. Past it a span is dropped and counted in "
-        "`spanlight_gateway_record_failures_total`; the call itself is never affected."
+        "Most gateway spans waiting or being written, a failed write waiting to be retried "
+        "included. Each holds its input and output already cut to 32 KB, so a span's payloads "
+        "are at most 64 KB of JSON as stored; the memory a waiting span takes in the process is "
+        "larger than that, so size the backlog by what the api can spare. Past it a "
+        "span is dropped and counted in "
+        "`spanlight_gateway_record_failures_total` and in `gateway_spans_lost` on "
+        "`/health/ready`; the call itself is never affected."
     ),
     "alerts_evaluation_enabled": (
         "Schedule the alert evaluation job, which checks every enabled rule once a minute. Off, "

@@ -10,8 +10,6 @@ from collections.abc import Mapping, Sequence
 from http import HTTPStatus
 from typing import Any, TypedDict, cast
 
-import psycopg
-import psycopg.errors
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -20,6 +18,7 @@ from sqlalchemy.exc import DataError, OperationalError
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.db_errors import is_nul_error, is_statement_timeout
 from app.core.request_context import current_request_id
 
 PROBLEM_CONTENT_TYPE = "application/problem+json"
@@ -151,10 +150,7 @@ def service_unavailable(
     *,
     retry_after_seconds: int = RETRY_AFTER_SECONDS,
 ) -> ProblemError:
-    """503 for a request the database could not take or finish in time.
-
-    `Retry-After` says when the client may try again.
-    """
+    """503 for a request the database could not take or finish in time; see `Retry-After`."""
     return ProblemError(
         503,
         "SERVICE_UNAVAILABLE",
@@ -273,8 +269,7 @@ async def _handle_pool_timeout(request: Request, _: Exception) -> JSONResponse:
 
 async def _handle_operational_error(request: Request, exc: Exception) -> JSONResponse:
     error = cast(OperationalError, exc)
-    # `QueryCanceled` is what Postgres raises when a statement outlives `statement_timeout`.
-    if isinstance(error.orig, psycopg.errors.QueryCanceled):
+    if is_statement_timeout(error.orig):
         return await _busy("db_statement_timeout", request)
     return await _handle_unexpected(request, exc)
 
@@ -283,7 +278,7 @@ async def _handle_data_error(request: Request, exc: Exception) -> JSONResponse:
     error = cast(DataError, exc)
     # A request value Postgres text cannot hold (NUL) that no parameter constraint caught: the
     # client's mistake, not ours. Any other data error is unexpected.
-    if isinstance(error.orig, psycopg.DataError) and "NUL" in str(error.orig):
+    if is_nul_error(error.orig):
         return problem_response(
             422, "VALIDATION_ERROR", "Text parameters cannot contain NUL characters."
         )

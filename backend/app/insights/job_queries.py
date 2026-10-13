@@ -1,15 +1,18 @@
-"""Reads of the `run_detectors` job that span every project.
+"""Queries of the insight jobs that span every project.
 
-Both hold nothing but ids and counts, so they run with row-level security bypassed, each in a
-transaction of its own that they end themselves (the bypass is local to it).
+The two reads of the `run_detectors` job hold nothing but ids and counts, and the cleanup job's
+`complete_stale_reservations` touches nothing but explanation reservations. Each runs with
+row-level security bypassed, in a transaction of its own that it ends itself (the bypass is local
+to it). Only worker code calls them.
 """
 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.db.models import InsightExplanation
 from app.db.rls import bypass_rls
 from app.insights.schemas import Severity
 
@@ -53,3 +56,28 @@ async def open_insights_by_severity(db: AsyncSession) -> dict[Severity, int]:
     for row in rows:
         counts[Severity(row.severity)] = int(row.open_count)
     return counts
+
+
+async def complete_stale_reservations(
+    session_factory: async_sessionmaker[AsyncSession], *, before: datetime, now: datetime
+) -> int:
+    """Complete explanation reservations created before `before` at their worst-case cost, with
+    no answer.
+
+    Their request died between the reservation and its outcome (a process killed mid-call, a
+    failed settle), so the provider may have billed the call. The row stays in the month's spend
+    at its reserved cost rather than handing that cost back: the budget errs high. One
+    transaction, every project.
+    """
+    async with session_factory() as db:
+        await bypass_rls(db)
+        result = await db.execute(
+            update(InsightExplanation)
+            .where(
+                InsightExplanation.completed_at.is_(None),
+                InsightExplanation.created_at < before,
+            )
+            .values(completed_at=now)
+        )
+        await db.commit()
+    return int(getattr(result, "rowcount", 0))

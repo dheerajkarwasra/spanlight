@@ -126,11 +126,14 @@ class Settings(BaseSettings):
     # checked before each key's own limits. Blank means no ceiling. A shared deployment sets it
     # so one organization's traffic cannot crowd out the others'.
     gateway_org_rpm_ceiling: int | None = Field(default=None, ge=1, le=100_000)
-    # Gateway spans are written after the answer, in the background. At most this many writes
-    # run at once (each holds a database connection), and at most `gateway_record_backlog` wait
-    # or run; past that a span is dropped and counted, so a burst cannot drain the pool.
+    # Gateway spans are written after the answer, in the background, a failed write retried a
+    # few times (`app.gateway.recorder.RECORD_RETRY_DELAYS_S`). At most this many writes run at
+    # once (each holds a database connection), and at most `gateway_record_backlog` wait or run;
+    # past that a span is dropped and counted, so a burst cannot drain the pool. A waiting span
+    # holds its input and output already cut to 32 KB each (up to 64 KB of JSON per span as
+    # stored; the span's memory in the process is larger, so size the backlog by measuring).
     gateway_record_concurrency: int = Field(default=16, ge=1, le=256)
-    gateway_record_backlog: int = Field(default=1000, ge=1, le=100_000)
+    gateway_record_backlog: int = Field(default=5000, ge=1, le=100_000)
 
     # Alerts. `alerts_evaluation_enabled` schedules the alert evaluation job (every minute) and
     # `weekly_digest_enabled` the Monday digest email; turn either off to stop it everywhere.

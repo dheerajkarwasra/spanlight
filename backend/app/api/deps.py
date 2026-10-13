@@ -88,7 +88,9 @@ Clock = Callable[[], datetime]
 
 
 def get_clock(request: Request) -> Clock:
-    """The time source for one-time codes and login challenges: the wall clock, except in tests."""
+    """The time source for one-time codes, login challenges and the other `/api/v1` reads that
+    take a `now` (the budgets API among them); the gateway request path reads the same clock.
+    The wall clock, except in tests."""
     clock: Clock = request.app.state.clock
     return clock
 

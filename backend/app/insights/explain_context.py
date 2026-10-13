@@ -9,7 +9,7 @@ the project's `block` budgets still apply, since the call is spend in the projec
 """
 
 from app.db.models import Project, ProviderCredential
-from app.gateway.context import GatewayContext, GatewayServices, SpanSink
+from app.gateway.context import Clock, GatewayContext, GatewayServices, SpanSink
 from app.gateway.in_process import single_credential_context
 
 ENVIRONMENT = "doctor"
@@ -22,8 +22,10 @@ def explain_context(
     credential: ProviderCredential,
     *,
     span_sink: SpanSink,
+    clock: Clock | None = None,
 ) -> GatewayContext:
-    """The context of one explanation call in `project`, sent with `credential`."""
+    """The context of one explanation call in `project`, sent with `credential`, on `clock`
+    (real time when None)."""
     return single_credential_context(
         services,
         project,
@@ -31,4 +33,5 @@ def explain_context(
         environment=ENVIRONMENT,
         route_name=ROUTE_NAME,
         span_sink=span_sink,
+        clock=clock,
     )

@@ -7,10 +7,12 @@
    (`app.insights.explain`), and the call's worst-case cost (the prompt's characters ÷ 3 input
    tokens and `MAX_OUTPUT_TOKENS` output tokens). The transaction is then committed, which
    returns its connection to the pool.
-2. **Reserve**, in one short transaction under an advisory lock per organization: the
-   organization's month-to-date explanation cost (reservations included) plus the worst case
-   must not exceed `EXPLAIN_MONTHLY_BUDGET_USD`; a reservation row holding the worst case is
-   inserted and committed. Two concurrent requests cannot both pass the check on the same sum.
+2. **Reserve**, in one short transaction bound to the project and under an advisory lock per
+   organization: the organization's month-to-date explanation cost (reservations included,
+   summed by a database function so the request never bypasses row-level security) plus the
+   worst case must not exceed `EXPLAIN_MONTHLY_BUDGET_USD`; a reservation row holding the worst
+   case is inserted and committed. Two concurrent requests cannot both pass the check on the
+   same sum.
 3. **Call** the gateway in process (`key=None`: no cache, faults or key limits) through a route
    built in memory: the one credential, the configured model, one attempt, no fallbacks. The
    trace's environment is `doctor` and its tag `doctor-explain`; the span is written into the
@@ -34,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ProblemError, not_configured, not_found
 from app.db.models import InsightExplanation, Project
+from app.db.rls import bind_project
 from app.gateway.context import GatewayServices
 from app.gateway.execute import execute
 from app.gateway.recorder import DirectSpans
@@ -78,7 +81,7 @@ async def explain(
     await db.commit()  # no connection is held while the provider answers
     reservation = await _reserve(db, services, project, insight_id, actor, prepared, now)
     spans = DirectSpans()
-    context = explain_context(services, project, prepared.credential, span_sink=spans)
+    context = explain_context(services, project, prepared.credential, span_sink=spans, clock=clock)
     try:
         result = await execute(prepared.request, context)
     except BaseException:
@@ -147,9 +150,16 @@ async def _reserve(
     prepared: Prepared,
     now: datetime,
 ) -> Reservation:
-    """Check the budget and reserve the worst case, in one committed transaction."""
+    """Check the budget and reserve the worst case, in one committed transaction.
+
+    The lock, the sum and the insert share that transaction, so two concurrent requests cannot
+    both pass the check on the same sum. The transaction is bound to `project` (the request's
+    first one ended with the prepare step's commit), so the insert is checked by row-level
+    security; the organization-wide sum is a database function that needs no bypass.
+    """
     budget = services.settings.explain_monthly_budget_usd
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    await bind_project(db, project.id)
     await explain_queries.lock_org_budget(db, project.org_id)
     spent = await explain_queries.month_to_date_cost(db, project.org_id, month_start)
     if spent + prepared.worst_case > budget:

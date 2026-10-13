@@ -7,11 +7,17 @@ access. It is idempotent and safe to run on every deploy.
 """
 
 import re
+from typing import Any
 
 import psycopg
 from psycopg import sql
 
 _ROLE_NAME = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
+
+# Functions the migrations revoke from PUBLIC because only the app may call them, by signature.
+# Each is granted to the app role by name, so a function added later stays revoked until it is
+# listed here.
+APP_FUNCTIONS = ("public.explain_month_to_date_cost(uuid, timestamptz)",)
 
 
 def ensure_app_role(admin_url: str, role: str, password: str) -> None:
@@ -45,4 +51,21 @@ def ensure_app_role(admin_url: str, role: str, password: str) -> None:
         ):
             connection.execute(
                 sql.SQL(statement).format(database=sql.Identifier(database), role=role_id)
+            )
+        _grant_app_functions(connection, role_id)
+
+
+def _grant_app_functions(connection: psycopg.Connection[Any], role_id: sql.Identifier) -> None:
+    """Let the role call each function in `APP_FUNCTIONS` that the schema has.
+
+    A database restored from before the function's migration does not have it yet; the
+    `ensure-app-role` that follows the next `migrate` grants it.
+    """
+    for signature in APP_FUNCTIONS:
+        exists = connection.execute("SELECT to_regprocedure(%s)", (signature,)).fetchone()
+        if exists is not None and exists[0] is not None:
+            connection.execute(
+                sql.SQL("GRANT EXECUTE ON FUNCTION {function} TO {role}").format(
+                    function=sql.SQL(signature), role=role_id
+                )
             )

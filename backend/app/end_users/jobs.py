@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.rls import bind_project
 from app.end_users.days import midnight, recent_days
-from app.end_users.queries import active_project_ids
+from app.end_users.job_queries import active_project_ids
 from app.end_users.refresh import refresh_user_stats
 from app.jobs.context import TaskContext
 

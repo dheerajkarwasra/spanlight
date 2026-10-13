@@ -22,7 +22,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.alerts.evaluation import ProjectOutcome, evaluate_project
-from app.alerts.evaluation_queries import projects_with_enabled_rules
+from app.alerts.job_queries import projects_with_enabled_rules
 from app.alerts.metrics import MetricCache
 from app.core.observability import ALERT_EVALUATION_DURATION
 from app.jobs.context import TaskContext

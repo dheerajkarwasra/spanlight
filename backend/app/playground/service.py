@@ -26,7 +26,6 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
-from datetime import datetime
 from typing import Any
 
 import structlog
@@ -36,7 +35,13 @@ from app.core.errors import not_configured, not_found
 from app.core.ratelimit import PostgresTokenBucket
 from app.db.models import Project, PromptVersion, ProviderCredential
 from app.gateway import service as gateway_service
-from app.gateway.context import GatewayContext, GatewayRequest, GatewayResult, GatewayServices
+from app.gateway.context import (
+    Clock,
+    GatewayContext,
+    GatewayRequest,
+    GatewayResult,
+    GatewayServices,
+)
 from app.gateway.execute import execute as gateway_execute
 from app.gateway.in_process import single_credential_context
 from app.gateway.recorder import DirectSpans
@@ -94,20 +99,21 @@ async def run(
     actor_id: uuid.UUID,
     configs: list[PlaygroundConfig],
     *,
-    now: datetime,
+    clock: Clock,
     execute: Execute = gateway_execute,
 ) -> list[PlaygroundResult]:
     """Run every configuration and answer in order. Commits `db`.
 
     Errors: `409 NOT_CONFIGURED` without the gateway runtime or `CREDENTIALS_KEYS`; `404` for a
     credential that is not the organization's or a prompt version that is not the project's.
+    `clock` is the app's wall clock: the budget guard, the spans and the pricing all read it.
     """
     services = _configured(services)
     plans = [await _plan(db, project, actor_id, config) for config in configs]
     prices = await load_price_book(db, project.org_id)
     await db.commit()  # no connection is held while the providers answer
     results = await asyncio.gather(
-        *(_run_one(services, project, plan, prices, now, execute) for plan in plans)
+        *(_run_one(services, project, plan, prices, clock, execute) for plan in plans)
     )
     logger.info(
         "playground_run",
@@ -163,14 +169,14 @@ async def _run_one(
     project: Project,
     plan: _Plan,
     prices: PriceBook,
-    now: datetime,
+    clock: Clock,
     execute: Execute,
 ) -> PlaygroundResult:
     """One configuration's result; anything but a cancellation becomes its `error`."""
     if plan.request is None:
         return failed(plan.error or "invalid_configuration")
     try:
-        return await _call(services, project, plan, plan.request, prices, now, execute)
+        return await _call(services, project, plan, plan.request, prices, clock, execute)
     except Exception as error:  # noqa: BLE001 - one broken configuration must not stop the others
         logger.error("playground_call_failed", error_type=type(error).__name__)
         return failed("playground_failed")
@@ -182,7 +188,7 @@ async def _call(
     plan: _Plan,
     request: GatewayRequest,
     prices: PriceBook,
-    now: datetime,
+    clock: Clock,
     execute: Execute,
 ) -> PlaygroundResult:
     spans = _PlaygroundSpans(plan.version_id)
@@ -193,6 +199,7 @@ async def _call(
         environment=ENVIRONMENT,
         route_name=TRACE_NAME,
         span_sink=spans,
+        clock=clock,
     )
     started = time.monotonic()
     try:
@@ -202,7 +209,8 @@ async def _call(
         await shielded(spans.write(context))
         raise
     latency_ms = (time.monotonic() - started) * 1000
-    stored = await shielded(spans.write(context))
+    # An answered call always leaves a span; none means it could not be built.
+    stored = await shielded(spans.write(context, require_span=True))
     outcome = result_of(
         result,
         surface=request.surface,
@@ -210,10 +218,17 @@ async def _call(
         model=plan.model,
         prices=prices,
         latency_ms=latency_ms,
-        at=now,
+        at=clock(),
     )
+    return _linked(outcome, stored=stored, project_id=project.id)
+
+
+def _linked(outcome: PlaygroundResult, *, stored: bool, project_id: uuid.UUID) -> PlaygroundResult:
+    """The outcome, without its trace link when its span was not stored.
+
+    A trace link that cannot open is worse than none.
+    """
     if stored:
         return outcome
-    logger.warning("playground_span_not_stored", project_id=str(project.id))
-    # A trace link that cannot open is worse than none.
+    logger.warning("playground_span_not_stored", project_id=str(project_id))
     return replace(outcome, trace_id=None, span_id=None)

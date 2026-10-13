@@ -21,7 +21,7 @@ def matches_model(configured: str, actual: str) -> bool:
         return True
     if not actual.startswith(configured):
         return False
-    return _SNAPSHOT_SUFFIX.match(actual[len(configured) :]) is not None
+    return _SNAPSHOT_SUFFIX.fullmatch(actual[len(configured) :]) is not None
 
 
 def like_prefix(name: str) -> str:

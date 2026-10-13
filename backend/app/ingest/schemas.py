@@ -4,6 +4,7 @@ Each span is validated independently so one bad span is reported in
 `rejected` instead of failing the whole batch.
 """
 
+import sys
 from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import UUID
@@ -47,7 +48,10 @@ def _parse_timestamp(value: object) -> datetime:
             raise ValueError("timestamp is not valid ISO-8601") from exc
         if parsed.tzinfo is None:
             raise ValueError("timestamp must include a UTC offset")
-        return parsed.astimezone(UTC)
+        try:
+            return parsed.astimezone(UTC)
+        except OverflowError as exc:  # year 1 or 9999, pushed past the range by its offset
+            raise ValueError("timestamp is out of range") from exc
     raise ValueError("timestamp must be an ISO-8601 string or integer unix nanoseconds")
 
 
@@ -77,6 +81,16 @@ SpanId = Annotated[
     AfterValidator(_nonzero),
 ]
 TokenCount = Annotated[StrictInt, Field(ge=0, le=MAX_TOKEN_COUNT)]
+
+
+def _fits_double(value: float) -> float:
+    """`value`, if a double precision column can hold it; a JSON integer can be far larger."""
+    if value > sys.float_info.max:
+        raise ValueError("number is too large to store")
+    return value
+
+
+_Double = AfterValidator(_fits_double)
 
 
 def _valid_hash_or_none(value: object) -> str | None:
@@ -132,7 +146,7 @@ class SpanIn(BaseModel):
     provider: Text128 | None = None
     model: Text256 | None = None
     usage: UsageIn | None = None
-    time_to_first_token_ms: Annotated[StrictFloat | StrictInt, Field(ge=0)] | None = None
+    time_to_first_token_ms: Annotated[StrictFloat | StrictInt, Field(ge=0), _Double] | None = None
     input: Any = None
     output: Any = None
     attributes: dict[str, Any] = Field(default_factory=dict, max_length=256)

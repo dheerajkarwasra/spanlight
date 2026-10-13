@@ -8,9 +8,11 @@ first chunk is awaited inside it, so a provider that accepts the request and the
 is a timeout that can still be retried or fallen back from.
 
 How one attempt ends is `single_attempt.attempt_once`'s concern. A request body that cannot be
-sent as strict JSON is `INVALID_REQUEST` with no attempt made.
+sent as strict JSON is `INVALID_REQUEST` with no attempt made. An attempt the caller cancels
+still counts (error `cancelled`): the provider may have received the request.
 """
 
+import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -95,65 +97,113 @@ async def run_attempts(
     *,
     deadline: float,
     waits: Waits,
+    result: LoopResult | None = None,
 ) -> LoopResult:
-    """Try the plan's targets until one answers; see the module docstring for the endings."""
-    result = LoopResult()
+    """Try the plan's targets until one answers; see the module docstring for the endings.
+
+    `result` is filled as the loop goes, so a caller that passes one can still read the attempts
+    made when the loop is cancelled.
+    """
+    loop_result = result if result is not None else LoopResult()
+    run = _Run(request, context, fault, deadline, waits, loop_result)
     for position, index in enumerate(plan.order):
-        target = context.route.targets[index]
-        credential = context.credentials[target.credential_id]
-        adapter = adapter_for(credential.provider)
-        upstream = _prepare(request, context, plan, index, credential, adapter)
-        if isinstance(upstream, GatewayError):
-            if upstream.spanlight_code == "INVALID_REQUEST":
-                result.error = upstream
-                return result
+        target = _prepare(request, context, plan, index)
+        if isinstance(target, GatewayError):
+            if target.spanlight_code == "INVALID_REQUEST":
+                run.result.error = target
+                return run.result
             # The credential cannot be opened: try the next target; the last real failure, if
             # there was one, stays the answer.
-            if not result.attempts:
-                result.error = upstream
+            if not run.result.attempts:
+                run.result.error = target
             continue
-        tries = 0
-        while True:
-            remaining = deadline - context.monotonic()
-            if remaining <= 0:
-                return _timed_out(result, context)
-            tries += 1
-            before = (context.monotonic(), waits.total_s)
-            step = await attempt_once(
-                request, context, adapter, upstream, fault, deadline=deadline, sleep=waits.sleep
-            )
-            duration = context.monotonic() - before[0]
-            _count(
-                result, credential, index, step, duration, duration - (waits.total_s - before[1])
-            )
-            if step.outcome is None:
-                result.first_byte_at = context.monotonic() if request.stream else None
-                return result
-            action = next_action(
-                context.route,
-                step.outcome,
-                tries,
-                targets_left=len(plan.order) - position - 1,
-                remaining_s=deadline - context.monotonic(),
-            )
-            if isinstance(action, Retry):
-                await waits.sleep(action.after_s)
-                continue
-            if isinstance(action, Fallback):
-                break
-            return result
-    return result
+        if not await _try_target(run, target, targets_left=len(plan.order) - position - 1):
+            return run.result
+    return run.result
+
+
+@dataclass(frozen=True)
+class _Run:
+    """What every attempt of one loop shares, and the result they fill."""
+
+    request: GatewayRequest
+    context: GatewayContext
+    fault: AppliedFault | None
+    deadline: float
+    waits: Waits
+    result: LoopResult
+
+
+@dataclass(frozen=True)
+class _Target:
+    """One planned target, ready to send to: its credential, adapter and prepared request."""
+
+    index: int
+    credential: ProviderCredential
+    adapter: ProviderAdapter
+    upstream: UpstreamRequest
+
+
+async def _try_target(run: _Run, target: _Target, *, targets_left: int) -> bool:
+    """Attempt `target` until the plan falls back (True) or the loop ends (False).
+
+    The loop ends when an attempt answers, the plan gives up, or the budget runs out.
+    """
+    context, result = run.context, run.result
+    tries = 0
+    while True:
+        if run.deadline - context.monotonic() <= 0:
+            _timed_out(result, context)
+            return False
+        tries += 1
+        step = await _attempt_and_count(run, target)
+        if step.outcome is None:
+            result.first_byte_at = context.monotonic() if run.request.stream else None
+            return False
+        action = next_action(
+            context.route,
+            step.outcome,
+            tries,
+            targets_left=targets_left,
+            remaining_s=run.deadline - context.monotonic(),
+        )
+        if isinstance(action, Retry):
+            await run.waits.sleep(action.after_s)
+            continue
+        return isinstance(action, Fallback)
+
+
+async def _attempt_and_count(run: _Run, target: _Target) -> AttemptEnd:
+    """One attempt on `target`, folded into the result and the metrics, a cancelled one too."""
+    context, waits = run.context, run.waits
+    started, waited = context.monotonic(), waits.total_s
+    try:
+        step = await attempt_once(
+            run.request,
+            context,
+            target.adapter,
+            target.upstream,
+            run.fault,
+            deadline=run.deadline,
+            sleep=waits.sleep,
+        )
+    except asyncio.CancelledError:
+        elapsed = context.monotonic() - started
+        _count_cancelled(run.result, target.credential, target.index, elapsed)
+        raise
+    duration = context.monotonic() - started
+    upstream_s = duration - (waits.total_s - waited)
+    _count(run.result, target.credential, target.index, step, duration, upstream_s)
+    return step
 
 
 def _prepare(
-    request: GatewayRequest,
-    context: GatewayContext,
-    plan: RoutePlan,
-    index: int,
-    credential: ProviderCredential,
-    adapter: ProviderAdapter,
-) -> UpstreamRequest | GatewayError:
+    request: GatewayRequest, context: GatewayContext, plan: RoutePlan, index: int
+) -> _Target | GatewayError:
+    """Target `index` ready to send to, or the error that rules it out."""
     target = context.route.targets[index]
+    credential = context.credentials[target.credential_id]
+    adapter = adapter_for(credential.provider)
     body = {**plan.body, "model": target.model_aliases.get(plan.model, plan.model)}
     try:
         api_key = decrypt_api_key(credential, settings=context.settings)
@@ -165,10 +215,13 @@ def _prepare(
         )
         return internal(request.request_id)
     try:
-        return adapter.prepare(credential, request.surface, body, request.client_headers, api_key)
+        upstream = adapter.prepare(
+            credential, request.surface, body, request.client_headers, api_key
+        )
     except InvalidUpstreamBody:
         message = "Request body must be strict JSON: NaN and infinite numbers are not allowed."
         return invalid_request(message, param=None)
+    return _Target(index, credential, adapter, upstream)
 
 
 def _count(
@@ -208,6 +261,16 @@ def _count(
     label = str(step.status) if step.status is not None else (error_kind or "unknown")
     GATEWAY_ATTEMPTS.labels(provider, label).inc()
     GATEWAY_UPSTREAM_DURATION.labels(provider).observe(duration_s)
+
+
+def _count_cancelled(
+    result: LoopResult, credential: ProviderCredential, index: int, duration_s: float
+) -> None:
+    """Fold in an attempt its caller cancelled: no response, but the request may have been sent."""
+    attempt = Attempt(index, credential.id, None, "cancelled", round(duration_s * 1000, 3))
+    result.attempts.append(attempt)
+    result.target_index = index
+    GATEWAY_ATTEMPTS.labels(credential.provider.value, "cancelled").inc()
 
 
 def _timed_out(result: LoopResult, context: GatewayContext) -> LoopResult:

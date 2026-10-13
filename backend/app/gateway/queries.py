@@ -53,7 +53,7 @@ async def get_credential_with_creator(
     ).one_or_none()
     if row is None:
         return None
-    credential, creator = row.tuple()
+    credential, creator = row
     return credential, creator
 
 
@@ -90,10 +90,24 @@ async def credential_in_use(db: AsyncSession, credential_id: uuid.UUID) -> str |
         await db.scalars(select(Project.id).where(Project.org_id == org_id).order_by(Project.id))
     ).all()
     previous = await db.scalar(text("SELECT current_setting('app.project_id', true)"))
+    # A savepoint, so a scan that fails midway rolls the binding back with it (`set_config(...,
+    # true)` is transactional) instead of leaving the request bound to another project.
+    async with db.begin_nested():
+        route_name = await _first_route_targeting(db, project_ids, credential_id)
+    await db.execute(
+        text("SELECT set_config('app.project_id', :previous, true)"),
+        {"previous": previous or ""},
+    )
+    return route_name
+
+
+async def _first_route_targeting(
+    db: AsyncSession, project_ids: Sequence[uuid.UUID], credential_id: uuid.UUID
+) -> str | None:
+    """The first route (by name) targeting the credential, each project bound in turn."""
     targets_credential = GatewayRoute.config.contains(
         {"targets": [{"credential_id": str(credential_id)}]}
     )
-    route_name: str | None = None
     for project_id in project_ids:
         await bind_project(db, project_id)
         route_name = await db.scalar(
@@ -103,12 +117,8 @@ async def credential_in_use(db: AsyncSession, credential_id: uuid.UUID) -> str |
             .limit(1)
         )
         if route_name is not None:
-            break
-    await db.execute(
-        text("SELECT set_config('app.project_id', :previous, true)"),
-        {"previous": previous or ""},
-    )
-    return route_name
+            return route_name
+    return None
 
 
 async def share_lock_credentials(

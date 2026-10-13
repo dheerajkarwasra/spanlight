@@ -13,13 +13,20 @@ from sqlalchemy import select
 
 from app.api.deps import DbSession, require_key_scope
 from app.api.principals import ApiKeyPrincipal
-from app.core.body import BodyTooLarge, UndecodableBody, UnsupportedEncoding, read_bounded_body
+from app.core.body import (
+    BodyTooLarge,
+    ClientDisconnected,
+    UndecodableBody,
+    UnsupportedEncoding,
+    read_bounded_body,
+)
 from app.core.errors import ProblemError, unauthorized
 from app.core.observability import INGESTED_SPANS, REJECTED_SPANS
 from app.core.ratelimit import INGEST_LIMITER, enforce_rate_limit
 from app.core.scopes import KeyScope
 from app.db.models import Project
 from app.ingest import otlp
+from app.ingest.otlp_values import OtlpDecodeError
 from app.ingest.pipeline import (
     IngestOutcome,
     IngestTarget,
@@ -82,6 +89,9 @@ async def read_ingest_body(request: Request) -> bytes:
         raise ProblemError(
             400, "BAD_REQUEST", "The request body could not be decompressed."
         ) from exc
+    except ClientDisconnected as exc:
+        # Nobody reads this answer; it keeps a client that left from being logged as our error.
+        raise ProblemError(400, "BAD_REQUEST", "The request body was not fully sent.") from exc
 
 
 def _check_span_count(count: int) -> None:
@@ -163,7 +173,7 @@ async def ingest_otlp(request: Request, key: AuthenticatedKey, db: DbSession) ->
                 "UNSUPPORTED_MEDIA_TYPE",
                 "Use application/json or application/x-protobuf.",
             )
-    except otlp.OtlpDecodeError as exc:
+    except OtlpDecodeError as exc:
         raise ProblemError(400, "INVALID_OTLP", str(exc)) from exc
     _check_span_count(len(spans))
 

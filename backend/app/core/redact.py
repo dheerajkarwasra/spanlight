@@ -8,6 +8,7 @@ are labelled as such).
 """
 
 import re
+from functools import lru_cache
 from typing import Any
 
 from app.core.security import ANY_KEY_PATTERN
@@ -31,33 +32,94 @@ _SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?i)aws_secret_access_key[\"']?\s*[:=]\s*[\"']?[A-Za-z0-9/+=]{40}"),
 )
 
-# 13-19 digits, optionally separated by single spaces or dashes.
-_CARD_CANDIDATE = re.compile(r"\b\d(?:[ \-]?\d){12,18}\b")
+# A card-shaped run: digit groups separated by single spaces or dashes, every group of four or
+# more digits but the last, which has two or more. That covers how cards are printed (4-4-4-4,
+# 4-6-5, 4-6-4, 4-4-4-2, 4-4-4-4-3, or unbroken) and leaves lists of small numbers, dates and
+# phone numbers alone. A card typed in groups of one to three digits is not detected.
+#
+# A card number is 13-19 digits of whole groups inside a run: a CVV, an expiry or a quantity next
+# to a card makes the run longer than the card, so the run is searched for its card rather than
+# judged whole.
+_DIGIT_RUN = re.compile(r"\b\d{4,}(?:[ \-]\d{4,})*(?:[ \-]\d{2,})?\b")
+_SEPARATOR = re.compile(r"[ \-]")
+_CARD_DIGITS = range(13, 20)
 
 MAX_DEPTH = 64
+# What a value nested deeper than `MAX_DEPTH` is stored as.
+DEPTH_MARKER = "[MAX_DEPTH]"
+
+
+# A digit's Luhn value when doubled, indexed by the digit.
+_DOUBLED = (0, 2, 4, 6, 8, 1, 3, 5, 7, 9)
 
 
 def luhn_valid(digits: str) -> bool:
-    total = 0
-    for index, char in enumerate(reversed(digits)):
-        digit = int(char)
-        if index % 2 == 1:
-            digit *= 2
-            if digit > 9:
-                digit -= 9
-        total += digit
-    return total % 10 == 0
+    values = [int(char) for char in digits]  # `int`, so any Unicode decimal digit reads right
+    return (sum(values[-1::-2]) + sum(_DOUBLED[value] for value in values[-2::-2])) % 10 == 0
 
 
-def _redact_card(match: re.Match[str]) -> str:
-    digits = re.sub(r"[ \-]", "", match.group(0))
-    return REDACTED if luhn_valid(digits) else match.group(0)
+# Called only for groups of at most 19 digits, so the cache never holds a long string.
+@lru_cache(maxsize=4096)
+def _group_sums(group: str) -> tuple[int, int]:
+    """The group's Luhn sum when its last digit is not doubled, and when it is."""
+    values = [int(char) for char in group]
+    odd, even = values[-1::-2], values[-2::-2]
+    return (
+        sum(odd) + sum(_DOUBLED[value] for value in even),
+        sum(_DOUBLED[value] for value in odd) + sum(even),
+    )
+
+
+def _redact_cards(match: re.Match[str]) -> str:
+    """The run with every Luhn-valid card of 13-19 digits made of whole groups redacted.
+
+    Every window of whole groups is checked, and overlapping cards are all covered, so no digit
+    of any of them is kept. A window ends at each group and holds at most five groups (19 digits
+    in groups of four or more), so the cost is a few steps per group: about 1 s of CPU for a
+    5 MiB body of random four-digit groups, the costliest shape because every group misses the
+    `_group_sums` cache.
+    """
+    run = match.group(0)
+    if len(run) < _CARD_DIGITS.start:
+        return run
+    groups = _SEPARATOR.split(run)
+    if len(groups) == 1:
+        return REDACTED if len(run) in _CARD_DIGITS and luhn_valid(run) else run
+    # A group longer than a card is in no window; skipping it also keeps long strings out of the
+    # cache.
+    longest = _CARD_DIGITS.stop - 1
+    sums = [_group_sums(group) if len(group) <= longest else (0, 0) for group in groups]
+    lengths = [len(group) for group in groups]
+    covered = [False] * len(groups)
+    for last in range(len(groups)):
+        digits = total = 0
+        for start in range(last, -1, -1):
+            # Counted from the right of the window, the group's last digit is doubled when an
+            # odd number of digits follows it.
+            total += sums[start][digits % 2]
+            digits += lengths[start]
+            if digits > longest:
+                break
+            if digits >= _CARD_DIGITS.start and total % 10 == 0:
+                covered[start : last + 1] = [True] * (last + 1 - start)
+    # Rebuild the run: groups are joined by one separator character each, and a stretch of
+    # covered groups, with the separators inside it, becomes one marker.
+    pieces: list[str] = []
+    position = 0
+    for index, group in enumerate(groups):
+        joined_to_previous = index > 0 and covered[index] and covered[index - 1]
+        if index > 0 and not joined_to_previous:
+            pieces.append(run[position - 1])
+        if not joined_to_previous:
+            pieces.append(REDACTED if covered[index] else group)
+        position += len(group) + 1
+    return "".join(pieces)
 
 
 def redact_text(value: str) -> str:
     for pattern in _SECRET_PATTERNS:
         value = pattern.sub(REDACTED, value)
-    return _CARD_CANDIDATE.sub(_redact_card, value)
+    return _DIGIT_RUN.sub(_redact_cards, value)
 
 
 def redact_json(value: Any, *, depth: int = 0) -> Any:
@@ -65,7 +127,7 @@ def redact_json(value: Any, *, depth: int = 0) -> Any:
     if isinstance(value, str):
         return redact_text(value)
     if depth >= MAX_DEPTH:
-        return "[MAX_DEPTH]"
+        return DEPTH_MARKER
     if isinstance(value, dict):
         return {
             redact_text(str(key)): redact_json(item, depth=depth + 1) for key, item in value.items()

@@ -43,7 +43,7 @@ async def get_key_with_creator(
     ).one_or_none()
     if row is None:
         return None
-    key, creator = row.tuple()
+    key, creator = row
     return key, creator
 
 

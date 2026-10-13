@@ -162,15 +162,7 @@ class HttpAdapter:
         if surface == "models":
             return UpstreamRequest("GET", url, {**headers, **self.auth_headers(api_key)})
         headers["content-type"] = "application/json"
-        try:
-            serialized = json.dumps(
-                body, ensure_ascii=False, allow_nan=False, separators=(",", ":")
-            )
-        except ValueError:
-            raise InvalidUpstreamBody(
-                "the request body contains NaN or an infinite number"
-            ) from None
-        content = serialized.encode()
+        content = strict_json(body)
         return UpstreamRequest("POST", url, {**headers, **self.auth_headers(api_key)}, content)
 
     async def send(
@@ -180,6 +172,22 @@ class HttpAdapter:
 
     def check_request(self, credential: CredentialEndpoint, api_key: str) -> UpstreamRequest:
         return self.prepare(credential, "models", {}, {}, api_key)
+
+
+def strict_json(body: Mapping[str, Any]) -> bytes:
+    """`body` as compact strict JSON in UTF-8; `InvalidUpstreamBody` for a NaN or an infinity.
+
+    A lone surrogate (the client sent a `\\ud800` escape) has no UTF-8 form, so a body holding
+    one is written with every non-ASCII character escaped instead, as strict JSON allows.
+    """
+    try:
+        serialized = json.dumps(body, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+    except ValueError:
+        raise InvalidUpstreamBody("the request body contains NaN or an infinite number") from None
+    try:
+        return serialized.encode()
+    except UnicodeEncodeError:
+        return json.dumps(body, allow_nan=False, separators=(",", ":")).encode()
 
 
 async def send_upstream(

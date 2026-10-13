@@ -80,7 +80,9 @@ def connection_params(url: str) -> dict[str, str]:
     """
     try:
         parsed = make_url(url)
-    except ArgumentError:
+    except (ArgumentError, ValueError):
+        # A malformed port raises a ValueError that quotes it, and without a host the password
+        # lands there.
         raise ValueError("the database URL is not a valid URL") from None
     if not parsed.drivername.startswith("postgres"):
         raise ValueError("the database URL must start with postgresql://")

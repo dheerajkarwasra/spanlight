@@ -42,7 +42,7 @@ async def get_profile_with_creator(
     ).one_or_none()
     if row is None:
         return None
-    profile, creator = row.tuple()
+    profile, creator = row
     return profile, creator
 
 

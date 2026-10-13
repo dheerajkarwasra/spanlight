@@ -139,6 +139,7 @@ async def _call(
         environment=ENVIRONMENT,
         route_name=plan.trace_name,
         span_sink=spans,
+        clock=deps.clock,
     )
     started = time.monotonic()
     try:
@@ -172,7 +173,8 @@ async def _with_span(
     """Write the answered call's span. The call points at its trace only when the span was
     stored; a cancellation meanwhile stores the item row (unlinked) and re-raises."""
     try:
-        stored = await shielded(spans.write(context))
+        # An answered call always leaves a span; none means it could not be built.
+        stored = await shielded(spans.write(context, require_span=True))
     except asyncio.CancelledError:
         row = {"run_id": plan.run_id, "dataset_item_id": item.id, **_unlinked(answered).columns}
         await shielded(_store(deps, plan, row))

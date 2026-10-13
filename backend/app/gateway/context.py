@@ -39,6 +39,12 @@ Sleep = Callable[[float], Awaitable[None]]
 UPSTREAM_ERROR_CODE = "UPSTREAM_ERROR"
 """`X-Spanlight-Code` on a passed-through provider error; also the code of its `GatewayError`."""
 
+Clock = Callable[[], datetime]
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
+
 
 @dataclass(frozen=True)
 class Received:
@@ -46,14 +52,16 @@ class Received:
 
     The `/gw/v1` router takes it before it authenticates the key, so the overhead and time to
     first token include the gateway's own front half (authentication, limits, reading the body).
+    `at` comes from `clock`, the app's wall clock, so a call's span starts on the same clock that
+    the guard, the cache and the span's end read.
     """
 
     monotonic: float
     at: datetime
 
     @classmethod
-    def now(cls) -> "Received":
-        return cls(monotonic=time.monotonic(), at=datetime.now(UTC))
+    def now(cls, clock: Clock = _now) -> "Received":
+        return cls(monotonic=time.monotonic(), at=clock())
 
 
 @dataclass(frozen=True)
@@ -111,10 +119,6 @@ class GatewayServices(Protocol):
     def settings(self) -> "Settings": ...
 
 
-def _now() -> datetime:
-    return datetime.now(UTC)
-
-
 def new_rng() -> random.Random:
     """A generator seeded from the operating system, for a call that is not under test."""
     return random.Random(secrets.randbits(64))  # noqa: S311 - routing and faults, not secrets
@@ -145,7 +149,7 @@ class GatewayContext:
     sessions: async_sessionmaker[AsyncSession]
     settings: "Settings"
     rng: random.Random = field(default_factory=new_rng)
-    clock: Callable[[], datetime] = _now
+    clock: Clock = _now
     monotonic: Callable[[], float] = time.monotonic
     sleep: Sleep = asyncio.sleep
     span_sink: SpanSink | None = None  # None: spans go to the background recorder
@@ -173,9 +177,16 @@ class GatewayContext:
 
 
 def context_for_key(
-    key: KeyContext, services: GatewayServices, *, rng: random.Random | None = None
+    key: KeyContext,
+    services: GatewayServices,
+    *,
+    rng: random.Random | None = None,
+    clock: Clock = _now,
 ) -> GatewayContext:
-    """The context of a call made with a gateway key, after its secret and limits passed."""
+    """The context of a call made with a gateway key, after its secret and limits passed.
+
+    `clock` is the wall clock of the call: the router passes the app's, which tests can pin.
+    """
     return GatewayContext(
         key=key,
         project_id=key.project_id,
@@ -193,6 +204,7 @@ def context_for_key(
         sessions=services.sessions,
         settings=services.settings,
         rng=rng if rng is not None else new_rng(),
+        clock=clock,
     )
 
 
@@ -243,3 +255,4 @@ class GatewayResult:
     client_disconnected: bool = False
     disconnected_after_ms: float | None = None
     stream_error: str | None = None  # why a stream ended before the provider finished it
+    cut_by_fault: bool = False  # a `truncated_stream` fault withheld the end of the stream

@@ -22,6 +22,9 @@ Using it on a route::
         body: ThingIn,
     ) -> ThingOut: ...
 
+Today four routes opt in: creating an alert channel, creating an export, starting an experiment
+run and running the playground. `tests/core/test_idempotency_replays.py` replays each of them.
+
 `idempotent(authorize)` runs `authorize` as its own dependency and hands its result to the route,
 so a request is always authorized before a key is reserved, and a replay is authorized exactly like
 the request it replays: a caller who lost access since gets the 403 or 404, not the stored answer.

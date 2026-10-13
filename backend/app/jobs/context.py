@@ -2,6 +2,7 @@
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -11,11 +12,17 @@ from app.jobs.outcome import JobOutcome
 from app.jobs.queue import ClaimedJob, extend_lease
 
 
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
 @dataclass(frozen=True)
 class TaskContext:
     job: ClaimedJob
     settings: Settings
     session_factory: async_sessionmaker[AsyncSession]
+    # Wall time for tasks that decide by the calendar (a monthly cap); tests pin it.
+    clock: Callable[[], datetime] = _utcnow
 
     async def heartbeat(self) -> None:
         """Extend the lease; raises LeaseLostError if another worker took the job over.

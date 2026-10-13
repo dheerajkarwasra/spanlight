@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def bind_project(session: AsyncSession, project_id: uuid.UUID) -> None:
-    """Restrict `traces`/`spans` visibility to one project for this transaction."""
+    """Restrict every table under row-level security to one project for this transaction."""
     await session.execute(
         text("SELECT set_config('app.project_id', :project_id, true)"),
         {"project_id": str(project_id)},
@@ -20,7 +20,7 @@ async def bind_project(session: AsyncSession, project_id: uuid.UUID) -> None:
 
 
 async def bypass_rls(session: AsyncSession) -> None:
-    """Make every project's telemetry visible for this transaction.
+    """Make every project's rows visible in every RLS table for this transaction.
 
     Only worker/maintenance code may call this (retention, demo budget checks).
     Request handlers must use `bind_project` instead.

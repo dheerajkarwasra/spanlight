@@ -1,8 +1,9 @@
-"""Reads and writes of the `evaluate_alerts` job.
+"""Reads and writes of the `evaluate_alerts` job, and of the API paths that close an alert.
 
-The project list spans every project, so it is read with row-level security bypassed; it holds
-nothing but ids. Everything else runs in a transaction bound to one project, and the explicit
-`project_id` filters are a second guard.
+Everything runs in a transaction bound to one project, and the explicit `project_id` filters are
+a second guard. The job's list of projects, which spans every project, is in
+`app.alerts.job_queries`, so the request path never imports code that bypasses row-level
+security.
 """
 
 import uuid
@@ -11,26 +12,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import func, select, text, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.alerts.types import RuleStateName
 from app.db.models import AlertEvent, AlertRule, AlertState, Organization, Project
-from app.db.rls import bypass_rls
-
-# Projects with at least one enabled rule. A project whose rules have never been evaluated, or
-# were evaluated longest ago, comes first: if a pass runs out of time, the next one starts where
-# this one could not reach.
-_PROJECTS_WITH_ENABLED_RULES = text(
-    """
-    SELECT r.project_id
-    FROM alert_rules AS r
-    LEFT JOIN alert_states AS s ON s.rule_id = r.id
-    WHERE r.enabled
-    GROUP BY r.project_id
-    ORDER BY bool_or(s.last_evaluated_at IS NULL) DESC, min(s.last_evaluated_at), r.project_id
-    """
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,14 +27,6 @@ class ProjectNames:
     project_name: str
     org_id: uuid.UUID
     org_name: str
-
-
-async def projects_with_enabled_rules(db: AsyncSession) -> list[uuid.UUID]:
-    """Every project with an enabled rule. Ends its own transaction (the bypass is local to it)."""
-    await bypass_rls(db)
-    rows = (await db.execute(_PROJECTS_WITH_ENABLED_RULES)).scalars().all()
-    await db.commit()
-    return [uuid.UUID(str(project_id)) for project_id in rows]
 
 
 async def project_names(db: AsyncSession, project_id: uuid.UUID) -> ProjectNames | None:

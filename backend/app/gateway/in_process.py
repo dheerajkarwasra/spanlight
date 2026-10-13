@@ -13,6 +13,7 @@ limits, cache or faults apply, and the caller names the trace's environment. Two
 The project's `block` budgets apply to both, since every call is spend in the project.
 """
 
+import dataclasses
 import random
 import uuid
 
@@ -21,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import GatewayRoute, Project, ProviderCredential
 from app.db.rls import bind_project
-from app.gateway.context import GatewayContext, GatewayServices, SpanSink, new_rng
+from app.gateway.context import Clock, GatewayContext, GatewayServices, SpanSink, new_rng
 from app.gateway.route_config import FallbackPolicy, RetryPolicy, RouteConfig, Target, load_stored
 from app.gateway.route_errors import RouteNotFoundError
 
@@ -40,26 +41,23 @@ def single_credential_context(
     route_name: str,
     span_sink: SpanSink,
     timeout_ms: int | None = None,
+    clock: Clock | None = None,
 ) -> GatewayContext:
     """The context of one in-process call in `project`, sent with `credential` and nothing else.
 
     Pure: builds values only. One target, one attempt, no fallbacks; `environment` labels the
     trace and `route_name` names the in-memory route on its spans. `timeout_ms` bounds the call
     (the route's default when None); a caller inside a worker task passes one shorter than the
-    task's timeout, so the gateway ends a slow call itself and records it.
+    task's timeout, so the gateway ends a slow call itself and records it. `clock` is the
+    caller's wall clock (real UTC time when None), so the budget guard and the span times read
+    the same time as the caller's own reservation.
     """
-    route = RouteConfig(
-        targets=[Target(credential_id=credential.id)],
-        retry=RetryPolicy(max_attempts=1),
-        fallback=FallbackPolicy(on=[]),
-        **({} if timeout_ms is None else {"timeout_ms": timeout_ms}),
-    )
-    return GatewayContext(
+    context = GatewayContext(
         key=None,
         project_id=project.id,
         org_id=project.org_id,
         environment=environment,
-        route=route,
+        route=_single_target_route(credential, timeout_ms),
         route_id=IN_MEMORY_ROUTE_ID,
         route_name=route_name,
         route_version=IN_MEMORY_ROUTE_VERSION,
@@ -72,6 +70,17 @@ def single_credential_context(
         settings=services.settings,
         rng=new_rng(),
         span_sink=span_sink,
+    )
+    return context if clock is None else dataclasses.replace(context, clock=clock)
+
+
+def _single_target_route(credential: ProviderCredential, timeout_ms: int | None) -> RouteConfig:
+    """One target, one attempt, no fallbacks; the default timeout when `timeout_ms` is None."""
+    return RouteConfig(
+        targets=[Target(credential_id=credential.id)],
+        retry=RetryPolicy(max_attempts=1),
+        fallback=FallbackPolicy(on=[]),
+        **({} if timeout_ms is None else {"timeout_ms": timeout_ms}),
     )
 
 

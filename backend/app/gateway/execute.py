@@ -81,8 +81,15 @@ async def _run(call: Call) -> GatewayResult:
         )
         if error is not None:
             return call.fail(error)
+    call.loop = LoopResult()  # filled as attempts are made: a cancelled call still has them
     loop = await run_attempts(
-        request, context, plan, call.fault, deadline=call.deadline, waits=call.waits
+        request,
+        context,
+        plan,
+        call.fault,
+        deadline=call.deadline,
+        waits=call.waits,
+        result=call.loop,
     )
     summary = StreamSummary()
     if loop.succeeded and loop.body is not None:

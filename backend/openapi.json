@@ -2479,8 +2479,7 @@
           "value": {
             "anyOf": [
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
+                "type": "number"
               },
               {
                 "type": "null"
@@ -9673,8 +9672,7 @@
           "value": {
             "anyOf": [
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
+                "type": "number"
               },
               {
                 "type": "null"

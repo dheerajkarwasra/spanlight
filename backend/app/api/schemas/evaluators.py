@@ -11,6 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from app.api.schemas.common import ApiModel, Money
+from app.api.schemas.scores import ScoreNumber
 from app.db.models import Evaluator, EvaluatorRun
 from app.evals.config import (
     EvaluatorConfig,
@@ -95,7 +96,7 @@ class RunScoreOut(ApiModel):
     categorical ones."""
 
     name: str
-    value: Decimal | None
+    value: ScoreNumber | None
     string_value: str | None
 
 
@@ -164,7 +165,7 @@ class EvaluatorTestIn(ApiModel):
 class EvalScoreOut(ApiModel):
     name: str
     span_id: str | None
-    value: Decimal | None
+    value: ScoreNumber | None
     string_value: str | None
     comment: str | None
 

@@ -23,7 +23,7 @@ demo project's spans this calendar month, the gateway's spans included.
 import random
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
@@ -32,17 +32,24 @@ import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.budgets.guard import get_budget_guard
 from app.config import Settings
 from app.db.models import Span, SpanKind
 from app.db.rls import bind_project
-from app.gateway.budget import BudgetGuard, NoOpBudgetGuard
+from app.gateway.budget import BudgetGuard
 from app.gateway.cache import GatewayCache, PostgresGatewayCache
 from app.gateway.context import context_for_key
 from app.gateway.http import build_http_client
 from app.ingest.pipeline import IngestTarget, ingest_spans
 from app.jobs.context import TaskContext
 from app.jobs.outcome import JobOutcome
-from app.jobs.tasks.demo_flow import QUESTIONS, DemoSpendUnrecordedError, run_support_flow
+from app.jobs.tasks.demo_flow import (
+    QUESTIONS,
+    DemoBudgetBlockedError,
+    DemoSpendUnrecordedError,
+    FlowRecorder,
+    run_support_flow,
+)
 from app.services.demo_gateway import DemoGateway, ensure_demo_gateway
 
 logger = structlog.get_logger(__name__)
@@ -58,27 +65,46 @@ class DemoServices:
     """The services a gateway context is built from (`GatewayServices`), for one job run.
 
     The worker keeps no process-wide resources for its tasks, so each run opens its own
-    upstream client and closes it when the run ends. Phase 2 has no budgets to enforce in the
-    gateway (the job's own monthly cap is checked before the run), and the demo key has no cache
-    TTL, so the cache is never read.
+    upstream client and closes it when the run ends. The budget guard is the real one, like every
+    other in-process caller's: a firing `block` budget on the demo project stops a demo call, on
+    top of the job's own monthly cap. The demo key has no cache TTL, so the cache is never read.
     """
 
     http: httpx.AsyncClient
     sessions: async_sessionmaker[AsyncSession]
     settings: Settings
-    budget_guard: BudgetGuard = field(default_factory=NoOpBudgetGuard)
+    budget_guard: BudgetGuard
     cache: GatewayCache = field(default_factory=PostgresGatewayCache)
 
 
 async def run_demo_traffic(context: TaskContext, _: dict[str, Any]) -> JobOutcome | None:
-    settings = context.settings
-    reason = not_configured_reason(settings)
+    reason = not_configured_reason(context.settings)
     if reason is not None:
         logger.info("demo_traffic_skipped", reason=reason)
         return JobOutcome.SKIPPED_NOT_CONFIGURED
+    demo = await _demo_within_budget(context)
+    if isinstance(demo, JobOutcome):
+        return demo
+    await context.heartbeat()  # make sure we still own the job before paying for calls
+    question = random.choice(QUESTIONS)  # noqa: S311 - not security-sensitive
+    async with make_http_client(context.settings) as http:
+        services = DemoServices(
+            http=http,
+            sessions=context.session_factory,
+            settings=context.settings,
+            budget_guard=get_budget_guard(context.settings),
+        )
+        flow = await run_support_flow(
+            context_for_key(demo.key_context, services, clock=context.clock), question
+        )
+    await _record_flow(context, demo, flow)
+    return _flow_outcome(flow)
 
+
+async def _demo_within_budget(context: TaskContext) -> DemoGateway | JobOutcome:
+    """The demo gateway when a paid run may go ahead, or the outcome that skips the run."""
     async with context.session_factory() as db:
-        demo = await ensure_demo_gateway(db, settings)
+        demo = await ensure_demo_gateway(db, context.settings)
         await db.commit()
         if not makes_one_call(demo):
             # A paid job never retries, falls back or serves from a cache it did not set up.
@@ -90,23 +116,20 @@ async def run_demo_traffic(context: TaskContext, _: dict[str, Any]) -> JobOutcom
                 credential_id=str(demo.credential.id),
             )
             return JobOutcome.SKIPPED_NOT_CONFIGURED
-        workspace = demo.workspace
-        spent, unpriced = await month_to_date_spend(db, workspace.project.id, datetime.now(UTC))
-
+        spent, unpriced = await month_to_date_spend(db, demo.workspace.project.id, context.clock())
     if unpriced:
         # Without recorded costs the budget cannot be enforced, so do not spend.
         logger.warning("demo_traffic_skipped", reason="unpriced demo calls this month")
         return JobOutcome.SKIPPED_BUDGET
-    if spent >= settings.demo_monthly_budget_usd:
+    if spent >= context.settings.demo_monthly_budget_usd:
         logger.info("demo_traffic_skipped", reason="monthly budget reached", spent=str(spent))
         return JobOutcome.SKIPPED_BUDGET
+    return demo
 
-    await context.heartbeat()  # make sure we still own the job before paying for calls
-    question = random.choice(QUESTIONS)  # noqa: S311 - not security-sensitive
-    async with make_http_client(settings) as http:
-        services = DemoServices(http=http, sessions=context.session_factory, settings=settings)
-        flow = await run_support_flow(context_for_key(demo.key_context, services), question)
 
+async def _record_flow(context: TaskContext, demo: DemoGateway, flow: FlowRecorder) -> None:
+    """Write the flow's own spans (the root `chain` and the retrieval); the LLM spans are in."""
+    workspace = demo.workspace
     async with context.session_factory() as db:
         outcome = await ingest_spans(
             db,
@@ -125,10 +148,18 @@ async def run_demo_traffic(context: TaskContext, _: dict[str, Any]) -> JobOutcom
         accepted=outcome.accepted,
         rejected=len(outcome.rejected),
     )
+
+
+def _flow_outcome(flow: FlowRecorder) -> JobOutcome:
+    """The run's outcome; raises the flow's error when it failed (a paid job gets one attempt)."""
+    if isinstance(flow.error, DemoBudgetBlockedError):
+        # A firing project budget is a stop, not a failure: no spend, and the next run asks again.
+        logger.warning("demo_traffic_skipped", reason="project budget blocked the demo call")
+        return JobOutcome.SKIPPED_BUDGET
     if isinstance(flow.error, DemoSpendUnrecordedError):
         logger.error("demo_spend_unrecorded", trace_id=flow.trace_id, llm_calls=flow.llm_calls)
     if flow.error is not None:
-        raise flow.error  # a paid job gets one attempt: the run ends `failed`
+        raise flow.error  # the run ends `failed`
     return JobOutcome.OK
 
 

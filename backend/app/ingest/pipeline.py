@@ -12,23 +12,28 @@ order so batches touching several traces cannot deadlock each other.
 """
 
 import json
+import math
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
 
+import structlog
 from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.text import without_nul
+from app.core.observability import SPAN_NORMALIZATION_FAILURES
+from app.core.text import clean_json
 from app.db.rls import bind_project
 from app.ingest.jsondepth import MAX_JSON_DEPTH, exceeds_depth
 from app.ingest.normalize import NormalizedSpan, SpanRejectedError, normalize_span
 from app.ingest.schemas import RejectedSpan, SpanIn
 from app.ingest.store import write_spans
-from app.pricing.cost import load_price_book
+from app.pricing.cost import PriceBook, load_price_book
+
+logger = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -39,6 +44,10 @@ class IngestTarget:
     # The gateway key the calls came through. Only the gateway sets it; native and OTLP
     # ingestion leave it None, since a project API key is not a gateway key.
     source_key_id: uuid.UUID | None = None
+    # Set only by a caller that ran its spans through `normalize.prepare_span_payloads` (the
+    # gateway recorder, one span per target): their payloads are stored as they are, and this
+    # is their `truncated` flag. None: payloads are redacted and truncated here.
+    prepared_truncated: bool | None = None
 
 
 @dataclass
@@ -66,27 +75,36 @@ _KEY_SHARE_PROJECT = text("SELECT id FROM projects WHERE id = :project_id FOR KE
 
 
 def parse_json_body(body: bytes) -> Any:
-    """Parse JSON strictly (no NaN/Infinity) and strip NUL characters.
+    """Parse JSON strictly (no NaN/Infinity), stripping NUL and replacing lone surrogates.
 
-    Postgres rejects both in jsonb and text columns, and one bad value would
-    otherwise abort the whole batch's transaction.
+    Postgres rejects NUL in jsonb and text columns, and a lone surrogate (a `\\ud800` escape)
+    cannot be encoded as UTF-8; either would otherwise fail the whole batch.
     """
 
     def reject_constant(name: str) -> Any:
         raise InvalidJsonError(f"{name} is not valid JSON")
 
+    def finite_float(literal: str) -> float:
+        number = float(literal)
+        if math.isinf(number):  # `1e999` is valid JSON, but past a double and jsonb has no infinity
+            raise InvalidJsonError("a number is too large to store")
+        return number
+
     try:
-        parsed = json.loads(body, parse_constant=reject_constant)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        parsed = json.loads(body, parse_constant=reject_constant, parse_float=finite_float)
+    except InvalidJsonError:  # NaN, Infinity or a number past a double
+        raise
+    except ValueError as exc:  # also a number with more digits than Python converts (4300)
         raise InvalidJsonError("request body is not valid JSON") from exc
     except RecursionError as exc:  # nested deeper than the parser can follow
         raise InvalidJsonError(_TOO_DEEP) from exc
     if exceeds_depth(parsed):
         raise InvalidJsonError(_TOO_DEEP)
-    return without_nul(parsed)
+    return clean_json(parsed)
 
 
 _TOO_DEEP = f"request body is nested more than {MAX_JSON_DEPTH} levels deep"
+_UNPROCESSABLE = "span: could not be processed"
 
 
 async def ingest_spans(
@@ -111,19 +129,10 @@ async def ingest_spans(
     accepted: dict[tuple[str, str], tuple[int, NormalizedSpan]] = {}
 
     for index, raw in enumerate(raw_spans):
-        try:
-            validated = SpanIn.model_validate(raw)
-            normalized = normalize_span(
-                validated, capture_payloads=target.capture_payloads, prices=prices, now=now
-            )
-        except ValidationError as exc:
+        normalized = _prepare(raw, index, target, prices, now)
+        if isinstance(normalized, str):
             outcome.rejected.append(
-                RejectedSpan(index=index, span_id=_raw_span_id(raw), reason=_first_error(exc))
-            )
-            continue
-        except SpanRejectedError as exc:
-            outcome.rejected.append(
-                RejectedSpan(index=index, span_id=_raw_span_id(raw), reason=str(exc))
+                RejectedSpan(index=index, span_id=_raw_span_id(raw), reason=normalized)
             )
             continue
 
@@ -145,6 +154,55 @@ async def ingest_spans(
     outcome.accepted = len(spans)
     outcome.rejected.sort(key=lambda rejection: rejection.index)
     return outcome
+
+
+def _prepare(
+    raw: Any, index: int, target: IngestTarget, prices: PriceBook, now: datetime
+) -> NormalizedSpan | str:
+    """The span ready to store, or the reason it is rejected.
+
+    Any failure is this span's alone. One that is not a validation or semantic check is a bug:
+    counted, and logged by its type, origin and the span's index, never its message, which may
+    quote the payload.
+    """
+    try:
+        validated = SpanIn.model_validate(raw)
+        prepared = target.prepared_truncated
+        capture = target.capture_payloads
+        normalized = normalize_span(
+            validated, capture_payloads=capture and prepared is None, prices=prices, now=now
+        )
+        if capture and prepared is not None:
+            # Already redacted and cut by `prepare_span_payloads`: stored as they are.
+            normalized = replace(
+                normalized, input=validated.input, output=validated.output, truncated=prepared
+            )
+        return normalized
+    except ValidationError as exc:
+        return _first_error(exc)
+    except SpanRejectedError as exc:
+        return str(exc)
+    except Exception as exc:  # noqa: BLE001 - a bug must cost this span, not the batch
+        error_type = type(exc).__name__
+        SPAN_NORMALIZATION_FAILURES.labels(error_type).inc()
+        logger.error(
+            "span_normalization_failed",
+            project_id=str(target.project_id),
+            index=index,
+            error_type=error_type,
+            origin=_origin(exc),
+        )
+        return _UNPROCESSABLE
+
+
+def _origin(exc: BaseException) -> str:
+    """`module:line` of the frame that raised `exc`: where the bug is, without its message."""
+    frame = exc.__traceback__
+    if frame is None:
+        return "unknown"
+    while frame.tb_next is not None:
+        frame = frame.tb_next
+    return f"{frame.tb_frame.f_globals.get('__name__', '?')}:{frame.tb_lineno}"
 
 
 def _raw_span_id(raw: Any) -> str | None:

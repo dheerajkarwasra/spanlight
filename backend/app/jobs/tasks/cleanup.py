@@ -21,7 +21,7 @@ from app.db.models import (
     ThrottleEvent,
 )
 from app.exports.expiry import expire_exports, reap_exports
-from app.insights.explain_queries import complete_stale_reservations
+from app.insights.job_queries import complete_stale_reservations
 from app.jobs.context import TaskContext
 from app.storage.object_store import get_object_store
 

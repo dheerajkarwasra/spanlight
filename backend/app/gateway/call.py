@@ -29,6 +29,7 @@ from app.gateway.faults import AppliedFault
 from app.gateway.recorder import credentials_used, record_soon
 from app.gateway.response_summary import summarize_response
 from app.gateway.routing import resolve_model
+from app.gateway.span_losses import span_not_built
 from app.gateway.sse import StreamSummary
 from app.gateway.stream_forward import GatewayStream
 from app.gateway.tracing import build_span, new_span_id, new_trace_id
@@ -56,6 +57,7 @@ class Call:
         self.fault: AppliedFault | None = None
         self.budget: BudgetDecision | None = None
         self.cache: CacheStatus = _cache_status(request, context)
+        self.loop: LoopResult | None = None  # the attempt loop's result, once the loop has begun
 
     def remaining_s(self) -> float:
         return max(0.0, self.deadline - self.context.monotonic())
@@ -79,9 +81,12 @@ class Call:
             return self._bare_internal_error()
 
     def abandon(self) -> None:
-        """Record a call its caller cancelled before it was answered, as a client disconnect."""
+        """Record a call its caller cancelled before it was answered, as a client disconnect.
+
+        The span lists the attempts made so far, the cancelled one included.
+        """
         try:
-            result = self._result(None, 499, {})
+            result = self._result(self.loop, 499, {})
             result.client_disconnected = True
             result.disconnected_after_ms = (self.context.monotonic() - self.started) * 1000
             self._finish(result, None)
@@ -170,8 +175,8 @@ class Call:
             ended_at = self.context.clock()
             span = build_span(self.request, result, self.context, self.started_at, ended_at)
             record_soon(self.context, span, credentials_used(result))
-        except Exception:
-            logger.exception("gateway.span_failed", request_id=self.request.request_id)
+        except Exception as failure:  # noqa: BLE001 - counted and logged, the client was answered
+            span_not_built(self.request.request_id, failure)
         return result
 
     def _bare_internal_error(self) -> GatewayResult:

@@ -3,8 +3,8 @@
 Pure protocol and value types. ``execute`` calls the guard once per request, after the model
 is resolved and before the cache and the attempt loop. A blocked decision becomes a
 ``BUDGET_EXCEEDED`` error with zero attempts and no upstream call. ``execute`` records
-``spanlight.budget.blocked=true`` and ``spanlight.budget.id`` on the error span. Phase 2 ships
-only the no-op guard; Phase 3 supplies the real ``budgets`` implementation.
+``spanlight.budget.blocked=true`` and ``spanlight.budget.id`` on the error span. The real
+implementation is ``app.budgets.guard.StateBudgetGuard``.
 """
 
 from collections.abc import Sequence
@@ -49,22 +49,6 @@ class BudgetGuard(Protocol):
         now: datetime,
         target_models: Sequence[str] = (),
     ) -> BudgetDecision: ...
-
-
-class NoOpBudgetGuard:
-    """Allows every request. The Phase 2 default; never blocks."""
-
-    async def check(
-        self,
-        db: AsyncSession,
-        project_id: UUID,
-        key_id: UUID | None,
-        model: str,
-        external_user_id: str | None,
-        now: datetime,
-        target_models: Sequence[str] = (),
-    ) -> BudgetDecision:
-        return BudgetDecision(allowed=True)
 
 
 def blocked_error(decision: BudgetDecision) -> GatewayError:

@@ -63,10 +63,10 @@ def parse_jsonl(data: bytes) -> ParsedItems:
         try:
             record = json.loads(line)
         except (ValueError, RecursionError):
-            parsed.errors.append(LineError(number, "not valid JSON"))
+            _reject(parsed, number, "not valid JSON")
             continue
         if not isinstance(record, dict):
-            parsed.errors.append(LineError(number, "not a JSON object"))
+            _reject(parsed, number, "not a JSON object")
             continue
         _accept(parsed, number, _jsonl_fields(record))
     return parsed
@@ -221,9 +221,13 @@ def _accept(parsed: ParsedItems, number: int, fields: dict[str, Any]) -> None:
     try:
         parsed.items.append(DatasetItemIn(**fields))
     except ValidationError as error:
-        # A file of bad lines must not make a response of the same size.
-        if len(parsed.errors) < MAX_REPORTED_ERRORS:
-            parsed.errors.append(LineError(number, _reason(error)))
+        _reject(parsed, number, _reason(error))
+
+
+def _reject(parsed: ParsedItems, number: int, reason: str) -> None:
+    # A file of bad lines must not make a response of the same size.
+    if len(parsed.errors) < MAX_REPORTED_ERRORS:
+        parsed.errors.append(LineError(number, reason))
 
 
 def _is_full(parsed: ParsedItems) -> bool:

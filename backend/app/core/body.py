@@ -14,7 +14,7 @@ The failures are plain exceptions, so each caller answers in its own error forma
 import gzip
 import zlib
 
-from starlette.requests import Request
+from starlette.requests import ClientDisconnect, Request
 
 
 class BodyTooLarge(Exception):  # noqa: N818 - reads as the condition, like the egress errors
@@ -33,10 +33,14 @@ class UndecodableBody(Exception):  # noqa: N818 - reads as the condition
     """The body claims gzip or deflate but does not decompress."""
 
 
+class ClientDisconnected(Exception):  # noqa: N818 - reads as the condition
+    """The client went away before it had sent the whole body."""
+
+
 async def read_bounded_body(request: Request, limit: int) -> bytes:
     """The request body, decompressed, refusing to buffer more than `limit` bytes.
 
-    Raises `BodyTooLarge`, `UnsupportedEncoding` and `UndecodableBody`.
+    Raises `BodyTooLarge`, `UnsupportedEncoding`, `UndecodableBody` and `ClientDisconnected`.
     """
     declared = request.headers.get("content-length")
     if declared is not None and declared.isdigit() and int(declared) > limit:
@@ -44,11 +48,14 @@ async def read_bounded_body(request: Request, limit: int) -> bytes:
 
     chunks: list[bytes] = []
     received = 0
-    async for chunk in request.stream():
-        received += len(chunk)
-        if received > limit:
-            raise BodyTooLarge
-        chunks.append(chunk)
+    try:
+        async for chunk in request.stream():
+            received += len(chunk)
+            if received > limit:
+                raise BodyTooLarge
+            chunks.append(chunk)
+    except ClientDisconnect as exc:
+        raise ClientDisconnected from exc
     body = b"".join(chunks)
 
     encoding = request.headers.get("content-encoding", "identity").lower()
@@ -68,4 +75,7 @@ def _decompress(body: bytes, limit: int, *, gzip_wrapped: bool) -> bytes:
         raise UndecodableBody from exc
     if len(output) > limit or decompressor.unconsumed_tail:
         raise BodyTooLarge
+    if not decompressor.eof:
+        # The stream stops before its end marker: a cut body whose prefix may still parse.
+        raise UndecodableBody
     return output

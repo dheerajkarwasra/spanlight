@@ -3,12 +3,18 @@
 `build_span` turns a finished call into a dict in the native ingestion shape (`SpanIn`), which
 `recorder.record` writes through `ingest_spans` like any SDK span. The span joins the caller's
 trace when the request carried valid `x-spanlight-*` ids, and starts a new one otherwise.
+
+The client's body is parsed leniently (it is forwarded as sent), so it may hold a NUL, a lone
+surrogate or a NaN, none of which Postgres stores. The span is made storable here
+(`storable_json`), the one place every gateway span is built, so neither the background
+recorder nor a `DirectSpans` caller loses it to a refused write.
 """
 
 import secrets
 from datetime import datetime
 from typing import Any
 
+from app.core.text import storable_json
 from app.db.models import FaultScenario, ProviderCredential
 from app.gateway.context import (
     UPSTREAM_ERROR_CODE,
@@ -23,8 +29,9 @@ from app.ingest.request_hash import request_hash
 
 MAX_NAME_LENGTH = 256
 MAX_STATUS_MESSAGE = 4096
-# Matches no error-class pattern, so with its 200 status the span's class is `unknown`.
+# Match no error-class pattern, so with their 200 status these spans' class is `unknown`.
 MALFORMED_JSON_MESSAGE = "the Integration Lab cut the response body short on purpose"
+TRUNCATED_STREAM_MESSAGE = "the Integration Lab ended the stream before its final event on purpose"
 
 
 def new_trace_id() -> str:
@@ -49,12 +56,12 @@ def build_span(
     started_at: datetime,
     ended_at: datetime,
 ) -> dict[str, Any]:
-    """The call's span as a `SpanIn`-shaped dict."""
+    """The call's span as a `SpanIn`-shaped dict that Postgres can store."""
     model = result.model or _requested_model(request)
     credential = _credential(result, context)
     message = status_message(result)
     failed = message is not None
-    return {
+    span = {
         "trace_id": result.trace_id,
         "span_id": result.span_id,
         "parent_span_id": request.trace.parent_span_id,
@@ -75,13 +82,21 @@ def build_span(
         # does not capture payloads, and the requested model keeps the hash stable across a
         # fallback to another target.
         "request_hash": request_hash(_requested_model(request), request.body),
-        "trace": {
-            "environment": context.environment or None,
-            "release": request.trace.release,
-            "user_id": request.trace.user_id,
-            "session_id": request.trace.session_id,
-            "tags": trace_tags(request, result, context),
-        },
+        "trace": _trace(request, result, context),
+    }
+    storable: dict[str, Any] = storable_json(span)
+    return storable
+
+
+def _trace(
+    request: GatewayRequest, result: GatewayResult, context: GatewayContext
+) -> dict[str, Any]:
+    return {
+        "environment": context.environment or None,
+        "release": request.trace.release,
+        "user_id": request.trace.user_id,
+        "session_id": request.trace.session_id,
+        "tags": trace_tags(request, result, context),
     }
 
 
@@ -102,22 +117,29 @@ def status_message(result: GatewayResult) -> str | None:
         return f"{error.status} {code}: {error.message}"[:MAX_STATUS_MESSAGE]
     if result.stream_error is not None:
         return f"{result.status} stream_error: {result.stream_error}"[:MAX_STATUS_MESSAGE]
-    if _body_cut_by_fault(result):
-        code = fault_code(FaultScenario.MALFORMED_JSON)
-        return f"{result.status} {code}: {MALFORMED_JSON_MESSAGE}"
+    fault = result.fault
+    cut = _cut_by_fault(result)
+    if fault is not None and cut is not None:
+        return f"{result.status} {fault_code(fault.scenario)}: {cut}"
     return None
 
 
-def _body_cut_by_fault(result: GatewayResult) -> bool:
-    """Whether a `malformed_json` fault cut an otherwise successful answer's body.
+def _cut_by_fault(result: GatewayResult) -> str | None:
+    """Why a lab fault cut an otherwise successful answer short, or None when none did.
 
-    The client got a success status with a body it cannot parse, so the span is a failure: what
-    the client does next is then judged like after any other failure.
+    `malformed_json` always cuts the body; `truncated_stream` cuts a stream that had more than
+    its `after_chunks` frames (`cut_by_fault`). The client got a success status with an answer
+    it cannot trust, so the span is a failure: what the client does next is then judged like
+    after any other failure.
     """
     fault = result.fault
-    return (
-        fault is not None and fault.scenario == FaultScenario.MALFORMED_JSON and result.status < 400
-    )
+    if fault is None or result.status >= 400:
+        return None
+    if fault.scenario == FaultScenario.MALFORMED_JSON:
+        return MALFORMED_JSON_MESSAGE
+    if fault.scenario == FaultScenario.TRUNCATED_STREAM and result.cut_by_fault:
+        return TRUNCATED_STREAM_MESSAGE
+    return None
 
 
 def trace_tags(

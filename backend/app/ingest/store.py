@@ -199,7 +199,10 @@ _RECOMPUTE_ROLLUPS = text(
                count(*) FILTER (WHERE status = 'error')   AS error_count,
                coalesce(sum(input_tokens), 0)             AS input_tokens,
                coalesce(sum(output_tokens), 0)            AS output_tokens,
-               sum(cost_usd)                              AS cost_usd,
+               -- traces.cost_usd is numeric(14, 8), like each span's cost. A total of a
+               -- million dollars or more cannot be stored and is unknown (NULL), rather
+               -- than an overflow that would fail every batch touching the trace.
+               CASE WHEN sum(cost_usd) < 1000000 THEN sum(cost_usd) END AS cost_usd,
                coalesce(
                    bool_or((kind = 'llm' OR model IS NOT NULL) AND cost_usd IS NULL),
                    false

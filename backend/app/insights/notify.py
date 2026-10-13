@@ -61,7 +61,7 @@ async def notify_opened(
     ).first()
     if row is None:
         return 0
-    project, org = row.tuple()
+    project, org = row
     channel_ids = list(project.insight_channel_ids)
     if not channel_ids:
         return 0

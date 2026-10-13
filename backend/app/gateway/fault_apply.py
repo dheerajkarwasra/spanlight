@@ -7,7 +7,9 @@ Two entry points, matching where a scenario acts:
   scenario acts around the call instead.
 - `apply_around` wraps the provider's real response. It returns a response whose body is cut
   (`malformed_json`), stopped early (`truncated_stream`) or delayed (`slow_response`); any
-  other scenario returns the response unchanged.
+  other scenario returns the response unchanged. A stream stopped early raises
+  `StreamCutByFault` after its last forwarded byte, so the forwarder can end the client's stream
+  cleanly and still record the call as cut.
 
 Fault errors copy each provider's wording, so client code is exercised against realistic
 bodies, and carry `spanlight_code` / `X-Spanlight-Code` `FAULT_<SCENARIO>` plus the
@@ -40,6 +42,11 @@ MAX_BUFFERED_BYTES = 10 * 1024 * 1024
 """The most of a response body `malformed_json` reads before cutting it (10 MB)."""
 
 _SERVER_ERROR = "The server had an error while processing your request."
+
+
+class StreamCutByFault(Exception):  # noqa: N818 - a signal, not an error
+    """A `truncated_stream` fault withheld the rest of the stream (raised after its last byte)."""
+
 
 # Status and both providers' wording, for the scenarios whose error takes no parameters.
 _FIXED: dict[type[object], tuple[int, ErrorKind, ErrorKind]] = {
@@ -189,7 +196,8 @@ async def _truncated(upstream: UpstreamResponse, after_chunks: int) -> AsyncIter
 
     Frames are counted with the gateway's SSE parser (comment-only blocks are not frames), so
     the end marker (`[DONE]`, `message_stop`) is never sent; a stream with no more than
-    `after_chunks` frames passes whole. A frame over the parser's limit ends the stream.
+    `after_chunks` frames passes whole. A frame over the parser's limit ends the stream. When
+    bytes were withheld, `StreamCutByFault` is raised once the last forwarded piece is taken.
     """
     state = SseState()
     seen = 0
@@ -213,6 +221,8 @@ async def _truncated(upstream: UpstreamResponse, after_chunks: int) -> AsyncIter
                 piece += b"\n"
             if piece:
                 yield piece
+            if chunk[len(piece) :] or await anext(upstream.body, None) is not None:
+                raise StreamCutByFault
             return
     finally:
         await upstream.aclose()
@@ -245,4 +255,4 @@ async def _delayed(
         await upstream.aclose()
 
 
-__all__ = ["MAX_BUFFERED_BYTES", "Sleep", "apply_around", "apply_before"]
+__all__ = ["MAX_BUFFERED_BYTES", "Sleep", "StreamCutByFault", "apply_around", "apply_before"]

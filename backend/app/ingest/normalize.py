@@ -24,6 +24,8 @@ MAX_PAYLOAD_BYTES = 32 * 1024
 MAX_ATTRIBUTES_BYTES = 64 * 1024
 MAX_SPAN_AGE = timedelta(days=90)  # the longest retention a project can configure
 MAX_CLOCK_SKEW = timedelta(minutes=10)
+# `spans.cost_usd` is numeric(14, 8): a cost must stay below a million dollars to be stored.
+MAX_STORED_COST = Decimal(1_000_000)
 
 
 class SpanRejectedError(Exception):
@@ -137,7 +139,12 @@ def _cost(span: SpanIn, prices: PriceBook, tokens: _Tokens) -> tuple[Decimal | N
         output_tokens=output_tokens,
         cached_tokens=cached_tokens,
     )
-    return (cost.cost_usd, cost.pricing_version) if cost else (None, None)
+    if cost is None:
+        return None, None
+    if cost.cost_usd >= MAX_STORED_COST:
+        # Only an organization's own price override can price a call this high.
+        raise SpanRejectedError("usage: the cost at this model's price is too large to store")
+    return cost.cost_usd, cost.pricing_version
 
 
 def _payloads(span: SpanIn, capture_payloads: bool) -> tuple[Any, Any, bool]:
@@ -147,6 +154,24 @@ def _payloads(span: SpanIn, capture_payloads: bool) -> tuple[Any, Any, bool]:
     stored_input, input_truncated = _prepare_payload(span.input)
     stored_output, output_truncated = _prepare_payload(span.output)
     return stored_input, stored_output, input_truncated or output_truncated
+
+
+def prepare_span_payloads(
+    span: dict[str, Any], *, capture_payloads: bool
+) -> tuple[dict[str, Any], bool]:
+    """A raw span with `input` and `output` already as they will be stored, and the flag.
+
+    For a caller that holds spans before writing them (the gateway recorder's queue): what it
+    holds is then bounded by `MAX_PAYLOAD_BYTES` per payload and already redacted. Without
+    payload capture both are dropped. Pass the flag as `IngestTarget.prepared_truncated`, so
+    ingestion stores the payloads as they are instead of preparing them a second time.
+    """
+    if not capture_payloads:
+        return {**span, "input": None, "output": None}, False
+    stored_input, input_truncated = _prepare_payload(span.get("input"))
+    stored_output, output_truncated = _prepare_payload(span.get("output"))
+    prepared = {**span, "input": stored_input, "output": stored_output}
+    return prepared, input_truncated or output_truncated
 
 
 def _attributes(span: SpanIn) -> dict[str, Any]:

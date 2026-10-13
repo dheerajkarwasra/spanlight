@@ -1,9 +1,10 @@
 """The SQL behind "Explain with Claude": credentials, trace excerpts, the budget and the rows.
 
-Reads of a project's own rows (`insight_explanations`, `spans`) rely on the transaction being
-bound to the project. The budget's month-to-date sum covers every project of the organization,
-so it runs under `bypass_rls` and filters by `org_id` itself; `complete_stale_reservations` is the
-cleanup job's and runs under `bypass_rls` too. Callers commit.
+Reads and writes of a project's own rows (`insight_explanations`, `spans`) rely on the
+transaction being bound to the project. The budget's month-to-date sum covers every project of
+the organization, so it is the database function `explain_month_to_date_cost` (migration 0507),
+which sees past row-level security for its own body only: the request never sets the bypass
+flag, and the reservation insert is checked by the table's policy. Callers commit.
 """
 
 import uuid
@@ -11,20 +12,18 @@ from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import case, delete, func, select, text, update
+from sqlalchemy import case, delete, select, text, update
 from sqlalchemy.dialects.postgresql import distinct_on
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
     InsightExplanation,
-    Project,
     ProviderCredential,
     ProviderKind,
     Span,
     SpanKind,
     SpanStatus,
 )
-from app.db.rls import bypass_rls
 from app.insights.explain import TraceExcerpt
 
 
@@ -86,15 +85,14 @@ async def lock_org_budget(db: AsyncSession, org_id: uuid.UUID) -> None:
 
 
 async def month_to_date_cost(db: AsyncSession, org_id: uuid.UUID, since: datetime) -> Decimal:
-    """The cost of the organization's explanations since `since`, reservations included."""
-    # A request handler bypasses row-level security here on purpose: the budget is per
-    # organization, so the sum spans every project of it, and the `org_id` condition below is
-    # what scopes it. The flag is transaction-local and ends with the reservation's commit.
-    await bypass_rls(db)
+    """The cost of the organization's explanations since `since`, reservations included.
+
+    `org_id` must be the organization of the project the request was authorized for: the
+    function sums whatever organization it is given.
+    """
     total = await db.scalar(
-        select(func.coalesce(func.sum(InsightExplanation.cost_usd), 0))
-        .join(Project, Project.id == InsightExplanation.project_id)
-        .where(Project.org_id == org_id, InsightExplanation.created_at >= since)
+        text("SELECT explain_month_to_date_cost(:org_id, :since)"),
+        {"org_id": org_id, "since": since},
     )
     return Decimal(0) if total is None else Decimal(total)
 
@@ -169,27 +167,3 @@ async def list_completed(
         .limit(limit)
     )
     return list(rows.all())
-
-
-async def complete_stale_reservations(
-    session_factory: async_sessionmaker[AsyncSession], *, before: datetime, now: datetime
-) -> int:
-    """Complete reservations created before `before` at their worst-case cost, with no answer.
-
-    Their request died between the reservation and its outcome (a process killed mid-call, a
-    failed settle), so the provider may have billed the call. The row stays in the month's spend
-    at its reserved cost rather than handing that cost back: the budget errs high. One
-    transaction, every project.
-    """
-    async with session_factory() as db:
-        await bypass_rls(db)
-        result = await db.execute(
-            update(InsightExplanation)
-            .where(
-                InsightExplanation.completed_at.is_(None),
-                InsightExplanation.created_at < before,
-            )
-            .values(completed_at=now)
-        )
-        await db.commit()
-    return int(getattr(result, "rowcount", 0))

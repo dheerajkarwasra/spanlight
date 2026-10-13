@@ -51,7 +51,9 @@ def create_app(
     provider calls, `gateway_transport` for calls to LLM providers (gateway traffic and
     credential checks), `gateway_resolver` the DNS that those calls (and alert webhook URLs, when
     saved) are vetted against, and `clock` replaces the time that one-time codes and login
-    challenges are judged against, so a test decides which code is valid.
+    challenges are judged against, so a test decides which code is valid. The same clock drives
+    the gateway request path (key limits, the budget guard, the cache and span times) and the
+    `now` the budgets API reports a budget's period and spend at.
     """
     settings = settings or get_settings()
     configure_logging(settings.log_level, json=settings.log_json)

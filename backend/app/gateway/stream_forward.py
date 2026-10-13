@@ -11,6 +11,8 @@ stream nobody started reading):
 - the provider finished: a normal span;
 - the provider went quiet for the idle timeout or its connection broke: an error span with the
   reason, and the client's stream simply ends;
+- a lab `truncated_stream` fault withheld the rest (`StreamCutByFault`): the client's stream
+  ends cleanly and the span is an error naming the fault;
 - the client went away (the generator is closed or cancelled): an error span saying after how
   long, with `spanlight.gateway.client_disconnected` true.
 
@@ -29,7 +31,9 @@ import structlog
 from app.gateway.adapters import UpstreamResponse
 from app.gateway.context import GatewayContext, GatewayRequest, GatewayResult
 from app.gateway.errors import Surface
+from app.gateway.fault_apply import StreamCutByFault
 from app.gateway.recorder import credentials_used, record_soon
+from app.gateway.span_losses import span_not_built
 from app.gateway.sse import StreamObserver
 from app.gateway.stream_observers import (
     AnthropicMessagesObserver,
@@ -119,10 +123,13 @@ async def _forward(
         # `observe_stream` is an async generator; closing it closes the upstream response.
         observing = cast(AsyncGenerator[bytes, None], observe_stream(upstream, observer, _ignore))
         async with contextlib.aclosing(observing) as observed:
-            async for chunk in observed:
-                forwarded = hidden.feed(chunk) if hidden is not None else chunk
-                if forwarded:
-                    yield forwarded
+            try:
+                async for chunk in observed:
+                    forwarded = hidden.feed(chunk) if hidden is not None else chunk
+                    if forwarded:
+                        yield forwarded
+            except StreamCutByFault:
+                result.cut_by_fault = True  # the client's stream ends here, cleanly
         if hidden is not None and (rest := hidden.flush()):
             yield rest
     except TimeoutError:
@@ -137,23 +144,28 @@ async def _forward(
         logger.exception("gateway.stream_failed", request_id=request.request_id)
         result.stream_error = "the gateway failed while forwarding the stream"
     finally:
-        summary = observer.summary()
-        result.model = summary.model or result.model
-        result.usage = summary.usage
-        result.finish_reason = summary.finish_reason
-        result.output = summary.output
+        _take_summary(result, observer)
         _record(request, context, result, started_at)
+
+
+def _take_summary(result: GatewayResult, observer: StreamObserver) -> None:
+    """What the observer read: the model, usage, finish reason and reassembled output."""
+    summary = observer.summary()
+    result.model = summary.model or result.model
+    result.usage = summary.usage
+    result.finish_reason = summary.finish_reason
+    result.output = summary.output
 
 
 def _record(
     request: GatewayRequest, context: GatewayContext, result: GatewayResult, started_at: datetime
 ) -> None:
-    """Queue the span; a failure to build it is logged, never raised into the stream."""
+    """Queue the span; a failure to build it is counted and logged, never raised into the stream."""
     try:
         span = build_span(request, result, context, started_at, context.clock())
         record_soon(context, span, credentials_used(result))
-    except Exception:
-        logger.exception("gateway.stream_span_failed", request_id=request.request_id)
+    except Exception as failure:  # noqa: BLE001 - counted and logged, the client has the stream
+        span_not_built(request.request_id, failure)
 
 
 def _ignore() -> None:

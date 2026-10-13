@@ -54,6 +54,6 @@ async def run_playground(
         access.require_project(),
         access.user_id,
         body.configs,
-        now=clock(),
+        clock=clock,
     )
     return PlaygroundRunOut(results=[PlaygroundResultOut.of(result) for result in results])

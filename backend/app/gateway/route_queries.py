@@ -51,7 +51,7 @@ async def get_route_with_updater(
     ).one_or_none()
     if row is None:
         return None
-    route, updater = row.tuple()
+    route, updater = row
     return route, updater
 
 

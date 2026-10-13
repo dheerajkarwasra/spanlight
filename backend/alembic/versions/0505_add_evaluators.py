@@ -40,12 +40,18 @@ Choices worth knowing about:
 * `scores.evaluator_run_id` gains its foreign key (`ON DELETE SET NULL`: a score outlives the run
   that wrote it). The column and its partial index were created by 0502. The key is added
   `NOT VALID` and validated in a second statement, so the scan of `scores` does not hold the
-  lock that blocks writes; every existing value is NULL, so validation cannot fail.
+  lock that blocks writes; every existing value is NULL (on a first upgrade nothing set one, and
+  the downgrade clears them), so validation cannot fail.
 
-Downgrade drops the foreign key and the tables.
+Downgrade drops the foreign key, clears `scores.evaluator_run_id` (what `ON DELETE SET NULL` does
+when the runs go, so a score never points at a run that no longer exists and the next upgrade
+validates), then drops the tables. The clearing runs with the worker bypass set for the
+transaction, because `scores` forces row-level security on its owner too.
 """
 
 from collections.abc import Sequence
+
+from sqlalchemy import text
 
 from alembic import op
 
@@ -163,5 +169,24 @@ def _link_scores() -> None:
 
 def downgrade() -> None:
     op.execute(f"ALTER TABLE scores DROP CONSTRAINT IF EXISTS {SCORES_FK}")
+    _unlink_scores()
     op.execute("DROP TABLE IF EXISTS evaluator_runs")
     op.execute("DROP TABLE IF EXISTS evaluators")
+
+
+def _unlink_scores() -> None:
+    """Null every `scores.evaluator_run_id`, seeing every project's rows, then restore the flag.
+
+    No `try/finally`: after an error the transaction is aborted and rolls back, which discards the
+    transaction-local setting by itself (as in 0017).
+    """
+    bind = op.get_bind()
+    previous = bind.execute(text("SELECT current_setting('app.bypass_rls', true)")).scalar()
+    bind.execute(text("SELECT set_config('app.bypass_rls', 'on', true)"))
+    bind.execute(
+        text("UPDATE scores SET evaluator_run_id = NULL WHERE evaluator_run_id IS NOT NULL")
+    )
+    bind.execute(
+        text("SELECT set_config('app.bypass_rls', :previous, true)"),
+        {"previous": previous or ""},
+    )

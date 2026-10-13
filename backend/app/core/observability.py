@@ -22,6 +22,11 @@ REJECTED_SPANS = Counter(
     "Spans rejected by the ingestion pipeline.",
     ["source"],
 )
+SPAN_NORMALIZATION_FAILURES = Counter(
+    "spanlight_span_normalization_failures_total",
+    "Spans rejected because preparing them raised an unexpected error (a bug), by error type.",
+    ["error_type"],
+)
 JOBS_FINISHED = Counter(
     "spanlight_jobs_finished_total",
     "Background jobs finished, by kind and outcome.",
@@ -77,8 +82,8 @@ GATEWAY_UPSTREAM_DURATION = Histogram(
 )
 GATEWAY_ATTEMPTS = Counter(
     "spanlight_gateway_attempts_total",
-    "Upstream attempts, by provider and status (an HTTP status, timeout, connection_error "
-    "or blocked).",
+    "Upstream attempts, by provider and status (an HTTP status, timeout, connection_error, "
+    "blocked or cancelled).",
     ["provider", "status"],
 )
 GATEWAY_RECORD_FAILURES = Counter(

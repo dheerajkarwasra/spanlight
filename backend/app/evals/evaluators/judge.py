@@ -170,6 +170,7 @@ class JudgeEvaluator:
             route_name=ROUTE_NAME,
             span_sink=spans,
             timeout_ms=CALL_TIMEOUT_MS,
+            clock=self._clock,
         )
         try:
             result = await self._execute(prepared.request, context)

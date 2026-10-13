@@ -20,7 +20,8 @@ finished, the client went away, sending failed), the stream is closed in a `fina
 closes the provider connection and writes the span. A `truncated_stream` fault ends the
 response with a clean end of stream after the last forwarded frame: Starlette has no way to
 abort a connection without raising through the server, so the truncation shows as a stream
-without its final event (`[DONE]` or `message_stop`), which is what SDKs detect.
+without its final event (`[DONE]` or `message_stop`), which is what SDKs detect. Its span is an
+error naming the fault.
 
 None of the dashboard's middleware touches these paths: no cookies, CSRF or Origin check (they
 are scoped to `/api/`), and the 1 MiB body limit is `/api/v1` only.
@@ -37,9 +38,16 @@ from starlette.types import Receive, Scope, Send
 
 from app.api.gw_errors import request_id_of
 from app.config import Settings
-from app.core.body import BodyTooLarge, UndecodableBody, UnsupportedEncoding, read_bounded_body
+from app.core.body import (
+    BodyTooLarge,
+    ClientDisconnected,
+    UndecodableBody,
+    UnsupportedEncoding,
+    read_bounded_body,
+)
 from app.core.observability import GATEWAY_REQUESTS
 from app.core.security import GATEWAY_KEY_PREFIX, key_secret_matches, parse_key
+from app.core.text import clean_text
 from app.db.timeouts import limit_statement_time
 from app.gateway.context import ByteStream, GatewayRequest, Received, context_for_key
 from app.gateway.errors import (
@@ -113,7 +121,7 @@ def presented_key(headers: Headers) -> str:
 
 async def _authenticate(request: Request, *, check_tokens: bool) -> KeyContext:
     # The call's clocks start here, so its overhead includes authentication, limits and the body.
-    request.state.gateway_received = Received.now()
+    request.state.gateway_received = Received.now(request.app.state.clock)
     runtime = get_runtime(request)
     raw = presented_key(request.headers)
     parsed = parse_key(raw, GATEWAY_KEY_PREFIX)
@@ -168,12 +176,19 @@ async def read_model_call(request: Request) -> dict[str, Any]:
     except (UnsupportedEncoding, UndecodableBody):
         message = "Request body could not be decoded: send JSON, optionally gzip or deflate."
         raise invalid_request(message, param=None) from None
+    except ClientDisconnected:
+        # Nobody reads this answer; it keeps a client that left from being logged as our error.
+        raise invalid_request("Request body was not fully sent.", param=None) from None
     try:
         body = json.loads(raw)
     except (ValueError, RecursionError):
         raise invalid_request() from None
     if not isinstance(body, dict) or not isinstance(body.get("model"), str):
         raise invalid_request()
+    if clean_text(body["model"]) != body["model"]:
+        # A NUL or a lone surrogate: no provider serves such a model, and Postgres cannot take
+        # it as a query parameter (the budget and route checks match on the model name).
+        raise invalid_request("'model' must not contain NUL or unpaired surrogate characters.")
     return body
 
 
@@ -211,7 +226,8 @@ async def _serve(request: Request, surface: Surface, key: KeyContext) -> Respons
         request_id=request_id_of(request),
         received=getattr(request.state, "gateway_received", None),
     )
-    result = await execute(call, context_for_key(key, runtime))
+    context = context_for_key(key, runtime, clock=request.app.state.clock)
+    result = await execute(call, context)
     if result.stream is not None:
         return GatewayStreamingResponse(
             result.stream, status_code=result.status, headers=result.headers

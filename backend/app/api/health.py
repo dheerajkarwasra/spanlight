@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from app.api.deps import SettingsDep
 from app.core.errors import not_found, unauthorized
 from app.db.migrations import head_revision
+from app.gateway import recorder
 from app.jobs.scheduler import EVALUATE_ALERTS
 
 router = APIRouter(tags=["health"])
@@ -60,7 +61,9 @@ async def ready(request: Request, settings: SettingsDep) -> JSONResponse:
     # Numbers and fixed words only: this endpoint is unauthenticated. `outbox_backlog` stops
     # counting at OUTBOX_BACKLOG_CAP, so a runaway backlog cannot make the probe slow.
     # `gateway_mode` says where /gw/* is served from (embedded, standalone or disabled).
-    # `alert_evaluation_lag_s` is informational: it never makes the probe fail.
+    # `alert_evaluation_lag_s` is informational: it never makes the probe fail. So is
+    # `gateway_spans_lost`, the gateway spans this process answered for but could not store since
+    # it started (each is also in `spanlight_gateway_record_failures_total`).
     return JSONResponse(
         {
             "status": "ok" if healthy else "unavailable",
@@ -70,6 +73,7 @@ async def ready(request: Request, settings: SettingsDep) -> JSONResponse:
             "outbox_backlog": outbox_backlog,
             "alert_evaluation_lag_s": evaluation_lag,
             "gateway_mode": settings.gateway_mode,
+            "gateway_spans_lost": recorder.spans_lost(),
         },
         status_code=200 if healthy else 503,
     )
