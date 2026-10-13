@@ -127,7 +127,12 @@ def _sources(template: Template) -> list[str]:
         blocks = [message.content for message in template.messages]
     else:
         raise InvalidTemplateError(f"unknown template kind: {template.kind!r}")
-    if sum(len(block.encode("utf-8")) for block in blocks) > MAX_TEMPLATE_BYTES:
+    try:
+        size = sum(len(block.encode("utf-8")) for block in blocks)
+    except UnicodeEncodeError:
+        # A lone surrogate: not valid Unicode, and the server would refuse it as a template.
+        raise InvalidTemplateError("template text is not valid Unicode") from None
+    if size > MAX_TEMPLATE_BYTES:
         raise InvalidTemplateError(f"template exceeds {MAX_TEMPLATE_BYTES} bytes")
     return blocks
 
@@ -156,7 +161,10 @@ def _check_size(parts_per_block: list[list[_Part]], variables: Mapping[str, str]
                 total += len(part.literal.encode("utf-8"))
             else:
                 if part.name not in sizes:
-                    sizes[part.name] = len(variables[part.name].encode("utf-8"))
+                    # `surrogatepass`: a value may carry a lone surrogate (from `os.fsdecode`,
+                    # say); count it rather than raise, since the value is the caller's data.
+                    value = variables[part.name]
+                    sizes[part.name] = len(value.encode("utf-8", "surrogatepass"))
                 total += sizes[part.name]
             if total > MAX_COMPILED_BYTES:
                 raise TemplateTooLargeError()

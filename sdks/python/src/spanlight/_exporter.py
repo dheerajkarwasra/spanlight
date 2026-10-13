@@ -23,6 +23,7 @@ import email.utils
 import gzip
 import json
 import logging
+import math
 import os
 import random
 import threading
@@ -445,9 +446,12 @@ def parse_retry_after(value: str | None) -> float | None:
         return None
     value = value.strip()
     try:
-        return max(float(value), 0.0)
+        seconds = float(value)
     except ValueError:
         pass
+    else:
+        # `nan` and `inf` parse as floats but are not delays; fall back to the backoff.
+        return max(seconds, 0.0) if math.isfinite(seconds) else None
     try:
         moment = email.utils.parsedate_to_datetime(value)
     except (TypeError, ValueError):
