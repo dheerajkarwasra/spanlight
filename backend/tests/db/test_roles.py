@@ -6,7 +6,7 @@ import psycopg
 import pytest
 
 from app.db.roles import ensure_app_role
-from tests.conftest import _admin_url
+from tests.conftest import admin_database_url
 
 PROBE_ROLE = "spanlight_role_probe"
 
@@ -18,7 +18,7 @@ def _plain_url(url: str) -> str:
 @pytest.fixture
 def admin_url(app_database_url: str) -> Iterator[str]:
     # app_database_url guarantees the schema is migrated before we grant on it.
-    url = _admin_url()
+    url = admin_database_url()
     yield url
     with psycopg.connect(_plain_url(url), autocommit=True) as connection:
         if connection.execute(
@@ -43,6 +43,19 @@ def test_creates_a_role_that_cannot_bypass_row_level_security(admin_url: str) ->
 
     assert row == (False, False, True)
     assert can_write_spans == (True,)
+
+
+def test_grants_the_functions_revoked_from_public(admin_url: str) -> None:
+    ensure_app_role(admin_url, PROBE_ROLE, "first-password-123")
+
+    with psycopg.connect(_plain_url(admin_url)) as connection:
+        can_sum_spend = connection.execute(
+            "SELECT has_function_privilege(%s, "
+            "'explain_month_to_date_cost(uuid, timestamptz)', 'EXECUTE')",
+            (PROBE_ROLE,),
+        ).fetchone()
+
+    assert can_sum_spend == (True,)
 
 
 def test_is_idempotent_and_rotates_the_password(admin_url: str) -> None:

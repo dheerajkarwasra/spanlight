@@ -5,29 +5,23 @@ upstream transport (no network, no spend), so the request, response parsing,
 span writing and usage recording are the production code paths.
 """
 
-import base64
-import json
-import secrets
 from decimal import Decimal
-from typing import Any
 
 import httpx
 import pytest
-from pydantic import SecretStr
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
 from app.db.models import Span, Trace
 from app.db.rls import bypass_rls
-from app.gateway.http import build_http_client
-from app.jobs.context import TaskContext
 from app.jobs.outcome import JobOutcome
-from app.jobs.queue import ClaimedJob, claim_next, enqueue
 from app.jobs.tasks import TASKS, demo_traffic, seed_demo_evals
 from app.main import create_app
 from app.services.demo import ensure_demo_workspace
 from app.services.demo_evals import NoAnthropicCredentialError
+from tests.gateway_support import FakeProvider, ManualClock
+from tests.jobs.demo_support import RUN_COST, TIGHT_CAP, keyed, run_context, script_flow
 
 SessionFactory = async_sessionmaker[AsyncSession]
 
@@ -72,15 +66,6 @@ async def test_demo_session_404_when_disabled(settings: Settings) -> None:
     await app.state.engine.dispose()
 
 
-async def _context(session_factory: SessionFactory, settings: Settings) -> TaskContext:
-    async with session_factory() as db:
-        await enqueue(db, "demo_traffic", max_attempts=1)
-        await db.commit()
-        job = await claim_next(db)
-    assert isinstance(job, ClaimedJob)
-    return TaskContext(job=job, settings=settings, session_factory=session_factory)
-
-
 async def _span_count(session_factory: SessionFactory) -> int:
     async with session_factory() as db:
         await bypass_rls(db)
@@ -90,75 +75,24 @@ async def _span_count(session_factory: SessionFactory) -> int:
 async def test_demo_traffic_skips_without_api_key(
     session_factory: SessionFactory, settings: Settings
 ) -> None:
-    context = await _context(session_factory, settings)  # settings has no key
+    context = await run_context(session_factory, settings)  # settings has no key
     await demo_traffic.run_demo_traffic(context, {})
     assert await _span_count(session_factory) == 0
 
 
-def _anthropic_reply(text: str, input_tokens: int, output_tokens: int) -> dict[str, Any]:
-    return {
-        "id": "msg_test",
-        "type": "message",
-        "role": "assistant",
-        "model": "claude-haiku-4-5-20251001",
-        "content": [{"type": "text", "text": text}],
-        "stop_reason": "end_turn",
-        "stop_sequence": None,
-        "usage": {
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "cache_read_input_tokens": 0,
-            "cache_creation_input_tokens": 0,
-        },
-    }
-
-
-@pytest.fixture
-def mock_anthropic(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
-    """Answers the gateway's upstream Messages calls; records each request body sent."""
-    requests: list[dict[str, Any]] = []
-    replies = [
-        _anthropic_reply("billing", 40, 1),
-        _anthropic_reply("Refunds are prorated and issued within 5 business days.", 120, 18),
-    ]
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.host == "api.anthropic.com"
-        requests.append(json.loads(request.content))
-        return httpx.Response(200, json=replies[len(requests) - 1])
-
-    async def resolve(_host: str, _port: int) -> list[str]:
-        return ["160.79.104.10"]  # a public address, so the egress check passes offline
-
-    def make_http_client(settings: Settings) -> httpx.AsyncClient:
-        return build_http_client(settings, transport=httpx.MockTransport(handler), resolver=resolve)
-
-    monkeypatch.setattr(demo_traffic, "make_http_client", make_http_client)
-    return requests
-
-
-def _keyed(settings: Settings, **extra: Any) -> Settings:
-    """Settings the demo job runs with: an Anthropic key and a keyring to seal it with."""
-    return settings.model_copy(
-        update={
-            "anthropic_api_key": SecretStr("sk-ant-test-key-1234567890"),
-            "credentials_keys": SecretStr(
-                f"v1:{base64.b64encode(secrets.token_bytes(32)).decode()}"
-            ),
-            **extra,
-        }
-    )
-
-
 async def test_demo_traffic_records_real_usage(
-    session_factory: SessionFactory, settings: Settings, mock_anthropic: list[dict[str, Any]]
+    session_factory: SessionFactory, settings: Settings, demo_provider: FakeProvider
 ) -> None:
+    script_flow(demo_provider)
     outcome = await demo_traffic.run_demo_traffic(
-        await _context(session_factory, _keyed(settings)), {}
+        await run_context(session_factory, keyed(settings)), {}
     )
 
     assert outcome is JobOutcome.OK
-    assert [request["model"] for request in mock_anthropic] == ["claude-haiku-4-5"] * 2
+    assert [request.json["model"] for request in demo_provider.requests] == ["claude-haiku-4-5"] * 2
+    assert {request.url for request in demo_provider.requests} == {
+        "https://api.anthropic.com/v1/messages"
+    }
     async with session_factory() as db:
         await bypass_rls(db)
         spans = (await db.scalars(select(Span).order_by(Span.started_at))).all()
@@ -181,21 +115,29 @@ async def test_demo_traffic_records_real_usage(
     assert answer.cost_usd == Decimal("0.00021000")
     assert trace.environment == "demo" and "billing" in trace.tags
     # classify: 40 * $1 + 1 * $5; answer: 120 * $1 + 18 * $5 (per 1M tokens)
-    assert trace.cost_usd == Decimal("0.00025500")
+    assert trace.cost_usd == RUN_COST
 
 
 async def test_demo_traffic_respects_monthly_budget(
-    session_factory: SessionFactory, settings: Settings, mock_anthropic: list[dict[str, Any]]
+    session_factory: SessionFactory,
+    settings: Settings,
+    demo_provider: FakeProvider,
+    app_clock: ManualClock,
 ) -> None:
-    keyed = _keyed(settings, demo_monthly_budget_usd=Decimal("0.0002"))
-    first = await demo_traffic.run_demo_traffic(await _context(session_factory, keyed), {})
+    script_flow(demo_provider)
+    keyed_settings = keyed(settings, demo_monthly_budget_usd=TIGHT_CAP)
+    first = await demo_traffic.run_demo_traffic(
+        await run_context(session_factory, keyed_settings, app_clock), {}
+    )
     assert first is JobOutcome.OK
     assert await _span_count(session_factory) == 4  # the first run spends $0.000255
 
-    second = await demo_traffic.run_demo_traffic(await _context(session_factory, keyed), {})
+    second = await demo_traffic.run_demo_traffic(
+        await run_context(session_factory, keyed_settings, app_clock), {}
+    )
     assert second is JobOutcome.SKIPPED_BUDGET
     assert await _span_count(session_factory) == 4  # budget reached: skipped, no API calls
-    assert len(mock_anthropic) == 2
+    assert len(demo_provider.requests) == 2
 
 
 async def test_demo_workspace_is_idempotent(session_factory: SessionFactory) -> None:
@@ -219,6 +161,6 @@ async def test_seed_demo_evals_job_fails_without_the_demo_credential(
     async with session_factory() as db:
         await ensure_demo_workspace(db)
         await db.commit()
-    context = await _context(session_factory, settings)
+    context = await run_context(session_factory, settings)
     with pytest.raises(NoAnthropicCredentialError):
         await seed_demo_evals.run_seed_demo_evals(context, {})

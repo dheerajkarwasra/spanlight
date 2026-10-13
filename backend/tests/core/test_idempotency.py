@@ -1,8 +1,10 @@
 """Idempotency keys: a retried POST runs once and gets the first answer back.
 
-The tests run against a copy of the real app with probe routes added, because no production route
-uses `idempotent()` yet. The probe handler counts how often it ran, which is the whole point of
-the feature, and can be told (through the request body) to wait, to fail, or to answer oddly.
+The tests run against a copy of the real app with probe routes added, so that the mechanism is
+tested apart from any one route (`test_idempotency_replays.py` replays the export, experiment run
+and playground routes, which use `idempotent()` in production). The probe handler counts how often
+it ran, which is the whole point of the feature, and can be told (through the request body) to
+wait, to fail, or to answer oddly.
 """
 
 import asyncio
@@ -36,6 +38,8 @@ from app.core.idempotency import (
 from app.core.permissions import Permission
 from app.db.models import Session, TokenScope, User
 from app.main import create_app
+from tests.asgi_harness import call_asgi as harness_call
+from tests.asgi_harness import is_last_body
 from tests.conftest import TEST_ORIGIN, BrowserFactory
 from tests.helpers import Browser, bearer, create_token, create_workspace, join_with_role
 
@@ -539,50 +543,13 @@ async def call_asgi(
     body: bytes,
     on_message: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> list[dict[str, Any]]:
-    """POST to the app without httpx, which would hide when each message is delivered."""
-    delivered: list[dict[str, Any]] = []
-
-    sent_body = False
-
-    async def receive() -> dict[str, Any]:
-        nonlocal sent_body
-        if not sent_body:
-            sent_body = True
-            return {"type": "http.request", "body": body, "more_body": False}
-        # A streaming response listens for the client to leave. This client stays until the
-        # response is over; answering at once would make that listener spin without yielding.
-        await asyncio.Event().wait()
-        raise AssertionError("unreachable")  # pragma: no cover
-
-    async def send(message: dict[str, Any]) -> None:
-        delivered.append(message)
-        if on_message is not None:
-            await on_message(message)
-
-    scope = {
-        "type": "http",
-        "asgi": {"version": "3.0"},
-        "http_version": "1.1",
-        "method": "POST",
-        "scheme": "http",
-        "path": PROBE,
-        "raw_path": PROBE.encode(),
-        "query_string": b"",
-        "headers": [
-            (b"host", b"testserver"),
-            (b"authorization", f"Bearer {api_key}".encode()),
-            (b"content-type", b"application/json"),
-            (b"idempotency-key", b"order-42"),
-        ],
-        "client": ("127.0.0.1", 1234),
-        "server": ("testserver", 80),
-    }
-    await app(scope, receive, send)
-    return delivered
-
-
-def is_last_body(message: dict[str, Any]) -> bool:
-    return message["type"] == "http.response.body" and not message.get("more_body")
+    """POST to the probe without httpx, which would hide when each message is delivered."""
+    headers = [
+        ("authorization", f"Bearer {api_key}"),
+        ("content-type", "application/json"),
+        ("idempotency-key", "order-42"),
+    ]
+    return await harness_call(app, PROBE, headers=headers, body=body, on_message=on_message)
 
 
 async def test_the_answer_is_stored_before_the_client_receives_its_last_byte(

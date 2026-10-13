@@ -14,6 +14,7 @@ from fastapi.routing import APIRoute
 from app.api import v1
 from scripts.update_openapi import build_app
 from tests.helpers import bearer
+from tests.key_readable import KEY_READABLE
 from tests.keys.conftest import END_USER, RELEASES, World
 
 # Every test here walks all routes with one credential: see `unthrottled_reads`.
@@ -22,26 +23,6 @@ pytestmark = pytest.mark.usefixtures("unthrottled_reads", "release_and_user_data
 SKIPPED_METHODS = {"HEAD", "OPTIONS"}
 # A path parameter with a Starlette converter, such as `{name:path}`.
 CONVERTER = re.compile(r"\{(\w+):\w+\}")
-
-# The only routes an API key may use, and only with `traces:read`, for its own project. Adding to
-# this set is the decision to let keys into a route: it belongs in a review, not in a refactor.
-KEY_READABLE = {
-    ("GET", "/api/v1/projects/{project_id}/traces"),
-    ("GET", "/api/v1/projects/{project_id}/traces/{trace_id}"),
-    ("GET", "/api/v1/projects/{project_id}/sessions"),
-    ("GET", "/api/v1/projects/{project_id}/filters"),
-    ("GET", "/api/v1/projects/{project_id}/metrics/overview"),
-    ("GET", "/api/v1/projects/{project_id}/metrics/timeseries"),
-    ("GET", "/api/v1/projects/{project_id}/metrics/models"),
-    # The Phase 1 spec lists it with the metrics routes (docs/api-deviations.md, "Prices").
-    ("GET", "/api/v1/projects/{project_id}/unpriced-models"),
-    # Phase 4: releases and end users, for a CI job that checks a release after a deploy
-    # (docs/api-deviations.md, "Releases" and "Users").
-    ("GET", "/api/v1/projects/{project_id}/releases"),
-    ("GET", "/api/v1/projects/{project_id}/releases/compare"),
-    ("GET", "/api/v1/projects/{project_id}/users"),
-    ("GET", "/api/v1/projects/{project_id}/users/{external_user_id:path}"),
-}
 
 
 def _declared_routes() -> set[tuple[str, str]]:

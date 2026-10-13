@@ -31,6 +31,10 @@ APP_ROLE = "spanlight_app_test"
 APP_PASSWORD = "spanlight_app_test"
 TEST_ORIGIN = "http://testserver"
 
+# The gateway fixtures (fake provider, gateway workspace and context) and the budget fixtures
+# (pinned app clock, budget world) for every test directory.
+pytest_plugins = ["tests.gateway_fixtures", "tests.budget_fixtures"]
+
 _TABLES_TO_TRUNCATE = (
     "exports",
     "span_rollups_hourly",
@@ -59,7 +63,7 @@ _TABLES_TO_TRUNCATE = (
 )
 
 
-def _admin_url() -> str:
+def admin_database_url() -> str:
     return os.environ.get("TEST_DATABASE_URL", DEFAULT_TEST_DATABASE_URL)
 
 
@@ -72,7 +76,7 @@ def _with_credentials(url: str, user: str, password: str) -> str:
 
 @pytest.fixture(scope="session")
 def app_database_url() -> str:
-    admin_url = _admin_url()
+    admin_url = admin_database_url()
     libpq_url = admin_url.replace("postgresql+psycopg://", "postgresql://")
     with psycopg.connect(libpq_url, autocommit=True) as connection:
         exists = connection.execute(

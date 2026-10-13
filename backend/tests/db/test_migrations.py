@@ -42,6 +42,18 @@ _SNAPSHOT_QUERIES = {
         WHERE relnamespace = 'public'::regnamespace AND relkind = 'r'
         ORDER BY 1
     """,
+    "functions": """
+        SELECT proname, pg_get_function_identity_arguments(oid), prosecdef, proconfig,
+               -- NULL is the default ACL; a GRANT elsewhere (ensure_app_role) spells it out.
+               COALESCE(proacl, acldefault('f', proowner))::text, prosrc
+        FROM pg_proc AS f
+        WHERE pronamespace = 'public'::regnamespace
+          -- Functions of an extension (citext) belong to it, not to a migration.
+          AND NOT EXISTS (
+              SELECT 1 FROM pg_depend AS d WHERE d.objid = f.oid AND d.deptype = 'e'
+          )
+        ORDER BY 1, 2
+    """,
     "enums": """
         SELECT t.typname, e.enumlabel
         FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
@@ -85,6 +97,7 @@ async def test_migrations_downgrade_to_base_and_upgrade_to_head(
         assert {row[0] for row in emptied["columns"]} == {"alembic_version"}
         assert emptied["enums"] == []
         assert emptied["policies"] == []
+        assert emptied["functions"] == []
     finally:
         # The rest of the session shares this database, so it must end at head even when an
         # assertion above fails. The price table is seeded once per session by a fixture and

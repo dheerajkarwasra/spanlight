@@ -76,3 +76,23 @@ async def test_cannot_revoke_key_of_another_project(browser_factory: Any) -> Non
 
     response = await owner.delete(f"/api/v1/projects/{first.project_id}/keys/{other_key}")
     assert response.status_code == 404
+
+
+async def test_every_api_key_query_filters_by_project(
+    browser_factory: Any, client: httpx.AsyncClient
+) -> None:
+    # `api_keys` has no row-level security (ADR 0003, "Exception: api_keys"), so the list and the
+    # revoke queries are the only thing between one project's keys and another's.
+    owner: Browser = await browser_factory("owner@example.com")
+    first = await create_workspace(owner, org_name="One")
+    second = await create_workspace(owner, org_name="Two")
+    first_keys = (await owner.get(f"/api/v1/projects/{first.project_id}/keys")).json()
+    second_keys = (await owner.get(f"/api/v1/projects/{second.project_id}/keys")).json()
+    assert len(first_keys) == 1 and len(second_keys) == 1
+    assert first_keys[0]["id"] != second_keys[0]["id"]
+
+    revoke = await owner.delete(f"/api/v1/projects/{first.project_id}/keys/{second_keys[0]['id']}")
+    assert revoke.status_code == 404
+    batch = {"spans": [span(trace_id=new_trace_id())]}
+    still_live = await client.post("/v1/traces", json=batch, headers=bearer(second.api_key))
+    assert still_live.status_code == 200

@@ -2,66 +2,13 @@
 
 import importlib
 
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
+
 from app.db.models import Base
 
-ALL_TABLES = {
-    "alert_channels",
-    "alert_events",
-    "alert_rules",
-    "alert_states",
-    "annotation_queue_items",
-    "annotation_queues",
-    "api_keys",
-    "audit_events",
-    "budgets",
-    "dataset_items",
-    "datasets",
-    "detector_runs",
-    "email_tokens",
-    "evaluator_runs",
-    "evaluators",
-    "experiment_items",
-    "experiment_runs",
-    "experiments",
-    "exports",
-    "fault_profiles",
-    "gateway_cache",
-    "gateway_key_minutes",
-    "gateway_keys",
-    "gateway_route_versions",
-    "gateway_routes",
-    "idempotency_keys",
-    "insight_explanations",
-    "insights",
-    "invites",
-    "jobs",
-    "login_attempts",
-    "memberships",
-    "model_prices",
-    "notification_outbox",
-    "oauth_identities",
-    "organizations",
-    "personal_access_tokens",
-    "price_overrides",
-    "projects",
-    "prompt_labels",
-    "prompt_versions",
-    "prompts",
-    "provider_credentials",
-    "rate_limit_buckets",
-    "recovery_codes",
-    "score_configs",
-    "scores",
-    "sessions",
-    "span_rollups_hourly",
-    "spans",
-    "throttle_events",
-    "trace_rollups_hourly",
-    "traces",
-    "user_stats_daily",
-    "users",
-    "worker_heartbeats",
-}
+# Created by Alembic itself, not by a migration of ours: it has no ORM model.
+MIGRATION_BOOKKEEPING = {"alembic_version"}
 
 DOMAIN_MODULES = (
     "alerts",
@@ -88,8 +35,18 @@ DOMAIN_MODULES = (
 )
 
 
-def test_models_package_exports_every_table() -> None:
-    assert set(Base.metadata.tables.keys()) == ALL_TABLES
+async def test_models_package_exports_every_table(engine: AsyncEngine) -> None:
+    """The ORM models and the migrated database describe the same tables, in both directions."""
+    async with engine.connect() as connection:
+        rows = await connection.execute(
+            text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
+        )
+    migrated = {row[0] for row in rows} - MIGRATION_BOOKKEEPING
+    modelled = set(Base.metadata.tables)
+
+    assert modelled, "no ORM model is registered: the models package imports nothing"
+    assert sorted(migrated - modelled) == [], "tables with no ORM model"
+    assert sorted(modelled - migrated) == [], "ORM models with no migrated table"
 
 
 def test_domain_modules_exist() -> None:

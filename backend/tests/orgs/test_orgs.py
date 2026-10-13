@@ -7,6 +7,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import Invite
+from app.services.slugs import RESERVED_ORG_SLUGS
 from tests.helpers import Browser, create_workspace, join_with_role
 
 
@@ -21,6 +22,17 @@ async def test_create_org_makes_caller_owner_and_uniquifies_slug(browser_factory
     assert [m["role"] for m in me["memberships"]] == ["owner", "owner"]
     org = (await ada.get(f"/api/v1/orgs/{first['id']}")).json()
     assert org["role"] == "owner"
+
+
+async def test_org_slug_never_collides_with_a_dashboard_path(browser_factory: Any) -> None:
+    ada: Browser = await browser_factory("ada@example.com")
+    login = (await ada.post("/api/v1/orgs", json={"name": "Login"})).json()
+    api = (await ada.post("/api/v1/orgs", json={"name": "API"})).json()
+    plain = (await ada.post("/api/v1/orgs", json={"name": "Globex"})).json()
+
+    assert login["slug"] not in RESERVED_ORG_SLUGS and login["slug"].startswith("login-")
+    assert api["slug"] not in RESERVED_ORG_SLUGS and api["slug"].startswith("api-")
+    assert plain["slug"] == "globex"
 
 
 async def test_last_owner_cannot_be_demoted_or_removed(browser_factory: Any) -> None:

@@ -32,6 +32,9 @@ class Browser:
     async def patch(self, url: str, **kwargs: Any) -> httpx.Response:
         return await self.http.patch(url, headers=self._headers(), **kwargs)
 
+    async def put(self, url: str, **kwargs: Any) -> httpx.Response:
+        return await self.http.put(url, headers=self._headers(), **kwargs)
+
     async def delete(self, url: str, **kwargs: Any) -> httpx.Response:
         # `request`, not `delete`: deleting an organization or a project carries a JSON body.
         return await self.http.request("DELETE", url, headers=self._headers(), **kwargs)

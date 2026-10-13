@@ -15,20 +15,12 @@ from app.core.security import PAT_PREFIX, generate_key
 from app.db.models import Span, Trace
 from app.db.rls import bypass_rls
 from tests.helpers import (
-    Browser,
     Workspace,
     bearer,
-    create_workspace,
     new_span_id,
     new_trace_id,
     span,
 )
-
-
-@pytest.fixture
-async def workspace(browser_factory: Any) -> Workspace:
-    owner: Browser = await browser_factory("owner@example.com")
-    return await create_workspace(owner)
 
 
 async def _ingest(

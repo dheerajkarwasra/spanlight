@@ -6,7 +6,6 @@ import time
 from typing import Any
 
 import httpx
-import pytest
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
     ExportTraceServiceRequest,
     ExportTraceServiceResponse,
@@ -19,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import Span, Trace
 from app.db.rls import bypass_rls
-from tests.helpers import Browser, Workspace, bearer, create_workspace
+from tests.helpers import Workspace, bearer
 
 RESOURCE = {
     "service.name": "checkout-api",
@@ -38,12 +37,6 @@ LLM_ATTRIBUTES: dict[str, Any] = {
     "session.id": "sess-42",
     "user.id": "user-7",
 }
-
-
-@pytest.fixture
-async def workspace(browser_factory: Any) -> Workspace:
-    owner: Browser = await browser_factory("owner@example.com")
-    return await create_workspace(owner)
 
 
 def _ids() -> tuple[bytes, bytes, bytes]:

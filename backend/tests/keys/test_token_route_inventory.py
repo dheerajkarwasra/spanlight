@@ -20,9 +20,9 @@ from fastapi.routing import APIRoute
 from app.api import v1
 from app.api.deps import ANONYMOUS, current_session, current_user
 from tests.helpers import Browser, bearer, create_token, expire_token
+from tests.key_readable import KEY_READABLE
 from tests.keys.conftest import World
 from tests.keys.test_key_route_inventory import (
-    KEY_READABLE,
     SKIPPED_METHODS,
     _call,
     _declared_routes,
