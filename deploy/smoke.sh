@@ -3,6 +3,9 @@
 #
 # It builds and starts deploy/compose.yaml on empty volumes, then checks, in order:
 #   1. the stack becomes ready (/health/ready: database up, migrations applied)
+#   1b. the database role the api connects as is neither a superuser nor able to bypass row-level
+#      security (either would silently turn off tenant isolation), and the backup role's URL is
+#      not in the api container's environment
 #   2. the dashboard sends X-Frame-Options: DENY on /
 #   3. the strict Content-Security-Policy of deploy/Caddyfile is the one policy sent on /, on a
 #      dashboard route, on an API path and on a health path, and the relaxed policy the API
@@ -13,7 +16,8 @@
 #      each provider's own error shape (OpenAI on /gw/v1/chat/completions, Anthropic on
 #      /gw/v1/messages), which also proves Caddy routes /gw/* to a gateway
 #   6. signup, organization, project and API key creation work through the web port with the
-#      same session cookie, CSRF header and Origin header the dashboard uses
+#      same session cookie, CSRF header and Origin header the dashboard uses; a second person who
+#      belongs to no organization gets 404 NOT_FOUND, not the data, from a project route
 #   7. a span sent by the Python SDK shows up (onboarding reports has_traces within 20 s)
 #   8. a native POST /v1/traces is accepted (the SDK swallows errors by design, so this is the
 #      step that fails on a non-2xx from ingest)
@@ -76,6 +80,22 @@ with spanlight.span("smoke-sdk", kind="chain") as span:
     span.set_output("hello from the sdk")
 if not spanlight.flush(timeout=15):
     sys.exit("spanlight.flush() timed out")
+'
+
+# The program run inside the api container by check_api_role_cannot_bypass_rls. It connects with
+# the container's own DATABASE_URL and prints the attributes of the role it connected as, never
+# the URL.
+ROLE_PROGRAM='
+import os
+
+import psycopg
+
+url = os.environ["DATABASE_URL"].replace("+psycopg", "", 1)
+with psycopg.connect(url) as connection:
+    row = connection.execute(
+        "SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user"
+    ).fetchone()
+print("rolsuper=%s rolbypassrls=%s" % (str(row[0]).lower(), str(row[1]).lower()))
 '
 
 # ---------- helpers ----------
@@ -266,6 +286,21 @@ wait_for_ready() {
     <<<"$RESPONSE_BODY" >/dev/null || fail "/health/ready is not fully ok: $RESPONSE_BODY"
 }
 
+# Row-level security only isolates tenants when the api's role is subject to it: a superuser or a
+# BYPASSRLS role ignores every policy without any error. compose gives the api the unprivileged
+# app role and only the worker the backup role; this fails if that ever changes. It also checks
+# that the backup role's URL (BACKUP_DATABASE_URL, which bypasses row-level security) is not in
+# the api container's environment at all.
+check_api_role_cannot_bypass_rls() {
+  local attributes
+  attributes=$(compose exec -T api python -c "$ROLE_PROGRAM") ||
+    fail "could not read the api's database role from the api container"
+  [ "$attributes" = "rolsuper=false rolbypassrls=false" ] ||
+    fail "the api's database role is not the unprivileged app role: $attributes"
+  compose exec -T api sh -c 'test -z "${BACKUP_DATABASE_URL:-}"' ||
+    fail "BACKUP_DATABASE_URL is set in the api container; only the worker may have the backup role"
+}
+
 check_security_headers() {
   http "$BASE_URL/" --dump-header "$WORK_DIR/headers"
   # Header names are case-insensitive, and every header line ends in a CR, which [[:space:]]
@@ -366,15 +401,17 @@ check_gateway_refuses_without_key() {
     fail "the Anthropic-shaped refusal has no top-level type error: $RESPONSE_BODY"
 }
 
+# sign_up [COOKIE_JAR]: a new account, signed in with the cookies stored in the jar (default: the
+# main one).
 sign_up() {
-  local email password body
+  local jar=${1:-$COOKIE_JAR} email password body
   email="smoke-$(random_hex 4)@example.com"
   password="smoke-$(random_hex 12)"
   body=$(jq -n --arg email "$email" --arg password "$password" \
     '{email: $email, password: $password, name: "Smoke Test"}')
   # No session yet, so no CSRF token: the Origin check is the guard on signup.
   http "$BASE_URL/api/v1/auth/signup" --request POST \
-    --cookie "$COOKIE_JAR" --cookie-jar "$COOKIE_JAR" \
+    --cookie "$jar" --cookie-jar "$jar" \
     --header "Origin: $ORIGIN" --header 'Content-Type: application/json' --data @- <<<"$body"
 }
 
@@ -386,6 +423,24 @@ create_organization() {
 create_project() {
   api_post "/api/v1/orgs/$ORG_ID/projects" '{"name": "Smoke Project"}'
   PROJECT_ID=$(jq -er '.id' <<<"$RESPONSE_BODY") || fail "the project response has no id"
+}
+
+# A person who signed up but belongs to no organization must be told the project does not exist
+# (404), never that it exists but is off limits (403) or its data (200). A Phase 5 route
+# (datasets) stands for the whole project API; the member's own call is the control.
+check_non_member_gets_404() {
+  local jar="$WORK_DIR/outsider-cookies.txt" status="" curl_status=0
+  http "$BASE_URL/api/v1/projects/$PROJECT_ID/datasets" --cookie "$COOKIE_JAR"
+  sign_up "$jar"
+  : >"$BODY_FILE"
+  status=$(curl --silent --show-error --connect-timeout 5 --max-time 30 \
+    --output "$BODY_FILE" --write-out '%{http_code}' --cookie "$jar" \
+    "$BASE_URL/api/v1/projects/$PROJECT_ID/datasets") || curl_status=$?
+  [ "$curl_status" -eq 0 ] || fail "the non-member's request failed (curl exit $curl_status)"
+  [ "$status" = "404" ] ||
+    fail "GET /api/v1/projects/<id>/datasets as a non-member is HTTP $status, expected 404"
+  jq -e '.code == "NOT_FOUND"' "$BODY_FILE" >/dev/null ||
+    fail "the non-member's 404 does not carry the code NOT_FOUND: $(head -c 300 "$BODY_FILE")"
 }
 
 create_api_key() {
@@ -435,6 +490,8 @@ main() {
   run_step "check prerequisites" check_prerequisites
   run_step "start the stack on fresh volumes" start_stack
   run_step "wait for /health/ready" wait_for_ready
+  run_step "check the api database role cannot bypass row-level security" \
+    check_api_role_cannot_bypass_rls
   run_step "check security headers on /" check_security_headers
   run_step "check the Content-Security-Policy on / and /api/docs" check_content_security_policy
   run_step "check the documentation site at /docs/" check_docs_site
@@ -442,6 +499,7 @@ main() {
   run_step "sign up" sign_up
   run_step "create an organization" create_organization
   run_step "create a project" create_project
+  run_step "check a non-member gets 404 from a project route" check_non_member_gets_404
   run_step "create an API key" create_api_key
   run_step "send a span with the Python SDK" send_sdk_span
   run_step "wait for the trace (has_traces)" wait_for_first_trace

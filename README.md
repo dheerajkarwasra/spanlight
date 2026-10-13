@@ -75,7 +75,7 @@ The wizard shows your first trace live as it arrives. From there you have an ove
                                                └──▶ OpenAI / Anthropic / OpenAI-compatible
 ```
 
-One Docker image runs all three roles. Ingestion is synchronous and idempotent by design: a replayed batch upserts the same rows and totals are recomputed, so SDK retries do not double-count. The gateway runs inside the api by default and can run as its own service with `GATEWAY_MODE=standalone`; each gateway call is recorded as one span through the same ingestion path, written after the answer is sent, and a span that cannot be written is counted in `spanlight_gateway_record_failures_total`. An S3-compatible store is optional and holds exports and nightly backups.
+One Docker image runs all three roles. Ingestion is synchronous and idempotent by design: a replayed batch upserts the same rows and totals are recomputed, so SDK retries do not double-count. The gateway runs inside the api by default and can run as its own service with `GATEWAY_MODE=standalone`; each gateway call is recorded as one span through the same ingestion path, written after the answer is sent; a failed write is retried, and a span still lost is counted in `spanlight_gateway_record_failures_total` and in `gateway_spans_lost` on `/health/ready`. An S3-compatible store is optional and holds exports and nightly backups.
 
 | Path                           | What it is                                                                                         |
 | ------------------------------ | -------------------------------------------------------------------------------------------------- |

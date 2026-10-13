@@ -28,3 +28,11 @@ Block by reading the evaluated state.
 - **A stopped worker means a stale guard.** If evaluation stops, every budget keeps its last state: an exceeded one keeps blocking and one not yet exceeded keeps allowing, however the spend moves. The alert evaluation metrics show it.
 - **A hard cap is not promised.** For a strict limit, set the budget below the amount that must never be exceeded. A budget of $0.01 is a convenient way to see the block while trying the gateway: send a few calls, wait for the next evaluation, and the next call is refused.
 - **Boring by default.** No cache, counter or extra table for spend; the guard reads rows the evaluator already writes.
+
+## Update 2026-10-12
+
+The gateway writes each call's span after the answer, and the budgets are evaluated on those spans, so a span that is lost makes recorded spend too low. The recorder now retries a failed write after 0.1, 0.5 and 2 seconds (four tries in all, a span for a deleted project is not retried) before it counts the span as lost, and each retry first checks that an earlier try was not stored after all, so a call is never counted twice. A span still lost, refused by ingestion or dropped because the write backlog was full is counted in `spanlight_gateway_record_failures_total` and in `gateway_spans_lost` on `/health/ready`, which never makes the probe fail. The backlog default grew from 1000 to 5000 spans.
+
+The demo traffic job used a guard that allowed everything. It now goes through the same budget guard as any gateway call, so a firing `block` budget on the demo project stops the demo's paid call before it is sent, and the job ends as skipped rather than failed.
+
+Consequence worth stating: spend counts priced spans only, so a budget on a model with no price never fires. Its spend is unknown, not zero, and the guard has nothing to read.

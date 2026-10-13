@@ -201,15 +201,29 @@ original design; everything else is a clarification.
   before `start_time`; `start_time` older than 90 days; `end_time` more than 10 minutes in the
   future; a span parenting itself; attributes over 64 KB; all-zero ids. Timestamps must be ISO-8601
   **with an offset** or integer unix nanoseconds. Ids are lowercased.
+- A value the database cannot store is rejected with the span, never by failing the batch: a
+  timestamp whose offset moves it outside years 1–9999, a `time_to_first_token_ms` larger than a
+  double, and a cost of $1,000,000 or more (`usage: the cost at this model's price is too large to
+  store`; only an organization's price override can price a call that high). Any other unexpected
+  failure while preparing a span rejects that span alone with `span: could not be processed`; it is
+  logged by type and origin and counted in `spanlight_span_normalization_failures_total`.
+- A trace's `cost_usd` is `null` when the sum of its spans' costs reaches $1,000,000, the most the
+  column holds; the spans keep their own costs.
 - A `span_id` repeated within one batch keeps the **last** occurrence; earlier ones are reported in
   `rejected` with reason `duplicate span_id in batch…`.
 - Trace fields: last non-null wins (within a batch and across batches); `null` never overwrites.
   `tags` are unioned. Rollups are always recomputed from stored spans, so re-sending is idempotent.
+- **Replaying a batch.** Sending the same spans again leaves every column of their rows and of their traces
+  as it was, except `ingested_at`, which moves to the time of the latest send, as long as prices have not
+  changed. The spans are priced again with the prices in force at that moment (the price table and the
+  organization's overrides), so a price change between two sends changes a span's `cost_usd` and
+  `pricing_version` and the trace's totals with it.
 - Payloads: secrets are redacted first, then `input`/`output` over 32 KB are replaced by a **string**
   holding the first 32 KB of their JSON text, with `truncated: true`.
 - The body may be `Content-Encoding: gzip` or `deflate`; the 5 MB limit applies after decompression.
   NaN/Infinity and NUL characters are rejected/stripped.
-  JSON nested more than 64 levels deep is `400 INVALID_JSON`.
+  JSON nested more than 64 levels deep, or holding a number of more than 4300 digits or one past
+  a double (`1e999`, which would be an infinity), is `400 INVALID_JSON`.
 
 ## OTLP (`POST /v1/otlp/traces`)
 
@@ -220,6 +234,14 @@ original design; everything else is a clarification.
 - Legacy `gen_ai.usage.prompt_tokens`/`completion_tokens` are accepted. Content attributes are parsed
   as JSON when they are JSON strings and are removed from `attributes`; `service.name` is copied into
   `attributes`.
+- A double that is NaN or infinite (protobuf, or the OTLP/JSON strings `"NaN"`, `"Infinity"`,
+  `"-Infinity"`) is stored as that string, since `jsonb` has no such numbers. Inside JSON-encoded
+  content, NaN, Infinity and a number past a double (`1e999`) become such a string the same way.
+  A malformed `intValue`/`doubleValue`, or a value where a JSON object belongs, is
+  `400 INVALID_OTLP`.
+- An OTLP/JSON body in which a number is written past a double (`"doubleValue": 1e999`, a number literal and
+  not the string `"Infinity"`) is not usable JSON for the server: the whole request is `400 INVALID_JSON`, as on
+  `POST /v1/traces`, and no span of it is stored.
 - JSON ids may be hex (as in the original design) or base64. Response: `{}` or
   `{"partialSuccess": {"rejectedSpans": "<n>", "errorMessage": "…"}}`; protobuf mirrors this.
 
@@ -227,6 +249,15 @@ original design; everything else is a clarification.
 
 - `/metrics` returns 404 when `METRICS_TOKEN` is unset, 401 for a wrong/missing bearer.
 - `/health/ready` reports `migrations: "pending"` (503) when the DB is not at the Alembic head.
+- `/health/ready` reports `gateway_spans_lost`: the gateway spans this process answered a call for but could
+  not store since it started (the write failed after up to four tries, a span for a deleted project being not retried;
+  its payloads could not be prepared; ingestion refused it; or the write backlog was full). It is
+  per process (the standalone gateway reports its own), resets on restart, and never makes the probe `503`; the
+  same spans are in `spanlight_gateway_record_failures_total`.
+- `alert_evaluation_lag_s` is the age of the newest finished evaluation job. It is `null` before the first one, with
+  `ALERTS_EVALUATION_ENABLED` off, and also once the cleanup job has deleted every finished evaluation job (finished
+  jobs are kept 7 days). A worker that has been stopped for more than a week therefore reads `null`, not a large
+  number; the worker heartbeat age is the signal that stays.
 
 ## Worker / demo
 
@@ -996,7 +1027,7 @@ Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anth
 - **`Retry-After`.** Whole seconds, rounded up, at least 1.
 - **`/models`.** No `X-Spanlight-Cache` header: listing models is never cached and is not a model call. A passed-through answer carries `X-Spanlight-Attempts: 1`.
 - **Compressed bodies.** A request body may be sent with `Content-Encoding: gzip` or `deflate`; the 10 MB limit applies to the decompressed size as well (`413 PAYLOAD_TOO_LARGE`). Another encoding, or a body that does not decompress, is `400 INVALID_REQUEST` with `param: null`.
-- **Streams.** Streamed answers add `Cache-Control: no-cache` and `X-Accel-Buffering: no`, so no cache keeps them and no proxy buffers them. A `truncated_stream` fault ends the response with a clean end of stream after the last forwarded frame (the connection is not aborted); the stream lacks its final event (`[DONE]` or `message_stop`).
+- **Streams.** Streamed answers add `Cache-Control: no-cache` and `X-Accel-Buffering: no`, so no cache keeps them and no proxy buffers them. A `truncated_stream` fault ends the response with a clean end of stream after the last forwarded frame (the connection is not aborted); the stream lacks its final event (`[DONE]` or `message_stop`). Its span is recorded as failed (`status = error`, message `200 FAULT_TRUNCATED_STREAM: …`, error class `unknown`) when the fault withheld anything; a stream with no more frames than `after_chunks` passes whole and its span stays `ok`.
 - **Usage chunk the client did not ask for.** A streaming chat completion without `stream_options` is sent upstream
   with `stream_options.include_usage: true`, so its span has tokens and a cost. OpenAI then ends the stream with a
   chunk whose `choices` is empty and which carries `usage`. The gateway reads that chunk for the span and does not
@@ -1005,7 +1036,12 @@ Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anth
 - **Provider answers over 10 MB.** A non-streaming provider answer longer than 10 MB ends the attempt with `502
   UPSTREAM_UNREACHABLE` (message: the answer exceeds the gateway's 10 MB limit), never retried or fallen back from.
 - **Non-strict JSON.** A request body with `NaN` or an infinite number is `400 INVALID_REQUEST` (`param: null`),
-  with no upstream attempt: it cannot be sent as strict JSON.
+  with no upstream attempt: it cannot be sent as strict JSON. Its span is still recorded, with each such number
+  stored as the string `"NaN"`, `"Infinity"` or `"-Infinity"`.
+- **NUL and lone surrogates (added 2026-10-13).** A `model` holding NUL or a lone UTF-16 surrogate is `400
+  INVALID_REQUEST` (`param: "model"`) before the call starts, with no span, like any body without a usable `model`.
+  Elsewhere in the body both are forwarded as sent (a lone surrogate as its `\uXXXX` escape); the call's span
+  stores the body with NUL removed and each lone surrogate replaced by `?`, as ingestion does.
 - **`NO_COMPATIBLE_TARGET` names the surface.** The message names the surface (`chat_completions`, `responses`,
   `messages` or `models`), not the request path: `Route 'support' has no target that serves messages.`
 - **Rate limiter fails open.** When the gateway's rate-limit buckets cannot be read (their pool is exhausted or the
@@ -1015,9 +1051,30 @@ Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anth
   start time count from when the gateway started checking the key, so authentication, limits and reading the body
   are part of the overhead. `time_to_first_token_ms` counts from the same moment. The route's `timeout_ms` budget
   still starts when the call is routed.
-- **Spans can be lost under overload.** The gateway writes spans after the answer, with at most
-  `GATEWAY_RECORD_BACKLOG` waiting. A span past that backlog is dropped and counted as
-  `spanlight_gateway_record_failures_total{reason="overflow"}`; the client's answer is not affected.
+- **Spans can be lost under overload or a long database outage.** The gateway writes spans after the answer,
+  with at most `GATEWAY_RECORD_BACKLOG` waiting, each holding its input and output already redacted and cut to 32 KB as
+  stored. A failed write is retried after 0.1, 0.5 and 2 s (up to four tries; a span for a deleted project is not
+  retried), each try one transaction that first checks whether an earlier try was stored after all; a span still
+  not stored is counted as `spanlight_gateway_record_failures_total{reason="error"}`,
+  and a span past the backlog is dropped and counted as `{reason="overflow"}`. Both also count in
+  `gateway_spans_lost` on `/health/ready`. A span whose input or output cannot even be prepared for the queue is
+  counted as `{reason="error"}` too, and logged by error type only. The client's answer is not affected.
+- **A retried call can be billed twice.** On a stored route, a read timeout or a connection error before the first
+  byte of the answer can lead to a second request for the same call, and the provider may already have received
+  and billed the first one; the gateway cannot tell. A retry (by default one more attempt on the target,
+  `max_attempts` up to 5) happens only while the route's `timeout_ms` budget has room for the wait. A fallback to
+  the next target happens when the error matches the route's `fallback.on` conditions (by default all of them).
+  The span records the usage and cost of the attempt that answered and lists every attempt in
+  `spanlight.gateway.attempts`, so the failed attempt's spend, if any, is not in Spanlight's totals. A request
+  that hangs uses the whole budget and is never retried, so it cannot be billed twice that way. Calls Spanlight
+  makes for itself (judges, Explain with Claude, the playground, experiment items and the demo traffic job) go
+  through a single-target route with one attempt and are never retried.
+- **A stream cut short is priced as reported.** When a provider's stream ends before its final event (the connection
+  breaks, or the stream idles out), the span takes the usage the provider had reported by then. Anthropic's
+  `message_start` carries the input tokens and an output count of 1, and the real output count only comes with
+  `message_delta`, so a cut Anthropic stream is priced with all its input tokens and that first output count, which
+  is lower than what the provider bills. The span is `error` and its cost is not `null`. A stream that ended before
+  any usage was reported has `null` usage and cost.
 - **No CORS.** `/gw/` sends no CORS headers and answers a preflight `OPTIONS` with `405`, so browsers cannot call the gateway from another origin. On purpose: a gateway key is a server-side secret and does not belong in a browser.
 
 ## Alert channels (added 2026-10-10)
@@ -1141,6 +1198,11 @@ Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anth
   deleting it resolves the alert at that moment and sends `alert.resolved` (with `budget` as it was), in the same
   transaction. Changing `scope`, `scope_id` or `period` also clears the measured spend, so `state` is `null` until
   the next evaluation, about a minute later.
+- **A model with no price never fires.** Spend counts priced spans only. A call to a model with no price in the
+  price table or the organization's overrides (see `unpriced-models`) has an unknown cost and adds nothing, so a
+  budget whose spend comes from such calls stays at 0 (`spent_usd` is `null` while spans exist and none was
+  priced), never fires and, with `action: block`, never blocks. Add a price override for the model to put its
+  calls under the budget.
 - **Hidden rule.** Each budget owns an alert rule (`kind: budget`) that is not reachable through `/alert-rules`. It
   is written in the same transaction as the budget, and deleting the budget deletes it with its events.
 
@@ -1438,6 +1500,12 @@ members hold `prompts:write`, `datasets:write`, `scores:write`, `annotations:wri
   `<field>: <message>`, and never fails the others. The body is read after the key is checked, bounded like span
   ingestion and may be gzip or deflate encoded. The `trace_id` need not exist yet (a score may arrive first), but
   `POST /traces/{trace_id}/scores` on the dashboard is `404` for a trace the project does not have.
+  A score sent with an `id` the project already stores is counted in `accepted` and ignored: the first write wins,
+  also when `value`, `string_value` or `comment` differ, so a retry can never overwrite. To change a score, delete it
+  (`DELETE /api/v1/projects/{project_id}/scores/{score_id}`, see Deleting a score) and send the corrected one.
+  Only a signed-in person can delete: a score a person wrote on the dashboard by its author or a project admin, any
+  other score (one sent through `/v1/scores` included) by a project admin. A project API key cannot delete
+  (`403 KEY_SCOPE`), so a client that only holds an API key cannot correct a score.
 - **Traces flag.** `traces.has_scores` is set when a score is written and never cleared, so after the last score of a
   trace is deleted `has_scores=true` still keeps the trace. It is a filter hint. A trace upsert keeps the flag when
   it is already set, and a small sweep inside the rollup job (every 5 minutes, scores of the last 15 minutes) sets it on
@@ -1522,6 +1590,10 @@ members hold `prompts:write`, `datasets:write`, `scores:write`, `annotations:wri
   share the worker's short-job lane with alerts and rollups), and a judge whose committed spend already reaches its
   monthly budget is not sampled at all. A queued online run whose job died is failed `abandoned` by the reaper instead of
   staying queued for ever (the trace is not sampled again for that evaluator).
+- **A run that outlives its row.** A judge call that comes back after its run was failed `abandoned` by the reaper
+  changes nothing and is counted once, where the reaper counted it. A call that comes back after its evaluator or
+  project was deleted has no run row to settle: it is counted once as `failed` with the error `run_deleted`, and
+  the cost it would have been charged is added to `spanlight_evaluator_cost_usd_total`.
 - **Never sampled.** The sampler skips traces in the environments `evals`, `playground`, `experiments` and `doctor` and
   traces tagged `spanlight:judge`, and traces that ran longer than an hour. Online runs have no expected output.
 - **Webhook evaluators.** The request carries `X-Spanlight-Timestamp` and `X-Spanlight-Signature` (the alert webhook
@@ -1559,3 +1631,9 @@ members hold `prompts:write`, `datasets:write`, `scores:write`, `annotations:wri
   `missing_variables: a, b`, or the failure); `ttft_ms` is always `null`. A credential outside the organization or a version outside
   the project is `404` for the request. It is limited to 30 runs a minute per user (`429 RATE_LIMITED`) and has no spend cap
   beyond the project's blocking budgets.
+
+## Full test pass 2026-10-13
+
+- **A body not fully sent.** A client that disconnects before its request body is complete is answered `400 BAD_REQUEST` ("The request body was not fully sent.") on `POST /v1/traces`, `/v1/otlp/traces` and `/v1/scores`, and `400 INVALID_REQUEST` with `param: null` ("Request body was not fully sent.") under `/gw/`. Nobody reads the answer; it keeps a dropped upload from being logged as a server error.
+- **Cut or empty compressed bodies.** A `gzip` or `deflate` body whose stream ends before its end marker is `400 BAD_REQUEST` ("The request body could not be decompressed.") on the ingestion routes and `400 INVALID_REQUEST` under `/gw/`, even when the part that arrived would parse. An empty body sent with `Content-Encoding: gzip` or `deflate` has no end marker either, so it gets the same answer (it was `400 INVALID_JSON` on ingestion).
+- **Card numbers in payloads.** Redaction searches card-shaped runs: digit groups separated by single spaces or dashes, every group of four or more digits but the last, which has two or more. Any 13-19 digit stretch of whole groups that passes the Luhn check is replaced, so a card next to a CVV, an expiry or a quantity is caught and the neighbouring digits are kept. Lists of small numbers, dates and phone numbers are left alone; a card typed in groups of one to three digits, or glued to a word, is not detected.

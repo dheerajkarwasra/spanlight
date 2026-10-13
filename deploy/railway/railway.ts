@@ -67,6 +67,7 @@ export default defineRailway(() => {
     env: {
       SPANLIGHT_TARGET: "backend", // build arg: which deploy/Dockerfile stage to ship
       PORT: "8000",
+      // With a custom domain, replace this with "https://<your domain>" (docs/deploy/railway.md, "Custom domain").
       APP_BASE_URL: "https://${{web.RAILWAY_PUBLIC_DOMAIN}}",
       DATABASE_URL: "postgresql+psycopg://spanlight_app:${{APP_DB_PASSWORD}}@" + pgEndpoint,
       // Owner connection, read only by the pre-deploy command above.

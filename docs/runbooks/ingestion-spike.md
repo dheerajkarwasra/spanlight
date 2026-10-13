@@ -41,6 +41,14 @@ sum by (source) (rate(spanlight_ingested_spans_total[5m]))
 sum by (source) (rate(spanlight_rejected_spans_total[5m]))
 ```
 
+Rejected spans are usually the sender's doing (the per-span `reason` in the response says why). One exception: a span rejected as `span: could not be processed` hit a bug while being prepared. Those are also counted, by error type, in:
+
+```promql
+sum by (error_type) (increase(spanlight_span_normalization_failures_total[1h]))
+```
+
+Anything above zero is a bug, not load. Each one logs `span_normalization_failed` with the error type, the span's index in its batch and the code location that raised (never the payload): `spl logs --since 1h api | grep span_normalization_failed`. Report it with those lines; the rest of the batch was stored.
+
 Without Prometheus, the api logs one `http_request` line per request:
 
 ```bash

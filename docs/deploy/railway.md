@@ -213,6 +213,17 @@ export DOMAIN=<the-name>.up.railway.app   # from the output above
 
 Only `web` gets a domain. The api's `APP_BASE_URL` points at this domain, so generate it before the api's first deploy.
 
+### Custom domain
+
+To serve Spanlight on your own domain instead of the generated `*.up.railway.app` name, do this now or at any time after the first deploy.
+
+1. **Add the domain to `web`.** In the dashboard, open **web → Settings → Networking → Custom Domain**, enter the domain and target port `8080`. Railway shows two DNS records: a CNAME pointing at `<id>.up.railway.app`, and a TXT record at `_railway-verify.<your domain>`.
+2. **Create both records at your DNS provider.** A bare domain (`example.com` rather than `app.example.com`) needs a provider that supports CNAME flattening or ALIAS records; Cloudflare does. Railway verifies the domain and issues a Let's Encrypt certificate, usually within a few minutes.
+3. **On Cloudflare, set the record to DNS only (grey cloud).** With the proxy on, Railway's edge sees a Cloudflare address, so `X-Real-IP`, and with it login throttling, rate limits and the sessions list, carries Cloudflare's IP instead of each visitor's. Cloudflare also ends proxied requests after 100 seconds, which cuts off long gateway streams.
+4. **Point the app at the new origin.** Set `APP_BASE_URL=https://<your domain>` on every service that sets it, and change the same line in `railway.ts` so the next apply doesn't revert it. Railway stages variable changes, so deploy them, then redeploy `api` and `worker`. From then on the origin check accepts only the new domain: sign-ups and logins on the old `*.up.railway.app` address get 403 `ORIGIN_NOT_ALLOWED`. To keep both working during a move, add the old origin to `ALLOWED_ORIGINS` on the api.
+5. **Move the sign-in callbacks**, if GitHub or Google sign-in is configured. Register `https://<your domain>/api/v1/auth/oauth/github/callback` and `https://<your domain>/api/v1/auth/oauth/google/callback` with the providers. A GitHub OAuth app holds a single callback URL, so the old one stops working once you save. A Google OAuth client can list several, so add the new one first and remove the old one after sign-in works; also add the domain to the consent screen's authorized domains.
+6. **Verify** with `export DOMAIN=<your domain>` and the checks in [step 6](#6-verify). A resolver that looked the name up before the records existed keeps answering "not found" for as long as the zone's negative-cache TTL (30 minutes on Cloudflare). Wait it out, or purge the name from public resolvers' caches.
+
 ## 5. Deploy
 
 Deploy the api first. Its pre-deploy command creates the schema and the `spanlight_app` role that the worker connects as.
@@ -396,7 +407,7 @@ If `railway config` isn't an option, set the same things in each service's **Set
 | Restart policy | On failure, 10 retries | same | same |
 | Draining time | 15 s | 60 s | 10 s |
 | Serverless | off | off | off |
-| Public domain | none | none | generated, port 8080 |
+| Public domain | none | none | generated or [custom](#custom-domain), port 8080 |
 
 ## Troubleshooting
 
@@ -410,7 +421,7 @@ If `railway config` isn't an option, set the same things in each service's **Set
 | Pre-deploy can't connect to the database | Check that Postgres is running and that `railway variable list --service api` shows `MIGRATION_DATABASE_URL` resolved to a `postgres.railway.internal` host. |
 | api crashes with `SECRET_KEY must be set when APP_BASE_URL uses https` | Set `SECRET_KEY` (step 3). |
 | api or worker crashes with `CREDENTIALS_KEYS is invalid: entry 1 …` | The value isn't `<key id>:<base64 of 32 bytes>`. The message names the entry and the rule it breaks and never prints the value. Fix the value on both services. If secrets are already sealed, edit the existing key back into shape; a freshly generated one can't open them. |
-| Sign-up returns 403 `ORIGIN_NOT_ALLOWED` | `APP_BASE_URL` doesn't match the address in the browser. If the domain was generated after the api deployed, run `railway redeploy --service api`. For a custom domain, set `APP_BASE_URL=https://your.domain` on the api and add it to `railway.ts`. Extra origins go in `ALLOWED_ORIGINS` (comma-separated). |
+| Sign-up returns 403 `ORIGIN_NOT_ALLOWED` | `APP_BASE_URL` doesn't match the address in the browser. If the domain was generated after the api deployed, run `railway redeploy --service api`. For a custom domain, set `APP_BASE_URL=https://your.domain` on the api and add it to `railway.ts` (see [Custom domain](#custom-domain)). Extra origins go in `ALLOWED_ORIGINS` (comma-separated). |
 | `/api/…` returns 502 from web | The api isn't live yet, or `API_UPSTREAM` on web (`GATEWAY_UPSTREAM` for `/gw/…`) isn't `api.railway.internal:8000`. Environments created before 16 October 2025 use IPv6-only private networking. There, uvicorn must listen on `::`: set the api start command to `/bin/sh -c "unset MIGRATION_DATABASE_URL; exec uvicorn app.main:app --host :: --port $PORT --proxy-headers --forwarded-allow-ips=*"`. |
 | The worker restarts a few times on the first deploy | Expected until the api's pre-deploy has created `spanlight_app`. If it doesn't settle, check `railway logs --service worker --latest`. |
 | The live demo says it isn't configured | `DEMO_ENABLED` isn't `true` on the api, or the api hasn't been redeployed since it was set. |

@@ -36,7 +36,7 @@ curl -sS "$BASE/health/ready"
 
 Healthy: `{"status":"ok","database":"ok","migrations":"ok","worker_heartbeat_age_s":4.2,"outbox_backlog":0,"alert_evaluation_lag_s":31.4,"gateway_mode":"embedded"}`.
 
-- `alert_evaluation_lag_s` is how many seconds ago the newest finished evaluation pass was scheduled. A healthy worker keeps it under about 90. It is `null` before the first pass and whenever `ALERTS_EVALUATION_ENABLED` is off. It never makes the probe fail. See [Evaluation lag](#evaluation-lag).
+- `alert_evaluation_lag_s` is how many seconds ago the newest finished evaluation pass was scheduled. A healthy worker keeps it under about 90. It is `null` before the first pass, whenever `ALERTS_EVALUATION_ENABLED` is off, and once the cleanup job has deleted every finished pass (finished jobs are kept 7 days), so a worker stopped for over a week reads `null`, not a large number. It never makes the probe fail. See [Evaluation lag](#evaluation-lag).
 - `outbox_backlog` is the number of pending outbox rows, counted up to 10 000. More than 1 000 rows overdue by 10 minutes make the probe answer `503`. See [A stuck outbox](#a-stuck-outbox).
 
 If an alert shows as firing in the dashboard (**Alerts**, then the events list) but no message arrived, the evaluation worked and the delivery did not. If the rule does not fire although its metric is past the line, the evaluation is the problem.
@@ -183,7 +183,7 @@ Back out: rotate again; the previous secret cannot be restored.
 
 The scheduler enqueues one `evaluate_alerts` job a minute (dedupe key `evaluate_alerts:<period start>`), and the worker runs it. A pass stops starting new projects after 40 seconds so that it ends inside the worker's 50-second task limit, and the projects it did not reach go first in the next pass.
 
-1. Read the lag: `curl -sS "$BASE/health/ready" | jq .alert_evaluation_lag_s`. Under about 90 is healthy. `null` means no pass has finished yet, or evaluation is off (see below).
+1. Read the lag: `curl -sS "$BASE/health/ready" | jq .alert_evaluation_lag_s`. Under about 90 is healthy. `null` means no pass has finished yet, evaluation is off (see below), or the worker has been stopped so long that the cleanup job deleted the finished passes; check `worker_heartbeat_age_s` then.
 
 2. Look at the job rows:
 

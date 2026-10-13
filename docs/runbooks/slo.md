@@ -30,6 +30,7 @@ The api serves `/metrics` on port 8000, and the worker serves its own on port 91
 | `spanlight_http_request_duration_seconds` | `method`, `route` | Request latency histogram (`_bucket`, `_sum`, `_count`) with the client library's default buckets: 5, 10, 25, 50, 75, 100, 250, 500, 750 ms, 1, 2.5, 5, 7.5, 10 s. |
 | `spanlight_ingested_spans_total` | `source` (`native`, `otlp`) | Spans accepted. |
 | `spanlight_rejected_spans_total` | `source` | Spans rejected by validation. |
+| `spanlight_span_normalization_failures_total` | `error_type` | Spans rejected because preparing them raised an unexpected error. Each one is a bug: anything above zero is worth a look (see [ingestion-spike.md](ingestion-spike.md#1-see-what-is-happening)). |
 | `spanlight_rate_limit_rejections_total` | `scope` (`ingest`, `demo`, `api`) | Requests refused with 429 by a rate limit. |
 | `spanlight_idempotency_requests_total` | `outcome` | Requests carrying an `Idempotency-Key`, by outcome. |
 | `spanlight_jobs_finished_total` | `kind`, `outcome` | **Worker.** Background jobs finished. `outcome` is `done`, `skipped` (finished without work because an integration is not configured or a budget said no), `failed` (out of attempts), `retry` (failed, will run again) or `lease_lost`. |
