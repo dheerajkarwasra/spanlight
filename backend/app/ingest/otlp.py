@@ -19,6 +19,7 @@ from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
 from opentelemetry.proto.common.v1.common_pb2 import AnyValue, KeyValue
 
 from app.core.text import clean_json, storable_double
+from app.ingest.otlp_fit import DroppedValues, fit_span
 from app.ingest.otlp_values import (
     OtlpDecodeError,
     json_attributes,
@@ -166,19 +167,23 @@ def json_response(rejected: int, message: str | None) -> dict[str, Any]:
 # --- mapping ------------------------------------------------------------------
 
 
-def to_native_spans(spans: list[OtlpSpan]) -> list[dict[str, Any]]:
-    return [to_native_span(span) for span in spans]
+def to_native_spans(spans: list[OtlpSpan]) -> tuple[list[dict[str, Any]], DroppedValues]:
+    """The batch in the native shape, and how many values had to be dropped to keep its spans."""
+    dropped = DroppedValues()
+    return [to_native_span(span, dropped) for span in spans], dropped
 
 
-def to_native_span(span: OtlpSpan) -> dict[str, Any]:
+def to_native_span(span: OtlpSpan, dropped: DroppedValues | None = None) -> dict[str, Any]:
     """Map one OTLP span onto the native ingestion shape (validated later).
 
     Every string is cleaned of NUL and lone surrogates, which Postgres cannot store. The request
     body is already clean for OTLP/JSON, but a protobuf string may hold NUL, and the JSON text
     of a `gen_ai.*.messages` attribute is only parsed here, where a `\\ud800` escape in it
-    becomes a lone surrogate.
+    becomes a lone surrogate. A value that does not fit its native field is then dropped (or a
+    whole double token count made an integer) rather than the span rejected (`otlp_fit`).
     """
     native: dict[str, Any] = clean_json(_map_span(span))
+    fit_span(native, dropped if dropped is not None else DroppedValues())
     return native
 
 

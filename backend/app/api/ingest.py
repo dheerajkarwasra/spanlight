@@ -177,7 +177,18 @@ async def ingest_otlp(request: Request, key: AuthenticatedKey, db: DbSession) ->
         raise ProblemError(400, "INVALID_OTLP", str(exc)) from exc
     _check_span_count(len(spans))
 
-    outcome = await _store(db, key, otlp.to_native_spans(spans), source="otlp")
+    native_spans, dropped = otlp.to_native_spans(spans)
+    if dropped.total:
+        # Counts only: the values themselves may be long and are the client's data.
+        logger.warning(
+            "otlp_values_dropped",
+            project_id=str(key.project_id),
+            spans=len(spans),
+            environment=dropped.environment,
+            release=dropped.release,
+            token_counts=dropped.token_counts,
+        )
+    outcome = await _store(db, key, native_spans, source="otlp")
     rejected = len(outcome.rejected)
     message = "; ".join(f"span {r.span_id}: {r.reason}" for r in outcome.rejected[:5]) or None
 

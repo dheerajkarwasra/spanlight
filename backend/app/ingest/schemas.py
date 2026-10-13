@@ -107,6 +107,17 @@ def _valid_hash_or_none(value: object) -> str | None:
 RequestHash = Annotated[str | None, BeforeValidator(_valid_hash_or_none)]
 
 
+def _strip_model(value: object) -> object:
+    """The model name without surrounding whitespace, or None when nothing else is left.
+
+    Case is kept: the stored name is what pricing, alert, rollup and budget filters all compare,
+    so one rule decides whether a span matches (`app.core.model_match`).
+    """
+    if not isinstance(value, str):
+        return value
+    return value.strip() or None
+
+
 Text64 = Annotated[StrictStr, StringConstraints(min_length=1, max_length=64)]
 Text128 = Annotated[StrictStr, StringConstraints(min_length=1, max_length=128)]
 Text256 = Annotated[StrictStr, StringConstraints(min_length=1, max_length=256)]
@@ -144,7 +155,7 @@ class SpanIn(BaseModel):
     start_time: Timestamp
     end_time: Timestamp
     provider: Text128 | None = None
-    model: Text256 | None = None
+    model: Annotated[Text256 | None, BeforeValidator(_strip_model)] = None
     usage: UsageIn | None = None
     time_to_first_token_ms: Annotated[StrictFloat | StrictInt, Field(ge=0), _Double] | None = None
     input: Any = None

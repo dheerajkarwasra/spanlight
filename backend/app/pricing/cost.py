@@ -74,14 +74,19 @@ class PriceBook:
         self._prices: Sequence[Price] = tuple(prices)
 
     def find(self, provider: str | None, model: str, at: datetime) -> Price | None:
-        normalized_model = model.strip().lower()
+        """The price for `model`, matched exactly as given (case included), or None.
+
+        Ingestion strips surrounding whitespace before it stores and prices a model; nothing else
+        is normalized, so a price and a model-scoped alert, rollup or budget agree on every span.
+        The provider is a fixed vocabulary and is still compared lower-cased.
+        """
         normalized_provider = provider.strip().lower() if provider else None
         candidates = [
             price
             for price in self._prices
             if price.effective_from <= at
             and (normalized_provider is None or price.provider == normalized_provider)
-            and price.matches(normalized_model)
+            and price.matches(model)
         ]
         if not candidates:
             return None

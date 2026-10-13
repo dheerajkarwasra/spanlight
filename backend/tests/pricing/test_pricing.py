@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import pytest
 
+from app.core.model_match import matches_model
 from app.pricing.cost import Price, PriceBook
 from app.pricing.prices import EFFECTIVE_FROM, PRICING_VERSION, SEED_PRICES
 
@@ -58,7 +59,7 @@ def _cost(
         ("o4-mini", "5.50000000"),
         ("claude-haiku-4-5", "6.00000000"),
         ("claude-haiku-4-5-20251001", "6.00000000"),
-        ("Claude-Sonnet-4-5", "18.00000000"),
+        ("claude-sonnet-4-5", "18.00000000"),
     ],
 )
 def test_known_models_and_snapshots(book: PriceBook, model: str, expected: str) -> None:
@@ -70,6 +71,20 @@ def test_known_models_and_snapshots(book: PriceBook, model: str, expected: str) 
 )
 def test_unknown_models_cost_null_never_zero(book: PriceBook, model: str) -> None:
     assert _cost(book, model) is None
+
+
+@pytest.mark.parametrize(
+    "model", ["GPT-4o", "Claude-Sonnet-4-5", "gpt-4o-LATEST", " gpt-4o", "gpt-4o "]
+)
+def test_model_match_is_exact_about_case_and_whitespace(book: PriceBook, model: str) -> None:
+    # Ingestion strips surrounding whitespace before pricing; the price lookup itself compares
+    # the name as given, as the alert, rollup and budget filters compare the stored name.
+    assert _cost(book, model) is None
+
+
+@pytest.mark.parametrize("model", ["gpt-4o", "GPT-4o", "gpt-4o-2024-08-06", "Gpt-4o-latest"])
+def test_pricing_and_model_filters_follow_one_rule(book: PriceBook, model: str) -> None:
+    assert (book.find("openai", model, AT) is not None) == matches_model("gpt-4o", model)
 
 
 def test_missing_usage_costs_null(book: PriceBook) -> None:

@@ -33,7 +33,8 @@ def _as_utc(moment: datetime) -> datetime:
     return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment.astimezone(UTC)
 
 
-# Stored lower-case, as the seed table does: the price lookup lower-cases the model it is given.
+# Stored lower-case, as the seed table is (a CHECK in 0205 keeps it so). The price lookup is
+# case-sensitive, so an override prices the lower-case spelling of a model only.
 _Lowered = AfterValidator(str.lower)
 OverrideProvider = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100), _Lowered
