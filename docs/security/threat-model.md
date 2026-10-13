@@ -152,7 +152,7 @@ All tenants share one database. A bug in any query must not show one tenant's da
 | Export of another tenant's traces | I | Creating an export needs `export:create` on the project; the job reads under that project's RLS binding | `api/v1/exports.py`, `exports/jobs.py` |
 | A download link that lives too long | I | Download URLs are presigned for one hour and only for `done` exports; files are deleted 7 days after completion, and the row is marked `expired` only once the object is gone | `exports/service.py` (`export_out`, `EXPORT_RETENTION`), `exports/expiry.py` |
 | CSV formula injection when an export is opened in a spreadsheet | T | Every CSV cell that starts with `=`, `+`, `-`, `@`, tab or carriage return is prefixed with `'`; the audit log CSV uses the same writer | `exports/writers.py` (`safe_csv_cell`, `csv_line`), `exports/audit.py` |
-| Database dump disclosure | I | Dumps are written to a private bucket; the dump credentials reach `pg_dump` only as libpq environment variables, never on a command line or in a log line, and the child process inherits nothing else from the environment | `backups/service.py`, `backups/jobs.py`, [restore runbook](../runbooks/restore.md) |
+| Database dump disclosure | I | Dumps are written to a private bucket; the dump credentials reach `pg_dump` only as libpq environment variables, never on a command line or in a log line, and the child process inherits nothing else from the environment | `backups/libpq.py`, `backups/service.py`, `backups/jobs.py`, [restore runbook](../runbooks/restore.md) |
 | Unbounded backup growth | D | 14 daily and 8 weekly dumps are kept; anything else under `backups/` that the job created is pruned | `backups/retention.py` |
 
 ### TB6. Application to third parties

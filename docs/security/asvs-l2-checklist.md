@@ -185,7 +185,7 @@ Assessed in October 2026 against the code before the first `1.0` release.
 | 5.3.5 | Encoding where parameterization is unavailable | Met | Role DDL quotes identifiers and literals with `psycopg.sql` | `db/roles.py` |
 | 5.3.6 | JSON injection prevented | Met | | `core/errors.py` |
 | 5.3.7 | LDAP injection | N/A | No LDAP | |
-| 5.3.8 | OS command injection prevented | Met | `pg_dump` and `pg_restore` run with an argument list and environment variables, no shell | `backups/service.py` |
+| 5.3.8 | OS command injection prevented | Met | `pg_dump` and `pg_restore` run with an argument list and environment variables, no shell | `backups/service.py`, `backups/restore.py` |
 | 5.3.9 | Local and remote file inclusion | N/A | No user-supplied paths | |
 | 5.3.10 | XPath and XML injection | N/A | No XML | |
 | 5.4.3 | Integer overflow prevented | Met | Token counts and timestamps are range-checked before storage | `ingest/schemas.py` |
@@ -216,7 +216,7 @@ Assessed in October 2026 against the code before the first `1.0` release.
 
 | ID | Requirement | Status | Note | Reference |
 |---|---|---|---|---|
-| 7.1.1 | No credentials or session tokens in logs | Met | Logged by id only; query strings are not logged; database URLs never reach a log line; `httpx` request lines (which hold alert channel URLs) are not logged | `core/middleware.py`, `api/v1/tokens.py`, `backups/service.py`, `core/logging.py` |
+| 7.1.1 | No credentials or session tokens in logs | Met | Logged by id only; query strings are not logged; database URLs never reach a log line; `httpx` request lines (which hold alert channel URLs) are not logged | `core/middleware.py`, `api/v1/tokens.py`, `backups/libpq.py`, `core/logging.py` |
 | 7.1.2 | No other sensitive data in logs | Met | Request bodies are not logged; ingestion logs counts and the project id | `api/ingest.py`, `core/sentry.py` |
 | 7.1.3 | Security events logged | Partial | Every request is logged with status; failed sign-ins are recorded in `login_attempts` (kept 1 day); there is no dedicated security event stream | `core/middleware.py`, `auth/login_throttle.py` |
 | 7.1.4 | Enough context for an investigation | Met | UTC timestamp, request id, route, status and duration on every line | `core/logging.py`, `core/middleware.py` |

@@ -195,7 +195,8 @@ original design; everything else is a clarification.
 - **Deviation — model matching:** a price pattern matches the model exactly, or followed by a
   snapshot suffix (`-YYYYMMDD`, `-YYYY-MM-DD`, `-latest`); longest pattern wins. Plain prefix
   matching (as in the original design) would price e.g. `gpt-4.1-nano` as `gpt-4.1`. Matching is
-  case-insensitive; when `provider` is sent it must match the price's provider.
+  case-sensitive (since 2026-10-13, see "Owner decisions 2026-10-13"); the provider is compared
+  case-insensitively, and when `provider` is sent it must match the price's provider.
 - Unknown span fields are ignored (forward compatible) rather than rejected.
 - Per-span rejections (`rejected[].reason` is `"<field>: <message>"`): schema errors; `end_time`
   before `start_time`; `start_time` older than 90 days; `end_time` more than 10 minutes in the
@@ -1491,15 +1492,18 @@ members hold `prompts:write`, `datasets:write`, `scores:write`, `annotations:wri
   `ON CONFLICT DO NOTHING` would silently drop the second score). A client-supplied `id` (a UUID) makes a retry
   idempotent: a repeat counts as `accepted` and stores nothing. On `POST /traces/{trace_id}/scores` a repeated `id`
   returns the stored score as it is, even if it belongs to another trace or author.
-- **Values.** Score values are JSON numbers with at most four decimals within ±1e9, and are serialised as JSON
-  numbers (not strings) in every response. A JSON boolean is accepted in `value` and stored as `1` or `0`; it makes
-  an implicit config boolean, and a boolean config also accepts the numbers `0` and `1`. Exactly one of `value` and
-  `string_value` is allowed. A name is 1 to 64 characters `[a-z0-9][a-z0-9_.-]*`.
+- **Values.** Score values are JSON numbers within ±1e9, rounded to four decimals (half to even, so `1.23456` is
+  stored as `1.2346`), and are serialised as JSON numbers (not strings) in every response. A JSON boolean is
+  accepted in `value` and stored as `1` or `0`; it makes an implicit config boolean, and a boolean config also
+  accepts the numbers `0` and `1`. Exactly one of `value` and `string_value` is allowed. A name is 1 to 64
+  characters `[a-z0-9][a-z0-9_.-]*`.
 - **Batch results.** `POST /v1/scores` takes 1 to 1000 scores. An empty, oversize or misshapen body is `422`. A
   score that fails validation is listed in `rejected` as `{index, reason}` with `reason` written
   `<field>: <message>`, and never fails the others. The body is read after the key is checked, bounded like span
   ingestion and may be gzip or deflate encoded. The `trace_id` need not exist yet (a score may arrive first), but
   `POST /traces/{trace_id}/scores` on the dashboard is `404` for a trace the project does not have.
+  `GET /traces/{trace_id}/scores` is `200` for such a trace, on purpose: it lists the scores that already name it,
+  which is `[]` when there are none, so scores sent ahead of their trace stay readable.
   A score sent with an `id` the project already stores is counted in `accepted` and ignored: the first write wins,
   also when `value`, `string_value` or `comment` differ, so a retry can never overwrite. To change a score, delete it
   (`DELETE /api/v1/projects/{project_id}/scores/{score_id}`, see Deleting a score) and send the corrected one.
@@ -1637,3 +1641,42 @@ members hold `prompts:write`, `datasets:write`, `scores:write`, `annotations:wri
 - **A body not fully sent.** A client that disconnects before its request body is complete is answered `400 BAD_REQUEST` ("The request body was not fully sent.") on `POST /v1/traces`, `/v1/otlp/traces` and `/v1/scores`, and `400 INVALID_REQUEST` with `param: null` ("Request body was not fully sent.") under `/gw/`. Nobody reads the answer; it keeps a dropped upload from being logged as a server error.
 - **Cut or empty compressed bodies.** A `gzip` or `deflate` body whose stream ends before its end marker is `400 BAD_REQUEST` ("The request body could not be decompressed.") on the ingestion routes and `400 INVALID_REQUEST` under `/gw/`, even when the part that arrived would parse. An empty body sent with `Content-Encoding: gzip` or `deflate` has no end marker either, so it gets the same answer (it was `400 INVALID_JSON` on ingestion).
 - **Card numbers in payloads.** Redaction searches card-shaped runs: digit groups separated by single spaces or dashes, every group of four or more digits but the last, which has two or more. Any 13-19 digit stretch of whole groups that passes the Luhn check is replaced, so a card next to a CVV, an expiry or a quantity is caught and the neighbouring digits are kept. Lists of small numbers, dates and phone numbers are left alone; a card typed in groups of one to three digits, or glued to a word, is not detected.
+
+## Owner decisions 2026-10-13
+
+Calls made after the full test pass on behaviour the spec left open.
+
+- **Model names: whitespace stripped, case kept, pricing case-sensitive.** Every span (`POST /v1/traces`,
+  `POST /v1/otlp/traces` and the gateway's own spans) has the whitespace around its `model` stripped once, at
+  ingest, and the stripped name is what is stored; a model that is only whitespace is stored as `null`. Case is
+  kept, and the price lookup now compares the name as stored, case included, as alert rules, rollup filters and
+  budgets already did. So `" gpt-4o "` is stored as `gpt-4o` and priced, while `GPT-4o` is stored as sent, costs
+  `null` ("—"), sets the trace's `has_unpriced` and appears among the project's unpriced models. Before this,
+  pricing lower-cased the name and so priced `GPT-4o` while a budget or alert on `gpt-4o` did not count it. Price
+  overrides are still stored lower-case, so an override cannot price an upper-case model name; send the
+  provider's own (lower-case) model id.
+- **OTLP values that do not fit.** On `POST /v1/otlp/traces` a resource's `deployment.environment(.name)` longer
+  than 64 characters or `service.version` longer than 128 is dropped (the trace field stays `null` or keeps an
+  earlier value) and the span is kept. A token count sent as a whole double (`12.0`) is stored as the integer
+  (`12`); one with a fraction, or NaN or an infinity, is dropped, so the span is kept with that count unknown and
+  its cost `null`. A count sent as the string `"NaN"`, `"Infinity"` or `"-Infinity"` cannot be told apart from
+  such a double once decoded and is dropped the same way. One warning, `otlp_values_dropped`, is logged per batch with the number of values of each kind
+  dropped, never the values. Everything else that does not fit (an over-long `user.id` or `session.id`, a
+  negative or too-large count, any other count sent as a string) still rejects the span with a per-span reason, as on
+  `POST /v1/traces`, which stays strict: there an over-long `trace.environment` or `trace.release`, or a
+  `usage` count that is not a JSON integer, rejects the span.
+- **`POST /v1/traces` reads any content type.** The body is parsed as JSON whatever `Content-Type` says
+  (`text/plain`, a form type, or none), so loosely labelled clients keep working. The route needs a bearer API key,
+  so a cross-site form cannot reach it. `POST /v1/otlp/traces` still answers `415 UNSUPPORTED_MEDIA_TYPE` for a
+  type other than `application/json` or `application/x-protobuf`, because it must know which encoding it was sent.
+- **Card numbers sent as JSON numbers are not redacted.** Redaction reads strings only. A Luhn-valid 13-19 digit
+  JSON integer (`{"card": 4242424242424242}`) is stored as sent: about one in ten numeric ids of that length
+  (snowflake ids, order numbers) passes the Luhn check, and replacing them would corrupt ordinary data. Send card
+  numbers as strings, or keep them out of traced payloads. A card number glued to a word or an underscore
+  (`card4242424242424242`) is not detected either (see "Card numbers in payloads" above).
+- **Constraint validation in migrations sees every row.** Migrations run as the table owner, which row-level
+  security also applies to (`FORCE ROW LEVEL SECURITY`), and Postgres validates a foreign key with a query that
+  the policies filter. Each `VALIDATE CONSTRAINT` (migrations 0013, 0400, 0401 and 0505) now runs with the worker
+  bypass set for its own transaction, so a dangling reference fails the upgrade instead of being marked valid. A
+  CHECK constraint is validated by scanning the table, which the policies never filtered; those migrations take
+  the same path so every validation follows one rule.
