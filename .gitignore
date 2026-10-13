@@ -8,6 +8,8 @@ deploy/prometheus/metrics_token
 # Editor and agent tooling (local only)
 .claude/
 .superpowers/
+.taste-skill/
+skills-lock.json
 
 # Internal planning and progress docs. The public repository keeps only what visitors
 # use: README, contributing and security policies, ADRs, the API reference, deploy guide.
@@ -58,3 +60,5 @@ docs-site/src/content/docs/changelog.md
 
 # archify skill output (generated diagrams; keep the ones worth it under docs/design/diagrams)
 .archify/
+
+.taste-skills/
