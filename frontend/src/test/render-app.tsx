@@ -9,7 +9,8 @@ import { ApiError, authApi, orgsApi, projectsApi, type Me, type Project } from "
 
 export const ORG_ID = "org_1";
 
-const me: Me = {
+/** The signed-in owner of `ORG_ID` that `mockSignedIn` answers `/me` with. */
+export const ME: Me = {
   user: { id: "u1", email: "me@example.com", name: "Me", created_at: "", email_verified: true },
   memberships: [
     {
@@ -42,7 +43,7 @@ export function mockSignedOut() {
 
 /** An owner of `ORG_ID`, which holds `projects`. */
 export function mockSignedIn(projects: Project[]) {
-  vi.spyOn(authApi, "me").mockResolvedValue(me);
+  vi.spyOn(authApi, "me").mockResolvedValue(ME);
   vi.spyOn(orgsApi, "projects").mockResolvedValue(projects);
   vi.spyOn(projectsApi, "get").mockImplementation((projectId) => {
     const project = projects.find((candidate) => candidate.id === projectId);

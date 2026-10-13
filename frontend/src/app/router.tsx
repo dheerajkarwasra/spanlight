@@ -9,6 +9,7 @@ import {
   retainSearchParams,
 } from "@tanstack/react-router";
 
+import { bindSlugSource, ensureCanonicalProjectUrl, projectParams } from "@/app/project-params";
 import { NotFoundPage, RootLayout, RouteErrorPage } from "@/app/route-pages";
 import { LoginPage } from "@/features/auth/login-page";
 import { ensureMe } from "@/features/auth/queries";
@@ -207,10 +208,19 @@ const accountSecurityRoute = createRoute({
 const projectRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/$orgId/$projectId",
+  // The URL carries slugs; every page below reads ids (see `project-params.ts`).
+  params: projectParams,
   validateSearch: projectSearchSchema,
   search: {
     middlewares: [retainSearchParams(["range", "from", "to", "env"])],
   },
+  beforeLoad: ({ context, params, location }) =>
+    ensureCanonicalProjectUrl({
+      queryClient: context.queryClient,
+      me: context.me,
+      params,
+      location,
+    }),
   component: AppShell,
 });
 
@@ -726,6 +736,7 @@ const routeTree = rootRoute.addChildren([
 ]);
 
 export function createAppRouter(queryClient: QueryClient) {
+  bindSlugSource(queryClient);
   return createRouter({
     routeTree,
     context: { queryClient },

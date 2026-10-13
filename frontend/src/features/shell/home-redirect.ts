@@ -1,7 +1,9 @@
 import type { QueryClient } from "@tanstack/react-query";
 
-import { isTwoFactorRequired, orgsApi, queryKeys, type Me, type Project } from "@/lib/api";
+import type { Me } from "@/lib/api";
 import { readLastProject } from "@/lib/last-project";
+
+import { orgProjectsOrNull } from "./workspace-slugs";
 
 type HomeDestination =
   | { to: "/onboarding"; search: { org?: string } }
@@ -57,23 +59,4 @@ export async function resolveHomeDestination(
     return { to: "/account/security" };
   }
   return { to: "/onboarding", search: { org: openOrgId ?? orderedOrgIds[0] } };
-}
-
-/** The org's projects, or null when it is locked behind two-factor authentication. */
-async function orgProjectsOrNull(
-  queryClient: QueryClient,
-  orgId: string,
-): Promise<Project[] | null> {
-  try {
-    return await queryClient.query({
-      queryKey: queryKeys.org(orgId).projects,
-      queryFn: () => orgsApi.projects(orgId),
-      staleTime: "static",
-    });
-  } catch (error) {
-    if (isTwoFactorRequired(error)) {
-      return null;
-    }
-    throw error;
-  }
 }

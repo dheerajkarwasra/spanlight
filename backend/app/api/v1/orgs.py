@@ -64,7 +64,7 @@ from app.exports.audit import (
 from app.services.audit import record_audit
 from app.services.deletion import delete_organization, lock_organization
 from app.services.invites import check_invite_email_limit, enqueue_invite_email
-from app.services.slugs import slugify, with_random_suffix
+from app.services.slugs import RESERVED_ORG_SLUGS, slugify, with_random_suffix
 
 router = APIRouter(tags=["orgs"])
 logger = structlog.get_logger(__name__)
@@ -99,10 +99,16 @@ async def create_org(
 
 
 async def _insert_org(db: DbSession, name: str) -> Organization:
-    """Insert with a slug derived from the name, adding a suffix on collision."""
+    """Insert with a slug derived from the name, adding a suffix on collision.
+
+    A slug that is also a top-level dashboard path (`login`, `api`, ...) is never handed out, so
+    the first candidate for such a name already carries a suffix.
+    """
     slug = slugify(name, fallback="org")
     for attempt in range(5):
-        candidate = slug if attempt == 0 else with_random_suffix(slug)
+        candidate = (
+            slug if attempt == 0 and slug not in RESERVED_ORG_SLUGS else with_random_suffix(slug)
+        )
         org = Organization(name=name, slug=candidate)
         try:
             async with db.begin_nested():
