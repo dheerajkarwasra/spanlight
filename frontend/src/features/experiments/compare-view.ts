@@ -48,17 +48,22 @@ export function itemScoreParts(value: ItemScore): ScoreValueParts {
   return { value: typeof value === "boolean" ? Number(value) : value, string_value: null };
 }
 
-/** A run's mean: "0.8667" (four decimals at most, like every score), or "96%" for a yes / no. */
+/**
+ * A run's mean: "0.8667" (four decimals at most, like every score), or "96%" for a yes / no. The
+ * percent rounds down, so "100%" means every item passed (199 of 200 reads "99%").
+ */
 export function formatMean(mean: number | null, kind: ScoreKind): string | null {
   if (mean === null || !Number.isFinite(mean)) {
     return null;
   }
-  return kind === "boolean" ? `${Math.round(mean * 100)}%` : formatScoreNumber(mean);
+  // The epsilon keeps a float like 0.29 * 100 = 28.999… from flooring to 28.
+  return kind === "boolean" ? `${Math.floor(mean * 100 + 1e-9)}%` : formatScoreNumber(mean);
 }
 
 /**
  * A score change: "+0.08", "−0.53", or "+6 pts" for a yes / no score's mean. A change too small
- * for two decimals keeps its sign and shows the API's four ("+0.0030"), never a bare "0.00".
+ * for two decimals keeps its sign and shows the API's four ("+0.0030"), never a bare "0.00"; one
+ * too small for four reads "+<0.0001".
  */
 export function formatScoreDelta(delta: number | null, kind: ScoreKind): string | null {
   if (delta === null || !Number.isFinite(delta)) {
@@ -67,6 +72,9 @@ export function formatScoreDelta(delta: number | null, kind: ScoreKind): string 
   if (kind === "boolean") {
     const points = Math.round(Math.abs(delta) * 100);
     return signed(delta, points === 0 && delta !== 0 ? "<1 pt" : `${points} pts`);
+  }
+  if (delta !== 0 && Math.abs(delta) < 0.00005) {
+    return signed(delta, "<0.0001");
   }
   const digits = delta !== 0 && Math.abs(delta) < 0.005 ? 4 : 2;
   return signed(delta, Math.abs(delta).toFixed(digits));

@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 
 import { LandingShot } from "./landing-shot";
 import { MeshBlob } from "./mesh-blob";
+import { useShotSources } from "./use-shot-sources";
 
 /**
  * The hero's product shot (Figma "Product preview", v3): a real screenshot of the experiment
@@ -11,6 +12,8 @@ import { MeshBlob } from "./mesh-blob";
  * where it comes from.
  */
 export function ProductPreview({ className }: { className?: string }) {
+  // The caption claims a real screen, so it waits for the screenshot (finding T7-08).
+  const captured = useShotSources("hero") !== null;
   return (
     <figure className={cn("relative pb-[30px] lg:pb-16", className)}>
       <MeshBlob
@@ -44,9 +47,11 @@ export function ProductPreview({ className }: { className?: string }) {
         <LandingShot shot="hero" priority className="rounded-[14px] lg:rounded-[22px]" />
       </div>
 
-      <figcaption className="relative mx-auto mt-4 max-w-[320px] text-center text-xs font-medium text-muted-foreground md:max-w-none lg:mt-6 lg:text-sm">
-        A real screen from the live demo: two prompt versions scored on the same dataset.
-      </figcaption>
+      {captured ? (
+        <figcaption className="relative mx-auto mt-4 max-w-[320px] text-center text-xs font-medium text-muted-foreground md:max-w-none lg:mt-6 lg:text-sm">
+          A real screen from the live demo: two prompt versions scored on the same dataset.
+        </figcaption>
+      ) : null}
     </figure>
   );
 }

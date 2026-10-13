@@ -110,11 +110,11 @@ export type EvaluatorRunStatus = "queued" | "running" | "done" | "failed";
 /** Why a run happened: sampled live, a test run, or an experiment item. */
 export type EvaluatorRunSource = "online" | "test" | "experiment";
 
-/** A score a run wrote: `value` (decimal string) for numeric and boolean (1/0) scores,
- * `string_value` for categorical ones. */
+/** A score a run wrote: `value` (a JSON number, like every score) for numeric and boolean (1/0)
+ * scores, `string_value` for categorical ones. */
 export interface EvaluatorRunScore {
   name: string;
-  value: string | null;
+  value: number | null;
   string_value: string | null;
 }
 
@@ -148,7 +148,8 @@ export interface EvaluatorBudget {
 export interface EvaluatorTestScore {
   name: string;
   span_id: string | null;
-  value: string | null;
+  /** A JSON number, like every score; null for a categorical score. */
+  value: number | null;
   string_value: string | null;
   comment: string | null;
 }

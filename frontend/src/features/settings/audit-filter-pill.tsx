@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 import {
   Select,
   SelectContent,
@@ -37,6 +39,8 @@ export function FilterSelectPill({
   onChange,
 }: FilterSelectPillProps) {
   const active = value !== undefined;
+  const labelId = useId();
+  const valueId = useId();
 
   return (
     <Select
@@ -46,6 +50,8 @@ export function FilterSelectPill({
       }}
     >
       <SelectTrigger
+        // The trigger takes no name from its content: name it "Action All actions".
+        aria-labelledby={`${labelId} ${valueId}`}
         className={cn(
           PILL_BASE,
           "w-auto max-w-64 justify-start gap-1.5 py-0 pr-3 pl-3.5",
@@ -55,8 +61,11 @@ export function FilterSelectPill({
         )}
       >
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className="shrink-0 font-medium text-muted-foreground">{label}</span>
+          <span id={labelId} className="shrink-0 font-medium text-muted-foreground">
+            {label}
+          </span>
           <span
+            id={valueId}
             className={cn(
               "min-w-0 truncate font-semibold",
               active ? "text-accent" : "text-foreground",

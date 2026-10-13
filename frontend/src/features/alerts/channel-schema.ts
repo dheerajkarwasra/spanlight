@@ -80,7 +80,15 @@ export function isSlackUrl(value: string): boolean {
   );
 }
 
-const emailSchema = z.email();
+/**
+ * zod's default address pattern with letters, digits and marks from any script, so an
+ * internationalized address the API accepts (`ops@例え.jp`) can be added; the domain still needs
+ * a dot and a two-letter top level. The API stays the authority.
+ */
+const UNICODE_EMAIL =
+  /^(?:[\p{L}\p{M}\p{N}_'+-]+\.)*[\p{L}\p{M}\p{N}_'+-]*[\p{L}\p{M}\p{N}_+-]@(?:[\p{L}\p{M}\p{N}][\p{L}\p{M}\p{N}-]*\.)+\p{L}{2,}$/u;
+
+const emailSchema = z.email({ pattern: UNICODE_EMAIL });
 
 /** The reason one address can't be a recipient, or null. Used by the picker before adding it. */
 export function recipientProblem(address: string, current: readonly string[]): string | null {

@@ -64,6 +64,7 @@ export function ReleasesPage() {
       <ReleasePicker
         key={`${a ?? ""}|${b ?? ""}`}
         releases={list.data}
+        failed={list.isError}
         a={a}
         b={b}
         unavailable={tooLarge}

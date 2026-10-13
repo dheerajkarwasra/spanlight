@@ -8,6 +8,7 @@ import type { Credential, ProviderKind } from "@/lib/api";
 
 import type { FormErrors, FormState, TargetSource } from "./experiment-form-state";
 import { useCredentialsQuery, usePricesQuery } from "./experiment-queries";
+import { LoadFailed } from "./load-failed";
 import { MessagesFields } from "./messages-fields";
 import { PromptTargetFields } from "./prompt-target-fields";
 
@@ -74,25 +75,29 @@ export function TargetFields({ state, errors, onChange }: TargetFieldsProps) {
         />
       )}
       <div className="grid gap-4 sm:grid-cols-2">
-        <FormField
-          label="Credential"
-          error={errors.credentialId}
-          hint={
-            credentials.data?.length === 0
-              ? "No credentials yet. Add one under Gateway, Credentials."
-              : undefined
-          }
-        >
-          <FieldSelect
-            value={state.credentialId}
-            placeholder={credentials.isPending ? "Loading credentials…" : "Choose a credential"}
-            onChange={(credentialId) => onChange({ credentialId })}
-            options={(credentials.data ?? []).map((credential) => ({
-              value: credential.id,
-              label: credentialLabel(credential),
-            }))}
-          />
-        </FormField>
+        {credentials.isError ? (
+          <LoadFailed what="credentials" onRetry={() => void credentials.refetch()} />
+        ) : (
+          <FormField
+            label="Credential"
+            error={errors.credentialId}
+            hint={
+              credentials.data?.length === 0
+                ? "No credentials yet. Add one under Gateway, Credentials."
+                : undefined
+            }
+          >
+            <FieldSelect
+              value={state.credentialId}
+              placeholder={credentials.isPending ? "Loading credentials…" : "Choose a credential"}
+              onChange={(credentialId) => onChange({ credentialId })}
+              options={(credentials.data ?? []).map((credential) => ({
+                value: credential.id,
+                label: credentialLabel(credential),
+              }))}
+            />
+          </FormField>
+        )}
         <FormField label="Model" error={errors.model}>
           <Input
             value={state.model}

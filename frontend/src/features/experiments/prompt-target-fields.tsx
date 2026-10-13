@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { PromptVersion } from "@/lib/api";
 
 import type { FormErrors, FormState } from "./experiment-form-state";
+import { LoadFailed } from "./load-failed";
 import { versionOptionLabel } from "./run-label";
 import { usePromptListQuery, usePromptVersionsQuery } from "./use-version-index";
 
@@ -32,7 +33,7 @@ export function PromptTargetFields({ state, errors, onChange }: PromptTargetFiel
     return <Skeleton className="h-[72px] w-full rounded-input" />;
   }
   if (prompts.isError) {
-    return <Notice tone="danger">Couldn't load the prompts. Reload the page to try again.</Notice>;
+    return <LoadFailed what="prompts" onRetry={() => void prompts.refetch()} />;
   }
   if (prompts.data.length === 0) {
     return (

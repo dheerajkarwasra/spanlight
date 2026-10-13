@@ -37,6 +37,10 @@ export default defineConfig({
             { name: "tanstack", test: /node_modules[\\/]@tanstack[\\/]/ },
             { name: "radix", test: /node_modules[\\/](@radix-ui|radix-ui)[\\/]/ },
             { name: "charts", test: /node_modules[\\/](recharts|d3-[a-z-]+|victory-vendor)[\\/]/ },
+            // zod and its jitless switch share a chunk, so the switch runs before any chunk that
+            // builds a schema at import time. In the entry chunk it ran after them, and zod's
+            // `new Function` probe broke the CSP on every page load.
+            { name: "zod", test: /node_modules[\\/]zod[\\/]|src[\\/]lib[\\/]zod-config\.ts$/ },
           ],
         },
       },

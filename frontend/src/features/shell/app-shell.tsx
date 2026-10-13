@@ -1,4 +1,4 @@
-import { Outlet, useMatchRoute } from "@tanstack/react-router";
+import { Outlet, useMatch } from "@tanstack/react-router";
 import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
@@ -42,9 +42,15 @@ import { useKeyboardShortcuts } from "./use-keyboard-shortcuts";
  * spacing and a 1440px max width. Pages should not add their own outer padding.
  */
 export function AppShell() {
-  const matchRoute = useMatchRoute();
   // Review work mode is a focus screen: the page draws its own frame, without rail or top bar.
-  if (matchRoute({ to: "/$orgId/$projectId/annotate/$queueId" })) {
+  // Read from the matches the outlet renders, not the location: while a navigation is pending
+  // the location is still the old one, so the page would mount in one shell and then remount in
+  // the other (finding T9-03: work mode claimed an item twice).
+  const workMode = useMatch({
+    from: "/_authed/$orgId/$projectId/annotate/$queueId",
+    shouldThrow: false,
+  });
+  if (workMode !== undefined) {
     return <FocusShell />;
   }
   return <ChromeShell />;

@@ -127,11 +127,17 @@ function previewCsv(text: string): UploadPreview {
   const { preview, add } = collector("csv");
   const records = csvRecords(text);
   const header = records.next();
-  const names = header.done ? null : header.value.cells.map((name) => name.trim());
+  const names =
+    header.done || header.value.unreadable ? null : header.value.cells.map((name) => name.trim());
   if (names?.includes("input") !== true) {
     return { ...preview, fileProblem: "The header row needs an input column." };
   }
-  for (const { cells, line } of records) {
+  for (const { cells, line, unreadable } of records) {
+    if (unreadable) {
+      // As the server: its reader would resume inside the broken cell, so it stops here.
+      add(line, "unreadable record; the rest is skipped");
+      break;
+    }
     if (cells.some((cell) => cell.trim())) add(line, csvFields(names, cells));
   }
   return preview;
@@ -169,6 +175,24 @@ interface CsvRecord {
   cells: string[];
   /** The physical line the record ends on. */
   line: number;
+  /** Python's csv module refuses the record (and the reader stops): see `csvRecords`. */
+  unreadable: boolean;
+}
+
+/** The server's `csv.field_size_limit`; Python counts characters, not UTF-16 units. */
+const FIELD_LIMIT = 64 * 1024;
+
+function overFieldLimit(value: string): boolean {
+  // A string never has fewer UTF-16 units than characters, so only a long cell is counted.
+  return value.length > FIELD_LIMIT && Array.from(value).length > FIELD_LIMIT;
+}
+
+/**
+ * Whether an unquoted stretch holds a carriage return Python's csv refuses ("new-line character
+ * seen in unquoted field"): one that is not part of the record's line end.
+ */
+function hasBareCr(stretch: string, endsRecord: boolean): boolean {
+  return (endsRecord ? stretch.replace(/\r+$/, "") : stretch).includes("\r");
 }
 
 const QUOTE = 34;
@@ -182,18 +206,22 @@ function cellEnd(text: string, from: number): number {
   return DELIMITER.exec(text)?.index ?? text.length;
 }
 
-/** A quoted cell starting at `from` (on its opening quote): its text and where it ends. */
-function quotedCell(text: string, from: number): { value: string; end: number } {
+/**
+ * A quoted cell starting at `from` (on its opening quote): its text, the unquoted stretch after
+ * the closing quote, and where it ends.
+ */
+function quotedCell(text: string, from: number): { value: string; tail: string; end: number } {
   let value = "";
   let start = from + 1;
   for (;;) {
     const quote = text.indexOf('"', start);
-    if (quote === -1) return { value: value + text.slice(start), end: text.length };
+    if (quote === -1) return { value: value + text.slice(start), tail: "", end: text.length };
     value += text.slice(start, quote);
     if (text.charCodeAt(quote + 1) !== QUOTE) {
       // Anything between the closing quote and the delimiter stays in the cell, as csv does.
       const end = cellEnd(text, quote + 1);
-      return { value: value + text.slice(quote + 1, end), end };
+      const tail = text.slice(quote + 1, end);
+      return { value: value + tail, tail, end };
     }
     value += '"';
     start = quote + 2;
@@ -202,7 +230,9 @@ function quotedCell(text: string, from: number): { value: string; end: number } 
 
 /**
  * RFC 4180 records: quoted cells may hold commas, doubled quotes and line breaks. A record ends
- * at a line break outside quotes (`\n` or `\r\n`).
+ * at a line break outside quotes (`\n` or `\r\n`). Like the server's Python `csv` reader, a
+ * carriage return elsewhere outside quotes, or a cell over 65,536 characters, makes the record
+ * unreadable, and nothing after it is read.
  */
 export function* csvRecords(text: string): Generator<CsvRecord> {
   let position = 0;
@@ -211,15 +241,23 @@ export function* csvRecords(text: string): Generator<CsvRecord> {
     const cells: string[] = [];
     for (;;) {
       let value: string;
+      let unquoted: string;
       if (text.charCodeAt(position) === QUOTE) {
         const quoted = quotedCell(text, position);
         value = quoted.value;
+        unquoted = quoted.tail;
         line += value.split("\n").length - 1;
         position = quoted.end;
       } else {
         const end = cellEnd(text, position);
         value = text.slice(position, end);
+        unquoted = value;
         position = end;
+      }
+      const endsRecord = position >= text.length || text.charCodeAt(position) !== COMMA;
+      if (hasBareCr(unquoted, endsRecord) || overFieldLimit(value)) {
+        yield { cells, line, unreadable: true };
+        return;
       }
       cells.push(value);
       if (position < text.length && text.charCodeAt(position) === COMMA) {
@@ -227,7 +265,7 @@ export function* csvRecords(text: string): Generator<CsvRecord> {
         continue;
       }
       position += text.charCodeAt(position) === CR ? 2 : 1;
-      yield { cells, line };
+      yield { cells, line, unreadable: false };
       line += 1;
       break;
     }

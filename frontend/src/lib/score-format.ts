@@ -26,7 +26,7 @@ export function formatScoreNumber(value: number): string {
   return String(roundScore(value));
 }
 
-/** A score value as the API sends it: a number, or a decimal string on evaluator runs. */
+/** A score value as the API sends it: a number. A decimal string is still read as its number. */
 export function toScoreParts(score: {
   value: number | string | null;
   string_value: string | null;
@@ -130,7 +130,8 @@ function categoricalCheck(config: ScoreConfig, raw: string): ScoreInputCheck {
   if (text === "") {
     return { ok: false, error: "Enter a value." };
   }
-  if (text.length > CATEGORY_LIMIT) {
+  // The API counts characters (code points), not UTF-16 units.
+  if (Array.from(text).length > CATEGORY_LIMIT) {
     return { ok: false, error: `Use at most ${String(CATEGORY_LIMIT)} characters.` };
   }
   return { ok: true, input: { string_value: text } };

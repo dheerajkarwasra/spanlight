@@ -13,18 +13,28 @@ import {
   type FormErrors,
   type FormState,
 } from "./experiment-form-state";
+import { LoadFailed } from "./load-failed";
 import { TargetFields } from "./target-fields";
 
 interface ExperimentFormProps {
   state: FormState;
   errors: FormErrors;
   onChange: (patch: Partial<FormState>) => void;
-  /** Undefined while the datasets load. */
+  /** Undefined while the datasets load, or when they failed to (`datasetsFailed`). */
   datasets: Dataset[] | undefined;
+  datasetsFailed: boolean;
+  onRetryDatasets: () => void;
 }
 
 /** The four cards of Figma "Experiments — Create": basics, target, evaluators and limits. */
-export function ExperimentForm({ state, errors, onChange, datasets }: ExperimentFormProps) {
+export function ExperimentForm({
+  state,
+  errors,
+  onChange,
+  datasets,
+  datasetsFailed,
+  onRetryDatasets,
+}: ExperimentFormProps) {
   const dataset = datasets?.find((item) => item.id === state.datasetId);
   return (
     <div className="flex flex-col gap-5">
@@ -43,7 +53,9 @@ export function ExperimentForm({ state, errors, onChange, datasets }: Experiment
             className="font-mono text-xs"
           />
         </FormField>
-        {datasets === undefined ? (
+        {datasetsFailed ? (
+          <LoadFailed what="datasets" onRetry={onRetryDatasets} />
+        ) : datasets === undefined ? (
           <Skeleton className="h-[72px] w-full rounded-input" />
         ) : (
           <FormField

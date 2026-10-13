@@ -92,6 +92,8 @@ export function NewExperimentPage() {
               errors={errors}
               onChange={change}
               datasets={datasets.data}
+              datasetsFailed={datasets.isError}
+              onRetryDatasets={() => void datasets.refetch()}
             />
             {errors.form ? (
               <Notice tone="danger" role="alert">

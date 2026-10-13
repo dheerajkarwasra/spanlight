@@ -9,6 +9,7 @@ import { formatCost } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import { useEvaluatorBudgets, useEvaluatorsQuery } from "./experiment-queries";
+import { LoadFailed } from "./load-failed";
 import { KindChip } from "./score-chips";
 
 interface EvaluatorPickerProps {
@@ -41,9 +42,7 @@ export function EvaluatorPicker({ selected, onChange }: EvaluatorPickerProps) {
     return <Skeleton className="h-[136px] w-full rounded-tile" />;
   }
   if (evaluators.isError) {
-    return (
-      <Notice tone="danger">Couldn't load the evaluators. Reload the page to try again.</Notice>
-    );
+    return <LoadFailed what="evaluators" onRetry={() => void evaluators.refetch()} />;
   }
   if (evaluators.data.length === 0) {
     return (

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useReducer, useRef } from "react";
 
 import { useRefreshScores } from "@/features/scores";
 import { useProjectParams } from "@/features/shell";
-import { annotationsApi, type CompletedScore } from "@/lib/api";
+import { annotationsApi, type CompletedScore, type QueueItem } from "@/lib/api";
 
 import { isClaimLost, workNotice } from "./annotation-errors";
 import { useInvalidateQueues } from "./annotation-queries";
@@ -14,13 +14,49 @@ interface SessionKey {
   queueId: string;
 }
 
-function sameQueue(a: SessionKey | null, b: SessionKey): boolean {
-  return a !== null && a.projectId === b.projectId && a.queueId === b.queueId;
-}
-
 function releaseQuietly(key: SessionKey, itemId: string): void {
   // Fire and forget: nobody is waiting. An unreleased claim still frees itself in 30 minutes.
   annotationsApi.release(key.projectId, key.queueId, itemId).catch(() => undefined);
+}
+
+/** A claim request on the wire, shared by every session on its queue. */
+interface InFlightClaim {
+  answer: Promise<QueueItem | undefined>;
+  /** Set when the session that sent it goes away; cleared when a new session adopts it. */
+  orphaned: boolean;
+  /** Set once an orphan's item has been given back, so a second abandoned session does not. */
+  released: boolean;
+}
+
+/**
+ * Claims still waiting for their answer, by queue. Module-level because the page can remount as a
+ * new component on the same queue while its first claim is on the wire (the app shell swaps its
+ * layout when navigation into work mode resolves; StrictMode does the same in development). A
+ * second claim sent then would skip the row the first one still holds and come back empty, ending
+ * the session while an item is pending, so the remounted page adopts the first claim instead.
+ */
+const inFlightClaims = new Map<string, InFlightClaim>();
+
+function claimFor(key: SessionKey): InFlightClaim {
+  const id = `${key.projectId}/${key.queueId}`;
+  const pending = inFlightClaims.get(id);
+  if (pending?.orphaned) {
+    pending.orphaned = false;
+    return pending;
+  }
+  const claim: InFlightClaim = {
+    answer: annotationsApi.claim(key.projectId, key.queueId),
+    orphaned: false,
+    released: false,
+  };
+  inFlightClaims.set(id, claim);
+  const forget = () => {
+    if (inFlightClaims.get(id) === claim) {
+      inFlightClaims.delete(id);
+    }
+  };
+  claim.answer.then(forget, forget);
+  return claim;
 }
 
 /**
@@ -45,6 +81,8 @@ export function useWorkSession(queueId: string) {
   const busy = useRef<SaveAction | "claim" | null>(null);
   /** Bumped when a claim is abandoned, so its late answer is not applied. */
   const claimSeq = useRef(0);
+  /** The claim this session is waiting on, so leaving the page can hand it on. */
+  const claiming = useRef<InFlightClaim | null>(null);
   const invalidateRef = useRef(invalidate);
   const refreshScoresRef = useRef(refreshScores);
   useEffect(() => {
@@ -61,25 +99,29 @@ export function useWorkSession(queueId: string) {
     busy.current = "claim";
     const seq = ++claimSeq.current;
     dispatch({ type: "claim_started" });
+    const claim = claimFor(key);
+    claiming.current = claim;
     let item;
     try {
-      item = await annotationsApi.claim(key.projectId, key.queueId);
+      item = await claim.answer;
     } catch (error) {
       if (seq === claimSeq.current) {
         busy.current = null;
+        claiming.current = null;
         dispatch({ type: "claim_failed", error });
       }
       return;
     }
     if (seq !== claimSeq.current) {
-      // Abandoned. A remount on the same queue claims again and gets this same item back (a
-      // claim returns the caller's own item first); otherwise give it back now.
-      if (item !== undefined && !sameQueue(active.current, key)) {
+      // Abandoned. A session that adopted this claim shows the item; otherwise give it back now.
+      if (item !== undefined && claim.orphaned && !claim.released) {
+        claim.released = true;
         releaseQuietly(key, item.id);
       }
       return;
     }
     busy.current = null;
+    claiming.current = null;
     held.current = item?.id ?? null;
     heldTrace.current = item?.trace_id ?? null;
     dispatch({ type: "claimed", item });
@@ -95,6 +137,10 @@ export function useWorkSession(queueId: string) {
       claimSeq.current += 1;
       if (busy.current === "claim") {
         busy.current = null;
+        if (claiming.current !== null) {
+          claiming.current.orphaned = true;
+          claiming.current = null;
+        }
       }
       const itemId = held.current;
       held.current = null;

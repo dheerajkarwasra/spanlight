@@ -50,7 +50,6 @@ export function ProbabilityField({ value, onChange, error }: ProbabilityFieldPro
         </div>
       </div>
       <SliderPrimitive.Root
-        aria-label="Probability in percent"
         min={0}
         max={100}
         step={1}
@@ -64,6 +63,7 @@ export function ProbabilityField({ value, onChange, error }: ProbabilityFieldPro
           <SliderPrimitive.Range className="absolute h-full rounded-full bg-accent" />
         </SliderPrimitive.Track>
         <SliderPrimitive.Thumb
+          aria-label="Probability in percent"
           aria-valuetext={`${percent ?? 0} %`}
           className={cn(
             "block size-5 rounded-full border-2 border-accent bg-surface shadow-card",

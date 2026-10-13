@@ -1,18 +1,7 @@
-import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
-import { SHOTS, shotSources, type ShotId } from "./landing-shots";
-
-/** Every captured screenshot, keyed by file name ("hero-light@1x.webp" → hashed asset URL). */
-const SHOT_URLS: Record<string, string> = Object.fromEntries(
-  Object.entries(
-    import.meta.glob<string>("../../assets/landing/*.webp", {
-      eager: true,
-      query: "?url",
-      import: "default",
-    }),
-  ).map(([path, url]) => [path.slice(path.lastIndexOf("/") + 1), url]),
-);
+import { SHOTS, type ShotId } from "./landing-shots";
+import { useShotSources } from "./use-shot-sources";
 
 interface LandingShotProps {
   shot: ShotId;
@@ -27,9 +16,8 @@ interface LandingShotProps {
  * empty (and is hidden from assistive tech) instead of showing a stand-in image.
  */
 export function LandingShot({ shot, priority = false, className }: LandingShotProps) {
-  const { resolvedTheme } = useTheme();
   const spec = SHOTS[shot];
-  const sources = shotSources(shot, resolvedTheme, SHOT_URLS);
+  const sources = useShotSources(shot);
   const frameClass = cn("block h-auto w-full bg-surface-muted", className);
 
   if (!sources) {

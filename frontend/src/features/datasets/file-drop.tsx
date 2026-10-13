@@ -50,6 +50,7 @@ export function FileDrop({ chosen, onChoose, onClear }: FileDropProps) {
         id={inputId}
         type="file"
         accept=".jsonl,.csv"
+        aria-label="Choose a .jsonl or .csv file"
         className="sr-only"
         onChange={(event) => {
           const file = event.target.files?.[0];

@@ -44,9 +44,10 @@ export function barShare(ratio: number): number {
   return Math.min(Math.max(ratio, 0), 1);
 }
 
-/** "82%". */
+/** "82%", rounded down so "100%" means the budget is used up (99.6 % reads "99%"). */
 export function usedPercent(ratio: number): string {
-  return `${Math.round(ratio * 100)}%`;
+  // The epsilon keeps a float like 0.29 * 100 = 28.999… from flooring to 28.
+  return `${Math.floor(ratio * 100 + 1e-9)}%`;
 }
 
 /** "October 2026" for the UTC month the budget covers. */

@@ -20,10 +20,13 @@ export const SAME_RELEASE_NOTICE =
   "Baseline and candidate are the same release. Choose two different releases to compare.";
 const PICK_REASON = "Choose a baseline and a candidate to compare.";
 const UNAVAILABLE = "Unavailable for this range";
+const FAILED = "Couldn't load releases";
 
 interface ReleasePickerProps {
-  /** `undefined` while the list loads. */
+  /** `undefined` while the list loads, or when it failed to (`failed`). */
   releases: readonly ReleaseStats[] | undefined;
+  /** The list failed to load: the selects are disabled instead of loading forever. */
+  failed: boolean;
   /** The releases in the URL. The parent re-keys the picker when they change. */
   a: string | undefined;
   b: string | undefined;
@@ -33,7 +36,14 @@ interface ReleasePickerProps {
 }
 
 /** Figma "Compare releases" card: baseline and candidate selects, then the Compare button. */
-export function ReleasePicker({ releases, a, b, unavailable, onCompare }: ReleasePickerProps) {
+export function ReleasePicker({
+  releases,
+  failed,
+  a,
+  b,
+  unavailable,
+  onCompare,
+}: ReleasePickerProps) {
   const [draftA, setDraftA] = useState(a);
   const [draftB, setDraftB] = useState(b);
   const same = draftA !== undefined && draftA === draftB;
@@ -47,6 +57,7 @@ export function ReleasePicker({ releases, a, b, unavailable, onCompare }: Releas
           value={draftA}
           onChange={setDraftA}
           releases={releases}
+          failed={failed}
           unavailable={unavailable}
         />
         <ArrowRight
@@ -58,6 +69,7 @@ export function ReleasePicker({ releases, a, b, unavailable, onCompare }: Releas
           value={draftB}
           onChange={setDraftB}
           releases={releases}
+          failed={failed}
           unavailable={unavailable}
         />
         {ready ? (
@@ -91,24 +103,45 @@ interface ReleaseSelectProps {
   value: string | undefined;
   onChange: (release: string) => void;
   releases: readonly ReleaseStats[] | undefined;
+  failed: boolean;
   unavailable: boolean;
 }
 
-function ReleaseSelect({ label, value, onChange, releases, unavailable }: ReleaseSelectProps) {
+function ReleaseSelect({
+  label,
+  value,
+  onChange,
+  releases,
+  failed,
+  unavailable,
+}: ReleaseSelectProps) {
   const id = useId();
   const empty = releases !== undefined && releases.length === 0;
+  const missing = releases === undefined && (failed || unavailable);
   const known = releases?.some((release) => release.release === value) ?? false;
 
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-2">
       <Label htmlFor={id}>{label}</Label>
-      {releases === undefined ? (
+      {releases === undefined && !missing ? (
         <Skeleton className="h-[46px] w-full rounded-input" />
       ) : (
-        <Select value={value ?? ""} onValueChange={onChange} disabled={empty || unavailable}>
+        <Select
+          value={value ?? ""}
+          onValueChange={onChange}
+          disabled={empty || unavailable || missing}
+        >
           <SelectTrigger id={id}>
             <SelectValue
-              placeholder={unavailable ? UNAVAILABLE : empty ? "No releases" : "Select a release"}
+              placeholder={
+                unavailable
+                  ? UNAVAILABLE
+                  : missing
+                    ? FAILED
+                    : empty
+                      ? "No releases"
+                      : "Select a release"
+              }
             />
           </SelectTrigger>
           <SelectContent>
@@ -117,7 +150,7 @@ function ReleaseSelect({ label, value, onChange, releases, unavailable }: Releas
                 <ReleaseOption name={value} meta={null} />
               </SelectItem>
             ) : null}
-            {releases.map((release) => (
+            {(releases ?? []).map((release) => (
               <SelectItem key={release.release} value={release.release}>
                 <ReleaseOption name={release.release} meta={metaLine(release)} />
               </SelectItem>
