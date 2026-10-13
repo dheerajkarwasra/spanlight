@@ -53,16 +53,30 @@ function requireEnv(name: string): string {
   return value.replace(/\/+$/, "");
 }
 
-/** Starts a demo session from the landing page and returns where it landed. */
+/**
+ * Starts a demo session from the landing page and returns where it landed. Dashboard URLs name
+ * the org and project by slug, so the ids the API needs are looked up from those slugs.
+ */
 async function startDemo(page: Page, baseUrl: string): Promise<Workspace> {
   await page.goto(`${baseUrl}/`);
   await page.getByRole("button", { name: "Try the live demo" }).first().click();
-  await page.waitForURL(/\/[0-9a-f-]{36}\/[0-9a-f-]{36}\//, { timeout: 30_000 });
-  const [orgId, projectId] = new URL(page.url()).pathname.split("/").filter(Boolean);
-  if (!orgId || !projectId) {
+  await page.waitForURL((url) => url.pathname.split("/").filter(Boolean).length >= 2, {
+    timeout: 30_000,
+  });
+  const [orgSlug, projectSlug] = new URL(page.url()).pathname.split("/").filter(Boolean);
+  const me = (await getJson(page, baseUrl, "/auth/me")) as {
+    memberships: { org: { id: string; slug: string } }[];
+  };
+  const org = me.memberships.map((membership) => membership.org).find((o) => o.slug === orgSlug);
+  if (!org) {
     throw new Error(`Unexpected demo URL: ${page.url()}`);
   }
-  return { orgId, projectId };
+  const projects = await listItems(page, baseUrl, `/orgs/${org.id}/projects`);
+  const project = projects.find((item) => item.slug === projectSlug);
+  if (!project) {
+    throw new Error(`Unexpected demo URL: ${page.url()}`);
+  }
+  return { orgId: org.id, projectId: String(project.id) };
 }
 
 async function getJson(page: Page, baseUrl: string, path: string): Promise<unknown> {

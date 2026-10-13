@@ -21,11 +21,12 @@ export function gatewayWindow(range: ResolvedRange): ResolvedRange {
     : resolveRange({ range: GATEWAY_TIME_RANGE_OPTIONS.fallback });
 }
 
+/** A no-break space keeps "24" and "h" on one line when a KPI detail wraps (T7-07). */
 const WINDOW_PHRASES: Record<RangeValue, string> = {
-  "1h": "last 1 h",
-  "24h": "last 24 h",
-  "7d": "last 7 d",
-  "30d": "last 30 d",
+  "1h": "last 1\u00a0h",
+  "24h": "last 24\u00a0h",
+  "7d": "last 7\u00a0d",
+  "30d": "last 30\u00a0d",
   custom: "this window",
 };
 

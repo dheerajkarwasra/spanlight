@@ -25,8 +25,13 @@ function isSpanDetailTab(value: string): value is SpanDetailTab {
   return (SPAN_DETAIL_TABS as readonly string[]).includes(value);
 }
 
-/** Figma "Traces/Pill tab": equal-width pills on a surface-muted track. */
-const TAB_TRIGGER = "h-[34px] min-w-0 flex-1 px-3.5";
+/**
+ * Figma "Traces/Pill tab": equal-width pills on a surface-muted track. Four labels need about
+ * 450 px in one row, so a narrower card shows them as a 2×2 grid (Figma "Fixes 2026-10-13",
+ * T7-06); the breakpoint is the card's own width, since the panel is narrow on desktop too.
+ */
+const TAB_LIST = "grid w-full grid-cols-2 gap-1 rounded-tile border-0 @md:flex @md:rounded-full";
+const TAB_TRIGGER = "h-[34px] min-w-0 px-3.5 @md:flex-1";
 
 interface SpanDetailPanelProps {
   span: Span;
@@ -57,9 +62,9 @@ export function SpanDetailPanel({
               onTabChange(next);
             }
           }}
-          className="flex min-w-0 flex-col"
+          className="@container flex min-w-0 flex-col"
         >
-          <TabsList aria-label="Span details" className="flex w-full gap-1 border-0">
+          <TabsList aria-label="Span details" className={TAB_LIST}>
             <TabsTrigger value="io" className={TAB_TRIGGER}>
               Input / Output
             </TabsTrigger>

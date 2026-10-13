@@ -2,61 +2,16 @@ import { useCallback, useEffect, useReducer, useRef } from "react";
 
 import { useRefreshScores } from "@/features/scores";
 import { useProjectParams } from "@/features/shell";
-import { annotationsApi, type CompletedScore, type QueueItem } from "@/lib/api";
+import { annotationsApi, type CompletedScore } from "@/lib/api";
 
 import { isClaimLost, workNotice } from "./annotation-errors";
 import { useInvalidateQueues } from "./annotation-queries";
+import { claimFor, type InFlightClaim, type SessionKey } from "./in-flight-claims";
 import { canClaim, INITIAL_WORK_STATE, workReducer, type SaveAction } from "./work-state";
-
-/** The queue a mounted session works on; null once the page has gone. */
-interface SessionKey {
-  projectId: string;
-  queueId: string;
-}
 
 function releaseQuietly(key: SessionKey, itemId: string): void {
   // Fire and forget: nobody is waiting. An unreleased claim still frees itself in 30 minutes.
   annotationsApi.release(key.projectId, key.queueId, itemId).catch(() => undefined);
-}
-
-/** A claim request on the wire, shared by every session on its queue. */
-interface InFlightClaim {
-  answer: Promise<QueueItem | undefined>;
-  /** Set when the session that sent it goes away; cleared when a new session adopts it. */
-  orphaned: boolean;
-  /** Set once an orphan's item has been given back, so a second abandoned session does not. */
-  released: boolean;
-}
-
-/**
- * Claims still waiting for their answer, by queue. Module-level because the page can remount as a
- * new component on the same queue while its first claim is on the wire (the app shell swaps its
- * layout when navigation into work mode resolves; StrictMode does the same in development). A
- * second claim sent then would skip the row the first one still holds and come back empty, ending
- * the session while an item is pending, so the remounted page adopts the first claim instead.
- */
-const inFlightClaims = new Map<string, InFlightClaim>();
-
-function claimFor(key: SessionKey): InFlightClaim {
-  const id = `${key.projectId}/${key.queueId}`;
-  const pending = inFlightClaims.get(id);
-  if (pending?.orphaned) {
-    pending.orphaned = false;
-    return pending;
-  }
-  const claim: InFlightClaim = {
-    answer: annotationsApi.claim(key.projectId, key.queueId),
-    orphaned: false,
-    released: false,
-  };
-  inFlightClaims.set(id, claim);
-  const forget = () => {
-    if (inFlightClaims.get(id) === claim) {
-      inFlightClaims.delete(id);
-    }
-  };
-  claim.answer.then(forget, forget);
-  return claim;
 }
 
 /**

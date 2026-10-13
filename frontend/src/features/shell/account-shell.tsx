@@ -44,10 +44,14 @@ export function AccountShell({ children }: AccountShellProps) {
           <Link to="/" className="rounded-full">
             <Logo />
           </Link>
-          <Button asChild variant="ghost" size="sm">
-            <Link to="/">
+          {/*
+            Below 640 px the label would sit under the theme toggle (T7-05): the link becomes an
+            icon circle, and the label stays its accessible name.
+          */}
+          <Button asChild variant="ghost" size="sm" className="max-sm:size-10 max-sm:px-0">
+            <Link to="/" title="Back to app">
               <ArrowLeft aria-hidden />
-              Back to app
+              <span className="max-sm:sr-only">Back to app</span>
             </Link>
           </Button>
         </div>

@@ -72,8 +72,13 @@ function TraceSummaryStrip({ trace }: { trace: TraceDetail }) {
   const totalTokens = trace.input_tokens + trace.output_tokens;
   return (
     <dl className="grid grid-cols-2 gap-y-4 rounded-tile bg-hero-card py-4.5 text-hero-card-foreground sm:grid-cols-3 lg:grid-cols-[12.25rem_repeat(5,minmax(0,1fr))] dark:border dark:border-border">
-      <Stat label="Started">
-        <ValueOnInk value={formatTimestamp(trace.started_at)} reason="The start time is invalid" />
+      {/* Two columns at 375 px leave no room for date and time on one line: it wraps, never cuts. */}
+      <Stat label="Started" wrap>
+        <ValueOnInk
+          value={formatTimestamp(trace.started_at)}
+          reason="The start time is invalid"
+          wrap
+        />
       </Stat>
       <Stat label="Duration">
         <ValueOnInk value={formatDuration(trace.duration_ms)} reason="Duration isn't known yet" />
@@ -107,23 +112,46 @@ function TraceSummaryStrip({ trace }: { trace: TraceDetail }) {
   );
 }
 
+interface ValueOnInkProps {
+  value: string | null;
+  reason: string;
+  /** Wrap onto a second line below the sm breakpoint instead of truncating. */
+  wrap?: boolean;
+}
+
 /** A strip value, or the unknown placeholder in light-on-dark colours. */
-function ValueOnInk({ value, reason }: { value: string | null; reason: string }) {
+function ValueOnInk({ value, reason, wrap = false }: ValueOnInkProps) {
   if (value === null || value === "") {
     return <UnknownValue reason={reason} tone="on-ink" />;
   }
   return (
-    <span title={value} className="truncate tabular">
+    <span title={value} className={cn("tabular", wrap ? "sm:truncate" : "truncate")}>
       {value}
     </span>
   );
 }
 
-function Stat({ label, children }: { label: string; children: ReactNode }) {
+function Stat({
+  label,
+  wrap = false,
+  children,
+}: {
+  label: string;
+  /** Let the value wrap below the sm breakpoint. */
+  wrap?: boolean;
+  children: ReactNode;
+}) {
   return (
     <div className="flex min-w-0 flex-col gap-1 px-5 lg:border-l lg:border-rail-tile lg:first:border-l-0">
       <dt className="text-xs font-medium text-rail-muted-foreground">{label}</dt>
-      <dd className="flex min-w-0 items-baseline gap-2 text-card whitespace-nowrap">{children}</dd>
+      <dd
+        className={cn(
+          "flex min-w-0 items-baseline gap-2 text-card",
+          wrap ? "sm:whitespace-nowrap" : "whitespace-nowrap",
+        )}
+      >
+        {children}
+      </dd>
     </div>
   );
 }

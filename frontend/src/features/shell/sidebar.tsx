@@ -8,6 +8,7 @@ import { OpenCriticalBadge } from "./nav-badge";
 import { NAV_GROUPS, type NavGroup, type NavItem } from "./nav-items";
 import { useProjectParams, useProjectQuery } from "./project-context";
 import { ProjectSwitcher } from "./project-switcher";
+import { RailScrollArea } from "./rail-scroll-area";
 import { isBlockedByTwoFactor } from "./two-factor-gate";
 import { UserMenu } from "./user-menu";
 
@@ -115,10 +116,13 @@ function NavGroupItems({ group, settingsLocked, onNavigate }: NavGroupItemsProps
 
 /**
  * The floating dark rail (Figma "App/Rail"): logo, project switcher, pill navigation with a
- * lime active state, the "Connect your app" tile and the account tile.
+ * lime active state, the "Connect your app" tile and the account tile. The header and footer stay
+ * put and only the navigation scrolls, with the current page kept in view (Figma "Fixes
+ * 2026-10-13"). On a window too short for that (600 px or less) the whole rail scrolls instead.
  */
 export function Sidebar({ onNavigate, headerAction, className }: SidebarProps) {
   const params = useProjectParams();
+  const pathname = useLocation({ select: (location) => location.pathname });
   // While the org demands two-factor authentication, its settings are locked: Settings opens the
   // account's Security page instead, the one that is not.
   const settingsLocked = isBlockedByTwoFactor(useProjectQuery());
@@ -130,27 +134,32 @@ export function Sidebar({ onNavigate, headerAction, className }: SidebarProps) {
         className,
       )}
     >
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex shrink-0 items-center justify-between gap-2">
         <Logo tone="on-dark" />
         {headerAction}
       </div>
 
       <ProjectSwitcher variant="rail" />
 
-      <nav aria-label="Main">
-        <ul className="flex flex-col gap-1">
-          {NAV_GROUPS.filter((group) => group.items.length > 0).map((group, index) => (
-            <NavGroupItems
-              key={group.heading ?? index}
-              group={group}
-              settingsLocked={settingsLocked}
-              onNavigate={onNavigate}
-            />
-          ))}
-        </ul>
-      </nav>
+      <RailScrollArea
+        revealKey={pathname}
+        className="flex-1 [@media(max-height:37.5rem)]:flex-none"
+      >
+        <nav aria-label="Main">
+          <ul className="flex flex-col gap-1">
+            {NAV_GROUPS.filter((group) => group.items.length > 0).map((group, index) => (
+              <NavGroupItems
+                key={group.heading ?? index}
+                group={group}
+                settingsLocked={settingsLocked}
+                onNavigate={onNavigate}
+              />
+            ))}
+          </ul>
+        </nav>
+      </RailScrollArea>
 
-      <div className="mt-auto flex flex-col gap-3">
+      <div className="flex shrink-0 flex-col gap-3">
         <Link
           to="/onboarding"
           search={{ org: params.orgId, project: params.projectId }}
