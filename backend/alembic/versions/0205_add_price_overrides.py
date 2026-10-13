@@ -13,8 +13,10 @@ Choices worth knowing about:
 
 * The money columns match `model_prices` (`numeric(12, 6)`, not negative), so a rate means the
   same thing in both tables.
-* `provider` and `model_pattern` are stored lower-case, as the seed table does, because the
-  price lookup lower-cases the model it is given. The CHECKs make the stored form the only form.
+* `provider` and `model_pattern` are stored lower-case, as the seed table does. The CHECKs make
+  the stored form the only form. (The price lookup lower-cased the model when this was written;
+  since 2026-10-13 it matches the model case-sensitively, so an override prices lower-case
+  model names only.)
 * The table is scoped to an organization, not a project, so it has no row-level security: every
   query filters by `org_id` (`app.pricing.queries`). `org_id` cascades, so deleting an
   organization deletes its overrides.

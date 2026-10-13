@@ -41,7 +41,9 @@ Choices worth knowing about:
   that wrote it). The column and its partial index were created by 0502. The key is added
   `NOT VALID` and validated in a second statement, so the scan of `scores` does not hold the
   lock that blocks writes; every existing value is NULL (on a first upgrade nothing set one, and
-  the downgrade clears them), so validation cannot fail.
+  the downgrade clears them), so validation cannot fail. It runs with the worker bypass set
+  (`_validate`): `scores` forces row-level security on its owner, and Postgres validates a
+  foreign key with a query the policies filter, so without the bypass a dangling id would pass.
 
 Downgrade drops the foreign key, clears `scores.evaluator_run_id` (what `ON DELETE SET NULL` does
 when the runs go, so a score never points at a run that no longer exists and the next upgrade
@@ -164,7 +166,35 @@ def _link_scores() -> None:
         f"ALTER TABLE scores ADD CONSTRAINT {SCORES_FK} FOREIGN KEY (evaluator_run_id) "
         "REFERENCES evaluator_runs (id) ON DELETE SET NULL NOT VALID"
     )
-    op.execute(f"ALTER TABLE scores VALIDATE CONSTRAINT {SCORES_FK}")
+    _validate("scores", SCORES_FK)
+
+
+# Copied on purpose into each migration that validates: migrations do not import app code or
+# each other, so a later change to a shared helper cannot rewrite what a shipped one did.
+def _validate(table: str, constraint: str) -> None:
+    """Validate `constraint` against every row of `table`, whatever row-level security hides.
+
+    Migrations run as the table owner, and FORCE ROW LEVEL SECURITY applies the policies to it:
+    Postgres validates a foreign key with a query that sees only the rows the policies let
+    through. (A CHECK is validated by scanning the table, which the policies do not filter; it
+    goes through here too, so every validation follows one rule.) The worker bypass is set for
+    the statement's own transaction and the caller's value restored afterwards; on an error the
+    transaction aborts and discards the setting by itself. One `DO` block, so the setting and the
+    validation share a transaction even inside `autocommit_block()`.
+    """
+    op.execute(
+        f"""
+        DO $$
+        DECLARE
+            previous text := current_setting('app.bypass_rls', true);
+        BEGIN
+            PERFORM set_config('app.bypass_rls', 'on', true);
+            ALTER TABLE {table} VALIDATE CONSTRAINT {constraint};
+            PERFORM set_config('app.bypass_rls', COALESCE(previous, ''), true);
+        END
+        $$
+        """
+    )
 
 
 def downgrade() -> None:

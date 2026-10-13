@@ -89,8 +89,8 @@ def upgrade() -> None:
             f"ADD CONSTRAINT {FINISH_CHECK} CHECK (finish_reason IN ({values})) NOT VALID"
         )
         op.execute("RESET lock_timeout")
-        op.execute(f"ALTER TABLE spans VALIDATE CONSTRAINT {HASH_CHECK}")
-        op.execute(f"ALTER TABLE spans VALIDATE CONSTRAINT {FINISH_CHECK}")
+        _validate("spans", HASH_CHECK)
+        _validate("spans", FINISH_CHECK)
         _build_index(
             INDEX,
             "ON spans (project_id, request_hash, started_at) WHERE request_hash IS NOT NULL",
@@ -105,6 +105,34 @@ def _build_index(name: str, definition: str) -> None:
     if state is False:
         op.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {name}")
     op.execute(f"CREATE INDEX CONCURRENTLY {name} {definition}")
+
+
+# Copied on purpose into each migration that validates: migrations do not import app code or
+# each other, so a later change to a shared helper cannot rewrite what a shipped one did.
+def _validate(table: str, constraint: str) -> None:
+    """Validate `constraint` against every row of `table`, whatever row-level security hides.
+
+    Migrations run as the table owner, and FORCE ROW LEVEL SECURITY applies the policies to it:
+    Postgres validates a foreign key with a query that sees only the rows the policies let
+    through. (A CHECK is validated by scanning the table, which the policies do not filter; it
+    goes through here too, so every validation follows one rule.) The worker bypass is set for
+    the statement's own transaction and the caller's value restored afterwards; on an error the
+    transaction aborts and discards the setting by itself. One `DO` block, so the setting and the
+    validation share a transaction even inside `autocommit_block()`.
+    """
+    op.execute(
+        f"""
+        DO $$
+        DECLARE
+            previous text := current_setting('app.bypass_rls', true);
+        BEGIN
+            PERFORM set_config('app.bypass_rls', 'on', true);
+            ALTER TABLE {table} VALIDATE CONSTRAINT {constraint};
+            PERFORM set_config('app.bypass_rls', COALESCE(previous, ''), true);
+        END
+        $$
+        """
+    )
 
 
 def downgrade() -> None:
