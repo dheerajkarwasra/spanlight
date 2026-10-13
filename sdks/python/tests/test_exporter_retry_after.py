@@ -21,7 +21,7 @@ def test_retry_after_nan_is_ignored(value: str) -> None:
 def test_a_non_finite_retry_after_still_waits_a_finite_backoff() -> None:
     exporter = BatchExporter(url="http://spanlight.test/v1/traces", api_key="k")
     try:
-        delay = exporter._retry_delay(0, parse_retry_after("nan"))
+        delay = exporter._delivery.retry_delay(0, parse_retry_after("nan"))
     finally:
         exporter.shutdown()
 

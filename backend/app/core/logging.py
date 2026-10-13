@@ -17,29 +17,40 @@ def _add_request_id(_: WrappedLogger, __: str, event_dict: EventDict) -> EventDi
     return event_dict
 
 
+_SHARED_PROCESSORS: list[structlog.typing.Processor] = [
+    structlog.contextvars.merge_contextvars,
+    _add_request_id,
+    structlog.stdlib.add_log_level,
+    structlog.stdlib.add_logger_name,
+    structlog.processors.TimeStamper(fmt="iso", utc=True),
+]
+# One list for the life of the process. Loggers are cached on first use together with the list
+# configured at that moment, so every `configure_logging` (one per `create_app`) must hand
+# structlog this same instance: a fresh list would leave earlier module loggers on a stale chain,
+# out of reach of anything that changes the configured chain in place, such as
+# `structlog.testing.capture_logs`.
+_STRUCTLOG_PROCESSORS: list[structlog.typing.Processor] = [
+    *_SHARED_PROCESSORS,
+    structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+]
+
+
 def configure_logging(
     level: str = "INFO", *, json: bool = True, stream: TextIO | None = None
 ) -> None:
     """Route structlog and stdlib logging to `stream` (stdout by default).
 
+    Safe to call more than once: the level, format and stream live on the stdlib handler, which
+    is replaced on every call, while structlog's processor chain stays the same list.
+
     A command that prints a result on stdout passes `sys.stderr`, so the result stays parseable.
     """
-    shared_processors: list[structlog.typing.Processor] = [
-        structlog.contextvars.merge_contextvars,
-        _add_request_id,
-        structlog.stdlib.add_log_level,
-        structlog.stdlib.add_logger_name,
-        structlog.processors.TimeStamper(fmt="iso", utc=True),
-    ]
     renderer: structlog.typing.Processor = (
         structlog.processors.JSONRenderer() if json else structlog.dev.ConsoleRenderer()
     )
 
     structlog.configure(
-        processors=[
-            *shared_processors,
-            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
-        ],
+        processors=_STRUCTLOG_PROCESSORS,
         logger_factory=structlog.stdlib.LoggerFactory(),
         wrapper_class=structlog.stdlib.BoundLogger,
         cache_logger_on_first_use=True,
@@ -47,7 +58,7 @@ def configure_logging(
 
     # Route stdlib logging (uvicorn, sqlalchemy, alembic) through the same renderer.
     formatter = structlog.stdlib.ProcessorFormatter(
-        foreign_pre_chain=shared_processors,
+        foreign_pre_chain=_SHARED_PROCESSORS,
         processors=[
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
             structlog.processors.format_exc_info,

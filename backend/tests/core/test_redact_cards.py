@@ -6,12 +6,24 @@ kept whole. Every 13-19 digit window inside such a run is checked instead.
 """
 
 import random
+import sys
 import time
 
 import pytest
 
 from app.core.redact import REDACTED, redact_text
 from app.ingest.schemas import MAX_BODY_BYTES
+
+
+def _traced() -> bool:
+    """Whether a tracer such as coverage slows every line, which makes a CPU bound meaningless."""
+    coverage = sys.modules.get("coverage")
+    return sys.gettrace() is not None or (
+        coverage is not None and coverage.Coverage.current() is not None
+    )
+
+
+skip_when_traced = pytest.mark.skipif(_traced(), reason="CPU bound is meaningless under a tracer")
 
 
 @pytest.mark.parametrize(
@@ -86,6 +98,7 @@ def test_a_card_behind_small_numbers_is_still_redacted() -> None:
     assert redact_text("1 2 3 4 5 6 7 8 9 4242 4242 4242 4242") == f"1 2 3 4 5 6 7 8 9 {REDACTED}"
 
 
+@skip_when_traced
 @pytest.mark.parametrize("unit", ["1 ", "0 ", "4242 ", "0000 ", "4242-42 "])
 def test_redacting_a_body_sized_run_of_digit_groups_stays_cheap(unit: str) -> None:
     # Redaction runs on the event loop before payloads are cut to 32 KB, so its cost on a whole
@@ -103,6 +116,7 @@ def test_redacting_a_body_sized_run_of_digit_groups_stays_cheap(unit: str) -> No
     assert time.process_time() - started < 3.0
 
 
+@skip_when_traced
 def test_redacting_a_body_of_random_digit_groups_stays_cheap() -> None:
     # Random four-digit groups miss the per-group cache every time, the costliest shape (about
     # 1 s of CPU on a laptop). Same bound and reasoning as the repeated shapes above.

@@ -102,8 +102,15 @@ def _redact_cards(match: re.Match[str]) -> str:
                 break
             if digits >= _CARD_DIGITS.start and total % 10 == 0:
                 covered[start : last + 1] = [True] * (last + 1 - start)
-    # Rebuild the run: groups are joined by one separator character each, and a stretch of
-    # covered groups, with the separators inside it, becomes one marker.
+    return _rebuild_run(run, groups, covered)
+
+
+def _rebuild_run(run: str, groups: list[str], covered: list[bool]) -> str:
+    """`run` with each stretch of covered groups, and the separators inside it, as one marker.
+
+    `groups` is `run` split on its separators, one character each, so a group's position in `run`
+    follows from the lengths before it.
+    """
     pieces: list[str] = []
     position = 0
     for index, group in enumerate(groups):

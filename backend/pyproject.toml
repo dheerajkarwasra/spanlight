@@ -63,6 +63,12 @@ asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 filterwarnings = ["error"]
 
+[tool.coverage.run]
+# SQLAlchemy's async engine runs ORM code inside greenlets; without greenlet
+# tracing, lines executed there are reported as missed.
+concurrency = ["greenlet", "thread"]
+source = ["app"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

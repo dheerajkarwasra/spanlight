@@ -18,7 +18,6 @@ from typing import Any
 
 import httpx
 import pytest
-import structlog
 from aiosmtpd.controller import Controller
 from aiosmtpd.smtp import AuthResult, Envelope, LoginPassword
 from pydantic import SecretStr
@@ -26,7 +25,6 @@ from structlog.testing import capture_logs
 
 from app.config import Settings
 from app.email.message import EmailDeliveryError, EmailMessage
-from app.email.providers import console as console_provider
 from app.email.providers.console import ConsoleEmailSender
 from app.email.providers.resend import ResendEmailSender
 from app.email.providers.smtp import SmtpEmailSender
@@ -429,18 +427,6 @@ async def test_console_fails_loudly_when_the_directory_is_missing(tmp_path: Path
         await sender.send(MESSAGE)
 
 
-@pytest.fixture
-def fresh_console_logger(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Give the console provider a logger that binds on its next use, inside `capture_logs`.
-
-    Loggers are cached on first use (`cache_logger_on_first_use` in `app.core.logging`), so once
-    an earlier test sent an email through the console provider under the app's logging config,
-    its module logger keeps that processor chain and `capture_logs` sees nothing.
-    """
-    monkeypatch.setattr(console_provider, "logger", structlog.get_logger(console_provider.__name__))
-
-
-@pytest.mark.usefixtures("fresh_console_logger")
 @pytest.mark.parametrize("with_file", [True, False])
 async def test_console_provider_never_logs_body(tmp_path: Path, with_file: bool) -> None:
     sender = ConsoleEmailSender(tmp_path / "outbox.jsonl" if with_file else None)
@@ -454,7 +440,6 @@ async def test_console_provider_never_logs_body(tmp_path: Path, with_file: bool)
     assert TOKEN not in rendered and "reset-password" not in rendered
 
 
-@pytest.mark.usefixtures("fresh_console_logger")
 async def test_console_without_a_file_only_logs() -> None:
     with capture_logs() as logs:
         await ConsoleEmailSender(None).send(MESSAGE)

@@ -11,6 +11,7 @@ Design goals, in priority order:
 3. **Deliver what we can.** Batches are retried with jittered exponential
    backoff on network errors, ``429`` and ``5xx``, honouring ``Retry-After``.
    Other ``4xx`` responses are permanent failures and are logged, not retried.
+   The sending itself lives in :mod:`spanlight._exporter_delivery`.
 
 Spans and scores share one queue (and so one ``max_queue`` bound). Each cycle
 takes up to ``batch_size`` items, sends the spans first and the scores after,
@@ -19,43 +20,22 @@ so a score recorded after its span never reaches the server before it.
 
 from __future__ import annotations
 
-import email.utils
-import gzip
-import json
 import logging
-import math
 import os
 import random
 import threading
 import time
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Any
 
 import httpx
 
-from ._serialize import JsonValue
-from ._version import __version__
+from ._exporter_delivery import SCORES, SPANS, Delivery, SpanPayload, parse_retry_after
+
+__all__ = ["BatchExporter", "SpanPayload", "parse_retry_after"]
 
 logger = logging.getLogger("spanlight")
 
-SpanPayload = dict[str, JsonValue]
-
-_MAX_LOGGED_REJECTIONS = 10
-
-
-@dataclass(frozen=True)
-class _Target:
-    """One endpoint the exporter delivers to."""
-
-    url: str
-    body_key: str  # the list's key in the request body, and the plural noun in logs
-    id_field: str  # the payload field logged when the server rejects an item
-
-
-_SPANS = "spans"
-_SCORES = "scores"
 _Item = tuple[str, SpanPayload]
 
 
@@ -101,42 +81,32 @@ class BatchExporter:
         base_backoff: float = 0.5,
         max_backoff: float = 30.0,
     ) -> None:
-        self._targets: dict[str, _Target] = {_SPANS: _Target(url, _SPANS, "span_id")}
-        if scores_url is not None:
-            self._targets[_SCORES] = _Target(scores_url, _SCORES, "id")
-        self._scores_unsupported_logged = False
-        self._headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "User-Agent": f"spanlight-python/{__version__}",
-        }
-        if gzip_body:
-            self._headers["Content-Encoding"] = "gzip"
+        self._delivery = Delivery(
+            url=url,
+            api_key=api_key,
+            scores_url=scores_url,
+            gzip_body=gzip_body,
+            timeout=timeout,
+            max_retries=max_retries,
+            transport=transport,
+            sleep=sleep,
+            jitter=jitter,
+            base_backoff=base_backoff,
+            max_backoff=max_backoff,
+        )
         self._batch_size = batch_size
         self._flush_interval = flush_interval
         self._max_queue = max_queue
-        self._gzip = gzip_body
-        self._timeout = timeout
-        self._max_retries = max_retries
-        self._transport = transport
-        self._sleep = sleep if sleep is not None else self._interruptible_sleep
-        self._jitter = jitter
-        self._base_backoff = base_backoff
-        self._max_backoff = max_backoff
 
         self._condition = threading.Condition()
         self._queue: deque[_Item] = deque()
         self._in_flight = 0
         self._flush_requested = False
         self._closed = False
-        self._abort_retries = threading.Event()
         self._worker: threading.Thread | None = None
-        self._client: httpx.Client | None = None
         self._pid = os.getpid()
 
         self._dropped = 0
-        self._failed = 0
-        self._sent = 0
 
     # ------------------------------------------------------------------ #
     # Public API (called from user threads)
@@ -150,23 +120,23 @@ class BatchExporter:
     @property
     def failed_count(self) -> int:
         """Spans and scores lost because their batch could not be delivered."""
-        return self._failed
+        return self._delivery.failed
 
     @property
     def sent_count(self) -> int:
         """Spans and scores delivered and accepted by the server."""
-        return self._sent
+        return self._delivery.sent
 
     def export(self, span: SpanPayload) -> None:
         """Enqueue one serialized span. Never blocks on I/O and never raises."""
-        self._enqueue(_SPANS, span)
+        self._enqueue(SPANS, span)
 
     def export_score(self, score: SpanPayload) -> None:
         """Enqueue one serialized score. Never blocks on I/O and never raises."""
-        if _SCORES not in self._targets:
+        if not self._delivery.accepts(SCORES):
             logger.debug("No score endpoint configured; dropping a score")
             return
-        self._enqueue(_SCORES, score)
+        self._enqueue(SCORES, score)
 
     def _enqueue(self, kind: str, payload: SpanPayload) -> None:
         try:
@@ -228,12 +198,11 @@ class BatchExporter:
             with self._condition:
                 self._closed = True
                 self._condition.notify_all()
-            self._abort_retries.set()
+            self._delivery.abort_retries()
             worker = self._worker
             if worker is not None and worker is not threading.current_thread():
                 worker.join(max(deadline - time.monotonic(), 0.0))
-            if self._client is not None:
-                self._client.close()
+            self._delivery.close()
         except Exception:
             logger.debug("Shutdown failed", exc_info=True)
 
@@ -250,7 +219,7 @@ class BatchExporter:
         self._queue = deque()
         self._in_flight = 0
         self._worker = None
-        self._client = None
+        self._delivery.forget_client()
 
     def _ensure_worker(self) -> None:
         with self._condition:
@@ -271,10 +240,10 @@ class BatchExporter:
             if batch is None:
                 return
             try:
-                for kind in (_SPANS, _SCORES):
+                for kind in (SPANS, SCORES):
                     payloads = [payload for item_kind, payload in batch if item_kind == kind]
                     if payloads:
-                        self._send_guarded(self._targets[kind], payloads)
+                        self._delivery.send(kind, payloads)
             finally:
                 with self._condition:
                     self._in_flight -= len(batch)
@@ -304,163 +273,3 @@ class BatchExporter:
         if self._closed or self._flush_requested:
             return False
         return len(self._queue) < self._batch_size
-
-    def _http_client(self) -> httpx.Client:
-        if self._client is None:
-            self._client = httpx.Client(transport=self._transport, timeout=self._timeout)
-        return self._client
-
-    def _send_guarded(self, target: _Target, batch: list[SpanPayload]) -> None:
-        """Send one target's part of a cycle; a crash here never stops the next part."""
-        try:
-            self._send_batch(target, batch)
-        except Exception:
-            self._failed += len(batch)
-            logger.warning(
-                "Unexpected error exporting %d %s", len(batch), target.body_key, exc_info=True
-            )
-
-    def _send_batch(self, target: _Target, batch: list[SpanPayload]) -> None:
-        if not batch:
-            return
-        body = json.dumps({target.body_key: batch}, separators=(",", ":"), default=str).encode()
-        if self._gzip:
-            body = gzip.compress(body)
-
-        for attempt in range(self._max_retries + 1):
-            retry_after: float | None = None
-            try:
-                response = self._http_client().post(target.url, content=body, headers=self._headers)
-            except httpx.HTTPError as exc:
-                failure = f"{type(exc).__name__}: {exc}"
-            else:
-                status = response.status_code
-                if 200 <= status < 300:
-                    self._handle_success(target, response, batch)
-                    return
-                if status == 413 and len(batch) > 1:
-                    self._split_and_send(target, batch)
-                    return
-                if not _is_retryable(status):
-                    self._failed += len(batch)
-                    self._log_rejected_batch(target, response, len(batch))
-                    return
-                failure = f"HTTP {status}"
-                retry_after = parse_retry_after(response.headers.get("Retry-After"))
-
-            if attempt >= self._max_retries or self._abort_retries.is_set():
-                self._failed += len(batch)
-                logger.warning(
-                    "Dropping %d %s after %d attempts (%s)",
-                    len(batch),
-                    target.body_key,
-                    attempt + 1,
-                    failure,
-                )
-                return
-            delay = self._retry_delay(attempt, retry_after)
-            logger.debug("Export failed (%s); retrying in %.2fs", failure, delay)
-            self._sleep(delay)
-
-    def _split_and_send(self, target: _Target, batch: list[SpanPayload]) -> None:
-        """Retry an oversized (HTTP 413) batch as two smaller ones."""
-        middle = len(batch) // 2
-        self._send_batch(target, batch[:middle])
-        self._send_batch(target, batch[middle:])
-
-    def _log_rejected_batch(self, target: _Target, response: httpx.Response, size: int) -> None:
-        if target.body_key == _SCORES and response.status_code == 404:
-            # A server older than score ingestion: say so once instead of on every batch.
-            if not self._scores_unsupported_logged:
-                self._scores_unsupported_logged = True
-                logger.warning(
-                    "This Spanlight server does not accept scores (HTTP 404); dropping them"
-                )
-            return
-        logger.error(
-            "Spanlight rejected a batch of %d %s: HTTP %d %s",
-            size,
-            target.body_key,
-            response.status_code,
-            _short_body(response),
-        )
-
-    def _handle_success(
-        self, target: _Target, response: httpx.Response, batch: list[SpanPayload]
-    ) -> None:
-        batch_size = len(batch)
-        try:
-            result: Any = response.json()
-        except ValueError:
-            self._sent += batch_size
-            return
-        rejected = result.get("rejected") if isinstance(result, dict) else None
-        if not isinstance(rejected, list) or not rejected:
-            self._sent += batch_size
-            return
-
-        self._sent += batch_size - len(rejected)
-        self._failed += len(rejected)
-        logger.warning(
-            "Spanlight rejected %d of %d %s",
-            len(rejected),
-            batch_size,
-            target.body_key,
-        )
-        for item in rejected[:_MAX_LOGGED_REJECTIONS]:
-            if isinstance(item, dict):
-                index = item.get("index")
-                sent = batch[index] if isinstance(index, int) and 0 <= index < batch_size else {}
-                logger.warning(
-                    "  %s %s (index %s): %s",
-                    target.body_key[:-1],
-                    item.get(target.id_field) or sent.get(target.id_field),
-                    index,
-                    item.get("reason"),
-                )
-
-    def _retry_delay(self, attempt: int, retry_after: float | None) -> float:
-        """Return seconds to wait before retry number ``attempt + 1``.
-
-        ``Retry-After`` wins when present. Otherwise use "equal jitter"
-        exponential backoff: half of the exponential step is fixed and the
-        other half random, which spreads retries out without ever retrying
-        immediately.
-        """
-        if retry_after is not None:
-            return min(max(retry_after, 0.0), self._max_backoff)
-        step = min(self._max_backoff, self._base_backoff * (2.0**attempt))
-        return step / 2 + self._jitter() * step / 2
-
-    def _interruptible_sleep(self, seconds: float) -> None:
-        self._abort_retries.wait(seconds)
-
-
-def _is_retryable(status: int) -> bool:
-    return status == 429 or status >= 500
-
-
-def parse_retry_after(value: str | None) -> float | None:
-    """Parse a ``Retry-After`` header (delta-seconds or HTTP-date) into seconds."""
-    if value is None:
-        return None
-    value = value.strip()
-    try:
-        seconds = float(value)
-    except ValueError:
-        pass
-    else:
-        # `nan` and `inf` parse as floats but are not delays; fall back to the backoff.
-        return max(seconds, 0.0) if math.isfinite(seconds) else None
-    try:
-        moment = email.utils.parsedate_to_datetime(value)
-    except (TypeError, ValueError):
-        return None
-    return max(moment.timestamp() - time.time(), 0.0)
-
-
-def _short_body(response: httpx.Response) -> str:
-    try:
-        return response.text[:500]
-    except Exception:
-        return "<unreadable body>"

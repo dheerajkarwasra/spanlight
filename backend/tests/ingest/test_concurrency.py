@@ -3,6 +3,12 @@
 The requests go through the in-process ASGI client with the app's real connection pool, so
 every batch runs in its own transaction on its own connection. A real server interleaves them
 more finely, but the row locks that serialize them are the same.
+
+The no-deadlock tests send 40 batches at once. On a loaded host some of them can wait longer
+than the pool timeout for a connection, and the api then sheds them with a 503 by design
+(`db_pool_timeout`). That is not a deadlock: Postgres cancels one side of a deadlock, which
+reaches the client as a 500. So those tests resend a shed batch, as a client would, and fail on
+any 500 or on a 503 that was not a pool timeout.
 """
 
 import asyncio
@@ -17,6 +23,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ingest import store
+from tests.gateway_support import logged
 from tests.helpers import (
     Workspace,
     new_span_id,
@@ -29,6 +36,37 @@ CONCURRENT_BATCHES = 10
 ROUNDS = 20
 TRACES_PER_ROUND = 100
 PAUSE_BETWEEN_TRACES = 0.02  # seconds a slowed trace upsert waits after each trace
+SHED_ATTEMPTS = 5  # sends of one batch while the api sheds it with a 503
+
+
+class _Sender:
+    """Ingests batches, sending a batch again after a 503, and counts the 503s it saw."""
+
+    def __init__(self, client: httpx.AsyncClient, workspace: Workspace) -> None:
+        self._client = client
+        self._workspace = workspace
+        self.shed = 0
+
+    async def ingest(self, batch: list[dict[str, Any]]) -> httpx.Response:
+        for _ in range(SHED_ATTEMPTS - 1):
+            response = await ingest_native(self._client, self._workspace, batch)
+            if response.status_code != 503:
+                return response
+            self.shed += 1
+            await asyncio.sleep(float(response.headers["Retry-After"]))
+        return await ingest_native(self._client, self._workspace, batch)
+
+
+def _assert_only_pool_timeouts_shed(sender: _Sender, caplog: pytest.LogCaptureFixture) -> None:
+    """Every 503 was a pool timeout (load shedding), and nothing failed unexpectedly.
+
+    Read from the log records the app really emitted: a deadlock surfaces as an
+    `unhandled_exception` whose traceback names it.
+    """
+    assert logged(caplog, "unhandled_exception") == []
+    assert logged(caplog, "db_statement_timeout") == []
+    assert len(logged(caplog, "db_pool_timeout")) == sender.shed
+    assert "deadlock" not in caplog.text.lower()
 
 
 def _twenty_spans_in_three_traces() -> list[dict[str, Any]]:
@@ -78,15 +116,14 @@ async def test_concurrent_batches_on_the_same_trace_in_opposite_order_do_not_dea
         batches.append([span(trace_id=trace_id, start=start) for trace_id in trace_ids])
         batches.append([span(trace_id=trace_id, start=start) for trace_id in reversed(trace_ids)])
 
-    responses = await asyncio.gather(
-        *(ingest_native(client, workspace, batch) for batch in batches)
-    )
+    sender = _Sender(client, workspace)
+    responses = await asyncio.gather(*(sender.ingest(batch) for batch in batches))
 
     assert [response.status_code for response in responses] == [200] * len(batches)
+    _assert_only_pool_timeouts_shed(sender, caplog)
     spans, traces = await telemetry_rows(session_factory, workspace.project_id)
     assert (len(spans), len(traces)) == (2 * ROUNDS * TRACES_PER_ROUND, ROUNDS * TRACES_PER_ROUND)
     assert {trace["span_count"] for trace in traces} == {2}  # the union of A's and B's spans
-    assert "deadlock" not in caplog.text.lower()
 
 
 async def test_opposite_order_batches_do_not_deadlock_when_each_trace_lock_takes_time(
@@ -123,14 +160,13 @@ async def test_opposite_order_batches_do_not_deadlock_when_each_trace_lock_takes
         batches.append([span(trace_id=trace_id, start=start) for trace_id in trace_ids])
         batches.append([span(trace_id=trace_id, start=start) for trace_id in reversed(trace_ids)])
 
-    responses = await asyncio.gather(
-        *(ingest_native(client, workspace, batch) for batch in batches)
-    )
+    sender = _Sender(client, workspace)
+    responses = await asyncio.gather(*(sender.ingest(batch) for batch in batches))
 
     assert [response.status_code for response in responses] == [200] * len(batches)
+    _assert_only_pool_timeouts_shed(sender, caplog)
     _, traces = await telemetry_rows(session_factory, workspace.project_id)
     assert {trace["span_count"] for trace in traces} == {2}
-    assert "deadlock" not in caplog.text.lower()
 
 
 async def test_concurrent_batches_with_overlapping_spans_keep_one_row_per_span(
