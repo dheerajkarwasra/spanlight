@@ -1,0 +1,22 @@
+---
+/** "Report a problem with this page": a GitHub issue prefilled with the page title and address. */
+import { pageAddress, reportProblemUrl } from '../lib/report-problem.mjs';
+
+const REPOSITORY_URL = 'https://github.com/dheerajkarwasra/spanlight';
+const route = Astro.locals.starlightRoute;
+const href = reportProblemUrl({
+  repoUrl: REPOSITORY_URL,
+  title: route.entry.data.title,
+  pageUrl: pageAddress(Astro.url.pathname, Astro.site),
+});
+---
+
+<a class="report-problem" href={href} rel="noopener">Report a problem with this page</a>
+
+<style>
+  .report-problem {
+    display: inline-block;
+    font-size: var(--sl-text-sm);
+    color: var(--sl-color-text-accent);
+  }
+</style>

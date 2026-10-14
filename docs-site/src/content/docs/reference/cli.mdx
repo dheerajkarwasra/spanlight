@@ -1,0 +1,269 @@
+---
+title: Admin CLI reference
+description: Every command of the spanlight admin CLI, with its arguments, options, what it changes, exit codes and an example, for operators of a self-hosted Spanlight.
+---
+
+{/* Sources: backend/app/cli.py, backend/app/cli_alerts.py, backend/app/cli_demo.py, backend/pyproject.toml, backend/app/config.py, backend/app/alerts/cli_support.py, backend/app/core/security.py, backend/app/db/models/identity.py, backend/app/rollups/jobs.py, deploy/compose.yaml, deploy/Dockerfile */}
+
+The `spanlight` command is the operator's tool for a self-hosted Spanlight. It creates users, resets credentials, runs migrations, takes backups and runs maintenance jobs by hand. It is not the Python SDK; for that see the [Python SDK reference](/docs/reference/python-sdk/).
+
+## Run a command
+
+The command is installed in the backend image that the `api` and `worker` services run. With Docker Compose, run it from the repository root:
+
+```bash
+docker compose -f deploy/compose.yaml --env-file deploy/.env exec api spanlight --help
+```
+
+The examples on this page show only the `spanlight ...` part. Put that prefix before them. From a source checkout, run `cd backend && uv run spanlight ...`.
+
+The CLI reads the same settings as the API: environment variables, and a `.env` file in the working directory. Most commands use `DATABASE_URL`. Each command names any other setting it needs.
+
+Every command takes `--help`. Two kinds of failure exit with a non-zero status:
+
+- A bad option or value prints a usage error and exits with status `2`.
+- A runtime failure prints `Error: ...` to standard error and exits with status `1`.
+
+| Command | What it does |
+| --- | --- |
+| [`create-user`](#create-user) | Creates a user, optionally in an organization. |
+| [`reset-password`](#reset-password) | Sets a new password and signs the user out everywhere. |
+| [`reset-2fa`](#reset-2fa) | Turns two-factor authentication off for a user. |
+| [`sync-prices`](#sync-prices) | Inserts the bundled model price snapshot. |
+| [`reseal-credentials`](#reseal-credentials) | Re-seals provider credentials under the first encryption key. |
+| [`migrate`](#migrate) | Applies database migrations. |
+| [`ensure-app-role`](#ensure-app-role) | Creates the database role the API and worker connect as. |
+| [`rollups backfill`](#rollups-backfill) | Recomputes hourly metric rollups for a time range. |
+| [`alerts evaluate`](#alerts-evaluate) | Runs one alert evaluation pass now. |
+| [`demo seed-evals`](#demo-seed-evals) | Seeds the demo workspace with an experiment. |
+| [`backup now`](#backup-now) | Takes a database backup now. |
+| [`backup list`](#backup-list) | Lists stored backups. |
+| [`restore`](#restore) | Restores a backup into an empty database. |
+
+## Users
+
+### `create-user`
+
+```text
+spanlight create-user --email TEXT --name TEXT [--org TEXT] [--role owner|admin|member|viewer]
+```
+
+| Option | Required | Meaning |
+| --- | --- | --- |
+| `--email` | yes | The user's email address. |
+| `--name` | yes | Display name. |
+| `--org` | no | Slug of an existing organization to add the user to. |
+| `--role` | no | The role in `--org`: `owner`, `admin`, `member` or `viewer`. The default is `member`. |
+
+The command asks for a password twice, hidden. The password must have at least 10 characters. It never takes the password as an option, so it stays out of the process list and the shell history.
+
+**What it changes.** It inserts the user. With `--org` it also adds a membership with the given role and writes an audit-log entry for the organization, marked as made through the CLI. Without `--org` the user belongs to no organization.
+
+**Output.** `Created user <user id> <email>`.
+
+**Errors.** An unknown `--org` slug and an address that already has an account are refused, and nothing is created.
+
+```bash
+spanlight create-user --email ada@example.com --name "Ada Lovelace" --org acme --role member
+```
+
+### `reset-password`
+
+```text
+spanlight reset-password --email TEXT
+```
+
+Sets a new password for the user with that address and revokes all their sessions, so they are signed out everywhere. It asks for the new password twice, hidden, with the same minimum of 10 characters. For every organization the user belongs to, it writes an audit-log entry marked as made through the CLI.
+
+**Output.** `Password reset for <email>; all sessions revoked.` An address with no account is refused.
+
+```bash
+spanlight reset-password --email ada@example.com
+```
+
+### `reset-2fa`
+
+```text
+spanlight reset-2fa --email TEXT
+```
+
+Turns two-factor authentication off for a user who lost both the authenticator app and the recovery codes. It deletes the secret and the recovery codes, as if the user had turned it off. The password and the sessions are left as they are; `reset-password` is the command that signs the user out everywhere. For every organization the user belongs to, it writes an audit-log entry.
+
+**Output.** `Two-factor authentication turned off for <email>; recovery codes deleted.` If the user does not have it turned on, it prints that and changes nothing. An address with no account is refused.
+
+```bash
+spanlight reset-2fa --email ada@example.com
+```
+
+## Database and security
+
+### `migrate`
+
+```text
+spanlight migrate
+```
+
+Applies the database migrations up to the latest one (`alembic upgrade head`) on the database in `DATABASE_URL`. Run it as the database owner, because migrations create and change tables. It takes no options and prints `Database is at the latest migration.`
+
+The Compose stack runs it for you in the `migrate` service on every `up`, followed by `ensure-app-role`. See [Upgrade Spanlight](/docs/self-hosting/upgrades/).
+
+### `ensure-app-role`
+
+```text
+spanlight ensure-app-role [--role TEXT]
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--role` | `spanlight_app` | The role that the API and worker connect as. |
+
+Creates or updates that database role and grants it data access. The role is not a superuser and cannot bypass row-level security, which is what keeps one project's data from another's.
+
+Run it as the database owner, after `migrate` and after a restore. The password is read from `APP_DB_PASSWORD`, which must be set and have at least 16 characters, so it never appears in the process list or the shell history. It prints `Role <name> is ready (no superuser, no RLS bypass).`
+
+```bash
+APP_DB_PASSWORD="$(openssl rand -hex 24)" spanlight ensure-app-role --role spanlight_app
+```
+
+### `reseal-credentials`
+
+```text
+spanlight reseal-credentials
+```
+
+Re-seals every provider credential under the first key of `CREDENTIALS_KEYS`. Run it after you put a new key first in that list. It counts again afterwards, and exits with status `1` while any credential is still sealed under an older key. When it succeeds, nothing needs the older keys any more, and you can remove them.
+
+It prints `Re-sealed <n> provider credentials.` and never prints a key. Credentials that no key in `CREDENTIALS_KEYS` can open are left as they are and reported on standard error, with their ids in the log. Without `CREDENTIALS_KEYS` it fails with `Error: CREDENTIALS_KEYS is not set`. The full procedure is in the [rotate secrets runbook](/docs/runbooks/rotate-secrets/).
+
+### `sync-prices`
+
+```text
+spanlight sync-prices
+```
+
+Inserts the model price snapshot bundled with the server into the price table. Rows that already exist are kept. It prints `Inserted <n> price rows.` See [Cost](/docs/concepts/cost/).
+
+## Maintenance
+
+### `rollups backfill`
+
+```text
+spanlight rollups backfill --project UUID --from DATETIME --to DATETIME
+```
+
+| Option | Required | Meaning |
+| --- | --- | --- |
+| `--project` | yes | The project id. |
+| `--from` | yes | Start of the range, inclusive. ISO 8601; a value without a UTC offset is read as UTC. |
+| `--to` | yes | End of the range, exclusive. Same format. |
+
+Recomputes the hourly metric rollups of one project over the range `[--from, --to)`. Both ends are widened to whole hours. The scheduled job only refreshes the last 48 hours, so use this for spans that arrived more than 48 hours after they started.
+
+The range may not be longer than 90 days, and `--from` must be earlier than `--to`. An unknown project is refused. It prints `Wrote <n> rollup rows.`
+
+```bash
+spanlight rollups backfill --project 3f1c9a52-8d0e-4c1b-9a6e-2b7d5e41c0aa --from 2026-09-01 --to 2026-10-01
+```
+
+### `alerts evaluate`
+
+```text
+spanlight alerts evaluate [--dry-run] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--dry-run` | Evaluate, then roll every change back. |
+| `--json` | Print one JSON object instead of text. |
+
+Runs one alert evaluation pass over every project now, the same work as the worker's job.
+
+**A real pass is not a preview.** It writes each rule's state, opens and resolves events, and queues the notification of every transition in the outbox, which the worker then delivers. While the worker's own pass runs, the two split the rules between them, so set `ALERTS_EVALUATION_ENABLED` to `false` first when you time a pass.
+
+**A dry run keeps nothing.** All of the work is rolled back at the end, and nothing is queued. It does this in one long transaction, so every rule it evaluates stays row-locked until the end. The worker's pass skips those rules for that minute, and an edit of a rule waits. Run it when that is acceptable, with the worker's evaluation off, or against a copy of the database.
+
+Logs go to standard error, so standard output carries only the result:
+
+```text
+Evaluated 12 rules in 3 projects in 0.42 s.
+  ok: 10
+  no_data: 1
+  error: 1
+Transitions: 2
+```
+
+With `--json`, the object has the keys `projects`, `projects_failed`, `rules`, `ok`, `no_data`, `errors`, `transitions`, `seconds` and `dry_run`. The counts of `ok`, `no_data` and `errors` add up to `rules`. A dry run adds the line `Dry run: every change was rolled back.` to the text form.
+
+The command exits with status `1` when a rule or a project failed. See [Alerts](/docs/alerts/) and the [alerts runbook](/docs/runbooks/alerts/).
+
+```bash
+spanlight alerts evaluate --dry-run --json
+```
+
+### `demo seed-evals`
+
+```text
+spanlight demo seed-evals
+```
+
+Seeds the demo project with a prompt, a dataset, a judge and an experiment. It takes no options. It is for the public demo workspace, not for a normal installation.
+
+It creates the prompt `support/answer` (version 1 is the demo bot's answer prompt, version 2 a tightened rewrite; `production` points at version 2 and `staging` at version 1), the dataset `support-questions` from the 50 newest recorded demo answers, the judge `relevance`, and the experiment `answer-v1-vs-v2`. An experiment runs one run at a time, so the first call queues the version 1 run. A second call, once that run has ended, queues the version 2 run. The worker executes the runs. They are real provider calls under the demo credential, and each run is capped at $0.50.
+
+It needs 50 recorded demo answers with stored payloads and an Anthropic credential on the demo organization. Set `ANTHROPIC_API_KEY` and let the worker's demo job run first. It is safe to repeat: what exists is kept and nothing is queued twice.
+
+It exits with status `1` and `Error: demo org has no Anthropic credential` when the credential is missing, and with `Error: need 50 traces, found N` when there are too few answers. If the version 2 run still has to wait for version 1, the output says so. See the [demo evaluations runbook](/docs/runbooks/demo-evals/).
+
+## Backups
+
+Backups need object storage (`S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`) and `BACKUP_DATABASE_URL`. The guide [Back up and restore](/docs/self-hosting/backups/) shows how to set them up and how to rehearse a restore.
+
+### `backup now`
+
+```text
+spanlight backup now
+```
+
+Dumps the database to object storage now and prints the key and the size: `Backed up to <key> (<n> bytes).` It takes no options.
+
+`BACKUPS_ENABLED` only controls the nightly job, so it does not stop a backup you ask for. Old backups are not pruned by this command; the nightly job removes them. If `BACKUP_DATABASE_URL` or the object storage settings are missing, the command exits with status `1` and names what is missing.
+
+```bash
+spanlight backup now
+```
+
+### `backup list`
+
+```text
+spanlight backup list
+```
+
+Lists the stored backups, oldest first. Each line is the key, the size in bytes and the upload time. It prints `No backups found.` when there are none, and it exits with status `1` when object storage is not configured.
+
+### `restore`
+
+```text
+spanlight restore --key TEXT --target-url TEXT
+```
+
+| Option | Required | Meaning |
+| --- | --- | --- |
+| `--key` | yes | The object key of a backup, from `spanlight backup list`. |
+| `--target-url` | yes | The URL of a new, empty database. It can be given by the `RESTORE_TARGET_URL` environment variable instead. |
+
+Restores a backup into an empty database. It refuses a database that already has tables. Prefer the environment variable for the target: a URL on the command line is visible in the process list and the shell history.
+
+On success it prints `Restored <key>.` and a reminder to run `spanlight ensure-app-role` against the restored database, so that the API and worker can connect. Follow the [restore runbook](/docs/runbooks/restore/) for the full procedure, including how to switch the restored database in.
+
+```bash
+RESTORE_TARGET_URL="postgresql://postgres:secret@restore-host:5432/spanlight" \
+  spanlight restore --key backups/2026/10/09/spanlight-20261009T030000Z.dump
+```
+
+## Related pages
+
+- [Back up and restore](/docs/self-hosting/backups/): set up nightly backups and rehearse a restore.
+- [Upgrade Spanlight](/docs/self-hosting/upgrades/): when migrations run and how to go back.
+- [Configuration](/docs/configuration/): every setting the CLI reads.
+- [Accounts and sign-in](/docs/guides/accounts/): the user-facing side of password and two-factor resets.
+- [Runbooks](/docs/runbooks/): restore, rotate secrets, alerts and the demo evaluations.

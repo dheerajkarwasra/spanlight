@@ -25,7 +25,7 @@ The settings every deployment needs to look at.
 | `APP_BASE_URL` | string | `http://localhost:8000` | The public URL the dashboard is served from. It is the allowed `Origin` for state-changing requests and the base of the links in emails and OAuth callbacks. An `https` URL turns on `Secure` cookies and requires a real `SECRET_KEY`. |
 | `ALLOWED_ORIGINS` | comma-separated list | empty | Extra origins allowed to make state-changing requests, comma-separated. Leave empty unless another site must call the API from a browser. |
 | `SECRET_KEY` | secret | built-in development value (do not use) | HMAC key for CSRF tokens and for the short-lived signed state of two-factor and GitHub or Google sign-in. Required when `APP_BASE_URL` uses `https`: the application refuses to start with the built-in development value. Generate a long random string. Rotating it does not sign anyone out. |
-| `CREDENTIALS_KEYS` | secret | unset | Master keys that encrypt stored secrets such as two-factor seeds and gateway provider credentials, as `<key_id>:<base64 of 32 bytes>`, comma-separated. The first entry encrypts new data; keep older entries so existing data stays readable. Unset leaves two-factor authentication and the gateway's provider credentials unavailable. Back the value up: a lost key cannot be recovered. |
+| `CREDENTIALS_KEYS` | secret | unset | Master keys that encrypt stored secrets such as two-factor seeds and gateway provider credentials, as `<key_id>:<base64 of 32 bytes>`, comma-separated. The first entry encrypts new data; keep older entries so existing data stays readable. Unset leaves two-factor authentication and the gateway's provider credentials unavailable. The worker needs the same value as the API: without it the worker cannot open any stored secret: experiment runs and LLM judge evaluators fail with `credentials_not_configured`, webhook evaluators fail with `webhook_secret_unreadable`, Slack, webhook and PagerDuty alerts are not delivered, and demo traffic is skipped. The worker logs a `worker_credentials_keys_missing` warning at start-up. Back the value up: a lost key cannot be recovered. |
 
 ### Email
 
@@ -186,6 +186,22 @@ These are read by `deploy/compose.yaml` and the `web` role, not by the applicati
 | `API_UPSTREAM` | `api:8000` | Where `web` proxies `/api`, `/v1` and `/health` to. |
 | `GATEWAY_UPSTREAM` | `api:8000` | Where `web` proxies `/gw/*` (the LLM gateway) to. The default is the API, which serves the gateway when `GATEWAY_MODE=embedded`. With `GATEWAY_MODE=standalone` and the `standalone-gateway` Compose profile, set it to `gateway:8000`. |
 
+## MinIO variables
+
+<!-- Sources: deploy/compose.minio.yaml -->
+
+These are read by `deploy/compose.minio.yaml`, the optional file that adds a local MinIO object store for trying exports and backups without a cloud account. Start it with `docker compose -f deploy/compose.yaml -f deploy/compose.minio.yaml --env-file deploy/.env up -d --build`. The file sets the `S3_*` variables of the `api` and `worker` for you: the endpoint `http://minio:9000`, the region `us-east-1`, path-style addressing, and a public endpoint of `http://localhost:<MINIO_API_PORT>` for download links. For production, leave the file out and set the `S3_*` variables to a real bucket.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MINIO_ROOT_USER` | `spanlight-minio` | MinIO's root user, which the file also uses as `S3_ACCESS_KEY`. The default is public: change it in `deploy/.env` if anyone else can reach the host. |
+| `MINIO_ROOT_PASSWORD` | `spanlight-minio-secret` | MinIO's root password, which the file also uses as `S3_SECRET_KEY`. The default is public: change it in `deploy/.env` if anyone else can reach the host. |
+| `MINIO_API_PORT` | `9000` | Host port of the MinIO API, bound to `127.0.0.1` only. Browsers download exports from it, so it is also the port in `S3_PUBLIC_ENDPOINT`. |
+| `MINIO_CONSOLE_PORT` | `9001` | Host port of the MinIO web console, bound to `127.0.0.1` only. |
+| `S3_BUCKET` | `spanlight` | Bucket that the one-shot `minio-init` service creates (nothing happens if it exists) and that the `api` and `worker` use. |
+
+Backups also need `BACKUP_DATABASE_URL`, which the MinIO file does not set. See [Back up and restore](/docs/self-hosting/backups/).
+
 ## Generating secrets
 
 ```bash
@@ -194,3 +210,12 @@ echo "v1:$(openssl rand -base64 32)"                               # CREDENTIALS
 ```
 
 To change a secret on a running deployment, follow the [rotate secrets runbook](/docs/runbooks/rotate-secrets/).
+
+## Related pages
+
+- [Self-hosting](/docs/self-hosting/): What runs, how to expose it and how to keep it healthy.
+- [Provider credentials](/docs/gateway/credentials/): Store provider keys encrypted and rotate the master keys.
+- [Data, limits and operations](/docs/guides/data/): Rate limits, backups and monitoring Spanlight itself.
+- [Rotate secrets](/docs/runbooks/rotate-secrets/): Change a secret on a running deployment.
+- [Back up and restore](/docs/self-hosting/backups/): Use the backup settings and rehearse a restore.
+- [Troubleshooting](/docs/troubleshooting/): Fix the most common self-hosting problems.

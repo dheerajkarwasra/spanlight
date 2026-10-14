@@ -1,0 +1,187 @@
+---
+title: Prompts
+description: Keep prompts in Spanlight as immutable versions with movable labels, fetch them from your application with caching and a fallback, and see which version produced every trace.
+sidebar:
+  order: 1
+---
+
+{/* Sources: backend/app/api/prompt_problems.py, backend/app/api/v1/prompts_read.py, frontend/src/features/prompts/prompt-errors.ts, frontend/src/features/prompts/prompts-page.tsx, frontend/src/features/prompts/prompt-detail-page.tsx, frontend/src/features/prompts/usage-card.tsx, sdks/python/src/spanlight/_prompts.py, sdks/python/src/spanlight/_prompt_client.py */}
+
+import NextSteps from '../../components/NextSteps.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+
+A **prompt** is a named template that Spanlight stores for you. Every change is a new, numbered **version** that can never be edited, and **labels** such as `production` point at the version your application should use. Your application asks for "the `production` version of `support/answer`", so you can ship, test or roll back a prompt by moving a label, without a deploy. Every trace that used a version links back to it, so you can see what a change did to latency, tokens and cost.
+
+Anyone who can see the project can read prompts. **Members**, **admins** and **owners** can create prompts, add versions, move labels and delete prompts. Prompts live under **Prompts** in the project.
+
+<Prerequisites
+  items={[
+    'The member, admin or owner role in the project, to create prompts, add versions and move labels. Viewers can read',
+    'To read a prompt from your application: a project API key with the prompts:read scope',
+    'The Python SDK, for the code examples',
+  ]}
+/>
+
+## Prompts and versions
+
+A prompt has a name, an optional description and a **kind**:
+
+| Kind | Template | Use it for |
+| --- | --- | --- |
+| `text` | One block of text | A single instruction or completion prompt |
+| `chat` | 1 to 50 messages, each with a role of `system`, `user` or `assistant` | Chat models |
+
+- **Names** are case-sensitive, at most 128 characters, and unique in the project. They may contain `/` to group prompts (`support/answer`). Each part between slashes starts with a letter or digit and continues with letters, digits, `_`, `.` or `-`, so `.` and `..` are not valid parts. A part cannot be called `versions` or `labels`, because those words follow a name in the API paths. A name that is taken answers `409 NAME_TAKEN`.
+- **Versions are immutable.** The first version is created with the prompt; every change after that is a new version, numbered 2, 3, and so on. The database refuses to change a stored version, so the version a trace points at is exactly what was sent. A version has a template (at most 64 KB), an optional commit message (at most 500 characters) and optional **model advice**.
+- **A prompt keeps its kind.** A text prompt stays text and a chat prompt stays chat (`409 KIND_MISMATCH`).
+- **Saving nothing is refused.** A new version whose template and model advice equal the latest version's is `409 NO_CHANGES`.
+- **A prompt can get 100 new versions a day** (UTC). After that the API answers `429 RATE_LIMITED`, with `Retry-After` set to the time until midnight UTC.
+- **Model advice** is a small object saved with a version: `model`, `temperature` (0 to 2), `max_tokens` and `top_p` (0 to 1), at most 2 KB. Spanlight never uses it to call a model; it travels with the version so your code can read it (`prompt.model_config` in the SDK) and the playground can fill it in.
+
+**Deleting a prompt** deletes all its versions and labels. It is refused with `409 PROMPT_IN_USE` while an [evaluator](/docs/evaluators/) or an [experiment](/docs/experiments/) uses one of its versions, because deleting it would make their results impossible to reproduce. Delete or change them first.
+
+## Templates
+
+A template inserts variables written as `{{name}}`.
+
+```text
+You are a support agent for {{company}}.
+Answer in at most {{max_sentences}} sentences, using only this FAQ entry:
+{{ faq_entry }}
+```
+
+- A variable name starts with a letter or `_` and continues with letters, digits or `_`, up to 64 characters. Spaces and tabs inside the braces are ignored, so `{{ name }}` and `{{name}}` are the same variable.
+- There are no sections, loops, escapes or partials. Values are inserted exactly as given and are never expanded again, so a value that contains `{{x}}` stays as written.
+- A `{{` with no closing `}}` on the same line, or braces around something that is not a valid name, make the template invalid (`422 VALIDATION_ERROR`, naming the line and column). A single `{` or `}}` is plain text.
+- Spanlight works out the template's **variables** itself, in order of first appearance, and returns them with the version.
+- To fill a template, you give a value for every variable. If any are missing, compiling fails and names **all** of them, sorted. Extra values are not an error; they are listed as unused.
+
+The dashboard, the server and the Python SDK follow these rules identically.
+
+## Labels
+
+A **label** is a movable pointer from a name to one version of a prompt. Labels are lowercase, 1 to 32 characters, made of letters, digits, `_` and `-`, and start with a letter or digit. Common choices are `production` and `staging`.
+
+- `PUT /api/v1/projects/{project_id}/prompts/{name}/labels/{label}` with `{"version": 3}` creates the label or moves it, and `DELETE` on the same path removes it. A version can carry any number of labels.
+- **`latest` is reserved.** It always means the highest version, so it cannot be set (`422 LABEL_RESERVED`). Reading `latest` is allowed (below).
+- Moving `production` changes what your application receives the next time it fetches the prompt, which is within the SDK's cache time (60 seconds by default). To roll back, point the label at the older version.
+
+## Read a prompt from your application
+
+### With the Python SDK
+
+```python
+import spanlight
+from openai import OpenAI
+
+spanlight.init()
+client = spanlight.wrap_openai(OpenAI())
+
+prompt = spanlight.prompts.get(
+    "support/answer",  # the "production" label by default
+    fallback=[{"role": "user", "content": "Answer briefly: {{question}}"}],
+)
+compiled = prompt.compile(question="How do refunds work?")
+
+completion = client.chat.completions.create(
+    model=prompt.model_config.get("model", "gpt-4o-mini"),
+    messages=compiled.messages,
+    spanlight_prompt=compiled,  # links the span to this prompt version
+)
+```
+
+`spanlight.prompts.get(name, label="production", *, version=None, fallback=None)` returns a `Prompt` with `name`, `version`, `version_id`, `kind`, `template`, `variables`, `model_config` and `labels`. Pass `version=3` to pin a version number instead of a label. `compile(**variables)` returns the text (`compiled.text`) or the messages (`compiled.messages`, plain `{"role", "content"}` dictionaries that the OpenAI and Anthropic SDKs accept). It raises `MissingVariablesError` for missing variables, `InvalidTemplateError` for a broken template and `TemplateTooLargeError` when the rendered prompt would exceed 256 KB, and all three can be imported from `spanlight`.
+
+How a fetch behaves:
+
+- **Cache.** A fetched prompt is served from memory for `prompt_cache_ttl` seconds (60 by default), then checked again with `If-None-Match`, so an unchanged prompt costs a `304` and no body. Concurrent first calls for the same prompt make one request.
+- **Stale copy.** After the cache time, if Spanlight cannot be reached or answers with an error (network, `5xx`, `429`, even `401`), the SDK keeps serving the copy it has and logs one warning per prompt per minute. A prompt outage does not become an application outage.
+- **Fallback.** With nothing cached, the `fallback` you passed (a text template, or a list of messages) is used, and the returned prompt has `version=None` and `is_fallback` set.
+- **`PromptUnavailableError`.** With no cache, no valid fallback and a failed fetch, `get` raises `PromptUnavailableError`. It is the one exception the SDK raises on purpose, and its message names the prompt and the cause. It is also raised without a request when the name is empty or has an empty, `.` or `..` part.
+- **It blocks.** `get` is synchronous. In `async` code a cache miss blocks the event loop for up to the client timeout, so call it at start-up or through `asyncio.to_thread`.
+
+`enabled=False` turns tracing off but does not stop `prompts.get`; pass no API key (and a `fallback`) to keep tests offline.
+
+### With HTTP
+
+```bash
+curl -H "Authorization: Bearer $SPANLIGHT_API_KEY" \
+  "https://spanlight.example.com/v1/prompts/support/answer?label=production"
+```
+
+```json
+{
+  "name": "support/answer",
+  "version": 3,
+  "version_id": "0192f3a1-5c3e-7b1a-9d2c-8e4f6a7b8c9d",
+  "kind": "chat",
+  "template": {
+    "kind": "chat",
+    "messages": [
+      { "role": "system", "content": "Answer in at most {{max_sentences}} sentences." },
+      { "role": "user", "content": "{{question}}" }
+    ]
+  },
+  "variables": ["max_sentences", "question"],
+  "model_config": { "model": "claude-haiku-5-5", "max_tokens": 300 },
+  "labels": ["production"]
+}
+```
+
+- **Authentication.** A project API key with the **`prompts:read`** scope. Existing keys keep the scopes they were created with, so a key made for sending traces cannot read prompts: create a new key with `prompts:read` (see [API keys](/docs/guides/access/)). A key without the scope gets `403 KEY_SCOPE`.
+- **Which version.** `label` (default `production`) or `version`, not both (`422`). `label=latest` is accepted here as an alias for the highest version. An unknown prompt, label or version, or a prompt in another project, is `404 NOT_FOUND`.
+- **Caching.** The response carries an `ETag` made of the version id and a hash of the version's labels, and `Cache-Control: private, max-age=60`. Send the tag back in `If-None-Match` and an unchanged prompt answers `304` with no body. Moving a label changes the tag.
+- **Rate limit.** The route shares the key's request limit with ingestion: 50 requests a second, bursts of 100.
+
+## See which version produced a trace
+
+Spans can carry the id of the prompt version they used.
+
+- **SDK.** Pass `spanlight_prompt=compiled` to a wrapped OpenAI or Anthropic call (the keyword is removed before the provider sees it), or enter the compiled prompt with `with compiled:` and every span started inside is linked.
+- **Fallbacks clear the link.** A prompt with `version=None` links nothing, and passing one to a call inside `with compiled:` removes the link for that call, because the call did not use that version.
+- **Tasks and threads.** The link is a `contextvars` value, like the current span. An `asyncio` task created inside the block keeps the link for its whole life, and a thread does not see it. Start long-lived work inside `with spanlight.no_prompt():` to keep its spans unlinked.
+- **Other senders.** Spans sent as native JSON may set `prompt_version_id`. OTLP has no field for it. The id is stored even when Spanlight has no such version (for example one that was deleted since), and the link then simply leads nowhere.
+- **The playground and experiments** link their spans automatically.
+
+Trace and span detail show the prompt version, and **Traces** can be filtered by it (`prompt_version_id`). The prompt page shows each version's use over the last 7 days: traces, LLM calls, cost and p95 duration. Cost and duration are "—" when unknown, and the cost is a lower bound when some calls had no price.
+
+## Routes
+
+Under `/api/v1/projects/{project_id}`. Prompt names contain `/`, so they are part of the path as they are. Like the Users routes, these routes strip one leading `~` from a name before looking it up (browsers resolve `.` and `..` path parts); no valid prompt name starts with `~` or `.`, so you never need it.
+
+| Route | Needs | Does |
+| --- | --- | --- |
+| `GET /prompts` | `project:read` | List, with `q` as a name prefix and keyset pagination; each item has `latest_version` and its labels |
+| `POST /prompts` | `prompts:write` | Create a prompt and its version 1 |
+| `GET /prompts/{name}` | `project:read` | The prompt, its latest version and its labels |
+| `DELETE /prompts/{name}` | `prompts:write` | Delete (`409 PROMPT_IN_USE`) |
+| `GET /prompts/{name}/versions` | `project:read` | Versions, newest first |
+| `POST /prompts/{name}/versions` | `prompts:write` | Add a version |
+| `GET /prompts/{name}/versions/{version}` | `project:read` | One version |
+| `GET /prompts/{name}/versions/{version}/usage` | `project:read` | Use over the last 7 days |
+| `GET /prompt-versions/{version_id}` | `project:read` | A version by its id, with its prompt's name |
+| `PUT` / `DELETE /prompts/{name}/labels/{label}` | `prompts:write` | Move or remove a label |
+
+Creating a prompt takes `{"name", "kind", "template", "model_config"?, "commit_message"?, "description"?}`, with `kind` equal to `template.kind`. Adding a version takes the same body without `name`, `kind` and `description`. [API conventions](/docs/api/conventions/) lists the error codes.
+
+## Check it worked
+
+Create a prompt under **Prompts** and set the label `production` on version 1. Run the `curl` request from [With HTTP](#with-http), with a key that has the `prompts:read` scope. The answer has `"version": 1` and `"labels": ["production"]`. Run the SDK example, and the trace that follows shows the prompt version on its header and on the span.
+
+## Troubleshooting
+
+- **`403 KEY_SCOPE` when you fetch a prompt.** The key was created without the `prompts:read` scope, and a key cannot change its scopes. Create a new key with the scope. See [API keys](/docs/guides/access/).
+- **`PromptUnavailableError` from `prompts.get`.** Either the name is invalid (empty, or with an empty, `.` or `..` part), which raises without a request, or the fetch failed (network, `5xx`, `429`, a `401` or a `404` for a missing prompt or label) with no cached copy and no valid `fallback`. Check the name, the label, the host and the key, and pass a `fallback`. The message names the prompt and the cause. See [With the Python SDK](#with-the-python-sdk).
+- **`MissingVariablesError` when you call `compile`.** Every variable in the template needs a value, and the error lists all missing ones. Pass them, or remove the variable from the template.
+- **The editor will not save: "This is the same as the latest version."** A new version needs a change to the template or the model config (`409 NO_CHANGES`). Change one of them.
+- **"Can't delete this prompt."** An evaluator or an experiment uses one of its versions (`409 PROMPT_IN_USE`). Remove them first.
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Playground', href: '/docs/playground/', description: 'Try a prompt on up to three models side by side.' },
+    { title: 'Experiments', href: '/docs/experiments/', description: 'Replay a dataset through a prompt and compare two runs.' },
+    { title: 'Python SDK', href: '/docs/python-sdk/', description: 'Install the package and trace functions and provider calls.' },
+  ]}
+/>

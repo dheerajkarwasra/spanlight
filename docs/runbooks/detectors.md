@@ -2,7 +2,7 @@
 
 ## Purpose and when to use
 
-The Doctor's detectors run in the worker every 15 minutes. For each project with a span in the last 24 hours they read the recent spans, apply 15 fixed rules, and open, update or resolve insights (what an insight is and what each detector looks for is in [the Doctor guide](../../docs-site/src/content/docs/doctor.md)). Use this page when:
+The Doctor's detectors run in the worker every 15 minutes. For each project with a span in the last 24 hours they read the recent spans, apply 15 fixed rules, and open, update or resolve insights (what an insight is and how it is opened, muted and resolved is in [the Doctor guide](../../docs-site/src/content/docs/doctor.mdx); what each detector looks for is in [the detector catalogue](../../docs-site/src/content/docs/reference/detectors.md)). Use this page when:
 
 - no insights appear and you expect some, or the Doctor looks late;
 - a detector shows errors in `GET /detector-runs`, or `spanlight_detector_runs_total{outcome="error"}` grows;
@@ -194,7 +194,8 @@ Back out: nothing to undo; raising or lowering the budget is a configuration cha
 
 ## Related
 
-- [The Doctor guide](../../docs-site/src/content/docs/doctor.md): what each detector reads and how to fix what it finds.
+- [The detector catalogue](../../docs-site/src/content/docs/reference/detectors.md): what each detector reads and the fix and check it suggests.
+- [The Doctor guide](../../docs-site/src/content/docs/doctor.mdx): how insights are opened, muted and resolved, and the health score.
 - [Alerts runbook](alerts.md): a critical insight reaches its channels through the same outbox, so a stuck outbox delays insight notifications too.
 - [Operator runbooks overview](README.md): the first five minutes of any incident, and the worker check.
 - [SLO runbook](slo.md): what healthy looks like and the alerts on the worker.

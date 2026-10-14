@@ -238,9 +238,11 @@ export function renderOpenApi(document) {
   return files;
 }
 
-export function frontmatter({ title, description, order, label }) {
+export function frontmatter({ title, description, order, label, editUrl = false }) {
   const lines = ['---', `title: ${JSON.stringify(title)}`];
   if (description) lines.push(`description: ${JSON.stringify(description)}`);
+  // Generated pages have no file under docs-site/: link their real source, or show no edit link.
+  lines.push(`editUrl: ${editUrl === false ? 'false' : JSON.stringify(editUrl)}`);
   if (order !== undefined || label) {
     lines.push('sidebar:');
     if (order !== undefined) lines.push(`  order: ${order}`);

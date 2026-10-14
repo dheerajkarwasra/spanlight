@@ -74,7 +74,7 @@ Why the database items matter: a Postgres superuser bypasses row-level security 
   railway login
   ```
 
-- A [Sentry](https://sentry.io) account (a free plan is enough) and an [Anthropic API key](https://console.anthropic.com), both of which step 3 needs. This runbook requires `SENTRY_DSN` for the hosted demo. Self-hosting with Docker Compose is different: leave `SENTRY_DSN` blank in `deploy/.env` and error reporting stays off. On Railway with this file, set it, or delete its two `preserve()` lines from `railway.ts` first. `CREDENTIALS_KEYS`, the key that encrypts stored secrets such as two-factor seeds, works the same way: left blank, two-factor authentication stays "not configured", and on Railway you delete its two `preserve()` lines from `railway.ts` to leave it out. Step 3 generates it, and its warning about backups applies before you run it.
+- A [Sentry](https://sentry.io) account (a free plan is enough) and an [Anthropic API key](https://console.anthropic.com), both of which step 3 needs. This runbook requires `SENTRY_DSN` for the live demo at spanlight.dev. Self-hosting with Docker Compose is different: leave `SENTRY_DSN` blank in `deploy/.env` and error reporting stays off. On Railway with this file, set it, or delete its two `preserve()` lines from `railway.ts` first. `CREDENTIALS_KEYS`, the key that encrypts stored secrets such as two-factor seeds, works the same way: left blank, two-factor authentication stays "not configured", and on Railway you delete its two `preserve()` lines from `railway.ts` to leave it out. Step 3 generates it, and its warning about backups applies before you run it.
 
 Run every command below from the repository root.
 

@@ -1,0 +1,643 @@
+---
+title: Python SDK reference
+description: Every public name of the spanlight Python package, with its signature, parameters, defaults, errors and an example, plus the limits of the provider wrappers.
+---
+
+{/* Sources: sdks/python/src/spanlight/__init__.py, sdks/python/src/spanlight/_globals.py, sdks/python/src/spanlight/_client.py, sdks/python/src/spanlight/_config.py, sdks/python/src/spanlight/_span.py, sdks/python/src/spanlight/_context.py, sdks/python/src/spanlight/_decorator.py, sdks/python/src/spanlight/_serialize.py, sdks/python/src/spanlight/_ids.py, sdks/python/src/spanlight/_request_hash.py, sdks/python/src/spanlight/_scores.py, sdks/python/src/spanlight/_prompts.py, sdks/python/src/spanlight/_prompt_client.py, sdks/python/src/spanlight/_templates.py, sdks/python/src/spanlight/_exporter.py, sdks/python/src/spanlight/_exporter_delivery.py, sdks/python/src/spanlight/_experiments.py, sdks/python/src/spanlight/_version.py, sdks/python/src/spanlight/integrations/_common.py, sdks/python/src/spanlight/integrations/openai.py, sdks/python/src/spanlight/integrations/anthropic.py, sdks/python/pyproject.toml, sdks/python/README.md */}
+
+import { Aside } from '@astrojs/starlight/components';
+
+This page lists everything the `spanlight` package exports, in the order you meet it: configure the client, trace code, wrap a provider, fetch prompts, record scores. To install the package and trace your first function, start with the [Python SDK guide](/docs/python-sdk/).
+
+All names below are imported from the top-level package, `import spanlight`. Anything in a module whose name starts with an underscore is private and can change without notice. The one exception is the experiments runner, described at the end.
+
+The package needs Python 3.10 or newer and `httpx`. `openai` and `anthropic` are optional extras. It ships `py.typed`.
+
+## How the SDK behaves
+
+These rules hold for every call on this page.
+
+- **Tracing never raises into your code.** Setters, `score`, `flush` and the wrappers log failures to the `spanlight` logger and carry on. Exceptions from your own code and from provider SDKs are recorded on the span and re-raised unchanged.
+- **One call can raise on purpose.** `prompts.get` raises `PromptUnavailableError` when it has nothing to return. Compiling a prompt raises the template errors listed under [Errors](#errors).
+- **Nothing waits on the network.** A finished span is queued in memory and a background thread sends it in batches.
+- **Without an API key the SDK is a no-op.** It logs one warning, spans are not recorded, and every call returns as usual.
+- **Values are converted to JSON.** Anything you record as input, output or an attribute goes through a best-effort conversion: models, dataclasses, enums, dates and UUIDs become plain data, bytes become `<N bytes>`, and other objects use `repr`. Strings longer than 32,000 characters are cut and end in `...[truncated]`. Lists and mappings keep their first 1,000 entries, and nesting deeper than 12 levels is replaced by `[max depth reached]`.
+
+## Configure the client
+
+### `init`
+
+```python
+spanlight.init(
+    *,
+    api_key: str | None = None,
+    host: str | None = None,
+    environment: str | None = None,
+    release: str | None = None,
+    enabled: bool | None = None,
+    flush_interval: float = 2.0,
+    batch_size: int = 100,
+    max_queue: int = 10_000,
+    gzip: bool = False,
+    timeout: float = 10.0,
+    max_retries: int = 5,
+    shutdown_timeout: float = 5.0,
+    prompt_cache_ttl: float = 60.0,
+    transport: httpx.BaseTransport | None = None,
+) -> Spanlight
+```
+
+Creates the global client that `observe`, `span`, `score`, `prompts` and the provider wrappers use, and returns it. Every argument is keyword-only. Calling `init` again replaces the global client; the previous one is flushed and shut down first.
+
+An argument left as `None` is read from the environment. An explicit argument always wins. A variable that is unset or blank counts as unset.
+
+| Option | Environment variable | Default | Meaning |
+| --- | --- | --- | --- |
+| `api_key` | `SPANLIGHT_API_KEY` | none | Project API key, `spl_live_...`. Without one, tracing is off. |
+| `host` | `SPANLIGHT_HOST` | `http://localhost:8000` | Base URL of the Spanlight API. |
+| `environment` | `SPANLIGHT_ENVIRONMENT` | none | Deployment environment attached to every trace, for example `production`. |
+| `release` | `SPANLIGHT_RELEASE` | none | Application version attached to every trace, for example a git SHA. |
+| `enabled` | `SPANLIGHT_ENABLED` | `true` | `false`, `0`, `no` or `off` turn tracing and scores into a no-op. `true`, `1`, `yes` and `on` turn them on. Any other text keeps the default. |
+| `flush_interval` | | `2.0` | Longest time in seconds a span waits before it is sent. At least `0.05`. |
+| `batch_size` | | `100` | Most spans in one request. Clamped to 1 through 1000. |
+| `max_queue` | | `10000` | Most spans and scores held in memory. When it is full the oldest are dropped. At least 1. |
+| `gzip` | | `False` | Compress request bodies. |
+| `timeout` | | `10.0` | HTTP timeout per request, in seconds. At least `0.1`. |
+| `max_retries` | | `5` | Retries per batch for network errors, `429` and `5xx`. At least 0. |
+| `shutdown_timeout` | | `5.0` | Seconds allowed for the final flush at interpreter exit. At least 0. |
+| `prompt_cache_ttl` | | `60.0` | Seconds a fetched prompt is served before it is revalidated. At least 0. |
+| `transport` | | none | A custom `httpx.BaseTransport` used for span, score and prompt requests. Meant for tests; see below. |
+
+Numeric options outside the range are clamped, not rejected, because a configuration mistake must not crash the host application.
+
+{/* snippet-test */}
+```python
+import spanlight
+
+spanlight.init(environment="production", release="2026.10.07")
+
+with spanlight.span("startup-check"):
+    pass
+```
+
+The `transport` option replaces the network, so a test can capture what the SDK would send. This example answers every request with an accepted result:
+
+```python
+import httpx
+import spanlight
+
+def ingest(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(200, json={"accepted": 1, "rejected": []})
+
+spanlight.init(
+    api_key="spl_live_test",
+    host="http://spanlight.test",
+    transport=httpx.MockTransport(ingest),
+)
+```
+
+### `Spanlight`
+
+```python
+spanlight.Spanlight(
+    *,
+    api_key=None, host=None, environment=None, release=None, enabled=None,
+    flush_interval=2.0, batch_size=100, max_queue=10_000, gzip=False,
+    timeout=10.0, max_retries=5, shutdown_timeout=5.0, prompt_cache_ttl=60.0,
+    transport=None,
+)
+```
+
+The client class. It takes the same options as `init`, with the same defaults and environment variables, and owns the configuration, the background exporter and the prompt client. `init` creates one and keeps it as the global client. Create instances yourself when you send to several projects from one process, or in tests.
+
+The client has these members:
+
+| Member | What it is |
+| --- | --- |
+| `config` | The resolved, read-only settings. |
+| `prompts` | The `PromptClient` of this client. |
+| `enabled` | `True` while spans are recorded and exported. `False` without an API key, with `enabled=False`, and after `shutdown`. |
+| `exporter` | The background exporter, or `None` when the client is disabled. It has the counters `sent_count`, `failed_count` and `dropped_count` (spans and scores delivered, lost after a failed delivery, and discarded because the queue was full). |
+| `start_span(name, *, kind="chain", parent=None)` | Creates and starts a `Span` without making it current. Without a `parent` it uses the current span; without either it starts a new trace. You must call `Span.end()` yourself. |
+| `span(name, *, kind="chain", input=None, attributes=None)` | Same as the module-level [`span`](#span), bound to this client. |
+| `observe(...)` | Same as the module-level [`observe`](#observe), bound to this client. |
+| `update_trace(*, name=None, user_id=None, session_id=None, tags=None)` | Same as the module-level [`update_trace`](#update_trace). It acts on the trace of the current span, whichever client created it. |
+| `score(trace_id, name, value, *, span_id=None, comment=None)` | Same as the module-level [`score`](#score), bound to this client. |
+| `flush(timeout=None)` and `shutdown(timeout=None)` | Same as the module-level functions, bound to this client. |
+
+Use the client's own methods to report through it. `wrap_openai(client, spanlight=tracer)` and `wrap_anthropic(client, spanlight=tracer)` do the same for provider calls.
+
+### `get_client`
+
+```python
+spanlight.get_client() -> Spanlight
+```
+
+Returns the global client. If `init` has not run, it creates one from the `SPANLIGHT_*` environment variables.
+
+### `flush`
+
+```python
+spanlight.flush(timeout: float | None = None) -> bool
+```
+
+Blocks until every span that has ended and every score recorded so far has been sent, or until `timeout` seconds have passed. `None` waits without limit. Returns `True` when everything was delivered, and also when there is no global client or the SDK is disabled. Returns `False` on a timeout.
+
+Long-running servers do not need it. Call it at the end of short scripts, command-line tools and serverless handlers. An `atexit` hook also flushes, within `shutdown_timeout`.
+
+### `shutdown`
+
+```python
+spanlight.shutdown(timeout: float | None = None) -> None
+```
+
+Flushes the global client, stops its background thread and removes it. `timeout` defaults to `shutdown_timeout`. Spans that cannot be delivered in time are discarded. A later call that needs a client, such as `observe` or `get_client`, creates a new one from the environment.
+
+### `__version__`
+
+```python
+spanlight.__version__ -> str
+```
+
+The version of the installed package, for example `"0.1.0"`. The SDK also sends it in the `User-Agent` header of its requests, as `spanlight-python/<version>`. To print it from a shell: `python -c "import spanlight; print(spanlight.__version__)"`.
+
+## Trace your code
+
+### `observe`
+
+```python
+@spanlight.observe
+def f(...): ...
+
+@spanlight.observe(
+    name: str | None = None,
+    *,
+    kind: SpanKind = "chain",
+    capture_input: bool = True,
+    capture_output: bool = True,
+)
+def g(...): ...
+```
+
+A decorator that records each call of the function as a span. It works on plain functions, `async def` coroutines, generators and async generators, and both the bare and the called form work.
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `name` | the function's `__name__` | Span name. In the bare form this parameter receives the function itself. |
+| `kind` | `"chain"` | One of `llm`, `tool`, `retrieval`, `chain`, `http` or `other`. |
+| `capture_input` | `True` | Record the call's arguments, by parameter name, as the span input. A leading `self` or `cls` is left out. |
+| `capture_output` | `True` | Record the return value as the span output. |
+
+Details that matter:
+
+- The span becomes the current span while the function runs, so spans and wrapped provider calls made inside it nest under it.
+- For a generator, the span stays open until iteration finishes or the generator is closed. The output is the yielded items; if every item is a string they are joined into one string.
+- An exception that leaves the function is recorded on the span and re-raised unchanged.
+- The global client is looked up at call time, so you can apply the decorator at import time, before `init` runs.
+- When the SDK is disabled the function runs untraced.
+
+{/* snippet-test */}
+```python
+import spanlight
+
+spanlight.init(environment="production")
+
+@spanlight.observe(kind="retrieval")
+def search_docs(query: str) -> list[str]:
+    return ["Refunds take 5-7 business days."]
+
+@spanlight.observe(name="support-request", capture_output=False)
+def handle(question: str) -> str:
+    docs = search_docs(question)
+    return docs[0]
+
+handle("How long do refunds take?")
+```
+
+This produces two spans in one trace: `support-request` and its child `search_docs`.
+
+### `span`
+
+```python
+spanlight.span(
+    name: str,
+    *,
+    kind: SpanKind = "chain",
+    input: Any = None,
+    attributes: Mapping[str, Any] | None = None,
+) -> SpanContext
+```
+
+Traces a block of code. It returns a context manager that works with both `with` and `async with` and yields a `Span`. The span is current inside the block. An exception that leaves the block marks the span as failed and is re-raised unchanged.
+
+`input` is recorded on the span as soon as it starts. `attributes` is a mapping of custom attributes.
+
+{/* snippet-test */}
+```python
+import spanlight
+
+spanlight.init()
+
+with spanlight.span("rerank", kind="retrieval", input={"candidates": 50}) as span:
+    span.set_attribute("reranker", "bge-v2")
+    span.set_output(["doc-3", "doc-1"])
+```
+
+### `SpanContext`
+
+The object that `span` returns. You do not create it. Entering it starts the span and makes it current; leaving it records any exception, restores the previous current span and ends the span. Both the synchronous and the asynchronous form do the same.
+
+### `update_trace`
+
+```python
+spanlight.update_trace(
+    *,
+    name: str | None = None,
+    user_id: str | None = None,
+    session_id: str | None = None,
+    tags: Iterable[str] | None = None,
+) -> None
+```
+
+Sets fields on the trace of the current span. Call it anywhere inside the trace. A field left as `None` stays as it is, and tags are added to the existing set without duplicates. Outside any span the call does nothing.
+
+| Parameter | Meaning |
+| --- | --- |
+| `name` | Trace name shown in the dashboard. It defaults to the name of the root span. |
+| `user_id` | Your application's identifier for the user. |
+| `session_id` | Groups traces into a conversation. |
+| `tags` | Free-form labels for filtering. |
+
+{/* snippet-test */}
+```python
+import spanlight
+
+spanlight.init()
+
+@spanlight.observe
+def answer(question: str, user_id: str) -> str:
+    spanlight.update_trace(user_id=user_id, session_id="chat-123", tags=["beta"])
+    return "Refunds take 5-7 business days."
+
+answer("How long do refunds take?", "u_42")
+```
+
+### `get_current_span`
+
+```python
+spanlight.get_current_span() -> Span | None
+```
+
+Returns the span that is current in this context, or `None`. The current span is stored in a `contextvars.ContextVar`. Nested calls and `asyncio` tasks see it automatically. Threads do not inherit it, so copy the context when you hand work to a thread pool:
+
+```python
+import contextvars
+
+context = contextvars.copy_context()
+executor.submit(context.run, do_work, item)
+```
+
+### `get_current_trace_id`
+
+```python
+spanlight.get_current_trace_id() -> str | None
+```
+
+Returns the trace id of the current span, or `None`. A trace id is 32 lowercase hex characters and a span id is 16, both compatible with W3C Trace Context. Put the trace id in your logs, or pass it to `score`.
+
+### `Span`
+
+A timed unit of work. You receive spans from `span`, `observe`-decorated code that calls `get_current_span`, and `Spanlight.start_span`. Every setter is safe to call at any time and never raises. After the span has ended, setters are ignored. A span created while the SDK is disabled is non-recording, and each of its methods does nothing.
+
+| Method | What it does |
+| --- | --- |
+| `set_input(value)` | Records the operation's input. |
+| `set_output(value)` | Records the operation's output. |
+| `set_attribute(key, value)` | Attaches one custom attribute. The key is converted to a string. |
+| `set_attributes(attributes)` | Attaches several attributes from a mapping. |
+| `set_model(model, *, provider=None)` | Records the model and, optionally, the provider that served the call. |
+| `set_usage(*, input_tokens=None, output_tokens=None, cached_tokens=None)` | Records token usage. A value left as `None` is unchanged. `input_tokens` is the total prompt size and includes the cached tokens; `cached_tokens` is the part served from the provider's prompt cache. |
+| `set_finish_reason(reason)` | Records why generation stopped, as the provider reports it. Cut to 64 characters. `None` clears it. |
+| `set_request_hash(value)` | Records the hash that groups identical requests. The provider wrappers set it for you. A value that is not 32 lowercase hex characters is ignored, because the server would reject the whole batch. |
+| `set_prompt_version(version_id)` | Links the span to a prompt version. `CompiledPrompt` does this for you. A value that is not a UUID is ignored; `None` removes the link. |
+| `mark_first_token()` | Records the time to first token as the time since the span started. Only the first call counts. |
+| `record_error(error)` | Marks the span as failed. `error` is an exception or a message. An exception also sets the attribute `error.type` to its class name. The message is cut to 2,000 characters. |
+| `end()` | Finishes the span and queues it for sending. Calling it again does nothing. A span still `unset` ends as `ok`. |
+
+Read-only attributes of a span include `name`, `kind`, `status`, `status_message`, `span_id`, `parent_span_id`, `trace_id` and `is_ended`.
+
+{/* snippet-test */}
+```python
+import spanlight
+
+spanlight.init()
+
+with spanlight.span("generate", kind="llm") as span:
+    span.set_model("my-model", provider="my-provider")
+    span.set_input({"prompt": "Say hello"})
+    span.mark_first_token()
+    span.set_output("Hello!")
+    span.set_usage(input_tokens=120, output_tokens=8, cached_tokens=100)
+    span.set_finish_reason("stop")
+```
+
+### `SpanKind`
+
+A type alias: `Literal["llm", "tool", "retrieval", "chain", "http", "other"]`. A kind the SDK does not know is recorded as `other`.
+
+### `SpanStatus`
+
+A type alias: `Literal["ok", "error", "unset"]`. `Span.status` starts as `unset`, becomes `error` when `record_error` runs, and becomes `ok` when the span ends without an error.
+
+## Wrap a provider
+
+Both wrappers patch methods on one client instance and return that same client. Wrapping a client twice is harmless. They need the matching extra: `spanlight[openai]` or `spanlight[anthropic]`. Importing `spanlight` does not import either provider package.
+
+If a wrapper cannot instrument the client, it logs a warning and returns the client unchanged.
+
+### `wrap_openai`
+
+```python
+spanlight.wrap_openai(
+    client: ClientT,
+    *,
+    spanlight: Spanlight | None = None,
+    provider: str = "openai",
+) -> ClientT
+```
+
+Instruments `chat.completions.create` and `responses.create` of an `OpenAI`, `AsyncOpenAI` or Azure client. The SDK's `.stream()` helpers are traced too, because they call `create`.
+
+| Parameter | Meaning |
+| --- | --- |
+| `client` | The client to instrument. |
+| `spanlight` | The `Spanlight` client to report to. It defaults to the global client, looked up on every call, so `init` may run after wrapping. |
+| `provider` | The provider name recorded on spans. Set it when you point the OpenAI SDK at a compatible API, for example `"openrouter"`. |
+
+```python
+import spanlight
+from openai import OpenAI
+
+spanlight.init()
+client = spanlight.wrap_openai(OpenAI())
+completion = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "Summarize our refund policy."}],
+)
+```
+
+For streamed Chat Completions, ask OpenAI for usage with `stream_options={"include_usage": True}`. Without it the span has no token counts and carries the attribute `usage.missing_reason`.
+
+### `wrap_anthropic`
+
+```python
+spanlight.wrap_anthropic(
+    client: ClientT,
+    *,
+    spanlight: Spanlight | None = None,
+) -> ClientT
+```
+
+Instruments `messages.create` (including `stream=True`) and `messages.stream` of an `Anthropic` or `AsyncAnthropic` client. The parameters mean the same as for `wrap_openai`.
+
+```python
+import spanlight
+from anthropic import Anthropic
+
+spanlight.init()
+client = spanlight.wrap_anthropic(Anthropic())
+message = client.messages.create(
+    model="claude-haiku-4-5",
+    max_tokens=512,
+    messages=[{"role": "user", "content": "Summarize our refund policy."}],
+)
+```
+
+### What a wrapped call records
+
+Each call becomes an `llm` span named after the operation and the model, for example `chat gpt-4o-mini` or `responses gpt-4o-mini`.
+
+- The provider, and the model from the response (the requested model if the response has none).
+- Token usage. `input_tokens` includes cached tokens, which are also reported as `cached_tokens`. For Anthropic, `input_tokens` is input plus cache reads plus cache writes.
+- The time to first token, for streams.
+- The request parameters as the input, the assistant message as the output, and the first finish reason.
+- A request hash, so identical requests can be grouped.
+- For a failed call, the status `error` and the provider's message. The attributes `http.status_code` and `provider.request_id` are added when the provider exception has them.
+- Extra attributes where the provider supplies them: `response.id`, `response.finish_reasons`, `response.stop_reason`, `response.status`, `request.stream`, `usage.reasoning_tokens` and `usage.cache_creation_input_tokens`.
+
+API keys, `extra_headers`, `extra_query`, `extra_body`, `timeout` and `http_client` are never recorded.
+
+### `spanlight_prompt`
+
+A wrapped call accepts one extra keyword, `spanlight_prompt=compiled`, where `compiled` is a `CompiledPrompt`. The span is linked to that prompt version. The wrapper removes the keyword before the provider SDK sees it. Passing a fallback prompt, which has no version, clears a link inherited from an enclosing `with compiled:` block.
+
+## Prompts
+
+### `prompts`
+
+```python
+spanlight.prompts.get(
+    name: str,
+    label: str = "production",
+    *,
+    version: int | None = None,
+    fallback: str | Sequence[Mapping[str, Any]] | None = None,
+) -> Prompt
+```
+
+`prompts` is the prompt client of whichever global client is current. `prompts.get` is the same as `PromptClient.get` on that client. It needs an API key with the `prompts:read` scope.
+
+### `PromptClient`
+
+Fetches prompts for one `Spanlight` client. You reach it as `Spanlight.prompts` and normally use it through `spanlight.prompts`.
+
+**`get(name, label="production", *, version=None, fallback=None) -> Prompt`**
+
+| Parameter | Meaning |
+| --- | --- |
+| `name` | The prompt name, for example `"support/answer"`. An empty name, or one with an empty, `.` or `..` segment, is refused without a request. |
+| `label` | The label to resolve. Ignored when `version` is given. |
+| `version` | A specific version number. |
+| `fallback` | A text template, or a list of `{"role", "content"}` messages, used when the prompt cannot be fetched and nothing is cached. The returned prompt then has `version=None`. |
+
+How it answers:
+
+- **Cache.** A fetched prompt is served from memory for `prompt_cache_ttl` seconds, then revalidated with `If-None-Match`, so an unchanged prompt costs a `304`. Concurrent first calls for the same prompt make one request.
+- **Outage.** After the time to live, if the server cannot be reached or answers with an error, the cached copy keeps being served, with one warning per prompt per minute.
+- **Nothing cached.** The `fallback` is used. Without a valid one, `get` raises `PromptUnavailableError`.
+- **Blocking.** `get` is synchronous. In `async` code a cache miss blocks the event loop for up to `timeout`. Call it at startup or through `asyncio.to_thread`.
+- **A disabled SDK.** `enabled=False` turns off tracing and scores, but `prompts.get` still calls the server when an API key is set. Pass no key, and a `fallback`, to keep tests offline.
+
+**`close() -> None`** closes the HTTP connection pool. A later `get` opens a new one.
+
+### `Prompt`
+
+One prompt version, or a local fallback. It is immutable.
+
+| Attribute | Meaning |
+| --- | --- |
+| `name` | The prompt name. |
+| `version` | The version number, or `None` for a fallback. |
+| `version_id` | The version's id, or `None` for a fallback. |
+| `kind` | `"text"` or `"chat"`. |
+| `template` | The uncompiled template. |
+| `variables` | The variables the template uses, in order of first appearance. |
+| `model_config` | The model settings saved with the version, such as the model and temperature. |
+| `labels` | The labels that point at this version. |
+| `is_fallback` | `True` when `version` is `None`. |
+
+**`compile(**variables) -> CompiledPrompt`** fills in the `{{name}}` variables. Spaces inside the braces are allowed. Values are inserted as they are and never expanded again. A value is a string, a number or a boolean; numbers and booleans are converted with `str()`. Variables you pass but the template does not use are reported in `unused_variables`, not rejected. It can raise the errors in [Errors](#errors).
+
+### `CompiledPrompt`
+
+A prompt with its variables filled in. It is immutable.
+
+| Attribute | Meaning |
+| --- | --- |
+| `name` | The prompt name. |
+| `version` | The version number, or `None` for a fallback. |
+| `prompt_version_id` | The id that spans are linked to, or `None` for a fallback. |
+| `kind` | `"text"` or `"chat"`. |
+| `text` | The compiled text, for a text prompt. |
+| `messages` | The compiled messages as plain `{"role", "content"}` dicts, for a chat prompt. |
+| `variables_used` | The variables the template uses, in order of first appearance. |
+| `unused_variables` | The variables that were passed but not used, sorted. |
+
+Enter it with `with compiled:` (or `async with`) to link every span started inside the block to this prompt version. The link is a `contextvars` value, so an `asyncio` task created inside the block keeps it for its whole life, and a thread does not see it unless you copy the context.
+
+{/* snippet-test */}
+```python
+import spanlight
+
+spanlight.init()
+
+prompt = spanlight.prompts.get(
+    "support/answer",
+    fallback=[{"role": "user", "content": "Answer briefly: {{question}}"}],
+)
+compiled = prompt.compile(question="How do refunds work?")
+
+with compiled:
+    with spanlight.span("answer", kind="llm") as span:
+        span.set_input(compiled.messages)
+        span.set_output("Refunds take 5-7 business days.")
+```
+
+### `no_prompt`
+
+```python
+with spanlight.no_prompt():
+    ...
+```
+
+A context manager that unlinks spans started inside the block from any prompt version. Use it around code that starts long-lived work, such as `asyncio.create_task` or a background worker, from inside `with compiled:`. That work would otherwise inherit the link.
+
+## Scores
+
+### `score`
+
+```python
+spanlight.score(
+    trace_id: str,
+    name: str,
+    value: float | int | bool | str,
+    *,
+    span_id: str | None = None,
+    comment: str | None = None,
+) -> None
+```
+
+Records a score on a trace, or on one span of it. It never raises. It needs an API key with the `scores:write` scope.
+
+| Parameter | Meaning |
+| --- | --- |
+| `trace_id` | The trace to score, for example from `get_current_trace_id()`. |
+| `name` | The score name, for example `"helpfulness"`. |
+| `value` | A number makes a numeric score, `True` or `False` a boolean score, and a string a categorical score. A number must be finite. |
+| `span_id` | Score one span of the trace instead of the whole trace. |
+| `comment` | A free-text note shown next to the score. |
+
+A score the SDK cannot send, such as one with a value of another type, is dropped with a warning. Scores travel with the spans, after the spans of the same batch. Each gets a unique id, so a retried request never stores one twice. A server that predates scores answers `404`, which is logged once.
+
+{/* snippet-test */}
+```python
+import spanlight
+
+spanlight.init()
+
+with spanlight.span("support-request"):
+    trace_id = spanlight.get_current_trace_id()
+    spanlight.score(trace_id, "helpfulness", 0.8)
+    spanlight.score(trace_id, "resolved", True, comment="user said thanks")
+    spanlight.score(trace_id, "tone", "friendly")
+```
+
+## Errors
+
+The SDK defines these exceptions. All except `PromptUnavailableError` subclass `ValueError`.
+
+| Exception | Raised when |
+| --- | --- |
+| `PromptUnavailableError` | `prompts.get` has nothing to return: the fetch failed, nothing is cached and there is no valid `fallback`, or the name is invalid. This is the one exception the SDK raises on purpose. Pass `fallback=` to avoid it. |
+| `MissingVariablesError` | `compile` was called without every variable the template uses. Its `names` attribute lists all the missing names, sorted. |
+| `InvalidTemplateError` | A template is malformed: bad braces, a bad variable name, the wrong shape, or over 64 KB. A fallback that is not a valid template raises `PromptUnavailableError` instead. |
+| `TemplateTooLargeError` | The rendered prompt would exceed 256 KB with the variables in. |
+
+`Prompt.compile` also raises the built-in `TypeError` when a value is not a string, number or boolean, `None` included.
+
+## Limits of the wrappers
+
+- **Raw responses are not traced.** The wrappers instrument the client you pass in. Calls made through `.with_raw_response` or `.with_streaming_response` are passed through untraced.
+- **Streams are proxied.** A wrapped streaming call returns a transparent proxy, not the provider's `Stream` class, so `isinstance(result, openai.Stream)` is `False`. Iteration, use as a context manager, `close()` and attributes such as `.response` behave as before.
+- **An abandoned stream is never sent.** The span of a stream ends when the stream is exhausted or closed. If you drop it without doing either, its span is never sent.
+- **The queue is bounded.** When more than `max_queue` items wait, the oldest are dropped and counted in `exporter.dropped_count`.
+
+## Delivery
+
+A batch goes out when it reaches `batch_size` spans or after `flush_interval` seconds. Network errors, `429` and `5xx` are retried with jittered exponential backoff, and `Retry-After` is honoured. A `413` splits the batch in two and sends the halves. Other `4xx` responses are not retried; they are logged to the `spanlight` logger, as are spans the server rejects. Ingestion is idempotent by design, so a retried batch does not double-count.
+
+To see what the SDK is doing, turn on debug logging:
+
+```python
+import logging
+
+logging.getLogger("spanlight").setLevel(logging.DEBUG)
+```
+
+## Experiments runner
+
+The package contains the runner behind the `eval-gate` GitHub Action. It is a private module, `spanlight._experiments`, and this command line is its supported entry point. It runs a prompt over a dataset on the server, scores the answers with your evaluators, and exits non-zero when a score is below its threshold. There is no `python -m spanlight` command.
+
+```bash
+export SPANLIGHT_TOKEN=spl_pat_...
+python -m spanlight._experiments \
+  --host https://spanlight.example.com --project-id <project id> \
+  --dataset support-questions --prompt support/answer@production \
+  --evaluators relevance,format --fail-below relevance=0.8,format=1 \
+  --credential-id <credential id> --model claude-haiku-5-5
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--host` | required, or `SPANLIGHT_HOST` | Spanlight URL. It must be `https://` unless it is localhost. |
+| `--project-id` | required, or `SPANLIGHT_PROJECT_ID` | The project to run in. |
+| `--dataset` | required | The dataset name. |
+| `--prompt` | required | `name`, `name@label` or `name:version`. |
+| `--evaluators` | none | Comma-separated evaluator names. |
+| `--fail-below` | none | Thresholds such as `relevance=0.8,format=1`. |
+| `--credential-id` | required | The provider credential to run on. |
+| `--model` | required | The model to run the prompt on. |
+| `--max-cost-usd` | none | A cost cap for a new experiment's runs, above 0 and at most 1000. |
+| `--timeout` | `1800` | Seconds to wait in total. |
+| `--poll` | `5.0` | Seconds between polls, at least 1. |
+
+The access token is required and is read from `SPANLIGHT_TOKEN`; it is never printed. If a required setting is missing, the runner prints `error: ...` naming it and exits with `2`. The exit code is `0` when every threshold held, `1` when a score was below its threshold, and `2` when the run could not be set up, failed or timed out. Each run makes real provider calls. See [Experiments](/docs/experiments/) and the [eval gate](/docs/eval-gate/).
+
+## Related pages
+
+- [Python SDK guide](/docs/python-sdk/): install the package, trace your first function and understand delivery.
+- [Prompts](/docs/prompts/): versions and labels you can change without a deploy.
+- [Scores](/docs/scores/): the judgements that `score` records, and review queues.
+- [Experiments](/docs/experiments/) and [Eval gate](/docs/eval-gate/): the runner behind the command line above.
+- [Ingest paths](/docs/concepts/ingest-paths/): how the SDK compares with OTLP.
+- [HTTP API](/docs/api/): the endpoints the SDK calls.

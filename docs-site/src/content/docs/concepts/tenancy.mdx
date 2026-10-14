@@ -1,0 +1,88 @@
+---
+title: Tenancy and access
+description: How Spanlight keeps organizations and projects apart. Membership and roles, what a 404 means, the three layers of enforcement including Postgres row-level security, and the four kinds of credential.
+sidebar:
+  order: 6
+---
+
+{/* Sources: backend/app/api/deps.py, backend/app/api/principals.py, backend/app/core/permissions.py, backend/app/core/scopes.py, backend/app/core/security.py, backend/app/db/rls.py, backend/app/db/roles.py, backend/app/db/models/identity.py, backend/app/db/models/projects.py, backend/app/services/sessions.py, backend/tests/rls/test_rls.py, backend/tests/rls/test_policy_inventory.py, docs/decisions/0003-row-level-security.md */}
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Spanlight can hold the data of many organizations in one database. This page explains how it makes sure each person and each program sees only what it should.
+
+## The idea
+
+Access follows a chain: a **credential** says who is asking, **membership** says which organizations they belong to and in what role, and the **project** a request names decides which data it touches. The chain is checked in the application and then checked again by the database. The second check is the one that matters, because it still holds when the first has a bug.
+
+## How it works
+
+### Membership and roles
+
+A person belongs to an organization through a membership with one of four roles. The roles are cumulative: each holds everything the one below it holds.
+
+| Role | Adds |
+| --- | --- |
+| `viewer` | Read the organization and its projects. |
+| `member` | Create keys, revoke their own, create exports, write scores, annotations, prompts and datasets, and run experiments. |
+| `admin` | Manage members, projects, the audit log and other people's keys, and write gateway routes and keys, alerts, evaluators and insight actions. |
+| `owner` | Delete or secure the organization and manage provider credentials. Only an owner can grant the owner role. |
+
+The roles belong to the organization and apply to every project in it. There are no per-project roles.
+
+All the rules live in one permission table. A route does not ask "is this person an admin?". It declares the permission it needs, such as `alerts:write`, and the table says which roles hold it. When a permission is added, the table decides at once which roles get it.
+
+### A 404 is not a refusal
+
+Every organization and project route first looks for your membership.
+
+- If you are **not a member**, the answer is `404`, the same as for something that does not exist. A stranger cannot tell the two apart, so the existence of other tenants' organizations and projects is never revealed.
+- If you **are a member** without the permission, the answer is `403`.
+
+A project API key is held to the same rule. Asking about any project other than its own gets a `404`.
+
+If an organization requires two-factor authentication, a member without it gets `403 TWO_FACTOR_REQUIRED` for everything in the organization. The check comes after membership, so a stranger still gets a `404`.
+
+### Three layers
+
+1. **Identify.** Middleware and the authentication step find who is calling and read their credential. A request has one principal. If it carries a bearer token, the cookie is ignored.
+2. **Authorize.** The route's permission check resolves the organization or project from the path, checks membership and the permission, and tells the database which project this request is about.
+3. **Row-level security.** Postgres itself filters every query.
+
+The third layer works like this. Telemetry tables, and every other table that belongs to a project, have row-level security switched on and **forced**. A policy says a row is visible only when its project is the one the current transaction is bound to. The binding is set for the length of one transaction and cannot leak to the next user of a pooled connection.
+
+The result is that a query written without any `WHERE project_id = …` returns nothing instead of everyone's data. A forgotten filter becomes an empty page, not a leak. Tests check this directly: with no binding, no rows are visible; with a binding, only that project's rows are; and a write for another project is refused. A further test reads the database catalog to make sure every table with a `project_id` has these policies, so a migration that adds a table and forgets its policy fails the build.
+
+Two details keep the guarantee real.
+
+- **The application connects as an ordinary database role.** Superusers and roles that bypass row-level security ignore the policies silently, so the API and the worker connect as a role that cannot.
+- **Bypassing is explicit and rare.** Background jobs that must look across projects, such as retention, set a bypass flag themselves. They are the only code allowed to. The one table with a project column and no row-level security is the table of project API keys, because a key is looked up by its prefix before the project is known.
+
+### Four kinds of credential
+
+| Credential | Looks like | Belongs to | Can do |
+| --- | --- | --- | --- |
+| Session | `spl_session` cookie | A person who signed in | Everything the person's roles allow, in the dashboard. State-changing requests also need a CSRF token. A session lasts 7 days from its last use and never more than 30. |
+| Project API key | `spl_live_…` | One project | Only what its scopes allow: `ingest:write`, `traces:read`, `scores:write`, `prompts:read`. |
+| Personal access token | `spl_pat_…` | A person | What the person can do, limited to read-only if its scope is `read`. It cannot reach the routes that are for a browser, such as creating more tokens. |
+| Gateway key | `spl_gw_…` | One project | Calling the gateway. It cannot send traces or call the dashboard API. |
+
+A project API key carries the project with it, so the project of ingested data comes from the key and never from the request. A key can read its own project's data only on routes that opt in, and only with `traces:read`. A personal access token is checked against the person's current memberships on every request, so removing someone from an organization ends their tokens' access to it at once.
+
+## What it means for you
+
+- Give people the lowest role that lets them do their job. A viewer can read everything in the project, so do not add one to a project whose prompts they should not see.
+- A `404` from an organization or project route can mean you are not a member. Check the membership before you suspect a missing resource.
+- Use one project per application or per audience. Data does not cross projects, and there is no way to query across them.
+- Put a project API key in your application and a personal access token in your scripts. Scope each to the least it needs, and give the key an expiry.
+- Keys do not carry a role. A key cannot be an admin, and that is deliberate.
+- Run the application as a non-superuser database role if you self-host. The provided setup does this for you; see [Self-hosting](/docs/self-hosting/).
+
+## Related pages
+
+<CardGrid>
+  <LinkCard title="API keys, tokens and administration" href="/docs/guides/access/" description="Create scoped keys and tokens, and manage organizations and projects." />
+  <LinkCard title="Accounts and sign-in" href="/docs/guides/accounts/" description="Sessions, two-factor authentication and inviting people." />
+  <LinkCard title="Security" href="/docs/security/" description="Policy, threat model and the ASVS checklist." />
+  <LinkCard title="Self-hosting" href="/docs/self-hosting/" description="Run Spanlight with the database role it needs." />
+</CardGrid>

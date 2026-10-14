@@ -1,0 +1,134 @@
+---
+title: GitHub Action
+description: Run a prompt version over a Spanlight dataset on every pull request with the eval-gate GitHub Action, and fail the job when a score drops. Shows a minimal workflow, which inputs to set first, and what Spanlight records.
+---
+
+{/* Sources: backend/app/api/deps.py, backend/app/core/errors.py, .github/actions/eval-gate/action.yml, .github/actions/eval-gate/README.md, sdks/python/src/spanlight/_experiments.py, sdks/python/src/spanlight/_experiments_api.py, sdks/python/src/spanlight/_experiments_setup.py, sdks/python/src/spanlight/_experiments_runs.py, sdks/python/src/spanlight/_experiments_report.py, backend/app/evals/experiments.py, backend/app/api/v1/experiments.py, backend/app/core/idempotency_store.py, frontend/src/features/gateway/credentials/credential-row.tsx */}
+
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+import Verified from '../../../components/Verified.astro';
+
+The **eval-gate** Action runs one prompt version over one dataset in Spanlight, scores every answer with your evaluators and fails the job when a mean score is below a threshold you set. It is how a pull request that changes a prompt is checked before it merges. The [Tutorial: block a regression in CI](/docs/tutorials/eval-gate/) builds the whole setup and shows a failing pull request; this page is the short reference for the Action.
+
+The Action is a thin wrapper. It installs the Spanlight Python SDK and runs `python -m spanlight._experiments` with your inputs. Every run is a real run in Spanlight and every answer is a real provider call, so each run costs money.
+
+<Prerequisites
+  items={[
+    'A GitHub repository where you can add a workflow, a secret and variables',
+    'A Spanlight instance that GitHub can reach over https. The token is never sent over plain http, except to localhost',
+    'A personal access token with the write scope, stored as a secret. The role behind it is member, admin or owner in the project',
+    'A dataset with items and a prompt in the project. Evaluators are optional and need an admin or owner to create',
+    'The id of a provider credential and a model with a known price, the worker running on your instance, and CREDENTIALS_KEYS set on the server',
+  ]}
+/>
+
+<Verified
+  date="2026-10-13"
+  packages={[{ name: 'spanlight', version: '0.1.0' }]}
+  note="The Action's command, python -m spanlight._experiments with the arguments action.yml builds, was run on a local machine with Python 3.13.9 against a local Spanlight server and a stand-in for the Anthropic API. The SDK came from PyPI. Its experiment runner is identical to the one at the repository tag sdk-python-v0.1.0, which the workflow below uses, and the Action's own files match that tag. GitHub Actions itself was not run, so neither the hosted Action nor this workflow was."
+/>
+
+## A minimal workflow
+
+```yaml
+name: Prompt evals
+on:
+  pull_request:
+    paths: ['prompt-version.txt']
+
+# An experiment runs one run at a time: queue gates instead of running them side by side.
+concurrency:
+  group: spanlight-eval-gate-${{ github.ref }}
+
+jobs:
+  eval-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Read the prompt version
+        id: prompt
+        run: echo "ref=support/answer:$(tr -d '[:space:]' < prompt-version.txt)" >> "$GITHUB_OUTPUT"
+
+      - uses: dheerajkarwasra/spanlight/.github/actions/eval-gate@sdk-python-v0.1.0
+        with:
+          host: ${{ vars.SPANLIGHT_HOST }}
+          token: ${{ secrets.SPANLIGHT_TOKEN }}
+          project-id: ${{ vars.SPANLIGHT_PROJECT_ID }}
+          dataset: refund-questions
+          prompt: ${{ steps.prompt.outputs.ref }}
+          evaluators: cites-policy
+          fail-below: cites-policy=1
+          credential-id: ${{ vars.SPANLIGHT_CREDENTIAL_ID }}
+          model: claude-haiku-4-5
+          max-cost-usd: '1'
+```
+
+Replace the dataset, prompt, evaluators and thresholds with your own. The text after `@` in the `uses` line is a Git tag or commit of the Spanlight repository. Pin it, as above, so a change to the repository cannot change your gate. The Action installs the SDK from the same ref, so the two always match. Set `sdk-ref` only if you need a different SDK.
+
+The workflow runs when GitHub runs it. A prompt change made in Spanlight does not start it: the trigger is the `on:` block of your workflow. So the example keeps the version to test in a file of your repository, `prompt-version.txt`, triggers on that file and reads the version from it; a pull request that changes the file changes what is tested. With `prompt: support/answer@production` instead, a pull request changes nothing the Action tests, because the label lives in Spanlight and the job only re-tests whatever `production` points at. The [tutorial](/docs/tutorials/eval-gate/) uses the same file.
+
+## Inputs to set first
+
+The [eval gate page](/docs/eval-gate/#inputs) has the table of every input and its default. These are the ones that decide whether the gate protects you:
+
+* **`prompt`.** What is tested. `support/answer:3` is version 3. `support/answer@staging` is whatever the `staging` label points at, and a name alone means the `production` label. The experiment records the version it ran, so a label that moves runs the new version in the same experiment.
+* **`evaluators` and `fail-below`.** The evaluators score each answer, and `fail-below` turns a mean score into a pass or a fail. **If `fail-below` is empty the job only reports and always passes**, whatever the scores are. A score you list in `fail-below` that the run did not produce counts as below its threshold.
+* **`credential-id` and `model`.** Where the prompt runs. Copy the credential id from **Gateway, Credentials**, where each credential shows its ID with a copy button. With the evaluators they choose the experiment, so changing any of them starts a new experiment instead of continuing the old one.
+* **`max-cost-usd`.** The cost limit of a run. It applies when the experiment is created, so changing it later changes nothing; see [the eval gate page](/docs/eval-gate/#what-the-gate-does).
+* **`host`, `token` and `project-id`.** Keep the token in a secret and the other two in variables.
+
+The Action's outputs are `run-id` and `run-url`. The `run-url` links to the run in the dashboard; which page it opens depends on the SDK ref, as the next paragraph explains. The report is also printed to the job log and added to the job summary.
+
+The `run-url` output and the format of the report depend on the SDK ref the Action installs. With the `sdk-python-v0.1.0` tag used in the workflow above, `run-url` and the "Open the run" link open the experiment page, and the report prints latencies unrounded. The Action on `main`, or on a later tag, links the run page and rounds latencies to whole milliseconds.
+
+## The exit codes
+
+The step ends with `0` when the run finished and every threshold held, `1` when a score is below its threshold, and `2` when the run could not be set up, failed or timed out. GitHub shows `1` and `2` as a failed job. [The eval gate page](/docs/eval-gate/#what-the-gate-does) explains each.
+
+For a gate to block a merge, require the job in your branch protection rules. The Action does not set a status or write to the pull request by itself.
+
+## Other CI systems
+
+The Action only installs the SDK and runs one command, so the same gate runs in any CI that has Python 3.10 or newer. [Run it outside GitHub](/docs/eval-gate/#run-it-outside-github) has the command. Keep the token in your CI system's secret store.
+
+## What is recorded
+
+* **An experiment**, created the first time and reused afterwards, named `ci/<dataset>/<prompt>/<id>`. Listed under **Experiments**.
+* **A run** for each gate, with its number, the prompt version it tested, its items, the mean of each score, its cost and its latency.
+* **A trace for each answer**, in the `experiments` environment, with the prompt that was sent, the answer, the tokens and the cost, like any call through the gateway.
+* **The scores** your evaluators wrote for each answer.
+* **The report** in the job log and the job summary, and the two outputs.
+
+## What is not recorded
+
+* **Nothing links a run to GitHub.** Spanlight does not store the pull request, the commit or the branch. Inside GitHub Actions the Action sends an `Idempotency-Key` made from `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT` and the experiment id, so a retried request cannot start two runs; Spanlight keeps that key for 24 hours, and it is not shown on the run. The run records which prompt version was tested and who started it, which is the owner of the token.
+* **No comment or status.** The Action writes to the job log and the job summary only.
+* **No change to your prompts.** The gate reads a prompt version and never saves, relabels or deletes one.
+* **No categories.** A score that is a category, rather than a number or a yes or no, cannot be compared with a threshold. Use a numeric or boolean evaluator for the gate.
+* **The token.** It is read from the environment and never printed.
+
+## Troubleshooting
+
+* **The job fails with `error: SPANLIGHT_TOKEN is required`.** The secret is empty. GitHub does not give repository secrets to workflows triggered by pull requests from forks. A missing `host`, `project-id`, `credential-id` or `model` is named in the same line.
+* **`error: ... cannot reach the server (ConnectError)`.** The runner cannot reach `host`. A GitHub-hosted runner cannot reach an instance that runs on your laptop or inside a private network; use a public https address or a self-hosted runner.
+* **`the host must be an https:// URL`.** Use the https address of your instance. Only `localhost` may use `http://`.
+* **`401 UNAUTHORIZED: Missing, invalid or revoked access token.`** The token is wrong or revoked. Create a new one and update the secret.
+* **`401 TOKEN_EXPIRED: This access token has expired. Create a new one.`** The token passed its expiry date. Create a new one and update the secret.
+* **`dataset '<name>' not found in the project`, or `evaluator not found in the project: <name>`.** The names are looked up exactly, in the project from `project-id`.
+* **`prompt '<name>' has no label 'production'`.** `prompt` has no version number or label, and the prompt has no `production` label. Set the label, or write `name:version`.
+* **`422 EXPERIMENT_MODEL_UNPRICED`.** The model has no price for the provider of the credential, so the cost limit cannot be enforced. See [Price overrides](/docs/concepts/cost/#price-overrides).
+* **The job exits `2` and the run shows `credentials_not_configured`.** A worker cannot open stored provider keys. Set `CREDENTIALS_KEYS` on the API and on every worker; see [Provider credentials](/docs/gateway/credentials/).
+* **The job exits `2` with `another run of this experiment did not finish in time`.** An experiment allows one run at a time, and the gate waits for the earlier one. Add the `concurrency:` block shown above.
+* **The job passes but a score is low.** Check that `fail-below` is set and spells the score name as the evaluator does.
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Tutorial: block a regression in CI', href: '/docs/tutorials/eval-gate/', description: 'Set up a dataset, a prompt and a rule, and watch a worse prompt fail a pull request.' },
+    { title: 'Eval gate for CI', href: '/docs/eval-gate/', description: 'Every input, the exit codes, the experiment name and the limits.' },
+    { title: 'Experiments', href: '/docs/experiments/', description: 'Replay a dataset through a prompt and compare two runs.' },
+  ]}
+/>

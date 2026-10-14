@@ -1,0 +1,162 @@
+---
+title: OTLP attribute mapping
+description: How Spanlight turns an OpenTelemetry GenAI span into a Spanlight span. Which attribute fills which field, which fallback is used, how the finish reason and error class are worked out, and which attributes are not read.
+---
+
+{/* Sources: backend/app/ingest/otlp.py, backend/app/ingest/otlp_values.py, backend/app/ingest/otlp_fit.py, backend/app/ingest/finish_reason.py, backend/app/ingest/error_class.py, backend/app/ingest/jsondepth.py, backend/app/ingest/normalize.py, backend/app/api/ingest.py */}
+
+This page lists, attribute by attribute, how Spanlight reads a span sent to `POST /v1/otlp/traces`. To send traces, see [OTLP ingestion](/docs/otlp/). Both encodings, protobuf and JSON, are decoded to the same shape and then mapped by the same code, so the result does not depend on the encoding.
+
+## Decoding
+
+- **Ids.** Trace and span ids are stored as lower-case hex. In JSON, an id is hex, or base64 that decodes to 16 bytes (trace) or 8 bytes (span). An id that is neither is left as it is, and span validation rejects the span with the reason.
+- **Keys.** JSON keys are lowerCamelCase, as OTLP/JSON writes them (`resourceSpans`, `startTimeUnixNano`). For the structure of the request, the snake_case spellings are accepted too: `resource_spans`, `scope_spans`, `trace_id`, `span_id`, `parent_span_id`, `start_time_unix_nano` and `end_time_unix_nano`. The wrappers of attribute values are lowerCamelCase only: `stringValue`, `intValue`, `doubleValue`, `boolValue`, `arrayValue`, `kvlistValue` and `bytesValue`. A value sent as `string_value` is read as `null`.
+- **Integers.** An `intValue` and the nanosecond timestamps may be JSON numbers or strings of digits. An integer of the wrong type, such as a fraction or an object, or a string of digits that is too long, is a `400 INVALID_OTLP` for the whole request.
+- **Names for enums.** The span kind and the status code may be sent as numbers or as names such as `SPAN_KIND_CLIENT` and `STATUS_CODE_ERROR`.
+- **Doubles.** A `doubleValue` that is not finite (`NaN`, an infinity) is stored as its name, a string, because the database cannot store such a number.
+- **Value types.** Strings, booleans, integers, doubles, arrays and key-value lists are kept as they are. A protobuf `bytes_value` is stored as base64. A value of any other type becomes `null`.
+- **Resource attributes.** The attributes of the resource apply to every span under it.
+
+## Which attribute fills which field
+
+When a field lists several attributes, the first one that is present and not an empty string wins.
+
+| Spanlight field | Read from |
+| --- | --- |
+| `provider` | `gen_ai.provider.name`, else `gen_ai.system` |
+| `model` | `gen_ai.response.model`, else `gen_ai.request.model`. The response model is the snapshot that was billed. |
+| Input tokens | `gen_ai.usage.input_tokens`, else `gen_ai.usage.prompt_tokens` |
+| Output tokens | `gen_ai.usage.output_tokens`, else `gen_ai.usage.completion_tokens` |
+| Cached tokens | `gen_ai.usage.cache_read_input_tokens` |
+| Input | `gen_ai.input.messages`, else `gen_ai.prompt` |
+| Output | `gen_ai.output.messages`, else `gen_ai.completion` |
+| Finish reason | See [Finish reason](#finish-reason) |
+| Span name | The name of the span; if it has none, the resource's `service.name`; if there is none, `span` |
+| Span kind | See [Span kind](#span-kind) |
+| Status | The OTLP status code: 0 is `unset`, 1 is `ok`, 2 is `error`. Any other code is `unset`. |
+| Status message | The OTLP status message |
+| Start and end time | `startTimeUnixNano` and `endTimeUnixNano` |
+| Parent | The parent span id. A span without one is a root span. |
+
+Include the cached tokens in the input token count. Spanlight prices the cached part at the cached rate and the rest at the input rate; see [How cost is calculated](/docs/concepts/cost/). Cost is worked out on the server from the model and the token counts. It is never read from the span. A span with an unknown model, or without token counts, has an unknown cost, not zero. The [price table](/docs/reference/prices/) lists the models that have a price.
+
+### Prompts and completions
+
+The four content attributes (`gen_ai.input.messages`, `gen_ai.prompt`, `gen_ai.output.messages`, `gen_ai.completion`) usually hold JSON text. Spanlight parses the text and stores the result. If the text is not valid JSON, or nests more than 64 levels, it is stored as the plain string. Numbers in it that are not finite, or too large for a double, become strings. A value that is not a string is stored as it is.
+
+The content attributes are not repeated in the span's attributes. Secrets are redacted and large values are cut as for every other ingestion path; see [Limits](/docs/reference/limits/).
+
+### Span kind
+
+Spanlight sets the kind in this order. The first rule that applies wins.
+
+1. `llm`, if the span has any attribute whose key starts with `gen_ai.`.
+2. `http`, if it is a client span (OTLP kind 3) with any attribute that starts with `http.` or `url.`.
+3. `retrieval`, if it has any attribute that starts with `db.`.
+4. `other`.
+
+The kinds `tool` and `chain` are never set from OTLP data.
+
+### Trace fields
+
+A trace takes its fields from the spans that belong to it. These are read for every span, and the trace keeps the values according to the rules in [the API conventions](/docs/api/conventions/#ingestion-post-v1traces).
+
+| Trace field | Read from |
+| --- | --- |
+| Name | Only on a root span: the span's name; if it has none, the resource's `service.name`. A span with a parent does not name the trace. |
+| Environment | The resource attribute `deployment.environment.name`, else `deployment.environment` |
+| Release | The resource attribute `service.version` |
+| User | `user.id` on the span, else `user.id` on the resource |
+| Session | `session.id` on the span, else `session.id` on the resource |
+
+### Stored attributes
+
+Every attribute of the span is stored on the span, except the four content attributes above. The resource's `service.name` is added as `service.name`, unless the span has an attribute of that name. No other resource attribute is stored on the span. Only the ones in the tables above are read, and they go to the trace.
+
+## Finish reason
+
+The finish reason says why the model stopped. Spanlight stores one value from a fixed set: `stop`, `length`, `tool_calls`, `content_filter` or `other`. It reads the first of these that holds a non-empty string:
+
+1. The span's own finish reason. An OTLP span has no such field, so this is empty here.
+2. The attribute `finish_reason`.
+3. The first element of the list in the attribute `response.finish_reasons`.
+4. The attribute `response.stop_reason`.
+5. The first element of the list in the attribute `gen_ai.response.finish_reasons`.
+
+`gen_ai.response.finish_reasons` must be a list, as the OpenTelemetry convention says. A plain string in that attribute is not read. Only the first element is used. The raw value stays in the attributes. The stored value is the raw value, trimmed and lower-cased, mapped like this:
+
+| Raw value | Stored value |
+| --- | --- |
+| `stop`, `end_turn`, `stop_sequence` | `stop` |
+| `length`, `max_tokens` | `length` |
+| `tool_calls`, `function_call`, `tool_use` | `tool_calls` |
+| `content_filter`, `refusal` | `content_filter` |
+| `pause_turn`, and any value not listed here | `other` |
+
+A span with no finish reason has an unknown one, not `other`.
+
+## Error class
+
+Every span with status `error` gets one error class, so you can filter on it and the Doctor can count failures by cause. A span that did not fail has none. The class is decided in this order.
+
+### 1. A numeric status
+
+Spanlight reads the first of these attributes that holds a whole number: `spanlight.gateway.upstream_status`, `http.status_code`, `error.status`. The number may be an integer, a float with no fraction, or a string of one to three ASCII digits. The newer attribute `http.response.status_code` is not read.
+
+| Status | Class |
+| --- | --- |
+| 401, 403 | `auth` |
+| 429 | `rate_limit` |
+| 408, 499, 504 | `timeout` |
+| 413 | `context_length` |
+| any other 500 to 599 (529 included) | `provider_5xx` |
+| any other 400 to 499 | `client`, unless the message names `context_length` or `content_filter` (below), which is more specific |
+
+A number outside 400 to 599 does not decide. The message does.
+
+### 2. The status message
+
+Without a deciding status, Spanlight looks for these phrases in the status message, ignoring case. The first group that has a match wins, in this order.
+
+| Class | Phrases |
+| --- | --- |
+| `auth` | `unauthorized`, `invalid api key`, `authentication`, `permission denied`, `forbidden` |
+| `rate_limit` | `rate limit`, `too many requests`, `quota` |
+| `timeout` | `timed out`, `timeout`, `deadline exceeded`, `client disconnected`, `aborted` |
+| `context_length` | `context length`, `context window`, `maximum context`, `too many tokens`, `prompt is too long` |
+| `content_filter` | `content filter`, `content_policy`, `safety`, `refusal` |
+| `network` | `connection`, `dns`, `ssl`, `reset by peer`, `econnrefused` |
+| `provider_5xx` | `overloaded`, `internal server error`, `service unavailable`, `bad gateway`, `upstream` |
+
+### 3. Otherwise
+
+A failed span with no deciding status and no matching phrase is `unknown`.
+
+## Values that are dropped, not rejected
+
+An OpenTelemetry exporter describes a whole service in its resource attributes. So one value that does not fit would reject every span the service sends. For these cases, Spanlight keeps the span and drops or fixes the value instead:
+
+- An environment longer than 64 characters, or a release longer than 128, is dropped. The trace has no environment or release from that span.
+- A token count sent as a double with no fraction (`12.0`) is stored as an integer (`12`).
+- A token count sent as a double with a fraction, or as `NaN` or an infinity, is dropped. The span's usage is then unknown, so its cost is unknown, not zero.
+
+The server logs how many values of each kind it dropped in a request, never the values. Every other invalid value is a rejection of that span only: a user or session id that is too long, a negative or huge token count, or a count sent as a string. The response lists the rejected spans in `partialSuccess`; see [OTLP ingestion](/docs/otlp/).
+
+## What is not mapped
+
+Spanlight reads the OpenTelemetry GenAI attributes listed on this page and nothing else. In particular:
+
+- **OpenInference.** The `llm.*` attributes (for example `llm.model_name` and `llm.token_count.*`) and the `input.value` and `output.value` attributes are not read. A span that has only OpenInference attributes is stored with kind `other` (unless the kind rules above apply for another reason), with no model, tokens, prompt or completion, and with an unknown cost. The attributes are kept in the span's attributes, so you can see them, but nothing is worked out from them. Use an exporter that writes the OpenTelemetry `gen_ai.*` attributes, or the [Python SDK](/docs/python-sdk/).
+- **Other GenAI attributes.** Attributes such as `gen_ai.request.temperature`, `gen_ai.operation.name` and `gen_ai.usage.cache_creation_input_tokens` are stored in the span's attributes but do not fill any field. Cache writes are not priced separately.
+- **Span events and links.** They are ignored. A prompt or completion sent as a `gen_ai.*` event, not as an attribute, is not stored.
+- **Time to first token.** It is not set from OTLP data.
+- **Metrics and logs.** The OTLP endpoint accepts traces only.
+
+## Related pages
+
+- [OTLP ingestion](/docs/otlp/): the endpoint, the limits and how to configure an exporter.
+- [How ingestion works](/docs/concepts/ingestion/): what happens to a span after it is mapped.
+- [Prices](/docs/reference/prices/): the models that have a built-in price.
+- [How cost is calculated](/docs/concepts/cost/): the formula, the token convention and unknown costs.
+- [Limits](/docs/reference/limits/): sizes and rates that apply to ingestion.
+- [Error codes](/docs/reference/errors/): what each status and code means.

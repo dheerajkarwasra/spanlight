@@ -1,0 +1,94 @@
+---
+title: How the Doctor works
+description: The ideas behind the Doctor. Deterministic detectors, windows and baselines, evidence, the layer a problem lives in, how an insight is kept, fixed and verified, and the health score.
+sidebar:
+  order: 5
+---
+
+{/* Sources: backend/app/insights/catalogue.py, backend/app/insights/engine.py, backend/app/insights/jobs.py, backend/app/insights/schemas.py, backend/app/insights/fingerprint.py, backend/app/insights/lifecycle_queries.py, backend/app/insights/health.py, backend/app/insights/context_queries.py, backend/app/insights/context_build.py, backend/app/insights/detectors/base.py, backend/app/insights/explain.py, backend/app/insights/explain_service.py, backend/app/insights/notify.py, backend/app/jobs/scheduler.py, backend/app/api/schemas/insights.py, docs/decisions/0013-insight-detectors-are-pure-functions.md */}
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+The Doctor reads the traces Spanlight already holds and tells you when your application calls models in a way that wastes money, time or correctness. This page explains how it reaches a finding and why you can trust one. To use it, see the [Doctor guide](/docs/doctor/).
+
+## The idea
+
+A dashboard shows you numbers and leaves the looking to you. The Doctor does the looking. It turns a pattern in your spans into an **insight**: a named problem, the evidence for it, the layer where it lives, a suggested fix and a way to check that the fix worked.
+
+Three choices shape it.
+
+- **It is deterministic.** Each detector is a fixed rule over your spans. No language model decides whether something is a problem, so the same data gives the same findings, and you can re-check any of them by hand.
+- **It shows its evidence.** Every insight lists the traces and the numbers behind it. A finding you cannot verify is not worth acting on.
+- **It stays silent on thin data.** A detector with too few samples says nothing rather than guess.
+
+## How it works
+
+### Detectors, windows and baselines
+
+There are fifteen detectors, one per kind of problem. A detector is a pure function: it receives the spans of its **window** and returns findings. It runs no queries, reads no clock and calls no model, which is why each one can be tested on a handful of rows.
+
+Every 15 minutes the worker takes each project that received a span in the last 24 hours, loads the last 24 hours of its LLM and tool spans once, and gives each detector the slice that is its window. The windows range from 15 minutes to 24 hours.
+
+Some detectors compare the recent past with a **baseline**: the same slice over the previous 7 days. The comparison needs enough history, so a new install starts quiet and begins to find things as traffic accumulates.
+
+Two kinds of call are kept out where they would mislead. Calls that the Integration Lab faulted on purpose are not counted by the detectors that judge your traffic or your provider, and gateway cache hits, which never reached a provider, are left out of the detectors where they would distort the picture. The detectors that judge how your client behaves use faulted calls deliberately, because a fault is how a client's reaction can be seen on demand.
+
+A run is bounded in time: no project starts after 40 seconds into a pass, and one project may take at most 30 seconds. A project the pass did not reach goes first in the next one. A detector that raises an error is recorded and skipped, and the others still run.
+
+### What a finding says
+
+A finding carries values, not prose. The catalogue turns the values into the title, summary, suggested fix and verification you read. Every kind has three labels besides its text.
+
+| Label | Values | Meaning |
+| --- | --- | --- |
+| Layer | `client`, `request`, `agent`, `provider`, `platform`, `traffic` | Where the problem lives: how your code calls the API, what it sends, how tools are orchestrated, the model provider, Spanlight's own setup such as prices, or an aggregate symptom whose cause is still open. |
+| Certainty | `measured`, `inferred` | Whether the finding restates numbers Spanlight observed, or a pattern that suggests a cause you should confirm. |
+| Severity | `info`, `warning`, `critical` | How urgent it is. Thresholds belong to each kind. |
+
+The layer is the most useful of the three. A `traffic` finding, such as an error spike, tells you something is wrong and sends you to the evidence to find out what. A `client` finding tells you the fix is in your code.
+
+The full list, with the thresholds of each, is the [detector catalogue](/docs/reference/detectors/).
+
+### Identity and lifecycle
+
+An insight is identified by its kind and a key that names what it is about, such as the environment and model. Spanlight hashes the project, kind and key into a fingerprint. The same problem therefore always maps to the same insight, and a problem that comes back never creates a second row.
+
+An insight moves between four states: `open`, `acknowledged`, `muted` and `resolved`.
+
+- A new problem opens an insight. A problem seen again adds to its occurrence count and refreshes its evidence.
+- An open or acknowledged insight that is not seen for 24 hours is resolved automatically, provided its detector ran without an error. A failed run says nothing about whether the problem went away.
+- A resolved problem that returns reopens the same insight.
+- A person can acknowledge, resolve or mute an insight. A mute needs a reason and an end date.
+
+Only a critical insight that becomes open sends a notification, and only once for each opening. The rules in full are in [The life of an insight](/docs/doctor/#the-life-of-an-insight).
+
+### Fix and verification
+
+Each kind ships with a suggested fix and a **verification**: what you should see once the fix is in. The verification is part of the finding because a fix you cannot check is a guess. It usually names a screen or a filter, and for the client-behaviour findings it names a scenario of the [Integration Lab](/docs/gateway/lab/) that reproduces the problem so that you can watch it disappear.
+
+### The health score
+
+The Overview condenses the state of a project into one number from 0 to 100. It is 100 minus four penalties: open findings (15 points per critical insight and 5 per warning, at most 40), errors (300 times the error rate, at most 30), latency growth against the previous window (at most 15) and cost growth against the previous window (at most 15).
+
+An input that is unknown costs nothing, and a window with no LLM calls has no score at all: the tile shows a dash. The score is a prompt to look, not a grade. The formulas are in [The health score](/docs/doctor/#the-health-score).
+
+### Where a model is involved
+
+Only in one place, and only when someone asks. **Explain with Claude** sends an insight and at most five example traces, redacted, to a Claude model through your own gateway credential, under a monthly budget. The answer is labelled as advisory and stored beside the finding. Nothing about whether a problem exists depends on it.
+
+## What it means for you
+
+- A finding is a claim about your traffic that you can check. Open its evidence traces before you act.
+- No finding does not mean no problem. It means no detector had enough data to fire, or none covers it.
+- The thresholds are fixed in code and are not tuned per project, so a project with unusual traffic can see a finding it considers normal, or miss one. Use the evidence to check a finding, and mute one you disagree with.
+- Read the layer first. It tells you whether to look at your code, your prompts, your provider or your setup.
+- Use the current Python SDK or the gateway if you want the client-behaviour findings. They need a request hash on each span, which those two send; any other source gets one only when the span's input is sent.
+
+## Related pages
+
+<CardGrid>
+  <LinkCard title="The Doctor guide" href="/docs/doctor/" description="Run it, read an insight, mute it and ask for an explanation." />
+  <LinkCard title="Detector catalogue" href="/docs/reference/detectors/" description="All fifteen detectors, their thresholds, fixes and checks." />
+  <LinkCard title="Integration Lab" href="/docs/gateway/lab/" description="Reproduce client failures on purpose." />
+  <LinkCard title="Detectors runbook" href="/docs/runbooks/detectors/" description="Detector runs, stuck projects and the explanation budget." />
+</CardGrid>

@@ -1,0 +1,187 @@
+---
+title: The Doctor
+description: Findings about how your application calls LLMs, found from your own traces. What the Doctor reads, when it runs, how an insight is opened, muted and resolved, the health score, and how to ask Claude for an explanation.
+sidebar:
+  order: 1
+---
+
+{/* Sources: frontend/src/features/doctor/last-checked-pill.tsx, frontend/src/features/doctor/insight-format.ts, frontend/src/features/doctor/insight-empty.tsx, docs/runbooks/detectors.md */}
+
+import CatalogueRedirect from '../../components/CatalogueRedirect.astro';
+import NextSteps from '../../components/NextSteps.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+
+<CatalogueRedirect />
+
+The **Doctor** reads the traces Spanlight already stores and opens an **insight** when it finds a pattern that usually costs money, time or correctness: a client that hammers a failing endpoint, a timeout that cuts off healthy calls, a conversation that grows without bound. Every insight carries the measured evidence, the layer where the problem lives, a suggested fix and a way to check that the fix worked.
+
+The Doctor is deterministic. Fifteen detectors apply fixed rules to your spans; no language model decides whether something is a problem. An optional, clearly labelled [explanation from Claude](#explain-with-claude) can be asked for on demand, and that is the only place a model is involved.
+
+The thresholds are constants in the code, the same for every project and not tuned to yours, so a finding can be a false alarm for your traffic; the evidence traces are there so you can check.
+
+The **Doctor** screen lists a project's insights. The Overview shows a [health score](#the-health-score), and a trace that is part of an insight's evidence carries a badge that links to it. Anyone who can see the project can read insights. Organization **admins and owners** can acknowledge, resolve, mute and unmute them, and ask for explanations.
+
+<Prerequisites
+  items={[
+    'Traces from the last 24 hours in the project',
+    'The worker running, with DETECTORS_ENABLED on (the default). The detectors run every 15 minutes',
+    'The admin or owner role, to acknowledge, resolve or mute an insight. Every role can read them',
+    'To ask Claude for an explanation: an Anthropic credential under Gateway, Credentials, CREDENTIALS_KEYS set on the server, and the gateway running in the API process (GATEWAY_MODE=embedded, the default)',
+  ]}
+/>
+
+## What the Doctor reads
+
+Detectors work from the LLM and tool spans of a project. Spanlight 0.5.0 adds three fields to LLM spans so that client behaviour can be seen at all.
+
+**Error class.** Every failed span gets one class, worked out when it is ingested from the HTTP status (`spanlight.gateway.upstream_status`, `http.status_code` or `error.status`, in that order) and, when there is no status, from the error message.
+
+| Class | Typical cause |
+| --- | --- |
+| `auth` | 401 and 403, an invalid or expired key, missing permission |
+| `rate_limit` | 429, "rate limit", "too many requests", quota |
+| `timeout` | 408, 499 and 504, "timed out", "deadline exceeded", a client that disconnected |
+| `context_length` | 413, or a 400 that talks about the context window or too many tokens |
+| `content_filter` | A 400 that names a content filter, safety or a refusal |
+| `provider_5xx` | 500 to 599 (529 included), "overloaded", "bad gateway" |
+| `network` | Connection reset or refused, DNS, TLS |
+| `client` | Any other 4xx |
+| `unknown` | A failure that matches nothing above |
+
+A span that did not fail has no class. Filter **Traces** by error class to see every trace with a failure of one class.
+
+**Request hash.** A 32-character hash of the model and the request (the same prompt, messages, tools and parameters give the same hash). It lets the Doctor see "the same request, again". Options that do not change what is asked, such as `stream`, `user`, `metadata`, `timeout` and extra headers, are left out of the hash. The hash is computed before payload capture, so it exists even for projects that do not store prompts. The Python SDK and the gateway send it. For other sources Spanlight computes it from the span input when one is sent (the input as received, before payload capture drops it); only native JSON spans may send their own `request_hash` (32 lowercase hex characters).
+
+**Finish reason.** Why generation ended, in one vocabulary for every provider: `stop`, `length`, `tool_calls`, `content_filter` or `other`. OpenAI's `stop` and Anthropic's `end_turn` and `stop_sequence` are `stop`; `max_tokens` is `length`; `tool_use` is `tool_calls`. The provider's own value stays in the span attributes. OTLP spans use `gen_ai.response.finish_reasons`.
+
+Spans stored before these fields existed have none of them, and they are not filled in afterwards. Detectors that need a field simply skip such spans, so a new install starts finding things as new traffic arrives.
+
+## When the Doctor runs
+
+The worker runs every detector over every project that received a span in the last 24 hours, **every 15 minutes**. For each project it loads the last 24 hours of LLM spans and tool spans (up to 50 000 of each, newest first) and gives each detector the slice it needs, from 15 minutes to 24 hours. Baselines for the spike detectors come from the previous 7 days.
+
+- **A run is bounded.** One pass starts no new project after 40 seconds, and one project may take at most 30 seconds. A project the pass did not reach goes first in the next one. A detector that raises an error is recorded and skipped; the others still run.
+- **Nothing is invented from thin data.** Every detector has a minimum sample size and returns nothing below it. A baseline needs at least 100 calls in the same slice; without one, the spike detectors say nothing.
+- **Faults and cache hits are not traffic.** Calls that the [Integration Lab](/docs/gateway/lab/) faulted on purpose are left out of the detectors that judge the health of your traffic or your provider (`error_spike`, `latency_regression`, `cost_spike`, `rate_limit_pressure`, `provider_incident`, `unpriced_spend`). Gateway cache hits never reached a provider and are left out of `retry_storm`, `cache_opportunity` and `unpriced_spend`. The detectors that judge client behaviour (the lab findings) use the faulted calls on purpose.
+- **Evidence is real traces.** Each insight lists up to 20 trace ids that contributed to the finding, most recent first, and the numbers behind it. Open them to confirm the finding.
+
+Operators can switch the schedule off with `DETECTORS_ENABLED` (see [Configuration](/docs/configuration/)) and read each run's outcome at `GET /api/v1/projects/{project_id}/detector-runs`; see the [detectors runbook](/docs/runbooks/detectors/).
+
+## The life of an insight
+
+An insight is identified by its **kind** and a key that names the thing it is about (for example the environment and model). The same problem is the same insight every time it is seen, so a problem that comes back does not create a second row.
+
+| Status | Meaning |
+| --- | --- |
+| `open` | Found and not dealt with. |
+| `acknowledged` | Someone has seen it. It still counts as open for the health score and still updates. |
+| `muted` | Silenced until a date. It keeps counting occurrences but never notifies. |
+| `resolved` | Gone for 24 hours, or resolved by hand. |
+
+What happens when the detector runs:
+
+- **A new problem** opens an insight with 1 occurrence.
+- **A problem still there** adds to `occurrences`, refreshes the evidence and the last-seen time, and follows the latest severity.
+- **A resolved problem that returns** reopens the same insight.
+- **A problem not seen for 24 hours** after its last sighting is resolved automatically, provided its detector ran without an error.
+- **A muted insight** stays muted and counts silently until the mute ends. After that it reopens if the problem is still there and resolves if it is not.
+
+Actions, for admins and owners: **Acknowledge** (open to acknowledged), **Resolve** (any status but resolved; the insight reopens if the problem is seen again), **Mute** with a date up to 90 days ahead and a required reason (1 to 500 characters), and **Unmute**. An action that does not apply to the current status answers `409 INVALID_TRANSITION`; a bad mute date or reason answers `422 INVALID_MUTE`. Every action is written to the audit log.
+
+Resolved insights are kept for the project's retention period and then deleted.
+
+### Notifications
+
+Only an insight of **critical** severity that becomes `open` sends a notification, and only once per opening. Warnings and infos appear in the Doctor and in the [weekly digest](/docs/budgets/#the-weekly-digest) but never page anyone. A re-detection of an open insight does not notify again, and a warning that later grows to critical stays quiet: only a transition into `open` notifies. A muted insight does not notify until its mute ends.
+
+Where it goes is set per project under **Settings, Project, Insight notifications**: up to 10 of the organization's [alert channels](/docs/alerts/#channels). Admins choose the channels; a channel that is not in the organization is refused with `422 UNKNOWN_CHANNEL`. All four kinds of channel receive it:
+
+- **Slack:** a message titled "Critical insight in `{project}`" with the title, the summary, the kind, the number of occurrences, when it was first seen, the suggested fix and a button that opens the insight.
+- **Email:** subject `[Spanlight] Critical insight in {project}: {title}`, with the summary, the fix, the way to verify it and a link. Recipients must be verified members, as for alerts.
+- **Webhook:** a signed `insight.opened` request, see [Alert webhooks](/docs/webhooks/#insightopened).
+- **PagerDuty:** a `trigger` with severity `critical` and a dedup key that is stable for the insight, so a reopening does not page a second incident while the first is still open in PagerDuty. Insights never send a `resolve` to PagerDuty: an insight resolves after a quiet day, which is not a recovery signal, so close the incident in PagerDuty yourself.
+
+The [weekly digest](/docs/budgets/#the-weekly-digest) gains an Insights section: the number of open insights and up to five of them, critical first.
+
+## The health score
+
+The Overview shows a **Health** tile from 0 to 100. It is 100 minus four penalties, each rounded to a whole number:
+
+| Penalty | Formula | At most |
+| --- | --- | --- |
+| Open findings | 15 per critical insight and 5 per warning (open and acknowledged; infos do not count) | 40 |
+| Errors | 300 times the error rate of the window (a 10 % error rate costs 30 points) | 30 |
+| Latency | 15 times (p95 divided by the p95 of the previous window, minus 1), only when p95 went up | 15 |
+| Cost | 15 times (spend divided by the spend of the previous window, minus 1), only when spend went up | 15 |
+
+The window is the one you picked on the Overview (24 hours by default) and the baseline is the window of equal length right before it. An input that is unknown costs nothing: a missing p95 never lowers the score. When the window has **no LLM calls the score is "—", not 100 and not 0**. Hover the tile to see each penalty, for example "Open findings −20" and "Errors −10". `GET /api/v1/projects/{project_id}/health` returns the same numbers, with a flag when a percentile came from rollups and is approximate.
+
+The score is a prompt to look, not a grade: two open critical insights alone take it to 70.
+
+## Explain with Claude
+
+Each insight page has an **Explain with Claude** button. It asks a Claude model to explain the finding to the engineer who owns the application: the likely cause, how to confirm it in the listed traces, and a concrete fix.
+
+- **Opt-in.** Nothing is sent anywhere until an admin or owner presses the button. It needs an Anthropic provider credential under **Gateway, Credentials**, `CREDENTIALS_KEYS` on the server and the gateway running in the API process (`GATEWAY_MODE=embedded`, the default); without them the button explains what is missing (`409 NOT_CONFIGURED`).
+- **Admins and owners only.** Members and viewers read the explanations already stored, and see the button disabled.
+- **A monthly budget.** Each organization may spend `EXPLAIN_MONTHLY_BUDGET_USD` (default $1.00) per UTC month on explanations; an explanation typically costs a few cents (the worst case is reserved up front). When the budget is spent the request is refused with `402 EXPLAIN_BUDGET_EXCEEDED` and nothing is sent. The cost of an explanation in flight is reserved up front, so concurrent requests cannot overspend. The budget `0` turns explanations off. The model is `EXPLAIN_MODEL` (default `claude-sonnet-5-5`); it needs a price, otherwise the budget cannot be enforced (`409 EXPLAIN_MODEL_UNPRICED`).
+- **Labelled advisory.** Every explanation is shown under "Advisory — generated by Claude from the evidence above; verify before acting." and is rendered as plain text. It is a second opinion on measured data, not a measurement.
+- **What is sent.** The insight's label, title, summary, layer, metrics and window, the catalogue fix, and at most five example traces: model, status, error class, status message, finish reason, token counts and the first 1 KB of each trace's input and output. Every piece of text passes through the same secret redaction as ingestion before it leaves. A project that does not capture payloads has no prompts or completions to send. No other data, and nothing from other projects, is included.
+- **It is traced.** The call goes through the gateway to your own Anthropic credential and is recorded as a normal LLM span in the project, in the environment `doctor` with the tag `doctor-explain`. It is real spend in that project.
+- **Failures usually cost nothing.** A failed call answers `502 EXPLAIN_FAILED`. When the request never left, or Anthropic answered an error before generating, the reservation is removed and nothing is counted. When the provider may have billed the call (a timeout or a lost connection after the request was sent), the worst-case cost stays in the month's spend, so the budget errs high.
+
+## The catalogue
+
+The fifteen detectors, with the layer, certainty and severity of each and the fix and check for every finding, are listed in the [detector catalogue](/docs/reference/detectors/).
+
+## Trying it on purpose
+
+The five client-behaviour findings can all be reproduced. The example clients in the repository's `examples/` folder run a scenario against a gateway key that has a fault profile:
+
+| Lab scenario | Naive client opens |
+| --- | --- |
+| `auth_expired`, `scope_denied`, `malformed_json`, `provider_5xx` | `retry_storm` |
+| `rate_limited` | `retry_after_ignored` and `retry_storm` |
+| `truncated_stream` | `truncated_stream_accepted` |
+| `unsupported_parameter` | `unsupported_parameter_retried` |
+| `slow_response`, `timeout` | `client_timeout_misconfigured` (and `retry_storm`, because the naive client retries its own timeouts at once) |
+
+The corrected client runs the same scenarios and is written to open no finding; keep `hold_ms` under 60 000, or its own 60 s timeout shows up as `client_timeout_misconfigured`. Findings appear the next time the detectors run, within about 15 minutes, if the run is long enough to pass each detector's minimum sample: use 10 or more rounds (`--rounds 12` for the timeout scenarios), because `retry_storm` needs 20 hashed calls and `client_timeout_misconfigured` needs 10 aborts.
+
+## Settings
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `DETECTORS_ENABLED` | `true` | Schedule the detector job. Off, no new insights appear. |
+| `EXPLAIN_MODEL` | `claude-sonnet-5-5` | The model behind "Explain with Claude". It needs a price. |
+| `EXPLAIN_MONTHLY_BUDGET_USD` | `1.00` | Most an organization may spend on explanations per UTC month. `0` turns them off. |
+| `USER_STATS_ENABLED` | `true` | Schedule the refresh behind the [Users](/docs/releases-and-users/#users) page. |
+
+Full descriptions are in [Configuration](/docs/configuration/).
+
+## Check it worked
+
+Open **Doctor** after your project has had traffic for 15 minutes or more. The pill beside the page title reads "Last checked" with a time, such as "Last checked 4 min ago", instead of "Not checked yet". The **Open** tab then lists the insights. When the detectors have found nothing yet, a new project shows "No findings yet — the Doctor checks every 15 minutes." The tab says "Nothing open." only once earlier insights exist and all of them are dealt with.
+
+## Troubleshooting
+
+| You see | Check |
+| --- | --- |
+| No insights at all | The Doctor needs traffic in the last 24 hours and checks every 15 minutes. Then check `DETECTORS_ENABLED` and that the worker is running. A new install has no baseline: the traffic detectors stay quiet until a slice has 100 calls from the previous 7 days. |
+| A finding you expected is missing | Each detector has a minimum sample size (see its entry). The client detectors need `request_hash`, so spans must come from the current SDK or the gateway; `tool_loop` needs stored inputs. |
+| An insight does not go away | It resolves after 24 hours without a sighting. Resolve it by hand if you have fixed the cause; it reopens if the problem is seen again. |
+| A critical insight did not notify | The project needs insight channels under Settings, Project. A muted insight does not notify until its mute ends, and only the first opening notifies. |
+| "Explain with Claude" is disabled | You are not an admin or owner, no Anthropic credential is set, or the monthly budget is spent. The message says which. |
+| The pill reads "Not checked yet", or "Last check failed" with a time | No detector run has finished, or the last one failed. Check that the worker is running and `DETECTORS_ENABLED` is on, then see the [detectors runbook](/docs/runbooks/detectors/). |
+| Detector runs show errors | See the [detectors runbook](/docs/runbooks/detectors/). |
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Detector catalogue', href: '/docs/reference/detectors/', description: 'What each of the fifteen detectors reads and the fix it suggests.' },
+    { title: 'Alert rules and channels', href: '/docs/alerts/', description: 'Get told when error rate, latency, volume or cost crosses a line.' },
+    { title: 'Alert webhooks', href: '/docs/webhooks/', description: 'Signed requests for alerts, budgets and critical insights.' },
+    { title: 'Run the Doctor', href: '/docs/runbooks/detectors/', description: 'Detector runs, stuck projects and the explanation budget.' },
+  ]}
+/>

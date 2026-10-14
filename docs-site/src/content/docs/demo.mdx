@@ -1,0 +1,132 @@
+---
+title: The live demo
+description: What the demo workspace contains, how to start a read-only demo session, how its model calls are paid for and capped, and what a self-hosted server needs before it shows the demo.
+sidebar:
+  order: 2
+---
+
+{/* Sources: backend/app/cli_demo.py, backend/app/config.py, backend/app/api/v1/demo.py, backend/app/services/demo.py, backend/app/services/demo_gateway.py, backend/app/services/demo_evals.py, backend/app/services/demo_evals_data.py, backend/app/services/sessions.py, backend/app/jobs/scheduler.py, backend/app/jobs/tasks/demo_traffic.py, backend/app/jobs/tasks/demo_flow.py, backend/app/jobs/tasks/seed_demo_evals.py, backend/app/api/v1/projects.py, backend/app/core/ratelimit.py, frontend/src/features/landing/use-start-demo.ts, frontend/src/features/auth/use-demo-session.ts, frontend/src/features/auth/login-page.tsx, frontend/src/features/overview/first-run.tsx, backend/app/api/deps.py, backend/app/api/v1/auth.py */}
+
+import NextSteps from '../../components/NextSteps.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+
+The demo is a workspace where you can look around Spanlight without an account. Its traces come from a small support bot that really calls Claude. Nothing in it is simulated.
+
+You can try the live demo at [https://spanlight.dev](https://spanlight.dev) without installing anything. The rest of this page covers the demo on your own server.
+
+<Prerequisites
+  items={[
+    'A Spanlight server that has the demo turned on. The public one is at https://spanlight.dev.',
+    'To run the demo on your own server: an Anthropic API key (ANTHROPIC_API_KEY), CREDENTIALS_KEYS, and the worker running',
+  ]}
+/>
+
+## Start a demo session
+
+1. Open [https://spanlight.dev](https://spanlight.dev), or the sign-in page of your own server. The landing, sign-in and sign-up pages all have the button.
+2. Select **Try the live demo**.
+
+Spanlight signs you in as a shared demo visitor and opens the demo workspace. You do not need an account.
+
+- The session is **read-only**. The demo visitor is a viewer, so you can read traces and other pages but cannot change anything.
+- The visitor is **shared**. Everyone who starts a demo session signs in as the same account, so what you see is what every visitor sees.
+- Starting the demo replaces the session cookie in your browser. If you were signed in to your own account, you are signed out of it there, and you sign in again to return. The button on the dashboard's first-run screen (shown in an organization that is not the demo one) asks you to confirm before it does this. The buttons on the sign-in, sign-up and landing pages start the demo straight away, without a prompt.
+- A demo session lasts at most one hour. Start another one afterwards.
+- Starting a demo session is limited to 10 an hour for each client address. Past that, the button shows "Too many demo sessions from your network. Try again in an hour."
+- If the server has the demo off, the button shows an error toast. The sign-in page says "The live demo isn't enabled on this server." and the landing page says "The live demo isn't configured on this server."
+
+## What the workspace contains
+
+The first demo session, or the first demo run of the worker, creates these. Creating them again changes nothing.
+
+| Object | Name |
+| --- | --- |
+| Organization | `Demo` (slug `demo`) |
+| Project | `Support bot` (slug `support-bot`) |
+| User | `Demo visitor`, a viewer of the organization |
+
+The demo organization cannot be changed. For example, its project cannot be deleted.
+
+### The traces
+
+Traces come from the worker's demo job. Each run does the same three steps for one question, chosen at random from seven fixed support questions:
+
+1. A model call classifies the question as `billing`, `shipping`, `account` or `other`.
+2. A lookup span, `faq-lookup`, picks the built-in FAQ entry for that category.
+3. A second model call answers from that entry.
+
+When both calls succeed, the result is one trace named `support-bot`. A root `chain` span holds two `llm` spans and the `faq-lookup` `retrieval` span. Both model calls use `claude-haiku-4-5` and go through the Spanlight [gateway](/docs/gateway/routing/) with a gateway key named `demo`, on a route named `demo` and a credential named `demo-anthropic`. The tokens, timings and errors are the ones the provider really returned.
+
+A run can end early. If the first call fails, or a budget set to block stops it, there is no category tag, no `faq-lookup` span and no second call. If the second call fails, the trace keeps the first call and the lookup. In every case the root span is stored with the status `error` and a message. A failed call has its own `llm` span, with one exception: if the span of a call could not be stored, the run fails with a "span was not stored" message, the call has no span, and its cost is not recorded. A run that is stopped by a block budget counts as skipped, not failed.
+
+Each trace has the environment `demo`, the release `demo-v1`, a session id that starts with `demo-`, a user id that starts with `visitor-`, and the tags `demo` and the category.
+
+### What the demo does not promise
+
+The code does not create an insight for the demo. Whether the [Doctor](/docs/doctor/) reports anything depends on the traffic the demo has gathered so far.
+
+## When the demo makes model calls
+
+The worker schedules the demo job every 30 minutes, but only when the demo is on. The job makes at most two provider calls per run. It gets one attempt and is never retried, so a failure does not repeat the spend.
+
+The job skips the run, and makes no call, when:
+
+- `ANTHROPIC_API_KEY` is not set;
+- the demo is turned off;
+- `CREDENTIALS_KEYS` is not set, because the provider key is stored sealed like any gateway credential;
+- the demo route or key was changed so that a call no longer reaches the provider exactly once, for example by adding retries, a fallback or a cache;
+- the monthly budget is used up (see the next section).
+
+## The budget cap
+
+`DEMO_MONTHLY_BUDGET_USD` caps the spending of the demo traffic job. The default is `1.00`. It does not cover the seeded evaluations, which have their own caps (see [Seed the demo evaluations](#seed-the-demo-evaluations)).
+
+Before every run, the job adds up the cost recorded on the demo project's spans since the start of the calendar month. The run goes ahead only if that sum is below the cap. The check happens before the calls, so the last run of a month can take the total a little past the cap.
+
+The job also skips a run when a billed model call this month has no recorded cost, because it can then not know what was spent. A [budget](/docs/budgets/) on the demo project that is set to block stops a demo call too.
+
+## Turn the demo on for your server
+
+The demo is on exactly when `ANTHROPIC_API_KEY` is set, unless you set `DEMO_ENABLED` yourself. `DEMO_ENABLED=true` turns it on and `DEMO_ENABLED=false` turns it off, whatever the key.
+
+1. Set `ANTHROPIC_API_KEY` and `CREDENTIALS_KEYS` for the API and the worker. See [Configuration](/docs/configuration/#demo-workspace).
+2. Optionally set `DEMO_MONTHLY_BUDGET_USD`.
+3. Run the worker. It schedules the demo job.
+4. Wait for a run, then open the sign-in page and select **Try the live demo**.
+
+If you turn the demo on without a key, visitors can start a demo session, but the workspace stays empty because no job makes calls.
+
+## Seed the demo evaluations
+
+A separate command adds an evaluation setup to the demo project. It is not scheduled, and you run it yourself:
+
+```bash
+spanlight demo seed-evals
+```
+
+It creates the prompt `support/answer` with two versions, the dataset `support-questions` from the 50 newest demo answers, the judge `relevance` and the experiment `answer-v1-vs-v2`. It needs 50 recorded demo answers with stored prompts and completions, and an Anthropic credential on the demo organization, so let the demo job run first. Without enough traces it exits with `need 50 traces, found N`.
+
+An experiment runs one run at a time. The first call queues the version 1 run. Run the command again, after that run has ended, to queue version 2. Each run makes real provider calls and is capped at $0.50. The seeded judge `relevance` samples 5 % of demo traffic, on `claude-haiku-5-5`, under its own monthly budget of $0.50. These caps are separate from `DEMO_MONTHLY_BUDGET_USD`. The command is safe to repeat. See [Experiments](/docs/experiments/#the-demo-seed) and the [demo evaluations runbook](/docs/runbooks/demo-evals/).
+
+## Check it worked
+
+After you select **Try the live demo**, the dashboard opens in the `Demo` organization and the `Support bot` project. Open **Traces**: once the worker has completed a run, the list has traces named `support-bot` in the environment `demo`. On your own server the first trace appears after the first scheduled run, up to 30 minutes after the worker starts.
+
+## Troubleshooting
+
+- **The button shows "The live demo isn't enabled on this server." or "The live demo isn't configured on this server."** The server has the demo off. Follow [Turn the demo on for your server](#turn-the-demo-on-for-your-server).
+- **The button shows "Too many demo sessions from your network. Try again in an hour."** The limit is 10 sessions an hour for each client address. Wait, or see [Start a demo session](#start-a-demo-session).
+- **The workspace opens but has no traces.** No job has made a call yet, or every run was skipped. Check the worker is running and read the list in [When the demo makes model calls](#when-the-demo-makes-model-calls). The first run comes up to 30 minutes after the worker starts.
+- **You are signed out of your own account.** Starting a demo session replaces the session cookie in your browser. Sign in again to return.
+- **`spanlight demo seed-evals` exits with `need 50 traces, found N`.** The demo project has fewer than 50 recorded answers. Let the demo job run longer, then run the command again. See [Seed the demo evaluations](#seed-the-demo-evaluations).
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Quickstart', href: '/docs/quickstart/', description: 'Start Spanlight and send your own first trace.' },
+    { title: 'Configuration', href: '/docs/configuration/', description: 'The demo settings and every other environment variable.' },
+    { title: 'Experiments', href: '/docs/experiments/', description: 'Compare two prompt versions on a dataset.' },
+    { title: 'Demo evaluations runbook', href: '/docs/runbooks/demo-evals/', description: 'Seed or re-seed the demo evaluations.' },
+  ]}
+/>

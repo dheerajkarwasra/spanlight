@@ -1,0 +1,272 @@
+---
+title: 'Tutorial: block a regression in CI'
+description: Set up a three-question test set, a prompt and a rule in Spanlight, run them on every pull request with the eval-gate GitHub Action, point the gate at a worse prompt version and watch the build fail, then fix it.
+---
+
+{/* Sources: backend/app/api/deps.py, backend/app/core/errors.py, .github/actions/eval-gate/action.yml, sdks/python/src/spanlight/_experiments.py, sdks/python/src/spanlight/_experiments_api.py, sdks/python/src/spanlight/_experiments_setup.py, sdks/python/src/spanlight/_experiments_runs.py, sdks/python/src/spanlight/_experiments_report.py, backend/app/evals/experiments.py, backend/app/evals/experiment_run.py, backend/app/evals/evaluators/heuristic.py, backend/app/api/v1/experiments.py, backend/app/api/v1/gateway_credentials.py, frontend/src/features/settings/settings-nav-items.ts, frontend/src/features/settings/project-settings-parts.tsx, frontend/src/features/gateway/credentials/credential-row.tsx, frontend/src/features/settings/tokens/create-token-form.tsx, frontend/src/features/settings/tokens/scopes.ts, frontend/src/features/settings/tokens/expiry.ts, frontend/src/features/datasets/datasets-page.tsx, frontend/src/features/datasets/create-dataset-dialog.tsx, frontend/src/features/datasets/dataset-header.tsx, frontend/src/features/datasets/item-editor.tsx, frontend/src/features/datasets/item-values.ts, frontend/src/features/prompts/prompts-page.tsx, frontend/src/features/prompts/new-prompt-editor.tsx, frontend/src/features/prompts/prompt-editor.tsx, frontend/src/features/prompts/prompt-overview.tsx, frontend/src/features/prompts/template-editor.tsx, frontend/src/features/prompts/editor-side.tsx, frontend/src/features/evaluators/evaluators-page.tsx, frontend/src/features/evaluators/basics-fields.tsx, frontend/src/features/evaluators/heuristic-fields.tsx, frontend/src/features/evaluators/sampling-field.tsx, frontend/src/features/evaluators/evaluator-labels.ts, frontend/src/features/evaluators/evaluator-form.tsx, frontend/src/features/experiments/experiments-page.tsx, frontend/src/features/experiments/experiment-detail-page.tsx, frontend/src/features/experiments/experiment-header.tsx, frontend/src/features/experiments/run-list.tsx, frontend/src/features/experiments/run-row.tsx, frontend/src/features/experiments/run-label.ts, frontend/src/features/experiments/run-detail.tsx, frontend/src/features/experiments/compare-page.tsx, frontend/src/features/experiments/compare-pickers.tsx, frontend/src/features/experiments/compare-result.tsx, frontend/src/features/experiments/compare-score-card.tsx, frontend/src/features/experiments/compare-view.ts, frontend/src/features/experiments/run-items.tsx, frontend/src/features/experiments/item-score.tsx */}
+
+import { Steps } from '@astrojs/starlight/components';
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+import Verified from '../../../components/Verified.astro';
+
+In this tutorial you stop a prompt change that makes answers worse from reaching your main branch. You build a small test set, save a prompt, add a rule that checks every answer, and run all three on every pull request with the eval-gate GitHub Action. Then you open a pull request that points the gate at a worse prompt version, watch the build fail, read why in Spanlight, and fix it.
+
+The prompt is about refund questions. Version 1 ends every answer with a link to the refund policy. Version 2 is a "shorter" prompt that drops the instruction, and with it the link. The rule checks that each answer contains the link, so version 2 scores lower and the gate says no. The pull request does not hold the prompt: it holds a one-line file that says which prompt version to test.
+
+The Action runs your prompt on a real model, so every run costs money. A run here sends three short questions to the model. The commands set `--max-cost-usd 1` (`max-cost-usd: '1'` in the workflow), the cost limit of a run. Before each call, Spanlight adds the cost so far, the estimates of the calls still in flight and the estimate for this call. If that total would pass the limit, the calls in flight finish and the check is repeated with their real costs. If it still fails, no further item runs, the run ends with the status `failed` and the reason `cost_cap_reached`, and the gate exits with `2`.
+
+<Prerequisites
+  items={[
+    'A running Spanlight instance. For the GitHub Action it must be reachable from GitHub over https, so the value you store for GitHub is never localhost. For the command on your own machine, Docker Compose serves it at http://localhost:8080, and an API run directly for development at http://localhost:8000',
+    'The admin or owner role in the project, because creating an evaluator needs it. The gate itself needs the member role or higher',
+    'An Anthropic credential in your organization (an owner adds it under Gateway, Credentials), CREDENTIALS_KEYS set on the server, and the worker running, because it executes the runs',
+    'The model claude-haiku-4-5, which has a built-in price. A model with no price is refused, because the cost limit could not be enforced',
+    'A GitHub repository where you can add a workflow, a secret and variables, and open pull requests',
+    'Python 3.10 or newer, curl, and a terminal with bash or zsh',
+  ]}
+/>
+
+<Verified
+  date="2026-10-13"
+  packages={[{ name: 'spanlight', version: '0.1.0' }]}
+  note="Run with Python 3.13.9 against a local Spanlight server and worker, and a stand-in for the Anthropic API, not Anthropic itself. The stand-in repeats the prompt back to you, which is how version 2 scored lower; with a real model the answers, the scores and the costs differ, and the stand-in's credential needed a price override that your own credential does not. The gate command was run on a local machine exactly as the Action builds it, with the SDK from the repository tag sdk-python-v0.1.0 (identical to spanlight 0.1.0 on PyPI). GitHub Actions was not run: the workflow file was checked for syntax and its version-reading step was run locally. The dashboard screens are described from the dashboard source, and the data behind them was read back through the API; the screens were not opened in a browser."
+/>
+
+<Steps>
+
+1. **Collect four values and store them in GitHub.** The Action needs the address of your instance, the project, a token and a provider credential.
+
+   * **Host.** The address of your Spanlight instance. In GitHub it must be a public https address, for example `https://spanlight.example.com`. On your own machine (step 5) use `http://localhost:8080` for Docker Compose, the `web` service, or `http://localhost:8000` if you run the API directly for development. A wrong host is the first thing to check when nothing arrives; see [the SDK points at the wrong host](/docs/troubleshooting/#the-sdk-points-at-the-wrong-host).
+   * **Project ID.** Open **Settings, Project** in the dashboard. The **Project ID** is shown on the page, with a copy button. The first id in a dashboard address is the organization, the second is the project.
+   * **Token.** Open **Settings, Personal, Tokens** and choose **Create token**. Name it `ci-eval-gate`. Choose **Write**, because the default scope is **Read** and starting a run needs write access. Choose an expiry and create it, then copy the secret from the next screen. It is shown once.
+   * **Credential ID.** Open **Gateway, Credentials**. Each credential shows its ID under its name. Choose the copy button next to the ID of the Anthropic credential (its label is **Copy** followed by the credential name and **ID**, for example **Copy anthropic-prod ID**). Any member of the organization can see and copy it. If you prefer the API, `GET /api/v1/orgs/<organization id>/credentials` with your token lists the credentials, and the `id` of each is the value.
+
+   In your GitHub repository open **Settings, Secrets and variables, Actions**. Add a secret `SPANLIGHT_TOKEN` and three variables: `SPANLIGHT_HOST`, `SPANLIGHT_PROJECT_ID` and `SPANLIGHT_CREDENTIAL_ID`. The token is a secret. The other three are not, so they can be variables. The workflow in step 6 reads them.
+
+2. **Create the dataset.** Open **Datasets** in the sidebar and choose **New dataset**. Name it `refund-questions` and choose **Create dataset**. The name is the handle the gate uses.
+
+   The dataset page opens. Choose **Add item** and, in **Input**, type this and choose **Add item** again to save it:
+
+   ```json
+   {"question": "How do I get a refund?"}
+   ```
+
+   Add two more items the same way:
+
+   ```json
+   {"question": "How long does a refund take?"}
+   ```
+
+   ```json
+   {"question": "Can I get a refund after 30 days?"}
+   ```
+
+   An input that is a JSON object fills the prompt's variables by name, so these three items give the prompt a `question` variable. Leave **Expected output** empty: the rule you add in step 4 does not compare with one. The **Items** card now shows three items. [Datasets](/docs/datasets/) describes uploading a file instead.
+
+3. **Save version 1 of the prompt.** Open **Prompts** and choose **Create prompt** (or **New prompt** if the project already has prompts). Fill in:
+
+   * **Name:** `support/answer`
+   * **Kind:** **Chat**
+
+   The chat template starts with one message. Change its role to `system` and give it this text:
+
+   ```text
+   You are a support agent. Answer in one or two sentences.
+   ```
+
+   Choose **Add message**. It adds a `user` message. Give it this text, where `{{question}}` is the variable each dataset item fills in:
+
+   ```text
+   {{question}}
+
+   End your answer with the link to the refund policy: https://example.com/refunds
+   ```
+
+   Under **Commit message** write `First version` and choose **Save version**. The prompt page shows **v1**.
+
+4. **Add the rule.** Open **Evaluators**, choose **New evaluator** and fill in:
+
+   * **Name:** `cites-policy`. The scores it writes carry this name.
+   * **Kind:** **Heuristic**
+   * **Rule:** **Contains**, **Check the:** **Output**
+   * **Phrase:** `example.com/refunds`
+   * **Share of traces:** `0`. A heuristic starts at 100%, which would also score your live traffic. At 0 the rule is used only in experiments and tests.
+
+   Choose **Create evaluator**. A rule runs in code, so it costs nothing. [Evaluators](/docs/evaluators/#heuristic-evaluators) lists the other rules.
+
+5. **Run the gate on your machine.** Before CI, run the command the Action runs, so a wrong id fails here and not in a pull request. In a terminal in any folder:
+
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install "spanlight==0.1.0"
+
+   export SPANLIGHT_HOST=https://spanlight.example.com   # or http://localhost:8080 (Compose), http://localhost:8000 (API run directly)
+   export SPANLIGHT_PROJECT_ID=<project id>
+   export SPANLIGHT_TOKEN=spl_pat_...
+
+   python -m spanlight._experiments \
+     --dataset refund-questions --prompt support/answer:1 \
+     --evaluators cites-policy --fail-below cites-policy=1 \
+     --credential-id <credential id> --model claude-haiku-4-5 \
+     --max-cost-usd 1
+   echo "exit code: $?"
+   ```
+
+   The command finds the dataset, the prompt version and the evaluator by name. The first time, it creates an experiment called `ci/refund-questions/support/answer/<id>`. It starts a run, waits for the worker to finish it and compares the mean score with `--fail-below`. `cites-policy=1` means every answer must contain the link. It prints this report:
+
+   ```text
+   ### Spanlight eval gate: refund-questions / support/answer v1
+
+   Gate **passed**. [Open the run](https://spanlight.example.com/<organization id>/<project id>/experiments/<experiment id>/runs/<run id>)
+
+   Items 3, errors 0, cost 0.00039600 USD, p50 18 ms, p95 29 ms.
+
+   | Score | Mean | Items | Threshold | Result |
+   | --- | --- | --- | --- | --- |
+   | cites-policy | 1 | 3 | >= 1 | pass |
+   ```
+
+   and then `exit code: 0`. This is example output: your cost, latencies and ids differ. In the verification run every one of the three answers contained the link.
+
+   The reports on this page show what the Action on `main` prints: the link opens the run page, and latencies are whole milliseconds. The release `spanlight==0.1.0` installed above and the tag `sdk-python-v0.1.0` used in the workflow predate that change. With them, "Open the run" opens the experiment page and the latencies are printed unrounded, with many decimals. [The eval gate page](/docs/eval-gate/#what-the-gate-does) explains the exit codes and the experiment name.
+
+6. **Add the workflow.** In your repository create a file `prompt-version.txt` that contains only `1`. It stands for the place where your repository records which prompt version it ships. Use whatever your repository already has; the Action only needs the `prompt` input. Then create `.github/workflows/prompt-evals.yml`:
+
+   ```yaml
+   name: Prompt evals
+   on:
+     pull_request:
+       paths: ['prompt-version.txt']
+
+   # An experiment runs one run at a time: queue gates instead of running them side by side.
+   concurrency:
+     group: spanlight-eval-gate-${{ github.ref }}
+
+   jobs:
+     eval-gate:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+         - name: Read the prompt version
+           id: prompt
+           run: echo "ref=support/answer:$(tr -d '[:space:]' < prompt-version.txt)" >> "$GITHUB_OUTPUT"
+
+         - uses: dheerajkarwasra/spanlight/.github/actions/eval-gate@sdk-python-v0.1.0
+           with:
+             host: ${{ vars.SPANLIGHT_HOST }}
+             token: ${{ secrets.SPANLIGHT_TOKEN }}
+             project-id: ${{ vars.SPANLIGHT_PROJECT_ID }}
+             dataset: refund-questions
+             prompt: ${{ steps.prompt.outputs.ref }}
+             evaluators: cites-policy
+             fail-below: cites-policy=1
+             credential-id: ${{ vars.SPANLIGHT_CREDENTIAL_ID }}
+             model: claude-haiku-4-5
+             max-cost-usd: '1'
+   ```
+
+   The workflow runs when a pull request changes `prompt-version.txt`. One step turns its content into `support/answer:1`. The Action step gets the same inputs as the command in step 5. The `@sdk-python-v0.1.0` after the Action path is a Git tag, so a change to the repository cannot change your gate; the Action installs the SDK from the same tag. [The GitHub Action page](/docs/integrations/github-action/) lists the inputs that matter first, and the [eval gate page](/docs/eval-gate/#inputs) has the full table.
+
+   Commit both files on a new branch, push it and open a pull request. The job `eval-gate` runs, and its log ends with the report from step 5. The same table is added to the job summary. The job passes.
+
+7. **Open a pull request that points the gate at the worse prompt.** In Spanlight open **Prompts**, open `support/answer` and choose **New version**. The editor starts from v1. Remove everything after `{{question}}` in the `user` message, so the message is only:
+
+   ```text
+   {{question}}
+   ```
+
+   Under **Commit message** write `Shorter prompt` and choose **Save version**. This is v2: shorter, and without the instruction to add the link.
+
+   Prompt versions live in Spanlight, not in your repository, so the change your pull request makes is the pointer. On a new branch change `prompt-version.txt` to `2`, push it and open a pull request.
+
+   The `eval-gate` job fails. Its log shows output like this (example output; your numbers differ):
+
+   ```text
+   ### Spanlight eval gate: refund-questions / support/answer v2
+
+   Gate **failed**. [Open the run](https://spanlight.example.com/<organization id>/<project id>/experiments/<experiment id>/runs/<run id>)
+
+   Items 3, errors 0, cost 0.00019800 USD, p50 17 ms, p95 19 ms.
+
+   | Score | Mean | Items | Threshold | Result |
+   | --- | --- | --- | --- | --- |
+   | cites-policy | 0 | 3 | >= 1 | FAIL |
+
+   Below threshold:
+
+   - cites-policy: 0 < 1
+   ```
+
+   The step exits with code `1`, which is how GitHub marks the job as failed. A pull request that requires this check cannot be merged.
+
+8. **Read why it failed.** Choose **Open the run** in the log, which opens the page of that run (with `0.1.0` it opens the experiment page, which lists the runs); on a run page, its back link leads to the experiment. You can also open **Experiments** in the sidebar and choose the experiment `ci/refund-questions/support/answer/<id>`. The steps below start from the experiment page.
+
+   * The header shows the **Dataset** `refund-questions`, the **Target** (the prompt, the model and the credential), **Scored by** `cites-policy` and the **Cost limit**.
+   * The **Runs** card lists every run. Each row shows the run's number, such as **Run #3**, and the prompt version it tested, such as `support/answer v2`. Your run numbers differ, because every start is numbered, including the one on your machine in step 5.
+   * Tick the run for `support/answer v1` and the run for `support/answer v2`, then choose **Compare runs**. **Baseline (A)** is the earlier run and **Candidate (B)** the later.
+   * A card at the top summarises the trade-off in one sentence that starts "B scores −100 pts on cites-policy". The `cites-policy` card shows **A** at 100% and **B** at 0%, with 3 regressed. The **Items** card lists the three questions, sorted by the size of the change, and shows each answer from both runs.
+
+   Each answer in a run is also a trace, in the `experiments` environment, so you can open one under **Traces** and read the prompt that was sent. In the verification run, a stand-in for the model that repeats the prompt back, version 2 scored 0. The scores of a real model will differ, because a model may add a link nobody asked for; see Troubleshooting if version 2 still passes. [Experiments](/docs/experiments/) describes the run and compare pages.
+
+9. **Fix the prompt.** Open `support/answer` again and choose **New version**. Keep the shorter prompt, but ask for the link again. Make the `user` message:
+
+   ```text
+   {{question}}
+   End with the refund policy link: https://example.com/refunds
+   ```
+
+   Under **Commit message** write `Shorter prompt that keeps the refund policy link` and choose **Save version**. This is v3. On the same branch change `prompt-version.txt` to `3` and push. The job runs again and its log ends with output like this (example output):
+
+   ```text
+   ### Spanlight eval gate: refund-questions / support/answer v3
+
+   Gate **passed**. [Open the run](https://spanlight.example.com/<organization id>/<project id>/experiments/<experiment id>/runs/<run id>)
+
+   Items 3, errors 0, cost 0.00032400 USD, p50 21 ms, p95 32 ms.
+
+   | Score | Mean | Items | Threshold | Result |
+   | --- | --- | --- | --- | --- |
+   | cites-policy | 1 | 3 | >= 1 | pass |
+   ```
+
+   The check is green and the pull request can be merged. You kept the shorter prompt, and the gate confirmed it still does the one thing the rule checks.
+
+</Steps>
+
+## Check it worked
+
+You have finished when all of these are true:
+
+* The command in step 5 printed `Gate **passed**` and `exit code: 0` for `support/answer:1`.
+* The pull request for version 2 had a failing `eval-gate` job. Its log showed `cites-policy: 0 < 1`, and the step exited with code `1`.
+* The pull request for version 3 had a passing job.
+* **Experiments** lists one experiment named `ci/refund-questions/support/answer/<id>`. Its **Runs** card shows a run for each of v1, v2 and v3, and comparing the v1 and v2 runs shows `cites-policy` going from 100% to 0%.
+
+The three exit codes are the whole contract: `0` the thresholds held, `1` a score was below its threshold, `2` the run could not be set up, failed or timed out.
+
+## Troubleshooting
+
+* **Version 2 still passes.** The model added the policy link on its own, so the rule found it. The prompt in this tutorial never mentions the link in version 2, so make the regression stronger: save a new version that adds a sentence excluding it to the `user` message, such as `Do not include links.`, and point `prompt-version.txt` at it, or make the rule stricter (for example a **Regex match** with the **Pattern** `example\.com/refunds\S*\s*$`, which only matches when the link ends the answer). The rule only tests what you tell it to test.
+* **The command stops with `error: SPANLIGHT_TOKEN is required`.** The token is not set in this terminal, or, in a workflow, the secret is empty. GitHub does not give repository secrets to workflows triggered by pull requests from forks, so a fork's pull request fails this way. The other missing settings are named in the same line; see [Run an experiment from code](/docs/experiments/#run-an-experiment-from-code).
+* **`401 UNAUTHORIZED: Missing, invalid or revoked access token.`** The token is wrong or revoked. Create a new one under **Settings, Personal, Tokens** and update the secret.
+* **`401 TOKEN_EXPIRED: This access token has expired. Create a new one.`** The token passed its expiry date. Create a new one under **Settings, Personal, Tokens** and update the secret.
+* **`dataset 'refund-questions' not found in the project`, or `evaluator not found in the project: cites-policy`.** The gate looks the name up exactly. Check spelling and case, and check that `SPANLIGHT_PROJECT_ID` is the project that holds them.
+* **`404 NOT_FOUND` on a path that ends in `/versions/<number>`.** The prompt name or the version number does not exist. Open the prompt and check that the version is listed.
+* **`prompt 'support/answer' has no label 'production'`.** A prompt with no version number means its `production` label. This tutorial names a version (`support/answer:1`); see [Labels](/docs/prompts/#labels) if you want to use one.
+* **`422 EXPERIMENT_MODEL_UNPRICED`.** The model has no price for the provider of your credential, so the cost limit could not be enforced. Pick a model that is in the price table, or add a price override; see [Price overrides](/docs/concepts/cost/#price-overrides).
+* **The run fails with `credentials_not_configured`, and the gate exits with `2`.** The worker cannot open the stored provider keys. Set `CREDENTIALS_KEYS` on the API and the worker; see [Provider credentials](/docs/gateway/credentials/). If you run more than one worker, all of them need the same keys.
+* **`the host must be an https:// URL`.** The token is never sent in clear text. Use the https address of your instance. Only `localhost` may use `http://`.
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'GitHub Action', href: '/docs/integrations/github-action/', description: 'The Action in short: the minimal workflow and the inputs that matter first.' },
+    { title: 'Eval gate for CI', href: '/docs/eval-gate/', description: 'Every input, the exit codes, the experiment name and the limits.' },
+    { title: 'Experiments', href: '/docs/experiments/', description: 'Replay a dataset through a prompt and compare two runs.' },
+    { title: 'Evaluators', href: '/docs/evaluators/', description: 'Rules, an LLM judge under a monthly budget, or your own endpoint.' },
+  ]}
+/>

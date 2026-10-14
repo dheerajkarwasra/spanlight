@@ -1,0 +1,87 @@
+---
+/** Three ways to start: self-host, the live demo, or OpenTelemetry from any language. */
+const cards = [
+  {
+    tag: 'About 10 minutes',
+    title: 'Self-host and send a trace',
+    body: 'Start the stack with Docker Compose, add three lines to a Python app and watch the trace arrive.',
+    cta: 'Quickstart',
+    href: '/docs/quickstart/',
+  },
+  {
+    tag: 'Nothing to install',
+    title: 'Try the live demo',
+    body: 'Open the Spanlight home page and choose Try the live demo to explore a seeded workspace. Self-hosted servers show it only when the demo is turned on.',
+    cta: 'Go to the home page',
+    href: '/',
+  },
+  {
+    tag: 'Any language',
+    title: 'Send traces with OpenTelemetry',
+    body: 'Point an OTLP exporter at /v1/otlp/traces. JSON or protobuf; gen_ai.* attributes are mapped.',
+    cta: 'OpenTelemetry',
+    href: '/docs/otlp/',
+  },
+];
+---
+
+<ul class="start-cards not-content">
+  {
+    cards.map((card) => (
+      <li>
+        <a href={card.href}>
+          <span class="tag">{card.tag}</span>
+          <span class="title">{card.title}</span>
+          <span class="body">{card.body}</span>
+          <span class="cta">{card.cta} →</span>
+        </a>
+      </li>
+    ))
+  }
+</ul>
+
+<style>
+  .start-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: 1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  a {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    height: 100%;
+    padding: 1.5rem;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 1.25rem;
+    background: var(--spl-surface);
+    color: var(--sl-color-gray-3);
+    text-decoration: none;
+  }
+  a:hover {
+    border-color: var(--sl-color-text-accent);
+  }
+  .tag {
+    font-size: var(--sl-text-xs);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--sl-color-gray-4);
+  }
+  .title {
+    font-size: var(--sl-text-xl);
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--sl-color-white);
+  }
+  .body {
+    flex: 1;
+  }
+  .cta {
+    font-weight: 600;
+    color: var(--sl-color-text-accent);
+  }
+</style>

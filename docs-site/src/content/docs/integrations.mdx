@@ -1,0 +1,68 @@
+---
+title: Integrations
+description: Send traces to Spanlight from the provider SDK or CI system you already use. Every guide states the package versions it was tested with and what Spanlight records and leaves out.
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Spanlight reads traces that your application sends it. This section shows how to send them from the libraries you already use, so you add tracing without rewriting your code. Each card shows the language the guide is written for.
+
+## Built in
+
+Two ways to send traces need no framework guide. They work with any stack, and the guides below build on them.
+
+<CardGrid>
+  <LinkCard
+    title="Python SDK"
+    href="/docs/python-sdk/"
+    description="<span class='spl-lang'><span class='sr-only'>Language: </span>Python<span class='sr-only'>. </span></span>Wrap the OpenAI and Anthropic clients, trace your own functions and set sessions and users."
+  />
+  <LinkCard
+    title="OpenTelemetry (OTLP)"
+    href="/docs/otlp/"
+    description="<span class='spl-lang'><span class='sr-only'>Language: </span>Any language<span class='sr-only'>. </span></span>Send OpenTelemetry GenAI spans from any exporter over OTLP/HTTP."
+  />
+</CardGrid>
+
+## Providers
+
+Send the calls you make to a model provider. Each guide covers the Python SDK, the gateway and OpenTelemetry.
+
+<CardGrid>
+  <LinkCard
+    title="OpenAI"
+    href="/docs/integrations/openai/"
+    description="<span class='spl-lang'><span class='sr-only'>Language: </span>Python, JavaScript, cURL<span class='sr-only'>. </span></span>Trace Chat Completions calls with the Python wrapper, or send them through the gateway from any language."
+  />
+  <LinkCard
+    title="Anthropic"
+    href="/docs/integrations/anthropic/"
+    description="<span class='spl-lang'><span class='sr-only'>Language: </span>Python, JavaScript, cURL<span class='sr-only'>. </span></span>Trace Claude Messages calls with the Python wrapper, or send them through the gateway from any language."
+  />
+</CardGrid>
+
+## CI
+
+Check a prompt change before it merges.
+
+<CardGrid>
+  <LinkCard
+    title="GitHub Action"
+    href="/docs/integrations/github-action/"
+    description="<span class='spl-lang'><span class='sr-only'>Language: </span>GitHub Actions workflow (YAML)<span class='sr-only'>. </span></span>Run a prompt over a dataset on every pull request and fail the job when a score drops below a threshold."
+  />
+</CardGrid>
+
+## How the guides are tested
+
+Every integration guide opens with a "Verified" note. It gives the date the instructions were last run and the exact package versions they were run with, and the install commands on the page use the same versions. If you use a different version, the steps may differ.
+
+Each guide also lists what Spanlight records from that library and what it does not, so you know what the dashboard can show before you rely on it.
+
+## Related pages
+
+<CardGrid>
+  <LinkCard title="Ways to send data" href="/docs/concepts/ingest-paths/" description="Compare the Python SDK, OTLP and the gateway." />
+  <LinkCard title="OTLP attribute mapping" href="/docs/reference/otlp-mapping/" description="Which OpenTelemetry attribute fills which Spanlight field." />
+  <LinkCard title="Troubleshooting" href="/docs/troubleshooting/" description="Find out why no trace arrived." />
+</CardGrid>

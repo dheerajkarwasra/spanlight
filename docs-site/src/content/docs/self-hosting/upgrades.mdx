@@ -1,0 +1,183 @@
+---
+title: Upgrade Spanlight
+description: Upgrade a Docker Compose deployment to a new version. Pin the version, read the changelog, back up first, rebuild, check the migrations and know how to go back.
+sidebar:
+  order: 23
+---
+
+{/* Sources: deploy/compose.yaml, deploy/Dockerfile, deploy/.env.example, deploy/smoke.sh, docs/runbooks/deploy.md, docs/runbooks/rollback.md, docs/runbooks/restore.md, backend/app/cli.py, backend/app/api/health.py, CHANGELOG.md, sdks/python/src/spanlight/_exporter_delivery.py, sdks/python/src/spanlight/_client.py, sdks/python/pyproject.toml */}
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+
+<Prerequisites
+  items={[
+    'A Spanlight deployment started with deploy/compose.yaml, from a git checkout of the repository',
+    'Shell access to the host, and about five minutes in which nobody else changes deploy/.env',
+    'A recent backup, or space on the host for a pg_dump file (see Back up and restore)',
+  ]}
+/>
+
+An upgrade replaces the code, rebuilds the images, applies the database migrations and restarts the services. Spanlight is built from the repository, so you choose a version by choosing which commit you check out. Allow a few seconds of failed requests while the containers are recreated. The Python SDK retries network errors, `429` and `5xx` responses with backoff, five times by default, so a short gap does not lose spans from SDK clients.
+
+The commands use this shortcut. Run it from the repository root:
+
+```bash
+spl() { docker compose -f deploy/compose.yaml --env-file deploy/.env "$@"; }
+```
+
+If you start the stack with extra files, such as `deploy/compose.minio.yaml`, add the same `-f` options. Every command must see the same files and the same project.
+
+## Pin the version you run
+
+Check out a release tag or a specific commit, and write down which one. Do not follow `main` on a production instance, because a commit on `main` can include a migration you have not read about.
+
+Spanlight images are built on your host from the checkout (`image: spanlight:local`). Nothing in the stack pulls a Spanlight image, so there is nothing else to pin. `docker compose pull --ignore-buildable` refreshes only the images that are pulled, which here is Postgres (`postgres:17-alpine`, which follows the 17 line).
+
+The Python SDK has its own version. Upgrade it in your applications with `pip install --upgrade spanlight` when you are ready. It does not need to move in step with the server.
+
+## Upgrade
+
+<Steps>
+
+1. **Record where you are.** You need this to go back.
+
+   ```bash
+   git rev-parse --short HEAD
+   spl exec postgres psql -U postgres -d spanlight -tA -c "SELECT version_num FROM alembic_version"
+   curl -fsS http://localhost:8080/health/ready
+   ```
+
+   Write down the commit and the migration revision. Use the address of your own instance in the last command. The last line should show `"status":"ok"`. If the instance is not healthy before you start, fix that first. See [Troubleshooting](/docs/troubleshooting/).
+
+2. **Read what changed.** Open the [changelog](/docs/changelog/) for every version between yours and the new one. Look for changes marked as breaking, new settings and behaviour changes. Then compare the files that configure the stack:
+
+   ```bash
+   git fetch --tags
+   git diff HEAD <new-tag-or-commit> -- deploy/.env.example deploy/compose.yaml
+   ```
+
+   A new required variable stops the stack from starting with `set <NAME>` in the error. Add it to `deploy/.env` before you continue.
+
+3. **Back up.** A migration changes a live database, and undoing it can cost data, so a backup comes first. With backups configured:
+
+   ```bash
+   spl exec worker spanlight backup now
+   spl exec worker spanlight backup list
+   ```
+
+   `backup now` prints `Backed up to backups/2026/10/09/spanlight-20261009T143012Z.dump (48213377 bytes).` with your own key and size. Without object storage, dump the database to a file on the host instead:
+
+   ```bash
+   spl exec -T postgres pg_dump -U postgres -Fc --no-unlogged-table-data spanlight > spanlight-before-upgrade.dump
+   ls -l spanlight-before-upgrade.dump
+   ```
+
+   The file must not be empty. It holds every prompt and completion, so store it privately and delete it once the upgrade is confirmed good. [Back up and restore](/docs/self-hosting/backups/) explains backups in full.
+
+4. **Get the new code.**
+
+   ```bash
+   git checkout <new-tag-or-commit>
+   ```
+
+5. **Build and start.**
+
+   ```bash
+   spl up -d --build
+   ```
+
+   Compose rebuilds the images and runs the `migrate` service to completion. It applies the migrations as the database owner (`spanlight migrate`) and then refreshes the `spanlight_app` role (`spanlight ensure-app-role`). The `api` and `worker` start only after `migrate` succeeds, and `web` starts once `api` is healthy. Containers whose image or settings changed are recreated.
+
+6. **Check that the migrations ran.**
+
+   ```bash
+   spl logs migrate
+   ```
+
+   A successful run ends with these two lines:
+
+   ```text
+   Database is at the latest migration.
+   Role spanlight_app is ready (no superuser, no RLS bypass).
+   ```
+
+   If `migrate` failed, the new API never started. Read the error above those lines. If the failure happened before any migration was applied, you can go back to the old commit and rebuild.
+
+7. **Verify.**
+
+   ```bash
+   spl ps
+   curl -fsS http://localhost:8080/health/ready
+   spl logs --since 2m worker | grep worker_started
+   ```
+
+   `postgres`, `api`, `worker` and `web` should be running, and `migrate` should have exited with code 0. `/health/ready` should answer `200` with `"database":"ok"` and `"migrations":"ok"`. The worker log should show one `worker_started` line. A worker that has just started needs up to about two minutes before the heartbeat passes the check.
+
+   Then check real traffic. Open the dashboard, sign in, and confirm that new spans arrive from one of your applications.
+
+</Steps>
+
+<Aside type="caution">
+Do not use `deploy/smoke.sh` to check a production upgrade. It builds its own stack on `WEB_PORT` and deletes it afterwards with `down -v`. Run it only on a separate machine or in CI.
+</Aside>
+
+## How the migrations run
+
+You do not run migrations yourself. The `migrate` service in `deploy/compose.yaml` runs `spanlight migrate && spanlight ensure-app-role --role spanlight_app` as the database owner on every `up`. On a database that is already current, it changes nothing and prints the same two lines.
+
+Migrations are forward changes to a live database. The readiness check compares the database's revision with the one the code expects, and answers `503` with `"migrations":"pending"` when they differ in either direction. That is what stops an old build from running on a newer schema.
+
+## Go back
+
+What a rollback costs depends on whether the upgrade applied a migration.
+
+- **No migration ran.** Check out the old commit and run `spl up -d --build` again.
+- **A migration ran.** The old code does not become ready on the newer schema, and its `spanlight migrate` fails. You must undo the migration with the new build's own downgrade functions, or restore the backup from step 3.
+
+The [rollback runbook](/docs/runbooks/rollback/) has the exact commands for both cases, and warns that a downgrade can drop tables and columns. For a damaged database, use [Restoring a database backup](/docs/runbooks/restore/). A small bug is often safer fixed by a patch release than by a downgrade.
+
+## Clean up
+
+When the new version has been good for at least a day, delete the pre-upgrade dump file from the host. Old Docker images stay on disk until you remove them:
+
+```bash
+docker image prune
+```
+
+## Other platforms
+
+On Railway, the API runs the same migration command as its pre-deploy step, and a failure there leaves the running version untouched. The [deploy runbook](/docs/runbooks/deploy/) has the Railway steps, in the order to deploy the services.
+
+## Check it worked
+
+After step 7, the commit and migration you wrote down in step 1 have moved on:
+
+```bash
+git rev-parse --short HEAD
+spl exec postgres psql -U postgres -d spanlight -tA -c "SELECT version_num FROM alembic_version"
+curl -fsS http://localhost:8080/health/ready
+```
+
+The first command prints the new commit, the second a new migration revision when the release had a migration, and the third ends with `"status":"ok"`, `"database":"ok"` and `"migrations":"ok"`. New spans from your applications appear in the dashboard.
+
+## Troubleshooting
+
+- **`migrate` exited with an error and `api` and `worker` did not start.** Read `spl logs migrate`; the Python error is above the two success lines. If no migration was applied, check out the old commit and rebuild; otherwise see [Go back](#go-back).
+- **Compose stops with `set <NAME>`.** The new release needs a variable that `deploy/.env` lacks. Add it; step 2 shows how to find it.
+- **`/health/ready` answers `503` with `"migrations":"pending"`.** The code and the database are at different revisions, in either direction. See [Migrations are not applied](/docs/troubleshooting/#migrations-are-not-applied).
+- **`worker_heartbeat_age_s` is `null` or over 120 right after the upgrade.** A worker that has just started needs up to about two minutes. If it stays, see [The worker is not running](/docs/troubleshooting/#the-worker-is-not-running).
+- **A few failed requests during the upgrade.** The containers were recreated. The Python SDK retries, so SDK clients lose no spans in a short gap.
+- **The pre-upgrade dump file is empty.** Do not continue. Check the `pg_dump` error in step 3 and take the backup again.
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Back up and restore', href: '/docs/self-hosting/backups/', description: 'Nightly backups, a backup before every upgrade, and a restore drill.' },
+    { title: 'Deploy a new version', href: '/docs/runbooks/deploy/', description: 'The full runbook, including Railway.' },
+    { title: 'Roll back a deploy', href: '/docs/runbooks/rollback/', description: 'Go back to the previous version.' },
+    { title: 'Troubleshooting', href: '/docs/troubleshooting/', description: 'When the readiness check fails after an upgrade.' },
+  ]}
+/>

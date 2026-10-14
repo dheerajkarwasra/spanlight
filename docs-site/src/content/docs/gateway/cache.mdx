@@ -1,0 +1,134 @@
+---
+title: Response cache
+description: Serve repeated identical gateway calls from Postgres instead of the provider, with a time to live per key.
+sidebar:
+  order: 3
+---
+
+{/* Sources: frontend/src/features/gateway/keys/key-form.ts, frontend/src/features/gateway/overview-format.ts, frontend/src/features/gateway/keys/purge-cache-dialog.tsx */}
+
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+
+The gateway can answer a repeated call from its own storage instead of calling the provider. It is useful for tests, evaluations, demos and any workload that sends the same prompt many times. It is **off by default** and you turn it on per gateway key.
+
+<Prerequisites
+  items={[
+    'The admin or owner role in the project, to set Cache on a key or purge the cache',
+    'A gateway key with a route that works. See the gateway quickstart',
+  ]}
+/>
+
+## Turn it on
+
+Set **Cache** on a gateway key (**Gateway, Keys**) to 5 min, 1 h or 24 h, or set `cache_ttl_seconds` through the API. The value is the time to live in seconds, from 1 to 86 400 (24 hours); the dashboard offers three presets and shows other values as they are. Without a value the key never reads or writes the cache. Changing the TTL affects the entries stored from then on; entries already stored keep the expiry they were given.
+
+## What matches
+
+The cache is an **exact match**. Two calls share an entry only when all of these are the same:
+
+- the surface (`chat_completions`, `responses` or `messages`);
+- the route and the route's saved version;
+- the request body, as JSON with sorted keys and no whitespace, ignoring `stream`, `stream_options`, `user` and `metadata`.
+
+Everything else in the body counts: the model, messages, temperature, tools, `max_tokens` and so on. A different temperature is a different entry. Entries are also kept apart by project, so identical requests from two projects never meet.
+
+Because the route and its version are part of the key, saving or reverting a route makes its earlier entries unreachable (they simply expire). Two routes never share an answer, since their aliases and credentials decide which model answers.
+
+## What is stored
+
+- **Non-streaming calls only.** A streaming call always goes to the provider and reports `bypass`.
+- **Provider successes only.** Only a `200` is stored. Errors, retries and answers produced by a Lab fault are never cached.
+- **At most 1 MB.** A larger answer is passed through and not stored.
+- **Answers that report usage.** A `200` whose body has no token usage (some OpenAI-compatible servers omit it) is not stored, because a hit has to be able to report the usage of the answer it replays.
+
+A hit returns the stored body and content type unchanged, with `X-Spanlight-Cache: hit`. If the cache cannot be read or written, the call simply goes to the provider; a cache problem never fails a call.
+
+## `X-Spanlight-Cache`
+
+Every model call made with a gateway key carries the header:
+
+| Value | Meaning |
+| --- | --- |
+| `hit` | Served from the cache; the provider was not called |
+| `miss` | The key has a TTL and the call could be cached, but no live entry was found; the provider answered and a successful answer is stored |
+| `off` | The key has no TTL |
+| `bypass` | The key has a TTL but this call cannot be cached because it streams |
+
+`/gw/v1/models` is never cached and has no such header.
+
+## What a hit looks like in the dashboard
+
+A hit is recorded as an ordinary span with `spanlight.cache` set to `hit`. Its usage is reported as zero, because nothing was billed, and the tokens of the original answer are kept in the `spanlight.cache.original_usage` attribute. Cost for a hit is therefore zero and not unknown. **Gateway, Overview** shows the hit rate: hits divided by hits plus misses, so keys without a cache and streaming calls do not drag it down. With no cacheable traffic the rate is "—", not 0 %.
+
+## Check it worked
+
+Set a cache time to live on a key, then send the same call twice. This sets a five minute TTL through the API (it needs the admin or owner role and a [personal access token](/docs/guides/access/) with the write scope):
+
+```bash
+curl -sS -X PATCH "$SPANLIGHT_HOST/api/v1/projects/$PROJECT/gateway/keys/$KEY_ID" \
+  -H "Authorization: Bearer $SPANLIGHT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"cache_ttl_seconds": 300}'
+```
+
+Then call the gateway twice with the same body, printing the response headers. `<host>` is the address of your Spanlight web service:
+
+```bash
+curl -sS -i "<host>/gw/v1/chat/completions" \
+  -H "Authorization: Bearer spl_gw_…" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-4.1-mini", "messages": [{"role": "user", "content": "Say hello."}]}'
+```
+
+The first call goes to the provider and stores the answer. Its headers include these (the provider's own headers, such as rate-limit headers, are forwarded too and are left out here):
+
+```text
+Content-Type: application/json
+X-Request-ID: <request id>
+X-Spanlight-Attempts: 1
+X-Spanlight-Cache: miss
+```
+
+The second call is served from the cache. The body is the stored answer, and no provider was called, so there are no upstream attempts:
+
+```text
+Content-Type: application/json
+X-Request-ID: <another request id>
+X-Spanlight-Attempts: 0
+X-Spanlight-Cache: hit
+```
+
+On a key without a TTL, both calls report `X-Spanlight-Cache: off`.
+
+## Privacy
+
+The cache is independent of the project's `capture_payloads` setting. Turning a TTL on for a key is the explicit choice to store that key's responses, and a hit needs the stored body, so the cache keeps them even when the project does not store prompts and completions on its spans. Spans still follow `capture_payloads`. Do not enable the cache on a key whose responses must not be stored.
+
+## Purge and expiry
+
+- **Expiry.** A lookup never returns an entry past its expiry. A background job on the worker deletes expired entries to free space.
+- **Purge.** Owners and admins can delete every entry of a project at once with **Purge cache** in the menu of the **Gateway, Keys** page, or `POST /api/v1/projects/{project_id}/gateway/cache/purge` (`204`). Purging an empty cache succeeds. The purge is recorded in the audit log.
+
+## Storage
+
+Entries live in the Postgres database Spanlight already uses, so there is nothing more to run. Each entry holds the full response body (up to 1 MB), so size the TTL for the number of distinct prompts you send, not only for freshness.
+
+## Troubleshooting
+
+- **Every call says `X-Spanlight-Cache: off`.** The key has no TTL. Set **Cache** on the key; see [Turn it on](#turn-it-on).
+- **Every call says `bypass`.** The calls stream. Streaming calls are never cached.
+- **The second call says `miss`, not `hit`.** The requests are not identical: the model, messages, temperature, tools or `max_tokens` differ, or the key's route was saved in between (a new route version is a new entry). The first answer may also not have been stored: it was not a `200`, it was over 1 MB, or its body had no token usage. See [What matches](#what-matches) and [What is stored](#what-is-stored).
+- **The Cache hit rate tile on Gateway, Overview shows "—".** There were no requests ("No requests in this window.") or no cache lookups ("No cache lookups in this window.") in the selected time window. Keys without a TTL and streaming calls are not counted.
+- **A hit shows zero tokens in the trace.** By design: nothing was billed. The original answer's usage is in `spanlight.cache.original_usage`. See [What a hit looks like in the dashboard](#what-a-hit-looks-like-in-the-dashboard).
+- **An answer you changed upstream keeps coming back.** The entry lives until its expiry. Purge it with **Purge cache** in the menu of **Gateway, Keys**; see [Purge and expiry](#purge-and-expiry).
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Gateway quickstart', href: '/docs/gateway/quickstart/', description: 'Point the OpenAI or Anthropic SDK at the gateway.' },
+    { title: 'Routes, retries and fallbacks', href: '/docs/gateway/routing/', description: 'Choose which credentials serve a key and what happens on failure.' },
+    { title: 'Integration Lab', href: '/docs/gateway/lab/', description: 'Inject the failures real providers produce.' },
+  ]}
+/>

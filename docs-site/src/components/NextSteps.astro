@@ -1,0 +1,16 @@
+---
+/**
+ * Two to four link cards that end a page. The page keeps its own "## Next steps" heading so it
+ * shows in the on-page table of contents.
+ */
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+interface Props {
+  links: { title: string; href: string; description?: string }[];
+}
+const { links } = Astro.props;
+---
+
+<CardGrid>
+  {links.map((link) => <LinkCard title={link.title} href={link.href} description={link.description} />)}
+</CardGrid>

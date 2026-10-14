@@ -1,0 +1,114 @@
+---
+title: Privacy, retention and deletion
+description: Control what Spanlight stores and for how long. Secret redaction on ingest, turning off prompt and completion capture, the retention period, and what deleting a project or exporting traces does.
+sidebar:
+  order: 5
+---
+
+{/* Sources: backend/app/core/redact.py, backend/app/core/security.py, backend/app/ingest/normalize.py, backend/app/ingest/pipeline.py, backend/app/gateway/key_context.py, backend/app/gateway/recorder.py, backend/app/api/schemas/projects.py, backend/app/db/models/projects.py, backend/app/api/v1/projects.py, backend/app/core/permissions.py, backend/app/jobs/tasks/retention.py, backend/app/jobs/scheduler.py, backend/app/services/deletion.py, backend/app/exports/purge.py, backend/app/exports/service.py, frontend/src/features/settings/project-settings-form.tsx, frontend/src/features/settings/project-settings-parts.tsx, frontend/src/features/settings/project-settings-schema.ts, frontend/src/features/settings/project-settings-page.tsx, frontend/src/features/settings/project-danger-zone.tsx, frontend/src/features/settings/danger-copy.ts, frontend/src/features/settings/settings-nav-items.ts, frontend/src/features/traces/payload-view.tsx */}
+
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+
+Spanlight stores the prompts and completions your application sends, so you decide what it keeps and for how long. Each project has two settings for this: whether to capture prompts and completions, and how many days to keep traces. This page also covers the secret redaction that always runs, and what deleting a project removes.
+
+<Prerequisites
+  items={[
+    'The admin or owner role in the organization, to change project settings or delete a project (members and viewers see the settings read-only)',
+    'The member role or above, to export traces',
+  ]}
+/>
+
+## Redaction always runs
+
+Before a span is stored, Spanlight replaces secrets in its input, output, attributes and status message with `[REDACTED]`. It also checks the names of keys in JSON objects. You cannot turn this off. It replaces:
+
+- Spanlight credentials of every kind (API keys, personal access tokens and gateway keys).
+- Anthropic keys and OpenAI-style keys, including `sk-proj-` and `sk-svcacct-` keys.
+- `Bearer` tokens.
+- AWS access key ids, and AWS secret access keys that are labelled as such.
+- Card numbers: runs of 13 to 19 digits that pass the Luhn check, when written in groups of four or more digits or unbroken.
+
+Redaction runs before the 32 KB truncation, so a secret cut in half by the limit cannot survive in part.
+
+Redaction is a safety net, not a guarantee. A secret in a shape none of these patterns match is stored as sent, and a card typed in groups of one to three digits is not detected. Fields such as `user_id` are stored as you send them, so do not put an email address there. If a payload must never be stored, turn off payload capture instead. [How ingestion works](/docs/concepts/ingestion/#what-is-redacted) has the full pipeline.
+
+## Turn off prompt and completion capture
+
+By default a project stores the input and output of every span. To keep metadata only:
+
+1. Open **Settings, Project**.
+2. In the **Data** card, turn off **Capture prompts & completions**.
+3. Save.
+
+From then on, spans are stored without their input and output. Tokens, cost, latency, the model and the rest of the span are still stored, and so are the Doctor's request hashes, which are worked out before the payload is dropped.
+
+- The change applies to spans ingested after you save. Traces already stored keep their prompts and completions.
+- It covers every way of sending data, including spans the gateway records.
+- To remove what is already stored, shorten the retention period or delete the project.
+
+Only the admin and owner roles can change it. For anyone else the switch is disabled.
+
+## Set the retention period
+
+A project keeps traces for 30 days by default. You can set any whole number of days from 1 to 90.
+
+1. Open **Settings, Project**.
+2. In the **Data** card, enter a number in **Retention period (days)**.
+3. Save.
+
+A worker job runs every hour and deletes, in batches, the traces that started before the cutoff. Their spans go with them. Shortening the period deletes older traces within the next hour. A value outside 1 to 90 is refused.
+
+The same job removes data that is derived from those traces or quotes them, on the same cutoff:
+
+- hourly rollups behind the long-window charts;
+- resolved insights, by the time they were resolved, and per-user daily statistics;
+- scores, review-queue items and finished online evaluator runs. Online runs from the current month stay, because the evaluator's monthly budget counts them.
+
+Detector runs are kept for seven days whatever the setting. Datasets, experiments and their items are curated by people and are kept, so delete any that hold text you copied from traces. The [Limits reference](/docs/reference/limits/#retention) lists the retention limits.
+
+## Delete a project
+
+To remove a project and everything in it:
+
+1. Open **Settings, Project**.
+2. In the **Danger zone**, select **Delete project**.
+3. Type the project's slug to confirm.
+
+This deletes the project, its API keys and all of its traces, and it cannot be undone. Admins and owners can do it. The organization's audit log keeps a `project.delete` event with the project's name and slug. The demo organization's project cannot be deleted.
+
+The files of the project's [exports](/docs/guides/exports/) sit in your object storage, not in the database. Deleting the project queues a background job that deletes everything under the project's export prefix. If object storage is not configured, the job skips and there is nothing to delete.
+
+Deleting an organization deletes all of its projects the same way, together with its members and its audit log. Only an owner can do it.
+
+## Exports
+
+Exporting traces writes a CSV or JSONL file to your own object storage. The file holds the prompts and completions your project captured, so treat it like the traces themselves. Members, admins and owners can export; viewers cannot. Exports are made in **Settings, Project, Exports**.
+
+Spanlight deletes an export file seven days after it was made, and when the project is deleted. See [Exports](/docs/guides/exports/).
+
+## Check it worked
+
+- **Capture off.** When it is the only setting you changed, the toast after you save reads "Prompts and completions will no longer be captured." Send a new trace. Open it in **Traces**: the span's Input and Output show "No input captured" and "No output captured", while tokens, cost and latency are still there. Traces from before the change keep their text.
+- **Retention.** When it is the only setting you changed, saving a new period shows a toast such as "Traces are now kept for 14 days." Traces older than the period are removed within the next hour.
+- **Redaction.** Send a span whose input contains `Authorization: Bearer abcdefgh12345678`. The stored input reads `Authorization: [REDACTED]`.
+
+## Troubleshooting
+
+- **The switch and the retention field are disabled.** Only admins and owners can change them; members and viewers see them read-only.
+- **"Keep traces for at least 1 day." or "Traces can be kept for at most 90 days."** The retention period must be a whole number of days from 1 to 90 ("Enter a whole number of days." otherwise).
+- **Old traces still show prompts after you turned capture off.** The change applies to spans ingested after you save. Shorten the retention period or delete the project to remove what is stored; see [Turn off prompt and completion capture](#turn-off-prompt-and-completion-capture).
+- **A secret appears in a stored prompt.** Redaction matches known shapes only. Turn off payload capture if a payload must never be stored; see [Redaction always runs](#redaction-always-runs).
+- **Traces are still there after the retention period.** The cleanup job runs hourly on the worker. Check that the worker is running; see [Troubleshooting](/docs/troubleshooting/#the-worker-is-not-running).
+- **Deleting a project: the button stays disabled.** Type the project's slug exactly. The demo organization's project cannot be deleted.
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'How ingestion works', href: '/docs/concepts/ingestion/', description: 'The pipeline a span passes through, including redaction.' },
+    { title: 'Limits reference', href: '/docs/reference/limits/', description: 'Retention, size and rate limits.' },
+    { title: 'Exports', href: '/docs/guides/exports/', description: 'Export traces as CSV or JSONL.' },
+    { title: 'Roles and permissions', href: '/docs/reference/roles/', description: 'Who can change project settings and delete a project.' },
+  ]}
+/>

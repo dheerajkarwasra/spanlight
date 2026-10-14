@@ -1,0 +1,120 @@
+---
+title: Releases and users
+description: Tag traces with a release and an end-user id to compare two versions of your app and see who drives cost and errors. How to set both, what the Releases and Users pages show, and their limits.
+sidebar:
+  order: 2
+---
+
+{/* Sources: frontend/src/features/releases/releases-page.tsx, frontend/src/features/releases/release-picker.tsx, frontend/src/features/users/users-page.tsx, docs/api-deviations.md */}
+
+import NextSteps from '../../components/NextSteps.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+
+Two optional fields turn a pile of traces into answers to "did the last deploy make things worse?" and "who is costing us the most?". A **release** names the version of your application that produced a trace. A **user id** names the end user it was produced for. Both are plain strings you choose; Spanlight does not look anything up about them.
+
+<Prerequisites
+  items={[
+    'Traces already arriving in the project',
+    'For the Users page: the worker running, with USER_STATS_ENABLED on (the default). The numbers refresh every 15 minutes',
+    'Every role in the project, viewers included, can read both pages. Reading them through the API with a project API key needs the traces:read scope',
+  ]}
+/>
+
+## Set the release
+
+The release is a trace field of up to 128 characters. Use whatever identifies a deploy: a version number, a date or a git SHA.
+
+| You send traces with | Set the release with |
+| --- | --- |
+| The Python SDK | `spanlight.init(release="2026.10.12")` or the `SPANLIGHT_RELEASE` environment variable |
+| OTLP | The resource attribute `service.version` (see [OTLP](/docs/otlp/)) |
+| The gateway, without an SDK | The request header `x-spanlight-release` (see the [gateway quickstart](/docs/gateway/quickstart/)); a value of more than 128 characters is dropped |
+| The native JSON endpoint | `trace.release` |
+
+A trace has one release, so set it when the process starts, not per request.
+
+## Set the user id
+
+The user id is a trace field of 1 to 256 characters.
+
+| You send traces with | Set the user with |
+| --- | --- |
+| The Python SDK | `spanlight.update_trace(user_id="u_42")` inside the trace |
+| OTLP | The attribute `user.id`, on the span or on the resource |
+| The gateway, without an SDK | The request header `x-spanlight-user` |
+| The native JSON endpoint | `trace.user_id` |
+
+Send an opaque id, not an email address or a name, unless you are happy for it to be stored and shown to everyone who can read the project. Spanlight shows the id exactly as you sent it and never enriches it. The same id is what a [budget](/docs/budgets/) scoped to a user matches.
+
+## Releases
+
+**Releases** lists every release that has traces in the time range you picked, newest first, with its first and last sighting, traces, LLM calls, error rate, p50 and p95 latency, cost, and input and output tokens. It shows at most 200 releases. Narrow the range, or set an environment, to focus on one deploy.
+
+Pick a baseline (**A**) and a candidate (**B**) and press **Compare**. The comparison shows:
+
+- **Deltas** for each figure, absolute and relative. A figure that is unknown for one side (for example the cost of a release none of whose calls were priced) has no delta, and the relative change is blank when the baseline is zero. Unknown is never shown as 0.
+- **Model mix**: the share of calls each model answered in A and in B, so a quiet model swap shows up.
+- **Error classes**: how many failures of each [error class](/docs/doctor/#what-the-doctor-reads) each release had.
+- **New errors**: up to 10 error messages that appear in B and not in A, with a count and an example trace. Messages are normalised first (numbers, ids and hashes are masked) so the same error with a different request id counts once.
+
+Latency percentiles are exact: they are computed over the stored spans, not estimated from summaries. That is also why the range is limited.
+
+**The range may span at most 30 days.** A longer range is refused with `422 RELEASE_WINDOW_TOO_LARGE`. Comparing a release with itself is `422 SAME_RELEASE`, and a release with no traces in the range is `404 UNKNOWN_RELEASE`.
+
+A release comparison is also a cheap safety check after a deploy: set the range to the day around it, put the previous release in A and the new one in B, and look at error rate, p95 and the new errors before the [Doctor](/docs/doctor/) has seen enough traffic to say anything.
+
+## Users
+
+**Users** lists the end users who had traces in the range, with their traces, LLM calls, errors, cost, tokens and when they were last seen. Sort by cost, errors or traces; the list loads in pages. Open a user to see a day-by-day chart of their activity and their 20 most recent sessions.
+
+- **Whole UTC days.** Figures are kept per user per UTC day, so the range is rounded out to whole days, and the page says which days it covers.
+- **Refreshed every 15 minutes.** A background job recomputes yesterday and today, so today's numbers can be up to about 15 minutes behind the traces. A day with no traces left (for example after retention removed them) is removed from the figures.
+- **Cost is a lower bound.** It adds only the priced calls. When a user made calls and none was priced, their cost is "—", not 0; a day with no activity at all shows 0.
+- **Retention.** Per-user figures older than the project's retention period are deleted with the traces.
+- **Switch it off.** Operators can stop the refresh with `USER_STATS_ENABLED` (see [Configuration](/docs/configuration/)). The page then stops updating.
+
+A user whose id contains a `/` or other special characters works: the dashboard encodes it in the URL.
+
+## Reading both with an API key
+
+Releases and Users can be read with a project API key that has the `traces:read` scope, for its own project, as well as by signed-in members. This suits a CI job that checks a new release after a deploy:
+
+```bash
+curl -sS -H "Authorization: Bearer $SPANLIGHT_API_KEY" \
+  "$BASE/api/v1/projects/$PROJECT_ID/releases/compare?a=2026.10.11&b=2026.10.12&from=2026-10-11T00:00:00Z&to=2026-10-13T00:00:00Z"
+```
+
+| Route | Returns |
+| --- | --- |
+| `GET /api/v1/projects/{project_id}/releases?from&to&environment` | The releases in the range |
+| `GET /api/v1/projects/{project_id}/releases/compare?a&b&from&to&environment` | The comparison of release `a` with release `b` |
+| `GET /api/v1/projects/{project_id}/users?from&to&sort&limit&cursor` | A page of users, `sort` being `cost`, `errors` or `traces` |
+| `GET /api/v1/projects/{project_id}/users/{external_user_id}?from&to` | One user, with the daily series and recent sessions |
+
+Insights are not readable with a project API key: they need a signed-in user or a personal access token. The full request and response shapes are in the [API reference](/docs/api/).
+
+## Check it worked
+
+Send a trace with a release and a user id, then wait up to 15 minutes for the user figures. Open **Releases**, titled "Compare releases": the release is in the picker for **A** and **B** instead of the empty state "No releases in this window". Open **Users**: the user id is a row in the list instead of "No end users in this window".
+
+## Troubleshooting
+
+| You see | Check |
+| --- | --- |
+| "No releases in this window" | Traces carry no release. Set it in the SDK, in `service.version` or in `x-spanlight-release`; only new traces get it. |
+| "No end users in this window" | Traces carry no user id. Set `user_id`, `user.id` or `x-spanlight-user`. |
+| A release is missing from the picker | It has no traces in the range or in the chosen environment. |
+| `RELEASE_WINDOW_TOO_LARGE` | Use a range of 30 days or less. |
+| Today's user numbers look low | The refresh runs every 15 minutes. Check `USER_STATS_ENABLED` and that the worker is running. |
+| A user's cost shows "—" | None of their calls had a price. Add a price override for the model; see [Budgets](/docs/budgets/) for how unpriced calls are treated. |
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Python SDK', href: '/docs/python-sdk/', description: 'Install the package and trace functions and provider calls.' },
+    { title: 'OTLP ingestion', href: '/docs/otlp/', description: 'Send traces from OpenTelemetry instead of the SDK.' },
+    { title: 'Budgets and the weekly digest', href: '/docs/budgets/', description: 'Spend limits that notify or block gateway calls.' },
+    { title: 'The Doctor', href: '/docs/doctor/', description: 'Findings about how your application calls LLMs.' },
+  ]}
+/>

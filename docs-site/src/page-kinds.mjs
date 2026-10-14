@@ -1,0 +1,99 @@
+// The kind of every hand-written docs page, keyed by slug. The kind decides which
+// parts of the page contract apply (see scripts/lib/page-contract.mjs):
+//   how-to       Prerequisites block, "Check it worked", "Troubleshooting" and a closing
+//                "Next steps" section
+//   concept      a "Related pages" section
+//   reference    a "Related pages" section
+//   integration  Prerequisites, a Verified block with packages, "What is recorded",
+//                "What is not recorded", "Troubleshooting" and "Next steps"
+//   tutorial     Prerequisites, a Verified block with packages, Steps, "Check it worked",
+//                "Troubleshooting" and "Next steps"
+//   migration    Prerequisites, a Verified date, the four migration sections, "Next steps"
+//                and at least one https:// source
+// Generated pages (api, runbooks, security, deploy, changelog, reference/prices) and the
+// splash page (index.mdx) are not listed.
+
+/** @type {Record<string, 'how-to' | 'concept' | 'reference' | 'integration' | 'tutorial' | 'migration'>} */
+export const PAGE_KINDS = {
+  quickstart: 'how-to',
+  'tutorials/first-trace': 'tutorial',
+  'tutorials/eval-gate': 'tutorial',
+  demo: 'how-to',
+  glossary: 'reference',
+  faq: 'reference',
+  integrations: 'reference',
+  'integrations/openai': 'integration',
+  'integrations/anthropic': 'integration',
+  'integrations/github-action': 'integration',
+  'python-sdk': 'how-to',
+  otlp: 'how-to',
+  'releases-and-users': 'how-to',
+  doctor: 'how-to',
+  prompts: 'how-to',
+  playground: 'how-to',
+  datasets: 'how-to',
+  scores: 'how-to',
+  evaluators: 'how-to',
+  experiments: 'how-to',
+  'eval-gate': 'how-to',
+  alerts: 'how-to',
+  budgets: 'how-to',
+  webhooks: 'how-to',
+  'gateway/quickstart': 'how-to',
+  'gateway/cache': 'how-to',
+  'gateway/credentials': 'how-to',
+  'gateway/errors': 'how-to',
+  'gateway/lab': 'how-to',
+  'gateway/routing': 'how-to',
+  'guides/access': 'how-to',
+  'guides/accounts': 'how-to',
+  'guides/data': 'how-to',
+  'guides/exports': 'how-to',
+  'guides/privacy': 'how-to',
+  'guides/traces': 'how-to',
+  'guides/overview': 'how-to',
+  'self-hosting': 'how-to',
+  'self-hosting/upgrades': 'how-to',
+  'self-hosting/backups': 'how-to',
+  troubleshooting: 'how-to',
+  configuration: 'reference',
+  'reference/detectors': 'reference',
+  'reference/python-sdk': 'reference',
+  'reference/cli': 'reference',
+  'reference/limits': 'reference',
+  'reference/roles': 'reference',
+  'reference/errors': 'reference',
+  'reference/otlp-mapping': 'reference',
+  'concepts/data-model': 'concept',
+  'concepts/ingest-paths': 'concept',
+  'concepts/ingestion': 'concept',
+  'concepts/cost': 'concept',
+  'concepts/doctor': 'concept',
+  'concepts/tenancy': 'concept',
+};
+
+// Slugs created in docs-site phase 2. Each one must cite the repository files it was
+// written from in a `Sources:` comment. Grows as pages are added.
+/** @type {string[]} */
+export const PHASE_2_PAGES = [
+  'concepts/data-model',
+  'concepts/ingest-paths',
+  'concepts/ingestion',
+  'concepts/cost',
+  'concepts/doctor',
+  'concepts/tenancy',
+  'guides/traces',
+  'guides/overview',
+  'self-hosting/upgrades',
+  'self-hosting/backups',
+  'troubleshooting',
+  'reference/python-sdk',
+  'reference/cli',
+  'reference/limits',
+  'reference/roles',
+  'reference/errors',
+  'reference/otlp-mapping',
+  'glossary',
+  'demo',
+  'guides/privacy',
+];

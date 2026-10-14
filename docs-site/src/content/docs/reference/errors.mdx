@@ -1,0 +1,95 @@
+---
+title: Error codes reference
+description: How Spanlight reports errors as problem+json, how to read the code field, and the common error codes with their HTTP status, meaning and fix.
+---
+
+{/* Sources: backend/app/core/errors.py, backend/app/api/ingest.py, backend/app/api/deps.py, backend/app/core/middleware.py, backend/app/core/body_limit.py, backend/app/core/ratelimit.py, backend/app/api/v1/auth.py, backend/app/api/v1/orgs.py, backend/app/api/v1/projects.py, backend/app/api/v1/dataset_items.py, backend/app/core/permissions.py, backend/app/core/idempotency.py, backend/app/api/v1/exports.py, backend/app/api/v1/playground.py, backend/app/api/v1/experiments.py, backend/app/api/v1/alerts.py, docs/api-deviations.md */}
+
+Every error from the Spanlight API is a JSON document with the media type `application/problem+json`, as defined by RFC 9457. This page explains how to read one and lists the codes you meet most often. The [API conventions](/docs/api/conventions/) page has the full catalogue, including the codes of single features such as prompts, datasets and experiments.
+
+The gateway under `/gw/` answers in the format of the provider API it imitates, not in problem+json. See [Gateway errors](/docs/gateway/errors/) for those.
+
+## The shape of an error
+
+```json
+{
+  "type": "about:blank",
+  "title": "Unprocessable Entity",
+  "status": 422,
+  "detail": "The request is invalid.",
+  "code": "VALIDATION_ERROR",
+  "request_id": "0b7c1f0e5d2a4c6e8f1a3b5c7d9e2f40",
+  "errors": [{ "field": "retention_days", "message": "Input should be less than or equal to 90" }]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `status` | The HTTP status code, repeated in the body. |
+| `title` | The standard name of the status. |
+| `detail` | A sentence for people. Do not parse it, because the wording can change. |
+| `code` | A stable name for the error. Branch on this in your code. |
+| `request_id` | The ID of the request. It is also in the `X-Request-ID` response header. Quote it when you report a problem. |
+| `errors` | Only on `VALIDATION_ERROR`. One entry for each field, with its dotted path and a message. |
+
+Some errors add more fields. A response can also carry a `Retry-After` header, in whole seconds. `RATE_LIMITED` and `SERVICE_UNAVAILABLE` always do.
+
+## How to read an error
+
+1. Look at the `status` first. A `4xx` means the request is wrong or not allowed. Retrying it unchanged will not help, except for `429` and `IDEMPOTENCY_IN_PROGRESS`. A `5xx` means the server could not finish the request. A `GET` is safe to retry. A write may have been applied in part, so retry it only if the route accepts an `Idempotency-Key`. Send the same key again. Spanlight never keeps the answer to a `5xx` under a key, so the retry runs. Today the routes that accept the header create exports, run playground prompts, start experiment runs and send a test to an alert channel.
+2. Read the `code` to find the cause in the tables below.
+3. Read `detail` for the specifics, such as which setting to change or which field is wrong.
+4. For `VALIDATION_ERROR`, read each entry of `errors`.
+
+Two things behave in a way you might not expect. A resource that exists but that you may not see answers `404 NOT_FOUND`, not `403`. And a status that has no specific code uses a generic one: `METHOD_NOT_ALLOWED` for `405`, `CONFLICT` for `409` and `ERROR` for anything else.
+
+## Request and validation errors
+
+| Code | Status | Meaning | What to do |
+| --- | --- | --- | --- |
+| `BAD_REQUEST` | 400 | The request could not be understood. On ingestion this is a body that could not be decompressed or was not fully sent. | Check the `Content-Encoding` header and send the whole body. |
+| `INVALID_JSON` | 400 | The ingestion body is not valid JSON. | Fix the JSON. |
+| `INVALID_OTLP` | 400 | The OTLP body could not be decoded. | Send OTLP JSON or protobuf with the matching `Content-Type`. |
+| `VALIDATION_ERROR` | 422 | A field is missing, has the wrong type or is out of range. | Read `errors` and fix each field. |
+| `PAYLOAD_TOO_LARGE` | 413 | The body is over its size limit, or an ingestion batch has too many spans. | Send smaller bodies and batches. See the [Limits reference](/docs/reference/limits/). |
+| `UNSUPPORTED_MEDIA_TYPE` | 415 | The `Content-Type` or `Content-Encoding` is not supported. | Use `application/json` or `application/x-protobuf`, and `gzip` or `deflate` encoding. |
+| `CONFIRMATION_MISMATCH` | 422 | A deletion's typed `confirm` is not the slug of what it deletes. | Send the exact slug. |
+| `IDEMPOTENCY_MISMATCH` | 422 | The `Idempotency-Key` was first used for a different request. | Send a new key for a different request. |
+| `IDEMPOTENCY_IN_PROGRESS` | 409 | The first request with this `Idempotency-Key` has not answered yet. | Wait a moment and send the same request again. |
+
+## Authentication and permission errors
+
+| Code | Status | Meaning | What to do |
+| --- | --- | --- | --- |
+| `UNAUTHORIZED` | 401 | No valid session or credential came with the request. | Sign in, or send `Authorization: Bearer <key or token>`. |
+| `INVALID_CREDENTIALS` | 401 | The email or password is wrong. | Check both. Repeated failures are throttled. |
+| `KEY_EXPIRED` | 401 | The API key is past its expiry. | Create a new key. |
+| `TOKEN_EXPIRED` | 401 | The personal access token is past its expiry. | Create a new token. |
+| `FORBIDDEN` | 403 | You are signed in, but your role does not allow this. | Ask an admin or owner. See the [roles reference](/docs/reference/roles/). |
+| `KEY_SCOPE` | 403 | The API key does not have the scope this route needs. | Create a key with the scope. A key cannot change its scopes. |
+| `TOKEN_SCOPE` | 403 | A read-only access token tried to change something. | Use a write token. |
+| `SESSION_REQUIRED` | 403 | The route needs a signed-in browser session, not a token. | Use the dashboard. |
+| `TWO_FACTOR_REQUIRED` | 403 | The organization requires two-factor authentication, and you have not turned it on. | Turn it on in your account settings. |
+| `CSRF_FAILED` | 403 | The CSRF token is missing or wrong. | Reload the dashboard. Scripts should use a bearer token, which skips this check. |
+| `ORIGIN_NOT_ALLOWED` | 403 | The `Origin` header is missing or not on the allowed list. | Call from the dashboard origin, or use a bearer token. |
+| `NOT_FOUND` | 404 | The resource does not exist, or you cannot see it. | Check the ID and your membership. |
+
+## Conflicts and server errors
+
+| Code | Status | Meaning | What to do |
+| --- | --- | --- | --- |
+| `NOT_CONFIGURED` | 409 | The request needs an optional integration that the operator has not set up. `detail` names the setting. | Set it. See [Configuration](/docs/configuration/). |
+| `LAST_OWNER` | 409 | The change would leave the organization without an owner. | Make someone else an owner first. |
+| `EMAIL_TAKEN` | 409 | An account with this email already exists. | Sign in instead. |
+| `SLUG_UNAVAILABLE` | 409 | Spanlight could not find a free slug for the name. | Try another name. |
+| `RATE_LIMITED` | 429 | You sent too many requests. The `Retry-After` header says how long to wait. | Wait that long, then retry. Send larger batches in fewer requests. |
+| `INTERNAL_ERROR` | 500 | An unexpected error on the server. | Retry a `GET` once. Retry a write only with the same `Idempotency-Key`, on a route that accepts one (see step 1 of [How to read an error](#how-to-read-an-error)). If it persists, report it with the `request_id`. |
+| `SERVICE_UNAVAILABLE` | 503 | The database could not take the request in time. `Retry-After` is 5 seconds. | Retry a `GET` after the delay. Retry a write only with the same `Idempotency-Key`, on a route that accepts one (see step 1 of [How to read an error](#how-to-read-an-error)). The Python SDK retries trace ingestion by itself. |
+
+## Related pages
+
+- [API conventions](/docs/api/conventions/): the full catalogue of codes and the rules behind them.
+- [Limits reference](/docs/reference/limits/): the numbers behind `PAYLOAD_TOO_LARGE` and `RATE_LIMITED`.
+- [Roles and permissions reference](/docs/reference/roles/): what `FORBIDDEN`, `KEY_SCOPE` and `TOKEN_SCOPE` check.
+- [Troubleshooting](/docs/troubleshooting/): fixes for rejected spans, missing traces and failing requests.
+- [Gateway errors](/docs/gateway/errors/): the error format of the gateway.

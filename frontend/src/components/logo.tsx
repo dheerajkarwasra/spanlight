@@ -1,12 +1,10 @@
-import { useId } from "react";
-
 import { cn } from "@/lib/utils";
 
 type LogoTone = "on-light" | "on-dark";
 type LogoSize = "md" | "lg";
 
 interface LogoProps {
-  /** `on-light` for the canvas and panels (ink tile), `on-dark` for the rail (bare mark, lime dot). */
+  /** `on-light` for the canvas and panels, `on-dark` for the rail and the dark landing page. */
   tone?: LogoTone;
   /** `md` is the 32px mark; `lg` is the 40px mobile app-bar mark. */
   size?: LogoSize;
@@ -22,8 +20,9 @@ const WORDMARK_SIZE: Record<LogoSize, string> = {
 };
 
 /**
- * The Spotlight mark plus the lowercase "spanlight" wordmark. One accessible name for the
- * whole lockup; the drawn letters are hidden from assistive tech.
+ * The Cascade mark plus the lowercase "spanlight" wordmark (Figma "Logo · v2" › "Final ·
+ * Cascade"). One accessible name for the whole lockup; the drawn letters are hidden from
+ * assistive tech.
  */
 export function Logo({
   tone = "on-light",
@@ -35,47 +34,40 @@ export function Logo({
     <span
       role="img"
       aria-label="Spanlight"
-      className={cn("inline-flex items-center", size === "lg" ? "gap-3" : "gap-2.5", className)}
+      className={cn("inline-flex items-center", size === "lg" ? "gap-2.5" : "gap-2", className)}
     >
       <LogoMark tone={tone} size={size} />
-      {withWordmark ? <Wordmark tone={tone} size={size} /> : null}
+      {withWordmark ? (
+        <span
+          aria-hidden
+          className={cn(
+            "font-brand font-semibold tracking-[-0.045em] whitespace-nowrap",
+            WORDMARK_SIZE[size],
+            tone === "on-dark" ? "text-rail-foreground" : "text-foreground",
+          )}
+        >
+          spanlight
+        </span>
+      ) : null}
     </span>
   );
 }
 
 /**
- * "spanlight" set with a dotless ı and a separately drawn dot: lime on the rail, the text
- * colour elsewhere. The dot sits just before the ı as an inline-block with zero net advance,
- * raised from the baseline with vertical-align, so neither font metrics nor letter-spacing can
- * move it off the stem. Offsets are in em, measured from Plus Jakarta Sans Bold (ı stem centred
- * 0.114em from its origin; the font's own dot spans 0.605–0.745em, so 0.6em keeps the gap).
+ * Four spans of a trace waterfall on a 64-unit grid: bars 8u tall, 4u apart, each starting 9u
+ * further right. The third is the lit one.
  */
-function Wordmark({ tone, size }: { tone: LogoTone; size: LogoSize }) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        "font-bold tracking-[-0.03em] whitespace-nowrap",
-        WORDMARK_SIZE[size],
-        tone === "on-dark" ? "text-rail-foreground" : "text-foreground",
-      )}
-    >
-      spanl
-      <span
-        className={cn(
-          "-mr-[0.214em] ml-[0.014em] inline-block size-[0.2em] rounded-full align-[0.6em]",
-          tone === "on-dark" ? "bg-lime" : "bg-current",
-        )}
-      />
-      ıght
-    </span>
-  );
-}
+const CASCADE_SPANS = [
+  { x: 4, y: 10, width: 30, lit: false },
+  { x: 13, y: 22, width: 30, lit: false },
+  { x: 22, y: 34, width: 38, lit: true },
+  { x: 31, y: 46, width: 22, lit: false },
+] as const;
 
 /**
- * The Spotlight mark: a lamp, its cone of light and the one span it lands on, lit lime.
- * `on-light` draws it at 72% on an ink tile (canvas, panels, favicon); `on-dark` draws it bare
- * for the ink rail. Decorative: pair it with visible text or a label.
+ * The Cascade mark. Only the lit span is drawn at full strength: the call the light lands on.
+ * On dark surfaces it is lime and the others are white at 30%; on light surfaces everything is
+ * the text colour, the unlit spans at 20%. Decorative: pair it with visible text or a label.
  */
 export function LogoMark({
   tone = "on-light",
@@ -86,39 +78,32 @@ export function LogoMark({
   size?: LogoSize;
   className?: string;
 }) {
-  const beamId = `logo-beam-${useId()}`;
-  const tile = tone === "on-light";
+  const dark = tone === "on-dark";
 
   return (
-    <span
+    <svg
       aria-hidden
+      viewBox="0 0 64 64"
+      fill="none"
       className={cn(
-        "flex shrink-0 items-center justify-center",
+        "shrink-0",
         MARK_SIZE[size],
-        tile && "rounded-[24%] bg-rail",
+        dark ? "text-rail-foreground" : "text-foreground",
         className,
       )}
     >
-      <svg viewBox="0 0 32 32" fill="none" className={tile ? "size-[72%]" : "size-full"}>
-        <defs>
-          <linearGradient id={beamId} x1="16" y1="8" x2="16" y2="23" gradientUnits="userSpaceOnUse">
-            <stop stopColor="var(--lime)" stopOpacity="0.85" />
-            <stop offset="1" stopColor="var(--lime)" stopOpacity="0.2" />
-          </linearGradient>
-        </defs>
-        <rect x="12.5" y="3.5" width="7" height="3.5" rx="1.75" fill="var(--lime)" />
-        <path d="M13.5 8.5H18.5L23 23H9Z" fill={`url(#${beamId})`} />
+      {CASCADE_SPANS.map((span) => (
         <rect
-          x="3"
-          y="23"
-          width="26"
-          height="5"
-          rx="2.5"
-          fill="var(--rail-foreground)"
-          fillOpacity="0.3"
+          key={span.y}
+          x={span.x}
+          y={span.y}
+          width={span.width}
+          height="8"
+          rx="4"
+          fill={span.lit && dark ? "var(--lime)" : "currentColor"}
+          fillOpacity={span.lit ? 1 : dark ? 0.3 : 0.2}
         />
-        <rect x="9" y="23" width="14" height="5" rx="2.5" fill="var(--lime)" />
-      </svg>
-    </span>
+      ))}
+    </svg>
   );
 }

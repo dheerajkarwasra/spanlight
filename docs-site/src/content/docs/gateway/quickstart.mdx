@@ -1,0 +1,228 @@
+---
+title: Gateway quickstart
+description: Point the OpenAI or Anthropic SDK at the Spanlight gateway with one base URL and get every call traced, priced and, if you choose, routed, retried and cached.
+sidebar:
+  order: 1
+---
+
+{/* Sources: backend/app/gateway/errors.py, backend/app/api/gw_errors.py, backend/app/api/gw.py, backend/app/api/v1/gateway_keys.py, backend/app/api/v1/gateway.py, backend/app/gateway/overview_queries.py, backend/app/gateway/overview_service.py, frontend/src/features/gateway/overview-page.tsx, frontend/src/features/gateway/overview-kpis.tsx, frontend/src/features/gateway/overview-format.ts, frontend/src/features/gateway/overview-card.tsx, frontend/src/features/gateway/target-table.tsx, frontend/src/features/gateway/key-table.tsx, frontend/src/features/gateway/fault-chips.tsx, frontend/src/features/shell/time-range-options.ts */}
+
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+
+The gateway is an HTTP proxy for LLM providers. Your application keeps using the official OpenAI or Anthropic client; you change its `base_url` and its API key. Each call is then recorded as a trace in Spanlight with the prompt, completion, tokens, latency and cost (the span is written after the answer is sent; the [gateway runbook](/docs/runbooks/gateway/) names the metric that counts any that could not be), and the gateway can retry, fall back to another provider, cache answers and inject faults on the way.
+
+Nothing is translated: an OpenAI-style request goes to an OpenAI-style provider (`openai` or `openai_compatible` credentials) and a Messages request goes to Anthropic. The response is forwarded as the provider sent it, streams included.
+
+| Path | Surface | Errors come back as |
+| --- | --- | --- |
+| `POST /gw/v1/chat/completions` | OpenAI Chat Completions | OpenAI |
+| `POST /gw/v1/responses` | OpenAI Responses | OpenAI |
+| `POST /gw/v1/messages` | Anthropic Messages | Anthropic |
+| `GET /gw/v1/models` | Model list | OpenAI, or Anthropic when the request carries `anthropic-version` |
+
+<Prerequisites
+  items={[
+    'The gateway enabled: GATEWAY_MODE is embedded (the default) or standalone, not disabled',
+    'CREDENTIALS_KEYS set on the server, so provider keys can be stored',
+    'An organization owner to add the provider credential, and an admin or owner to create the route and the gateway key',
+    'An OpenAI or Anthropic API key, and the official Python SDK or any HTTP client',
+  ]}
+/>
+
+## 1. Set up a credential, a route and a key
+
+You do this once per project, in the dashboard under **Gateway**.
+
+1. **Credentials.** An organization owner stores a provider API key (**Gateway, Credentials**). The key is encrypted at rest and never shown again. See [Provider credentials](/docs/gateway/credentials/).
+2. **Routes.** An owner or admin creates a route that names the credential to use (**Gateway, Routes**). The first route of a project becomes its default. See [Routes, retries and fallbacks](/docs/gateway/routing/).
+3. **Keys.** An owner or admin creates a gateway key (**Gateway, Keys**). It looks like `spl_gw_…`, is shown **once**, and belongs to one project. A key without a route of its own uses the project's default route.
+
+A gateway key authenticates the gateway only. It is not a project API key (`spl_live_…`) and cannot call the dashboard API or send traces to `/v1/traces`.
+
+## 2. Change the base URL
+
+`<host>` is the address of your Spanlight web service, for example `http://localhost:8080` with the Compose stack. The gateway needs no CORS setup because it is meant for servers, not browsers; it sends no CORS headers, so a browser on another origin cannot call it. Keep the key out of front-end code.
+
+### OpenAI SDK
+
+The OpenAI SDK appends `/chat/completions` to its base URL, so the base URL ends in `/gw/v1`.
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="<host>/gw/v1",
+    api_key="spl_gw_…",  # the gateway key, not an OpenAI key
+)
+
+reply = client.chat.completions.create(
+    model="gpt-4.1-mini",
+    messages=[{"role": "user", "content": "Say hello."}],
+)
+print(reply.choices[0].message.content)
+```
+
+### Anthropic SDK
+
+The Anthropic SDK appends `/v1/messages`, so the base URL ends in `/gw`.
+
+```python
+from anthropic import Anthropic
+
+client = Anthropic(
+    base_url="<host>/gw",
+    api_key="spl_gw_…",  # the gateway key, not an Anthropic key
+)
+
+message = client.messages.create(
+    model="claude-sonnet-4-5",
+    max_tokens=256,
+    messages=[{"role": "user", "content": "Say hello."}],
+)
+print(message.content[0].text)
+```
+
+### curl
+
+```bash
+curl -sS "<host>/gw/v1/chat/completions" \
+  -H "Authorization: Bearer spl_gw_…" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-4.1-mini", "messages": [{"role": "user", "content": "Say hello."}]}'
+```
+
+### How the key is sent
+
+Send the key as `Authorization: Bearer spl_gw_…` or as `x-api-key: spl_gw_…` (the Anthropic SDK uses the second). If both headers are present and carry different values, the call is refused with `401`. The error body follows the path, not the header: a call to `/gw/v1/messages` always gets an Anthropic-shaped error.
+
+## Check it worked
+
+Run one of the examples from step 2. It prints the model's reply, and the call shows up as a trace.
+
+Open **Traces**. Each call is one `llm` span named after the surface and model, for example `chat_completions gpt-4.1-mini`. A call that starts a new trace gives the trace the same name; a call that joins a trace you started (with `x-spanlight-trace-id`, below) leaves that trace's name as it is. Streaming calls are recorded when the stream ends, or when the client goes away.
+
+A gateway span carries the usual fields (provider, model, input and output, token usage, time to first token for streams, cost) and these attributes:
+
+| Attribute | Meaning |
+| --- | --- |
+| `spanlight.gateway.key_id` | The gateway key that made the call |
+| `spanlight.gateway.request_id` | The `X-Request-ID` of the call |
+| `spanlight.gateway.surface` | `chat_completions`, `responses` or `messages` |
+| `spanlight.gateway.route`, `spanlight.gateway.route_version` | The route and the saved version that served the call |
+| `spanlight.gateway.target`, `spanlight.gateway.provider` | The credential name and provider that answered |
+| `spanlight.gateway.attempts`, `spanlight.gateway.fallbacks` | How many upstream attempts were made and how many other targets were used |
+| `spanlight.gateway.upstream_status` | The last provider status |
+| `spanlight.gateway.overhead_ms` | Time spent in Spanlight rather than at the provider |
+| `spanlight.cache` | `hit`, `miss`, `off` or `bypass` (see [Response cache](/docs/gateway/cache/)) |
+| `spanlight.fault.scenario` | Set when a Lab fault was injected (see [Integration Lab](/docs/gateway/lab/)) |
+
+Prompt and completion text is stored only while the project's `capture_payloads` setting is on, as for any other span. Token counts and cost are recorded either way. Cost comes from the same price table as the rest of Spanlight, including your [price overrides](/docs/api/conventions/); a model with no known price shows as unknown, never as zero.
+
+For streaming OpenAI chat completions that do not set `stream_options`, the gateway adds `stream_options.include_usage: true` so the span has token counts, and keeps the extra usage-only chunk (empty `choices`) that OpenAI then sends out of your stream, so your code sees the stream it asked for. Nothing else in the request is changed apart from [model aliases](/docs/gateway/routing/#model-aliases).
+
+## Read the Overview page
+
+**Gateway, Overview** summarizes the calls that went through gateway keys. Traces sent by the SDK or over OTLP are not in it.
+
+The time-range control offers the last 1 hour, 24 hours and 7 days. There is no 30-day or custom range here, because the page reads at most 7 days. If another page has set one of those, the Overview reads the last 7 days and leaves the other page's range alone. The environment filter limits the page to traces in one environment.
+
+A project with no gateway key shows "No gateway traffic yet" and a **Create a gateway key** button. After the first key, the page has three parts.
+
+**Six tiles** under "Gateway metrics":
+
+| Tile | Value | Line under it |
+| --- | --- | --- |
+| **Requests** | Calls in the window | "across N keys" and the window |
+| **Error rate** | Calls that ended in an error, as a share of all calls | "N of M requests", and "N from Lab" when Lab faults caused some of the errors on purpose |
+| **Cache hit rate** | Hits divided by hits plus misses | "N hits · N misses" |
+| **Fallbacks** | How many times a call moved on to another target of its route | "plus N retries" |
+| **p95 overhead** | The 95th percentile of the time Spanlight adds on top of the provider | "added by Spanlight, per request" |
+| **p95 time to first token** | The 95th percentile for streaming calls | "streaming requests only", or "0 streaming requests" when there are none |
+
+A value that cannot be worked out shows **—** with a tooltip that says why, for example "No requests in this window.", "No cache lookups in this window." or "No streaming requests in this window." It never shows 0 for an unknown value.
+
+Retries are the extra attempts that were not a move to another target. See [Retries](/docs/gateway/routing/#retries) and [Fallbacks](/docs/gateway/routing/#fallbacks).
+
+**Two tables**, busiest first:
+
+- **By target** ("Requests per route target in this window · a target is a provider credential"): Target, Provider, Requests, Errors and p95. It lists at most 50 targets. A deleted credential shows **—** under Provider ("The credential was deleted."). The link **Edit routes** opens Routes.
+- **By key** ("Requests and cost per gateway key"): Key, Environment, Requests, Errors and Cost. It lists at most 100 keys. A cost of **—** means a model had no price ("No price for this model"). The link **All keys** opens Keys.
+
+**Lab faults** shows one chip per Lab scenario with the number of calls it changed in the window, or "No lab faults in this window." The link **Open Lab** opens [the Integration Lab](/docs/gateway/lab/).
+
+## Join a trace you already started
+
+Send these headers to attach the call to your own trace, session or user. All are optional.
+
+| Header | Value | Bounds |
+| --- | --- | --- |
+| `x-spanlight-trace-id` | The id of an existing trace | 32 lowercase hex characters, not all zeros |
+| `x-spanlight-parent-span-id` | The span the call is a child of | 16 lowercase hex characters, not all zeros; needs a trace id |
+| `x-spanlight-session` | A session id | 1 to 256 characters |
+| `x-spanlight-user` | An end-user id | 1 to 256 characters |
+| `x-spanlight-tags` | Comma-separated tags | At most 20 tags of at most 64 characters; longer ones are dropped, repeats are ignored |
+
+If either id is present but invalid, both are ignored and the call starts a new trace. A parent id without a trace id is ignored. A session or user id outside its bounds is ignored. The final tag list is the Lab tag (if a fault fired), the key's default tags, then the header tags, at most 20 in all.
+
+With the Spanlight Python SDK, pass the ids of the active span:
+
+```python
+import spanlight
+
+with spanlight.span("answer") as current:
+    client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[{"role": "user", "content": "Say hello."}],
+        extra_headers={
+            "x-spanlight-trace-id": current.trace_id,
+            "x-spanlight-parent-span-id": current.span_id,
+            "x-spanlight-session": "session-42",
+            "x-spanlight-tags": "checkout,beta",
+        },
+    )
+```
+
+The `x-spanlight-*` headers are read by the gateway and never sent to the provider. Neither are your gateway key, cookies or any header outside a short allowlist.
+
+## Response headers
+
+| Header | When | Value |
+| --- | --- | --- |
+| `X-Request-ID` | Always | The id of the call, also in error bodies and in the span |
+| `X-Spanlight-Attempts` | Always | Upstream attempts made (`0` when the gateway answered without calling a provider) |
+| `X-Spanlight-Cache` | Model calls with a key | `hit`, `miss`, `off` or `bypass` |
+| `X-Spanlight-Code` | Errors | The stable [error code](/docs/gateway/errors/); `UPSTREAM_ERROR` for an error the provider returned |
+| `X-Spanlight-Fault` | A Lab fault fired | The scenario name |
+| `X-Upstream-Request-ID` | The provider sent one | The provider's own request id |
+
+Rate-limit headers and `Retry-After` from the provider are forwarded.
+
+## Limits
+
+- **Request size.** At most 10 MB, counted after decompression. Bodies may be sent with `Content-Encoding: gzip` or `deflate`. The body must be a JSON object with a string `model`.
+- **Per key.** A key can have a requests-per-minute limit and a tokens-per-minute limit. A call over either gets `429 RATE_LIMITED` with `Retry-After`.
+- **Per organization.** The operator can cap all of an organization's gateway keys together with `GATEWAY_ORG_RPM_CEILING` (see [Configuration](/docs/configuration/)). It is checked first.
+- **Models.** A key can list the models it may request (`allowed_models`, at most 100). A model outside the list gets `404 MODEL_NOT_ALLOWED`, checked before any alias is applied. `GET /gw/v1/models` then lists those models, or the route's alias names; with neither, the request goes to the first compatible provider and its answer is passed through.
+
+## Troubleshooting
+
+- **`401`, "Invalid or missing Spanlight gateway key."** The key is missing, malformed, unknown or revoked, or you sent a provider key. Use the `spl_gw_…` key shown when the gateway key was created. If the message reads "Authorization and x-api-key carry different keys.", send only one of the two headers. See [Gateway error responses](/docs/gateway/errors/).
+- **`404`, "Invalid URL (POST /gw/v1/v1/chat/completions)", or another path you did not intend.** The base URL is wrong, so the SDK's own suffix doubled up. The OpenAI base URL ends in `/gw/v1` and the Anthropic one in `/gw`.
+- **`400 NO_COMPATIBLE_TARGET`, "Route 'x' has no target that serves …".** The route has no credential for this surface, for example a Messages call on a route with only OpenAI credentials. Add a matching target in [Routes](/docs/gateway/routing/#targets).
+- **`404 MODEL_NOT_ALLOWED`.** The key lists the models it may request, and the one you asked for is not among them. Edit the key's allowed models, or ask for a listed one.
+- **`422 NO_DEFAULT_ROUTE` when creating a key.** The project has no default route. Choose a route for the key, or make one of the routes the default.
+- **The call worked but no trace appears.** The span is written after the answer is sent, and a streaming call is recorded when the stream ends. Check that you are looking at the project that owns the gateway key; see [You are looking at another project](/docs/troubleshooting/#you-are-looking-at-another-project).
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Routes, retries and fallbacks', href: '/docs/gateway/routing/', description: 'Choose which credentials serve a key and what happens on failure.' },
+    { title: 'Response cache', href: '/docs/gateway/cache/', description: 'Serve repeated identical calls from Postgres.' },
+    { title: 'Provider credentials', href: '/docs/gateway/credentials/', description: 'Store provider keys encrypted and rotate the master keys.' },
+    { title: 'Gateway error responses', href: '/docs/gateway/errors/', description: 'Every error the gateway itself produces.' },
+  ]}
+/>
+
+Also see the [Integration Lab](/docs/gateway/lab/) for injecting provider failures, and [Run the gateway](/docs/runbooks/gateway/) for running it as part of the api or as its own process.

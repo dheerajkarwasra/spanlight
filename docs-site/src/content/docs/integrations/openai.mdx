@@ -1,0 +1,255 @@
+---
+title: OpenAI
+description: Trace OpenAI calls with the Spanlight Python SDK, or send them through the Spanlight gateway from Python, JavaScript or cURL. Shows what Spanlight records from each call and what it leaves out.
+---
+
+{/* Sources: backend/app/gateway/errors.py, sdks/python/src/spanlight/integrations/openai.py, sdks/python/src/spanlight/integrations/_common.py, backend/app/gateway/tracing.py, backend/app/gateway/adapters/openai.py, backend/app/gateway/adapters/openai_compatible.py, backend/app/gateway/execute.py, backend/app/ingest/normalize.py, backend/app/ingest/finish_reason.py, backend/app/pricing/prices.py, backend/app/gateway/adapters/base.py, backend/app/gateway/usage_chunk.py, backend/app/gateway/trace_headers.py, backend/app/gateway/response_summary.py, backend/app/gateway/context.py, backend/app/db/models/gateway.py, backend/app/pricing/cost.py, sdks/python/src/spanlight/_span.py, sdks/python/src/spanlight/_client.py */}
+
+import { TabItem, Tabs } from '@astrojs/starlight/components';
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+import Verified from '../../../components/Verified.astro';
+
+Spanlight can record every OpenAI call your application makes: the prompt, the answer, the tokens, the latency and the cost. There are three ways to do it. [Ways to send data](/docs/concepts/ingest-paths/) compares them in detail.
+
+| Way | Languages | What you change |
+| --- | --- | --- |
+| [Python SDK](#python-sdk) | Python | Wrap your `OpenAI` client with one line. |
+| [Gateway](#gateway) | Any | Point your OpenAI client at Spanlight with a new base URL and key. |
+| [OpenTelemetry](#opentelemetry) | Any | Export spans from your own instrumentation. |
+
+<Prerequisites
+  items={[
+    'A running Spanlight instance that your application can reach',
+    'An OpenAI API key',
+    'Python SDK: Python 3.10 or newer, and a project API key with the ingest:write scope (the default). Creating one needs the member, admin or owner role',
+    'Gateway: an organization owner has stored an OpenAI credential, and an owner or admin has created a route and a gateway key',
+    'JavaScript and TypeScript: Node.js 24 (the version this page was tested with)',
+  ]}
+/>
+
+<Verified
+  date="2026-10-13"
+  packages={[
+    { name: 'spanlight', version: '0.1.0' },
+    { name: 'openai (Python)', version: '3.22.0' },
+    { name: 'openai (npm)', version: '7.25.0' },
+  ]}
+  note="Run with Python 3.13.9 and Node 24.11.1 against a local Spanlight server and a stand-in for the OpenAI API, not against OpenAI itself. The gateway run used an OpenAI-compatible credential, so its spans showed the provider openai_compatible and no cost. The provider label and cost for a real OpenAI credential are read from the gateway source and the price table. OpenTelemetry was not run."
+/>
+
+## Python SDK
+
+The `wrap_openai` function instruments one `OpenAI` client in place. Every `chat.completions.create` call made with it becomes an `llm` span. Your code, the answer and the exceptions you get from OpenAI do not change.
+
+Install the SDK with its OpenAI extra and the OpenAI package:
+
+```bash
+pip install "spanlight[openai]==0.1.0" "openai==3.22.0"
+```
+
+Give the SDK your Spanlight address and project API key, and OpenAI your OpenAI key:
+
+```bash
+export SPANLIGHT_HOST=http://localhost:8080
+export SPANLIGHT_API_KEY=spl_live_...
+export OPENAI_API_KEY=sk-...
+```
+
+`SPANLIGHT_HOST` is the address of the Spanlight `web` service. It defaults to `http://localhost:8000`, which is right only when you run the API directly for development.
+
+### A normal call
+
+```python
+import spanlight
+from openai import OpenAI
+
+spanlight.init(environment="development")
+client = spanlight.wrap_openai(OpenAI())
+
+reply = client.chat.completions.create(
+    model="gpt-4.1-mini",
+    messages=[{"role": "user", "content": "Say hello."}],
+)
+print(reply.choices[0].message.content)
+
+spanlight.flush()
+```
+
+The SDK queues spans and sends them from a background thread. `spanlight.flush()` waits until they are delivered. A long-running server does not need it. A short script does, or its last spans are lost.
+
+### A streamed call
+
+```python
+import spanlight
+from openai import OpenAI
+
+spanlight.init(environment="development")
+client = spanlight.wrap_openai(OpenAI())
+
+stream = client.chat.completions.create(
+    model="gpt-4.1-mini",
+    messages=[{"role": "user", "content": "Say hello."}],
+    stream=True,
+    stream_options={"include_usage": True},
+)
+for chunk in stream:
+    if chunk.choices:
+        print(chunk.choices[0].delta.content or "", end="")
+print()
+
+spanlight.flush()
+```
+
+You iterate the stream as before. The wrapper returns a transparent proxy that records the chunks as you read them, and the span ends when the stream is exhausted or closed. It also records the time to first token.
+
+Ask OpenAI for usage with `stream_options={"include_usage": True}`. Without it OpenAI sends no token counts for a stream, so the span has no tokens and no cost.
+
+The wrapper also instruments `client.responses.create`. The samples on this page use Chat Completions only. To name the provider yourself when you point the OpenAI client at a compatible API, pass `provider=` to `wrap_openai`; see the [reference](/docs/reference/python-sdk/#wrap_openai).
+
+## Gateway
+
+The gateway is an HTTP proxy that speaks the OpenAI API. Your application keeps its OpenAI client and changes two things: the base URL, which becomes `<host>/gw/v1`, and the API key, which becomes a Spanlight gateway key (`spl_gw_…`). The gateway forwards the call to OpenAI with the key you stored and records it as a trace. No Spanlight package is installed in your application.
+
+Do the one-time setup first: store the OpenAI key as a credential, create a route and create a gateway key. [Gateway quickstart](/docs/gateway/quickstart/#1-set-up-a-credential-a-route-and-a-key) walks through it.
+
+Give your application the address and the gateway key:
+
+```bash
+export SPANLIGHT_HOST=http://localhost:8080
+export SPANLIGHT_GATEWAY_KEY=spl_gw_...
+```
+
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+
+```bash
+pip install "openai==3.22.0"
+```
+
+```python
+import os
+
+from openai import OpenAI
+
+client = OpenAI(
+    base_url=f"{os.environ['SPANLIGHT_HOST']}/gw/v1",
+    api_key=os.environ["SPANLIGHT_GATEWAY_KEY"],  # a gateway key, not an OpenAI key
+)
+
+reply = client.chat.completions.create(
+    model="gpt-4.1-mini",
+    messages=[{"role": "user", "content": "Say hello."}],
+)
+print(reply.choices[0].message.content)
+```
+
+  </TabItem>
+  <TabItem label="JavaScript">
+
+```bash
+npm install openai@7.25.0
+```
+
+Save this as `gateway.mjs` and run `node gateway.mjs`:
+
+```js
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: `${process.env.SPANLIGHT_HOST}/gw/v1`,
+  apiKey: process.env.SPANLIGHT_GATEWAY_KEY, // a gateway key, not an OpenAI key
+});
+
+const reply = await client.chat.completions.create({
+  model: "gpt-4.1-mini",
+  messages: [{ role: "user", content: "Say hello." }],
+});
+console.log(reply.choices[0].message.content);
+```
+
+The same code runs as TypeScript: Node 24 runs `node gateway.ts` directly, and it type-checks with `strict` on.
+
+  </TabItem>
+  <TabItem label="cURL">
+
+```bash
+curl -sS "$SPANLIGHT_HOST/gw/v1/chat/completions" \
+  -H "Authorization: Bearer $SPANLIGHT_GATEWAY_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-4.1-mini", "messages": [{"role": "user", "content": "Say hello."}]}'
+```
+
+  </TabItem>
+</Tabs>
+
+Streaming needs no change: pass `stream: true` (or `stream=True` in Python) and read the stream as usual. When your request has no `stream_options` at all, the gateway adds `stream_options.include_usage` for you, so the span has token counts, and it keeps the extra usage chunk out of your stream. The span is written when the stream ends.
+
+The gateway records the provider of the credential that answered. For an OpenAI credential that is `openai`, and the cost comes from the [price table](/docs/reference/prices/), which includes `gpt-4.1-mini`. For an OpenAI-compatible credential (a local model server, for example) the provider is `openai_compatible`, no price is known, and the cost is empty unless you set a [price override](/docs/concepts/cost/#price-overrides) for that model.
+
+To join a call to a trace, session or user you already track, send `x-spanlight-*` headers; see [Join a trace you already started](/docs/gateway/quickstart/#join-a-trace-you-already-started).
+
+## OpenTelemetry
+
+If your application already uses OpenTelemetry instrumentation for OpenAI, you can send its spans to Spanlight over OTLP/HTTP instead. Spanlight reads the `gen_ai.*` attributes. See [OTLP ingestion](/docs/otlp/) for the endpoint and the exporter settings, and [OTLP attribute mapping](/docs/reference/otlp-mapping/) for which attribute fills which field.
+
+## Check it worked
+
+Open **Traces** in the dashboard and pick the project that owns your key.
+
+* With the Python SDK you see a trace named `chat gpt-4.1-mini` that holds one `llm` span of the same name.
+* Through the gateway you see a trace with one `llm` span named `chat_completions gpt-4.1-mini`.
+
+Open the span. It shows the messages you sent, the answer, the token counts and the cost.
+
+## What is recorded
+
+Each call is one `llm` span. Where a column says "empty", Spanlight stores nothing and the dashboard shows "—".
+
+| Field | Python SDK | Gateway |
+| --- | --- | --- |
+| Span name | `chat <model>` | `chat_completions <model>` |
+| Trace name | The name of the root span, for example `chat gpt-4.1-mini` | Empty. The gateway does not name traces |
+| Provider | `openai`, or the value you pass as `provider=` | The provider of the credential that answered: `openai` or `openai_compatible` |
+| Model | The model OpenAI reports in its answer. If the answer has none, the model you asked for | The same |
+| Input | The request parameters as JSON: `model`, `messages`, `stream`, `stream_options` and any others you pass | The request body as you sent it |
+| Output | The assistant message | The assistant message |
+| Input and output tokens | From OpenAI's usage. A streamed call has them only with `include_usage` | From OpenAI's usage. A streamed chat call without any `stream_options` has them, because the gateway adds `include_usage`. If you send `stream_options` without `include_usage: true`, it does not. On a [response cache](/docs/gateway/cache/) hit the tokens are recorded as 0, because nothing was billed |
+| Cached tokens | When OpenAI reports them, otherwise empty | The same. On a [response cache](/docs/gateway/cache/) hit it is recorded as 0 |
+| Cost | From the price table and your [price overrides](/docs/concepts/cost/#price-overrides), empty for a model with neither | The same |
+| Finish reason | `stop`, `length`, `tool_calls`, `content_filter` or `other` | The same |
+| Time to first token | For streamed calls | For streamed calls |
+| Status | `ok`, or `error` with the exception type (`error.type`), plus `http.status_code` and `provider.request_id` when the exception carries them | `ok`, or `error` with a status message |
+| Environment | The `environment` you pass to `spanlight.init` | The environment of the gateway key |
+| User and session | Set with `spanlight.update_trace` | Set with the `x-spanlight-user` and `x-spanlight-session` headers |
+
+The SDK and the gateway also store attributes. The SDK adds `response.id`, `response.finish_reasons` and `finish_reason` (the raw value from OpenAI). A streamed call adds `request.stream`, and a streamed call without usage adds `usage.missing_reason`. A call that reasons adds `usage.reasoning_tokens` when OpenAI reports a count. The gateway adds `spanlight.gateway.*` attributes (the key, route, target, attempts, overhead and upstream status) and `spanlight.cache`. [Gateway quickstart](/docs/gateway/quickstart/#check-it-worked) lists them. A call with an unknown model or without usage has no cost; [How cost is calculated](/docs/concepts/cost/) explains when.
+
+## What is not recorded
+
+* **Your keys and headers.** The wrapper never records `api_key`, `extra_headers`, `extra_query`, `extra_body`, `timeout` or `http_client`. The gateway does not forward your gateway key, cookies or any header outside a short allowlist to OpenAI.
+* **Prompts and completions, when the project turns capture off.** Spanlight then keeps the model, tokens, cost and timing and drops the text. See [Privacy](/docs/guides/privacy/#turn-off-prompt-and-completion-capture). The server also redacts common secret patterns from payloads and truncates very large ones.
+* **Token counts of a streamed Python call without `include_usage`.** The span carries the attribute `usage.missing_reason` instead.
+* **Output of a call that fails before an answer arrives.** The span has the error and the request, and no output. A stream that fails midway keeps the part of the answer that arrived, and is marked `error`.
+* **Calls the wrapper does not see.** It instruments the client you wrap and the two methods `chat.completions.create` and `responses.create`. Embeddings, images, audio and other endpoints are not traced. A call made through `with_raw_response` or `with_streaming_response` is passed through untraced.
+* **A stream you abandon.** The span of a stream ends when you read it to the end or close it. If you drop it without either, its span is never sent.
+* **Anything that bypasses the gateway.** Calls that do not use the gateway base URL do not appear.
+
+## Troubleshooting
+
+* **No trace arrives.** Work through [No trace arrives](/docs/troubleshooting/#no-trace-arrives). Two causes are common with the SDK. If `SPANLIGHT_API_KEY` is missing, the SDK logs `Spanlight: no API key configured` once, and your OpenAI call still works and returns its answer; see [The SDK has no API key](/docs/troubleshooting/#the-sdk-has-no-api-key-or-is-switched-off). If a script ends right after the call, the last spans are lost unless you call `spanlight.flush()`; see [A short script exits before the spans are sent](/docs/troubleshooting/#a-short-script-exits-before-the-spans-are-sent).
+* **The streamed call has no tokens and no cost.** Add `stream_options={"include_usage": True}` to the call. Through the gateway you do not need it.
+* **The gateway answers `401 UNAUTHORIZED`.** The key is missing, unknown or revoked, or you sent an OpenAI key or a project API key instead of a gateway key. Use the `spl_gw_…` key. If you send both `Authorization` and `x-api-key`, they must carry the same key. [Gateway error responses](/docs/gateway/errors/) lists every code.
+* **The gateway cost is empty.** The credential is OpenAI-compatible, or the model has no price, and you have not set a price override. Check the **provider** on the span, then see [When a cost is unknown](/docs/concepts/cost/#when-a-cost-is-unknown).
+* **The trace has no prompt or answer.** The project has prompt and completion capture turned off. [Privacy](/docs/guides/privacy/#turn-off-prompt-and-completion-capture) shows where.
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Python SDK', href: '/docs/python-sdk/', description: 'Trace your own functions and set sessions and users.' },
+    { title: 'Gateway quickstart', href: '/docs/gateway/quickstart/', description: 'Credentials, routes, retries and the trace headers.' },
+    { title: 'How cost is calculated', href: '/docs/concepts/cost/', description: 'The price table and when a cost is unknown.' },
+    { title: 'Troubleshooting', href: '/docs/troubleshooting/', description: 'Find out why no trace arrived.' },
+  ]}
+/>

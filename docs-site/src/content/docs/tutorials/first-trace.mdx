@@ -1,0 +1,218 @@
+---
+title: 'Tutorial: trace your first app'
+description: Build a small Python chat app from an empty folder, send its traces to Spanlight, and read the trace tree, the session and the cost in the dashboard.
+---
+
+{/* Sources: sdks/python/src/spanlight/integrations/anthropic.py, sdks/python/src/spanlight/_client.py, sdks/python/src/spanlight/_decorator.py, sdks/python/src/spanlight/_globals.py, frontend/src/features/shell/nav-items.ts, frontend/src/features/traces/traces-table-columns.tsx, frontend/src/features/traces/trace-header.tsx, frontend/src/features/traces/trace-attribute-chips.tsx, frontend/src/features/traces/span-waterfall.tsx, frontend/src/features/traces/span-usage-card.tsx, frontend/src/features/traces/span-detail-panel.tsx, frontend/src/features/sessions/sessions-page.tsx, frontend/src/features/sessions/session-tile.tsx, frontend/src/features/sessions/session-header.tsx, frontend/src/features/sessions/session-turn.tsx, frontend/src/features/sessions/session-summary-card.tsx, frontend/src/features/sessions/conversation.ts, frontend/src/features/doctor/insight-empty.tsx, backend/app/insights/detectors/tool_loop.py, backend/app/insights/detectors/retry_after_ignored.py, backend/app/insights/detectors/context_growth.py, backend/app/insights/detectors/cache_opportunity.py, backend/app/insights/detectors/unpriced_spend.py, backend/app/insights/detectors/error_spike.py, backend/app/insights/detectors/retry_storm.py */}
+
+import { Steps } from '@astrojs/starlight/components';
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+import Verified from '../../../components/Verified.astro';
+
+In this tutorial you build a small support chat in Python and watch Spanlight record it. You start in an empty folder and end in the dashboard, reading one conversation as a trace tree, as a session and as a cost.
+
+The app answers two questions in a row. It calls Claude through the Spanlight wrapper, looks up an order in a function that stands in for a tool, and tags every run with a user and a session. That is enough to see most of what Spanlight shows for an app. It takes about twenty minutes. The [Quickstart](/docs/quickstart/) is the short version of the same path.
+
+<Prerequisites
+  items={[
+    'A running Spanlight instance. With Docker Compose it is at http://localhost:8080; if you run the API directly for development it is at http://localhost:8000. The Quickstart starts one',
+    'A project API key that starts with spl_live_, with the default ingest:write scope. The setup wizard creates one; you can also use Settings, Project, API keys, then Create key',
+    'An Anthropic API key (it starts with sk-ant-)',
+    'Python 3.10 or newer, and a terminal with bash or zsh',
+  ]}
+/>
+
+<Verified
+  date="2026-10-14"
+  packages={[
+    { name: 'spanlight', version: '0.1.0' },
+    { name: 'anthropic', version: '1.9.0' },
+  ]}
+  note="Run with Python 3.13.9 against a local Spanlight server and a stand-in for the Anthropic API, not against Anthropic itself, so the answers, the token counts and the costs you see will differ. The dashboard screens are described from the dashboard source, and the data behind them was read back through the API; the screens were not opened in a browser. The step 4 code was run again on 2026-10-14 with the SDK from the repository's main branch, whose decorator and span code is unchanged since spanlight 0.1.0."
+/>
+
+<Steps>
+
+1. **Make a folder and install the packages.**
+
+   ```bash
+   mkdir spanlight-tutorial
+   cd spanlight-tutorial
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install "spanlight[anthropic]==0.1.0" "anthropic==1.9.0"
+   ```
+
+   The `anthropic` extra makes sure the Anthropic package is installed beside the SDK. The second package pins the exact version of the Anthropic client this tutorial was tested with.
+
+2. **Tell the app where to send things.** Use your own values for the keys. `SPANLIGHT_HOST` picks the instance. With Docker Compose use the `web` service, `http://localhost:8080`. If you run the API directly for development (uvicorn), use `http://localhost:8000`.
+
+   ```bash
+   export SPANLIGHT_HOST=http://localhost:8080
+   export SPANLIGHT_API_KEY=spl_live_...
+   export ANTHROPIC_API_KEY=sk-ant-...
+   ```
+
+   The SDK reads the first two and the Anthropic client reads the third, so none of them appear in the code. Set them again in every new terminal. If you leave `SPANLIGHT_HOST` unset, the SDK uses `http://localhost:8000`. If no trace arrives later, a wrong host is the first thing to check; see [the SDK points at the wrong host](/docs/troubleshooting/#the-sdk-points-at-the-wrong-host).
+
+3. **Trace one model call.** Save this as `app.py`:
+
+   ```python
+   import spanlight
+   from anthropic import Anthropic
+
+   spanlight.init(environment="development")
+   client = spanlight.wrap_anthropic(Anthropic())
+
+   reply = client.messages.create(
+       model="claude-haiku-4-5",
+       max_tokens=200,
+       messages=[{"role": "user", "content": "In one sentence, what is an LLM trace?"}],
+   )
+   print(reply.content[0].text)
+
+   spanlight.flush()
+   ```
+
+   `spanlight.init` starts the SDK. `environment="development"` labels every trace, so you can later tell development from production. `wrap_anthropic` changes the one client you pass it, and the rest of the code is plain Anthropic code. `spanlight.flush()` sends what is still queued before the script ends. The SDK sends spans from a background thread, and a short script would otherwise exit first.
+
+   Run it:
+
+   ```bash
+   python3 app.py
+   ```
+
+   It prints Claude's answer. Open **Traces** in the dashboard sidebar. The newest row is named `chat claude-haiku-4-5`, and its **Models** column shows `claude-haiku-4-5`. The list shows the last 24 hours by default; if you do not see the row, wait a few seconds and look again.
+
+   This single call became one trace holding one span. A trace is one run of your code, and a span is one step inside it.
+
+4. **Add a tool step, a user, a session and a second turn.** Replace the contents of `app.py` with this:
+
+   ```python
+   import uuid
+
+   import spanlight
+   from anthropic import Anthropic
+
+   spanlight.init(environment="development")
+   client = spanlight.wrap_anthropic(Anthropic())
+
+   ORDERS = {
+       "1042": "Order 1042 shipped on 2 October and arrives in 3 days.",
+   }
+
+
+   @spanlight.observe(kind="tool")
+   def lookup_order(order_id: str) -> str:
+       return ORDERS.get(order_id, f"No order {order_id} found.")
+
+
+   @spanlight.observe(name="support-chat", capture_input=False)
+   def chat_turn(
+       history: list[dict[str, str]], question: str, user_id: str, session_id: str
+   ) -> str:
+       spanlight.update_trace(user_id=user_id, session_id=session_id)
+       span = spanlight.get_current_span()
+       if span is not None:
+           span.set_input(question)
+       order = lookup_order("1042")
+       history.append({"role": "user", "content": question})
+       reply = client.messages.create(
+           model="claude-haiku-4-5",
+           max_tokens=200,
+           system=f"You are a support agent. Order data: {order}",
+           messages=history,
+       )
+       answer = reply.content[0].text
+       history.append({"role": "assistant", "content": answer})
+       return answer
+
+
+   session_id = f"tutorial-{uuid.uuid4().hex[:8]}"
+   print("session:", session_id)
+
+   history: list[dict[str, str]] = []
+   for question in ["Where is my order 1042?", "Can I change the delivery address?"]:
+       print(chat_turn(history, question, "user-42", session_id))
+
+   spanlight.flush()
+   ```
+
+   Four things are new:
+
+   * `@spanlight.observe(kind="tool")` turns `lookup_order` into a span of kind `tool`. A real app would call a database or an API here. `@spanlight.observe(name="support-chat")` turns each call of `chat_turn` into a trace, with the function as its root span. Spans created inside it, the tool step and the model call, become its children.
+   * `capture_input=False` and `span.set_input(question)` change what the `support-chat` span records as its input. By default `@observe` records every argument, and here that would include the whole `history` list on every turn. With these two lines the span records only the question. The model call inside it still records the full conversation it was sent.
+   * `spanlight.update_trace(user_id=..., session_id=...)` attaches a user and a session to the current trace. A session groups the traces of one conversation. Each call of `chat_turn` is one turn, so two turns make two traces with the same session ID.
+   * The `history` list carries the first question and answer into the second call, so the second model call sees the whole conversation.
+
+   The session ID is new on every run, so each run makes a separate session. Run it:
+
+   ```bash
+   python3 app.py
+   ```
+
+   It prints the session ID and then the two answers:
+
+   ```text
+   session: tutorial-1a2b3c4d
+   ```
+
+   Note the ID. Your value differs.
+
+5. **Read the trace tree.** Open **Traces** again. The two newest rows are named `support-chat`. The **User / session** column shows `user-42` and the session ID. On a narrow window that column is hidden, so widen the window or open a trace to see them. Click the newer row, which is the second question.
+
+   * The header shows the trace name `support-chat`, an OK badge and the trace ID. The summary strip shows **Started**, **Duration**, **Spans** (3), **Tokens (in → out)**, **Cost** and **Environment**. Below it, the chips show the **User** `user-42` and the **Session**.
+   * The **Spans** card shows the tree. `support-chat` is the root, and `lookup_order` and `chat claude-haiku-4-5` sit one level below it. Each row has a bar on a shared time axis, coloured by kind: **Chain**, **Tool** and **LLM**.
+   * Click `chat claude-haiku-4-5`. The **Usage** card shows its **Model**, **Provider**, **Input tokens**, **Output tokens**, **Cached tokens**, **Cost** and **Pricing version**. **Time to first token** shows — with a tooltip, because this call was not streamed.
+   * On the **Input / Output** tab you see the conversation sent to the model. For this trace it holds three messages: the first question, its answer, and the second question. The answer from the model is on the output side.
+   * Click `support-chat`. Its **Input / Output** tab shows only the question of this turn, `Can I change the delivery address?`, not the history.
+   * Click `lookup_order`. The **Usage** card now says "This span made no model call. Select an LLM span to see its tokens and cost." Its **Input / Output** tab shows the order ID that went in and the text that came out.
+
+   [Traces and sessions](/docs/guides/traces/) describes every control on this page.
+
+6. **Open the session.** Click the **Session** chip in the trace header, or choose **Sessions** in the sidebar and open the tile with your session ID.
+
+   * In the list, the tile shows the session ID, the time it started and how long it lasted, **Traces** (2), **Cost** and **No errors**.
+   * The session page has the title **Session**, your session ID with a copy button, and a one-line summary: the number of turns, the total cost, "No errors" and the time window.
+   * The **Conversation** card shows **Turn 1** and **Turn 2**, each with the user message on the right and the assistant reply on the left, then the model, the latency, the cost and **Open trace**. The text comes from the model call of each trace.
+   * The **Summary** card shows the **Total cost** with a line such as "About … per turn", the counts **Turns**, **Errors**, **Tokens** and **Time span**, the **Models used**, and a **Timeline**.
+
+7. **Look at the cost.** Spanlight works out the cost of each model call from its token counts and its price table. The **Usage** card shows the cost of one call, with the **Pricing version** that was used. The trace's **Cost** adds up the spans of the trace, and the session's **Cost** and **Total cost** add up its traces. This app makes one model call per trace, so each trace costs what its call costs.
+
+   `claude-haiku-4-5` is in the price table, so it has a cost. For a model that is not in the table, the dashboard shows — and a tooltip says why; it never shows 0. [How cost is calculated](/docs/concepts/cost/) explains the formula and how to add your own prices.
+
+8. **Open the Doctor.** Choose **Doctor** in the sidebar. This app is not expected to trigger any detector, so the Doctor has nothing to report for it. On a project that has never had a finding, the **Open** tab reads "No findings yet — the Doctor checks every 15 minutes." If every earlier finding is resolved, the tab reads "Nothing open." instead. A project with open findings from other traffic still lists them on the **Open** tab.
+
+   Each detector needs a pattern this app does not produce: enough calls of one kind, or a specific failure sequence. The [detector catalogue](/docs/reference/detectors/) gives the exact conditions of every detector, and [the Doctor](/docs/doctor/) explains how findings are opened.
+
+</Steps>
+
+## Check it worked
+
+You have finished when all of these are true:
+
+* **Traces** lists two traces named `support-chat` for `user-42`, each with 3 spans: the root `support-chat`, a `tool` span `lookup_order` and an `llm` span `chat claude-haiku-4-5`.
+* The LLM span's **Usage** card shows the provider `anthropic`, the model `claude-haiku-4-5`, token counts and a cost.
+* **Sessions** lists the session ID that your script printed, with 2 traces and **No errors**, and its page shows **Turn 1** and **Turn 2**.
+* **Doctor** has no finding caused by this app. None is expected from it. Findings from other traffic in the project may still be listed.
+
+## Troubleshooting
+
+* **Nothing appears in Traces.** Work through [No trace arrives](/docs/troubleshooting/#no-trace-arrives). The common causes are a wrong `SPANLIGHT_HOST` ([the SDK points at the wrong host](/docs/troubleshooting/#the-sdk-points-at-the-wrong-host)), a missing `SPANLIGHT_API_KEY` ([the SDK has no API key](/docs/troubleshooting/#the-sdk-has-no-api-key-or-is-switched-off)), and a script that ends before the spans are sent ([a short script exits before the spans are sent](/docs/troubleshooting/#a-short-script-exits-before-the-spans-are-sent)). Also check that the dashboard shows the project that owns your key ([you are looking at another project](/docs/troubleshooting/#you-are-looking-at-another-project)).
+* **The script stops with `anthropic.AuthenticationError`.** Anthropic refused the key in `ANTHROPIC_API_KEY`. The wrapper passes the exception on unchanged, so your code sees what it would see without Spanlight. The failed run still appears in Traces: the trace shows an error and the `chat claude-haiku-4-5` span has the status `error`.
+* **The script stops with a `TypeError` that says "Could not resolve authentication method".** `ANTHROPIC_API_KEY` is not set in this terminal. Run the `export` line from step 2 again.
+* **Traces appear, but Sessions is empty or a trace has no Session chip.** The session comes from `spanlight.update_trace(session_id=...)`, which must run inside the traced function. Check that your `app.py` matches step 4. Sessions lists only sessions with a trace in the selected time range; see [Follow a conversation in Sessions](/docs/guides/traces/#follow-a-conversation-in-sessions).
+* **The cost shows —.** The model has no price in the table, and you have set no override. See [When a cost is unknown](/docs/concepts/cost/#when-a-cost-is-unknown).
+* **A trace has no prompt or answer.** The project has prompt and completion capture turned off; see [Privacy](/docs/guides/privacy/#turn-off-prompt-and-completion-capture).
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Traces and sessions', href: '/docs/guides/traces/', description: 'Filters, search, exports and every control on the pages you just used.' },
+    { title: 'How cost is calculated', href: '/docs/concepts/cost/', description: 'The price table, price overrides and when a cost is unknown.' },
+    { title: 'The Doctor', href: '/docs/doctor/', description: 'What the detectors read and how a finding is opened and resolved.' },
+    { title: 'Python SDK', href: '/docs/python-sdk/', description: 'Streaming, spans, releases and everything else the SDK can record.' },
+  ]}
+/>

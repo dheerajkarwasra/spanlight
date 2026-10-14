@@ -1,0 +1,62 @@
+---
+/** The large search box on the docs home. It opens Starlight's search dialog (⌘K on Apple devices, Ctrl K elsewhere). */
+---
+
+<button type="button" class="home-search" data-home-search aria-label="Search the docs">
+  <span class="placeholder">Search the docs: “OTLP endpoint”, “retry storm”, “budgets”</span>
+  <kbd data-shortcut>Ctrl K</kbd>
+</button>
+
+<script>
+  // The shortcut Starlight's search answers to is Cmd K on Apple platforms and Ctrl K elsewhere.
+  const platform = navigator.platform || navigator.userAgent;
+  if (/Mac|iPhone|iPad|iPod/i.test(platform)) {
+    for (const key of document.querySelectorAll('[data-shortcut]')) key.textContent = '⌘K';
+  }
+  for (const button of document.querySelectorAll('[data-home-search]')) {
+    button.addEventListener('click', () => {
+      document.querySelector<HTMLButtonElement>('site-search button[data-open-modal]')?.click();
+    });
+  }
+</script>
+
+<style>
+  .home-search {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    width: min(100%, 37.5rem);
+    margin-inline: auto;
+    padding: 0.875rem 0.875rem 0.875rem 1.25rem;
+    border: 1px solid var(--sl-color-gray-4);
+    border-radius: 999px;
+    background: var(--spl-surface);
+    color: var(--sl-color-gray-3);
+    font: inherit;
+    cursor: pointer;
+    text-align: start;
+  }
+  .home-search:hover {
+    border-color: var(--sl-color-text-accent);
+  }
+  .placeholder {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  kbd {
+    flex-shrink: 0;
+    padding: 0.125rem 0.5rem;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 0.375rem;
+    background: var(--sl-color-gray-6);
+    font-family: var(--sl-font);
+    font-size: var(--sl-text-xs);
+  }
+  @media (max-width: 40rem) {
+    kbd {
+      display: none;
+    }
+  }
+</style>

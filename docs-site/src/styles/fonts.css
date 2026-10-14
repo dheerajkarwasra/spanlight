@@ -1,0 +1,4 @@
+/* Self-hosted fonts (no third-party requests): the dashboard's Plus Jakarta Sans and JetBrains Mono. */
+@import '@fontsource-variable/plus-jakarta-sans';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';

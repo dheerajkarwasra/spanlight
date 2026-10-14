@@ -1,0 +1,60 @@
+---
+/**
+ * "Before you start": what a reader needs (role, key scope, versions, running services) before
+ * step 1. An item is a plain string, or `{ text, href }` to link a prerequisite to the page that
+ * explains it.
+ */
+type Item = string | { text: string; href: string };
+interface Props {
+  items: Item[];
+}
+const { items } = Astro.props;
+---
+
+{
+  items.length > 0 && (
+    <section class="prerequisites not-content" aria-labelledby="before-you-start">
+      {/* A real heading for assistive technology. Starlight builds the page's table of contents
+          from the Markdown headings, so this one stays out of it. */}
+      <h2 id="before-you-start" class="title">
+        Before you start
+      </h2>
+      <ul>
+        {items.map((item) => (
+          <li>{typeof item === 'string' ? item : <a href={item.href}>{item.text}</a>}</li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+<style>
+  .prerequisites {
+    margin-block: 1.5rem;
+    padding: 1rem 1.25rem;
+    border-radius: 0.875rem;
+    background: var(--sl-color-gray-6);
+    border: 1px solid var(--sl-color-hairline);
+  }
+  .title {
+    margin: 0 0 0.5rem;
+    font-size: var(--sl-text-base);
+    font-weight: 600;
+    line-height: var(--sl-line-height);
+    color: var(--sl-color-white);
+  }
+  ul {
+    margin: 0;
+    padding-inline-start: 1.25rem;
+    color: var(--sl-color-gray-3);
+  }
+  li {
+    overflow-wrap: anywhere;
+  }
+  li + li {
+    margin-top: 0.25rem;
+  }
+  a {
+    color: var(--sl-color-text-accent);
+  }
+</style>

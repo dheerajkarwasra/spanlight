@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@fontsource-variable/plus-jakarta-sans";
+@import "@fontsource-variable/geist";
 @import "@fontsource/instrument-serif/400-italic.css";
 @import "@fontsource/jetbrains-mono/400.css";
 @import "@fontsource/jetbrains-mono/500.css";
@@ -276,6 +277,8 @@
   --font-sans: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  /* The logo wordmark. */
+  --font-brand: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
 
   /*
    * Type scale (Figma text styles). Sizes carry their own line height, tracking and weight,

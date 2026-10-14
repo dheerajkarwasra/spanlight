@@ -1,0 +1,80 @@
+---
+title: Roles and permissions reference
+description: What the viewer, member, admin and owner roles can do in Spanlight, one row per permission, plus API key scopes, personal access token scopes and who can assign the owner role.
+---
+
+{/* Sources: backend/app/core/permissions.py, backend/app/core/scopes.py, backend/app/api/deps.py, backend/app/api/v1/orgs.py, backend/app/api/v1/projects.py, backend/app/api/v1/keys.py, backend/app/api/v1/exports.py, backend/app/api/v1/alerts.py, backend/app/api/v1/budgets.py, backend/app/api/v1/insights.py, backend/app/api/v1/gateway.py, backend/app/api/v1/gateway_credentials.py, backend/app/api/v1/experiments.py, backend/app/api/v1/playground.py, backend/app/api/v1/annotations.py, backend/app/api/v1/evaluators.py, backend/app/api/v1/scores.py, backend/app/api/ingest.py, backend/app/api/scores_ingest.py, backend/app/api/v1/prompts_read.py, docs/api-deviations.md */}
+
+A person has one role in each organization: viewer, member, admin or owner. The role decides which permissions the person holds. This page lists every permission and the roles that hold it. It also covers the scopes of API keys and personal access tokens.
+
+Roles are cumulative. Each role holds every permission of the roles below it, and then more. Spanlight checks one permission per action. It does not compare roles for ordinary actions, so apart from the owner rule below, this table is the whole rule.
+
+## Permissions by role
+
+A role that holds a permission shows **Yes**.
+
+| Permission | Allows | Viewer | Member | Admin | Owner |
+| --- | --- | --- | --- | --- | --- |
+| `org:read` | Reading the organization, its members and its projects | Yes | Yes | Yes | Yes |
+| `project:read` | Reading a project's data, such as traces, metrics and prompts | Yes | Yes | Yes | Yes |
+| `key:create` | Creating project API keys | No | Yes | Yes | Yes |
+| `key:revoke_own` | Revoking the keys you created | No | Yes | Yes | Yes |
+| `export:create` | Requesting trace exports | No | Yes | Yes | Yes |
+| `scores:write` | Adding scores. Deleting a score someone else added needs `project:write` | No | Yes | Yes | Yes |
+| `annotations:write` | Working in annotation review queues | No | Yes | Yes | Yes |
+| `prompts:write` | Creating prompts and prompt versions | No | Yes | Yes | Yes |
+| `datasets:write` | Creating and changing datasets and their items | No | Yes | Yes | Yes |
+| `experiments:run` | Running experiments and playground runs | No | Yes | Yes | Yes |
+| `key:revoke_any` | Revoking any project key | No | No | Yes | Yes |
+| `project:write` | Changing project settings, such as retention | No | No | Yes | Yes |
+| `project:delete` | Deleting a project | No | No | Yes | Yes |
+| `member:manage` | Inviting members and changing or removing their roles | No | No | Yes | Yes |
+| `org:update` | Renaming the organization | No | No | Yes | Yes |
+| `audit:read` | Reading and downloading the audit log | No | No | Yes | Yes |
+| `gateway:write` | Changing gateway routes, keys and price overrides | No | No | Yes | Yes |
+| `alerts:write` | Managing alert channels, rules and budgets | No | No | Yes | Yes |
+| `insights:manage` | Managing the Doctor's insights | No | No | Yes | Yes |
+| `evaluators:write` | Creating and running evaluators | No | No | Yes | Yes |
+| `org:delete` | Deleting the organization | No | No | No | Yes |
+| `org:security` | Requiring two-factor authentication for the organization | No | No | No | Yes |
+| `credentials:manage` | Managing the provider credentials the gateway uses | No | No | No | Yes |
+
+A person who is not a member of an organization gets `404 NOT_FOUND` for it, not `403`. That way Spanlight does not reveal which organizations exist. See [Tenancy and data isolation](/docs/concepts/tenancy/).
+
+## Who can assign roles
+
+Owners and admins hold `member:manage`, so both can invite people and change roles. One rule limits admins: only an owner can grant the owner role, change an owner's role or remove an owner. An admin who tries gets `403 FORBIDDEN`.
+
+An organization must keep at least one owner. A request that would remove the last one gets `409 LAST_OWNER`.
+
+Any member can leave an organization. Leaving is still subject to the last-owner rule.
+
+## API key scopes
+
+A project API key does not have a role. It has scopes, chosen when the key is created. A key keeps its scopes for its lifetime.
+
+| Scope | Allows |
+| --- | --- |
+| `ingest:write` | Sending traces to `POST /v1/traces` and `POST /v1/otlp/traces`. This is the default scope of a new key. |
+| `traces:read` | Reading the dashboard routes for the key's own project. |
+| `scores:write` | Sending scores to `POST /v1/scores`. |
+| `prompts:read` | Fetching a prompt from `GET /v1/prompts/{name}`. |
+
+A key used outside its scopes gets `403 KEY_SCOPE`. A key past its expiry gets `401 KEY_EXPIRED`. A key can reach only its own project. See [API keys, tokens and administration](/docs/guides/access/) for how to create and revoke keys.
+
+## Personal access tokens
+
+A personal access token has no permissions of its own. It acts as its person, so the person's current role applies on every request. The token adds one limit through its scope:
+
+- A **write** token can do whatever the person's role allows.
+- A **read** token can use only the permissions that read: `org:read`, `project:read` and `audit:read`. Any change gets `403 TOKEN_SCOPE`.
+
+A token cannot use routes that need a signed-in browser session. Those routes answer `403 SESSION_REQUIRED`.
+
+## Related pages
+
+- [API keys, tokens and administration](/docs/guides/access/): create keys and tokens, and set their scopes.
+- [Tenancy and data isolation](/docs/concepts/tenancy/): how roles, projects and row-level security fit together.
+- [Limits reference](/docs/reference/limits/): rate limits for keys and tokens.
+- [Error codes](/docs/reference/errors/): what `FORBIDDEN`, `KEY_SCOPE` and `TOKEN_SCOPE` mean and how to fix them.
+- [Accounts and sign-in](/docs/guides/accounts/): invitations, two-factor authentication and membership.

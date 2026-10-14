@@ -1,37 +1,27 @@
 ---
 title: Spanlight documentation
-description: Open-source observability for LLM applications. Send traces from your app and see prompts, completions, latency, tokens, cost and errors.
+description: Open-source observability for LLM applications. Trace every call, find what is wrong, test changes before they ship and run it on your own Postgres.
 template: splash
+editUrl: false
+lastUpdated: false
+pagefind: false
 hero:
-  tagline: Open-source observability for LLM applications. Every call, with its prompt, completion, latency, tokens, cost and errors, grouped into traces and sessions.
-  actions:
-    - text: Quickstart
-      link: /docs/quickstart/
-      icon: right-arrow
-    - text: Self-hosting
-      link: /docs/self-hosting/
-      variant: minimal
+  title: Spanlight documentation
+  tagline: Trace every LLM call, find what is wrong, test changes before they ship and run it all on your own Postgres. Pick a path below, or search.
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import AreaGrid from '../../components/home/AreaGrid.astro';
+import HomeSearch from '../../components/home/HomeSearch.astro';
+import IntegrationRow from '../../components/home/IntegrationRow.astro';
+import LatestRelease from '../../components/home/LatestRelease.astro';
+import StartCards from '../../components/home/StartCards.astro';
 
-<CardGrid stagger>
-  <Card title="Send your first trace" icon="rocket">
-    Start the stack with one `docker compose up`, add three lines to your Python app, and watch the trace arrive. [Quickstart](/docs/quickstart/)
-  </Card>
-  <Card title="Python SDK" icon="seti:python">
-    `@observe`, spans and wrappers for the OpenAI and Anthropic clients. Spans are batched in the background, so tracing never waits on the network or breaks your app. [Python SDK](/docs/python-sdk/)
-  </Card>
-  <Card title="OpenTelemetry" icon="puzzle">
-    Point any OpenTelemetry GenAI exporter at the OTLP endpoint, in JSON or protobuf. [OTLP](/docs/otlp/)
-  </Card>
-  <Card title="Run it yourself" icon="setting">
-    One image, three roles and Postgres as the only datastore. Compose or Railway. [Self-hosting](/docs/self-hosting/) and [configuration](/docs/configuration/)
-  </Card>
-  <Card title="HTTP API" icon="open-book">
-    Every endpoint and schema, generated from the OpenAPI document. [API reference](/docs/api/)
-  </Card>
-  <Card title="Operate it" icon="warning">
-    Runbooks for deploying, rolling back, restoring, rotating secrets and scaling, and the [security](/docs/security/) documentation.
-  </Card>
-</CardGrid>
+<HomeSearch />
+
+<StartCards />
+
+<AreaGrid />
+
+<IntegrationRow />
+
+<LatestRelease />

@@ -1,0 +1,104 @@
+---
+title: The data model
+description: How Spanlight organizes your data. Organizations, projects, traces, spans and the fields that group them, such as environment, session, user and release.
+sidebar:
+  order: 1
+---
+
+{/* Sources: backend/app/db/models/telemetry.py, backend/app/db/models/projects.py, backend/app/db/models/identity.py, backend/app/ingest/schemas.py, backend/app/ingest/store.py, backend/app/ingest/otlp.py, backend/app/jobs/tasks/retention.py, backend/app/metrics/queries.py, sdks/python/src/spanlight/_config.py, sdks/python/src/spanlight/_client.py, sdks/python/src/spanlight/_span.py, sdks/python/src/spanlight/__init__.py */}
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Spanlight stores what your application does when it calls a model. This page names the pieces and shows how they fit, so the rest of the documentation reads the same way everywhere.
+
+## The idea
+
+Two layers hold your data. **People and access** sit on the outside: an organization has members, and a member has a role. **Telemetry** sits inside: a project holds traces, and a trace holds spans. Everything you send lands in exactly one project.
+
+```text
+organization
+├── members (each with a role)
+└── projects
+    ├── API keys (how data gets in)
+    └── traces
+        └── spans
+```
+
+## How it works
+
+### Organization and project
+
+An **organization** is the account that owns projects and has members. Each member has one role in the organization: owner, admin, member or viewer. See [Tenancy and access](/docs/concepts/tenancy/).
+
+A **project** is one application, or one slice of an application, whose traces you want to read together. A project is the unit of data isolation: traces, spans, prompts, datasets and alerts all belong to one project. A project also holds the settings that apply to its data, for example how many days it keeps traces (`retention_days`, 30 by default) and whether it stores prompts and completions (`capture_payloads`, on by default).
+
+You send data into a project with a **project API key**. The key decides the project, so you never name it in a request.
+
+### Trace and span
+
+A **span** is one unit of work with a start and an end: an LLM call, a tool call, a retrieval step, a function in your code. A **trace** is the set of spans that belong to one request or one job. Spans point to their parent with `parent_span_id`, which is how the trace page draws the tree.
+
+A span has a **kind**:
+
+| Kind | What it is |
+| --- | --- |
+| `llm` | A model call. The Overview counts spans of this kind as LLM calls, and they carry the model, token counts and cost. |
+| `tool` | A tool or function the model asked for. |
+| `retrieval` | A lookup, for example in a vector store or database. |
+| `chain` | A step that wraps other steps, such as a pipeline or an agent run. |
+| `http` | An HTTP call. |
+| `other` | Anything else. This is the default when a span does not say. |
+
+A span also has a status (`ok`, `error` or `unset`), and the model, provider and token counts when it is an LLM call. Spans and traces are identified by ids you choose: 32 hexadecimal characters for a trace and 16 for a span. A span's identity is its project, trace id and span id. Sending the same span again updates it instead of adding a second one. See [Ingestion](/docs/concepts/ingestion/).
+
+A trace is not sent as an object of its own. It exists because spans name it. Its totals (number of spans, errors, tokens and cost) are worked out from its stored spans, so they always add up.
+
+### Fields that group traces
+
+Four optional fields on the trace let you slice your data. They are plain strings that you choose. Spanlight does not look anything up about them, and none of them is a separate object you create first.
+
+| Field | Length | What it names |
+| --- | --- | --- |
+| `environment` | up to 64 characters | Where the code ran, for example `production` or `staging`. |
+| `release` | up to 128 characters | The version of your application that produced the trace. |
+| `user_id` | up to 256 characters | The end user the trace was produced for. |
+| `session_id` | up to 256 characters | A conversation or visit that spans several traces. |
+
+A trace can also carry up to 20 `tags`, each up to 64 characters, and a `name`.
+
+- An **environment** is a label, not a place you set up. Filters, charts and detectors read it.
+- A **release** lets you compare two versions of your application. See [Releases and users](/docs/releases-and-users/).
+- A **user** is the `user_id` you send, called `external_user_id` in storage because it is your identifier, not a Spanlight account. It powers the Users page.
+- A **session** is every trace that shares one `session_id`. It is a grouping in the dashboard, and it is unrelated to the sign-in sessions of the people who use Spanlight.
+
+When several spans of one trace set the same trace field, the last value that is not empty wins, and a missing value never erases one that is stored. Tags from all spans are combined.
+
+### Where the fields come from
+
+Each way of sending data fills the fields in its own way.
+
+| You send with | `environment` | `release` | `user_id` and `session_id` |
+| --- | --- | --- | --- |
+| The Python SDK | `init(environment=...)` or `SPANLIGHT_ENVIRONMENT` | `init(release=...)` or `SPANLIGHT_RELEASE` | `update_trace(...)` |
+| OTLP | resource attribute `deployment.environment.name` | resource attribute `service.version` | attributes `user.id` and `session.id` |
+| The native JSON endpoint | `trace.environment` | `trace.release` | `trace.user_id` and `trace.session_id` |
+
+### How long data lives
+
+A background job deletes traces, and their spans, that are older than their project's retention period. A span whose start is more than 90 days old is refused at ingestion, because 90 days is the longest retention a project can have.
+
+## What it means for you
+
+- Choose projects by who needs to read the data together and who must not. Data never crosses a project boundary.
+- Set `environment` and `release` on every trace. They cost nothing and make every later question easier.
+- Treat ids as yours. Reusing a span id overwrites that span, which is what makes retries safe.
+- Pick a stable `user_id`, for example your own user key. Avoid personal data such as an email address, because it is stored as you send it.
+
+## Related pages
+
+<CardGrid>
+  <LinkCard title="Ingestion" href="/docs/concepts/ingestion/" description="What happens to a span between your request and the database." />
+  <LinkCard title="Tenancy and access" href="/docs/concepts/tenancy/" description="Roles, keys and how projects stay separate." />
+  <LinkCard title="Releases and users" href="/docs/releases-and-users/" description="Set the release and user id, and read the two pages built on them." />
+  <LinkCard title="Python SDK" href="/docs/python-sdk/" description="Create traces and spans from your code." />
+</CardGrid>

@@ -1,0 +1,164 @@
+---
+title: Routes, retries and fallbacks
+description: Choose which provider credentials serve a gateway key, how failures are retried, when to fall back to another target, and how to change a route safely.
+sidebar:
+  order: 2
+---
+
+{/* Sources: backend/app/api/v1/gateway_routes.py, frontend/src/features/gateway/routes/use-route-save.ts, frontend/src/features/gateway/routes/version-conflict-callout.tsx, backend/app/gateway/errors.py */}
+
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+
+A **route** decides where a gateway call goes and what happens when the provider fails. Each gateway key uses one route. Owners and admins manage routes in **Gateway, Routes** or through the API; any member can read them.
+
+<Prerequisites
+  items={[
+    'The admin or owner role in the project, to create and change routes. Every role can read them',
+    'At least one provider credential in the organization, added by an owner under Gateway, Credentials',
+    'The gateway enabled: GATEWAY_MODE is not disabled',
+  ]}
+/>
+
+A route is a name and a configuration. This is a complete one:
+
+```json
+{
+  "targets": [
+    {
+      "credential_id": "0192f5a0-0000-7000-8000-000000000001",
+      "weight": 1,
+      "model_aliases": { "smart": "claude-sonnet-4-5" }
+    },
+    {
+      "credential_id": "0192f5a0-0000-7000-8000-000000000002",
+      "weight": 1,
+      "model_aliases": { "smart": "claude-haiku-4-5" }
+    }
+  ],
+  "retry": {
+    "max_attempts": 2,
+    "on_statuses": [408, 409, 429, 500, 502, 503, 504],
+    "backoff_ms": 200,
+    "max_backoff_ms": 2000,
+    "honour_retry_after": true
+  },
+  "fallback": {
+    "on": ["status_5xx", "rate_limited", "timeout", "connection_error"]
+  },
+  "timeout_ms": 60000
+}
+```
+
+Unknown fields are refused with `422`, and numbers must be real integers (`true` and `2.0` are not counts), so a misspelt setting never silently does nothing.
+
+## Targets
+
+A target is a [provider credential](/docs/gateway/credentials/) of the route's organization. A route has 1 to 8 targets, and the same credential can appear more than once, for example Sonnet first and Haiku second on one key.
+
+| Field | Rule |
+| --- | --- |
+| `credential_id` | A credential of the route's organization, else `422` on `config.targets.<i>.credential_id` |
+| `weight` | Integer 1 to 100, default 1 |
+
+**Picking a target.** The first target tried is chosen at random in proportion to the weights of the targets that can serve the call. If it fails and the failure allows a fallback, the remaining targets are tried in the order they are listed. So weights spread the load, and the list order is the fallback order.
+
+**Which targets can serve a call.** There is no translation between provider formats. A chat completions or responses call can only use `openai` and `openai_compatible` credentials, and a messages call can only use `anthropic` ones. Other targets are skipped. If none is left, the call fails with `400 NO_COMPATIBLE_TARGET`.
+
+### Model aliases
+
+`model_aliases` maps a name your application asks for to the name the provider knows, per target. Up to 32 aliases per target; names are 1 to 128 characters of letters, digits and `. _ : / -`. A requested model without an alias is sent unchanged.
+
+With the example above, an application asking for `smart` reaches `claude-sonnet-4-5` on the first target and `claude-haiku-4-5` on the second. The alias is applied per target, so a fallback to another provider can change the model too. A key's `allowed_models` list is checked against the name the application sent, before any alias.
+
+## Retries
+
+`retry` controls how often the **same target** is tried again.
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `max_attempts` | 2 | Tries per target, the first included. 1 to 5 |
+| `on_statuses` | 408, 409, 429, 500, 502, 503, 504 | Provider statuses worth another try. At most 16, each 400 to 599, no repeats |
+| `backoff_ms` | 200 | Wait before the first retry. 0 to 10 000 |
+| `max_backoff_ms` | 2000 | Cap on the wait. 0 to 30 000, at least `backoff_ms` |
+| `honour_retry_after` | true | Wait for the provider's `Retry-After` instead of the computed backoff |
+
+The wait before retry *n* is `min(backoff_ms * 2^(n-1), max_backoff_ms)`. With the defaults that is 200 ms before the first retry. When `honour_retry_after` is on and the provider sent `Retry-After`, that value is used instead, whatever its size.
+
+A timeout or a connection error always counts as retryable while attempts remain. A status is retried only if it is in `on_statuses`. Any other client error (for example a `400` or a `401` from the provider) is not retried, and it is returned to your application as the provider sent it, with `X-Spanlight-Code: UPSTREAM_ERROR`.
+
+A retry only happens when the wait fits inside the time budget with at least one second to spare. A `Retry-After: 120` against a 60 second budget is not waited for.
+
+## Fallbacks
+
+`fallback.on` lists the failures after which the gateway moves to the next target once the current one is out of retries:
+
+| Condition | Failure |
+| --- | --- |
+| `status_5xx` | The provider answered 500 to 599 |
+| `rate_limited` | The provider answered 429 |
+| `timeout` | The provider did not answer in time |
+| `connection_error` | The gateway could not connect or the connection broke |
+
+An empty list means never fall back. By default all four are on. Other client errors never fall back, because another provider would not fix a bad request.
+
+A request to a private or local address is never retried and never falls back (`502 UPSTREAM_BLOCKED`); that is a configuration error, not a provider failure. See [Provider credentials](/docs/gateway/credentials/#base-urls-and-private-addresses).
+
+Retries and fallbacks only happen **before the first byte reaches your application**. Once a stream has started, a failure ends it; it is not restarted on another target.
+
+## The time budget
+
+`timeout_ms` (1 000 to 600 000, default 60 000) is the budget for the whole call: every attempt, every wait and every fallback. When it runs out, the call fails with `504 UPSTREAM_TIMEOUT`. For a streamed answer it bounds the time until the first byte; after that the stream runs as long as the provider keeps sending.
+
+Each attempt gets whatever is left of the budget, so a slow first target leaves less for the fallback. Choose a budget for the slowest answer you accept, not for one attempt.
+
+## What a span records
+
+The span of a call records the route name and version, the credential that answered, the number of attempts, how many other targets were used and the last provider status. The attempt count is also in the `X-Spanlight-Attempts` response header. `GET /api/v1/projects/{project_id}/gateway/overview` and the **Gateway, Overview** page total retries and fallbacks per target.
+
+## Versions and revert
+
+Saving a route never overwrites it: every save stores the next numbered **version** and the history is kept.
+
+- Creating a route stores version 1. Each edit and each revert stores the next version.
+- An edit carries `expected_version`. If someone saved in between, the edit is refused with `409 ROUTE_VERSION_CONFLICT` and the response names the current version, so two people cannot overwrite each other unknowingly.
+- **Revert** restores an earlier version as a new version. It is checked against today's rules: if the old configuration names a credential that has since been deleted, or breaks a rule that was tightened, the revert is `422`.
+- Gateway keys keep their route when the route is edited; the new version applies to the next call. Spans record the version that served them.
+
+## The default route and deleting
+
+The first route of a project is its default, used by every new key that does not choose a route. **Make default** moves it without creating a new version. Deleting the default leaves the project without one until another is chosen, and creating a key then needs an explicit route.
+
+A route that an active gateway key uses cannot be deleted (`409 ROUTE_IN_USE`). A credential used by a route's current version cannot be deleted either (`409 CREDENTIAL_IN_USE`).
+
+Route names are unique per project (`409 ROUTE_NAME_TAKEN`). The routes' exact request and response shapes are in the [API reference](/docs/api/).
+
+## Check it worked
+
+Save a change to a route. A toast reads `Saved version 2 of <name>.`, with the next number after each save (a new route starts at version 1). Then send a call with a key that uses the route and open its trace in **Traces**. Its gateway attributes show:
+
+- `spanlight.gateway.route` and `spanlight.gateway.route_version`: the route name and the version you just saved;
+- `spanlight.gateway.target`: the credential that answered;
+- `spanlight.gateway.attempts`: `1` when the first try worked, and `spanlight.gateway.fallbacks`: `0` when no other target was needed.
+
+The response carries `X-Spanlight-Attempts` with the same attempt count.
+
+## Troubleshooting
+
+- **A call goes to a credential you did not expect.** Weights pick the first target at random among the targets that can serve the surface. Check the route version in the span (`spanlight.gateway.route_version`) and that the key uses this route. See [Targets](#targets).
+- **`400 NO_COMPATIBLE_TARGET`.** No target can serve the surface: chat completions and responses need an `openai` or `openai_compatible` credential, messages needs an `anthropic` one.
+- **A `4xx` from the provider is not retried and no fallback happens.** By design: another try or another provider would not fix a bad request. Only `on_statuses` are retried, and fallbacks follow `fallback.on`. See [Retries](#retries) and [Fallbacks](#fallbacks).
+- **Saving answers `409 ROUTE_VERSION_CONFLICT`** ("Someone saved version N while you were editing."). In the editor, **Reload latest**, then apply your change again.
+- **Deleting answers `409 ROUTE_IN_USE`.** A gateway key still uses the route. Move the key to another route first. A credential used by the route's current version answers `409 CREDENTIAL_IN_USE` the same way.
+- **`504 UPSTREAM_TIMEOUT`.** The whole call, every attempt and wait included, ran past `timeout_ms`. See [The time budget](#the-time-budget).
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Gateway quickstart', href: '/docs/gateway/quickstart/', description: 'Point the OpenAI or Anthropic SDK at the gateway.' },
+    { title: 'Response cache', href: '/docs/gateway/cache/', description: 'Serve repeated identical calls from Postgres.' },
+    { title: 'Provider credentials', href: '/docs/gateway/credentials/', description: 'Store provider keys encrypted and rotate the master keys.' },
+    { title: 'Gateway error responses', href: '/docs/gateway/errors/', description: 'Every error the gateway itself produces.' },
+  ]}
+/>

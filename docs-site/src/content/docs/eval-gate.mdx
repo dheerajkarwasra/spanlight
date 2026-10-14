@@ -1,0 +1,148 @@
+---
+title: Eval gate for CI
+description: Run a prompt over a dataset on every pull request with the eval-gate GitHub Action and fail the build when a score drops below a threshold.
+sidebar:
+  order: 1
+---
+
+{/* Sources: sdks/python/src/spanlight/_experiments.py, sdks/python/src/spanlight/_experiments_api.py, sdks/python/src/spanlight/_experiments_runs.py, sdks/python/src/spanlight/_experiments_report.py, backend/app/api/experiment_problems.py, frontend/src/features/gateway/credentials/credential-row.tsx */}
+
+import NextSteps from '../../components/NextSteps.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+
+The **eval-gate** GitHub Action runs a prompt version over a Spanlight dataset, scores every answer with your evaluators and fails the job when a mean score is below the threshold you set. Use it to catch a prompt change that makes answers worse before it reaches users.
+
+Each run is a real run in Spanlight: it appears under **Experiments**, every answer is a trace in the `experiments` environment, and every call is a real provider call that costs money. Each run is capped by the experiment's cost limit and `max_items` (see below).
+
+<Prerequisites
+  items={[
+    'The member, admin or owner role in the project',
+    'A personal access token with the write scope, stored as a secret of your CI system',
+    'A dataset with items and a prompt in the project. Evaluators are optional',
+    'The id of a provider credential and a model with a known price',
+    'The worker running on your Spanlight instance, because it executes the run',
+    'A GitHub repository for the Action, or Python 3.10 or newer for any other CI system',
+  ]}
+/>
+
+## Before the first run
+
+You need, in the project that holds the prompt:
+
+1. A **dataset** with items and a **prompt** (and, if you want scores, **evaluators**). Judge evaluators need a monthly budget; a judge that is over budget leaves the score out and the gate fails, because an unknown score never counts as a pass.
+2. A **personal access token** with the write scope. Create it as described in [Access](/docs/guides/access/) and store it as a repository secret, for example `SPANLIGHT_TOKEN`. Starting a run needs write access because a run spends money.
+3. The **credential id** and **model** the prompt should run on. Open **Gateway, Credentials** and use the copy button next to the ID shown under the credential's name (labelled **Copy** and the credential name and **ID**, for example **Copy anthropic-prod ID**).
+4. The **project id**, the second id in the dashboard URL (`/<organization id>/<project id>/...`).
+
+## Use it in a workflow
+
+```yaml
+name: Prompt evals
+on:
+  pull_request:
+    paths: ['prompts/**']
+
+# An experiment runs one run at a time: queue gates instead of running them side by side.
+concurrency:
+  group: spanlight-eval-gate-${{ github.ref }}
+
+jobs:
+  eval-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dheerajkarwasra/spanlight/.github/actions/eval-gate@main
+        with:
+          host: ${{ vars.SPANLIGHT_HOST }}
+          token: ${{ secrets.SPANLIGHT_TOKEN }}
+          project-id: ${{ vars.SPANLIGHT_PROJECT_ID }}
+          dataset: support-questions
+          prompt: support/answer@production
+          evaluators: relevance,format
+          fail-below: relevance=0.8,format=1
+          credential-id: ${{ vars.SPANLIGHT_CREDENTIAL_ID }}
+          model: claude-haiku-5-5
+          max-cost-usd: '2'
+```
+
+Pin the Action to a tag or a commit in your own workflows (`@<tag>` after the Action path) so a change to the repository cannot change your gate. The SDK is installed from the same ref unless you set `sdk-ref`.
+
+### Inputs
+
+| Input | Required | Meaning |
+| --- | --- | --- |
+| `host` | yes | URL of your Spanlight instance. |
+| `token` | yes | Personal access token with the write scope. |
+| `project-id` | yes | Id of the project that owns the dataset and the prompt. |
+| `dataset` | yes | Name of the dataset to run. |
+| `prompt` | yes | `name`, `name@label` or `name:version`. A bare name means the `production` label; `latest` is the highest version. |
+| `evaluators` | no | Comma-separated evaluator names. |
+| `fail-below` | no | `score=minimum` pairs, for example `relevance=0.8,format=1`. Empty means the Action only reports. |
+| `credential-id` | yes | Provider credential to run the prompt on. |
+| `model` | yes | Model to run the prompt on. |
+| `max-cost-usd` | no | Cost cap of one run, in US dollars. Applies only when the experiment is created; empty means the server default (5 USD). |
+| `python-version` | no | Python to run the gate with. Default `3.12`. |
+| `sdk-ref` | no | Git ref of the Spanlight repository to install the SDK from. Default: the ref the Action is pinned to, or `main` when that is unknown. |
+
+Outputs: `run-id` and `run-url` (a link to the run page in the dashboard). This describes the Action on `main` or a later tag. The tag `sdk-python-v0.1.0` links the experiment page instead and prints latencies unrounded in the report.
+
+## What the gate does
+
+1. Finds the dataset, the prompt version and the evaluators by name. A name that does not exist stops the job with exit code 2.
+2. Reuses the experiment `ci/<dataset>/<prompt>/<id>`, or creates it on first use with the resolved prompt version as its base target. `<id>` is a short digest of the evaluators, credential and model, because an experiment cannot be edited: change one of them and the gate starts a new experiment instead of running under the old settings. Every run names the version it tests, so when `production` moves to a new version the same experiment runs the new one and its runs stay comparable. The name can be at most 200 characters, so keep dataset and prompt names short.
+3. Waits, within the timeout, until the experiment has no run in progress (it allows one at a time), then starts a run and follows it. Inside GitHub Actions the run is started with an `Idempotency-Key` made from `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT` and the experiment id, so a request that is retried within one attempt cannot start two runs. A re-run of the workflow is a new attempt and starts a new run.
+4. Compares each mean score in `fail-below` with its threshold, prints a Markdown table to the log and adds it to the job summary.
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | The run finished and every threshold held. |
+| `1` | A score is below its threshold, for example `relevance: 0.75 < 0.8`. A score the run did not produce also counts as below. |
+| `2` | The run could not be set up, failed (for example `cost_cap_reached`) or did not finish within 30 minutes. |
+
+A run has a cost cap (`max-cost-usd`, 5 USD by default) and reads at most 1 000 dataset items by default. When the cap is reached the run ends `failed` and the gate exits with 2.
+
+## Run it outside GitHub
+
+The Action is a thin wrapper around a module of the Python SDK, so the same gate runs in any CI:
+
+```bash
+pip install spanlight
+
+export SPANLIGHT_TOKEN=spl_pat_...
+python -m spanlight._experiments \
+  --host https://spanlight.example.com --project-id <project id> \
+  --dataset support-questions --prompt support/answer:3 \
+  --evaluators relevance,format --fail-below relevance=0.8,format=1 \
+  --credential-id <credential id> --model claude-haiku-5-5
+```
+
+`--max-cost-usd` sets the cap of a new experiment and `--timeout` (seconds, default 1800) bounds the whole gate, including the wait for an earlier run. The token is read only from the environment so it never shows in a process list, and the runner refuses to send it to an `http://` host other than localhost.
+
+## Limits
+
+- Scores that are categories (a label rather than a number) cannot be compared with a threshold; use a numeric or boolean evaluator for the gate.
+- The Action runs one experiment per step. To gate several datasets, add one step for each.
+- Two gates for the same dataset, prompt and settings take turns: the second waits for the first to finish, and fails with exit code 2 if that takes longer than the timeout.
+- Experiments cannot be edited or deleted yet, so an unused `ci/...` experiment stays in the list.
+
+## Check it worked
+
+The job log ends with a Markdown report that starts with "Spanlight eval gate:", the dataset and the prompt version (for example `refund-questions / support/answer v1`), then "Gate **passed**" and a table with one row per score the run produced or `fail-below` names. The same table is in the job summary, and the run is listed under **Experiments** in the project. The step exits with `0`.
+
+## Troubleshooting
+
+- **The job exits with `2` and "error: … is required".** A required setting is missing, and the message names each one, such as `SPANLIGHT_TOKEN` or `--model`. In the Action, set the matching input.
+- **The job exits with `2` and "dataset … not found in the project" or "evaluator not found in the project".** The name does not match, or the token or `project-id` points to another project. Names are case-sensitive.
+- **The job exits with `1` and "Below threshold:".** A mean score is under its `fail-below` value, or the run did not produce that score at all. Open the run with the `run-url` output and compare it with the run of the base version. See [Compare two runs](/docs/experiments/#compare-two-runs).
+- **The job exits with `2` and "another run of this experiment did not finish in time".** An earlier gate on the same experiment is still running. The gate waits within its timeout (30 minutes by default). Wait for the earlier run, then re-run the job.
+- **The job exits with `2` and the run is `cost_cap_reached`.** The run reached its cost cap. `max-cost-usd` applies only when the experiment is created, so raising it changes nothing for an existing experiment. Change the evaluators, the credential or the model so that the gate creates a new experiment, or use a smaller dataset. See [The cost limit](/docs/experiments/#the-cost-limit).
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Experiments', href: '/docs/experiments/', description: 'Replay a dataset through a prompt and compare two runs.' },
+    { title: 'Datasets', href: '/docs/datasets/', description: 'Test cases built from your traces or from a file.' },
+    { title: 'Evaluators', href: '/docs/evaluators/', description: 'Score traces automatically with rules, a judge or your endpoint.' },
+    { title: 'API keys, tokens and administration', href: '/docs/guides/access/', description: 'Scoped API keys and personal access tokens.' },
+  ]}
+/>

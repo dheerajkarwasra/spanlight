@@ -1,0 +1,53 @@
+---
+title: Exports
+description: Export the traces that match your filters as CSV or JSONL, download them, and request exports through the API without running one twice.
+---
+
+{/* Sources: frontend/src/features/exports/export-status.ts, frontend/src/features/exports/exports-list.tsx, frontend/src/features/traces/export-dialog.tsx, frontend/src/features/traces/export-summary.tsx, frontend/src/features/traces/export-trigger.tsx, backend/app/exports/service.py, backend/app/api/v1/exports.py */}
+
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+
+<Prerequisites
+  items={[
+    'Object storage configured (see Configuration)',
+    'The member, admin or owner role in the project (viewers cannot export)',
+  ]}
+/>
+
+Start an export from the **Traces** page: it exports the traces that match the filters you have set, as CSV (one row per trace) or JSONL (one trace per line, with its spans). Follow it and download the file in **Settings, Project, Exports**. Exports need object storage, and the file is kept in your own bucket.
+
+- A time range is required and can span at most 90 days. More than 100 000 matching traces fail the export as too large; narrow the range.
+- Members, admins and owners can export. Viewers cannot.
+- The export runs in the background. When it is done, the dashboard offers a download link that is valid for one hour; open the export again for a fresh one.
+- Files are deleted seven days after they are made, and when the project is deleted.
+- Spreadsheet cells that begin with `=`, `+`, `-` or `@` are prefixed with an apostrophe, so opening the file cannot run a formula.
+
+Requesting an export (`POST /api/v1/projects/{project_id}/exports`) accepts an `Idempotency-Key` header, so a retried request runs once and returns the same export. Use a fresh random key, such as a UUID, for each intended export. A key belongs to the caller that sent it (a user, or an API key), is remembered for 24 hours, and the same key with a different body is `422 IDEMPOTENCY_MISMATCH`. A `409 NOT_CONFIGURED` is remembered too, so after switching object storage on, retry with a new key. Other routes ignore the header.
+
+The audit log has its own CSV download in **Settings, Organization, Audit log**. The filters you set apply, and up to 50 000 events fit in one file.
+
+## Check it worked
+
+On **Traces**, press **Export**, pick CSV or JSONL and press **Start export**. The dialog changes to **Export queued**. In **Settings, Project, Exports** the new row goes from **Queued** to **Running** to **Done**, and a **Download** button appears. The page checks again every three seconds while an export is queued or running.
+
+## Troubleshooting
+
+- **The Export button is off.** A viewer cannot export ("Viewers can't export traces. Ask an admin for access.").
+- **The dialog says "Not available on this server" ("Exports need object storage. Ask your administrator to set the S3 settings.").** The server answered `409 NOT_CONFIGURED`. An operator sets the S3 settings in [Configuration](/docs/configuration/); then retry with a new request, since the refusal is remembered for the same `Idempotency-Key`.
+- **"Exports cover at most 90 days. Narrow the time range on the Traces page, then export again."** The range is over 90 days. **Start export** stays off until you narrow it.
+- **The row reads "Failed" with `EXPORT_TOO_LARGE` ("More than 100,000 traces. Narrow the time range and export again.").** Narrow the range or add filters.
+- **The row reads "Failed" with `EXPORT_TIMEOUT` or `EXPORT_FAILED`.** Building the file took too long, or failed. Export again with a narrower range.
+- **The row reads "Failed" with `NOT_CONFIGURED` ("Object storage was switched off before the file was written.").** Object storage was turned off while the export ran. Switch it on in [Configuration](/docs/configuration/) and export again.
+- **The row reads "Expired", or Download says "This export is no longer available. It may have expired."** Files are deleted after seven days. Start a new export.
+- **The row stays "Queued".** The worker builds exports; check that it is running (see the [troubleshooting page](/docs/troubleshooting/#the-worker-is-not-running)).
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Data, limits and operations', href: '/docs/guides/data/', description: 'Rate limits, backups and monitoring Spanlight itself.' },
+    { title: 'Configuration', href: '/docs/configuration/', description: 'Every environment variable the API and worker read.' },
+    { title: 'Exports endpoints', href: '/docs/api/exports/', description: 'The routes behind exports.' },
+  ]}
+/>

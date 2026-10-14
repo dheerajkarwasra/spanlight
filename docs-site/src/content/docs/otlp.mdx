@@ -1,0 +1,165 @@
+---
+title: OTLP ingestion
+description: Send OpenTelemetry GenAI traces to Spanlight over OTLP/HTTP, in JSON or protobuf, and send the same data from a language without an SDK.
+sidebar:
+  order: 3
+---
+
+{/* Sources: backend/app/api/ingest.py, backend/app/ingest/otlp.py, backend/app/core/errors.py, backend/app/api/deps.py, frontend/src/features/traces/traces-empty-state.tsx, docs/api-deviations.md */}
+
+import NextSteps from '../../components/NextSteps.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+
+Spanlight accepts OTLP/HTTP traces, so any OpenTelemetry GenAI exporter can report to it without the Python SDK. The native JSON endpoint (`POST /v1/traces`) is described at the end of this page.
+
+<Prerequisites
+  items={[
+    'A running Spanlight instance that your exporter can reach',
+    'A project API key with the ingest:write scope, which is the default scope',
+    'An OpenTelemetry exporter that sends GenAI spans (gen_ai.* attributes) over OTLP/HTTP, as JSON or protobuf',
+  ]}
+/>
+
+## Endpoint
+
+| | |
+| --- | --- |
+| URL | `POST <host>/v1/otlp/traces`, for example `http://localhost:8080/v1/otlp/traces` |
+| Authentication | `Authorization: Bearer spl_live_…`, a project API key with the `ingest:write` scope (the default scope of a new key) |
+| Content types | `application/x-protobuf` or `application/json`. Anything else is `415`. |
+| Compression | `Content-Encoding: gzip` or `deflate` |
+| Limits | 5 MiB per request (after decompression) and 1000 spans per request, otherwise `413` |
+| Rate limit | 50 requests per second per key, with a burst of 100. Over the limit is `429` with `Retry-After`. |
+
+The response is `200` with `{}` (JSON) or an empty `ExportTraceServiceResponse` (protobuf). If some spans were rejected, the body carries `partialSuccess` with `rejectedSpans` and an `errorMessage` naming the first few. A body that is not valid OTLP is `400` with code `INVALID_OTLP`. An API key is not a personal access token: a token on this endpoint is `401`.
+
+## Configure an exporter
+
+Point the exporter at the full traces URL and pass the key as a header. With the standard OpenTelemetry environment variables:
+
+```bash
+export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:8080/v1/otlp/traces
+export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20spl_live_..."
+```
+
+Use the traces-specific endpoint variable. The general `OTEL_EXPORTER_OTLP_ENDPOINT` makes exporters append `/v1/traces` to it, which is Spanlight's native endpoint, not the OTLP one. The `%20` is the URL-encoded space that the OpenTelemetry specification requires in header values.
+
+In Python with the OpenTelemetry SDK:
+
+```python
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+provider = TracerProvider(
+    resource=Resource.create(
+        {"service.name": "support-bot", "deployment.environment.name": "production"}
+    )
+)
+provider.add_span_processor(
+    BatchSpanProcessor(
+        OTLPSpanExporter(
+            endpoint="http://localhost:8080/v1/otlp/traces",
+            headers={"Authorization": "Bearer spl_live_..."},
+        )
+    )
+)
+trace.set_tracer_provider(provider)
+```
+
+A request by hand, to check the key and the endpoint:
+
+```bash
+now=$(date +%s)
+curl -sS http://localhost:8080/v1/otlp/traces \
+  -H "Authorization: Bearer $SPANLIGHT_API_KEY" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<EOF
+{
+  "resourceSpans": [{
+    "resource": {"attributes": [{"key": "service.name", "value": {"stringValue": "curl-test"}}]},
+    "scopeSpans": [{"spans": [{
+      "traceId": "5b8efff798038103d269b633813fc60c",
+      "spanId": "eee19b7ec3c1b174",
+      "name": "chat",
+      "kind": 3,
+      "startTimeUnixNano": "${now}000000000",
+      "endTimeUnixNano": "$((now + 1))000000000",
+      "attributes": [
+        {"key": "gen_ai.request.model", "value": {"stringValue": "claude-haiku-4-5"}},
+        {"key": "gen_ai.usage.input_tokens", "value": {"intValue": "120"}},
+        {"key": "gen_ai.usage.output_tokens", "value": {"intValue": "40"}}
+      ]
+    }]}]
+  }]
+}
+EOF
+```
+
+A successful call prints `{}`. Spans that started more than 90 days ago are rejected, so use a current timestamp.
+
+## How attributes map
+
+Spanlight reads the OpenTelemetry GenAI attributes and keeps the others on the span. Every attribute, fallback and error rule is listed in [OTLP attribute mapping](/docs/reference/otlp-mapping/).
+
+Cost is computed on the server from the model and the token counts. A span with an unknown model, or without token counts, has an unknown cost, not zero. As with the SDK, secrets are redacted from payloads before they are stored, and a project can switch payload capture off. Include cached tokens in the input token count.
+
+## Native JSON
+
+`POST /v1/traces` takes the format the Python SDK sends, and is the simplest way to report from a language without an SDK:
+
+```json
+{
+  "spans": [
+    {
+      "trace_id": "5b8efff798038103d269b633813fc60c",
+      "span_id": "eee19b7ec3c1b174",
+      "name": "answer",
+      "kind": "llm",
+      "status": "ok",
+      "start_time": "2026-10-09T10:00:00+00:00",
+      "end_time": "2026-10-09T10:00:01.500+00:00",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "usage": {"input_tokens": 120, "output_tokens": 40, "cached_tokens": 0},
+      "input": {"messages": [{"role": "user", "content": "Hi"}]},
+      "output": "Hello!",
+      "trace": {"name": "support-request", "user_id": "u_42", "session_id": "chat-123", "tags": ["beta"]}
+    }
+  ]
+}
+```
+
+Timestamps are ISO-8601 with an offset, or integer Unix nanoseconds. The response lists what was stored:
+
+```json
+{"accepted": 1, "rejected": []}
+```
+
+Each span is validated on its own, so one bad span appears in `rejected` (with its index, span id and reason) without failing the batch. A span that is sent again with the same ids updates the stored one, so retrying a batch does not double-count by design. The limits, the key scope and the rate limit are the same as for OTLP. Validation rules, limits and the merge rules for trace fields are listed under [ingestion in the API conventions](/docs/api/conventions/#ingestion-post-v1traces).
+
+## Check it worked
+
+Run the request by hand from [Configure an exporter](#configure-an-exporter). A successful call prints `{}`. Open **Traces** for the same project: the list has a trace named `chat`, the name of the root span. Open it: the span shows the model `claude-haiku-4-5` and its token counts, 120 in and 40 out. A trace from your own exporter carries the name of its root span, or the `service.name` when that span has no name.
+
+## Troubleshooting
+
+- **The exporter gets `422 VALIDATION_ERROR` or `400 INVALID_JSON`.** It sent to `/v1/traces`, the native endpoint, because it appended the path to a base URL. Set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` to the full URL. See [The exporter appends `/v1/traces`](/docs/troubleshooting/#the-exporter-appends-v1traces).
+- **`401 UNAUTHORIZED`.** The `Authorization` header did not arrive, the key is wrong or revoked, or you used a personal access token. Encode the space as `%20` in `OTEL_EXPORTER_OTLP_HEADERS` and use a project API key. See [The `Authorization` header does not reach Spanlight](/docs/troubleshooting/#the-authorization-header-does-not-reach-spanlight).
+- **`415 UNSUPPORTED_MEDIA_TYPE`, or a gRPC exporter cannot connect.** Spanlight accepts OTLP over HTTP only, as protobuf or JSON. Set `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf`. See [The protocol is not OTLP over HTTP](/docs/troubleshooting/#the-protocol-is-not-otlp-over-http).
+- **`403 KEY_SCOPE`.** The key was created without the `ingest:write` scope. Scopes are fixed at creation, so create a new key. See [The key lacks the `ingest:write` scope](/docs/troubleshooting/#the-key-lacks-the-ingestwrite-scope).
+- **The answer is `200` but a trace is missing.** The response body holds `partialSuccess` with `rejectedSpans`. Read the `errorMessage`, then see [Spans are rejected](/docs/troubleshooting/#spans-are-rejected).
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Python SDK', href: '/docs/python-sdk/', description: 'Install the package and trace functions and provider calls.' },
+    { title: 'Releases and users', href: '/docs/releases-and-users/', description: 'Compare two versions of your app and see which users cost the most.' },
+    { title: 'The Doctor', href: '/docs/doctor/', description: 'Findings about how your application calls LLMs.' },
+    { title: 'API keys, tokens and administration', href: '/docs/guides/access/', description: 'Scoped API keys and personal access tokens.' },
+  ]}
+/>

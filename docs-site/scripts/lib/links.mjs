@@ -25,7 +25,7 @@ const PRIVATE_PREFIXES = [
   'docs/architecture.md',
 ];
 
-const isPrivate = (repoPath) =>
+export const isPrivate = (repoPath) =>
   PRIVATE_PREFIXES.some((p) => repoPath === p || repoPath.startsWith(`${p}/`)) ||
   /(^|\/)\.env(\.[^/]+)?$/.test(repoPath);
 

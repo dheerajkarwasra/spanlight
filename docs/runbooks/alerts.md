@@ -173,7 +173,7 @@ A webhook is signed with `HMAC-SHA256(secret, "<timestamp>." + body)`, sent as `
    ```
 
    Or press **Rotate secret** on the channel in the dashboard, which shows the secret once. Expected: `NEW_SECRET` holds a non-empty string. If it is `null`, the call failed or the channel is not a webhook (`rotate_secret` applies to webhooks only); run the `curl` without `jq` to read the error. Store the value in the receiver's secret store from the variable, then `unset NEW_SECRET`.
-3. Rotating clears the channel's verified mark. Send a test (**Send test**) and check the receiver accepted the signature. The test answers `"status":"sent"`; `failed` carries the reason in `error`.
+3. Rotating clears the channel's verified mark. Send a test (**Test**) and check the receiver accepted the signature. The test answers `"status":"sent"`; `failed` carries the reason in `error`.
 4. Remove the old secret from the receiver.
 5. Look for deliveries that failed in between (a receiver that rejected the signature answers a 4xx, which fails the row for good) and retry them; see [Dead letters](#dead-letters-failed-deliveries).
 

@@ -1,0 +1,32 @@
+---
+/**
+ * Sends an old Doctor-page detector anchor to the detector catalogue, where the entries now
+ * live. The catalogue's heading ids are read at build time from reference/detectors.md.
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+
+import { catalogueIdsFrom } from '../lib/anchor-redirect.mjs';
+
+const catalogue = path.join(process.cwd(), 'src/content/docs/reference/detectors.md');
+const ids = fs.existsSync(catalogue) ? catalogueIdsFrom(fs.readFileSync(catalogue, 'utf8')) : [];
+---
+
+<span hidden data-catalogue-ids={JSON.stringify(ids)}></span>
+
+<script>
+  import { catalogueRedirect } from '../lib/anchor-redirect.mjs';
+
+  const holder = document.querySelector<HTMLElement>('[data-catalogue-ids]');
+  const ids: string[] = JSON.parse(holder?.dataset.catalogueIds ?? '[]');
+  // An anchor that exists on this page stays here, whatever the catalogue calls its headings.
+  const here = (hash: string) => {
+    try {
+      return document.getElementById(decodeURIComponent(hash.slice(1))) !== null;
+    } catch {
+      return false;
+    }
+  };
+  const target = here(location.hash) ? null : catalogueRedirect(location.hash, ids);
+  if (target) location.replace(target);
+</script>

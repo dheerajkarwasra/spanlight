@@ -1,0 +1,130 @@
+---
+/** The product areas, each with its two or three most useful pages. */
+const areas = [
+  {
+    title: 'Trace and debug',
+    body: 'Every call with its prompt, completion, latency, tokens and cost, grouped into traces and sessions.',
+    links: [
+      ['Python SDK', '/docs/python-sdk/'],
+      ['OpenTelemetry', '/docs/otlp/'],
+      ['Users and releases', '/docs/releases-and-users/'],
+    ],
+  },
+  {
+    title: 'The Doctor',
+    body: 'Detectors read your traces and open an insight with evidence, a fix and a way to check it.',
+    links: [
+      ['How it works', '/docs/doctor/'],
+      ['Detector catalogue', '/docs/reference/detectors/'],
+    ],
+  },
+  {
+    title: 'Evaluate',
+    body: 'Version prompts, build datasets, score answers and fail the pull request when quality drops.',
+    links: [
+      ['Prompts', '/docs/prompts/'],
+      ['Evaluators', '/docs/evaluators/'],
+      ['Eval gate', '/docs/eval-gate/'],
+    ],
+  },
+  {
+    title: 'Gateway',
+    body: 'One base URL for OpenAI and Anthropic, with retries, caching and budgets that block.',
+    links: [
+      ['Quickstart', '/docs/gateway/quickstart/'],
+      ['Routing', '/docs/gateway/routing/'],
+      ['Cache', '/docs/gateway/cache/'],
+    ],
+  },
+  {
+    title: 'Alerts and budgets',
+    body: 'Get told when errors, latency or spend cross a line, and stop spend at a limit.',
+    links: [
+      ['Alerts', '/docs/alerts/'],
+      ['Budgets', '/docs/budgets/'],
+      ['Webhooks', '/docs/webhooks/'],
+    ],
+  },
+  {
+    title: 'Self-hosting',
+    body: 'One image, three roles, Postgres as the only datastore.',
+    links: [
+      ['Docker Compose', '/docs/self-hosting/'],
+      ['Configuration', '/docs/configuration/'],
+      ['Runbooks', '/docs/runbooks/'],
+    ],
+  },
+  {
+    title: 'API and security',
+    body: 'Every HTTP endpoint, and how Spanlight protects your data and takes vulnerability reports.',
+    links: [
+      ['HTTP API', '/docs/api/'],
+      ['Security', '/docs/security/'],
+      ['Limits', '/docs/reference/limits/'],
+    ],
+  },
+];
+---
+
+<section class="areas not-content" aria-labelledby="explore">
+  <h2 id="explore">Explore the product</h2>
+  <ul>
+    {
+      areas.map((area) => (
+        <li>
+          <h3>{area.title}</h3>
+          <p>{area.body}</p>
+          <p class="links">
+            {area.links.map(([label, href]) => (
+              <a href={href}>{label}</a>
+            ))}
+          </p>
+        </li>
+      ))
+    }
+  </ul>
+</section>
+
+<style>
+  h2 {
+    margin: 0 0 1.25rem;
+    font-size: var(--sl-text-3xl);
+    color: var(--sl-color-white);
+  }
+  ul {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+    gap: 1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  li {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 1.375rem;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 1.25rem;
+    background: var(--spl-surface);
+  }
+  h3 {
+    margin: 0;
+    font-size: var(--sl-text-base);
+    color: var(--sl-color-white);
+  }
+  p {
+    margin: 0;
+    color: var(--sl-color-gray-3);
+  }
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
+    margin-top: auto;
+  }
+  .links a {
+    font-weight: 500;
+    color: var(--sl-color-text-accent);
+  }
+</style>

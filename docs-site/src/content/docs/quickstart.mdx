@@ -1,0 +1,95 @@
+---
+title: Quickstart
+description: Start Spanlight with Docker Compose, instrument a Python app and see your first trace.
+sidebar:
+  order: 1
+---
+
+{/* Sources: deploy/compose.yaml, deploy/.env.example, frontend/src/features/onboarding/first-trace-status.tsx, frontend/src/features/traces/traces-empty-state.tsx, sdks/python/src/spanlight/_client.py, sdks/python/src/spanlight/_exporter_delivery.py, docs/api-deviations.md */}
+
+import NextSteps from '../../components/NextSteps.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+
+
+This takes about ten minutes and ends with a trace from your own code in the dashboard.
+
+<Prerequisites
+  items={['Docker with the Compose plugin', 'Python 3.10 or newer']}
+/>
+
+## 1. Start the platform
+
+```bash
+git clone https://github.com/dheerajkarwasra/spanlight.git
+cd spanlight
+cp deploy/.env.example deploy/.env
+```
+
+Open `deploy/.env` and fill in the three secrets it asks for (`POSTGRES_PASSWORD`, `APP_DB_PASSWORD` and `SECRET_KEY`). The file explains how to generate them:
+
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Then build and start the stack:
+
+```bash
+docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
+```
+
+When it is ready, `http://localhost:8080/health/ready` answers `200` with `"status":"ok"` (and `"database":"ok"`, `"migrations":"ok"`, plus the worker's heartbeat age and the notification backlog). Open `http://localhost:8080`, create an account, and follow the setup wizard to create a project and an API key. The key starts with `spl_live_` and is shown once, so copy it now.
+
+## 2. Instrument your app
+
+```bash
+pip install "spanlight[anthropic]"
+```
+
+Use `spanlight[openai]` for OpenAI. Then:
+
+```python
+import spanlight
+from anthropic import Anthropic
+
+spanlight.init(api_key="spl_live_…", host="http://localhost:8080")
+client = spanlight.wrap_anthropic(Anthropic())
+
+@spanlight.observe()
+def answer(question: str) -> str:
+    reply = client.messages.create(
+        model="claude-haiku-4-5",
+        max_tokens=300,
+        messages=[{"role": "user", "content": question}],
+    )
+    return reply.content[0].text
+
+print(answer("How long do refunds take?"))
+spanlight.flush()  # short scripts only: sends what is still queued before exit
+```
+
+Instead of passing them to `init`, you can set `SPANLIGHT_API_KEY` and `SPANLIGHT_HOST` in the environment.
+
+## Check it worked
+
+The setup wizard waits on "Waiting for your first trace…" and checks every 2 seconds. When your script has run, it changes to a card titled "First trace received" with the text "Your app is connected." Select **View traces**: the list has one trace named `answer`, the name of the traced function. Open it to see the model call as a span with its tokens and cost.
+
+From there you have an [overview](/docs/guides/overview/) of latency, tokens, cost and errors, a [trace explorer](/docs/guides/traces/) with a span waterfall, and [session views](/docs/guides/traces/) of multi-turn conversations. A model with no known price shows its cost as unknown, never as $0.
+
+## Troubleshooting
+
+- **`docker compose up` stops with "required variable … is missing a value".** A secret in `deploy/.env` is empty. The message names it: `SECRET_KEY`, `APP_DB_PASSWORD` or `POSTGRES_PASSWORD`. Fill all three, then run the command again.
+- **`/health/ready` does not answer `200`.** The API, the database or the worker is not ready yet, or a migration is pending. Read the fields of the answer in [Read the readiness check first](/docs/troubleshooting/#read-the-readiness-check-first).
+- **The wizard keeps waiting.** The SDK sends to `http://localhost:8000` unless told otherwise, and the stack serves on `8080`. Pass `host="http://localhost:8080"` as shown above. See [The SDK points at the wrong host](/docs/troubleshooting/#the-sdk-points-at-the-wrong-host).
+- **The script logs "no API key configured".** Without a key the SDK does nothing. Pass the `spl_live_` key you copied in the wizard. See [The SDK has no API key, or is switched off](/docs/troubleshooting/#the-sdk-has-no-api-key-or-is-switched-off).
+- **The script ends and no trace arrives.** The last spans were still queued when the process exited. Keep the `spanlight.flush()` call at the end. See [A short script exits before the spans are sent](/docs/troubleshooting/#a-short-script-exits-before-the-spans-are-sent).
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Python SDK', href: '/docs/python-sdk/', description: 'Every option, spans, update_trace, streaming and delivery guarantees.' },
+    { title: 'OpenTelemetry', href: '/docs/otlp/', description: 'Send traces from OpenTelemetry instead of the SDK.' },
+    { title: 'Self-hosting', href: '/docs/self-hosting/', description: 'What runs, how to expose it and how to keep it healthy.' },
+    { title: 'Configuration', href: '/docs/configuration/', description: 'Email, sign in with GitHub or Google, backups and exports.' },
+  ]}
+/>

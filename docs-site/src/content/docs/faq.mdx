@@ -1,0 +1,89 @@
+---
+title: Frequently asked questions
+description: Short answers to common questions about Spanlight, such as whether there is a hosted version, which languages work, where data is stored, why a cost shows a dash and whether you can import from another tool, each with a link to the page that explains it.
+sidebar:
+  order: 4
+---
+
+{/* Sources: deploy/compose.yaml, deploy/.env.example, backend/app/jobs/tasks/retention.py, backend/app/db/models/projects.py, backend/app/ingest/normalize.py, backend/app/ingest/otlp.py, backend/app/pricing/cost.py, backend/app/datasets/importers.py, backend/app/evals/config.py, backend/app/gateway/call.py, sdks/python/src/spanlight/_config.py, sdks/python/src/spanlight/_exporter.py, sdks/python/src/spanlight/integrations/openai.py, sdks/python/src/spanlight/integrations/anthropic.py */}
+
+Each answer is short and links the page that holds the details.
+
+## Getting started
+
+### Is there a hosted version of Spanlight?
+
+No. Spanlight is open source and you run it yourself with Docker Compose or on Railway; see [Self-hosting](/docs/self-hosting/). The live demo at [https://spanlight.dev](https://spanlight.dev) shows the product with sample data, and you need nothing installed to try it. Your own server can also show [the live demo](/docs/demo/), a shared read-only workspace, once you turn the demo on.
+
+### Which languages work?
+
+The [Python SDK](/docs/python-sdk/) covers Python. From any other language you can send traces over [OTLP](/docs/otlp/), or point an OpenAI-style or Anthropic client at the gateway, as the JavaScript and cURL examples in [OpenAI](/docs/integrations/openai/#gateway) and [Anthropic](/docs/integrations/anthropic/#gateway) show. [Ways to send data](/docs/concepts/ingest-paths/) compares them.
+
+### Should I use port 8000 or 8080?
+
+Docker Compose serves Spanlight on `http://localhost:8080`, and the API you start with `uvicorn` for development listens on `http://localhost:8000`. The SDK defaults to port 8000, so with Compose set `SPANLIGHT_HOST` to the 8080 address; see [The SDK points at the wrong host](/docs/troubleshooting/#the-sdk-points-at-the-wrong-host).
+
+### Does the SDK slow my app down?
+
+Recording a span only adds it to an in-memory queue, and a background thread sends the queue in batches, so tracing never waits on the network. The flush at exit can wait up to the shutdown timeout (5 seconds by default), and fetching a prompt is a network call; see [The Python SDK](/docs/concepts/ingest-paths/#the-python-sdk) for the batch size, the queue bound and what happens when delivery fails. The gateway is different because it sits in the request path; see [The gateway](/docs/concepts/ingest-paths/#the-gateway).
+
+## Data and privacy
+
+### Where is my data stored, and for how long?
+
+Traces, spans and the job queue are in your own Postgres database, the only database Spanlight needs; see [Self-hosting](/docs/self-hosting/). Exports and backups go to an S3-compatible object store that you configure; see [Exports](/docs/guides/exports/) and [Backups](/docs/self-hosting/backups/). A project keeps its traces for 30 days by default, and you can set 1 to 90 days; see [Set the retention period](/docs/guides/privacy/#set-the-retention-period) and [Limits](/docs/reference/limits/#retention).
+
+### Can I stop prompts and completions from being stored?
+
+Yes. Turn off **Capture prompts & completions** in the project settings and spans are stored without their input and output. Known secret patterns are redacted before a span is stored, but that is a safety net, not a guarantee, so turning capture off is the sure way to keep a payload out; see [Privacy](/docs/guides/privacy/#turn-off-prompt-and-completion-capture).
+
+## Cost
+
+### Why does a cost show a dash?
+
+The cost is unknown, which is not the same as zero. A span is priced only when it has a model, both token counts and a matching price; see [When a cost is unknown](/docs/concepts/cost/#when-a-cost-is-unknown).
+
+### Is the cost the same as my provider invoice?
+
+No. It is an estimate from your own token counts and a dated price table that leaves out batch discounts, cache-write premiums and taxes; see [The price table is versioned](/docs/concepts/cost/#the-price-table-is-versioned). You can add your own rate for a model with a price override.
+
+## Integrations
+
+### Does it work with OpenInference?
+
+No. Spanlight reads the OpenTelemetry `gen_ai.*` attributes and does not read the OpenInference `llm.*` attributes. Those attributes are kept on the span but fill no field, so the span has no model, tokens or cost; see [What is not mapped](/docs/reference/otlp-mapping/#what-is-not-mapped).
+
+### Can I import data from Langfuse, LangSmith or Helicone?
+
+No. Spanlight has no importer for traces from those tools. To switch, send new traffic with the [Python SDK](/docs/python-sdk/), [OTLP](/docs/otlp/) or the [gateway](/docs/gateway/quickstart/); [Ways to send data](/docs/concepts/ingest-paths/) helps you choose.
+
+### Does it work with OpenAI and Anthropic?
+
+Yes. The Python SDK wraps both clients, and the gateway proxies both APIs; see [Integrations](/docs/integrations/).
+
+## Self-hosting
+
+### What does it need to run?
+
+Docker with the Compose plugin and three secrets in `deploy/.env`. There is no Redis or message broker, because Postgres also holds the job queue; see [Self-hosting](/docs/self-hosting/).
+
+### Why does no trace arrive?
+
+Check first that the SDK has the right host and an API key. [Troubleshooting](/docs/troubleshooting/#no-trace-arrives) lists the causes in the order to check them.
+
+## Evaluations
+
+### Can I fail a pull request when a prompt gets worse?
+
+Yes. The eval-gate GitHub Action runs a prompt over a dataset and fails the job when a mean score is below your threshold; see [Eval gate for CI](/docs/eval-gate/), the [GitHub Action](/docs/integrations/github-action/) and the [eval gate tutorial](/docs/tutorials/eval-gate/).
+
+### Do evaluations cost money?
+
+Rule-based evaluators cost nothing. An LLM judge spends provider money, capped by the judge's monthly budget, and every experiment run makes real provider calls under a cost cap; see [Evaluators](/docs/evaluators/) and [Experiments](/docs/experiments/).
+
+## Related pages
+
+- [Self-hosting](/docs/self-hosting/): run Spanlight with Docker Compose or on Railway.
+- [Tutorial: trace your first app](/docs/tutorials/first-trace/): send a trace and find it in the dashboard.
+- [Troubleshooting](/docs/troubleshooting/): fixes for traces that do not arrive and spans that are rejected.
+- [Glossary](/docs/glossary/): short definitions of the terms Spanlight uses.

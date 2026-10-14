@@ -1,0 +1,211 @@
+---
+title: Traces and sessions
+description: Find a trace with filters and search, read it as a span waterfall with its prompts and completions, export or collect traces in bulk, and follow a multi-turn conversation as a session.
+---
+
+{/* Sources: frontend/src/features/traces/traces-page.tsx, frontend/src/features/traces/traces-toolbar.tsx, frontend/src/features/traces/facet-chips.tsx, frontend/src/features/traces/add-filter-popover.tsx, frontend/src/features/traces/trace-search-input.tsx, frontend/src/features/traces/search.ts, frontend/src/features/traces/use-trace-filters.ts, frontend/src/features/traces/trace-queries.ts, frontend/src/features/traces/list-summary.ts, frontend/src/features/traces/traces-empty-state.tsx, frontend/src/features/traces/traces-table.tsx, frontend/src/features/traces/traces-table-columns.tsx, frontend/src/features/traces/traces-table-grid.ts, frontend/src/features/traces/trace-cells.tsx, frontend/src/features/traces/use-trace-selection.ts, frontend/src/features/traces/bulk-selection-bar.tsx, frontend/src/features/traces/export-trigger.tsx, frontend/src/features/traces/export-dialog.tsx, frontend/src/features/traces/export-format-picker.tsx, frontend/src/features/traces/export-summary.tsx, frontend/src/features/traces/use-export-draft.ts, frontend/src/features/traces/last-traces-search.ts, frontend/src/features/traces/trace-detail-page.tsx, frontend/src/features/traces/trace-header.tsx, frontend/src/features/traces/trace-actions.tsx, frontend/src/features/traces/trace-attribute-chips.tsx, frontend/src/features/traces/insight-badges.tsx, frontend/src/features/traces/span-waterfall.tsx, frontend/src/features/traces/span-kind-meta.ts, frontend/src/features/traces/span-usage-card.tsx, frontend/src/features/traces/span-detail-panel.tsx, frontend/src/features/traces/span-metadata.tsx, frontend/src/features/traces/prompt-version-ref.tsx, frontend/src/features/traces/payload-view.tsx, frontend/src/features/traces/payload-format.ts, frontend/src/features/traces/chat-messages.ts, frontend/src/features/traces/chat-message-list.tsx, frontend/src/features/traces/truncated-badge.tsx, frontend/src/features/scores/score-facet.tsx, frontend/src/features/prompts/usage-card.tsx, frontend/src/features/sessions/sessions-page.tsx, frontend/src/features/sessions/session-tile.tsx, frontend/src/features/sessions/session-queries.ts, frontend/src/features/sessions/session-detail-page.tsx, frontend/src/features/sessions/session-header.tsx, frontend/src/features/sessions/session-conversation.tsx, frontend/src/features/sessions/session-turn.tsx, frontend/src/features/sessions/conversation.ts, frontend/src/features/sessions/chat-bubble.tsx, frontend/src/features/sessions/session-summary.ts, frontend/src/features/sessions/session-summary-card.tsx, frontend/src/features/shell/topbar.tsx, frontend/src/features/shell/use-data-filters.ts, frontend/src/features/shell/time-range-picker.tsx, frontend/src/features/shell/environment-filter.tsx, frontend/src/features/shell/command-palette.tsx, frontend/src/features/shell/use-keyboard-shortcuts.ts, frontend/src/features/shell/nav-items.ts, frontend/src/lib/time-range.ts, frontend/src/lib/error-class.ts, backend/app/api/v1/traces.py, backend/app/core/permissions.py, docs/api-deviations.md, frontend/src/features/traces/export-queued.tsx, backend/app/exports/service.py, frontend/src/features/exports/export-filters.ts, frontend/src/features/settings/settings-nav-items.ts, frontend/src/components/cost-value.tsx, frontend/src/features/sessions/session-format.ts, frontend/src/features/traces/trace-tiles.tsx, frontend/src/app/router.tsx */}
+
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+
+<Prerequisites
+  items={[
+    'A project that has received at least one trace (see the Quickstart)',
+    'Any role in the project can read traces. Exporting, adding to a dataset and adding to a review queue need the member role or above.',
+  ]}
+/>
+
+The **Traces** page lists every trace your app sent. A trace is one run of your code, made of spans, and a **session** groups the traces of one conversation. This guide covers finding a trace, reading it, and following a conversation. The [data model](/docs/concepts/data-model/) explains what traces, spans and sessions are.
+
+## Set the time range and environment
+
+The controls sit at the top right of the page, or in a row above the page on a phone.
+
+- **Time range.** Pick **1h**, **24h**, **7d** or **30d**. The calendar button sets a custom range of up to 90 days, in your local time. The default is the last 24 hours.
+- **Environment.** Pick one environment, or **All environments**. The list holds the environments seen in the last 30 days.
+
+The Overview, Traces, Sessions and Releases pages show these controls and share their values. They are kept in the page address, so a link you copy opens on the same window. The window applies to when a trace started.
+
+The page header counts the traces in the window, for example "12,904 traces in the last 24 hours". Below the list, the footer says how many you have loaded.
+
+## Find a trace
+
+The list shows the newest traces first, 50 at a time. Choose **Load more** under the list to get the next 50.
+
+### Search
+
+The search box matches the trace name (any part, ignoring case) or a full trace ID. It applies about 0.3 seconds after you stop typing. Press **Enter** to apply it at once and **Esc** to clear it.
+
+To jump straight to one trace, paste its 32-character ID into the command palette instead (see below).
+
+### Filters
+
+Each filter is a pill above the list. Choosing a value adds it to the **Active filters** row, where **×** removes it and **Clear all** removes them all. Filters combine, and a trace has to match every one.
+
+| Filter | What it keeps |
+| --- | --- |
+| **Status** | Traces with no failed span (**OK**), or with at least one (**Error**). |
+| **Error class** | Traces with a failed span of this class: Authentication, Rate limited, Timed out, Context too long, Content filtered, Provider error, Network, Client error or Unknown. |
+| **Model** | Traces with a span that called this model. |
+| **Release** | Traces tagged with this release. |
+| **Tag** | Traces carrying this tag. |
+| **Score** | Traces whose latest score of a given name matches a condition. Pick the name, then at least, at most or equal to a value (or a category). |
+| **Has scores** | Traces that have any score. |
+| **Add filter** | Traces from one user ID or one session ID, matched exactly. |
+
+The model, release, tag and score-name lists come from the last 30 days, at most 100 values each. A list with no values is disabled, and a tooltip says so.
+
+Two filters have no pill. The **Environment** from the top bar appears as an `environment` chip in the active filters, and a **Prompt version** chip appears when you arrive from a prompt version's usage card, which links to the traces that used it.
+
+When nothing matches, the list says "No traces match these filters" and offers **Clear filters**. When the window is empty, it offers **Connect your app**.
+
+### Read a row
+
+On a wide screen each row shows these columns. As the card narrows, columns drop away: **Tokens** goes first, then **User / session**, then **Scores** and **Tags**. Status, name, started, duration, models and cost always stay. Phones show each trace as a tile.
+
+| Column | Shows |
+| --- | --- |
+| Status dot | Green for OK, red when a span failed. Hover or focus the red dot for the first error message. |
+| **Name** | The trace name in bold (or "Unnamed trace"), with the trace ID under it. A failed trace shows the error class and first error message instead of the ID. |
+| **Started** | How long ago the trace started. |
+| **Duration** | End to end. |
+| **Models** | The first model, with `+N` for more. "No LLM calls" if the trace made none. |
+| **Tokens** | Input then output tokens. |
+| **Cost** | The cost, or **—** if it is unknown. A warning mark means some spans had no price, so the total is a lower bound. |
+| **Scores** | The most recent score, with `+N` for more. |
+| **Tags** | The first two tags, with `+N` for more. |
+| **User / session** | The user ID and session ID, if the trace has them. |
+
+A **—** in the cost column is never a zero. See [how cost is calculated](/docs/concepts/cost/).
+
+Click a row to open the trace. When you come back with the **Traces** link, you return to the same filters and the row you opened is highlighted. Reloading the page starts from a clean list.
+
+## Select traces in bulk
+
+From the medium screen width up, each row has a checkbox, and the header checkbox selects every trace loaded. A bar appears at the bottom of the page with the count and these actions:
+
+- **Add to dataset** copies the selected traces into a dataset. See [datasets](/docs/datasets/).
+- **Add to queue** sends them to a review queue. See [scores and review queues](/docs/scores/).
+- **Clear** drops the selection.
+
+The two add buttons show only if your role allows them (member and above). The selection covers loaded rows only, and a trace that leaves the list when you change a filter is deselected.
+
+## Export traces
+
+**Export** at the top right of the page exports the traces that match the current time range and filters. It is disabled for viewers, with the reason in a tooltip.
+
+1. Choose a format. **JSONL** is one trace per line with its spans nested. **CSV** is one row per trace with no span payloads.
+2. Check **What's exported**: the time range, the filters and the row count. The count is shown only when no filter is on, because a filtered count would be wrong.
+3. Choose **Start export**.
+
+The file is built in the background. It appears under **Settings, Exports** and expires seven days later. A range longer than 90 days cannot be exported, and the dialog tells you to narrow it. The score filter, **Has scores** and the prompt version filter are not applied to exports yet, so the file can include traces those filters hide. The dialog warns you when that is the case.
+
+If the server has no object storage, **Start export** answers "Not available on this server". The [Exports guide](/docs/guides/exports/) has the limits and the API.
+
+## Open a trace
+
+The trace page has a header, a waterfall of spans on the left, and the selected span on the right. Below 1280 px wide the two columns stack.
+
+### The header
+
+- **Name and status.** The trace name, an OK or error badge, and one badge per open Doctor finding on this trace. A finding badge reads like "Critical · Retry storm" and opens the finding. Resolved and muted findings are not shown. See [the Doctor](/docs/doctor/).
+- **Add to dataset** and **Add to queue** act on the span selected in the waterfall. They appear only if your role allows them.
+- **Trace ID** with a copy button.
+- **Summary strip.** Started, Duration, Spans (with a count of failed ones), Tokens (input to output), Cost and Environment. A value the SDK did not send shows **—** with a tooltip.
+- **Chips** for Release, User, Session, Tags and the prompt versions used, left out when not sent. The user chip opens the traces list filtered to that user. The session chip opens the session. A prompt chip opens the prompt version. A version that was deleted since reads as unknown.
+
+### The span waterfall
+
+The **Spans** card shows the call tree. Each row has the span name, a bar placed on a shared time axis, and the duration.
+
+- Bar colour shows the span kind: LLM, Tool, Retrieval, Chain, HTTP or Other. A legend lists the kinds in this trace. Failed spans are red.
+- A lime marker on an LLM bar shows the time to first token, for streamed calls.
+- Click a row to select it. The chevron collapses a branch, and **Expand all** and **Collapse all** act on the whole tree.
+- The selected span is kept in the address as `span=`, so a link opens on the same span. With none chosen, the first root span is selected.
+- On a phone, the waterfall scrolls sideways.
+
+With the keyboard, use the arrow keys to move between rows, **Home** and **End** to jump to the first and last, **Right** to expand or step into a branch, and **Left** to collapse or step out to the parent.
+
+### The usage card
+
+Under the waterfall, **Usage** shows the selected span's model, provider, input, output and cached tokens, cost, time to first token and pricing version. A value the SDK did not report shows **—** with a tooltip that says why. A span that made no model call says so; select an LLM span to see its numbers.
+
+Below it, the **Scores** panel lists the trace's scores. See [scores](/docs/scores/).
+
+### The span panel
+
+The panel on the right has the span name with a copy button for its ID, then its kind, status, duration, model and prompt version. A failed span adds a red note with its error message. It has four tabs:
+
+- **Input / Output.** Chat payloads from OpenAI Chat Completions, the OpenAI Responses API, Anthropic Messages and OpenTelemetry GenAI messages show as a conversation. System messages are centred, user messages sit on the right, and assistant and tool messages on the left. Tool calls and results show their arguments and content as JSON, and an image shows as a short description. Text longer than 1,200 characters is clipped until you choose **Show all**. Any other payload shows as text or a JSON tree. Each side has a copy button.
+- **Metadata.** Start and end time, duration, span ID, parent span ID, prompt version, and the span's custom attributes as JSON.
+- **Raw JSON.** The whole span, with **Copy span JSON**.
+- **Scores.** The scores on this span.
+
+Two notes explain a missing or cut payload:
+
+- **No input captured** means the SDK did not send one, or payload capture is off in the project settings.
+- **Truncated** marks a payload over 32 KB that was cut at ingestion.
+
+## Follow a conversation in Sessions
+
+A **session** groups the traces that share a `session_id`. Set it with `update_trace(session_id="chat_123")` inside a trace. The [Python SDK](/docs/python-sdk/) page has the details.
+
+**Sessions** in the sidebar lists the sessions that had a trace in the time range, the most recently active first, 50 at a time. Both the time range and the environment filter apply. With an environment picked, a session appears only if it has a trace in that environment, and its tile counts only those traces: the trace count, cost, errors and times leave out the session's traces from other environments. With **All environments** picked, a session that spans environments shows all its traces. Each tile shows:
+
+- the session ID, which is the link;
+- the first to last time and the duration;
+- the number of traces;
+- the total cost, or **—** if no model in the session has a price;
+- an error count, or "No errors".
+
+### Open a session
+
+Click a tile, or the session chip on a trace. The page reads every trace of that ID from the last 90 days, whatever the time range and environment are, so it can show more turns than the tile you clicked.
+
+- **Header.** The session ID with a copy button, the user when every trace that names one agrees, and a line such as "12 turns · $0.214 · 1 error · Today 09:12 to 09:41 · 29m 33s".
+- **Conversation.** One turn per trace, oldest first. A turn shows its status, number, trace name and start time, then the user message on the right and the assistant reply on the left, then the model, latency, cost and **Open trace**. A failed turn shows a red bubble with the error message. Messages longer than 2,000 characters are clipped until you choose **Show full message**.
+- **Summary.** Total cost with the average per turn, counts of turns, errors and tokens, the time span, the models used with the number of turns for each, an input and output token bar, a timeline of when each turn started with failed turns marked, and the start time, last turn and user.
+
+The text of each turn comes from its spans. The user message is the last user message of the first LLM call. The assistant reply is the output of the last LLM call that produced one. If the trace has no chat-shaped LLM span, Spanlight falls back to plain-text input and output on the root span. When nothing was captured, the turn says so.
+
+Turns appear ten at a time, with a button such as **Show 10 more turns** for the rest (fewer on the last batch). A session of more than 100 traces loads the newest 100 first. Until you choose **Load earlier turns**, the turns are not numbered, the turn count in the header line gets a trailing **+** (for example "100 turns+"), and the summary covers the loaded turns only.
+
+## Move around with the keyboard
+
+Press **Ctrl+K** (**⌘K** on a Mac), or click the search pill at the top, to open the command palette. It lists pages with their shortcuts, **API keys**, **Members**, other projects to switch to, the light, dark and system themes, and **Sign out**. Paste a 32-character trace ID to get an **Open trace** entry.
+
+Outside a text field, press **G**, then a second key within one second, to go to a page.
+
+| Keys | Page | Keys | Page |
+| --- | --- | --- | --- |
+| **G O** | Overview | **G N** | Datasets |
+| **G T** | Traces | **G Q** | Review |
+| **G S** | Sessions | **G E** | Evaluators |
+| **G D** | Doctor | **G X** | Experiments |
+| **G R** | Releases | **G G** | Gateway |
+| **G U** | Users | **G A** | Alerts |
+| **G P** | Prompts | **G B** | Budgets |
+| **G L** | Playground | **G ,** | Settings |
+
+## Check it worked
+
+Open **Traces** after your app has sent a trace. The list has a row for it, with the trace name, a green status dot, its duration, models, tokens and cost. Select the row: the page shows the header with the trace ID and the span waterfall, and the span panel shows the Input / Output of the selected span.
+
+## Troubleshooting
+
+- **The list says "No traces in this range".** Nothing arrived in the time range or environment you chose. Widen the range or pick another environment. If your app sent traces, see [No trace arrives](/docs/troubleshooting/#no-trace-arrives).
+- **The list says "No traces match these filters".** A trace has to match every active filter. Select **Clear filters**.
+- **A trace page says "No spans in this trace".** The trace was created but none of its spans have arrived. Spans usually arrive within a few seconds. Reload the page.
+- **A trace page says "Trace not found".** The retention policy may have deleted it, or the ID is wrong.
+- **Sessions says "No sessions in this range" or "No sessions in this environment".** No trace in the range, or none from the environment you picked, carries a session ID. Widen the range or pick another environment. To group traces, set one with `update_trace(session_id="chat_123")` inside a trace. See [Python SDK](/docs/python-sdk/#trace-your-own-code).
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'The Overview dashboard', href: '/docs/guides/overview/', description: 'Spend, latency, errors and health for a time window.' },
+    { title: 'Scores and review queues', href: '/docs/scores/', description: 'Score traces, filter by score and review them in a queue.' },
+    { title: 'The Doctor', href: '/docs/doctor/', description: 'The findings behind the badges on a trace.' },
+    { title: 'Traces API', href: '/docs/api/traces/', description: 'List and read traces from your own code.' },
+  ]}
+/>

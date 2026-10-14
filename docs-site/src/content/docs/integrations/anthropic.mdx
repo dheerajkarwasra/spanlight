@@ -1,0 +1,260 @@
+---
+title: Anthropic
+description: Trace Anthropic Claude calls with the Spanlight Python SDK, or send them through the Spanlight gateway from Python, JavaScript or cURL. Shows what Spanlight records from each call and what it leaves out.
+---
+
+{/* Sources: backend/app/gateway/errors.py, sdks/python/src/spanlight/integrations/anthropic.py, sdks/python/src/spanlight/integrations/_common.py, backend/app/gateway/tracing.py, backend/app/gateway/usage.py, backend/app/gateway/adapters/anthropic.py, backend/app/gateway/execute.py, backend/app/ingest/normalize.py, backend/app/ingest/finish_reason.py, backend/app/pricing/prices.py, backend/tests/gateway/test_gateway_smoke.py, backend/app/gateway/adapters/base.py, backend/app/gateway/usage_chunk.py, backend/app/gateway/trace_headers.py, backend/app/gateway/response_summary.py, backend/app/gateway/context.py, backend/app/db/models/gateway.py, backend/app/pricing/cost.py, sdks/python/src/spanlight/_span.py, sdks/python/src/spanlight/_client.py */}
+
+import { TabItem, Tabs } from '@astrojs/starlight/components';
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+import Verified from '../../../components/Verified.astro';
+
+Spanlight can record every Anthropic call your application makes: the prompt, the answer, the tokens, the latency and the cost. There are three ways to do it. [Ways to send data](/docs/concepts/ingest-paths/) compares them in detail.
+
+| Way | Languages | What you change |
+| --- | --- | --- |
+| [Python SDK](#python-sdk) | Python | Wrap your `Anthropic` client with one line. |
+| [Gateway](#gateway) | Any | Point your Anthropic client at Spanlight with a new base URL and key. |
+| [OpenTelemetry](#opentelemetry) | Any | Export spans from your own instrumentation. |
+
+<Prerequisites
+  items={[
+    'A running Spanlight instance that your application can reach',
+    'An Anthropic API key',
+    'Python SDK: Python 3.10 or newer, and a project API key with the ingest:write scope (the default). Creating one needs the member, admin or owner role',
+    'Gateway: an organization owner has stored an Anthropic credential, and an owner or admin has created a route that uses it and a gateway key',
+    'JavaScript and TypeScript: Node.js 24 (the version this page was tested with)',
+  ]}
+/>
+
+<Verified
+  date="2026-10-13"
+  packages={[
+    { name: 'spanlight', version: '0.1.0' },
+    { name: 'anthropic', version: '1.9.0' },
+    { name: '@anthropic-ai/sdk', version: '0.129.0' },
+  ]}
+  note="Run with Python 3.13.9 and Node 24.11.1 against a local Spanlight server and a stand-in for the Anthropic API, not against Anthropic itself. The gateway cannot reach a stand-in for Anthropic, because an Anthropic credential always uses Anthropic's own address. The gateway calls were run up to the gateway, which refused them with NO_COMPATIBLE_TARGET because the test route had no Anthropic credential. A successful gateway call, its provider label and its cost are read from the gateway source, the price table and the gateway tests. OpenTelemetry was not run."
+/>
+
+## Python SDK
+
+The `wrap_anthropic` function instruments one `Anthropic` client in place. Every `messages.create` call and every `messages.stream` block made with it becomes an `llm` span. Your code, the answer and the exceptions you get from Anthropic do not change.
+
+Install the SDK with its Anthropic extra and the Anthropic package:
+
+```bash
+pip install "spanlight[anthropic]==0.1.0" "anthropic==1.9.0"
+```
+
+Give the SDK your Spanlight address and project API key, and Anthropic your Anthropic key:
+
+```bash
+export SPANLIGHT_HOST=http://localhost:8080
+export SPANLIGHT_API_KEY=spl_live_...
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+`SPANLIGHT_HOST` is the address of the Spanlight `web` service. It defaults to `http://localhost:8000`, which is right only when you run the API directly for development.
+
+### A normal call
+
+```python
+import spanlight
+from anthropic import Anthropic
+
+spanlight.init(environment="development")
+client = spanlight.wrap_anthropic(Anthropic())
+
+message = client.messages.create(
+    model="claude-haiku-4-5",
+    max_tokens=256,
+    messages=[{"role": "user", "content": "Say hello."}],
+)
+print(message.content[0].text)
+
+spanlight.flush()
+```
+
+The SDK queues spans and sends them from a background thread. `spanlight.flush()` waits until they are delivered. A long-running server does not need it. A short script does, or its last spans are lost.
+
+### A streamed call
+
+```python
+import spanlight
+from anthropic import Anthropic
+
+spanlight.init(environment="development")
+client = spanlight.wrap_anthropic(Anthropic())
+
+with client.messages.stream(
+    model="claude-haiku-4-5",
+    max_tokens=256,
+    messages=[{"role": "user", "content": "Say hello."}],
+) as stream:
+    for text in stream.text_stream:
+        print(text, end="")
+print()
+
+spanlight.flush()
+```
+
+You use the stream as before, including `text_stream` and `get_final_message()`. The wrapper observes each event as you read it. The span starts when you enter the `with` block and ends when you leave it. It also records the time to first token.
+
+Streaming with `messages.create(..., stream=True)` is traced the same way. Anthropic sends usage inside the stream events, so you need no extra option.
+
+## Gateway
+
+The gateway is an HTTP proxy that speaks the Anthropic Messages API. Your application keeps its Anthropic client and changes two things: the base URL, which becomes `<host>/gw`, and the API key, which becomes a Spanlight gateway key (`spl_gw_…`). The gateway forwards the call to Anthropic with the key you stored and records it as a trace. No Spanlight package is installed in your application.
+
+The base URL ends in `/gw`, not `/gw/v1`, because the Anthropic SDKs add `/v1/messages` themselves.
+
+Do the one-time setup first: store the Anthropic key as a credential, create a route that uses it and create a gateway key. [Gateway quickstart](/docs/gateway/quickstart/#1-set-up-a-credential-a-route-and-a-key) walks through it. A route must contain an Anthropic credential to serve messages calls.
+
+Give your application the address and the gateway key:
+
+```bash
+export SPANLIGHT_HOST=http://localhost:8080
+export SPANLIGHT_GATEWAY_KEY=spl_gw_...
+```
+
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+
+```bash
+pip install "anthropic==1.9.0"
+```
+
+```python
+import os
+
+from anthropic import Anthropic
+
+client = Anthropic(
+    base_url=f"{os.environ['SPANLIGHT_HOST']}/gw",
+    api_key=os.environ["SPANLIGHT_GATEWAY_KEY"],  # a gateway key, not an Anthropic key
+)
+
+message = client.messages.create(
+    model="claude-haiku-4-5",
+    max_tokens=256,
+    messages=[{"role": "user", "content": "Say hello."}],
+)
+print(message.content[0].text)
+```
+
+  </TabItem>
+  <TabItem label="JavaScript">
+
+```bash
+npm install @anthropic-ai/sdk@0.129.0
+```
+
+Save this as `gateway.mjs` and run `node gateway.mjs`:
+
+```js
+import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic({
+  baseURL: `${process.env.SPANLIGHT_HOST}/gw`,
+  apiKey: process.env.SPANLIGHT_GATEWAY_KEY, // a gateway key, not an Anthropic key
+});
+
+const message = await client.messages.create({
+  model: "claude-haiku-4-5",
+  max_tokens: 256,
+  messages: [{ role: "user", content: "Say hello." }],
+});
+const block = message.content[0];
+console.log(block.type === "text" ? block.text : "");
+```
+
+The same code runs as TypeScript: Node 24 runs `node gateway.ts` directly, and it type-checks with `strict` on. The check on `block.type` is what TypeScript needs, because the first content block is not always text.
+
+  </TabItem>
+  <TabItem label="cURL">
+
+```bash
+curl -sS "$SPANLIGHT_HOST/gw/v1/messages" \
+  -H "x-api-key: $SPANLIGHT_GATEWAY_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "claude-haiku-4-5", "max_tokens": 256, "messages": [{"role": "user", "content": "Say hello."}]}'
+```
+
+  </TabItem>
+</Tabs>
+
+Streaming needs no change: pass `stream: true` (or `stream=True` in Python) and read the stream as usual. The span is written when the stream ends.
+
+The gateway records the provider of the credential that answered, which for an Anthropic credential is `anthropic`. The cost comes from the [price table](/docs/reference/prices/), which includes `claude-haiku-4-5`. A model that is not in the table has no cost.
+
+To join a call to a trace, session or user you already track, send `x-spanlight-*` headers; see [Join a trace you already started](/docs/gateway/quickstart/#join-a-trace-you-already-started).
+
+## OpenTelemetry
+
+If your application already uses OpenTelemetry instrumentation for Anthropic, you can send its spans to Spanlight over OTLP/HTTP instead. Spanlight reads the `gen_ai.*` attributes. See [OTLP ingestion](/docs/otlp/) for the endpoint and the exporter settings, and [OTLP attribute mapping](/docs/reference/otlp-mapping/) for which attribute fills which field.
+
+## Check it worked
+
+Open **Traces** in the dashboard and pick the project that owns your key.
+
+* With the Python SDK you see a trace named `chat claude-haiku-4-5` that holds one `llm` span of the same name.
+* Through the gateway you see a trace with one `llm` span named `messages claude-haiku-4-5`.
+
+Open the span. It shows the messages you sent, the answer, the token counts and the cost.
+
+## What is recorded
+
+Each call is one `llm` span. Where a column says "empty", Spanlight stores nothing and the dashboard shows "—".
+
+| Field | Python SDK | Gateway |
+| --- | --- | --- |
+| Span name | `chat <model>` | `messages <model>` |
+| Trace name | The name of the root span, for example `chat claude-haiku-4-5` | Empty. The gateway does not name traces |
+| Provider | `anthropic` | The provider of the credential that answered: `anthropic` |
+| Model | The model Anthropic reports in its answer. If the answer has none, the model you asked for | The same |
+| Input | The request parameters as JSON: `model`, `max_tokens`, `messages`, `system`, `stream` and any others you pass | The request body as you sent it |
+| Output | The assistant message: its list of content blocks | The assistant message |
+| Input tokens | Uncached input plus cache reads plus cache writes | The same. On a [response cache](/docs/gateway/cache/) hit the tokens are recorded as 0, because nothing was billed |
+| Output tokens | From Anthropic's usage | The same |
+| Cached tokens | Cache reads, when Anthropic reports them | The same. On a [response cache](/docs/gateway/cache/) hit it is recorded as 0 |
+| Cost | From the price table and your [price overrides](/docs/concepts/cost/#price-overrides), empty for a model with neither | The same |
+| Finish reason | `stop`, `length`, `tool_calls`, `content_filter` or `other`. Anthropic's `end_turn` is stored as `stop` | The same |
+| Time to first token | For streamed calls | For streamed calls |
+| Status | `ok`, or `error` with the exception type (`error.type`), plus `http.status_code` and `provider.request_id` when the exception carries them | `ok`, or `error` with a status message |
+| Environment | The `environment` you pass to `spanlight.init` | The environment of the gateway key |
+| User and session | Set with `spanlight.update_trace` | Set with the `x-spanlight-user` and `x-spanlight-session` headers |
+
+Spanlight counts input tokens the same way for every provider: `input_tokens` includes cached tokens. Anthropic reports uncached input, cache reads and cache writes apart, so Spanlight adds them up. The raw number of cache writes is kept in the attribute `usage.cache_creation_input_tokens`.
+
+The SDK and the gateway also store attributes. The SDK adds `response.id`, `response.stop_reason` (Anthropic's own value, such as `end_turn`) and `finish_reason`. A streamed call adds `request.stream`. The gateway adds `spanlight.gateway.*` attributes (the key, route, target, attempts, overhead and upstream status) and `spanlight.cache`. [Gateway quickstart](/docs/gateway/quickstart/#check-it-worked) lists them. [How cost is calculated](/docs/concepts/cost/) explains when a cost is unknown.
+
+## What is not recorded
+
+* **Your keys and headers.** The wrapper never records `api_key`, `extra_headers`, `extra_query`, `extra_body`, `timeout` or `http_client`. The gateway does not forward your gateway key, cookies or any header outside a short allowlist to Anthropic.
+* **Prompts and completions, when the project turns capture off.** Spanlight then keeps the model, tokens, cost and timing and drops the text. See [Privacy](/docs/guides/privacy/#turn-off-prompt-and-completion-capture). The server also redacts common secret patterns from payloads and truncates very large ones.
+* **Output of a call that fails before an answer arrives.** The span has the error and the request, and no output. A stream that fails midway keeps the part of the answer that arrived, and is marked `error`.
+* **Calls the wrapper does not see.** It instruments the client you wrap and the methods `messages.create` and `messages.stream`. Other endpoints, such as token counting or batches, are not traced. A call made through `with_raw_response` or `with_streaming_response` is passed through untraced.
+* **A stream you abandon.** The span of a `messages.create(..., stream=True)` stream ends when you read it to the end or close it. If you drop it without either, its span is never sent.
+* **Anything that bypasses the gateway.** Calls that do not use the gateway base URL do not appear.
+
+## Troubleshooting
+
+* **No trace arrives.** Work through [No trace arrives](/docs/troubleshooting/#no-trace-arrives). Two causes are common with the SDK. If `SPANLIGHT_API_KEY` is missing, the SDK logs `Spanlight: no API key configured` once, and your Anthropic call still works and returns its answer; see [The SDK has no API key](/docs/troubleshooting/#the-sdk-has-no-api-key-or-is-switched-off). If a script ends right after the call, the last spans are lost unless you call `spanlight.flush()`; see [A short script exits before the spans are sent](/docs/troubleshooting/#a-short-script-exits-before-the-spans-are-sent).
+* **The gateway answers `400 NO_COMPATIBLE_TARGET`** with the message "Route '…' has no target that serves messages." The route has no Anthropic credential. The gateway does not translate between providers, so an OpenAI or OpenAI-compatible credential cannot serve a messages call. Add an Anthropic credential to the route. The error comes back in Anthropic's error format, so the SDK raises its normal `BadRequestError`. [Gateway error responses](/docs/gateway/errors/) lists every code.
+* **The gateway answers `401 UNAUTHORIZED`.** The key is missing, unknown or revoked, or you sent an Anthropic key or a project API key instead of a gateway key. Use the `spl_gw_…` key. If you send both `Authorization` and `x-api-key`, they must carry the same key. [Gateway error responses](/docs/gateway/errors/) lists every code.
+* **The gateway cost is empty.** The model has no price, and you have not set a price override. Check the model on the span, then see [When a cost is unknown](/docs/concepts/cost/#when-a-cost-is-unknown).
+* **The trace has no prompt or answer.** The project has prompt and completion capture turned off. [Privacy](/docs/guides/privacy/#turn-off-prompt-and-completion-capture) shows where.
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Python SDK', href: '/docs/python-sdk/', description: 'Trace your own functions and set sessions and users.' },
+    { title: 'Gateway quickstart', href: '/docs/gateway/quickstart/', description: 'Credentials, routes, retries and the trace headers.' },
+    { title: 'How cost is calculated', href: '/docs/concepts/cost/', description: 'The price table and when a cost is unknown.' },
+    { title: 'Troubleshooting', href: '/docs/troubleshooting/', description: 'Find out why no trace arrived.' },
+  ]}
+/>

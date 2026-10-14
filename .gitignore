@@ -57,6 +57,7 @@ docs-site/src/content/docs/deploy/
 docs-site/src/content/docs/runbooks/
 docs-site/src/content/docs/security/
 docs-site/src/content/docs/changelog.md
+docs-site/src/content/docs/reference/prices.md
 
 # archify skill output (generated diagrams; keep the ones worth it under docs/design/diagrams)
 .archify/

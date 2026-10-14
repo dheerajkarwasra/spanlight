@@ -1,0 +1,97 @@
+---
+title: Ways to send data
+description: Compare the three ways traces reach Spanlight, the Python SDK, OTLP and the gateway. What each captures, where it sits in your request path, and what happens when something fails.
+sidebar:
+  order: 2
+---
+
+{/* Sources: sdks/python/src/spanlight/_exporter.py, sdks/python/src/spanlight/_client.py, sdks/python/src/spanlight/_config.py, sdks/python/src/spanlight/integrations/openai.py, sdks/python/src/spanlight/integrations/anthropic.py, backend/app/api/ingest.py, backend/app/ingest/otlp.py, backend/app/gateway/execute.py, backend/app/gateway/recorder.py, backend/app/gateway/tracing.py, backend/app/gateway/trace_headers.py, backend/app/config.py */}
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Spanlight can learn about your model calls in three ways. They end in the same place, one [ingestion pipeline](/docs/concepts/ingestion/), but they differ in where they sit, what they can see and how they fail. This page helps you choose.
+
+## The idea
+
+- The **Python SDK** lives inside your process and reports what your code does.
+- **OTLP** is the open OpenTelemetry protocol. Any exporter that speaks it can report, in any language.
+- The **gateway** sits between your application and the model provider and reports every call that passes through it.
+
+You can use more than one. The gateway and the SDK can join the same trace, and an OpenTelemetry setup can run beside the gateway.
+
+## How it works
+
+### The Python SDK
+
+The SDK is a library you initialize once with `spanlight.init()`. It records spans in memory and a background thread sends them to `POST /v1/traces`.
+
+**What it captures.** It sees your own code as well as the model calls. `@spanlight.observe` and `spanlight.span()` create spans for functions and steps of your choice, and `wrap_openai` and `wrap_anthropic` turn each call of a client into an LLM span with the model, token usage, time to first token for streams, the request parameters and the response. It records errors and re-raises them unchanged. It also sets trace fields (environment, release, user, session, tags), links a call to the prompt version it used, and sends scores.
+
+**Where it sits.** Inside your process, off the hot path. Recording a span only appends to an in-memory queue under a lock. All network work happens on a daemon thread. A batch goes out when it reaches 100 spans or after 2 seconds, whichever comes first, and the SDK flushes what is left when the process exits, waiting at most 5 seconds.
+
+**When it fails.**
+
+- The SDK never raises into your code, and a provider exception reaches you unchanged.
+- Without an API key it logs a warning and turns itself off.
+- If the server cannot be reached, or answers `429` or `5xx`, a batch is retried up to 5 times with growing, jittered waits, and `Retry-After` is honoured. After that the batch is dropped and counted.
+- Other `4xx` answers are not retried. They are logged to the `spanlight` logger.
+- The queue holds at most 10,000 spans. When it is full the oldest are dropped, because recent data is usually more useful.
+- A killed process loses what is still queued.
+
+All of these numbers are defaults that you can change in `init`.
+
+### OTLP
+
+OTLP lets an exporter you already run send spans to `POST /v1/otlp/traces`, as JSON or protobuf, with a project API key.
+
+**What it captures.** Whatever your instrumentation emits. Spanlight reads the OpenTelemetry GenAI attributes (`gen_ai.*`): a span with any of them becomes an `llm` span, and its model, provider, token counts and, when present, prompt and completion content are mapped to the same fields the SDK fills. The response model is preferred over the request model because it is the snapshot that was billed. A span without `gen_ai.*` attributes is kept too, as `http`, `retrieval` or `other`. Resource attributes become the trace's environment (`deployment.environment.name`) and release (`service.version`). See [OTLP ingestion](/docs/otlp/) for the full mapping.
+
+**Where it sits.** Wherever your exporter does. Batching, timeouts and retries are the exporter's own settings, not Spanlight's.
+
+**When it fails.** The endpoint answers `200` with a `partialSuccess` count when it rejected some spans. A failed request is handled by your exporter's retry policy. The spans are the exporter's to resend, and re-sending is safe.
+
+Things to know: the endpoint takes traces only, so scores go through the SDK or the API. Report input tokens as the whole prompt, cached tokens included. The server works out the request hash from the span's input, so the Doctor's client-behaviour findings need your instrumentation to emit the prompt content.
+
+### The gateway
+
+The gateway is an HTTP proxy for OpenAI-style and Anthropic APIs. You change your client's base URL to the gateway and use a gateway key. The gateway forwards the call with a provider credential stored in Spanlight and sends the provider's answer back, streams included.
+
+**What it captures.** Every call that passes through, with no instrumentation in your code, and including the calls your own code would not see: each attempt, retry and fallback, cache hits, calls blocked by a budget and faults injected by the [Integration Lab](/docs/gateway/lab/). A call becomes exactly one `llm` span with the usual fields plus `spanlight.gateway.*` attributes that record the route, the target that answered, the number of attempts, the last provider status and the time spent in Spanlight (`overhead_ms`). It sees only model calls. Your own functions, tools and retrieval steps are not visible to it, unless you send the trace headers to join the call to a trace you started with the SDK.
+
+**Where it sits.** In the request path, between your application and the provider. That is its power and its cost: it can retry, fall back to another provider, cache and enforce budgets, and it adds a hop. Each span records how much time that hop took, and the Gateway overview shows the 95th percentile.
+
+**When it fails.**
+
+- If the gateway is unreachable, so is the provider for any client that uses it. Plan for that the way you plan for any dependency in the request path.
+- The span is written after your answer has been sent, in the background, so a slow or failing database does not slow or fail your call.
+- A write that fails for a reason that may pass is retried up to three times, after 0.1, 0.5 and 2 seconds. A span that still cannot be stored is lost, counted in a metric and in `gateway_spans_lost` on `/health/ready`, and never raised to the caller.
+- Writes are bounded. At most 16 run at once and 5,000 may wait, by default. Past that, spans are dropped and counted, and your call is unaffected.
+
+### Side by side
+
+| | Python SDK | OTLP | Gateway |
+| --- | --- | --- | --- |
+| Change to your code | Initialize, wrap the client, optionally decorate functions | Configure an exporter | Change the base URL and the key |
+| Languages | Python | Any with OpenTelemetry | Any HTTP client |
+| Sees your own code | Yes | Yes, if instrumented | No |
+| Sees retries and fallbacks | Only what the provider SDK shows | Only what the instrumentation shows | Yes, every attempt |
+| In your request path | No | No | Yes |
+| Can change behaviour (retry, cache, block) | No | No | Yes |
+| If it fails | Spans are dropped, your code is unaffected | Your exporter's policy | Calls fail if the gateway is down; span loss never affects the answer |
+
+## What it means for you
+
+- Start with the SDK if you use Python and want to see inside your own code.
+- Use OTLP when your application is not in Python, or you already collect OpenTelemetry data.
+- Use the gateway when you want routing, fallbacks, caching, budgets or a Lab, or when you cannot change application code. Pair it with the SDK to see the whole trace.
+- All three produce the same spans, so dashboards, cost and the Doctor work the same way whichever you pick.
+- Remember the key types. The SDK and OTLP use a project API key (`spl_live_…`) and the gateway uses a gateway key (`spl_gw_…`). A gateway key cannot send traces to `/v1/traces`.
+
+## Related pages
+
+<CardGrid>
+  <LinkCard title="Python SDK" href="/docs/python-sdk/" description="Install, configure and trace your code." />
+  <LinkCard title="OTLP ingestion" href="/docs/otlp/" description="Endpoints, attribute mapping and examples." />
+  <LinkCard title="Gateway quickstart" href="/docs/gateway/quickstart/" description="Point your client at the gateway and see the trace." />
+  <LinkCard title="How ingestion works" href="/docs/concepts/ingestion/" description="What every route has in common once data arrives." />
+</CardGrid>

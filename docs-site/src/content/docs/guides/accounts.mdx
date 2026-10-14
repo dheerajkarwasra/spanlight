@@ -1,0 +1,235 @@
+---
+title: Accounts and sign-in
+description: Verify your email, reset a password, sign in with GitHub or Google, turn on two-factor authentication and manage your sessions.
+sidebar:
+  order: 1
+---
+
+{/* Sources: frontend/src/features/shell/project-switcher.tsx, frontend/src/features/onboarding/onboarding-page.tsx, frontend/src/features/onboarding/steps.ts, frontend/src/features/onboarding/org-step.tsx, frontend/src/features/onboarding/project-step.tsx, frontend/src/features/onboarding/connect-step.tsx, frontend/src/features/onboarding/name-form.tsx, frontend/src/lib/permissions.ts, backend/app/api/v1/orgs.py, backend/app/api/v1/projects.py, frontend/src/features/settings/settings-nav-items.ts, frontend/src/features/settings/settings-nav-groups.tsx, frontend/src/features/settings/account-page.tsx, frontend/src/features/settings/profile-section.tsx, frontend/src/features/settings/sign-out-section.tsx, frontend/src/features/settings/members-page.tsx, frontend/src/features/settings/member-list.tsx, frontend/src/features/settings/member-utils.ts, frontend/src/features/settings/member-queries.ts, frontend/src/features/settings/invite-section.tsx, frontend/src/features/settings/pending-invites-section.tsx, frontend/src/features/settings/project-settings-form.tsx, frontend/src/features/settings/organization/organization-page.tsx, frontend/src/features/settings/security/account-security-page.tsx, frontend/src/features/settings/tokens/tokens-page.tsx, frontend/src/features/settings/api-keys-page.tsx, frontend/src/features/settings/exports-page.tsx, frontend/src/features/settings/audit-log-page.tsx, frontend/src/lib/permissions.ts, backend/app/api/v1/orgs.py, backend/app/api/v1/auth.py, backend/app/api/v1/totp.py, backend/app/auth/password_reset.py, backend/app/auth/login_throttle.py, backend/app/core/permissions.py, frontend/src/features/settings/security/two-factor-card.tsx, frontend/src/features/settings/security/two-factor-required-notice.tsx, frontend/src/features/auth/login-flow.ts, frontend/src/features/auth/login-form.tsx, frontend/src/features/auth/two-factor-flow.ts, frontend/src/features/auth/reset-link-invalid.tsx */}
+
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+
+This page is the task-oriented view of how people sign in to Spanlight. The exact request and response of every route is in the [API conventions](/docs/api/conventions/) and the [Auth reference](/docs/api/auth/); the variables that switch each feature on are in [Configuration](/docs/configuration/).
+
+Some of these features need the operator to configure something first. When one is missing, the dashboard hides it, or the API refuses: `409 NOT_CONFIGURED` naming the setting, or `404` for a sign-in provider that is not configured.
+
+| Feature | Needs |
+| --- | --- |
+| Verification and reset emails, invitation emails | `EMAIL_PROVIDER` set up (`resend` or `smtp`) |
+| Sign in with GitHub or Google | The client ID and secret of that provider |
+| Two-factor authentication | `CREDENTIALS_KEYS` |
+
+<Prerequisites
+  items={[
+    'A Spanlight account',
+    'Set by the operator: EMAIL_PROVIDER for verification, reset and invitation emails; the client ID and secret of GitHub or Google for those sign-ins; CREDENTIALS_KEYS for two-factor authentication',
+    'The admin or owner role in the organization, to invite people. Requiring two-factor authentication needs the owner role',
+    'Shell access to the host, for the command-line steps',
+  ]}
+/>
+
+## Email verification
+
+Verification is soft. A new account works straight away, and Spanlight emails a link when email is configured. The link opens `/verify-email` and is valid for 24 hours. The token travels in the URL fragment, so it never reaches a server log.
+
+While an address is unverified, two actions are refused with `409 EMAIL_UNVERIFIED`: turning on two-factor authentication and linking a GitHub or Google account. The reason is recovery. Anyone can register an address that is not theirs, and a second factor or a provider attached to that account would outlast the real owner taking it back.
+
+You can ask for a new link from the banner the dashboard shows, up to three times an hour. When the operator has not configured email, nobody can verify an address, and these two restrictions do not apply.
+
+## Forgot your password
+
+Choose **Forgot password?** on the sign-in page and enter your address. The answer is the same whether or not an account exists, so the form cannot be used to find out who has one. If the account exists, an email arrives with a link that is valid for one hour and works once. Asking again retires the earlier link.
+
+Setting a new password:
+
+- ends every session of the account, on every device;
+- marks the address as verified, because the link reached the inbox;
+- does not sign you in. You sign in afterwards with the new password.
+
+If the address had never been verified, the reset also removes any GitHub or Google account linked to it, because that link was made while the address was unproven. You can link them again afterwards.
+
+Limits: three requests per email address and ten per client address in 15 minutes. If email is not configured, the operator resets passwords from the command line with `spanlight reset-password`; see [Self-hosting](/docs/self-hosting/).
+
+## Sign in with GitHub or Google
+
+Providers the operator configured appear as buttons on the sign-in page. The operator registers `<APP_BASE_URL>/api/v1/auth/oauth/<provider>/callback` as the callback URL with the provider.
+
+How a sign-in is resolved:
+
+1. If you have signed in with this provider account before, you are signed in.
+2. Otherwise, if an account with the same email exists, the provider account is linked to it, but only when the provider says the address is verified and your Spanlight address is verified too. Without email nobody can verify an address, so on such an instance a provider cannot match an existing account by email.
+3. Otherwise a new account is created, but only when the provider says the address is verified. An unverified address creates nothing.
+
+A person who signed up through a provider has no password. When email is configured they can set one with the forgot password flow; otherwise the operator sets it with `spanlight reset-password`.
+
+To link or unlink a provider for the account you already have, open **Settings, Personal, Security**. You cannot remove your last way of signing in. The shared demo account cannot link a provider.
+
+## Two-factor authentication
+
+Spanlight supports authenticator apps (time-based codes, six digits, 30 seconds) with ten one-time recovery codes.
+
+To turn it on, open **Settings, Personal, Security**, scan the QR code (or type the secret), and enter the first code. Spanlight then shows the recovery codes **once**. Save them somewhere safe. Each works one time, and turning two-factor authentication off, then on again, creates a new set.
+
+After that, a password sign-in asks for a code on a second step, and so does a GitHub or Google sign-in. A code is accepted once, so a code that was seen cannot be replayed. Wrong codes count towards the same sign-in limit as wrong passwords: after five failures for an address (or 20 for a client address) in 15 minutes, the next attempt waits. Turning two-factor authentication off allows five attempts per 15 minutes. Signing up is limited to ten attempts per client address an hour.
+
+Turning it off also needs a current code or a recovery code. If you lose both the app and the recovery codes, the operator can clear your second factor from the host with `spanlight reset-2fa --email <address>`. The command is written to the audit log.
+
+### Requiring it for an organization
+
+An organization owner can require two-factor authentication for all members in **Settings, Organization**. The owner must have it turned on first. From then on, a member without it gets `403 TWO_FACTOR_REQUIRED` for everything in that organization, and the dashboard sends them to **Security** to enrol. Ingestion with an API key is not affected, because a key is not a person signing in.
+
+## Sessions
+
+Signing in creates a server-side session in an httpOnly cookie. It lasts seven days from the last use and never more than 30 days in total. **Settings, Personal, Security** lists your sessions with the browser, the address and when each was last used. You can end any one of them, or choose **Sign out of all other sessions** (shown when there is another session). The session you are using keeps working.
+
+## Create a user from the command line
+
+An operator can create an account without email or the sign-up page, and add it to an organization. Run the command inside the `api` container:
+
+```bash
+docker compose -f deploy/compose.yaml --env-file deploy/.env exec api \
+  spanlight create-user --email ada@example.com --name "Ada Lovelace" --org acme --role member
+```
+
+The command asks for a password twice, hidden, and requires at least ten characters. On success it prints the new user's id and address:
+
+```text
+Created user <user id> <ada@example.com>
+```
+
+`--org` is the slug of an existing organization and `--role` is `owner`, `admin`, `member` or `viewer` (`member` by default). Without `--org` the account is created with no organization. A slug that does not exist, or an address that already has an account, is refused and nothing is created. The address starts unverified, and adding a person to an organization this way is recorded in the audit log. `spanlight create-user --help` lists the options.
+
+## Joining an organization
+
+An owner or admin invites someone from **Settings, Organization, Members**. Under **Invite people**, choose a role and select **Create invite link**. The dashboard shows the link with a **Copy** button and the note that anyone with the link can join in that role and that it works once. It expires after seven days. Whoever opens the link while signed in can accept it, so treat it like a password until it is used.
+
+The dashboard creates a link and does not mail it. To have Spanlight mail the invitation, create it through the API with an email address, as shown below. Mailed invitations are limited to 20 per organization per hour.
+
+### Invite through the API
+
+Admins and owners can create an invitation without the dashboard, with a [personal access token](/docs/guides/access/) that has the write scope. Only an owner can invite someone as an owner.
+
+```bash
+curl -sS -X POST "$SPANLIGHT_HOST/api/v1/orgs/$ORG/invites" \
+  -H "Authorization: Bearer $SPANLIGHT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"role": "member", "email": "ada@example.com"}'
+```
+
+The answer is `201`. `email` is optional: when it is set and email is configured, Spanlight mails the link, and without it you share the `url` yourself. The link is valid for seven days, and the response is marked `Cache-Control: no-store` because the link carries the invitation token.
+
+```json
+{
+  "id": "<invite id>",
+  "role": "member",
+  "email": "ada@example.com",
+  "url": "https://spanlight.example.com/invite/<token>",
+  "expires_at": "2026-10-20T09:30:00Z"
+}
+```
+
+## Managing members
+
+Members are managed on **Settings, Organization, Members**. Every role can open the page and see who is in the organization, their role and the date they joined. Only admins and owners can change anything. Everyone else sees the note "Only admins and owners can invite people or change roles." Roles apply to every project in the organization. The [Roles and permissions](/docs/reference/roles/) reference has the full matrix and the rule for who can assign which role.
+
+### Change a member's role
+
+In the person's row, open the role menu and choose **Owner**, **Admin**, **Member** or **Viewer**. The change applies at once, with no confirmation, and a message names the person and the new role, for example "Ada Lovelace is now admin."
+
+- You cannot change your own role. The menu is disabled and says to ask another admin or owner.
+- Only an owner can grant the owner role or change an owner's role. The menu lists all four roles for an admin as well, but the server refuses the change with `403 FORBIDDEN`.
+- The organization must keep one owner. See [The last owner](#the-last-owner).
+
+### Remove a member
+
+Select **Remove** in the person's row, then **Remove member** in the dialog. The person loses access to every project in the organization immediately. API keys they created keep working until you revoke them, so check [API keys, tokens and administration](/docs/guides/access/) as well.
+
+- You cannot remove yourself from this list. The button is disabled. See [Leave an organization](#leave-an-organization).
+- Only an owner can remove an owner. An admin who tries gets `403 FORBIDDEN`.
+
+### Revoke a pending invite
+
+**Pending invites** lists the links that have not been used or expired. Each row shows the role, when the link expires and when it was created. Select **Revoke**, then **Revoke invite**. Anyone who holds the link can no longer join with it, and you can create a new link at any time. Only admins and owners see this list.
+
+### Leave an organization
+
+The dashboard has no button for leaving. A member who is not an admin or owner sees no controls on the Members page, and admins and owners cannot remove themselves there. You have two options:
+
+- Ask another admin or owner to remove you from the member list.
+- Remove yourself through the API. Any member of an organization can delete their own membership with a [personal access token](/docs/guides/access/) that has the write scope. Your user id is in the answer of `GET /api/v1/auth/me`.
+
+```bash
+curl -sS -X DELETE "$SPANLIGHT_HOST/api/v1/orgs/$ORG/members/$USER_ID" \
+  -H "Authorization: Bearer $SPANLIGHT_TOKEN"
+```
+
+The answer is `204` with no body. The removal is written to the audit log.
+
+### The last owner
+
+An organization must keep at least one owner. A request that would demote or remove the only owner, including an owner who leaves, is refused with `409 LAST_OWNER`. The dashboard shows "An organization needs at least one owner. Promote someone else first." Make another person an owner first, then change your own role or leave.
+
+## Create another organization or project
+
+You do this from the project switcher: the tile at the top of the sidebar, which shows the word "Project" and the name of the current project. On a narrow screen it is in the app bar. Its accessible name starts with "Project" and ends with "Switch project or organization".
+
+The menu has two lists:
+
+- **Projects in** the current organization. Choose a project to open its Overview. **New project** opens the setup page for this organization.
+- **Organizations**, with the ones you belong to. Choose one to switch to it, which opens its first project. An organization with no project opens the setup page instead. **New organization** opens the setup page from the start.
+
+The setup page has three steps: **Organization**, **Project** and **Connect**.
+
+1. **Organization.** The page reads "Create your organization". Enter an **Organization name** (up to 100 characters) and choose **Continue**. A toast reads "Created" followed by the name. You become the organization's owner, and the page moves to the Project step. Below the form, "Or add a project to an existing organization" lists the organizations you belong to, each with your role.
+2. **Project.** The page reads "Name your first project", even when the organization already has projects. Enter a **Project name** (it starts as "My app") and choose **Create project**. A toast reads "Created" followed by the name. Only owners and admins can create projects. With another role the page shows "Only owners and admins can create projects in" followed by the organization name, and suggests asking one of them or creating your own organization.
+3. **Connect.** The page shows an **API key** card and code snippets, and waits for the first trace. When it arrives, the page reads "You’re connected." The steps from there are in the [first-trace tutorial](/docs/tutorials/first-trace/).
+
+An empty name is refused with "Enter an organization name." or "Enter a project name." A name longer than 100 characters is refused with "Use 100 characters or fewer." Spanlight derives a slug from the name for the organization or project, and adds a random suffix when that slug is taken.
+
+## Your profile and the Settings pages
+
+**Settings, Personal, Account** shows your name (or "No name set"), your email address and "Member since" with the date your account was created, and a **Sign out** button that ends the session on this device. These details are read-only. Spanlight has no screen or API route for changing your name or email address.
+
+Settings has three groups in its navigation. The labels below are the ones in the dashboard.
+
+| Group | Page | What it holds |
+| --- | --- | --- |
+| Project | Project | The project's name, retention period, email and notification settings, score configs, and deleting the project |
+| Project | API keys | Keys that let an application send traces to the project or read them |
+| Project | Exports | Trace exports for the project, newest first |
+| Organization | Organization | The organization's name, the two-factor requirement and deleting the organization |
+| Organization | Members | People, roles and invitations, as described above |
+| Organization | Audit log | Security-relevant changes in the organization. Shown to admins and owners only |
+| Personal | Account | Your profile and **Sign out** |
+| Personal | Security | Two-factor authentication, the ways you sign in, and your sessions |
+| Personal | Tokens | Your personal access tokens |
+
+Every role sees every page except **Audit log**. What a role can change on a page follows [Roles and permissions](/docs/reference/roles/).
+
+## Check it worked
+
+- **Two-factor authentication.** Open **Settings, Personal, Security**. The **Two-factor authentication** card shows the badge **On**. Sign out and sign in again: after the password, a second step asks for a code.
+- **An invitation.** After the person opens the link and accepts, they appear under **Settings, Organization, Members** with the role you chose, and the link leaves **Pending invites**.
+
+## Troubleshooting
+
+- **Turn on is disabled, with "Verify your email address first."** The address is unverified, so the API refuses two-factor authentication and linking a provider with `409 EMAIL_UNVERIFIED`. Use the link from the verification email; see [Email verification](#email-verification).
+- **"This link is invalid or has expired. Request a new one."** A password reset link is valid for one hour and works once. Choose **Request a new link**.
+- **"Too many sign-in attempts. Wait 15 minutes and try again." or "Too many attempts. Wait 15 minutes, then try again."** The sign-in limit counts wrong passwords and wrong codes together; see [Two-factor authentication](#two-factor-authentication).
+- **"That code didn't work. Check your device's clock and try again."** The authenticator's clock is off, or the code was used already. Wait for the next code, or use a recovery code.
+- **A GitHub or Google sign-in shows "An account with this email already exists. Sign in with your password, then connect … in Settings › Security.", or "Your … email isn't verified."** See [Sign in with GitHub or Google](#sign-in-with-github-or-google) for how the match is resolved.
+- **A button or feature is missing, or the API answers `409 NOT_CONFIGURED`.** The operator has not set up what the feature needs; see the table at the top of this page.
+- **A notice reads "… requires two-factor authentication. Turn it on in Settings › Security to continue."** The organization owner required it (`403 TWO_FACTOR_REQUIRED`). Turn it on to continue.
+- **"An organization needs at least one owner. Promote someone else first."** The change would leave the organization without an owner (`409 LAST_OWNER`); see [The last owner](#the-last-owner).
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Roles and permissions', href: '/docs/reference/roles/', description: 'Who can do what, and which role can assign which role.' },
+    { title: 'API keys, tokens and administration', href: '/docs/guides/access/', description: 'Scoped API keys and personal access tokens.' },
+    { title: 'Configuration', href: '/docs/configuration/', description: 'Every environment variable the API and worker read.' },
+    { title: 'Self-hosting', href: '/docs/self-hosting/', description: 'What runs, how to expose it and how to keep it healthy.' },
+  ]}
+/>

@@ -1,0 +1,101 @@
+---
+title: How cost is calculated
+description: How Spanlight prices an LLM call. The versioned price table, the token convention, model matching, price overrides, and why an unknown cost is shown as a dash and never as zero.
+sidebar:
+  order: 4
+---
+
+{/* Sources: backend/app/pricing/cost.py, backend/app/pricing/prices.py, backend/app/pricing/tokens.py, backend/app/core/model_match.py, backend/app/ingest/normalize.py, backend/app/ingest/store.py, backend/app/insights/detectors/unpriced_spend.py, sdks/python/src/spanlight/integrations/anthropic.py, frontend/src/components/cost-value.tsx, docs/api-deviations.md */}
+
+import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Spanlight does not ask the provider what a call cost. It works the cost out from the token counts on the span and a table of prices. This page explains the calculation, and what you see when it cannot be done.
+
+## The idea
+
+A cost is a **known** number or it is **unknown**. There is nothing in between, and in particular there is no zero that means "we could not tell". If Spanlight cannot price a call, the cost is stored as `NULL`, the API returns `null`, and the dashboard shows a dash (—) with a tooltip that says why.
+
+## How it works
+
+### The formula
+
+Prices are in US dollars per million tokens. A model has an input rate, an output rate and, for some models, a cached-input rate.
+
+```text
+cost = (input_tokens − cached_tokens) × input_rate
+     +  cached_tokens × cached_rate
+     +  output_tokens × output_rate
+```
+
+all divided by 1,000,000 and rounded half up to 8 decimal places. When a model has no published cached rate, cached tokens are billed at the input rate.
+
+### The token convention
+
+`input_tokens` is the **whole prompt**, including the tokens served from the provider's prompt cache. `cached_tokens` is the part of it that was a cache read. So `cached_tokens` can never be larger than `input_tokens`, and a span that says so is refused.
+
+The Python SDK follows this for you. Anthropic reports its input tokens without the cached ones, so the SDK adds the cache reads and cache writes back in before it sends the span. Cache writes, which providers bill at a premium, are not priced separately: they count as ordinary input. If you send OTLP or native JSON yourself, report the total in `input_tokens`. See [OTLP ingestion](/docs/otlp/).
+
+### When a cost is unknown
+
+A span gets a cost only when all of these are true:
+
+- It has a model.
+- It has both an input and an output token count.
+- The model matches a price in effect at the span's start time. If the span names a provider, the price must be for that provider.
+
+Otherwise the cost is unknown. In practice that happens for a model that is not in the table, for a call whose provider returned no usage, and for a streamed call where usage was not requested.
+
+An unknown cost spreads in a controlled way:
+
+- A **trace's cost** is the sum of its priced spans. It is unknown only when none of its spans is priced. When some are, the trace shows the total with a marker that says it is a **lower bound**, and the trace is flagged as having unpriced spans.
+- A **budget** adds nothing for an unpriced call. A budget whose spend comes only from models with no price stays at zero spend, never fires and never blocks. Add a price override to bring the model in.
+- The Overview and the per-model tables count `unpriced_calls` next to the cost, so you can see how much is missing.
+- The [Doctor](/docs/concepts/doctor/) opens an `unpriced_spend` finding when a provider and model have at least 20 calls in 24 hours that report both token counts and got no price.
+
+To see which models are missing, ask `GET /api/v1/projects/{project_id}/unpriced-models`. It lists the models whose calls had a model and token counts but matched no price.
+
+### Which model name matches which price
+
+A price is written for a model name, for example `gpt-4o`. A span's model matches that price when it is:
+
+- The same name exactly, or
+- The name followed by a snapshot suffix: `-YYYYMMDD`, `-YYYY-MM-DD` or `-latest`.
+
+So the price for `gpt-4o` also prices `gpt-4o-2024-08-06`, and the price for `claude-haiku-4-5` prices `claude-haiku-4-5-20251001`. A plain prefix does not match: `gpt-4.1-nano` is not priced as `gpt-4.1`. Matching is case-sensitive, and the longest matching name wins. Whitespace around a model name is removed when the span is stored, and nothing else is changed.
+
+### The price table is versioned
+
+The built-in prices are a dated snapshot of the providers' published rates for standard use. They leave out batch discounts, surcharges for very long prompts, cache-write premiums, regional modifiers and taxes. Only models whose prices are known with confidence are listed.
+
+Every priced span stores the version of the price it used in `pricing_version`, so a stored cost says which table made it. The server loads new prices with `spanlight sync-prices`. A span keeps the cost it was priced with; a new table affects spans ingested afterwards, and a span you send again is priced again with the table in force then. You can read the whole table at `GET /api/v1/prices`.
+
+### Price overrides
+
+An organization can set its own rate for a model, for example a negotiated price or a self-hosted model. An override has a provider, a model name, the input and output rates, an optional cached rate and an optional start time. Owners and admins manage them under `/api/v1/orgs/{org_id}/price-overrides`; see [Prices endpoints](/docs/api/prices/).
+
+- An override matches models the same way the built-in prices do.
+- The longest matching name wins whichever table it comes from. For equal names the override wins.
+- It applies to spans that start at or after its start time, and only to spans ingested after you add it. Spans already stored keep their cost.
+- A span priced by an override stores `override:<id>` as its pricing version.
+
+<Aside type="note">
+A single call priced at one million dollars or more is refused rather than stored, and a trace whose total reaches that figure shows an unknown cost. Only a price override can produce such a number.
+</Aside>
+
+## What it means for you
+
+- Treat the dash as information. It means "not priced", and the totals around it are lower bounds.
+- Check `unpriced_calls` before you trust a cost total or set a budget.
+- Report input tokens as the whole prompt, cached tokens included. If you report only the uncached part, the cost comes out too low, and the span is refused when its cached count is larger than its input count.
+- Spell the model name the way the provider does. Matching is case-sensitive, and a snapshot name is priced as long as its base name is in the table.
+- For a model that is not listed, add an override. You get a cost, a working budget and no `unpriced_spend` finding.
+- Use the cost as an estimate from your own token counts. It is not a copy of your provider's invoice.
+
+## Related pages
+
+<CardGrid>
+  <LinkCard title="Budgets" href="/docs/budgets/" description="Cap spend per project, key, user or model." />
+  <LinkCard title="Prices endpoints" href="/docs/api/prices/" description="Read the price table and manage overrides." />
+  <LinkCard title="How ingestion works" href="/docs/concepts/ingestion/" description="Where pricing sits in the pipeline." />
+  <LinkCard title="Detector catalogue" href="/docs/reference/detectors/" description="The unpriced spend finding and its fix." />
+</CardGrid>

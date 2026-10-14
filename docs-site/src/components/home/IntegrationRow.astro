@@ -1,0 +1,56 @@
+---
+/** What Spanlight works with today, each linked to the page that shows how. */
+const items = [
+  ['OpenAI', '/docs/integrations/openai/'],
+  ['Anthropic', '/docs/integrations/anthropic/'],
+  ['OpenTelemetry', '/docs/otlp/'],
+  ['GitHub Action', '/docs/integrations/github-action/'],
+];
+---
+
+<div class="integrations not-content">
+  <span class="label">Works with</span>
+  <ul>
+    {
+      items.map(([label, href]) => (
+        <li>
+          <a href={href}>{label}</a>
+        </li>
+      ))
+    }
+  </ul>
+</div>
+
+<style>
+  .integrations {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1rem;
+  }
+  .label {
+    font-weight: 600;
+    color: var(--sl-color-gray-3);
+  }
+  ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  a {
+    display: inline-block;
+    padding: 0.5rem 0.875rem;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 999px;
+    background: var(--spl-surface);
+    color: var(--sl-color-white);
+    font-weight: 500;
+    text-decoration: none;
+  }
+  a:hover {
+    border-color: var(--sl-color-text-accent);
+  }
+</style>

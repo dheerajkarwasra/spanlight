@@ -1,0 +1,98 @@
+---
+title: Integration Lab
+description: Inject the failures real providers produce, such as expired keys, rate limits, server errors, cut-off bodies and stalled streams, to see how your application copes.
+sidebar:
+  order: 4
+---
+
+{/* Sources: frontend/src/features/gateway/lab/lab-runs.tsx, frontend/src/features/gateway/lab/attach-keys-section.tsx, frontend/src/features/gateway/lab/lab-profile.ts, backend/app/api/v1/gateway_keys.py */}
+
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+
+Real providers fail in ways that are hard to reproduce on demand: a `529` during a launch, a stream that stops before its end marker, a `429` with a long `Retry-After`. The Integration Lab makes the gateway produce these failures for a gateway key, on request, so you can watch your client code deal with them and see the result in the trace.
+
+A **fault profile** names one scenario and its parameters. You attach it to a gateway key; from then on, calls made with that key are faulted with the profile's probability. Owners and admins manage profiles in **Gateway, Lab**; any member can read them.
+
+<Prerequisites
+  items={[
+    'The admin or owner role in the project, to create profiles. Every role can read them',
+    'A gateway key whose environment is not production',
+    'A route that works. See the gateway quickstart',
+  ]}
+/>
+
+## Rules
+
+- **Never on production.** A profile cannot be attached to a key whose environment is `production` (any casing, ignoring surrounding spaces), and a key with a profile cannot be changed to `production` (`422 FAULT_PROFILE_ON_PRODUCTION_KEY`). The gateway checks the environment again on every call, so a faulted call can never be a production call.
+- **Disabled or expired profiles do nothing.** Set `enabled` to false, or give the profile an `expires_at` in the future (the dashboard suggests 24 hours from now), so a forgotten profile stops by itself.
+- **Probability.** A number from 0 to 1 with at most three decimals; the default is 1, every call. Each call makes one random draw. A call a scenario cannot apply to is not drawn for and is not faulted: `malformed_json` needs a non-streaming call and `truncated_stream` a streaming one.
+- **Deterministic.** In tests the draw comes from a seeded generator, so for a given seed the same calls are faulted every time. Probability 1 is deterministic without any seed.
+- **Cache first.** A call answered from the [response cache](/docs/gateway/cache/) is not faulted, and a faulted call is never stored in the cache.
+- **Parameters are checked.** A parameter that does not belong to the scenario, or is out of bounds, is `422` on `params.<name>`. Omitted parameters take the defaults below, and the profile always shows all of them. A profile's name is 1 to 100 characters and unique in the project.
+
+## The nine scenarios
+
+The errors copy each provider's own wording and shape, so client code is tested against realistic bodies. The OpenAI form is used on the OpenAI surfaces and the Anthropic form on `/gw/v1/messages`.
+
+| Scenario | Parameters (default, bounds) | Effect |
+| --- | --- | --- |
+| `auth_expired` | none | `401`. OpenAI `invalid_request_error` with code `invalid_api_key`, "Incorrect API key provided."; Anthropic `authentication_error`, "invalid x-api-key" |
+| `scope_denied` | none | `403`. OpenAI `invalid_request_error` with code `insufficient_permissions`; Anthropic `permission_error` |
+| `rate_limited` | `retry_after_s` (2, 1 to 3 600) | `429` with `Retry-After: retry_after_s`. OpenAI `requests` / `rate_limit_exceeded`; Anthropic `rate_limit_error` |
+| `unsupported_parameter` | `param` (`temperature`, 1 to 64 characters of `a-z 0-9 _ .`, starting with a letter or `_`) | `400` naming the parameter as unsupported by the model. OpenAI code `unsupported_parameter` with `param` set; Anthropic "`param`: Extra inputs are not permitted" |
+| `provider_5xx` | `status` (500; one of 500, 502, 503, 529) | That status. OpenAI `server_error`; Anthropic `api_error`, or `overloaded_error` for 529 |
+| `malformed_json` | `keep_fraction` (0.6, 0.1 to 0.9) | A `200` with the provider's real body cut to that fraction of its length. Non-streaming calls only |
+| `truncated_stream` | `after_chunks` (3, 1 to 100) | The provider's real stream, closed cleanly after that many events, without `[DONE]` or `message_stop`. Streaming calls only |
+| `slow_response` | `delay_ms` (5 000, 100 to 60 000) | The provider's real answer, with its first byte delayed. The delay is capped by what is left of the route's time budget |
+| `timeout` | `hold_ms` (30 000, 1 000 to 120 000) | The call is held for `hold_ms` or what is left of the route's time budget, whichever is shorter, then fails like a real provider timeout (`504 UPSTREAM_TIMEOUT`) |
+
+The first five scenarios and `timeout` replace the provider call: the provider is not contacted, nothing is billed, and the fault is neither retried nor sent to another target. `malformed_json`, `truncated_stream` and `slow_response` alter a real, successful provider answer on its way back, so those calls reach the provider and are billed. If the provider itself fails, its error is returned as usual and the route's retries and fallbacks apply.
+
+## How a faulted call is marked
+
+You can always tell a Lab fault from a real provider failure:
+
+- the response has `X-Spanlight-Fault: <scenario>`;
+- error bodies carry `spanlight_code` and the `X-Spanlight-Code` header `FAULT_<SCENARIO>`, for example `FAULT_PROVIDER_5XX`;
+- the span has the attributes `spanlight.fault.scenario` and `spanlight.fault.profile_id`;
+- the trace has the tag `lab:<scenario>`, for example `lab:truncated_stream`, so a filter on that tag lists every faulted trace;
+- a `malformed_json` call answers `200`, but its span is recorded as failed with the status message `200 FAULT_MALFORMED_JSON: …`, because the client received a body it cannot parse.
+
+**Gateway, Lab** lists the recent faulted calls and **Gateway, Overview** counts them per scenario. Calls that a fault made fail are included in the overview's error rate.
+
+## Check it worked
+
+1. Create a gateway key with the environment `staging` and no route changes.
+2. In **Gateway, Lab**, create a profile with the scenario `rate_limited`, `retry_after_s` of 3 and probability 1, and attach it to the key.
+3. Call the gateway with that key:
+
+```bash
+curl -i "<host>/gw/v1/chat/completions" \
+  -H "Authorization: Bearer spl_gw_…" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-4.1-mini", "messages": [{"role": "user", "content": "hi"}]}'
+```
+
+The answer is `429` with `Retry-After: 3`, `X-Spanlight-Fault: rate_limited` and `X-Spanlight-Code: FAULT_RATE_LIMITED`. The official SDK treats it as it would a real rate limit, and the trace shows the call with the tag `lab:rate_limited`. The call also appears in **Recent lab runs** on **Gateway, Lab**.
+
+Deleting a profile detaches it from its keys; those keys carry on without faults.
+
+## Troubleshooting
+
+- **The profile cannot be attached: "Production keys can't run faults".** The key's environment is `production`, or the API answered `422 FAULT_PROFILE_ON_PRODUCTION_KEY`. Use a key from another environment, such as `staging`.
+- **Calls are not faulted.** Check that the profile is enabled and has not expired, that the key has it attached, and that the probability is above 0. A `malformed_json` profile faults non-streaming calls only, and `truncated_stream` streaming calls only. A call answered from the [cache](/docs/gateway/cache/) is not faulted. See [Rules](#rules).
+- **Only some calls are faulted.** Each call makes one random draw against the probability. Set it to 1 for every call.
+- **Recent lab runs reads "No faulted calls yet."** No call has been faulted in the last 7 days. Send a call with the key the profile is attached to.
+- **Saving the profile answers `422` on `params.<name>`.** A parameter does not belong to the scenario or is out of bounds. See the table in [The nine scenarios](#the-nine-scenarios).
+- **The profile dialog lists "No gateway keys yet. Create a staging or development key, then attach a profile."** The project has no key to attach to. Create one in **Gateway, Keys** first.
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Gateway error responses', href: '/docs/gateway/errors/', description: 'Every error the gateway itself produces.' },
+    { title: 'Routes, retries and fallbacks', href: '/docs/gateway/routing/', description: 'Choose which credentials serve a key and what happens on failure.' },
+    { title: 'Gateway quickstart', href: '/docs/gateway/quickstart/', description: 'Point the OpenAI or Anthropic SDK at the gateway.' },
+  ]}
+/>

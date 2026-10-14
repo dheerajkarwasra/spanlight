@@ -15,16 +15,21 @@ RUN npm run build
 
 # ---------- Documentation site ----------
 # Built from docs-site/ plus the repository documents it publishes (runbooks, security pages,
-# the deploy guide, the API notes, the changelog, SECURITY.md and the OpenAPI snapshot), copied
-# to the paths docs-site/scripts/sync-docs.mjs reads them from. The build also writes the
-# Content-Security-Policy snippet for /docs/ (docs-site/scripts/csp.mjs).
+# the deploy guide, the API notes, the changelog, SECURITY.md, the OpenAPI snapshot and the price
+# table backend/app/pricing/prices.py), copied to the paths docs-site/scripts/sync-docs.mjs reads
+# them from. The build also writes the Content-Security-Policy snippet for /docs/
+# (docs-site/scripts/csp.mjs).
 FROM node:24-alpine AS docs-build
-ENV ASTRO_TELEMETRY_DISABLED=1 DOCS_SYNC_SKIP_TARGET_CHECK=1
+# The public origin (for example https://spanlight.dev) gives the docs canonical URLs, a sitemap
+# and llms.txt. Leave it empty for a self-hosted build: those three are then skipped.
+ARG DOCS_SITE_URL=
+ENV ASTRO_TELEMETRY_DISABLED=1 DOCS_SYNC_SKIP_TARGET_CHECK=1 DOCS_SITE_URL=$DOCS_SITE_URL
 WORKDIR /src/docs-site
 COPY docs-site/package.json docs-site/package-lock.json ./
 RUN npm ci
 COPY CHANGELOG.md SECURITY.md /src/
 COPY backend/openapi.json /src/backend/openapi.json
+COPY backend/app/pricing/prices.py /src/backend/app/pricing/prices.py
 COPY docs/runbooks /src/docs/runbooks
 COPY docs/security /src/docs/security
 COPY docs/deploy /src/docs/deploy

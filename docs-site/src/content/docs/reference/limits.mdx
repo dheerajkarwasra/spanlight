@@ -1,0 +1,137 @@
+---
+title: Limits reference
+description: The size, count, time and rate limits that Spanlight enforces on ingestion, the API, exports, datasets, retention, sign-in, experiments and the playground, with the status code you get when you exceed it.
+---
+
+{/* Sources: backend/app/ingest/normalize.py, backend/app/ingest/schemas.py, backend/app/api/ingest.py, backend/app/core/ratelimit.py, backend/app/core/body_limit.py, backend/app/core/errors.py, backend/app/api/deps.py, backend/app/api/scores_ingest.py, backend/app/api/v1/prompts_read.py, backend/app/api/v1/demo.py, backend/app/api/v1/alert_rules.py, backend/app/api/v1/alerts.py, backend/app/scores/queries.py, backend/app/scores/configs.py, backend/app/scores/service.py, backend/app/api/v1/scores.py, backend/app/alerts/channel_test.py, backend/app/playground/service.py, backend/app/gateway/limits.py, backend/app/gateway/key_limits.py, backend/app/config.py, backend/app/services/invites.py, backend/app/api/v1/auth.py, backend/app/auth/login_throttle.py, backend/app/api/window.py, backend/app/exports/service.py, backend/app/exports/audit.py, backend/app/datasets/schemas.py, backend/app/datasets/service.py, backend/app/api/schemas/projects.py, backend/app/db/models/projects.py, backend/app/jobs/tasks/retention.py, backend/app/jobs/scheduler.py, backend/app/auth/password_reset.py, backend/app/api/v1/totp.py, backend/app/prompts/service.py, backend/app/api/prompt_problems.py, backend/app/alerts/service.py, backend/app/alerts/rules_service.py, backend/app/alerts/rule_spec.py, backend/app/budgets/service.py, backend/app/api/scores_ingest.py, backend/app/core/pagination.py, backend/app/playground/schemas.py, backend/app/api/dataset_problems.py, backend/app/api/v1/dataset_items.py, backend/app/evals/experiment_config.py, backend/app/evals/config.py, backend/app/insights/service.py, backend/app/core/idempotency.py, docs/api-deviations.md */}
+
+This page lists the main limits that Spanlight enforces. Each value comes from the code, so it is exact. Limits that belong to one feature are also on that feature's page. A limit you cannot change is fixed in the code. A limit that has a setting names it.
+
+## Ingestion
+
+These limits apply to `POST /v1/traces` and `POST /v1/otlp/traces`. See [How ingestion works](/docs/concepts/ingestion/) for the full pipeline.
+
+| Limit | Value | When you exceed it |
+| --- | --- | --- |
+| Request body | 5 MB (5 MiB), measured after decompression | `413 PAYLOAD_TOO_LARGE` |
+| Spans in one batch | 1,000 spans | `413 PAYLOAD_TOO_LARGE` |
+| Input or output of a span | 32 KB each, after redaction | The text is cut to its first 32 KB and the span is marked `truncated`. The span is stored. |
+| Attributes of a span | 64 KB of JSON and 256 entries | The span is refused. Attributes are never truncated. |
+| Age of a span | A span may not start more than 90 days ago | The span is rejected. |
+| Clock skew | A span may not end more than 10 minutes in the future | The span is rejected. |
+
+A rejected span does not fail the other spans of the batch. The response lists each rejection.
+
+## API request bodies
+
+Every `/api/v1` request body is limited to 1 MiB. A larger body gets `413 PAYLOAD_TOO_LARGE`. Ingestion has its own limit (5 MB, above). The dataset upload route has a limit of 5 MB of file plus 64 KB of multipart framing.
+
+## Rate limits
+
+Most rate limits are token buckets. A bucket refills at a steady rate and holds a burst. A request takes one token. When the bucket is empty, the request gets `429 RATE_LIMITED` and a `Retry-After` header in whole seconds. The buckets live in Postgres, so the limits hold across any number of API replicas. If the limiter cannot reach the database, the request is let through.
+
+| What | Rate | Burst | Counted per |
+| --- | --- | --- | --- |
+| Ingestion, score ingestion and prompt fetches with an API key | 50 a second | 100 | API key |
+| Reads with an API key or a personal access token | 20 a second | 40 | Credential |
+| Starting a demo session | 10 an hour | 10 | Client address |
+| Playground runs | 30 a minute | 30 | Person |
+| Alert rule previews | 30 a minute | 30 | Person |
+| Test deliveries to an alert channel | 10 an hour | 10 | Channel |
+
+Three notes on that table:
+
+- The first row is one bucket. `POST /v1/traces`, `POST /v1/otlp/traces`, `POST /v1/scores` and `GET /v1/prompts/{name}` all draw from the same bucket of the same key.
+- The second row applies to read requests that carry a bearer credential. Requests from the dashboard with a session cookie are not limited by it.
+- A key that has no `ingest:write` scope does not spend tokens on ingestion routes.
+
+### Gateway limits
+
+The [gateway](/docs/gateway/routing/) has its own limits. A gateway key can carry a limit of requests a minute and a limit of tokens a minute. An instance can also set `GATEWAY_ORG_RPM_CEILING` (1 to 100,000) as a ceiling on requests a minute for each organization. The ceiling is checked first, then the key's requests, then the key's tokens.
+
+- A requests limit is a token bucket that refills continuously. Its burst equals the limit.
+- A tokens limit is a fixed window for each UTC clock minute. A call that crosses the limit is let through and its tokens count. The next call is refused until the minute ends.
+
+A refused call gets `429 RATE_LIMITED` in the gateway's own error format. See [Gateway errors](/docs/gateway/errors/).
+
+### Attempts counted in a time window
+
+Some limits count attempts in a window instead of using a bucket. They also answer `429 RATE_LIMITED` with `Retry-After`.
+
+| What | Limit | Counted per |
+| --- | --- | --- |
+| Failed sign-ins | 5 in 15 minutes | Email address |
+| Failed sign-ins | 20 in 15 minutes | Client address |
+| Sign-ups | 10 an hour | Client address |
+| Verification emails | 3 an hour | Account |
+| Mailed invitations | 20 an hour | Organization |
+| Mailed invitations | 50 an hour | Person who invites |
+| Password reset requests | 3 in 15 minutes | Email address |
+| Password reset requests | 10 in 15 minutes | Client address |
+| Attempts to turn off two-factor authentication | 5 in 15 minutes | Person |
+| New versions of a prompt | 100 a day (UTC) | Prompt |
+
+Link-only invitations are not counted. A prompt gets at most 100 new versions in a UTC day. The 101st gets `429 RATE_LIMITED` with a `Retry-After` that lasts until midnight UTC. See [Accounts and sign-in](/docs/guides/accounts/) for what each limit means for a user. Set `TRUSTED_PROXIES` so that Spanlight sees the real client address; see [Configuration](/docs/configuration/).
+
+## Other caps
+
+| Limit | Value | When you exceed it |
+| --- | --- | --- |
+| Alert channels in an organization | 20 | `422 LIMIT_EXCEEDED` |
+| Alert rules in a project (budget rules do not count) | 100 | `422 LIMIT_EXCEEDED` |
+| Budgets in a project | 50 | `422 LIMIT_EXCEEDED` |
+| Score configs (distinct score names) in a project | 500 | Creating a config answers `422 VALIDATION_ERROR` with a `name` field error. In `POST /v1/scores`, a score whose new name would pass the cap is listed in `rejected` and the rest of the batch is stored. |
+| Alert channels on one rule | 10 | The rule is refused. |
+| Scores in one `POST /v1/scores` batch | 1,000 | `422 VALIDATION_ERROR` |
+| Configurations in one playground run | 3 | `422 VALIDATION_ERROR` |
+| Page size of a list | 200 | `422 VALIDATION_ERROR` |
+
+## Evaluation, playground and requests
+
+| Limit | Value | When you exceed it |
+| --- | --- | --- |
+| Evaluators on one experiment | 20 | `422 VALIDATION_ERROR` |
+| Cost ceiling of one experiment (`max_cost_usd`) | Above 0, at most USD 1,000 | `422 VALIDATION_ERROR` |
+| Output tokens of an LLM judge evaluator (`max_tokens`) | 4,096 | `422 VALIDATION_ERROR` |
+| Variables in one playground run | 100 | `422 VALIDATION_ERROR` |
+| Output tokens of a playground configuration (`max_tokens`) | 4,096 | `422 VALIDATION_ERROR` |
+| Length of an insight mute | At most 90 days ahead | `422 INVALID_MUTE` |
+| Reason for an insight mute | 1 to 500 characters | `422 INVALID_MUTE` |
+| `Idempotency-Key` header | 1 to 128 visible ASCII characters | `422 VALIDATION_ERROR` |
+
+## Exports
+
+| Limit | Value |
+| --- | --- |
+| Time range of a trace export | At most 90 days. `from` and `to` are required. |
+| Traces in one export | 100,000. More matching traces fail the export as too large. Narrow the range. |
+| Events in one audit log download | 50,000 |
+| Download link | Valid for 1 hour |
+| File retention | 7 days after the export finishes |
+
+See [Exports](/docs/guides/exports/) for how to request one.
+
+## Datasets
+
+| Limit | Value |
+| --- | --- |
+| Items in a dataset | 10,000 |
+| Input or expected output of an item | 64 KB each |
+| Metadata of an item | 8 KB |
+| Dataset file upload | 5 MB |
+
+An item that is over a size limit is refused with `422 VALIDATION_ERROR`. Adding items that would pass 10,000 is refused with `422 DATASET_FULL`, and the whole batch is refused. An upload over the limit gets `413 PAYLOAD_TOO_LARGE`. See [Datasets](/docs/datasets/).
+
+## Retention
+
+Each project keeps its spans for a number of days. The default is 30. You can set any whole number from 1 to 90 with `retention_days` on the project. The worker runs the retention job every hour and deletes the traces, and with them the spans, that are older than the project keeps. Ingestion refuses spans that started more than 90 days ago, so 90 days is the longest retention that makes sense.
+
+Time windows in the trace and metrics API are limited to 90 days as well.
+
+## Related pages
+
+- [How ingestion works](/docs/concepts/ingestion/): what happens to a batch, and why a span is rejected.
+- [Data, limits and operations](/docs/guides/data/): how long-window metrics, backups and monitoring work.
+- [Roles and permissions](/docs/reference/roles/): who can do what, and which API key scopes exist.
+- [Error codes](/docs/reference/errors/): what each status and code means.
+- [Troubleshooting](/docs/troubleshooting/): fixes for rejected spans and `429` responses.

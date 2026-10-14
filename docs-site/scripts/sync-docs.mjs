@@ -6,6 +6,7 @@
 //   docs/deploy/railway.md    -> src/content/docs/deploy/railway.md
 //   docs/api-deviations.md    -> src/content/docs/api/conventions.md
 //   CHANGELOG.md              -> src/content/docs/changelog.md
+//   backend/app/pricing/prices.py -> src/content/docs/reference/prices.md
 //   backend/openapi.json      -> src/content/docs/api/*.md and public/openapi.json
 //
 // Every output is git-ignored. Relative links are rewritten so they resolve on the site (see
@@ -17,8 +18,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { editUrlFor } from './lib/edit-url.mjs';
 import { rewriteLinks } from './lib/links.mjs';
 import { frontmatter, renderOpenApi } from './lib/openapi.mjs';
+import { parsePrices, renderPricesPage } from './lib/prices.mjs';
 
 const SITE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPO = path.resolve(SITE, '..');
@@ -26,7 +29,9 @@ const DOCS = path.join(SITE, 'src/content/docs');
 const BASE = '/docs';
 const GITHUB = 'https://github.com/dheerajkarwasra/spanlight';
 
-const GENERATED = ['runbooks', 'security', 'deploy', 'api', 'changelog.md'];
+// Top-level names removed with their contents. `reference/prices.md` is a single generated file
+// inside `reference/`, which also holds hand-written pages, so it is removed on its own.
+const GENERATED = ['runbooks', 'security', 'deploy', 'api', 'changelog.md', 'reference/prices.md'];
 
 const RUNBOOK_ORDER = [
   'deploy',
@@ -137,7 +142,7 @@ function main() {
     const sourceNote = `---\n\nThis page is generated from [\`${page.source}\`](${GITHUB}/blob/main/${page.source}) in the repository.`;
     writeFile(
       page.target,
-      `${frontmatter({ title, description: page.description, order: page.order, label: page.label })}${body}\n\n${sourceNote}\n`,
+      `${frontmatter({ title, description: page.description, order: page.order, label: page.label, editUrl: editUrlFor(GITHUB, page.source) })}${body}\n\n${sourceNote}\n`,
     );
   }
 
@@ -154,6 +159,13 @@ function main() {
     );
   }
 
+  const pricesSource = 'backend/app/pricing/prices.py';
+  const prices = parsePrices(read(pricesSource));
+  writeFile(
+    'reference/prices.md',
+    renderPricesPage(prices, { editUrl: editUrlFor(GITHUB, pricesSource) }),
+  );
+
   const openapi = JSON.parse(read('backend/openapi.json'));
   for (const { file, content } of renderOpenApi(openapi)) writeFile(file, content);
   fs.mkdirSync(path.join(SITE, 'public'), { recursive: true });
@@ -164,7 +176,9 @@ function main() {
     for (const error of errors) console.error(`  ${error}`);
     if (!process.argv.includes('--lenient')) process.exit(1);
   }
-  console.log(`sync-docs: ${pages.length} pages and ${openapi.info.title} ${openapi.info.version} synced`);
+  console.log(
+    `sync-docs: ${pages.length} pages, ${prices.prices.length} prices and ${openapi.info.title} ${openapi.info.version} synced`,
+  );
 }
 
 main();

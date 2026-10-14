@@ -1,0 +1,121 @@
+---
+title: The Overview dashboard
+description: Read spend, latency, error rate, token use, model health and the newest traces and errors for a time window, and know exactly how each figure is defined.
+---
+
+{/* Sources: frontend/src/features/overview/overview-page.tsx, frontend/src/features/overview/overview-dashboard.tsx, frontend/src/features/overview/overview-hero.tsx, frontend/src/features/overview/hero.ts, frontend/src/features/overview/page-state.ts, frontend/src/features/overview/use-overview-queries.ts, frontend/src/features/overview/estimated-chip.tsx, frontend/src/features/overview/kpis.ts, frontend/src/features/overview/kpi-cards.tsx, frontend/src/features/overview/spend-card.tsx, frontend/src/features/overview/spend.ts, frontend/src/features/overview/calls-errors-chart.tsx, frontend/src/features/overview/chart-data.ts, frontend/src/features/overview/health-tile.tsx, frontend/src/features/overview/health-format.ts, frontend/src/features/overview/latest-traces.tsx, frontend/src/features/overview/recent-errors.tsx, frontend/src/features/overview/trace-rows.ts, frontend/src/features/overview/model-table.tsx, frontend/src/features/overview/model-wide-table.tsx, frontend/src/features/overview/model-tiles.tsx, frontend/src/features/overview/model-cells.tsx, frontend/src/features/overview/models.ts, frontend/src/features/overview/first-run.tsx, frontend/src/features/overview/overview-empty-states.tsx, frontend/src/features/shell/use-data-filters.ts, frontend/src/features/shell/time-range-picker.tsx, frontend/src/features/shell/environment-filter.tsx, frontend/src/lib/time-range.ts, backend/app/metrics/queries.py, backend/app/metrics/service.py, backend/app/api/window.py, docs/api-deviations.md, frontend/src/features/onboarding/snippets.ts, frontend/src/features/onboarding/snippet-tabs.tsx, frontend/src/app/router.tsx */}
+
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+
+<Prerequisites
+  items={[
+    'A project that has received traces (see the Quickstart)',
+    'Any role in the project can open the Overview',
+  ]}
+/>
+
+The **Overview** is the first page of a project. It answers one question for a window of time: how are my models doing? It shows what you spent, how fast and how reliable the calls were, and the newest traces and errors. Every card follows the same time range and environment.
+
+## Choose the window
+
+Use the controls at the top right of the page, or in a row above the page on a phone.
+
+- **Time range.** Pick **1h**, **24h**, **7d** or **30d**, or use the calendar button for a custom range of up to 90 days. The default is the last 24 hours.
+- **Environment.** Pick one environment or **All environments**.
+
+Both are kept in the page address and shared with Traces, Sessions and Releases. The line above the greeting names the date, the environment and the range.
+
+For a window longer than 24 hours, percentiles come from hourly rollups and are estimates. An **Estimated · hourly rollups** chip appears on that line, and the percentile values start with **≈**. The tooltip says counts and cost can lag by up to five minutes and percentiles are accurate to about 25 percent. A window of 24 hours or less reads the raw spans, so its percentiles are exact.
+
+## The headline
+
+Under the date is a greeting and one sentence about the window.
+
+| Sentence | When |
+| --- | --- |
+| "Your models are behaving." | There are traces and no failed LLM calls. |
+| "3 errors need a look." | At least one LLM call failed. The number is the count of failed LLM calls. |
+| "No traces in this window." | The project has traces, but none in this window. |
+| "Waiting for your first trace." | The project has never received a trace. |
+
+**Explore traces** opens the Traces page on the same window and environment.
+
+## Spend
+
+The dark **Spend** card is the page's headline.
+
+- **The amount** is the cost of all spans in the window, with the cents muted. The pill beside the title is the change against the previous window of the same length. A rise in spend is shown as bad news.
+- **The projection**, such as "Projected $5.4K this month", is the window's spend per day multiplied by the number of days in the current month. It appears only for windows of 7 days or less, and it is an estimate, not a forecast. The line also shows what the previous window cost.
+- **The unpriced note**, such as "12 calls unpriced · spend is a lower bound", appears when LLM calls had no price. Those calls add nothing to spend.
+- **The bars** show spend per hour for windows up to two days, and per day for longer ones. The highest bar is lime and carries its value. For the preset ranges the axis counts back from now, for example "−6h" and "Now". A custom range shows dates instead. Hover a bar for the exact range and amount.
+- **The three tiles** under the bars are the most expensive models, with their dollars and share of priced spend.
+
+If no model in the window has a price, the amount is **—** with a tooltip, never $0. See [how cost is calculated](/docs/concepts/cost/).
+
+## Key metrics
+
+Four cards sit beside the chart. Each shows a value, a detail line, the change against the previous window of the same length, and a sparkline of the last eight buckets.
+
+| Card | Value | Detail line | Change shown as |
+| --- | --- | --- | --- |
+| **p95 latency** | 95th percentile duration of LLM calls | The p50 | Milliseconds. A rise is bad. |
+| **Error rate** | Failed LLM calls divided by LLM calls | "203 of 48.2K calls" | Percentage points. A rise is bad. |
+| **LLM calls** | Number of LLM calls | "across 12K traces" | Percent. Neutral. |
+| **Tokens** | Input plus output tokens | Input and output counts | Percent. Neutral. |
+
+These are the definitions behind them:
+
+- **LLM calls, errors, error rate, p50 and p95** are computed over spans of kind `llm` that started in the window. Error rate and percentiles are unknown, and shown as **—**, when the window has no LLM calls.
+- **Cost and tokens** are summed over all spans in the window, so they match the trace totals.
+- **Traces** counts the traces that started in the window.
+- **The environment filter** applies to the trace's environment.
+- **The previous window** is the one of equal length that ends where this one starts.
+
+## Calls and errors
+
+The chart plots LLM calls per hour or day as a violet area, using the left axis. Failed calls are a red line on their own right axis, because errors are usually far fewer than calls. Badges above the chart give the totals. Hover for a bucket's calls, errors and error percentage. Phones get a simpler chart without axes.
+
+## Health
+
+The **Health** tile shows the [Doctor's](/docs/concepts/doctor/) score from 0 to 100 as a ring, with a band: **Good** at 80 and above, **Fair** from 50 to 79, **Poor** below 50. The line under it counts the open findings, such as "2 open findings (1 critical, 1 warning) · last 24h". **Open the Doctor** takes you to them.
+
+Hover or focus the ring to see how the score is made. The tooltip lists each penalty that took points off, from **Open findings**, **Errors**, **Latency** and **Cost**, and ends with the formula: 100 minus those penalties. Latency and cost are compared with a baseline, which is the window of equal length before this one.
+
+If the window has no LLM calls, the score is **—**, and hovering or focusing it shows the tooltip "No LLM calls in this window". The band reads **No score**, and the visible line under the ring starts with "No LLM calls", for example "No LLM calls · last 24h". Open findings are still counted.
+
+## Latest traces and recent errors
+
+**Latest traces** lists the five newest traces in the window, with name, model, duration, tokens, cost and age. A failed trace has a red tint. For the preset ranges the list shows **Live** and refreshes every 15 seconds. A custom range is in the past, so it is fetched once. **View all** opens the Traces page.
+
+**Recent errors** lists the three newest traces with a failed span, each with its first error message, model and number of failed spans. A badge such as "3+" means more exist. **View all** opens Traces with the **Status: Error** filter set.
+
+The two cards count differently from the headline. The headline counts failed LLM calls. Recent errors lists traces where any span failed, such as a tool or an HTTP call.
+
+## Models
+
+The **Models** card lists each model with its provider, calls, errors, p50 and p95 latency, input and output tokens, and cost, busiest first. The five busiest show at first. Choose **All models** to see the rest. Click a model name to open the Traces page filtered to that model. On a narrow card each model becomes a tile with calls, p95 and errors.
+
+A cost of **—** means the model has no price. Its calls are not part of spend.
+
+## Check it worked
+
+Send a trace to the project and open **Overview**. The page leaves the first-run screen and shows the dashboard. The headline reads "Your models are behaving." when the window has traces and no failed LLM calls, or "N errors need a look." (with one failure, "1 error needs a look.") when some failed, and the **Latest traces** card lists your trace.
+
+## Troubleshooting
+
+- **The page shows "Connect your app" with a "Listening for new traces" pill.** The project has never received a trace. Send one, for example with the [Quickstart](/docs/quickstart/). The page checks every three seconds and switches to the dashboard when the first trace arrives. If none arrives, see [No trace arrives](/docs/troubleshooting/#no-trace-arrives). The full setup flow behind **Connect your app** adds two more snippet tabs, **curl** and **No SDK** (the gateway). Outside the demo workspace, **Try the live demo** opens a shared, read-only sample workspace and signs you out of your own, so it asks first.
+- **The page says "No traces in this time range".** The project has traces, but none in this window or environment. Select **Show last 30 days** to widen the range, or **All environments** to clear the environment. The first button is hidden when the range is already 30 days.
+- **One card shows an error message and a retry button.** That card's request failed. Each card has its own message, so one failed request does not blank the page. Select the retry button.
+- **A cost shows "—".** The model has no known price, so its calls are not part of spend. See [how cost is calculated](/docs/concepts/cost/).
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Traces and sessions', href: '/docs/guides/traces/', description: 'Open any trace behind a number and follow conversations.' },
+    { title: 'The Doctor', href: '/docs/doctor/', description: 'The findings that feed the health score.' },
+    { title: 'How cost is calculated', href: '/docs/concepts/cost/', description: 'Why a cost can be unknown and what that means for spend.' },
+    { title: 'Alert rules', href: '/docs/alerts/', description: 'Get told when error rate, latency or cost crosses a line.' },
+  ]}
+/>

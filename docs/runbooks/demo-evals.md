@@ -2,7 +2,7 @@
 
 ## Purpose and when to use
 
-The hosted demo shows the evaluation screens (prompts, datasets, evaluators, experiments) with real content. `spanlight demo seed-evals` creates it once, from the demo bot's own recorded traffic. Use it after the demo project has collected traces, or after you cleared the seeded objects and want them back. Self-hosters do not need it.
+The live demo shows the evaluation screens (prompts, datasets, evaluators, experiments) with real content. `spanlight demo seed-evals` creates it once, from the demo bot's own recorded traffic. Use it after the demo project has collected traces, or after you cleared the seeded objects and want them back. Self-hosters do not need it.
 
 It creates, in the demo project:
 

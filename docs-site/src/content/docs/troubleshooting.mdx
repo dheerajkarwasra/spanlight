@@ -1,0 +1,312 @@
+---
+title: Troubleshooting
+description: Find out why no trace arrived, why spans are rejected, why the readiness check fails, why the worker or email is not working, and how to fix each one.
+sidebar:
+  order: 22
+---
+
+{/* Sources: backend/app/api/health.py, backend/app/api/ingest.py, backend/app/api/deps.py, backend/app/core/errors.py, backend/app/core/scopes.py, backend/app/core/ratelimit.py, backend/app/ingest/normalize.py, backend/app/ingest/schemas.py, backend/app/ingest/pipeline.py, backend/app/config.py, backend/app/email/sender.py, backend/app/email/providers/console.py, backend/app/api/v1/auth.py, backend/app/api/v1/keys.py, backend/app/alerts/digest_job.py, backend/app/notifications/lease.py, backend/app/jobs/worker.py, backend/app/ingest/otlp.py, backend/app/ingest/jsondepth.py, backend/app/core/body_limit.py, backend/app/alerts/service.py, backend/app/alerts/delivery_fanout.py, backend/app/jobs/worker_heartbeat.py, deploy/Caddyfile, frontend/src/features/settings/settings-nav-items.ts, docs-site/src/content/docs/otlp.mdx, sdks/python/src/spanlight/_config.py, sdks/python/src/spanlight/_client.py, sdks/python/src/spanlight/_globals.py, sdks/python/src/spanlight/_exporter.py, sdks/python/src/spanlight/_exporter_delivery.py, deploy/compose.yaml, deploy/.env.example, docs/runbooks/README.md, docs/runbooks/alerts.md, docs/runbooks/deploy.md, docs/runbooks/rollback.md */}
+
+import NextSteps from '../../components/NextSteps.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+
+<Prerequisites
+  items={[
+    'A running Spanlight instance, and the address you reach it at',
+    'For the container checks: shell access to the host that runs Docker Compose',
+    'For the trace checks: the project API key your application uses',
+  ]}
+/>
+
+Start with the readiness check, because it answers most of the infrastructure questions in one request. If it passes and your problem is still there, use the symptom sections under Troubleshooting. Each one gives the cause, how to check it and how to fix it.
+
+The container commands use this shortcut. Run it from the repository root:
+
+```bash
+spl() { docker compose -f deploy/compose.yaml --env-file deploy/.env "$@"; }
+```
+
+If you started the stack with extra files, such as `deploy/compose.minio.yaml`, add the same `-f` option to the function.
+
+## Check it worked
+
+Spanlight is healthy when `GET /health/ready` answers `200` with `"status":"ok"`. Anything else points at one of the sections under [Troubleshooting](#troubleshooting).
+
+### Read the readiness check first
+
+```bash
+curl -sS -i http://localhost:8080/health/ready
+```
+
+Use the address of your own instance. A healthy instance answers `200` and a body like this:
+
+```json
+{"status":"ok","database":"ok","migrations":"ok","worker_heartbeat_age_s":6.1,"outbox_backlog":0,"alert_evaluation_lag_s":53.4,"gateway_mode":"embedded","gateway_spans_lost":0}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `status` | `ok` with HTTP `200`, or `unavailable` with HTTP `503`. |
+| `database` | `ok`, or `unavailable` when the API cannot reach Postgres. |
+| `migrations` | `ok` when the database schema is the one this build expects. `pending` when it is not, in either direction. `unknown` when the database is unreachable. |
+| `worker_heartbeat_age_s` | Seconds since a worker last reported. A worker reports every 10 seconds. `null` means none ever has. |
+| `outbox_backlog` | Notifications waiting to be sent, counted up to 10 000. |
+| `alert_evaluation_lag_s` | Seconds since the newest finished alert evaluation pass was scheduled. It never makes the check fail, and it is `null` before the first pass or when `ALERTS_EVALUATION_ENABLED` is off. |
+| `gateway_mode` | Where `/gw/*` is served from: `embedded`, `standalone` or `disabled`. |
+| `gateway_spans_lost` | Gateway spans this API process answered for but could not store since it started. It never makes the check fail. |
+
+The check answers `503` when the database is unreachable, when the migrations are not at the expected revision, when no worker has reported in the last 120 seconds (unless `WORKER_REQUIRED=false`), or when more than 1000 notifications are overdue by more than 10 minutes. A connection error, or a `502` from the `web` service, means the API itself is down. Check it with `spl ps` and `spl logs --tail 100 api`.
+
+## Troubleshooting
+
+Find your symptom, then read its section. Each section is a cause, a check and a fix.
+
+- **The dashboard stays empty, or a new trace does not show up.** See [No trace arrives](#no-trace-arrives).
+- **An OpenTelemetry exporter sends but nothing is stored.** See [OTLP traces do not arrive](#otlp-traces-do-not-arrive).
+- **A request succeeds but some spans are missing.** See [Spans are rejected](#spans-are-rejected).
+- **`/health/ready` answers `503` with `"migrations":"pending"`.** See [Migrations are not applied](#migrations-are-not-applied).
+- **Exports stay queued, or `worker_heartbeat_age_s` is `null` or over 120.** See [The worker is not running](#the-worker-is-not-running).
+- **A verification or alert email never arrives.** See [Emails are not sent](#emails-are-not-sent).
+
+## No trace arrives
+
+The dashboard stays empty, or a new trace does not show up. Work through the causes in this order.
+
+### The SDK points at the wrong host
+
+**Cause.** The SDK sends to `SPANLIGHT_HOST`, which defaults to `http://localhost:8000`. That is the address of the API when you run it with `uvicorn` for development. The Compose stack does not publish port 8000. It publishes the `web` service on `WEB_PORT`, `8080` by default, and `web` proxies `/v1` to the API.
+
+**Check.** Use the address your application uses:
+
+```bash
+curl -sS "$SPANLIGHT_HOST/health/ready"
+```
+
+If the request fails to connect, the host is wrong. In your application's log you will see a line like `Dropping 12 spans after 6 attempts (ConnectError: ...)` once the retries run out.
+
+**Fix.** Set `SPANLIGHT_HOST` (or pass `host=` to `spanlight.init`) to the address of the `web` service, for example `http://localhost:8080`, or to your public URL.
+
+### The SDK has no API key, or is switched off
+
+**Cause.** Without `SPANLIGHT_API_KEY` the SDK logs `Spanlight: no API key configured (set SPANLIGHT_API_KEY or pass api_key=...); tracing is disabled.` once and does nothing after that. `SPANLIGHT_ENABLED=false` (or `0`, `no`, `off`) turns it off on purpose.
+
+**Check.** Look for that warning in your application's log at start-up. Print `spanlight.get_client().enabled` if you are unsure.
+
+**Fix.** Set the key, and leave `SPANLIGHT_ENABLED` unset or `true`.
+
+### A short script exits before the spans are sent
+
+**Cause.** Spans are queued in memory and sent by a background thread every `flush_interval` seconds (2 by default). The SDK also flushes when the interpreter exits normally, but only for `shutdown_timeout` seconds (5 by default). A script, a serverless function, a test or a worker process that is frozen or killed before that never sends its last spans. So does a process that ends with `os._exit`.
+
+**Check.** The spans that are missing are the last ones the process created. A long-running server loses nothing.
+
+**Fix.** Call `spanlight.flush()` before the process can end. It blocks until everything queued so far is delivered, and returns `False` if it timed out. Call `spanlight.shutdown()` when you are finished with the SDK entirely.
+
+```python
+import spanlight
+
+spanlight.init()
+# ... your traced code ...
+spanlight.flush()
+```
+
+### The key lacks the `ingest:write` scope
+
+**Cause.** The ingestion routes need a project API key with the `ingest:write` scope. A key that was created with only `traces:read`, `scores:write` or `prompts:read` is refused with `403 KEY_SCOPE` and the detail "This API key does not have the `ingest:write` scope."
+
+**Check.** Send an empty batch with the key:
+
+```bash
+curl -sS -X POST "$SPANLIGHT_HOST/v1/traces" \
+  -H "Authorization: Bearer $SPANLIGHT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"spans":[]}'
+```
+
+`{"accepted":0,"rejected":[]}` means the key can ingest. The SDK does not retry a `403`. It logs `Spanlight rejected a batch of N spans: HTTP 403 ...` at error level and counts the spans as failed.
+
+**Fix.** A key's scopes are fixed when it is created. Create a new key under **Settings, Project, API keys** with the `ingest:write` scope, switch your application to it, and revoke the old one.
+
+### The key has expired or was revoked
+
+**Cause.** A key past its expiry date is refused with `401 KEY_EXPIRED` and the detail "This API key has expired. Create a new one." A key that is revoked, mistyped or unknown gets `401 UNAUTHORIZED` with "Missing, invalid or revoked API key." The two answers differ on purpose: only the holder of a real key can learn that it expired.
+
+**Check.** Run the same request as above. The `code` field of the answer says which case it is. The key list in **Settings, Project, API keys** shows each key's expiry and whether it is revoked.
+
+**Fix.** Create a new key and replace it in your application's configuration. See [Revoke a key](/docs/runbooks/revoke-key/) if the old key leaked.
+
+### You are looking at another project
+
+**Cause.** A key belongs to one project, and every trace it sends lands in that project.
+
+**Check.** Open the project that owns the key, and widen the time range and environment filters on **Traces**.
+
+**Fix.** Use the key of the project you want to look at.
+
+## OTLP traces do not arrive
+
+The endpoint is `POST <host>/v1/otlp/traces`. The [OTLP guide](/docs/otlp/) lists the full settings. These are the traps.
+
+### The exporter appends `/v1/traces`
+
+**Cause.** The general OpenTelemetry variable `OTEL_EXPORTER_OTLP_ENDPOINT` is a base URL, and exporters append `/v1/traces` to it. That is Spanlight's native JSON endpoint, not the OTLP one. The native endpoint expects a body with a `spans` array. An OTLP JSON body gets `422 VALIDATION_ERROR` with "The body must be an object with a `spans` array." An OTLP protobuf body gets `400 INVALID_JSON`.
+
+**Fix.** Use the traces-specific variable, which is a full URL:
+
+```bash
+export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:8080/v1/otlp/traces
+```
+
+### The `Authorization` header does not reach Spanlight
+
+**Cause.** The OpenTelemetry specification requires header values in `OTEL_EXPORTER_OTLP_HEADERS` to be URL-encoded, so the space after `Bearer` must be written as `%20`. A request that arrives without a usable key is `401 UNAUTHORIZED` with "Missing, invalid or revoked API key."
+
+**Check.** Send the same key by hand, as shown in the [OTLP guide](/docs/otlp/). If that works and the exporter does not, the exporter's header is wrong.
+
+**Fix.**
+
+```bash
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20spl_live_..."
+```
+
+### The protocol is not OTLP over HTTP
+
+**Cause.** Spanlight accepts OTLP over HTTP only, as `application/x-protobuf` or `application/json`. Any other content type is `415 UNSUPPORTED_MEDIA_TYPE`. A gRPC exporter, which usually targets port 4317, cannot connect. A body that is not valid OTLP is `400 INVALID_OTLP`.
+
+**Fix.** Set `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf` (or `http/json`).
+
+### You used a personal access token
+
+**Cause.** The ingestion routes accept project API keys only. A personal access token gets `401 UNAUTHORIZED`, valid or not.
+
+**Fix.** Use a project API key (`spl_live_...`) with the `ingest:write` scope.
+
+## Spans are rejected
+
+The request succeeds, but some spans are not stored. The answer to a native request is `200` with `accepted` and a `rejected` list. Each rejected entry has the `index` of the span in your batch, its `span_id` and a `reason`. An OTLP answer carries `partialSuccess` with `rejectedSpans` and an `errorMessage` naming the first few. The Python SDK logs `Spanlight rejected N of M spans` and then up to 10 lines with the reasons.
+
+**Check.** Read the `reason`. It names the field. These are the ones the ingestion code produces after the shape check:
+
+| Reason starts with | Cause | Fix |
+| --- | --- | --- |
+| `end_time: must not be before start_time` | The span ends before it starts. | Fix the timestamps in your instrumentation. |
+| `start_time: older than the maximum retention of 90 days` | The span started more than 90 days ago. | Spanlight never stores spans that old. Do not replay them. |
+| `end_time: is in the future` | The span ends more than 10 minutes ahead of the server clock. | Fix the clock of the host that sends the span. See below. |
+| `parent_span_id: a span cannot be its own parent` | `parent_span_id` equals `span_id`. | Give the span a different parent, or none. |
+| `usage.cached_tokens: cannot exceed usage.input_tokens` | Input tokens include the cached ones, so the cached count cannot be larger. | Send the total input tokens in `input_tokens`. |
+| `attributes: exceed 65536 bytes` | The attributes are larger than 64 KB. Spanlight never truncates attributes. | Send fewer or smaller attributes. |
+| `usage: the cost at this model's price is too large to store` | The computed cost is one million dollars or more. Only an organization's own price override can price a call this high. | Check the price override for the model, and the token counts you send. |
+| `duplicate span_id in batch; the later occurrence was kept` | The same trace id and span id appear twice in one batch. The earlier one is reported here and not stored. The later one is stored, and the rest of the batch is unaffected. | Give every span in a trace its own span id. |
+
+Other reasons name a field of the span whose shape is wrong, such as an id that is not 32 or 16 hexadecimal characters. The [ingestion guide](/docs/concepts/ingestion/) lists the checks in order.
+
+**Clock skew.** The server compares the span's times with its own clock and allows 10 minutes for a client that runs ahead. If spans are rejected as being in the future, compare the clocks of the two hosts:
+
+```bash
+date -u
+spl exec api date -u
+```
+
+Fix the time on the host that is off, for example with NTP. A containerised application uses the clock of its host.
+
+**Large inputs and outputs are not an error.** A prompt or completion over 32 KB is cut to its first 32 KB and the span is marked `truncated`. It is stored, not rejected.
+
+### The whole request is refused
+
+These answers refuse a request before any span is read:
+
+| Answer | Cause | Fix |
+| --- | --- | --- |
+| `413 PAYLOAD_TOO_LARGE` | The body is over 5 MiB after decompression, or holds more than 1000 spans. | Send smaller batches. The Python SDK splits a batch that gets `413` into two halves by itself, and caps `batch_size` at 1000. |
+| `429 RATE_LIMITED` | More than 50 requests a second for one key, with bursts of 100. The `Retry-After` header says how long to wait. | Send fewer, larger batches. The SDK retries and honours `Retry-After`. |
+| `400 INVALID_JSON` | The body is not valid JSON, or contains `NaN`, `Infinity`, a number beyond a double, or nesting deeper than 64 levels. | Fix the serialiser. |
+
+## Migrations are not applied
+
+**Symptom.** `/health/ready` answers `503` with `"migrations":"pending"`.
+
+**Cause.** The database schema is not the one this build expects. That can mean a new build on an old schema, for example when `migrate` did not run or failed. It can also mean an old build on a newer schema, for example after you checked out older code without undoing the migrations, or after you restored an older backup. On Compose the `api` and `worker` only start once `migrate` has finished successfully, so a pending state after an ordinary start usually means the code changed under a running database.
+
+**Check.**
+
+```bash
+spl logs migrate
+spl exec postgres psql -U postgres -d spanlight -tA -c "SELECT version_num FROM alembic_version"
+```
+
+A successful `migrate` ends with `Database is at the latest migration.` and `Role spanlight_app is ready (no superuser, no RLS bypass).` A failure has a Python error above those lines.
+
+**Fix.** Run the migrations of the build you are running:
+
+```bash
+spl up -d --build
+```
+
+If `migrate` fails, read the error above the two lines. If the database is ahead of the code, you rolled back across a migration: follow [Roll back a deploy](/docs/runbooks/rollback/), which explains how to undo a migration or restore a backup taken before the upgrade.
+
+## The worker is not running
+
+**Symptom.** `/health/ready` answers `503` with `worker_heartbeat_age_s` of `null` or over 120. Exports stay queued, notifications and alert emails are not sent, hourly rollups stop updating and no backup is made. Ingestion and the dashboard keep working, because the API does not need the worker for those.
+
+**Cause.** The `worker` container is stopped, crash-looping, or cannot reach the database. A worker that has just started needs up to about two minutes before the check passes.
+
+**Check.**
+
+```bash
+spl ps worker
+spl logs --tail 100 worker
+spl logs --since 5m worker | grep worker_started
+```
+
+A healthy worker logs one `worker_started` line when it starts, with the names of its tasks and `crypto_configured`. If `crypto_configured` is `false`, the worker also logs a `worker_credentials_keys_missing` warning: it cannot open any stored secret, so experiment runs and LLM judge evaluators fail with `credentials_not_configured`, webhook evaluators fail with `webhook_secret_unreadable`, Slack, webhook and PagerDuty alerts are not delivered, and demo traffic is skipped. Set `CREDENTIALS_KEYS` on the worker.
+
+**Fix.** Read the error in the log and fix its cause, then start the worker:
+
+```bash
+spl up -d worker
+```
+
+If you run the API without a worker on purpose, set `WORKER_REQUIRED=false`. The readiness check then ignores the heartbeat, but exports, notifications and backups only move while a worker runs. [Is the worker alive?](/docs/runbooks/#is-the-worker-alive) shows the same facts from Postgres.
+
+## Emails are not sent
+
+Check which of these applies, in this order.
+
+### No email provider is configured
+
+**Cause.** `EMAIL_PROVIDER` defaults to `console`. The console provider sends nothing: it only logs the recipient and the subject, and with `EMAIL_CONSOLE_FILE` set it also appends each message to that file. Spanlight does not count `console` without a file as configured. So requests that need email, such as verifying an address or resetting a password, answer `409 NOT_CONFIGURED` with "Email is not configured. Set EMAIL_PROVIDER to resend or smtp, or set EMAIL_CONSOLE_FILE to write emails to a file." The Monday digest ends as `skipped_not_configured`.
+
+**Check.** Look for the `409` above, or, when `EMAIL_CONSOLE_FILE` is set, for the `email_console` line in the API log.
+
+**Fix.** Set `EMAIL_PROVIDER` to `resend` or `smtp` with what it needs: `RESEND_API_KEY` and `EMAIL_FROM` for Resend, `SMTP_HOST` and `EMAIL_FROM` for SMTP. The application refuses to start if a provider is chosen without those values. Then recreate the services that read them:
+
+```bash
+spl up -d api worker
+```
+
+See [Configuration](/docs/configuration/#email) for every email variable.
+
+### Alert emails need a verified member
+
+**Cause.** With `ALERT_EMAIL_ANY_RECIPIENT` off, which is the default, every recipient of an email alert channel must be a member of the organization with a verified email address.
+
+**Fix.** Ask the recipient to verify their address, or add them to the organization. Set `ALERT_EMAIL_ANY_RECIPIENT=true` only on an instance that only you use.
+
+### The worker is not delivering
+
+**Cause.** Alert emails and other notifications are queued in the database and sent by the worker. If the worker is down, `outbox_backlog` grows, and the readiness check fails once more than 1000 are overdue by over 10 minutes. A send that fails is retried up to 8 times with growing waits, then marked `failed`.
+
+**Check.** Read `outbox_backlog` in `/health/ready`, then follow [Run alerts](/docs/runbooks/alerts/) to see the state of each delivery.
+
+**Fix.** Start the worker as described above. Fix the provider error that the delivery log shows for a `failed` row, then resend it as the alerts runbook explains.
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Operator runbooks', href: '/docs/runbooks/', description: 'First five minutes of an incident, and a runbook for each procedure.' },
+    { title: 'Configuration', href: '/docs/configuration/', description: 'Every environment variable the API and worker read.' },
+    { title: 'How ingestion works', href: '/docs/concepts/ingestion/', description: 'Every check a span goes through.' },
+    { title: 'Back up and restore', href: '/docs/self-hosting/backups/', description: 'Set up nightly backups and rehearse a restore.' },
+  ]}
+/>

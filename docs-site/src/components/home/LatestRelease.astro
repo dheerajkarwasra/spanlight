@@ -1,0 +1,51 @@
+---
+/** The newest version in the changelog, read at build time from the generated changelog page. */
+import fs from 'node:fs';
+import path from 'node:path';
+
+import { latestRelease, releaseLabel } from '../../../scripts/lib/latest-release.mjs';
+
+const changelog = path.join(process.cwd(), 'src/content/docs/changelog.md');
+const release = fs.existsSync(changelog) ? latestRelease(fs.readFileSync(changelog, 'utf8')) : null;
+const label = release ? releaseLabel(release) : null;
+---
+
+{
+  release && (
+    <a class="latest not-content" href={`/docs/changelog/#${release.anchor}`}>
+      <span class="version">{label?.badge}</span>
+      <span class="text">{label?.text}</span>
+      <span class="cta">Read the changelog →</span>
+    </a>
+  )
+}
+
+<style>
+  .latest {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    border-radius: 0.875rem;
+    background: var(--sl-color-gray-6);
+    color: var(--sl-color-white);
+    text-decoration: none;
+  }
+  .version {
+    padding: 0.125rem 0.625rem;
+    border-radius: 999px;
+    background: var(--spl-lime);
+    color: var(--spl-on-lime);
+    font-size: var(--sl-text-sm);
+    font-weight: 600;
+  }
+  .text {
+    flex: 1;
+    font-weight: 500;
+  }
+  .cta {
+    font-weight: 600;
+    color: var(--sl-color-text-accent);
+  }
+</style>

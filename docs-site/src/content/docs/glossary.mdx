@@ -1,0 +1,46 @@
+---
+title: Glossary
+description: Short definitions of the terms Spanlight uses, such as trace, span, session, insight, evaluator, budget and API key, each with a link to the page that explains it.
+sidebar:
+  order: 3
+---
+
+{/* Sources: backend/app/db/models/telemetry.py, backend/app/db/models/projects.py, backend/app/db/models/identity.py, backend/app/db/models/evals.py, backend/app/db/models/gateway.py, backend/app/ingest/schemas.py, backend/app/core/scopes.py, backend/app/core/permissions.py, backend/app/core/security.py, backend/app/insights/catalogue.py, backend/app/alerts/rule_spec.py, backend/app/alerts/types.py, backend/app/budgets/types.py, backend/app/datasets/schemas.py, backend/app/evals/experiments.py */}
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+This page defines the words the documentation uses. Each entry is short and links to the page that explains the idea in full. Terms are in alphabetical order.
+
+| Term | Meaning | Learn more |
+| --- | --- | --- |
+| **Alert rule** | A rule that watches one metric of a project, such as error rate, latency, volume or cost, and notifies channels when the metric crosses a line. A rule is a threshold rule or an anomaly rule. | [Alert rules and channels](/docs/alerts/) |
+| **API key** | A project API key. It belongs to one project and starts with `spl_live_`. Your application sends traces with it. It is shown once, when you create it. | [API keys and tokens](/docs/guides/access/), [Tenancy and access](/docs/concepts/tenancy/) |
+| **Budget** | A spend limit on a scope (the project, a gateway key, an end user or a model) over a UTC day or month. It notifies channels when the spend passes the amount, and a budget set to block also makes the gateway refuse further calls in that scope. | [Budgets and the weekly digest](/docs/budgets/) |
+| **Dataset** | A named list of test cases. Each item has an `input`, an optional `expected_output` and some metadata. You replay a dataset through a prompt in an experiment. | [Datasets](/docs/datasets/) |
+| **Detector** | A fixed rule that reads the spans of a time window and reports a finding when a pattern appears. The Doctor runs fifteen of them. No language model decides whether something is a problem. | [The Doctor](/docs/doctor/), [How the Doctor works](/docs/concepts/doctor/), [Detector catalogue](/docs/reference/detectors/) |
+| **Environment** | A label on a trace that says where the code ran, such as `production` or `staging`. You choose the value. It is not an object you create first. | [The data model](/docs/concepts/data-model/) |
+| **Evaluator** | Something that scores traces for you. It is a rule (heuristic), an LLM judge or a webhook to your own endpoint. It runs online on a sample of traces and inside experiments. | [Evaluators](/docs/evaluators/) |
+| **Experiment** | A comparison that joins a dataset, a target (a prompt version or typed messages) and some evaluators. Each run sends every dataset item through the target, scores the answers and records the cost. | [Experiments](/docs/experiments/) |
+| **Gateway route** | The part of the gateway that decides which provider credentials serve a call, how failures are retried and when to fall back to another target. Each gateway key uses one route. | [Routes, retries and fallbacks](/docs/gateway/routing/) |
+| **Insight** | A finding of the Doctor: a named problem with the evidence for it, the layer where it lives, a suggested fix and a way to check the fix. An insight is open, acknowledged, muted or resolved. | [The Doctor](/docs/doctor/), [How the Doctor works](/docs/concepts/doctor/) |
+| **Kind** | The type of a span: `llm`, `tool`, `retrieval`, `chain`, `http` or `other`. The default is `other`. | [The data model](/docs/concepts/data-model/) |
+| **Organization** | The account that owns projects and has members. Each member has one role: owner, admin, member or viewer. Also called an org. | [The data model](/docs/concepts/data-model/), [Tenancy and access](/docs/concepts/tenancy/), [Roles and permissions](/docs/reference/roles/) |
+| **Personal access token (PAT)** | A credential that belongs to a person and starts with `spl_pat_`. A script uses it to call the dashboard API as that person. It has a `read` or `write` scope. | [API keys and tokens](/docs/guides/access/) |
+| **Project** | One application, or one slice of one, whose traces you read together. A project is the unit of data isolation. It also holds settings such as the retention period. | [The data model](/docs/concepts/data-model/), [Tenancy and access](/docs/concepts/tenancy/) |
+| **Prompt** | A named template stored in Spanlight as immutable numbered versions. Labels such as `production` point at the version your application should use. | [Prompts](/docs/prompts/) |
+| **Release** | A label on a trace that names the version of your application that produced it. It lets you compare two versions. | [Releases and users](/docs/releases-and-users/) |
+| **Scope** | What a credential may do. A project API key has scopes such as `ingest:write`, `traces:read`, `scores:write` and `prompts:read`. A personal access token has a `read` or `write` scope. | [API keys and tokens](/docs/guides/access/), [Roles and permissions](/docs/reference/roles/) |
+| **Score** | A judgement about a trace, or about one span in it, with a name, a value and a source. You can filter and chart scores. | [Scores and review queues](/docs/scores/) |
+| **Session** | Every trace that shares one `session_id`, such as a conversation. It is a grouping in the dashboard and is unrelated to the sign-in sessions of the people who use Spanlight. | [The data model](/docs/concepts/data-model/), [Traces and sessions](/docs/guides/traces/) |
+| **Span** | One unit of work with a start and an end, such as a model call, a tool call or a retrieval step. A span points to its parent, which is how the trace page draws the tree. | [The data model](/docs/concepts/data-model/), [How ingestion works](/docs/concepts/ingestion/) |
+| **Trace** | The set of spans that belong to one request or one job. A trace exists because spans name it, and its totals are worked out from its stored spans. | [The data model](/docs/concepts/data-model/), [Traces and sessions](/docs/guides/traces/), [The Overview dashboard](/docs/guides/overview/) |
+| **User** | In observability data, the `user_id` you send on a trace to name the end user it was produced for. Spanlight stores it as you send it. It is not a Spanlight account. | [The data model](/docs/concepts/data-model/), [Releases and users](/docs/releases-and-users/) |
+
+## Related pages
+
+<CardGrid>
+  <LinkCard title="The data model" href="/docs/concepts/data-model/" description="How organizations, projects, traces and spans fit together." />
+  <LinkCard title="Tenancy and access" href="/docs/concepts/tenancy/" description="Roles, credentials and how projects stay separate." />
+  <LinkCard title="Limits reference" href="/docs/reference/limits/" description="Every size, count, time and rate limit." />
+  <LinkCard title="Roles and permissions" href="/docs/reference/roles/" description="Who can do what, and which key scopes exist." />
+</CardGrid>

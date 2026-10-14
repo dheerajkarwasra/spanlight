@@ -286,6 +286,10 @@ specific function, use `@observe(capture_input=False, capture_output=False)`.
 
 ## API reference
 
+The full API, with every signature, default and error, is in the
+[Python SDK reference](https://github.com/dheerajkarwasra/spanlight/blob/main/docs-site/src/content/docs/reference/python-sdk.mdx).
+The sections below are a summary.
+
 ### `init(**options) -> Spanlight`
 
 Configures the global client used by `observe`, `span` and the wrappers.

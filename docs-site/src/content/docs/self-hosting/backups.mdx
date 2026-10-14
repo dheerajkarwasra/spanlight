@@ -1,0 +1,221 @@
+---
+title: Back up and restore
+description: Set up nightly database backups to object storage, take one on demand, check that they run, and rehearse a restore without touching your live data.
+sidebar:
+  order: 24
+---
+
+{/* Sources: backend/app/backups/jobs.py, backend/app/backups/service.py, backend/app/backups/restore.py, backend/app/backups/retention.py, backend/app/backups/libpq.py, backend/app/cli.py, backend/app/jobs/scheduler.py, backend/app/config.py, deploy/compose.yaml, deploy/compose.minio.yaml, deploy/Dockerfile, docs/runbooks/restore.md, docs/runbooks/alerts.md, deploy/.env.example, backend/app/db/models/platform.py, docs/runbooks/rotate-secrets.md */}
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+
+<Prerequisites
+  items={[
+    'An S3-compatible bucket and its access key (S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY), or the MinIO file for a trial',
+    'A database role that can bypass row-level security, for BACKUP_DATABASE_URL',
+    'The worker running, because backups run in the worker',
+    'Shell access to the host that runs Docker Compose',
+  ]}
+/>
+
+Spanlight backs up its Postgres database to your own object storage. This page covers what a backup contains, how to switch the nightly job on, how to take a backup on demand, and how to rehearse a restore. The full restore procedure is the [restore runbook](/docs/runbooks/restore/).
+
+The commands use this shortcut. Run it from the repository root:
+
+```bash
+spl() { docker compose -f deploy/compose.yaml --env-file deploy/.env "$@"; }
+```
+
+If you start the stack with extra files, such as `deploy/compose.minio.yaml`, add the same `-f` options.
+
+## What is backed up
+
+A backup is one `pg_dump` of the whole `spanlight` database in custom format (`-Fc`). It contains traces, spans, users, projects, API key hashes, prompts, datasets, alert rules and the job queue.
+
+A backup leaves out:
+
+- Rate-limit buckets. They are an unlogged table with short-lived counters that refill on their own.
+- Anything outside the database. That means the contents of the bucket other than backups, your environment variables, and `CREDENTIALS_KEYS`.
+
+<Aside type="caution">
+Back up `CREDENTIALS_KEYS` and your `deploy/.env` file separately, in a secret manager. Encrypted values in a restored database, such as two-factor secrets and provider credentials, cannot be read without the key, and a lost key cannot be recovered.
+</Aside>
+
+A dump holds every prompt and completion your applications sent. Keep the bucket private and encrypted at rest.
+
+## Turn on nightly backups
+
+The worker runs the backup job once a day, from 03:00 UTC. If the worker was down at that time, the day's job runs as soon as a worker starts. A job gets up to three attempts. It uploads the dump to `backups/YYYY/MM/DD/spanlight-<UTC timestamp>.dump` in your bucket.
+
+The job runs only when all of this is true:
+
+- Object storage is configured: `S3_BUCKET`, `S3_ACCESS_KEY` and `S3_SECRET_KEY` are all set. Add `S3_ENDPOINT` for a store other than AWS, and `S3_REGION` for an AWS bucket. MinIO and most self-hosted stores also need `S3_FORCE_PATH_STYLE=true`. Setting only some of them stops the application at start-up.
+- `BACKUP_DATABASE_URL` is set.
+- `BACKUPS_ENABLED` is not `false`. It is `true` by default.
+
+If any of these is missing, the job ends as `skipped_not_configured` and takes no backup. It does not fail, so nothing alerts you. Check it yourself (see below).
+
+`BACKUP_DATABASE_URL` must name a superuser or a role with `BYPASSRLS`. The tenant tables force row-level security, and a dump made by the application role fails instead of producing an incomplete backup. On the bundled Postgres, the `postgres` owner qualifies. The Compose file passes `BACKUP_DATABASE_URL` to the worker only, because it is a role that bypasses row-level security and the API faces the network. On a managed Postgres, create a `BYPASSRLS` role for it.
+
+Add the settings to `deploy/.env`:
+
+```bash
+S3_BUCKET=my-spanlight-backups
+S3_ACCESS_KEY=...
+S3_SECRET_KEY=...
+S3_REGION=eu-west-1
+BACKUP_DATABASE_URL=postgresql://postgres:<POSTGRES_PASSWORD>@postgres:5432/spanlight
+```
+
+Then recreate the services that read them:
+
+```bash
+spl up -d api worker
+```
+
+Set a lifecycle rule on the bucket that aborts incomplete multipart uploads after one day (`AbortIncompleteMultipartUpload` with `DaysAfterInitiation: 1`). A crash in the middle of a backup can leave uploaded parts behind, and they cost storage until the rule removes them.
+
+### Retention
+
+After each successful backup, the job deletes old ones. It keeps the newest backup of each of the last 14 UTC days, and the newest backup made on a Sunday for each of the last 8 Sundays. It always keeps the newest backup overall, and it never deletes a key under `backups/` that it did not create. A failure while pruning does not fail the job, because the new backup is already safe.
+
+### Try it with MinIO
+
+To try backups without a cloud account, add the MinIO file. It starts a local MinIO server, creates the bucket and points the `api` and `worker` at it:
+
+```bash
+docker compose -f deploy/compose.yaml -f deploy/compose.minio.yaml --env-file deploy/.env up -d --build
+```
+
+You still need `BACKUP_DATABASE_URL`. The default MinIO credentials are public, so override `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` in `deploy/.env` if anyone else can reach the host. The ports are bound to `127.0.0.1`. See [Configuration](/docs/configuration/#minio-variables) for the variables. For production, use a real bucket instead.
+
+## Take a backup now
+
+```bash
+spl exec worker spanlight backup now
+```
+
+On success it prints the key and size:
+
+```text
+Backed up to backups/2026/10/09/spanlight-20261009T143012Z.dump (48213377 bytes).
+```
+
+It needs object storage and `BACKUP_DATABASE_URL`. `BACKUPS_ENABLED` only governs the nightly job, so it does not stop a backup you ask for. A backup you take by hand is not pruned. The nightly job removes old backups the next time it runs.
+
+If a setting is missing, the command exits with status 1 and names it:
+
+```text
+Error: BACKUP_DATABASE_URL is not set
+Error: object storage is not configured (set S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY)
+```
+
+List the backups, oldest first:
+
+```bash
+spl exec worker spanlight backup list
+```
+
+Each line is the key, the size in bytes and the upload time. It prints `No backups found.` when the bucket holds none.
+
+## Check it worked
+
+Do not assume the nightly job works. Check it after you set it up, and now and then afterwards.
+
+```bash
+spl exec worker spanlight backup list
+spl logs --since 24h worker | grep -E 'backup_completed|backup_skipped|backups?_prune'
+spl exec postgres psql -U postgres -d spanlight -c \
+  "SELECT status, outcome, attempts, last_error, created_at
+     FROM jobs WHERE kind = 'backup_database' ORDER BY id DESC LIMIT 3"
+```
+
+A good night leaves a `backup_completed` log line with the key, the size and the seconds it took, and a `done` row with outcome `ok`. A `backup_skipped` line gives the reason: `BACKUPS_ENABLED is false`, `BACKUP_DATABASE_URL is not set` or `object storage is not configured`. A newest backup in the list that is more than a day old is a reason to look.
+
+## Restore
+
+A restore always goes into a new, empty database. `spanlight restore` refuses a database that already has tables, so it cannot overwrite live data. It streams the dump from object storage into `pg_restore --no-owner --no-privileges --single-transaction`, so a failure leaves the target empty.
+
+```bash
+spanlight restore --key backups/2026/10/09/spanlight-20261009T030000Z.dump
+```
+
+The target comes from the `RESTORE_TARGET_URL` environment variable. Prefer that to the `--target-url` option, because a URL on the command line is visible in the process list and your shell history. The dump has neither owners nor privileges, so after a restore you run `spanlight ensure-app-role` against the restored database so the API and worker can connect. The [restore runbook](/docs/runbooks/restore/) has the complete Compose procedure, including how to swap the restored database in for the live one and how to go back.
+
+## Rehearse a restore
+
+A backup you have never restored is a hope, not a backup. This drill restores the newest backup into a scratch database next to the live one. It does not stop the stack and does not change the live database. It needs disk space for a full copy of the data.
+
+<Steps>
+
+1. **Pick a backup.**
+
+   ```bash
+   spl run --rm --no-deps worker spanlight backup list
+   ```
+
+   Choose a key, usually the newest. `run --rm --no-deps` starts a one-off container with the worker's settings, including the object storage.
+
+2. **Create an empty scratch database.**
+
+   ```bash
+   spl exec postgres psql -U postgres -d postgres -c 'CREATE DATABASE spanlight_drill'
+   ```
+
+3. **Restore into it.** The URL uses the owner password from `deploy/.env`, read by the shell so it never appears on the command line:
+
+   ```bash
+   export RESTORE_TARGET_URL="postgresql://postgres:$(sed -n 's/^POSTGRES_PASSWORD=//p' deploy/.env)@postgres:5432/spanlight_drill"
+   spl run --rm --no-deps -e RESTORE_TARGET_URL worker \
+     spanlight restore --key backups/2026/10/09/spanlight-20261009T030000Z.dump
+   unset RESTORE_TARGET_URL
+   ```
+
+   This assumes `POSTGRES_PASSWORD` has no characters that need escaping in a URL. The command ends with `Restored <key>.` and a reminder to run `ensure-app-role`. You can skip that for a drill, because nothing connects to the scratch database as the app role.
+
+4. **Check the data.**
+
+   ```bash
+   spl exec postgres psql -U postgres -d spanlight_drill -c \
+     "SELECT 'traces' AS table_name, count(*) FROM traces
+      UNION ALL SELECT 'spans', count(*) FROM spans
+      UNION ALL SELECT 'projects', count(*) FROM projects"
+   spl exec postgres psql -U postgres -d spanlight_drill -tA -c "SELECT max(started_at) FROM traces"
+   spl exec postgres psql -U postgres -d spanlight_drill -tA -c "SELECT version_num FROM alembic_version"
+   ```
+
+   The counts should be close to the live database, the newest trace should be about as recent as the backup, and the revision should match the version that took the backup.
+
+5. **Remove the scratch database.**
+
+   ```bash
+   spl exec postgres psql -U postgres -d postgres -c 'DROP DATABASE spanlight_drill'
+   ```
+
+</Steps>
+
+Time the drill. How long it took tells you how long a real restore will keep you down.
+
+## Troubleshooting
+
+- **The job ends as `skipped_not_configured` and no backup appears.** A `backup_skipped` log line names the missing piece: `BACKUPS_ENABLED is false`, `BACKUP_DATABASE_URL is not set` or `object storage is not configured`. See [Turn on nightly backups](#turn-on-nightly-backups).
+- **`Error: BACKUP_DATABASE_URL is not set`, or `Error: object storage is not configured (set S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY)`, from `backup now`.** Set the named variables in `deploy/.env` and run `spl up -d api worker`.
+- **The dump fails with `pg_dump exited with status …`.** A role without `BYPASSRLS` cannot dump the tenant tables, and the job fails instead of writing a partial backup. Point `BACKUP_DATABASE_URL` at the `postgres` owner or a `BYPASSRLS` role.
+- **The newest backup is more than a day old.** The worker may be down, or the job failed three times. Read the `jobs` row's `last_error` from the query in [Check it worked](#check-it-worked), and see [The worker is not running](/docs/troubleshooting/#the-worker-is-not-running).
+- **`the target database already has N table(s) in the public schema; restore into a new, empty database`.** `spanlight restore` never overwrites. Create a new database and point `RESTORE_TARGET_URL` at it.
+- **`no backup with key '…'`.** The key is wrong. Copy it from `spanlight backup list`.
+- **The API cannot connect to the restored database.** The dump has no owners or privileges. Run `spanlight ensure-app-role` against it.
+- **Two-factor secrets or provider credentials in a restored database cannot be read.** They are encrypted with `CREDENTIALS_KEYS`. Restore the key you backed up separately.
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Restoring a database backup', href: '/docs/runbooks/restore/', description: 'The full procedure, including swapping the restored database in.' },
+    { title: 'Upgrade Spanlight', href: '/docs/self-hosting/upgrades/', description: 'Back up before every upgrade.' },
+    { title: 'Configuration', href: '/docs/configuration/#backups', description: 'Object storage and backup settings.' },
+    { title: 'Data, limits and operations', href: '/docs/guides/data/', description: 'What a long-window metric is, and the rate limits.' },
+  ]}
+/>

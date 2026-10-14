@@ -1,0 +1,113 @@
+---
+/**
+ * Starlight's footer (edit link, last updated, previous and next page) with "Report a problem
+ * with this page" in its meta row. Starlight's own Footer renders nothing from a slot, so the
+ * footer is rebuilt here from the same parts and styles. The script below makes wide tables and
+ * code blocks reachable by keyboard and gives each one its own name.
+ */
+import EditLink from '@astrojs/starlight/components/EditLink.astro';
+import LastUpdated from '@astrojs/starlight/components/LastUpdated.astro';
+import Pagination from '@astrojs/starlight/components/Pagination.astro';
+
+import ReportProblem from './ReportProblem.astro';
+
+const isSplash = Astro.locals.starlightRoute.entry.data.template === 'splash';
+---
+
+<footer class="sl-flex">
+  <div class="meta sl-flex">
+    <EditLink />
+    <LastUpdated />
+    {!isSplash && <ReportProblem />}
+  </div>
+  <Pagination />
+</footer>
+
+<style>
+  @layer starlight.core {
+    footer {
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+    .meta {
+      gap: 0.75rem 3rem;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      margin-top: 3rem;
+      font-size: var(--sl-text-sm);
+      color: var(--sl-color-gray-3);
+    }
+  }
+</style>
+
+<script>
+  // Wide tables scroll sideways on narrow screens. A scrollable region must be reachable by
+  // keyboard (WCAG 2.1.1) and each landmark needs its own name, so only a table that actually
+  // overflows becomes a focusable region, named after the heading above it.
+  const regions: { region: HTMLElement; label: string }[] = [];
+  const perHeading = new Map<string, number>();
+  for (const table of document.querySelectorAll('.sl-markdown-content table')) {
+    let region = table.parentElement;
+    if (!region?.classList.contains('table-region')) {
+      region = document.createElement('div');
+      region.className = 'table-region';
+      table.replaceWith(region);
+      region.append(table);
+    }
+    let heading: Element | null = region;
+    while (heading && !/^H[2-4]$/.test(heading.tagName)) {
+      heading = heading.previousElementSibling ?? heading.parentElement;
+      if (heading?.classList.contains('sl-markdown-content')) heading = null;
+    }
+    const title = heading?.textContent?.trim() || document.title;
+    const count = (perHeading.get(title) ?? 0) + 1;
+    perHeading.set(title, count);
+    regions.push({ region, label: `Table: ${title}` });
+  }
+  for (const entry of regions) {
+    const title = entry.label.slice('Table: '.length);
+    if ((perHeading.get(title) ?? 0) > 1) {
+      const index = regions.filter((e) => e.label.startsWith(entry.label)).indexOf(entry) + 1;
+      entry.label = `${entry.label} (${index})`;
+    }
+  }
+  const update = () => {
+    for (const { region, label } of regions) {
+      const scrolls = region.scrollWidth > region.clientWidth;
+      region.toggleAttribute('tabindex', scrolls);
+      if (scrolls) {
+        region.tabIndex = 0;
+        region.setAttribute('role', 'region');
+        region.setAttribute('aria-label', label);
+      } else {
+        region.removeAttribute('role');
+        region.removeAttribute('aria-label');
+      }
+    }
+  };
+  update();
+  addEventListener('resize', () => requestAnimationFrame(update));
+
+  // Expressive Code makes a code block that overflows sideways a focusable `role="region"`, but
+  // gives it no name, and every region landmark needs its own. Name each one "Code: <title or
+  // language>", numbered when the same name appears more than once on the page. The region role
+  // is added and removed as the window resizes, so the name follows the role.
+  const blocks = [...document.querySelectorAll<HTMLElement>('.expressive-code pre')].map((pre) => {
+    const title = pre.closest('figure')?.querySelector('figcaption .title')?.textContent?.trim();
+    return { pre, name: title || pre.dataset.language || 'code' };
+  });
+  const totals = new Map<string, number>();
+  for (const { name } of blocks) totals.set(name, (totals.get(name) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  for (const { pre, name } of blocks) {
+    const index = (seen.get(name) ?? 0) + 1;
+    seen.set(name, index);
+    const label = (totals.get(name) ?? 0) > 1 ? `Code: ${name} (${index})` : `Code: ${name}`;
+    const sync = () => {
+      if (pre.getAttribute('role') === 'region') pre.setAttribute('aria-label', label);
+      else pre.removeAttribute('aria-label');
+    };
+    new MutationObserver(sync).observe(pre, { attributes: true, attributeFilter: ['role'] });
+    sync();
+  }
+</script>
