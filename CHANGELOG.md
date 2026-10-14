@@ -77,6 +77,7 @@ Prompts, datasets and evals: manage prompts as versions, score traces by hand or
 - **Span linking.** `spanlight_prompt=compiled` on `wrap_openai` and `wrap_anthropic` calls, `with compiled:` for everything inside a block, and `spanlight.no_prompt()` to keep a task unlinked.
 - **`spanlight.score(trace_id, name, value, *, span_id=None, comment=None)`** sends a score in the background with the spans, with an id per call so a retry cannot store it twice. It never raises.
 - **Experiment runner** `python -m spanlight._experiments`, behind the eval-gate Action.
+- **Python SDK 0.1.1.** The eval-gate report prints p50 and p95 latency in whole milliseconds, and its "Open the run" link and the Action's `run-url` output open the run page instead of the experiment.
 
 ### Settings
 
