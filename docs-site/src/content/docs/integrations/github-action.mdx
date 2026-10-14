@@ -25,8 +25,8 @@ The Action is a thin wrapper. It installs the Spanlight Python SDK and runs `pyt
 
 <Verified
   date="2026-10-13"
-  packages={[{ name: 'spanlight', version: '0.1.0' }]}
-  note="The Action's command, python -m spanlight._experiments with the arguments action.yml builds, was run on a local machine with Python 3.13.9 against a local Spanlight server and a stand-in for the Anthropic API. The SDK came from PyPI. Its experiment runner is identical to the one at the repository tag sdk-python-v0.1.0, which the workflow below uses, and the Action's own files match that tag. GitHub Actions itself was not run, so neither the hosted Action nor this workflow was."
+  packages={[{ name: 'spanlight', version: '0.1.1' }]}
+  note="The Action's command, python -m spanlight._experiments with the arguments action.yml builds, was run on a local machine with Python 3.13.9 against a local Spanlight server and a stand-in for the Anthropic API. The run used spanlight 0.1.0 from PyPI. Version 0.1.1, which the workflow below uses, changes only the report's latency format and run link; the SDK's tests cover both. GitHub Actions itself was not run, so neither the hosted Action nor this workflow was."
 />
 
 ## A minimal workflow
@@ -51,7 +51,7 @@ jobs:
         id: prompt
         run: echo "ref=support/answer:$(tr -d '[:space:]' < prompt-version.txt)" >> "$GITHUB_OUTPUT"
 
-      - uses: dheerajkarwasra/spanlight/.github/actions/eval-gate@sdk-python-v0.1.0
+      - uses: dheerajkarwasra/spanlight/.github/actions/eval-gate@sdk-python-v0.1.1
         with:
           host: ${{ vars.SPANLIGHT_HOST }}
           token: ${{ secrets.SPANLIGHT_TOKEN }}
@@ -79,9 +79,7 @@ The [eval gate page](/docs/eval-gate/#inputs) has the table of every input and i
 * **`max-cost-usd`.** The cost limit of a run. It applies when the experiment is created, so changing it later changes nothing; see [the eval gate page](/docs/eval-gate/#what-the-gate-does).
 * **`host`, `token` and `project-id`.** Keep the token in a secret and the other two in variables.
 
-The Action's outputs are `run-id` and `run-url`. The `run-url` links to the run in the dashboard; which page it opens depends on the SDK ref, as the next paragraph explains. The report is also printed to the job log and added to the job summary.
-
-The `run-url` output and the format of the report depend on the SDK ref the Action installs. With the `sdk-python-v0.1.0` tag used in the workflow above, `run-url` and the "Open the run" link open the experiment page, and the report prints latencies unrounded. The Action on `main`, or on a later tag, links the run page and rounds latencies to whole milliseconds.
+The Action's outputs are `run-id` and `run-url`. The `run-url` opens the run page in the dashboard. The report is also printed to the job log and added to the job summary.
 
 ## The exit codes
 

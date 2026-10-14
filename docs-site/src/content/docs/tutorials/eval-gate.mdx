@@ -29,8 +29,8 @@ The Action runs your prompt on a real model, so every run costs money. A run her
 
 <Verified
   date="2026-10-13"
-  packages={[{ name: 'spanlight', version: '0.1.0' }]}
-  note="Run with Python 3.13.9 against a local Spanlight server and worker, and a stand-in for the Anthropic API, not Anthropic itself. The stand-in repeats the prompt back to you, which is how version 2 scored lower; with a real model the answers, the scores and the costs differ, and the stand-in's credential needed a price override that your own credential does not. The gate command was run on a local machine exactly as the Action builds it, with the SDK from the repository tag sdk-python-v0.1.0 (identical to spanlight 0.1.0 on PyPI). GitHub Actions was not run: the workflow file was checked for syntax and its version-reading step was run locally. The dashboard screens are described from the dashboard source, and the data behind them was read back through the API; the screens were not opened in a browser."
+  packages={[{ name: 'spanlight', version: '0.1.1' }]}
+  note="Run with Python 3.13.9 against a local Spanlight server and worker, and a stand-in for the Anthropic API, not Anthropic itself. The stand-in repeats the prompt back to you, which is how version 2 scored lower; with a real model the answers, the scores and the costs differ, and the stand-in's credential needed a price override that your own credential does not. The gate command was run on a local machine exactly as the Action builds it, with spanlight 0.1.0; version 0.1.1, which this page installs, changes only the report's latency format and run link, and the SDK's tests cover both. GitHub Actions was not run: the workflow file was checked for syntax and its version-reading step was run locally. The dashboard screens are described from the dashboard source, and the data behind them was read back through the API; the screens were not opened in a browser."
 />
 
 <Steps>
@@ -100,7 +100,7 @@ The Action runs your prompt on a real model, so every run costs money. A run her
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate
-   pip install "spanlight==0.1.0"
+   pip install "spanlight==0.1.1"
 
    export SPANLIGHT_HOST=https://spanlight.example.com   # or http://localhost:8080 (Compose), http://localhost:8000 (API run directly)
    export SPANLIGHT_PROJECT_ID=<project id>
@@ -130,7 +130,7 @@ The Action runs your prompt on a real model, so every run costs money. A run her
 
    and then `exit code: 0`. This is example output: your cost, latencies and ids differ. In the verification run every one of the three answers contained the link.
 
-   The reports on this page show what the Action on `main` prints: the link opens the run page, and latencies are whole milliseconds. The release `spanlight==0.1.0` installed above and the tag `sdk-python-v0.1.0` used in the workflow predate that change. With them, "Open the run" opens the experiment page and the latencies are printed unrounded, with many decimals. [The eval gate page](/docs/eval-gate/#what-the-gate-does) explains the exit codes and the experiment name.
+   [The eval gate page](/docs/eval-gate/#what-the-gate-does) explains the exit codes and the experiment name.
 
 6. **Add the workflow.** In your repository create a file `prompt-version.txt` that contains only `1`. It stands for the place where your repository records which prompt version it ships. Use whatever your repository already has; the Action only needs the `prompt` input. Then create `.github/workflows/prompt-evals.yml`:
 
@@ -154,7 +154,7 @@ The Action runs your prompt on a real model, so every run costs money. A run her
            id: prompt
            run: echo "ref=support/answer:$(tr -d '[:space:]' < prompt-version.txt)" >> "$GITHUB_OUTPUT"
 
-         - uses: dheerajkarwasra/spanlight/.github/actions/eval-gate@sdk-python-v0.1.0
+         - uses: dheerajkarwasra/spanlight/.github/actions/eval-gate@sdk-python-v0.1.1
            with:
              host: ${{ vars.SPANLIGHT_HOST }}
              token: ${{ secrets.SPANLIGHT_TOKEN }}
@@ -168,7 +168,7 @@ The Action runs your prompt on a real model, so every run costs money. A run her
              max-cost-usd: '1'
    ```
 
-   The workflow runs when a pull request changes `prompt-version.txt`. One step turns its content into `support/answer:1`. The Action step gets the same inputs as the command in step 5. The `@sdk-python-v0.1.0` after the Action path is a Git tag, so a change to the repository cannot change your gate; the Action installs the SDK from the same tag. [The GitHub Action page](/docs/integrations/github-action/) lists the inputs that matter first, and the [eval gate page](/docs/eval-gate/#inputs) has the full table.
+   The workflow runs when a pull request changes `prompt-version.txt`. One step turns its content into `support/answer:1`. The Action step gets the same inputs as the command in step 5. The `@sdk-python-v0.1.1` after the Action path is a Git tag, so a change to the repository cannot change your gate; the Action installs the SDK from the same tag. [The GitHub Action page](/docs/integrations/github-action/) lists the inputs that matter first, and the [eval gate page](/docs/eval-gate/#inputs) has the full table.
 
    Commit both files on a new branch, push it and open a pull request. The job `eval-gate` runs, and its log ends with the report from step 5. The same table is added to the job summary. The job passes.
 
@@ -202,7 +202,7 @@ The Action runs your prompt on a real model, so every run costs money. A run her
 
    The step exits with code `1`, which is how GitHub marks the job as failed. A pull request that requires this check cannot be merged.
 
-8. **Read why it failed.** Choose **Open the run** in the log, which opens the page of that run (with `0.1.0` it opens the experiment page, which lists the runs); on a run page, its back link leads to the experiment. You can also open **Experiments** in the sidebar and choose the experiment `ci/refund-questions/support/answer/<id>`. The steps below start from the experiment page.
+8. **Read why it failed.** Choose **Open the run** in the log, which opens the page of that run; on a run page, its back link leads to the experiment. You can also open **Experiments** in the sidebar and choose the experiment `ci/refund-questions/support/answer/<id>`. The steps below start from the experiment page.
 
    * The header shows the **Dataset** `refund-questions`, the **Target** (the prompt, the model and the credential), **Scored by** `cites-policy` and the **Cost limit**.
    * The **Runs** card lists every run. Each row shows the run's number, such as **Run #3**, and the prompt version it tested, such as `support/answer v2`. Your run numbers differ, because every start is numbered, including the one on your machine in step 5.
