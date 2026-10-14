@@ -48,7 +48,7 @@ jobs:
       COMPOSE_PROJECT_NAME: spanlight-load
       COMPOSE_FILE: deploy/compose.yaml:backend/load/compose.load.yaml
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
@@ -312,7 +312,7 @@ jobs:
       EXPECTED_RULES: "1000"
       LIMIT_SECONDS: "10"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true

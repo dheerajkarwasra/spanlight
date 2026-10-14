@@ -163,6 +163,10 @@ original design; everything else is a clarification.
 - Non-members get 404 for every project route; members lacking a permission get 403.
 - `from`/`to` default to the last 24 h; `from >= to` or a window > 90 days → 422.
 - Sessions: `last_at` is the latest trace `ended_at`; ordering and cursors use it (desc).
+- Sessions `environment` (addition): `GET …/sessions?environment=` keeps only traces of that environment before the
+  traces are grouped, exactly as the trace list does. A session that spans environments is listed with the
+  `trace_count`, `cost_usd`, `error_count`, `first_at` and `last_at` of its matching traces only, and `last_at`
+  (so the order and the cursor) follows those traces. A session with no trace in the environment is not listed.
 - KPI definitions (overview, timeseries, models):
   - `llm_calls`, `errors`/`error_rate`, `p50_ms`/`p95_ms` (`percentile_cont`) and `unpriced_calls` are
     computed over spans of kind `llm` started in the window.

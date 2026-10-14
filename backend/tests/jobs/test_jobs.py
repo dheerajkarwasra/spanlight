@@ -1,10 +1,13 @@
 """The lease/fence job queue, the worker loop, scheduling and maintenance tasks."""
 
+import asyncio
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -34,6 +37,8 @@ from app.jobs.scheduler import (
 from app.jobs.tasks.cleanup import cleanup
 from app.jobs.tasks.retention import apply_retention
 from app.jobs.worker import Worker
+from tests.gateway_fixtures import CREDENTIALS_KEYS
+from tests.gateway_support import logged
 from tests.helpers import Browser, bearer, create_workspace, new_trace_id, span
 
 SessionFactory = async_sessionmaker[AsyncSession]
@@ -180,6 +185,42 @@ async def test_worker_runs_handlers_and_records_failures(
     assert jobs["bad"].status is JobStatus.QUEUED
     assert jobs["bad"].last_error == "RuntimeError: kaboom"
     assert "no handler" in (jobs["unknown"].last_error or "")
+
+
+async def _start_and_stop(
+    session_factory: SessionFactory, settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Start a worker that is told to stop at once, so only its start-up runs."""
+    caplog.set_level(logging.INFO)
+    stop = asyncio.Event()
+    stop.set()
+    await Worker(session_factory, settings, handlers={}).run_forever(stop)
+
+
+async def test_a_worker_without_credentials_keys_warns_at_start_up(
+    session_factory: SessionFactory, settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    assert not settings.is_crypto_configured
+
+    await _start_and_stop(session_factory, settings, caplog)
+
+    [started] = logged(caplog, "worker_started")
+    assert started["crypto_configured"] is False
+    [warning] = logged(caplog, "worker_credentials_keys_missing")
+    assert warning["level"] == "warning"
+    assert "CREDENTIALS_KEYS" in warning["impact"]
+
+
+async def test_a_worker_with_credentials_keys_starts_without_the_warning(
+    session_factory: SessionFactory, settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    keyed = settings.model_copy(update={"credentials_keys": SecretStr(CREDENTIALS_KEYS)})
+
+    await _start_and_stop(session_factory, keyed, caplog)
+
+    [started] = logged(caplog, "worker_started")
+    assert started["crypto_configured"] is True
+    assert logged(caplog, "worker_credentials_keys_missing") == []
 
 
 async def test_scheduler_dedupes_per_period(

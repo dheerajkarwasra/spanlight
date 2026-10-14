@@ -116,8 +116,7 @@ function SessionList({
         ) : null}
         <p className="text-xs font-medium text-muted-foreground" aria-live="polite">
           {hasNextPage ? "Showing the latest " : "Showing "}
-          {pluralize(sessions.length, "session")} {rangePhrase(range)}. Sessions include traces from
-          every environment.
+          {pluralize(sessions.length, "session")} {rangePhrase(range)}.
         </p>
       </div>
     </>
@@ -125,16 +124,17 @@ function SessionList({
 }
 
 function SessionsEmptyState() {
-  const { range } = useProjectFilters();
+  const { range, environment } = useProjectFilters();
   return (
     <EmptyState
       icon={MessagesSquare}
-      title="No sessions in this range"
+      title={environment ? "No sessions in this environment" : "No sessions in this range"}
       description={
         <>
           <p>
-            Nothing was grouped into a session {rangePhrase(range)}. Sessions appear when traces
-            carry a session ID, for example:
+            {environment
+              ? `Nothing from the "${environment}" environment was grouped into a session ${rangePhrase(range)}. Pick a wider time range or another environment. Sessions appear when traces carry a session ID, for example:`
+              : `Nothing was grouped into a session ${rangePhrase(range)}. Sessions appear when traces carry a session ID, for example:`}
           </p>
           <code className="mt-2 inline-block rounded-xs border border-border bg-surface-muted px-2 py-0.5 font-mono text-label text-foreground">
             update_trace(session_id=&quot;chat_123&quot;)

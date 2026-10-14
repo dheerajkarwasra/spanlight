@@ -2,6 +2,7 @@ import { Trash2 } from "lucide-react";
 import { useId } from "react";
 import { toast } from "sonner";
 
+import { CopyButton } from "@/components/copy-button";
 import { Button } from "@/components/ui/button";
 import { UnknownValue } from "@/components/unknown-value";
 import { errorMessage, type Credential, type Route } from "@/lib/api";
@@ -28,8 +29,9 @@ interface CredentialRowProps {
 }
 
 /**
- * Figma "Gateway/Credential row" and its mobile tile (182:3285): name and provider, base URL, last
- * use, last check, and Check, Rotate and Delete. Below the container breakpoint the tile stacks
+ * Figma "Gateway/Credential row" and its mobile tile (182:3285): name, provider and credential ID
+ * with a copy button (the eval-gate Action takes that ID), base URL, last use, last check, and
+ * Check, Rotate and Delete. Below the container breakpoint the tile stacks
  * those with overline labels and puts the actions under them. A credential a route uses shows
  * "Used by route {route}" and its Delete stays disabled, with that text as the reason.
  */
@@ -64,6 +66,19 @@ export function CredentialRow({
         </span>
         <span className="block text-xs font-medium text-subtle-foreground">
           {PROVIDER_LABELS[credential.provider]}
+        </span>
+        <span className="flex min-w-0 items-center gap-0.5">
+          <code
+            title={credential.id}
+            className="truncate font-mono text-label text-muted-foreground"
+          >
+            {credential.id}
+          </code>
+          <CopyButton
+            value={credential.id}
+            label={`Copy ${credential.name} ID`}
+            className="size-7 shrink-0"
+          />
         </span>
         {usedBy ? (
           <span

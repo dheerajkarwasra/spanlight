@@ -53,6 +53,8 @@ export interface TraceListQuery extends TimeWindow {
 }
 
 export interface SessionListQuery extends TimeWindow {
+  /** Counts only the traces of this environment; omitted for every environment. */
+  environment?: string | undefined;
   limit?: number;
   cursor?: string | null;
 }

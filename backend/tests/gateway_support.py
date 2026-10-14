@@ -140,6 +140,20 @@ async def read_gateway_span(
     return spans[0]
 
 
+async def read_gateway_traces(
+    sessions: async_sessionmaker[AsyncSession], project_id: uuid.UUID | str
+) -> list[dict[str, Any]]:
+    """The project's traces, oldest first, once every queued span has been written."""
+    await drain_recorder()
+    async with sessions() as db:
+        await db.execute(text("SELECT set_config('app.bypass_rls', 'on', true)"))
+        rows = await db.execute(
+            text("SELECT * FROM traces WHERE project_id = :id ORDER BY started_at, trace_id"),
+            {"id": str(project_id)},
+        )
+        return [dict(row) for row in rows.mappings()]
+
+
 def logged(caplog: pytest.LogCaptureFixture, event: str) -> list[dict[str, Any]]:
     """The structlog events named `event` that reached the stdlib handlers during the test.
 

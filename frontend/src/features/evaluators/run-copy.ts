@@ -58,7 +58,8 @@ const ERROR_COPY: Record<string, string> = {
   trace_not_found: "The trace is no longer stored.",
   no_payload: "The span has no stored input or output.",
   gateway_not_configured: "The gateway is not running on this server.",
-  credentials_not_configured: "Provider credentials are not configured on this server.",
+  credentials_not_configured:
+    "The worker has no CREDENTIALS_KEYS. Set it on the worker and run again.",
   cost_cap_reached: "The experiment's cost limit was reached.",
   internal_error: "Something went wrong on our side while scoring.",
   run_not_started: "The run did not start.",

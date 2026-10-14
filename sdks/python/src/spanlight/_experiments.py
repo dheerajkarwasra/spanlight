@@ -120,9 +120,12 @@ def run_experiment(
         experiment, version = _prepare(
             api, dataset, prompt, evaluators, credential_id, model, max_cost_usd
         )
-        url = f"{host.rstrip('/')}/{org_of(api)}/{project_id}/experiments/{experiment['id']}"
+        experiment_url = (
+            f"{host.rstrip('/')}/{org_of(api)}/{project_id}/experiments/{experiment['id']}"
+        )
         wait_idle(api, experiment["id"], deadline, poll_s, sleep, clock)
         run = start_run(api, experiment["id"], version.version_id, env)
+        url = f"{experiment_url}/runs/{run['id']}"
         try:
             final = wait(api, experiment["id"], run["id"], deadline, poll_s, sleep, clock)
         except ExperimentError as error:

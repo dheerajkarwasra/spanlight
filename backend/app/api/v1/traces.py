@@ -204,6 +204,7 @@ async def list_sessions(
     access: ProjectReader,
     db: DbSession,
     window: Window,
+    environment: OptionalText = None,
     limit: PageLimit = DEFAULT_PAGE_SIZE,
     cursor: Annotated[str | None, Query()] = None,
 ) -> Page[SessionSummaryOut]:
@@ -228,6 +229,9 @@ async def list_sessions(
         .order_by(last_at.desc(), Trace.session_id.desc())
         .limit(limit + 1)
     )
+    if environment is not None:
+        # Applied before the grouping: counts, cost and errors cover this environment's traces only.
+        query = query.where(Trace.environment == environment)
     if cursor:
         cursor_last_at, cursor_session_id = decode_cursor(cursor)
         query = query.having(

@@ -41,6 +41,6 @@ Each run is a real run in Spanlight with real provider calls. The job exits `0` 
 | Output | Meaning |
 | --- | --- |
 | `run-id` | Id of the experiment run. |
-| `run-url` | Link to the experiment in the dashboard. |
+| `run-url` | Link to the run in the dashboard. |
 
 The experiment is named `ci/<dataset>/<prompt>/<id>`, where `<id>` is a short digest of the evaluators, credential and model (an experiment cannot be edited, so a change starts a new one). It is created on first use and reused afterwards, and every run names the prompt version it tests, so a label that moves to a new version runs the new version in the same experiment. The gate waits for an earlier run of the same experiment to finish, so add a `concurrency:` group to your workflow. Within one workflow attempt a retried request starts only one run. Every Spanlight instance serves the full description at `/docs/eval-gate/`.

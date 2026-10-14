@@ -5,18 +5,25 @@ import { useProjectFilters, useProjectParams } from "@/features/shell/project-co
 import { projectsApi, queryKeys, type SessionListQuery, type TraceListQuery } from "@/lib/api";
 import { MAX_WINDOW_MS } from "@/lib/time-range";
 
-const SESSION_PAGE_SIZE = 50;
+export const SESSION_PAGE_SIZE = 50;
 const SESSION_TRACES_PAGE_SIZE = 100;
 
-/** Sessions active in the selected time range. The endpoint has no environment filter. */
+/** The sessions endpoint's query parameters for a time window and an optional environment. */
+export function toSessionListQuery(
+  window: { from: string; to: string },
+  environment: string | undefined,
+): Omit<SessionListQuery, "cursor"> {
+  return { from: window.from, to: window.to, environment, limit: SESSION_PAGE_SIZE };
+}
+
+/**
+ * Sessions active in the selected time range and environment. A session that spans
+ * environments counts only the traces of the selected one.
+ */
 export function useSessionListQuery() {
   const { projectId } = useProjectParams();
-  const { range } = useProjectFilters();
-  const query: Omit<SessionListQuery, "cursor"> = {
-    from: range.from,
-    to: range.to,
-    limit: SESSION_PAGE_SIZE,
-  };
+  const { range, environment } = useProjectFilters();
+  const query = toSessionListQuery(range, environment);
 
   return useInfiniteQuery({
     queryKey: queryKeys.project(projectId).sessions(query),

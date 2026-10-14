@@ -37,6 +37,8 @@ from app.prompts import service as prompts
 logger = structlog.get_logger(__name__)
 
 TRACE_NAME_PREFIX = "experiment:"
+# What an operator can do about an error, for the log line; the run itself keeps the bare code.
+_START_HINTS = {"credentials_not_configured": "set CREDENTIALS_KEYS on the worker"}
 
 
 @dataclass(frozen=True)
@@ -74,7 +76,9 @@ async def start(deps: RunnerDeps, run_id: uuid.UUID, project_id: uuid.UUID) -> S
             run.error = loaded
             run.finished_at = now
             run.totals = totals_json(summarize_items([]))
-            logger.warning("experiment_run_not_started", run_id=str(run_id), error=loaded)
+            # Only an error with a known remedy carries a hint.
+            hint = {"hint": _START_HINTS[loaded]} if loaded in _START_HINTS else {}
+            logger.warning("experiment_run_not_started", run_id=str(run_id), error=loaded, **hint)
             return None
         run.status = ExperimentRunStatus.RUNNING.value
         run.heartbeat_at = now

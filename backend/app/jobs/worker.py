@@ -174,7 +174,22 @@ class Worker:
                 logger.exception("long_job_failed_on_shutdown", task=task.get_name())
 
     async def run_forever(self, stop: asyncio.Event) -> None:
-        logger.info("worker_started", worker_id=self.worker_id, tasks=sorted(self.handlers))
+        crypto_configured = self.settings.is_crypto_configured
+        logger.info(
+            "worker_started",
+            worker_id=self.worker_id,
+            tasks=sorted(self.handlers),
+            crypto_configured=crypto_configured,
+        )
+        if not crypto_configured:
+            # Say it once at start-up, not only when the first run fails: the api can hold
+            # CREDENTIALS_KEYS while the worker, a separate process, does not.
+            logger.warning(
+                "worker_credentials_keys_missing",
+                impact="the worker cannot open stored secrets: experiment runs, LLM judge and "
+                "webhook evaluators fail, Slack, webhook and PagerDuty alerts are not delivered "
+                "and demo traffic is skipped; set CREDENTIALS_KEYS on the worker",
+            )
         # Its own task, so a job that runs for hours does not stop the heartbeat readiness reads.
         heartbeat = asyncio.create_task(
             run_heartbeat(self.session_factory, stop, self.worker_id), name="worker-heartbeat"

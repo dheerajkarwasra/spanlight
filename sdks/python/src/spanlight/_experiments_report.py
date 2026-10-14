@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 _PLACES = Decimal("0.000001")
@@ -65,6 +65,18 @@ def _number(value: Any) -> str:
     return _UNKNOWN if value is None else str(value)
 
 
+def _milliseconds(value: Any) -> str:
+    """A latency in whole milliseconds; the server sends a raw float such as ``1234.5678``."""
+    if value is None:
+        return _UNKNOWN
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return str(value)
+    try:
+        return str(int(Decimal(str(value)).quantize(Decimal(1), rounding=ROUND_HALF_UP)))
+    except (InvalidOperation, ValueError, OverflowError):
+        return _UNKNOWN
+
+
 def render_markdown(
     *,
     title: str,
@@ -89,8 +101,8 @@ def render_markdown(
         lines += [
             f"Items {_number(totals.get('items'))}, errors {_number(totals.get('errors'))}, "
             f"cost {_number(totals.get('cost_usd'))} USD, "
-            f"p50 {_number(totals.get('latency_p50_ms'))} ms, "
-            f"p95 {_number(totals.get('latency_p95_ms'))} ms.",
+            f"p50 {_milliseconds(totals.get('latency_p50_ms'))} ms, "
+            f"p95 {_milliseconds(totals.get('latency_p95_ms'))} ms.",
             "",
             *_score_rows(totals, fail_below),
             "",

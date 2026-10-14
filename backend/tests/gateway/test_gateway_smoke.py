@@ -19,8 +19,11 @@ from tests.gateway_support import (
     fixture_text,
     metric_delta,
     read_gateway_span,
+    read_gateway_spans,
+    read_gateway_traces,
     sse_frames,
 )
+from tests.helpers import bearer, create_api_key, new_trace_id, span
 
 CHAT_BODY = {"model": "gpt-4.1-mini", "messages": [{"role": "user", "content": "Hello"}]}
 # `chat.json` usage: 19 input tokens (8 of them cached) and 9 output tokens, at the seed
@@ -68,6 +71,37 @@ async def test_a_chat_completion_passes_through_and_becomes_one_priced_span(
     assert (span["input_tokens"], span["output_tokens"], span["cached_tokens"]) == (19, 9, 8)
     assert span["cost_usd"] == CHAT_COST
     assert span["source_key_id"] == gateway_workspace.gateway_key_id
+    # The gateway started this trace, so it names it like its span: a trace list row reads
+    # "chat_completions gpt-4.1-mini-2025-04-14", not "Unnamed trace".
+    [trace] = await read_gateway_traces(session_factory, gateway_workspace.project_id)
+    assert trace["name"] == span["name"] == "chat_completions gpt-4.1-mini-2025-04-14"
+
+
+async def test_a_call_that_joins_a_trace_keeps_the_name_that_trace_already_has(
+    gateway_workspace: GatewayWorkspace,
+    fake_provider: FakeProvider,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    key = await create_api_key(gateway_workspace.owner, str(gateway_workspace.project_id))
+    trace_id = new_trace_id()
+    root = span(trace_id=trace_id, trace={"name": "checkout flow"})
+    sent = await gateway_workspace.gw.post(
+        "/v1/traces", json={"spans": [root]}, headers=bearer(key["secret"])
+    )
+    assert sent.status_code == 200, sent.text
+    fake_provider.reply_json(fixture_text("openai/chat.json").encode())
+
+    response = await gateway_workspace.gw.post(
+        "/gw/v1/chat/completions",
+        json=CHAT_BODY,
+        headers={"x-spanlight-trace-id": trace_id, "x-spanlight-parent-span-id": root["span_id"]},
+    )
+
+    assert response.status_code == 200, response.text
+    spans = await read_gateway_spans(session_factory, gateway_workspace.project_id)
+    assert len(spans) == 2
+    [trace] = await read_gateway_traces(session_factory, gateway_workspace.project_id)
+    assert trace["name"] == "checkout flow"
 
 
 async def test_a_streamed_chat_completion_reaches_the_client_whole_and_becomes_one_ok_span(

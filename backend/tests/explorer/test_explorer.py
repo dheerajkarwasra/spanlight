@@ -223,6 +223,41 @@ async def test_sessions(workspace: Workspace, seeded: dict[str, str]) -> None:
     assert [s["session_id"] for s in page["items"] + rest["items"]] == ["s2", "s1"]
 
 
+async def test_sessions_environment_filter(workspace: Workspace, seeded: dict[str, str]) -> None:
+    url = f"/api/v1/projects/{workspace.project_id}/sessions"
+
+    # s1 spans both environments: only its matching trace is counted.
+    prod = (await workspace.owner.get(url, params={**_window(), "environment": "prod"})).json()
+    by_id = {s["session_id"]: s for s in prod["items"]}
+    assert list(by_id) == ["s2", "s1"]
+    assert by_id["s1"]["trace_count"] == 1 and by_id["s1"]["error_count"] == 0
+
+    dev = (await workspace.owner.get(url, params={**_window(), "environment": "dev"})).json()
+    assert [s["session_id"] for s in dev["items"]] == ["s1"]
+    assert dev["items"][0]["trace_count"] == 1 and dev["items"][0]["error_count"] == 1
+
+    none = (await workspace.owner.get(url, params={**_window(), "environment": "staging"})).json()
+    assert none == {"items": [], "next_cursor": None}
+
+    # Keyset pagination stays correct with the filter.
+    first = (
+        await workspace.owner.get(url, params={**_window(), "environment": "prod", "limit": 1})
+    ).json()
+    second = (
+        await workspace.owner.get(
+            url,
+            params={
+                **_window(),
+                "environment": "prod",
+                "limit": 1,
+                "cursor": first["next_cursor"],
+            },
+        )
+    ).json()
+    assert [s["session_id"] for s in first["items"] + second["items"]] == ["s2", "s1"]
+    assert second["next_cursor"] is None
+
+
 async def test_filters(workspace: Workspace, seeded: dict[str, str]) -> None:
     filters = (await workspace.owner.get(f"/api/v1/projects/{workspace.project_id}/filters")).json()
     assert filters == {

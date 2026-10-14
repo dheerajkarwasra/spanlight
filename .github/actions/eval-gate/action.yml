@@ -64,7 +64,7 @@ outputs:
     description: Id of the experiment run.
     value: ${{ steps.gate.outputs.run-id }}
   run-url:
-    description: Link to the experiment in the Spanlight dashboard.
+    description: Link to the run page in the Spanlight dashboard.
     value: ${{ steps.gate.outputs.run-url }}
 
 runs:

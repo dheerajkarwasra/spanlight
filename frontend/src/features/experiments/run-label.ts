@@ -76,7 +76,7 @@ export function runEndReason(error: string | null): string {
     case "credential_missing":
       return "Not started: the credential was deleted";
     case "credentials_not_configured":
-      return "Not started: this server can't open provider credentials";
+      return "Not started: the worker has no CREDENTIALS_KEYS. Set it on the worker and run again.";
     case "prompt_version_missing":
       return "Not started: the prompt version was deleted";
     case "experiment_config_invalid":

@@ -61,11 +61,12 @@ def build_span(
     credential = _credential(result, context)
     message = status_message(result)
     failed = message is not None
+    name = f"{request.surface} {model}"[:MAX_NAME_LENGTH]
     span = {
         "trace_id": result.trace_id,
         "span_id": result.span_id,
         "parent_span_id": request.trace.parent_span_id,
-        "name": f"{request.surface} {model}"[:MAX_NAME_LENGTH],
+        "name": name,
         "kind": "llm",
         "status": "error" if failed else "ok",
         "status_message": message,
@@ -82,16 +83,23 @@ def build_span(
         # does not capture payloads, and the requested model keeps the hash stable across a
         # fallback to another target.
         "request_hash": request_hash(_requested_model(request), request.body),
-        "trace": _trace(request, result, context),
+        "trace": _trace(request, result, context, name),
     }
     storable: dict[str, Any] = storable_json(span)
     return storable
 
 
 def _trace(
-    request: GatewayRequest, result: GatewayResult, context: GatewayContext
+    request: GatewayRequest, result: GatewayResult, context: GatewayContext, span_name: str
 ) -> dict[str, Any]:
+    """The trace fields the span carries.
+
+    A call that starts its own trace names it like its span; otherwise the trace list would show
+    it as unnamed. A call that joins a caller's trace sends no name, so the name the caller's
+    SDK gave the trace is not overwritten.
+    """
     return {
+        "name": span_name if request.trace.trace_id is None else None,
         "environment": context.environment or None,
         "release": request.trace.release,
         "user_id": request.trace.user_id,
