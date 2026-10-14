@@ -211,8 +211,13 @@ DESCRIPTIONS: dict[str, str] = {
         "Master keys that encrypt stored secrets such as two-factor seeds and gateway provider "
         "credentials, as `<key_id>:<base64 of 32 bytes>`, comma-separated. The first entry "
         "encrypts new data; keep older entries so existing data stays readable. Unset leaves "
-        "two-factor authentication and the gateway's provider credentials unavailable. Back the "
-        "value up: a lost key cannot be recovered."
+        "two-factor authentication and the gateway's provider credentials unavailable. The worker "
+        "needs the same value as the API. Without it the worker cannot open any stored secret: "
+        "experiment runs and LLM judge evaluators fail with `credentials_not_configured`, webhook "
+        "evaluators fail with `webhook_secret_unreadable`, Slack, webhook and PagerDuty alerts are "
+        "not delivered, and demo traffic is skipped. The worker logs a "
+        "`worker_credentials_keys_missing` warning at start-up. Back the value up: a lost key "
+        "cannot be recovered."
     ),
     "email_provider": (
         "How email is sent. `resend` needs `RESEND_API_KEY` and `EMAIL_FROM`; `smtp` needs "
