@@ -1,16 +1,16 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowLeft, User } from "lucide-react";
+import { ArrowLeft, Info, User } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 
 import { CopyButton } from "@/components/copy-button";
 import { CostValue } from "@/components/cost-value";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useProjectParams } from "@/features/shell/project-context";
+import { useProjectFilters, useProjectParams } from "@/features/shell/project-context";
 import type { TraceSummary } from "@/lib/api";
 import { formatDuration, pluralize } from "@/lib/format";
 
 import { formatSessionWindow } from "./session-format";
-import { consistentUserId, type SessionTotals } from "./session-summary";
+import { consistentUserId, turnsOutsideEnvironment, type SessionTotals } from "./session-summary";
 
 export function BackToSessionsLink() {
   const { orgId, projectId } = useProjectParams();
@@ -34,9 +34,14 @@ interface SessionHeaderProps {
   partial: boolean;
 }
 
-/** Back link, the title with the session ID chip, and a one-line summary. */
+/**
+ * Back link, the title with the session ID chip, a one-line summary, and, when an environment is
+ * selected and some turns are from another one, a note saying the session shows them all.
+ */
 export function SessionHeader({ sessionId, traces, totals, partial }: SessionHeaderProps) {
   const userId = consistentUserId(traces);
+  const { environment } = useProjectFilters();
+  const outside = turnsOutsideEnvironment(traces, environment);
 
   return (
     <header className="flex flex-col gap-3.5">
@@ -55,6 +60,14 @@ export function SessionHeader({ sessionId, traces, totals, partial }: SessionHea
         </div>
       </div>
       <SessionStatsLine userId={userId} totals={totals} partial={partial} />
+      {environment !== undefined && outside > 0 ? (
+        <EnvironmentNote
+          environment={environment}
+          outside={outside}
+          turns={totals.turns}
+          partial={partial}
+        />
+      ) : null}
     </header>
   );
 }
@@ -136,6 +149,31 @@ function SessionStatsLine({ userId, totals, partial }: SessionStatsLineProps) {
         ))}
       </p>
     </div>
+  );
+}
+
+interface EnvironmentNoteProps {
+  environment: string;
+  outside: number;
+  turns: number;
+  partial: boolean;
+}
+
+/** Figma "Session detail — Desktop · Other environments" (413:490), "Environment note". */
+function EnvironmentNote({ environment, outside, turns, partial }: EnvironmentNoteProps) {
+  return (
+    <p className="flex items-start gap-1.5 text-sm text-muted-foreground">
+      <Info aria-hidden className="mt-[3px] size-3.5 shrink-0" />
+      <span>
+        <span className="tabular">
+          {outside} of {pluralize(turns, "turn")}
+          {partial ? "+" : ""}
+        </span>{" "}
+        {outside === 1 ? "is" : "are"} outside{" "}
+        <span className="font-medium break-all text-foreground">"{environment}"</span>. A session
+        always shows all of its turns.
+      </span>
+    </p>
   );
 }
 

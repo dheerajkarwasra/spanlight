@@ -160,7 +160,7 @@ A **session** groups the traces that share a `session_id`. Set it with `update_t
 
 ### Open a session
 
-Click a tile, or the session chip on a trace. The page reads every trace of that ID from the last 90 days, whatever the time range and environment are, so it can show more turns than the tile you clicked.
+Click a tile, or the session chip on a trace. The page reads every trace of that ID from the last 90 days, whatever the time range and environment are, so it can show more turns than the tile you clicked. With an environment picked, a line under the header says how many turns are from other environments, for example `1 of 2 turns is outside "production"`.
 
 - **Header.** The session ID with a copy button, the user when every trace that names one agrees, and a line such as "12 turns · $0.214 · 1 error · Today 09:12 to 09:41 · 29m 33s".
 - **Conversation.** One turn per trace, oldest first. A turn shows its status, number, trace name and start time, then the user message on the right and the assistant reply on the left, then the model, latency, cost and **Open trace**. A failed turn shows a red bubble with the error message. Messages longer than 2,000 characters are clipped until you choose **Show full message**.

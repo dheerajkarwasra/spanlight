@@ -11,6 +11,7 @@ import {
   summariseSession,
   sumTokens,
   timelinePoints,
+  turnsOutsideEnvironment,
 } from "./session-summary";
 
 function makeTrace(
@@ -219,5 +220,22 @@ describe("timelinePoints", () => {
     expect(
       timelinePoints([makeTrace("a", "2026-10-07T12:00:00Z", "2026-10-07T12:00:01Z")]),
     ).toEqual([{ traceId: "a", offset: 0.5, failed: false }]);
+  });
+});
+
+describe("turnsOutsideEnvironment", () => {
+  const traces = [
+    makeTrace("a", "2026-10-14T09:00:00Z", "2026-10-14T09:00:01Z", { environment: "production" }),
+    makeTrace("b", "2026-10-14T09:01:00Z", "2026-10-14T09:01:01Z", { environment: "staging" }),
+    makeTrace("c", "2026-10-14T09:02:00Z", "2026-10-14T09:02:01Z"),
+  ];
+
+  it("is 0 when no environment is selected", () => {
+    expect(turnsOutsideEnvironment(traces, undefined)).toBe(0);
+  });
+
+  it("counts other environments and traces without one", () => {
+    expect(turnsOutsideEnvironment(traces, "production")).toBe(2);
+    expect(turnsOutsideEnvironment(traces, "staging")).toBe(2);
   });
 });

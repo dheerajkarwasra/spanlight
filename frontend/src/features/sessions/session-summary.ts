@@ -67,6 +67,20 @@ export function summariseSession(traces: readonly TraceSummary[]): SessionTotals
   };
 }
 
+/**
+ * Turns recorded in an environment other than the selected one. The session detail shows every
+ * turn whatever the environment filter, so the header says how many fall outside it.
+ */
+export function turnsOutsideEnvironment(
+  traces: readonly TraceSummary[],
+  environment: string | undefined,
+): number {
+  if (environment === undefined) {
+    return 0;
+  }
+  return traces.filter((trace) => trace.environment !== environment).length;
+}
+
 /** Elapsed time between two ISO timestamps, or null if either is invalid. */
 export function spanBetween(fromIso: string, toIso: string): number | null {
   const from = new Date(fromIso).getTime();
