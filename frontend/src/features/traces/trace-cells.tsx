@@ -99,7 +99,8 @@ export function TagBadges({ tags, max = 2 }: { tags: string[]; max?: number }) {
       values={tags}
       max={max}
       renderValue={(tag) => (
-        <Badge title={tag} className="min-w-0">
+        // Badges never shrink by default; a tag in a narrow cell must truncate instead.
+        <Badge title={tag} className="min-w-0 shrink">
           <span className="truncate">{tag}</span>
         </Badge>
       )}

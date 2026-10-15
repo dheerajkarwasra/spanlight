@@ -10,11 +10,13 @@ import { cn } from "@/lib/utils";
  * Hidden cells don't take a grid slot, so each template lists only the visible columns.
  */
 export const ROW_GRID = cn(
-  "grid items-center gap-2.5 px-3",
+  // 16px between columns, so a right-aligned header (Duration, Cost) does not run into the
+  // left-aligned one after it.
+  "grid items-center gap-4 px-3",
   "grid-cols-[20px_16px_minmax(0,1fr)_104px_64px_156px_88px]",
   "@3xl:grid-cols-[20px_16px_minmax(0,1fr)_104px_64px_156px_88px_88px]",
   "@4xl:grid-cols-[20px_16px_minmax(0,1fr)_104px_64px_156px_88px_88px_110px]",
-  "@min-[65rem]:grid-cols-[20px_16px_minmax(0,1fr)_104px_64px_156px_88px_88px_120px_92px_110px]",
+  "@min-[65rem]:grid-cols-[20px_16px_minmax(0,1fr)_104px_64px_156px_88px_88px_100px_112px_110px]",
 );
 
 export const SHOW_TOKENS = "hidden @3xl:block";

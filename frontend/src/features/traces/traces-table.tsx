@@ -116,11 +116,11 @@ export function TracesTable({
               <Cell className="text-right font-medium text-foreground">
                 <CostValue cost={trace.cost_usd} hasUnpriced={trace.has_unpriced} />
               </Cell>
-              <Cell className={cn(SHOW_SCORES_AND_TAGS, "min-w-0")}>
+              <Cell className={cn(SHOW_SCORES_AND_TAGS, "min-w-0 overflow-hidden")}>
                 <ScoresCell scores={trace.scores} typeOf={scoreTypeOf} />
               </Cell>
-              <Cell className={cn(SHOW_SCORES_AND_TAGS, "min-w-0")}>
-                <TagBadges tags={trace.tags} />
+              <Cell className={cn(SHOW_SCORES_AND_TAGS, "min-w-0 overflow-hidden")}>
+                <TagBadges tags={trace.tags} max={1} />
               </Cell>
               <Cell className={cn(SHOW_USER, "min-w-0")}>
                 <UserSession userId={trace.external_user_id} sessionId={trace.session_id} />

@@ -94,7 +94,12 @@ export function CredentialRow({
         <div className="grid grid-cols-2 gap-3">
           <div className="min-w-0">
             <p className="text-overline text-subtle-foreground uppercase">Base URL</p>
-            <p className="truncate font-mono text-xs text-muted-foreground">{host}</p>
+            <p
+              title={credential.base_url ?? undefined}
+              className="truncate font-mono text-xs text-muted-foreground"
+            >
+              {host}
+            </p>
           </div>
           <div className="min-w-0">
             <p className="text-overline text-subtle-foreground uppercase">Last used</p>
