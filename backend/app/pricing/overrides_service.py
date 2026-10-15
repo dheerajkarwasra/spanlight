@@ -24,7 +24,7 @@ UNIQUE_CONSTRAINT = "price_overrides_org_model_key"
 
 
 class PriceOverrideExistsError(Exception):
-    """The organization already has an override for this provider, pattern and start time."""
+    """The organization already has an override for this provider, pattern, start time and tier."""
 
 
 class PriceOverrideNotFoundError(Exception):
@@ -99,5 +99,9 @@ async def _audit(
         target_type=AUDIT_TARGET,
         target_id=override.id,
         ip=ip,
-        metadata={"provider": override.provider, "model_pattern": override.model_pattern},
+        metadata={
+            "provider": override.provider,
+            "model_pattern": override.model_pattern,
+            "min_prompt_tokens": override.min_prompt_tokens,
+        },
     )

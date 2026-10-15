@@ -7,8 +7,10 @@ instance, sync or async.
 Token accounting: Anthropic reports ``input_tokens`` *excluding* prompt-cache
 reads and writes. To keep one meaning across providers, spans record
 ``input_tokens`` as the total prompt size (uncached + cache reads + cache
-writes) and ``cached_tokens`` as the cache reads. The raw cache-write count is
-kept in the ``usage.cache_creation_input_tokens`` attribute.
+writes), ``cached_tokens`` as the cache reads, ``cache_write_tokens`` as the
+cache writes (``cache_creation_input_tokens``) and ``cache_write_1h_tokens``
+as the writes made with the 1-hour TTL
+(``cache_creation.ephemeral_1h_input_tokens``), which the server prices apart.
 """
 
 from __future__ import annotations
@@ -128,16 +130,26 @@ def _record_usage(span: Span, usage: Any) -> None:
     uncached = as_int(get_field(usage, "input_tokens"))
     cache_read = as_int(get_field(usage, "cache_read_input_tokens"))
     cache_write = as_int(get_field(usage, "cache_creation_input_tokens"))
+    cache_write_1h = as_int(get_field(usage, "cache_creation", "ephemeral_1h_input_tokens"))
     total_input = None
     if uncached is not None:
         total_input = uncached + (cache_read or 0) + (cache_write or 0)
+    if cache_write_1h is not None and (cache_write is None or cache_write_1h > cache_write):
+        # The server rejects the whole span for an inconsistent split; keep the
+        # total and drop the part rather than lose the span.
+        logger.debug(
+            "Ignoring Anthropic 1h cache-write count %r exceeding total %r",
+            cache_write_1h,
+            cache_write,
+        )
+        cache_write_1h = None
     span.set_usage(
         input_tokens=total_input,
         output_tokens=as_int(get_field(usage, "output_tokens")),
         cached_tokens=cache_read,
+        cache_write_tokens=cache_write,
+        cache_write_1h_tokens=cache_write_1h,
     )
-    if cache_write:
-        span.set_attribute("usage.cache_creation_input_tokens", cache_write)
 
 
 def _record_message_metadata(span: Span, message_id: Any, stop_reason: Any) -> None:
@@ -184,7 +196,11 @@ class _MessagesStreamAccumulator(StreamAccumulator):
         self._merge_usage(get_field(message, "usage"))
 
     def _merge_usage(self, usage: Any) -> None:
-        """Merge usage counters; later events carry cumulative values."""
+        """Merge usage counters; later events carry cumulative values, never summed.
+
+        The TTL split (``cache_creation``) usually appears only in
+        ``message_start``; a later event without it leaves the split in place.
+        """
         for key in (
             "input_tokens",
             "output_tokens",
@@ -194,6 +210,9 @@ class _MessagesStreamAccumulator(StreamAccumulator):
             value = as_int(get_field(usage, key))
             if value is not None:
                 self._usage[key] = value
+        cache_write_1h = as_int(get_field(usage, "cache_creation", "ephemeral_1h_input_tokens"))
+        if cache_write_1h is not None:
+            self._usage["cache_creation"] = {"ephemeral_1h_input_tokens": cache_write_1h}
 
     def _on_block_start(self, event: Any) -> None:
         index = as_int(get_field(event, "index")) or 0

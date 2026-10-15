@@ -49,6 +49,11 @@ export interface PriceOverride {
   input_per_mtok: string;
   output_per_mtok: string;
   cached_input_per_mtok: string | null;
+  /** Cache-write rates per TTL; null when writes are billed at the input rate. */
+  cache_write_5m_per_mtok: string | null;
+  cache_write_1h_per_mtok: string | null;
+  /** The smallest prompt (in tokens) this override prices; 0 is the base tier. */
+  min_prompt_tokens: number;
   effective_from: string;
   created_by: User | null;
   created_at: string;
@@ -61,6 +66,10 @@ export interface PriceOverrideCreate {
   input_per_mtok: string;
   output_per_mtok: string;
   cached_input_per_mtok?: string | null;
+  cache_write_5m_per_mtok?: string | null;
+  cache_write_1h_per_mtok?: string | null;
+  /** Integer >= 0; defaults to 0, the base tier. */
+  min_prompt_tokens?: number;
   /** Defaults to now on the server. */
   effective_from?: string | null;
 }

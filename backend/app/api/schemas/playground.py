@@ -14,6 +14,10 @@ class UsageOut(ApiModel):
     output_tokens: int
     # None when the provider sent no cache detail.
     cached_tokens: int | None
+    # Prompt tokens written to the provider's cache, and the part written with the 1-hour
+    # lifetime. Both None when the provider did not report them, never 0.
+    cache_write_tokens: int | None
+    cache_write_1h_tokens: int | None
 
     @classmethod
     def of(cls, usage: Usage) -> "UsageOut":
@@ -21,6 +25,8 @@ class UsageOut(ApiModel):
             input_tokens=usage.input_tokens,
             output_tokens=usage.output_tokens,
             cached_tokens=usage.cached_tokens,
+            cache_write_tokens=usage.cache_write_tokens,
+            cache_write_1h_tokens=usage.cache_write_1h_tokens,
         )
 
 

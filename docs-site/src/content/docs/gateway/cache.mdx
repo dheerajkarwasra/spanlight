@@ -59,7 +59,7 @@ Every model call made with a gateway key carries the header:
 
 ## What a hit looks like in the dashboard
 
-A hit is recorded as an ordinary span with `spanlight.cache` set to `hit`. Its usage is reported as zero, because nothing was billed, and the tokens of the original answer are kept in the `spanlight.cache.original_usage` attribute. Cost for a hit is therefore zero and not unknown. **Gateway, Overview** shows the hit rate: hits divided by hits plus misses, so keys without a cache and streaming calls do not drag it down. With no cacheable traffic the rate is "—", not 0 %.
+A hit is recorded as an ordinary span with `spanlight.cache` set to `hit`. Its usage is reported as zero, because nothing was billed, and the tokens of the original answer, prompt-cache reads and writes included, are kept in the `spanlight.cache.original_usage` attribute. Cost for a hit is therefore zero and not unknown. **Gateway, Overview** shows the hit rate: hits divided by hits plus misses, so keys without a cache and streaming calls do not drag it down. With no cacheable traffic the rate is "—", not 0 %.
 
 ## Check it worked
 

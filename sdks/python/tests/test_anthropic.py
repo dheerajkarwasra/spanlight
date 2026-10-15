@@ -7,9 +7,11 @@ import json
 import anthropic
 import pytest
 from provider_mocks import (
+    ANTHROPIC_CACHE_WRITE_MESSAGE,
     ANTHROPIC_INVALID_REQUEST,
     ANTHROPIC_MESSAGE,
     MockProvider,
+    anthropic_cache_write_stream,
     anthropic_stream_with_overload_error,
     anthropic_text_stream,
     anthropic_tool_use_stream,
@@ -61,8 +63,14 @@ def test_messages_create_span_fields(tracer, ingest):
     assert span["provider"] == "anthropic"
     assert span["model"] == "claude-haiku-4-5-20251001"
     # input_tokens is the full prompt: 12 uncached + 1500 cache reads + 3 cache writes.
-    assert span["usage"] == {"input_tokens": 1515, "output_tokens": 9, "cached_tokens": 1500}
-    assert span["attributes"]["usage.cache_creation_input_tokens"] == 3
+    # No TTL split was reported, so cache_write_1h_tokens is omitted (all writes 5-minute).
+    assert span["usage"] == {
+        "input_tokens": 1515,
+        "output_tokens": 9,
+        "cached_tokens": 1500,
+        "cache_write_tokens": 3,
+    }
+    assert "usage.cache_creation_input_tokens" not in span["attributes"]
     assert span["attributes"]["response.stop_reason"] == "end_turn"
     assert span["attributes"]["response.id"] == "msg_01XFDUDYJgAACzvnptvVoYEL"
     assert span["input"] == {
@@ -76,6 +84,41 @@ def test_messages_create_span_fields(tracer, ingest):
         "content": [{"type": "text", "text": "Refunds take 5-7 business days."}],
     }
     assert API_KEY not in json.dumps(span)
+
+
+# Real 2026-10-14 pilot usage: 19 uncached + 0 reads + 6404 writes, all 1-hour TTL.
+CACHE_WRITE_USAGE = {
+    "input_tokens": 6423,
+    "output_tokens": 12,
+    "cached_tokens": 0,
+    "cache_write_tokens": 6404,
+    "cache_write_1h_tokens": 6404,
+}
+
+
+def test_create_records_cache_write_fields(tracer, ingest):
+    provider = MockProvider(json_response(ANTHROPIC_CACHE_WRITE_MESSAGE))
+    client = make_client(provider, tracer)
+
+    message = client.messages.create(model=MODEL, max_tokens=256, messages=MESSAGES)
+
+    assert message.usage.cache_creation.ephemeral_1h_input_tokens == 6404
+    span = flushed_spans(tracer, ingest)[0]
+    assert span["usage"] == CACHE_WRITE_USAGE
+    assert "usage.cache_creation_input_tokens" not in span["attributes"]
+
+
+def test_stream_cache_write_fields(tracer, ingest):
+    provider = MockProvider(sse_response(anthropic_cache_write_stream()))
+    client = make_client(provider, tracer)
+
+    with client.messages.stream(model=MODEL, max_tokens=256, messages=MESSAGES) as stream:
+        streamed_text = "".join(stream.text_stream)
+
+    assert streamed_text == "Hi, how can I help?"
+    span = flushed_spans(tracer, ingest)[0]
+    assert span["usage"] == CACHE_WRITE_USAGE
+    assert "usage.cache_creation_input_tokens" not in span["attributes"]
 
 
 async def test_async_messages_create(tracer, ingest):
@@ -105,7 +148,12 @@ def test_create_with_stream_true(tracer, ingest):
     span = flushed_spans(tracer, ingest)[0]
     assert span["status"] == "ok"
     assert span["model"] == "claude-haiku-4-5-20251001"
-    assert span["usage"] == {"input_tokens": 25, "output_tokens": 15, "cached_tokens": 0}
+    assert span["usage"] == {
+        "input_tokens": 25,
+        "output_tokens": 15,
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+    }
     assert span["time_to_first_token_ms"] is not None
     assert span["output"] == {
         "role": "assistant",
@@ -142,7 +190,12 @@ def test_messages_stream_helper(tracer, ingest):
     assert final.usage.output_tokens == 15
     span = flushed_spans(tracer, ingest)[0]
     assert span["name"] == f"chat {MODEL}"
-    assert span["usage"] == {"input_tokens": 25, "output_tokens": 15, "cached_tokens": 0}
+    assert span["usage"] == {
+        "input_tokens": 25,
+        "output_tokens": 15,
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+    }
     assert span["time_to_first_token_ms"] is not None
     assert span["output"]["content"] == [{"type": "text", "text": "Hi, how can I help?"}]
     assert span["input"]["stream"] is True

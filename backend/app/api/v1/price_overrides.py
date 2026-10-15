@@ -36,6 +36,9 @@ def _override_out(override: PriceOverride, creator: User | None) -> PriceOverrid
         input_per_mtok=override.input_per_mtok,
         output_per_mtok=override.output_per_mtok,
         cached_input_per_mtok=override.cached_input_per_mtok,
+        cache_write_5m_per_mtok=override.cache_write_5m_per_mtok,
+        cache_write_1h_per_mtok=override.cache_write_1h_per_mtok,
+        min_prompt_tokens=override.min_prompt_tokens,
         effective_from=override.effective_from,
         created_by=UserOut.model_validate(creator) if creator else None,
         created_at=override.created_at,
@@ -46,7 +49,7 @@ def _override_out(override: PriceOverride, creator: User | None) -> PriceOverrid
 async def list_price_overrides(
     org_id: uuid.UUID, access: OverrideReader, db: DbSession
 ) -> list[PriceOverrideOut]:
-    """Ordered by provider, pattern and start time."""
+    """Ordered by provider, pattern, start time and tier."""
     rows = await queries.list_overrides(db, access.org.id)
     return [_override_out(override, creator) for override, creator in rows]
 
@@ -67,9 +70,11 @@ async def create_price_override(
 ) -> PriceOverrideOut:
     """Rates are USD per million tokens. `effective_from` defaults to now.
 
-    The pattern matches a model exactly or with a snapshot suffix, like the seed prices.
+    The pattern matches a model exactly or with a snapshot suffix, like the seed prices. The
+    optional cache-write rates fall back to the input rate; `min_prompt_tokens` (default 0) makes
+    the override one tier of the model, applied to prompts of at least that many tokens.
     `409 PRICE_OVERRIDE_EXISTS` when the organization already has one for the same provider,
-    pattern and start time.
+    pattern, start time and tier.
     """
     values = body.model_dump()
     values["effective_from"] = body.effective_from or clock()
@@ -82,8 +87,8 @@ async def create_price_override(
     except PriceOverrideExistsError:
         raise conflict(
             "PRICE_OVERRIDE_EXISTS",
-            "This organization already has a price override for this provider, model pattern "
-            "and start time.",
+            "This organization already has a price override for this provider, model pattern, "
+            "start time and min_prompt_tokens.",
         ) from None
     await db.commit()
     await db.refresh(override)

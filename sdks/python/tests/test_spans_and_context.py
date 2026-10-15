@@ -38,6 +38,36 @@ def test_span_setters_are_exported(tracer, ingest):
     assert exported["attributes"] == {"temperature": 0.2, "attempt": 1}
 
 
+def test_set_usage_omits_unset_write_fields(tracer, ingest):
+    with tracer.span("reads-only", kind="llm") as span:
+        span.set_usage(input_tokens=120, output_tokens=30, cached_tokens=100)
+    with tracer.span("writes-5m", kind="llm") as span:
+        span.set_usage(input_tokens=120, output_tokens=30, cache_write_tokens=20)
+    with tracer.span("writes-split", kind="llm") as span:
+        span.set_usage(
+            input_tokens=120,
+            output_tokens=30,
+            cached_tokens=50,
+            cache_write_tokens=20,
+            cache_write_1h_tokens=5,
+        )
+
+    by_name = {item["name"]: item["usage"] for item in flushed_spans(tracer, ingest)}
+    assert by_name["reads-only"] == {"input_tokens": 120, "output_tokens": 30, "cached_tokens": 100}
+    assert by_name["writes-5m"] == {
+        "input_tokens": 120,
+        "output_tokens": 30,
+        "cache_write_tokens": 20,
+    }
+    assert by_name["writes-split"] == {
+        "input_tokens": 120,
+        "output_tokens": 30,
+        "cached_tokens": 50,
+        "cache_write_tokens": 20,
+        "cache_write_1h_tokens": 5,
+    }
+
+
 def test_span_records_error_and_reraises(tracer, ingest):
     with pytest.raises(ZeroDivisionError), tracer.span("divide"):
         _ = 1 / 0

@@ -56,6 +56,13 @@ class SpanOut(BaseModel):
     input_tokens: int | None
     output_tokens: int | None
     cached_tokens: int | None
+    """Prompt tokens read from the provider's cache; part of `input_tokens`."""
+    cache_write_tokens: int | None
+    """Prompt tokens written to the provider's cache, every TTL; part of `input_tokens`. Null
+    when the span did not report them."""
+    cache_write_1h_tokens: int | None
+    """The part of `cache_write_tokens` written with the 1-hour TTL; null when not reported, in
+    which case every write was priced as 5-minute."""
     cost_usd: Money | None
     pricing_version: str | None
     time_to_first_token_ms: float | None

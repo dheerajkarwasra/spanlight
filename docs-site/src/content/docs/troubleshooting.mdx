@@ -194,6 +194,9 @@ The request succeeds, but some spans are not stored. The answer to a native requ
 | `end_time: is in the future` | The span ends more than 10 minutes ahead of the server clock. | Fix the clock of the host that sends the span. See below. |
 | `parent_span_id: a span cannot be its own parent` | `parent_span_id` equals `span_id`. | Give the span a different parent, or none. |
 | `usage.cached_tokens: cannot exceed usage.input_tokens` | Input tokens include the cached ones, so the cached count cannot be larger. | Send the total input tokens in `input_tokens`. |
+| `usage.cache_write_tokens: cached_tokens + cache_write_tokens cannot exceed usage.input_tokens` | Input tokens include the cache reads and the cache writes, so the two together cannot be larger. | Send the total input tokens in `input_tokens`: uncached tokens plus reads plus writes. |
+| `usage.cache_write_1h_tokens: cannot exceed usage.cache_write_tokens` | The 1-hour writes are part of all the writes. | Send every write in `cache_write_tokens`, and only the 1-hour part in `cache_write_1h_tokens`. |
+| `usage.cache_write_1h_tokens: requires usage.cache_write_tokens` | A 1-hour count was sent without the total write count it is part of. | Send `cache_write_tokens` as well. |
 | `attributes: exceed 65536 bytes` | The attributes are larger than 64 KB. Spanlight never truncates attributes. | Send fewer or smaller attributes. |
 | `usage: the cost at this model's price is too large to store` | The computed cost is one million dollars or more. Only an organization's own price override can price a call this high. | Check the price override for the model, and the token counts you send. |
 | `duplicate span_id in batch; the later occurrence was kept` | The same trace id and span id appear twice in one batch. The earlier one is reported here and not stored. The later one is stored, and the rest of the batch is unaffected. | Give every span in a trace its own span id. |

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Numeric, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, Text, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -21,6 +21,10 @@ class ModelPrice(Base):
     input_per_mtok: Mapped[Decimal] = mapped_column(Numeric(12, 6))
     output_per_mtok: Mapped[Decimal] = mapped_column(Numeric(12, 6))
     cached_input_per_mtok: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
+    cache_write_5m_per_mtok: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
+    cache_write_1h_per_mtok: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
+    # The smallest prompt this row prices, 0 for the base price; part of the unique key.
+    min_prompt_tokens: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     version: Mapped[str] = mapped_column(Text)
 
@@ -41,6 +45,10 @@ class PriceOverride(Base):
     input_per_mtok: Mapped[Decimal] = mapped_column(Numeric(12, 6))
     output_per_mtok: Mapped[Decimal] = mapped_column(Numeric(12, 6))
     cached_input_per_mtok: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
+    cache_write_5m_per_mtok: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
+    cache_write_1h_per_mtok: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
+    # The smallest prompt this row prices, 0 for the base price; part of the unique key.
+    min_prompt_tokens: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")

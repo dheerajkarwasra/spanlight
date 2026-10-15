@@ -190,10 +190,28 @@ original design; everything else is a clarification.
 - Both ingestion routes need a key with the `ingest:write` scope (403 `KEY_SCOPE` otherwise). The scope is checked
   before the per-key rate limit, so a key that may not ingest spends nothing from it.
 - **Token convention (shared with the SDK):** `usage.input_tokens` is the total prompt size
-  *including* cached tokens; `usage.cached_tokens` is the cached subset. Cost =
-  `(input - cached) × input_rate + cached × cached_rate + output × output_rate`; with no published
-  cached rate, cached tokens bill at the input rate. Cache writes are not priced separately.
-  `cached_tokens > input_tokens` rejects the span.
+  *including* cache reads and cache writes; `usage.cached_tokens` is the part read from the
+  provider's prompt cache. Since 2026-10-15, `usage.cache_write_tokens` is the part written to it
+  (every TTL) and `usage.cache_write_1h_tokens` the subset of those writes made with the 1-hour
+  TTL; both are optional. Cost = `uncached × input_rate + reads × cached_rate + writes_5m ×
+  write_5m_rate + writes_1h × write_1h_rate + output × output_rate`, with `uncached = input -
+  reads - writes` and `writes_5m = writes - writes_1h`. A missing cached or write rate falls back
+  to the input rate, so a model without published write rates prices as before. A missing
+  `cache_write_1h_tokens` means every write was 5-minute; a missing `cache_write_tokens` means
+  none were reported (priced as before).
+- **Usage checks (per span, the batch continues):** `cached_tokens > input_tokens` rejects the span
+  (`usage.cached_tokens: cannot exceed usage.input_tokens`); so does `cached_tokens +
+  cache_write_tokens > input_tokens` (`usage.cache_write_tokens: cached_tokens + cache_write_tokens
+  cannot exceed usage.input_tokens`) and `cache_write_1h_tokens > cache_write_tokens`
+  (`usage.cache_write_1h_tokens: cannot exceed usage.cache_write_tokens`). A
+  `cache_write_1h_tokens` sent without `cache_write_tokens` is rejected too
+  (`usage.cache_write_1h_tokens: requires usage.cache_write_tokens`): the database check
+  `cache_write_1h_tokens <= cache_write_tokens` compares with NULL and would let a subset of
+  nothing through. A span that reports no `input_tokens` skips these sum checks, as the
+  `cached_tokens` check always has; it is unpriced anyway.
+- **Span read model:** `GET /traces/{trace_id}` spans carry `cache_write_tokens` and
+  `cache_write_1h_tokens`, `null` when the span did not report them (every span stored before
+  2026-10-15, and every OTLP span's `cache_write_1h_tokens`).
 - Cost is `null` (never 0) for unknown models or when input/output tokens are missing; such
   LLM spans set the trace's `has_unpriced`.
 - **Deviation — model matching:** a price pattern matches the model exactly, or followed by a
@@ -236,6 +254,14 @@ original design; everything else is a clarification.
 - Kind: `llm` if any `gen_ai.*` attribute; `http` for client spans with `http.*`/`url.*`
   attributes; `retrieval` with `db.*`; otherwise `other`.
 - Trace name: the root span's name (falling back to `service.name`); non-root spans do not set it.
+- Cached input: `gen_ai.usage.cache_read.input_tokens` (current conventions, LiteLLM) is read first,
+  then the older `gen_ai.usage.cache_read_input_tokens`. Either way `gen_ai.usage.input_tokens` is
+  taken to include the cached part. Reading only the older name priced LiteLLM cache reads at the
+  full input rate (+43% on a real LiteLLM workload, 2026-10-14).
+- Cache writes (since 2026-10-15): `gen_ai.usage.cache_creation.input_tokens` is read first, then
+  the older `gen_ai.usage.cache_creation_input_tokens`, into `cache_write_tokens`; `input_tokens`
+  is taken to include the written part. OpenTelemetry has no attribute for the TTL split, so
+  `cache_write_1h_tokens` stays `null` and every OTLP cache write is priced at the 5-minute rate.
 - Legacy `gen_ai.usage.prompt_tokens`/`completion_tokens` are accepted. Content attributes are parsed
   as JSON when they are JSON strings and are removed from `attributes`; `service.name` is copied into
   `attributes`.
@@ -297,8 +323,13 @@ card and the trace list. Computed with a correlated subquery on the spans primar
 
 ## Price catalogue (added 2026-10-09)
 
-- `GET /api/v1/prices` lists every row of the price table ordered by provider, `model_pattern` and
-  `effective_from`; money is a decimal string. Any signed-in user may read it (session or access
+- `GET /api/v1/prices` lists every row of the price table ordered by provider, `model_pattern`,
+  `effective_from` and `min_prompt_tokens`; money is a decimal string. Since 2026-10-15 each row
+  also carries `cache_write_5m_per_mtok` and `cache_write_1h_per_mtok` (`null` when the provider
+  bills cache writes at the input rate, and for every row of the 2026-10-01 snapshot) and
+  `min_prompt_tokens`, the smallest prompt the row prices (0 for the base tier). A model with a
+  prompt-length tier has one row per tier; the row with the highest `min_prompt_tokens` not above
+  the span's `input_tokens` prices the whole prompt. Any signed-in user may read it (session or access
   token); API keys get 403 `KEY_SCOPE`. There is no write endpoint: prices change through
   `spanlight sync-prices`.
 - `GET /api/v1/projects/{project_id}/unpriced-models` needs `project:read` (an API key with
@@ -312,16 +343,27 @@ card and the trace list. Computed with a correlated subquery on the spans primar
 
 An organization can set its own rates for a model. The routes are under
 `/api/v1/orgs/{org_id}/price-overrides`: `GET` (`org:read`) lists them ordered by provider,
-`model_pattern` and `effective_from`, `POST` (`gateway:write`, owners and admins) adds one and
+`model_pattern`, `effective_from` and `min_prompt_tokens`, `POST` (`gateway:write`, owners and admins) adds one and
 returns 201, `DELETE /{override_id}` returns 204. Non-members get 404, and so does an override of
 another organization.
 
 - Body: `provider`, `model_pattern`, `input_per_mtok`, `output_per_mtok`, optional
-  `cached_input_per_mtok` (USD per million tokens, not negative, below 1,000,000, at most six
-  decimals) and optional `effective_from` (defaults to now; a time without an offset is UTC).
-  `provider` and `model_pattern` are trimmed and stored lower-case, as in the price table.
-- The same provider, pattern and `effective_from` twice in one organization is
-  `409 PRICE_OVERRIDE_EXISTS`.
+  `cached_input_per_mtok`, `cache_write_5m_per_mtok` and `cache_write_1h_per_mtok` (USD per
+  million tokens, not negative, below 1,000,000, at most six decimals; a missing cached or write
+  rate falls back to the input rate), optional `min_prompt_tokens` (an integer >= 0, default 0;
+  a negative or non-integer value is `422 VALIDATION_ERROR`) and optional `effective_from`
+  (defaults to now; a time without an offset is UTC). `provider` and `model_pattern` are trimmed
+  and stored lower-case, as in the price table. The response and the list echo all three new
+  fields (the rates `null` when not set).
+- The same provider, pattern, `effective_from` and `min_prompt_tokens` twice in one organization
+  is `409 PRICE_OVERRIDE_EXISTS`; the same pattern with another `min_prompt_tokens` is a second
+  tier of the override.
+- **Tiers (since 2026-10-15):** an override is one tier of a model. Among the seed rows and
+  overrides that match a span, the row with the highest `min_prompt_tokens` not above the span's
+  `input_tokens` wins; ties keep the precedence below (longest pattern, override over seed, latest
+  `effective_from`). So an organization that overrides only the base tier (`min_prompt_tokens: 0`)
+  of `claude-haiku-5-5` keeps the seed price for prompts over 100,000 tokens, and must add a
+  second override with `min_prompt_tokens: 100001` to change that tier too.
 - Matching follows the seed prices: a pattern matches a model exactly or with a snapshot suffix
   (`-YYYYMMDD`, `-YYYY-MM-DD`, `-latest`), never by prefix. The longest matching pattern wins
   whatever its source; for equal patterns an override beats the seed row. An override applies to a
@@ -332,7 +374,7 @@ another organization.
   overrides in force at replay time. A span the gateway recorded is never replayed over (see Span
   attribution under Gateway keys), so its cost stays as the gateway priced it.
 - Audit events `price_override.create` and `price_override.delete` have target type
-  `price_override` and the provider and pattern in their metadata.
+  `price_override` and the provider, pattern and `min_prompt_tokens` in their metadata.
 
 ## Email verification (added 2026-10-08)
 

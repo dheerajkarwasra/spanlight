@@ -267,17 +267,19 @@ run makes real provider calls. In a GitHub workflow use the
 
 For every LLM call:
 
-| Field                       | Source                                                                                                                            |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `provider`                  | `openai` / `anthropic`                                                                                                            |
-| `model`                     | Model from the response (for example `gpt-4o-mini-2024-07-18`). Falls back to the requested model.                                |
-| `usage.input_tokens`        | Total prompt tokens, **including** cached tokens. For Anthropic this is input + cache reads + cache writes.                       |
-| `usage.output_tokens`       | Completion tokens                                                                                                                 |
-| `usage.cached_tokens`       | Prompt tokens served from the provider's prompt cache                                                                             |
-| `time_to_first_token_ms`    | Streaming calls only                                                                                                              |
-| `input`                     | Request parameters such as `messages`, `system` and `temperature`. API keys, headers, `extra_*` and `timeout` are never recorded. |
-| `output`                    | The assistant message, including tool calls                                                                                       |
-| `status` / `status_message` | `error` plus the provider's message when the call fails                                                                           |
+| Field                         | Source                                                                                                                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `provider`                    | `openai` / `anthropic`                                                                                                                                                    |
+| `model`                       | Model from the response (for example `gpt-4o-mini-2024-07-18`). Falls back to the requested model.                                                                        |
+| `usage.input_tokens`          | Total prompt tokens, **including** cached tokens. For Anthropic this is input + cache reads + cache writes.                                                               |
+| `usage.output_tokens`         | Completion tokens                                                                                                                                                         |
+| `usage.cached_tokens`         | Prompt tokens served from the provider's prompt cache                                                                                                                     |
+| `usage.cache_write_tokens`    | Prompt tokens written to the prompt cache (Anthropic `cache_creation_input_tokens`). Sent only when the provider reports it.                                              |
+| `usage.cache_write_1h_tokens` | The part of `cache_write_tokens` written with Anthropic's 1-hour TTL (`cache_creation.ephemeral_1h_input_tokens`); the rest are 5-minute writes. Sent only when reported. |
+| `time_to_first_token_ms`      | Streaming calls only                                                                                                                                                      |
+| `input`                       | Request parameters such as `messages`, `system` and `temperature`. API keys, headers, `extra_*` and `timeout` are never recorded.                                         |
+| `output`                      | The assistant message, including tool calls                                                                                                                               |
+| `status` / `status_message`   | `error` plus the provider's message when the call fails                                                                                                                   |
 
 The Spanlight server also redacts common secret patterns from
 payloads on ingestion. Set `capture_payloads = false` on a project to drop
@@ -335,7 +337,8 @@ with spanlight.span("rerank", kind="retrieval") as span:
 
 `Span` methods: `set_input`, `set_output`, `set_attribute`, `set_attributes`,
 `set_model(model, provider=...)`, `set_usage(input_tokens=, output_tokens=,
-cached_tokens=)`, `set_finish_reason(reason)`, `set_request_hash(hash)`,
+cached_tokens=, cache_write_tokens=, cache_write_1h_tokens=)`,
+`set_finish_reason(reason)`, `set_request_hash(hash)`,
 `mark_first_token()` and `record_error(exc_or_message)`. An
 exception that escapes the block marks the span as failed and is re-raised
 unchanged.

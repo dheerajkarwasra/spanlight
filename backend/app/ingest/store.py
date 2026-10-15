@@ -132,6 +132,8 @@ _SPAN_COLUMNS = (
     "input_tokens",
     "output_tokens",
     "cached_tokens",
+    "cache_write_tokens",
+    "cache_write_1h_tokens",
     "cost_usd",
     "pricing_version",
     "time_to_first_token_ms",

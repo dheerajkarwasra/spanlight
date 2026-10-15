@@ -118,6 +118,8 @@ def _span_json(span: SpanExportRow) -> dict[str, Any]:
         "input_tokens": span.input_tokens,
         "output_tokens": span.output_tokens,
         "cached_tokens": span.cached_tokens,
+        "cache_write_tokens": span.cache_write_tokens,
+        "cache_write_1h_tokens": span.cache_write_1h_tokens,
         "cost_usd": None if span.cost_usd is None else _money(span.cost_usd),
         "pricing_version": span.pricing_version,
         "time_to_first_token_ms": span.time_to_first_token_ms,

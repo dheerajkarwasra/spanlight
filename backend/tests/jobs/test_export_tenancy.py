@@ -78,8 +78,10 @@ async def _seed_traces(
         await execute(
             session_factory,
             "INSERT INTO spans (project_id, trace_id, span_id, kind, name, status, started_at, "
-            "ended_at, model, input) VALUES (:project, :trace, :span, 'llm', 'call', 'ok', :at, "
-            ":at + interval '1 second', 'model-a', CAST(:input AS jsonb))",
+            "ended_at, model, input, input_tokens, output_tokens, cached_tokens, "
+            "cache_write_tokens, cache_write_1h_tokens) VALUES (:project, :trace, :span, 'llm', "
+            "'call', 'ok', :at, :at + interval '1 second', 'model-a', CAST(:input AS jsonb), "
+            "6423, 12, 0, 6404, 6404)",
             {
                 "project": project_id,
                 "trace": trace_id,
@@ -163,5 +165,23 @@ async def test_an_export_holds_only_its_own_projects_traces_when_ids_and_filters
     assert {trace["name"] for trace in traces} == {"trace-A"}
     assert b"tenant B" not in body and b"trace-B" not in body
     if export_format is ExportFormat.JSONL:
-        prompts = {span["input"]["prompt"] for trace in traces for span in trace["spans"]}
-        assert prompts == {"secret of tenant A"}
+        spans = [span for trace in traces for span in trace["spans"]]
+        assert {span["input"]["prompt"] for span in spans} == {"secret of tenant A"}
+        # Every usage column of the span is exported, the cache-write split included.
+        usage = {
+            key: spans[0][key]
+            for key in (
+                "input_tokens",
+                "output_tokens",
+                "cached_tokens",
+                "cache_write_tokens",
+                "cache_write_1h_tokens",
+            )
+        }
+        assert usage == {
+            "input_tokens": 6423,
+            "output_tokens": 12,
+            "cached_tokens": 0,
+            "cache_write_tokens": 6404,
+            "cache_write_1h_tokens": 6404,
+        }

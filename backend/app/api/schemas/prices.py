@@ -16,6 +16,11 @@ class PriceOut(ApiModel):
     input_per_mtok: Money
     output_per_mtok: Money
     cached_input_per_mtok: Money | None
+    # Null when the provider does not bill cache writes separately (priced at the input rate).
+    cache_write_5m_per_mtok: Money | None
+    cache_write_1h_per_mtok: Money | None
+    # The smallest prompt this row prices; 0 is the base tier.
+    min_prompt_tokens: int
     effective_from: datetime
     version: str
 
@@ -44,6 +49,9 @@ OverridePattern = Annotated[
 ]
 # `numeric(12, 6)`: below a million dollars per million tokens, six decimals.
 Rate = Annotated[Decimal, Field(ge=0, lt=1_000_000, max_digits=12, decimal_places=6)]
+# The lower bound of a price tier in prompt tokens; 0 is the base tier. An organization that
+# overrides only the base tier keeps the seed price of the higher ones.
+MinPromptTokens = Annotated[int, Field(ge=0, strict=True)]
 
 
 class PriceOverrideCreate(ApiModel):
@@ -52,6 +60,9 @@ class PriceOverrideCreate(ApiModel):
     input_per_mtok: Rate
     output_per_mtok: Rate
     cached_input_per_mtok: Rate | None = None
+    cache_write_5m_per_mtok: Rate | None = None
+    cache_write_1h_per_mtok: Rate | None = None
+    min_prompt_tokens: MinPromptTokens = 0
     effective_from: Annotated[datetime, AfterValidator(_as_utc)] | None = None
 
 
@@ -62,6 +73,9 @@ class PriceOverrideOut(ApiModel):
     input_per_mtok: Money
     output_per_mtok: Money
     cached_input_per_mtok: Money | None
+    cache_write_5m_per_mtok: Money | None
+    cache_write_1h_per_mtok: Money | None
+    min_prompt_tokens: int
     effective_from: datetime
     created_by: UserOut | None
     created_at: datetime

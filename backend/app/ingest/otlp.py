@@ -218,7 +218,17 @@ def _map_span(span: OtlpSpan) -> dict[str, Any]:
         "usage": {
             "input_tokens": first("gen_ai.usage.input_tokens", "gen_ai.usage.prompt_tokens"),
             "output_tokens": first("gen_ai.usage.output_tokens", "gen_ai.usage.completion_tokens"),
-            "cached_tokens": first("gen_ai.usage.cache_read_input_tokens"),
+            # Current conventions (and LiteLLM) name it `cache_read.input_tokens`; older
+            # instrumentations `cache_read_input_tokens`. Either way input_tokens includes it.
+            "cached_tokens": first(
+                "gen_ai.usage.cache_read.input_tokens", "gen_ai.usage.cache_read_input_tokens"
+            ),
+            # Cache writes follow the same two naming generations. OTel carries no TTL split,
+            # so `cache_write_1h_tokens` is never set and every write is priced as 5-minute.
+            "cache_write_tokens": first(
+                "gen_ai.usage.cache_creation.input_tokens",
+                "gen_ai.usage.cache_creation_input_tokens",
+            ),
         },
         "input": parse_content(first(*_CONTENT_INPUT_KEYS)),
         "output": parse_content(first(*_CONTENT_OUTPUT_KEYS)),

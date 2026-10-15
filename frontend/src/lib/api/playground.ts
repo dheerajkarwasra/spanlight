@@ -31,6 +31,10 @@ export interface PlaygroundUsage {
   input_tokens: number;
   output_tokens: number;
   cached_tokens: number | null;
+  /** Prompt tokens written to the provider's cache; null when not reported. */
+  cache_write_tokens: number | null;
+  /** The part of `cache_write_tokens` written with the 1-hour TTL; null when not reported. */
+  cache_write_1h_tokens: number | null;
 }
 
 /**

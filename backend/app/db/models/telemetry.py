@@ -163,6 +163,10 @@ class Span(Base):
     input_tokens: Mapped[int | None] = mapped_column(Integer)
     output_tokens: Mapped[int | None] = mapped_column(Integer)
     cached_tokens: Mapped[int | None] = mapped_column(Integer)
+    # Prompt tokens written to the cache in this call, every lifetime included, and the part of
+    # them written with the 1 hour lifetime (never more than the total; migration 0508).
+    cache_write_tokens: Mapped[int | None] = mapped_column(Integer)
+    cache_write_1h_tokens: Mapped[int | None] = mapped_column(Integer)
     cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 8))
     pricing_version: Mapped[str | None] = mapped_column(Text)
     time_to_first_token_ms: Mapped[float | None] = mapped_column(Double)

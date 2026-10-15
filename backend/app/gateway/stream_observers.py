@@ -28,6 +28,9 @@ _USAGE_FIELDS = (
     "cache_read_input_tokens",
     "cache_creation_input_tokens",
 )
+# The cache-write split by TTL, nested under `usage.cache_creation`.
+_CACHE_CREATION = "cache_creation"
+_CACHE_CREATION_FIELDS = ("ephemeral_5m_input_tokens", "ephemeral_1h_input_tokens")
 _STREAMED_FIELDS = {"text_delta": "text", "thinking_delta": "thinking"}
 _RESPONSES_TERMINAL = frozenset({"response.completed", "response.incomplete", "response.failed"})
 
@@ -164,7 +167,7 @@ class AnthropicMessagesObserver:
         self._model: str | None = None
         self._response_id: str | None = None
         self._stop_reason: str | None = None
-        self._usage: dict[str, int] = {}
+        self._usage: dict[str, Any] = {}  # the Messages usage shape, merged across events
         self._budget = OutputBudget()
         self._blocks: dict[int, dict[str, Any]] = {}
         self._parts: dict[tuple[int, str], list[str]] = {}
@@ -192,10 +195,21 @@ class AnthropicMessagesObserver:
             self._on_delta(index, dict_at(event, "delta"))
 
     def _merge_usage(self, usage: dict[str, Any]) -> None:
+        """Keep the latest value of each count: the events report totals, never increments.
+
+        `message_start` carries the input counts and the cache-write split; `message_delta`
+        repeats the cumulative counts (the split may be absent there), so a count is replaced,
+        never added up, and the split survives an event that leaves it out.
+        """
         for name in _USAGE_FIELDS:
             value = as_int(usage.get(name))
             if value is not None:
                 self._usage[name] = value
+        split = dict_at(usage, _CACHE_CREATION)
+        for name in _CACHE_CREATION_FIELDS:
+            value = as_int(split.get(name))
+            if value is not None:
+                self._usage.setdefault(_CACHE_CREATION, {})[name] = value
 
     def _on_delta(self, index: int, delta: dict[str, Any]) -> None:
         block = self._blocks.get(index)

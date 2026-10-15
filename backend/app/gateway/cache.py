@@ -79,11 +79,19 @@ def usage_to_json(usage: Usage) -> dict[str, Any]:
 
 
 def usage_from_json(raw: dict[str, Any]) -> Usage:
+    """A `Usage` from its stored form; a part absent from an older entry is unknown, not 0."""
     return Usage(
         input_tokens=int(raw["input_tokens"]),
         output_tokens=int(raw["output_tokens"]),
-        cached_tokens=None if raw.get("cached_tokens") is None else int(raw["cached_tokens"]),
+        cached_tokens=_optional_int(raw, "cached_tokens"),
+        cache_write_tokens=_optional_int(raw, "cache_write_tokens"),
+        cache_write_1h_tokens=_optional_int(raw, "cache_write_1h_tokens"),
     )
+
+
+def _optional_int(raw: dict[str, Any], key: str) -> int | None:
+    value = raw.get(key)
+    return None if value is None else int(value)
 
 
 class PostgresGatewayCache:

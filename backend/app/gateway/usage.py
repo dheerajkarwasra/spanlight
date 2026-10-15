@@ -8,7 +8,11 @@ A usage without both token counts is None: the call's tokens and cost are unknow
 from collections.abc import Mapping
 from typing import Any
 
+import structlog
+
 from app.gateway.sse import Usage, as_int, dict_at
+
+logger = structlog.get_logger(__name__)
 
 
 def _openai_usage(
@@ -43,12 +47,26 @@ def responses_usage(usage: Mapping[str, Any]) -> Usage | None:
 
 
 def anthropic_usage(usage: Mapping[str, Any]) -> Usage | None:
-    """Messages usage; input tokens include the cached ones, read and written."""
+    """Messages usage; input tokens include the cached ones, read and written.
+
+    `cache_creation_input_tokens` is every cache write; `cache_creation.ephemeral_1h_input_tokens`
+    is the part written with the 1-hour TTL. The split is kept only when it fits inside a write
+    total: on its own, or larger than the total, ingestion would refuse the whole span, and the
+    call's record matters more than a part the provider got wrong.
+    """
     uncached = as_int(usage.get("input_tokens"))
     output_tokens = as_int(usage.get("output_tokens"))
     if uncached is None or output_tokens is None:
         return None
     cache_read = as_int(usage.get("cache_read_input_tokens"))
     cache_write = as_int(usage.get("cache_creation_input_tokens"))
+    cache_write_1h = as_int(dict_at(usage, "cache_creation").get("ephemeral_1h_input_tokens"))
+    if cache_write_1h is not None and (cache_write is None or cache_write_1h > cache_write):
+        logger.warning(
+            "gateway.usage_1h_split_dropped",
+            cache_write_tokens=cache_write,
+            cache_write_1h_tokens=cache_write_1h,
+        )
+        cache_write_1h = None
     total_input = uncached + (cache_read or 0) + (cache_write or 0)
-    return Usage(total_input, output_tokens, cache_read)
+    return Usage(total_input, output_tokens, cache_read, cache_write, cache_write_1h)

@@ -316,7 +316,7 @@ A timed unit of work. You receive spans from `span`, `observe`-decorated code th
 | `set_attribute(key, value)` | Attaches one custom attribute. The key is converted to a string. |
 | `set_attributes(attributes)` | Attaches several attributes from a mapping. |
 | `set_model(model, *, provider=None)` | Records the model and, optionally, the provider that served the call. |
-| `set_usage(*, input_tokens=None, output_tokens=None, cached_tokens=None)` | Records token usage. A value left as `None` is unchanged. `input_tokens` is the total prompt size and includes the cached tokens; `cached_tokens` is the part served from the provider's prompt cache. |
+| `set_usage(*, input_tokens=None, output_tokens=None, cached_tokens=None, cache_write_tokens=None, cache_write_1h_tokens=None)` | Records token usage. A value left as `None` is unchanged. `input_tokens` is the total prompt size: uncached tokens plus prompt-cache reads plus prompt-cache writes. `cached_tokens` is the part read from the provider's prompt cache, `cache_write_tokens` the part written to it, and `cache_write_1h_tokens` the part of those writes made with a 1-hour lifetime (the rest are 5-minute writes). Leave the write fields unset when the provider reports none. The write fields exist since SDK 0.1.2. |
 | `set_finish_reason(reason)` | Records why generation stopped, as the provider reports it. Cut to 64 characters. `None` clears it. |
 | `set_request_hash(value)` | Records the hash that groups identical requests. The provider wrappers set it for you. A value that is not 32 lowercase hex characters is ignored, because the server would reject the whole batch. |
 | `set_prompt_version(version_id)` | Links the span to a prompt version. `CompiledPrompt` does this for you. A value that is not a UUID is ignored; `None` removes the link. |
@@ -418,12 +418,12 @@ message = client.messages.create(
 Each call becomes an `llm` span named after the operation and the model, for example `chat gpt-4o-mini` or `responses gpt-4o-mini`.
 
 - The provider, and the model from the response (the requested model if the response has none).
-- Token usage. `input_tokens` includes cached tokens, which are also reported as `cached_tokens`. For Anthropic, `input_tokens` is input plus cache reads plus cache writes.
+- Token usage. `input_tokens` includes cached tokens, which are also reported as `cached_tokens`. For Anthropic, `input_tokens` is uncached input plus cache reads plus cache writes, the writes are reported as `cache_write_tokens`, and the part of them made with a 1-hour lifetime as `cache_write_1h_tokens` (since SDK 0.1.2), so the server can price each at its own rate.
 - The time to first token, for streams.
 - The request parameters as the input, the assistant message as the output, and the first finish reason.
 - A request hash, so identical requests can be grouped.
 - For a failed call, the status `error` and the provider's message. The attributes `http.status_code` and `provider.request_id` are added when the provider exception has them.
-- Extra attributes where the provider supplies them: `response.id`, `response.finish_reasons`, `response.stop_reason`, `response.status`, `request.stream`, `usage.reasoning_tokens` and `usage.cache_creation_input_tokens`.
+- Extra attributes where the provider supplies them: `response.id`, `response.finish_reasons`, `response.stop_reason`, `response.status`, `request.stream` and `usage.reasoning_tokens`.
 
 API keys, `extra_headers`, `extra_query`, `extra_body`, `timeout` and `http_client` are never recorded.
 

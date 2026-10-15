@@ -7970,6 +7970,28 @@
       },
       "PriceOut": {
         "properties": {
+          "cache_write_1h_per_mtok": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write 1H Per Mtok"
+          },
+          "cache_write_5m_per_mtok": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write 5M Per Mtok"
+          },
           "cached_input_per_mtok": {
             "anyOf": [
               {
@@ -7989,6 +8011,10 @@
           "input_per_mtok": {
             "title": "Input Per Mtok",
             "type": "string"
+          },
+          "min_prompt_tokens": {
+            "title": "Min Prompt Tokens",
+            "type": "integer"
           },
           "model_pattern": {
             "title": "Model Pattern",
@@ -8013,6 +8039,9 @@
           "input_per_mtok",
           "output_per_mtok",
           "cached_input_per_mtok",
+          "cache_write_5m_per_mtok",
+          "cache_write_1h_per_mtok",
+          "min_prompt_tokens",
           "effective_from",
           "version"
         ],
@@ -8021,6 +8050,40 @@
       },
       "PriceOverrideCreate": {
         "properties": {
+          "cache_write_1h_per_mtok": {
+            "anyOf": [
+              {
+                "exclusiveMaximum": 1000000.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,6}|(?=[\\d.]{1,13}0*$)\\d{0,6}\\.\\d{0,6}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write 1H Per Mtok"
+          },
+          "cache_write_5m_per_mtok": {
+            "anyOf": [
+              {
+                "exclusiveMaximum": 1000000.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,6}|(?=[\\d.]{1,13}0*$)\\d{0,6}\\.\\d{0,6}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write 5M Per Mtok"
+          },
           "cached_input_per_mtok": {
             "anyOf": [
               {
@@ -8064,6 +8127,12 @@
             ],
             "title": "Input Per Mtok"
           },
+          "min_prompt_tokens": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Min Prompt Tokens",
+            "type": "integer"
+          },
           "model_pattern": {
             "maxLength": 200,
             "minLength": 1,
@@ -8102,6 +8171,28 @@
       },
       "PriceOverrideOut": {
         "properties": {
+          "cache_write_1h_per_mtok": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write 1H Per Mtok"
+          },
+          "cache_write_5m_per_mtok": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write 5M Per Mtok"
+          },
           "cached_input_per_mtok": {
             "anyOf": [
               {
@@ -8142,6 +8233,10 @@
             "title": "Input Per Mtok",
             "type": "string"
           },
+          "min_prompt_tokens": {
+            "title": "Min Prompt Tokens",
+            "type": "integer"
+          },
           "model_pattern": {
             "title": "Model Pattern",
             "type": "string"
@@ -8162,6 +8257,9 @@
           "input_per_mtok",
           "output_per_mtok",
           "cached_input_per_mtok",
+          "cache_write_5m_per_mtok",
+          "cache_write_1h_per_mtok",
+          "min_prompt_tokens",
           "effective_from",
           "created_by",
           "created_at"
@@ -10522,6 +10620,28 @@
             "title": "Attributes",
             "type": "object"
           },
+          "cache_write_1h_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write 1H Tokens"
+          },
+          "cache_write_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write Tokens"
+          },
           "cached_tokens": {
             "anyOf": [
               {
@@ -10720,6 +10840,8 @@
           "input_tokens",
           "output_tokens",
           "cached_tokens",
+          "cache_write_tokens",
+          "cache_write_1h_tokens",
           "cost_usd",
           "pricing_version",
           "time_to_first_token_ms",
@@ -11602,6 +11724,28 @@
       },
       "UsageOut": {
         "properties": {
+          "cache_write_1h_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write 1H Tokens"
+          },
+          "cache_write_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write Tokens"
+          },
           "cached_tokens": {
             "anyOf": [
               {
@@ -11625,7 +11769,9 @@
         "required": [
           "input_tokens",
           "output_tokens",
-          "cached_tokens"
+          "cached_tokens",
+          "cache_write_tokens",
+          "cache_write_1h_tokens"
         ],
         "title": "UsageOut",
         "type": "object"
@@ -14488,7 +14634,7 @@
     },
     "/api/v1/orgs/{org_id}/price-overrides": {
       "get": {
-        "description": "Ordered by provider, pattern and start time.",
+        "description": "Ordered by provider, pattern, start time and tier.",
         "operationId": "list_price_overrides_api_v1_orgs__org_id__price_overrides_get",
         "parameters": [
           {
@@ -14534,7 +14680,7 @@
         ]
       },
       "post": {
-        "description": "Rates are USD per million tokens. `effective_from` defaults to now.\n\nThe pattern matches a model exactly or with a snapshot suffix, like the seed prices.\n`409 PRICE_OVERRIDE_EXISTS` when the organization already has one for the same provider,\npattern and start time.",
+        "description": "Rates are USD per million tokens. `effective_from` defaults to now.\n\nThe pattern matches a model exactly or with a snapshot suffix, like the seed prices. The\noptional cache-write rates fall back to the input rate; `min_prompt_tokens` (default 0) makes\nthe override one tier of the model, applied to prompts of at least that many tokens.\n`409 PRICE_OVERRIDE_EXISTS` when the organization already has one for the same provider,\npattern, start time and tier.",
         "operationId": "create_price_override_api_v1_orgs__org_id__price_overrides_post",
         "parameters": [
           {

@@ -220,6 +220,7 @@ Each call is one `llm` span. Where a column says "empty", Spanlight stores nothi
 | Input tokens | Uncached input plus cache reads plus cache writes | The same. On a [response cache](/docs/gateway/cache/) hit the tokens are recorded as 0, because nothing was billed |
 | Output tokens | From Anthropic's usage | The same |
 | Cached tokens | Cache reads, when Anthropic reports them | The same. On a [response cache](/docs/gateway/cache/) hit it is recorded as 0 |
+| Cache writes | Cache writes (`cache_creation_input_tokens`), and the part of them with a 1-hour lifetime (`cache_creation.ephemeral_1h_input_tokens`), when Anthropic reports them | The same. On a [response cache](/docs/gateway/cache/) hit they are recorded as 0 |
 | Cost | From the price table and your [price overrides](/docs/concepts/cost/#price-overrides), empty for a model with neither | The same |
 | Finish reason | `stop`, `length`, `tool_calls`, `content_filter` or `other`. Anthropic's `end_turn` is stored as `stop` | The same |
 | Time to first token | For streamed calls | For streamed calls |
@@ -227,7 +228,7 @@ Each call is one `llm` span. Where a column says "empty", Spanlight stores nothi
 | Environment | The `environment` you pass to `spanlight.init` | The environment of the gateway key |
 | User and session | Set with `spanlight.update_trace` | Set with the `x-spanlight-user` and `x-spanlight-session` headers |
 
-Spanlight counts input tokens the same way for every provider: `input_tokens` includes cached tokens. Anthropic reports uncached input, cache reads and cache writes apart, so Spanlight adds them up. The raw number of cache writes is kept in the attribute `usage.cache_creation_input_tokens`.
+Spanlight counts input tokens the same way for every provider: `input_tokens` includes cache reads and cache writes. Anthropic reports uncached input, cache reads and cache writes apart, so Spanlight adds them up for `input_tokens` and keeps the reads in `cached_tokens` and the writes in `cache_write_tokens`, with the 1-hour part in `cache_write_1h_tokens` (the SDK reports the writes since 0.1.2; the gateway always has). Anthropic bills a cache write above the input rate (1.25 times for a 5-minute cache, 2 times for 1 hour), and Spanlight prices it that way; see [How cost is calculated](/docs/concepts/cost/#the-formula). The trace page shows the writes in the **Usage** card as **Cache writes**, with the 1-hour part after it when there is one.
 
 The SDK and the gateway also store attributes. The SDK adds `response.id`, `response.stop_reason` (Anthropic's own value, such as `end_turn`) and `finish_reason`. A streamed call adds `request.stream`. The gateway adds `spanlight.gateway.*` attributes (the key, route, target, attempts, overhead and upstream status) and `spanlight.cache`. [Gateway quickstart](/docs/gateway/quickstart/#check-it-worked) lists them. [How cost is calculated](/docs/concepts/cost/) explains when a cost is unknown.
 

@@ -124,11 +124,20 @@ Text256 = Annotated[StrictStr, StringConstraints(min_length=1, max_length=256)]
 
 
 class UsageIn(BaseModel):
+    """Token usage. `input_tokens` is the whole prompt: uncached, cache reads and cache writes.
+
+    `cached_tokens` is the part read from the provider's prompt cache and `cache_write_tokens` the
+    part written to it; `cache_write_1h_tokens` is the subset of those writes made with the 1-hour
+    TTL (absent: every write is 5-minute). The sums are checked in `normalize._usage`.
+    """
+
     model_config = ConfigDict(extra="ignore")
 
     input_tokens: TokenCount | None = None
     output_tokens: TokenCount | None = None
     cached_tokens: TokenCount | None = None
+    cache_write_tokens: TokenCount | None = None
+    cache_write_1h_tokens: TokenCount | None = None
 
 
 class TraceIn(BaseModel):

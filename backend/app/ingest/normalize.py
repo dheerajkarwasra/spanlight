@@ -59,6 +59,8 @@ class NormalizedSpan:
     input_tokens: int | None
     output_tokens: int | None
     cached_tokens: int | None
+    cache_write_tokens: int | None
+    cache_write_1h_tokens: int | None
     cost_usd: Decimal | None
     pricing_version: str | None
     time_to_first_token_ms: float | None
@@ -76,10 +78,10 @@ def normalize_span(
     span: SpanIn, *, capture_payloads: bool, prices: PriceBook, now: datetime
 ) -> NormalizedSpan:
     _check_span(span, now)
-    tokens = _usage(span)
+    usage = _usage(span)
     attributes = _attributes(span)
     stored_input, stored_output, truncated = _payloads(span, capture_payloads)
-    cost_usd, pricing_version = _cost(span, prices, tokens)
+    cost_usd, pricing_version = _cost(span, prices, usage)
     status_message = redact_text(span.status_message) if span.status_message else None
     return NormalizedSpan(
         trace_id=span.trace_id,
@@ -94,9 +96,11 @@ def normalize_span(
         ended_at=span.end_time,
         provider=span.provider,
         model=span.model,
-        input_tokens=tokens[0],
-        output_tokens=tokens[1],
-        cached_tokens=tokens[2],
+        input_tokens=usage.input_tokens,
+        output_tokens=usage.output_tokens,
+        cached_tokens=usage.cached_tokens,
+        cache_write_tokens=usage.cache_write_tokens,
+        cache_write_1h_tokens=usage.cache_write_1h_tokens,
         cost_usd=cost_usd,
         pricing_version=pricing_version,
         time_to_first_token_ms=(
@@ -114,30 +118,63 @@ def normalize_span(
     )
 
 
-_Tokens = tuple[int | None, int | None, int | None]
+@dataclass(frozen=True)
+class _Usage:
+    """The checked token counts of a span; every field None when it sent no usage."""
+
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cached_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    cache_write_1h_tokens: int | None = None
 
 
-def _usage(span: SpanIn) -> _Tokens:
-    """Input, output and cached tokens; cached ones are part of the input and cannot exceed it."""
+def _usage(span: SpanIn) -> _Usage:
+    """The usage as sent, once the parts of the prompt are known to fit inside it.
+
+    `input_tokens` is the whole prompt, cache reads and writes included, so reads plus writes
+    cannot exceed it, and the 1-hour writes are a subset of all writes. A 1-hour count without a
+    total is refused here: the database check compares with NULL and would let it through.
+    """
     usage = span.usage
     if usage is None:
-        return None, None, None
-    cached, total = usage.cached_tokens, usage.input_tokens
-    if cached is not None and total is not None and cached > total:
+        return _Usage()
+    total, reads, writes, writes_1h = (
+        usage.input_tokens,
+        usage.cached_tokens,
+        usage.cache_write_tokens,
+        usage.cache_write_1h_tokens,
+    )
+    if reads is not None and total is not None and reads > total:
         raise SpanRejectedError("usage.cached_tokens: cannot exceed usage.input_tokens")
-    return total, usage.output_tokens, cached
+    if writes is not None and total is not None and (reads or 0) + writes > total:
+        raise SpanRejectedError(
+            "usage.cache_write_tokens: cached_tokens + cache_write_tokens cannot exceed "
+            "usage.input_tokens"
+        )
+    if writes_1h is not None:
+        if writes is None:
+            raise SpanRejectedError(
+                "usage.cache_write_1h_tokens: requires usage.cache_write_tokens"
+            )
+        if writes_1h > writes:
+            raise SpanRejectedError(
+                "usage.cache_write_1h_tokens: cannot exceed usage.cache_write_tokens"
+            )
+    return _Usage(total, usage.output_tokens, reads, writes, writes_1h)
 
 
-def _cost(span: SpanIn, prices: PriceBook, tokens: _Tokens) -> tuple[Decimal | None, str | None]:
+def _cost(span: SpanIn, prices: PriceBook, usage: _Usage) -> tuple[Decimal | None, str | None]:
     """The span's cost and the price version used; both None when it cannot be priced."""
-    input_tokens, output_tokens, cached_tokens = tokens
     cost = prices.cost(
         provider=span.provider,
         model=span.model,
         at=span.start_time,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        cached_tokens=cached_tokens,
+        input_tokens=usage.input_tokens,
+        output_tokens=usage.output_tokens,
+        cached_tokens=usage.cached_tokens,
+        cache_write_tokens=usage.cache_write_tokens,
+        cache_write_1h_tokens=usage.cache_write_1h_tokens,
     )
     if cost is None:
         return None, None

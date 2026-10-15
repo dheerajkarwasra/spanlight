@@ -13,6 +13,11 @@ interface MetaFieldProps {
   /** Adds a copy button after the value. */
   copyValue?: string;
   copyLabel?: string;
+  /**
+   * Let a value with several parts wrap onto a second line instead of being cut with an ellipsis
+   * (the default), for a value that has no single text to put in a tooltip.
+   */
+  wrap?: boolean;
 }
 
 /** Figma "Traces/Meta field": one key/value pair inside a `<dl>`. */
@@ -23,6 +28,7 @@ export function MetaField({
   mono = false,
   copyValue,
   copyLabel,
+  wrap = false,
 }: MetaFieldProps) {
   const stacked = layout === "stacked";
   return (
@@ -40,7 +46,8 @@ export function MetaField({
       <dd className="flex min-w-0 flex-1 items-center gap-1">
         <span
           className={cn(
-            "min-w-0 truncate text-foreground",
+            "min-w-0 text-foreground",
+            wrap ? "break-words" : "truncate",
             mono ? "font-mono text-label" : "text-sm",
             !mono && stacked && "font-medium",
           )}

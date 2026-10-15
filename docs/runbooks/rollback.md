@@ -67,7 +67,7 @@ Do not check out the old code yet: the downgrade needs the new code's migration 
    sed -n '/def downgrade/,$p' backend/alembic/versions/0015_add_worker_heartbeats.py
    ```
 
-   Read every file from the current revision down to the target. Replace the file name with the real ones. If a downgrade deletes data you need, stop and restore a pre-deploy backup instead ([restore.md](restore.md)).
+   Read every file from the current revision down to the target. Replace the file name with the real ones. If a downgrade deletes data you need, stop and restore a pre-deploy backup instead ([restore.md](restore.md)). One case to know: downgrading below `0508` drops the cache-write rates (from the surviving price overrides too) and deletes the prompt-size tier rows from `model_prices` and `price_overrides`, and the seeding on the next upgrade keeps the built-in rows that still exist, so they come back without write rates. After such a round trip, stop `api` and `worker` (a span that arrives while the table is empty gets an unknown cost), run `DELETE FROM model_prices` as the owner and then `spanlight sync-prices`, start them again, and set the write rates and tier rows of your overrides again.
 
 3. Take a backup of the current state, in case the downgrade goes wrong.
 

@@ -143,7 +143,7 @@ If you point the OpenAI client at a compatible API, name the provider yourself: 
 
 For every LLM call the SDK records the provider, the model (from the response, falling back to the requested one), token usage, time to first token for streams, the request parameters and the assistant message, and the provider's error message when the call fails. API keys, headers and `extra_*` arguments are never recorded.
 
-Token counts follow one rule everywhere: `input_tokens` **includes** cached tokens, and `cached_tokens` says how many of them came from the provider's prompt cache.
+Token counts follow one rule everywhere: `input_tokens` **includes** cached tokens, and `cached_tokens` says how many of them came from the provider's prompt cache. For Anthropic, the wrapper also reports the tokens written to the cache as `cache_write_tokens`, and the part written with a 1-hour lifetime as `cache_write_1h_tokens` (since SDK 0.1.2), because Anthropic bills writes above the input rate. [How cost is calculated](/docs/concepts/cost/) explains the convention.
 
 ## Privacy
 

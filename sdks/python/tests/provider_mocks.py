@@ -300,6 +300,46 @@ ANTHROPIC_MESSAGE = {
 }
 
 
+# Real usage from a 2026-10-14 pilot call: every write landed in the 1-hour cache.
+ANTHROPIC_CACHE_WRITE_USAGE = {
+    "input_tokens": 19,
+    "output_tokens": 12,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 6404,
+    "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 6404},
+}
+
+ANTHROPIC_CACHE_WRITE_MESSAGE = {**ANTHROPIC_MESSAGE, "usage": ANTHROPIC_CACHE_WRITE_USAGE}
+
+
+def anthropic_cache_write_stream() -> list[tuple[str | None, dict[str, Any] | str]]:
+    """Text stream whose ``message_start`` carries the pilot's cache-write usage.
+
+    ``message_delta`` repeats the cumulative prompt counts without the TTL split,
+    as the API does; the accumulator must not sum them.
+    """
+    events = anthropic_text_stream()
+    name, start = events[0]
+    assert isinstance(start, dict)
+    message = {**start["message"], "usage": {**ANTHROPIC_CACHE_WRITE_USAGE, "output_tokens": 1}}
+    events[0] = (name, {**start, "message": message})
+    name, delta = events[-2]
+    assert isinstance(delta, dict)
+    events[-2] = (
+        name,
+        {
+            **delta,
+            "usage": {
+                "input_tokens": 19,
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 6404,
+                "output_tokens": 12,
+            },
+        },
+    )
+    return events
+
+
 def anthropic_text_stream() -> list[tuple[str | None, dict[str, Any] | str]]:
     return [
         (

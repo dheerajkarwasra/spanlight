@@ -1,18 +1,32 @@
 """Cost calculation for LLM spans.
 
 Token convention (shared with the SDKs, see docs/api-deviations.md):
-`input_tokens` is the *total* prompt size including cache reads, and
-`cached_tokens` is the subset served from the provider's prompt cache. So
+`input_tokens` is the *total* prompt size, cache reads and cache writes included;
+`cached_tokens` is the part served from the provider's prompt cache (reads);
+`cache_write_tokens` is the part written to it, and `cache_write_1h_tokens` the
+part of those writes kept for one hour. The classes do not overlap, so
 
-    cost = (input - cached) * input_rate + cached * cached_rate + output * output_rate
+    reads    = min(cached, input)
+    writes   = min(cache_write, input - reads)
+    writes1h = min(cache_write_1h, writes)
+    writes5m = writes - writes1h
+    uncached = input - reads - writes
+    cost = uncached * input_rate + reads * cached_rate
+         + writes5m * write_5m_rate + writes1h * write_1h_rate + output * output_rate
 
-where `cached_rate` falls back to `input_rate` when no cache-read price is known.
-Cache *writes* are billed by providers at a premium we do not model; the SDK
-reports them as an attribute only, so they are priced at the input rate here.
+A missing read or write rate falls back to `input_rate`, so a model without a
+published premium is priced as if the cache did not exist. A missing write
+count means no writes; a missing 1-hour count means every write is 5-minute.
 
-An organization's price overrides are loaded next to the seed prices. For the same model the
-longest matching pattern wins whatever its source; between equal patterns an override beats the
-seed row. An override's `version` is `override:<id>`, so a stored cost says which rate made it.
+Some models bill the whole prompt at a higher rate once it passes a size: such
+a model has one row per tier, `min_prompt_tokens` being the smallest prompt the
+row prices. The row with the highest `min_prompt_tokens` not above the prompt
+wins, so a long prompt picks the upper tier and a short one the base row.
+
+An organization's price overrides are loaded next to the seed prices. Within a tier, for the same
+model, the longest matching pattern wins whatever its source; between equal patterns an override
+beats the seed row. An override is per tier: overriding only the base row keeps the seed's upper
+tiers. An override's `version` is `override:<id>`, so a stored cost says which rate made it.
 
 A cost is only produced when the model has a known price at the span's start
 time and both input and output token counts are present. Otherwise it is
@@ -33,7 +47,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.ids import new_id
 from app.core.model_match import matches_model
 from app.db.models import ModelPrice, PriceOverride
-from app.pricing.prices import EFFECTIVE_FROM, PRICING_VERSION, SEED_PRICES
+from app.pricing.prices import ALL_SNAPSHOTS
 
 _PER_MILLION = Decimal(1_000_000)
 _COST_QUANTUM = Decimal("0.00000001")  # numeric(14, 8)
@@ -56,9 +70,32 @@ class Price:
     effective_from: datetime
     version: str
     source: Literal["seed", "override"] = "seed"
+    cache_write_5m_per_mtok: Decimal | None = None
+    cache_write_1h_per_mtok: Decimal | None = None
+    # The smallest prompt this row prices; 0 for the base row of a model.
+    min_prompt_tokens: int = 0
 
     def matches(self, model: str) -> bool:
         return matches_model(self.model_pattern, model)
+
+    @property
+    def cached_rate(self) -> Decimal:
+        """The cache-read rate, or the input rate when none is published."""
+        return _or_input(self.cached_input_per_mtok, self.input_per_mtok)
+
+    @property
+    def write_5m_rate(self) -> Decimal:
+        """The 5-minute cache-write rate, or the input rate when none is published."""
+        return _or_input(self.cache_write_5m_per_mtok, self.input_per_mtok)
+
+    @property
+    def write_1h_rate(self) -> Decimal:
+        """The 1-hour cache-write rate, or the input rate when none is published."""
+        return _or_input(self.cache_write_1h_per_mtok, self.input_per_mtok)
+
+
+def _or_input(rate: Decimal | None, input_rate: Decimal) -> Decimal:
+    return rate if rate is not None else input_rate
 
 
 @dataclass(frozen=True)
@@ -73,18 +110,22 @@ class PriceBook:
     def __init__(self, prices: Iterable[Price]) -> None:
         self._prices: Sequence[Price] = tuple(prices)
 
-    def find(self, provider: str | None, model: str, at: datetime) -> Price | None:
+    def find(
+        self, provider: str | None, model: str, at: datetime, prompt_tokens: int = 0
+    ) -> Price | None:
         """The price for `model`, matched exactly as given (case included), or None.
 
         Ingestion strips surrounding whitespace before it stores and prices a model; nothing else
         is normalized, so a price and a model-scoped alert, rollup or budget agree on every span.
-        The provider is a fixed vocabulary and is still compared lower-cased.
+        The provider is a fixed vocabulary and is still compared lower-cased. `prompt_tokens`
+        picks the tier: the row with the highest `min_prompt_tokens` not above it.
         """
         normalized_provider = provider.strip().lower() if provider else None
         candidates = [
             price
             for price in self._prices
             if price.effective_from <= at
+            and price.min_prompt_tokens <= prompt_tokens
             and (normalized_provider is None or price.provider == normalized_provider)
             and price.matches(model)
         ]
@@ -93,6 +134,7 @@ class PriceBook:
         return max(
             candidates,
             key=lambda price: (
+                price.min_prompt_tokens,
                 len(price.model_pattern),
                 price.source == "override",
                 price.effective_from,
@@ -108,24 +150,26 @@ class PriceBook:
         input_tokens: int | None,
         output_tokens: int | None,
         cached_tokens: int | None,
+        cache_write_tokens: int | None = None,
+        cache_write_1h_tokens: int | None = None,
     ) -> CostResult | None:
         if model is None or input_tokens is None or output_tokens is None:
             return None
-        price = self.find(provider, model, at)
+        price = self.find(provider, model, at, prompt_tokens=input_tokens)
         if price is None:
             return None
 
-        cached = min(cached_tokens or 0, input_tokens)
-        uncached = input_tokens - cached
-        # Without a published cache-read rate, cached tokens bill at the input rate.
-        cached_rate = (
-            price.cached_input_per_mtok
-            if price.cached_input_per_mtok is not None
-            else price.input_per_mtok
-        )
+        # Each class is clamped to what the prompt leaves, so no count goes negative.
+        reads = min(cached_tokens or 0, input_tokens)
+        writes = min(cache_write_tokens or 0, input_tokens - reads)
+        writes_1h = min(cache_write_1h_tokens or 0, writes)
+        writes_5m = writes - writes_1h
+        uncached = input_tokens - reads - writes
         total = (
             uncached * price.input_per_mtok
-            + cached * cached_rate
+            + reads * price.cached_rate
+            + writes_5m * price.write_5m_rate
+            + writes_1h * price.write_1h_rate
             + output_tokens * price.output_per_mtok
         ) / _PER_MILLION
         return CostResult(
@@ -148,6 +192,9 @@ async def load_price_book(session: AsyncSession, org_id: UUID | None = None) -> 
             cached_input_per_mtok=row.cached_input_per_mtok,
             effective_from=row.effective_from,
             version=row.version,
+            cache_write_5m_per_mtok=row.cache_write_5m_per_mtok,
+            cache_write_1h_per_mtok=row.cache_write_1h_per_mtok,
+            min_prompt_tokens=row.min_prompt_tokens,
         )
         for row in (await session.scalars(select(ModelPrice))).all()
     ]
@@ -165,6 +212,9 @@ async def load_price_book(session: AsyncSession, org_id: UUID | None = None) -> 
                 effective_from=row.effective_from,
                 version=f"{OVERRIDE_VERSION_PREFIX}{row.id}",
                 source="override",
+                cache_write_5m_per_mtok=row.cache_write_5m_per_mtok,
+                cache_write_1h_per_mtok=row.cache_write_1h_per_mtok,
+                min_prompt_tokens=row.min_prompt_tokens,
             )
             for row in overrides
         )
@@ -172,8 +222,12 @@ async def load_price_book(session: AsyncSession, org_id: UUID | None = None) -> 
 
 
 async def sync_seed_prices(session: AsyncSession) -> int:
-    """Insert the bundled price snapshot. Existing rows are left untouched.
+    """Insert every bundled price snapshot, the current and the historical ones. Existing rows
+    are left untouched.
 
+    Each snapshot has its own `effective_from`, so its rows land beside the others and price the
+    spans that start after it; a span stored under an older snapshot keeps its cost and version,
+    and a fresh install prices an older span as an upgraded one does.
     Returns the number of rows inserted. The caller commits.
     """
     statement = (
@@ -187,13 +241,19 @@ async def sync_seed_prices(session: AsyncSession) -> int:
                     "input_per_mtok": seed.input_per_mtok,
                     "output_per_mtok": seed.output_per_mtok,
                     "cached_input_per_mtok": seed.cached_input_per_mtok,
-                    "effective_from": EFFECTIVE_FROM,
-                    "version": PRICING_VERSION,
+                    "cache_write_5m_per_mtok": seed.cache_write_5m_per_mtok,
+                    "cache_write_1h_per_mtok": seed.cache_write_1h_per_mtok,
+                    "min_prompt_tokens": seed.min_prompt_tokens,
+                    "effective_from": snapshot.effective_from,
+                    "version": snapshot.version,
                 }
-                for seed in SEED_PRICES
+                for snapshot in ALL_SNAPSHOTS
+                for seed in snapshot.prices
             ]
         )
-        .on_conflict_do_nothing(index_elements=["provider", "model_pattern", "effective_from"])
+        .on_conflict_do_nothing(
+            index_elements=["provider", "model_pattern", "effective_from", "min_prompt_tokens"]
+        )
         .returning(ModelPrice.id)
     )
     result = await session.execute(statement)

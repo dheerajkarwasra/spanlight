@@ -141,7 +141,7 @@ It prints `Re-sealed <n> provider credentials.` and never prints a key. Credenti
 spanlight sync-prices
 ```
 
-Inserts the model price snapshot bundled with the server into the price table. Rows that already exist are kept. It prints `Inserted <n> price rows.` See [Cost](/docs/concepts/cost/).
+Inserts the model price snapshots bundled with the server, the current one and the historical ones, into the price table. Rows that already exist are kept. It prints `Inserted <n> price rows (snapshots up to <version>).`, `<version>` being the current snapshot. The `api` and `worker` run the same seeding when they start. See [Cost](/docs/concepts/cost/).
 
 ## Maintenance
 

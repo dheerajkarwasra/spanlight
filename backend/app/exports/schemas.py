@@ -95,6 +95,8 @@ class SpanExportRow:
     input_tokens: int | None
     output_tokens: int | None
     cached_tokens: int | None
+    cache_write_tokens: int | None
+    cache_write_1h_tokens: int | None
     cost_usd: Decimal | None
     pricing_version: str | None
     time_to_first_token_ms: float | None

@@ -17,6 +17,7 @@ function hasUsage(span: Span): boolean {
     span.input_tokens !== null ||
     span.output_tokens !== null ||
     span.cached_tokens !== null ||
+    span.cache_write_tokens !== null ||
     span.cost_usd !== null
   );
 }
@@ -62,6 +63,12 @@ function UsageGrid({ span }: { span: Span }) {
       <MetaField layout="stacked" label="Cached tokens">
         <TokenCount value={span.cached_tokens} />
       </MetaField>
+      {span.cache_write_tokens !== null ? (
+        <MetaField layout="stacked" label="Cache writes" wrap>
+          <TokenCount value={span.cache_write_tokens} />
+          <CacheWrite1hSuffix tokens={span.cache_write_1h_tokens} />
+        </MetaField>
+      ) : null}
       <MetaField layout="stacked" label="Cost">
         {cost === null ? (
           <UnknownValue reason={costReason} />
@@ -85,6 +92,20 @@ function UsageGrid({ span }: { span: Span }) {
 
 function TokenCount({ value }: { value: number | null }) {
   return <ValueOrUnknown value={formatInteger(value)} reason={NOT_REPORTED} className="tabular" />;
+}
+
+/** Figma "Span usage card · cache writes": the muted "· 1 h: N" part of the cache-write count. */
+function CacheWrite1hSuffix({ tokens }: { tokens: number | null }) {
+  const count = tokens !== null && tokens > 0 ? formatInteger(tokens) : null;
+  if (count === null) {
+    return null;
+  }
+  return (
+    <span className="ml-1 font-normal text-muted-foreground tabular">
+      <span aria-hidden>{`· 1 h: ${count}`}</span>
+      <span className="sr-only">{`, 1-hour cache: ${count}`}</span>
+    </span>
+  );
 }
 
 export function SpanUsageSkeleton() {

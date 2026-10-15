@@ -41,6 +41,7 @@ from app.db.roles import ensure_app_role
 from app.db.session import create_engine, create_session_factory
 from app.gateway.reseal import ResealResult, reseal_credentials
 from app.pricing.cost import sync_seed_prices
+from app.pricing.prices import PRICING_VERSION
 from app.rollups.compute import backfill_rollups
 from app.rollups.jobs import MAX_BACKFILL_DAYS
 from app.services.audit import record_audit
@@ -191,14 +192,20 @@ def reset_two_factor(email: EmailOption) -> None:
 
 @app.command("sync-prices")
 def sync_prices() -> None:
-    """Insert the bundled model price snapshot (existing rows are kept)."""
+    """Insert every bundled model price snapshot (existing rows are kept).
+
+    The current snapshot and each historical one are written, so a span dated before the current
+    snapshot's effective date is priced by the snapshot in force when it started. A newer snapshot
+    inserts beside the rows of older ones; spans priced under an older snapshot keep their stored
+    cost.
+    """
 
     async def operation(db: AsyncSession) -> int:
         inserted = await sync_seed_prices(db)
         await db.commit()
         return inserted
 
-    typer.echo(f"Inserted {_run(operation)} price rows.")
+    typer.echo(f"Inserted {_run(operation)} price rows (snapshots up to {PRICING_VERSION}).")
 
 
 @app.command("reseal-credentials")

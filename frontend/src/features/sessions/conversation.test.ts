@@ -39,6 +39,8 @@ function makeSpan({
     input_tokens: null,
     output_tokens: null,
     cached_tokens: null,
+    cache_write_tokens: null,
+    cache_write_1h_tokens: null,
     cost_usd: null,
     pricing_version: null,
     time_to_first_token_ms: null,

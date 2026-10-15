@@ -128,7 +128,7 @@ With the keyboard, use the arrow keys to move between rows, **Home** and **End**
 
 ### The usage card
 
-Under the waterfall, **Usage** shows the selected span's model, provider, input, output and cached tokens, cost, time to first token and pricing version. A value the SDK did not report shows **—** with a tooltip that says why. A span that made no model call says so; select an LLM span to see its numbers.
+Under the waterfall, **Usage** shows the selected span's model, provider, input, output and cached tokens, cost, time to first token and pricing version. A span that reported prompt-cache writes also shows **Cache writes**, with the part written for 1 hour after it (`· 1 h: N`) when there is one. A value the SDK did not report shows **—** with a tooltip that says why. A span that made no model call says so; select an LLM span to see its numbers.
 
 Below it, the **Scores** panel lists the trace's scores. See [scores](/docs/scores/).
 

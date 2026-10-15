@@ -5,7 +5,7 @@ sidebar:
   order: 23
 ---
 
-{/* Sources: deploy/compose.yaml, deploy/Dockerfile, deploy/.env.example, deploy/smoke.sh, docs/runbooks/deploy.md, docs/runbooks/rollback.md, docs/runbooks/restore.md, backend/app/cli.py, backend/app/api/health.py, CHANGELOG.md, sdks/python/src/spanlight/_exporter_delivery.py, sdks/python/src/spanlight/_client.py, sdks/python/pyproject.toml */}
+{/* Sources: deploy/compose.yaml, deploy/Dockerfile, deploy/.env.example, deploy/smoke.sh, docs/runbooks/deploy.md, docs/runbooks/rollback.md, docs/runbooks/restore.md, backend/app/cli.py, backend/app/api/health.py, backend/app/pricing/cost.py, backend/alembic/versions/0508_add_cache_write_and_price_tiers.py, CHANGELOG.md, sdks/python/src/spanlight/_exporter_delivery.py, sdks/python/src/spanlight/_client.py, sdks/python/pyproject.toml */}
 
 import { Aside, Steps } from '@astrojs/starlight/components';
 import NextSteps from '../../../components/NextSteps.astro';
@@ -137,6 +137,19 @@ What a rollback costs depends on whether the upgrade applied a migration.
 - **A migration ran.** The old code does not become ready on the newer schema, and its `spanlight migrate` fails. You must undo the migration with the new build's own downgrade functions, or restore the backup from step 3.
 
 The [rollback runbook](/docs/runbooks/rollback/) has the exact commands for both cases, and warns that a downgrade can drop tables and columns. For a damaged database, use [Restoring a database backup](/docs/runbooks/restore/). A small bug is often safer fixed by a patch release than by a downgrade.
+
+<Aside type="caution" title="Price rows after a downgrade below migration 0508">
+Migration `0508` adds the prompt-cache write rates and the prompt-size tiers to the price tables. Its downgrade drops those columns and deletes every tier row (the rows whose `min_prompt_tokens` is not 0) from both `model_prices` and your organizations' `price_overrides`; the price overrides that survive lose their write rates too. If you later upgrade again, the price table is not whole: the built-in rows that survived the downgrade are already present, so the seeding that runs when `api` and `worker` start (the same as `spanlight sync-prices`) keeps them as they are, without write rates, and only puts back the deleted `claude-haiku-5-5` row for prompts over 100,000 tokens. Until you fix it, a cache write on an Anthropic model is priced at the plain input rate. To restore the table, delete the built-in rows and seed them again. Between the two commands the table is empty and a span that arrives then is stored with an unknown cost, so stop `api` and `worker` first, or run the two commands back to back:
+
+```bash
+spl stop api worker
+spl exec postgres psql -U postgres -d spanlight -c "DELETE FROM model_prices"
+spl run --rm --no-deps api spanlight sync-prices
+spl start api worker
+```
+
+The `sync-prices` command prints `Inserted <n> price rows (snapshots up to 2026-10-15).`, where `n` is the size of the bundled tables. Spans already priced keep their stored cost; the next spans are priced from the full table. Tier rows you had added as price overrides are not restored, and the surviving overrides have no write rates: set them again through the API.
+</Aside>
 
 ## Clean up
 

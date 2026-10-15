@@ -89,6 +89,8 @@ def _cost(
         input_tokens=usage.input_tokens,
         output_tokens=usage.output_tokens,
         cached_tokens=usage.cached_tokens,
+        cache_write_tokens=usage.cache_write_tokens,
+        cache_write_1h_tokens=usage.cache_write_1h_tokens,
     )
     return priced.cost_usd if priced is not None else None
 

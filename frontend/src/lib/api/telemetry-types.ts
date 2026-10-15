@@ -122,6 +122,10 @@ export interface Span {
   input_tokens: number | null;
   output_tokens: number | null;
   cached_tokens: number | null;
+  /** Tokens written to the prompt cache; null when the provider did not report them. */
+  cache_write_tokens: number | null;
+  /** The part of `cache_write_tokens` written with the 1-hour TTL; null when not reported. */
+  cache_write_1h_tokens: number | null;
   cost_usd: string | null;
   pricing_version: string | null;
   time_to_first_token_ms: number | null;
@@ -201,6 +205,11 @@ export interface Price {
   output_per_mtok: string;
   /** Null when the provider has no separate cached-input price. */
   cached_input_per_mtok: string | null;
+  /** Cache-write rates per TTL; null when writes are billed at the input rate. */
+  cache_write_5m_per_mtok: string | null;
+  cache_write_1h_per_mtok: string | null;
+  /** The smallest prompt (in tokens) this row prices; 0 is the base tier. */
+  min_prompt_tokens: number;
   effective_from: string;
   version: string;
 }

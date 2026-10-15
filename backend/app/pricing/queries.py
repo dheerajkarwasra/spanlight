@@ -56,7 +56,10 @@ async def list_prices(db: AsyncSession) -> list[ModelPrice]:
     """Every row of the price table, in a stable order."""
     rows = await db.scalars(
         select(ModelPrice).order_by(
-            ModelPrice.provider, ModelPrice.model_pattern, ModelPrice.effective_from
+            ModelPrice.provider,
+            ModelPrice.model_pattern,
+            ModelPrice.effective_from,
+            ModelPrice.min_prompt_tokens,
         )
     )
     return list(rows)
@@ -98,6 +101,7 @@ async def list_overrides(
             PriceOverride.provider,
             PriceOverride.model_pattern,
             PriceOverride.effective_from,
+            PriceOverride.min_prompt_tokens,
             PriceOverride.id,
         )
     )

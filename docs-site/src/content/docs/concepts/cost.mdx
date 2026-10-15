@@ -5,7 +5,7 @@ sidebar:
   order: 4
 ---
 
-{/* Sources: backend/app/pricing/cost.py, backend/app/pricing/prices.py, backend/app/pricing/tokens.py, backend/app/core/model_match.py, backend/app/ingest/normalize.py, backend/app/ingest/store.py, backend/app/insights/detectors/unpriced_spend.py, sdks/python/src/spanlight/integrations/anthropic.py, frontend/src/components/cost-value.tsx, docs/api-deviations.md */}
+{/* Sources: backend/app/pricing/cost.py, backend/app/pricing/prices.py, backend/app/pricing/queries.py, backend/app/pricing/tokens.py, backend/app/pricing/overrides_service.py, backend/app/core/model_match.py, backend/app/ingest/normalize.py, backend/app/ingest/otlp.py, backend/app/ingest/store.py, backend/app/gateway/usage.py, backend/app/insights/detectors/unpriced_spend.py, sdks/python/src/spanlight/integrations/anthropic.py, frontend/src/components/cost-value.tsx, docs/api-deviations.md */}
 
 import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
@@ -19,21 +19,52 @@ A cost is a **known** number or it is **unknown**. There is nothing in between, 
 
 ### The formula
 
-Prices are in US dollars per million tokens. A model has an input rate, an output rate and, for some models, a cached-input rate.
+Prices are in US dollars per million tokens. A model has an input rate, an output rate and, for some models, a cached-input rate (what a prompt-cache read costs) and two cache-write rates: one for a write that lives 5 minutes, one for a write that lives 1 hour. Anthropic bills a 5-minute write at 1.25 times the input rate and a 1-hour write at 2 times; OpenAI does not bill cache writes separately.
 
 ```text
-cost = (input_tokens − cached_tokens) × input_rate
-     +  cached_tokens × cached_rate
-     +  output_tokens × output_rate
+reads     = cached_tokens
+writes    = cache_write_tokens
+writes_1h = cache_write_1h_tokens
+writes_5m = writes − writes_1h
+uncached  = input_tokens − reads − writes
+
+cost = uncached  × input_rate
+     + reads     × cached_rate
+     + writes_5m × cache_write_5m_rate
+     + writes_1h × cache_write_1h_rate
+     + output_tokens × output_rate
 ```
 
-all divided by 1,000,000 and rounded half up to 8 decimal places. When a model has no published cached rate, cached tokens are billed at the input rate.
+all divided by 1,000,000 and rounded half up to 8 decimal places. A count the span does not report is 0. When a model has no published cached rate, cached tokens are billed at the input rate; when it has no cache-write rates, cache writes are billed at the input rate too. So a model without published write rates costs what it did before Spanlight priced cache writes.
 
 ### The token convention
 
-`input_tokens` is the **whole prompt**, including the tokens served from the provider's prompt cache. `cached_tokens` is the part of it that was a cache read. So `cached_tokens` can never be larger than `input_tokens`, and a span that says so is refused.
+`input_tokens` is the **whole prompt**: the tokens the provider processed fresh, the tokens it read from its prompt cache and the tokens it wrote to it. The other three counts name parts of that whole:
 
-The Python SDK follows this for you. Anthropic reports its input tokens without the cached ones, so the SDK adds the cache reads and cache writes back in before it sends the span. Cache writes, which providers bill at a premium, are not priced separately: they count as ordinary input. If you send OTLP or native JSON yourself, report the total in `input_tokens`. See [OTLP ingestion](/docs/otlp/).
+| Field | Meaning | Required |
+| --- | --- | --- |
+| `input_tokens` | The whole prompt: uncached tokens, cache reads and cache writes | For a cost |
+| `cached_tokens` | The part read from the provider's prompt cache | No |
+| `cache_write_tokens` | The part written to the prompt cache, whatever the cache lifetime | No |
+| `cache_write_1h_tokens` | The part of `cache_write_tokens` written with a 1-hour lifetime; the rest are 5-minute writes | No |
+| `output_tokens` | The completion, reasoning tokens included | For a cost |
+
+The parts cannot add up to more than the whole, and a span that says so is refused, the rest of its batch is stored. These are the checks, with the reason the response gives:
+
+- `cached_tokens` larger than `input_tokens`: `usage.cached_tokens: cannot exceed usage.input_tokens`.
+- `cached_tokens` plus `cache_write_tokens` larger than `input_tokens`: `usage.cache_write_tokens: cached_tokens + cache_write_tokens cannot exceed usage.input_tokens`.
+- `cache_write_1h_tokens` larger than `cache_write_tokens`: `usage.cache_write_1h_tokens: cannot exceed usage.cache_write_tokens`.
+- `cache_write_1h_tokens` sent without `cache_write_tokens`: `usage.cache_write_1h_tokens: requires usage.cache_write_tokens`.
+
+A missing `cache_write_1h_tokens` means every write was a 5-minute write, the provider's default. A missing `cache_write_tokens` means no writes were reported, and the prompt is priced as reads plus uncached input.
+
+The Python SDK follows this for you. Anthropic reports uncached input, cache reads and cache writes apart, so `wrap_anthropic` adds them up for `input_tokens` and fills `cached_tokens`, `cache_write_tokens` and `cache_write_1h_tokens` from the answer. The [gateway](/docs/gateway/quickstart/) does the same for the Anthropic answers it forwards. If you send OTLP or native JSON yourself, report the total in `input_tokens`; OpenTelemetry has an attribute for cache writes but none for their lifetime, so an OTLP span's writes are priced at the 5-minute rate. See [OTLP ingestion](/docs/otlp/) and [OTLP attribute mapping](/docs/reference/otlp-mapping/).
+
+### Prompt-size tiers
+
+Some providers charge more per token once a prompt passes a size. Anthropic bills a Claude Haiku 5.5 prompt of more than 100,000 tokens at a higher row of rates, input, output, cached and cache writes alike, and the higher rates apply to the whole prompt, not only to the part over the line. The price table holds one row per tier, each with a `min_prompt_tokens`: `0` for the base row, `100001` for the row that prices prompts over 100,000 tokens.
+
+Among the rows that match a span's model, the one with the largest `min_prompt_tokens` that is not above the span's `input_tokens` wins. A prompt of exactly 100,000 tokens is priced by the base row; one of 100,001 by the higher row. Models without a published tier have only the base row. The [price table](/docs/reference/prices/) shows the tiers in its **Prompt** column.
 
 ### When a cost is unknown
 
@@ -65,16 +96,18 @@ So the price for `gpt-4o` also prices `gpt-4o-2024-08-06`, and the price for `cl
 
 ### The price table is versioned
 
-The built-in prices are a dated snapshot of the providers' published rates for standard use. They leave out batch discounts, surcharges for very long prompts, cache-write premiums, regional modifiers and taxes. Only models whose prices are known with confidence are listed.
+The built-in prices are a dated snapshot of the providers' published rates for standard use, including the prompt-cache read and write rates and the prompt-size tiers the providers publish. They leave out batch discounts, regional modifiers, server-tool fees and taxes. Only models whose prices are known with confidence are listed.
 
-Every priced span stores the version of the price it used in `pricing_version`, so a stored cost says which table made it. The server loads new prices with `spanlight sync-prices`. A span keeps the cost it was priced with; a new table affects spans ingested afterwards, and a span you send again is priced again with the table in force then. You can read the whole table at `GET /api/v1/prices`.
+Every priced span stores the version of the price it used in `pricing_version`, so a stored cost says which table made it. A span is priced by the snapshot in force when it started, and Spanlight keeps each earlier snapshot exactly as it was released, so a span up to 90 days old is priced the same on a fresh install as on an upgraded one. The server loads new prices with `spanlight sync-prices`. A span keeps the cost it was priced with; a new table affects spans ingested afterwards, and a span you send again is priced again with the table in force then. You can read the whole table at `GET /api/v1/prices`.
 
 ### Price overrides
 
-An organization can set its own rate for a model, for example a negotiated price or a self-hosted model. An override has a provider, a model name, the input and output rates, an optional cached rate and an optional start time. Owners and admins manage them under `/api/v1/orgs/{org_id}/price-overrides`; see [Prices endpoints](/docs/api/prices/).
+An organization can set its own rate for a model, for example a negotiated price or a self-hosted model. An override has a provider, a model name, the input and output rates, an optional cached rate, optional cache-write rates for the 5-minute and 1-hour lifetimes, an optional `min_prompt_tokens` and an optional start time. Owners and admins manage them under `/api/v1/orgs/{org_id}/price-overrides`; see [Prices endpoints](/docs/api/prices/).
 
 - An override matches models the same way the built-in prices do.
 - The longest matching name wins whichever table it comes from. For equal names the override wins.
+- An override is one tier of a model. The tier rule above picks the row first, among built-in rows and overrides alike, so an override of the base row (`min_prompt_tokens` 0) of `claude-haiku-5-5` leaves the built-in row for prompts over 100,000 tokens in force. To change that tier too, add a second override with `min_prompt_tokens` 100001.
+- A missing cached or cache-write rate on an override falls back to the override's input rate, as it does for a built-in row.
 - It applies to spans that start at or after its start time, and only to spans ingested after you add it. Spans already stored keep their cost.
 - A span priced by an override stores `override:<id>` as its pricing version.
 
@@ -86,7 +119,8 @@ A single call priced at one million dollars or more is refused rather than store
 
 - Treat the dash as information. It means "not priced", and the totals around it are lower bounds.
 - Check `unpriced_calls` before you trust a cost total or set a budget.
-- Report input tokens as the whole prompt, cached tokens included. If you report only the uncached part, the cost comes out too low, and the span is refused when its cached count is larger than its input count.
+- Report input tokens as the whole prompt, cache reads and cache writes included. If you report only the uncached part, the cost comes out too low, and the span is refused when its parts add up to more than its input count.
+- Report cache writes when your provider bills them. Without `cache_write_tokens`, a written prompt is priced as plain input, below what Anthropic charges; without `cache_write_1h_tokens`, a 1-hour write is priced as a 5-minute one.
 - Spell the model name the way the provider does. Matching is case-sensitive, and a snapshot name is priced as long as its base name is in the table.
 - For a model that is not listed, add an override. You get a cost, a working budget and no `unpriced_spend` finding.
 - Use the cost as an estimate from your own token counts. It is not a copy of your provider's invoice.

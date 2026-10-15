@@ -143,6 +143,8 @@ class Span:
         self.input_tokens: int | None = None
         self.output_tokens: int | None = None
         self.cached_tokens: int | None = None
+        self.cache_write_tokens: int | None = None
+        self.cache_write_1h_tokens: int | None = None
         self.time_to_first_token_ms: float | None = None
         self.request_hash: str | None = None
         self.finish_reason: str | None = None
@@ -206,11 +208,17 @@ class Span:
         input_tokens: int | None = None,
         output_tokens: int | None = None,
         cached_tokens: int | None = None,
+        cache_write_tokens: int | None = None,
+        cache_write_1h_tokens: int | None = None,
     ) -> None:
         """Record token usage. ``None`` leaves the existing value unchanged.
 
-        ``input_tokens`` is the *total* prompt size, including any cached
-        tokens; ``cached_tokens`` is the subset served from the prompt cache.
+        ``input_tokens`` is the *total* prompt size: uncached tokens plus
+        prompt-cache reads plus prompt-cache writes. ``cached_tokens`` is the
+        part served from the cache (reads); ``cache_write_tokens`` is the part
+        written to it, and ``cache_write_1h_tokens`` the subset of those writes
+        made with a 1-hour TTL (the rest are 5-minute writes). Leave the write
+        fields unset when the provider reports none.
         """
         if not self._mutable:
             return
@@ -220,6 +228,10 @@ class Span:
             self.output_tokens = int(output_tokens)
         if cached_tokens is not None:
             self.cached_tokens = int(cached_tokens)
+        if cache_write_tokens is not None:
+            self.cache_write_tokens = int(cache_write_tokens)
+        if cache_write_1h_tokens is not None:
+            self.cache_write_1h_tokens = int(cache_write_1h_tokens)
 
     def set_request_hash(self, value: str | None) -> None:
         """Record the request hash used to group identical calls.
@@ -301,6 +313,10 @@ class Span:
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
             "cached_tokens": self.cached_tokens,
+            # Sent only when set, so payloads for servers that predate cache-write
+            # pricing stay unchanged.
+            "cache_write_tokens": self.cache_write_tokens,
+            "cache_write_1h_tokens": self.cache_write_1h_tokens,
         }
         if any(count is not None for count in token_counts.values()):
             usage = {key: count for key, count in token_counts.items() if count is not None}

@@ -173,6 +173,8 @@ def _real_cost(prepared: Prepared, result: GatewayResult, now: datetime) -> Deci
         input_tokens=usage.input_tokens,
         output_tokens=usage.output_tokens,
         cached_tokens=usage.cached_tokens,
+        cache_write_tokens=usage.cache_write_tokens,
+        cache_write_1h_tokens=usage.cache_write_1h_tokens,
     )
     return prepared.worst_case if priced is None else priced.cost_usd
 

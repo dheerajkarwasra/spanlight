@@ -37,11 +37,18 @@ class SseState:
 
 @dataclass(frozen=True, slots=True)
 class Usage:
-    """Token usage in the native convention: ``input_tokens`` includes cached tokens."""
+    """Token usage in the native convention: ``input_tokens`` is the whole prompt.
+
+    Cache reads (``cached_tokens``) and cache writes (``cache_write_tokens``, of which
+    ``cache_write_1h_tokens`` were written with the 1-hour TTL) are parts of ``input_tokens``.
+    A part is ``None`` when the provider did not report it, never 0.
+    """
 
     input_tokens: int
     output_tokens: int
     cached_tokens: int | None  # None when the provider sent no cache detail
+    cache_write_tokens: int | None = None
+    cache_write_1h_tokens: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -225,7 +225,15 @@ def _upstream_status(result: GatewayResult) -> tuple[int | None, float | None]:
 def _usage(result: GatewayResult) -> dict[str, Any] | None:
     if result.cache == "hit":
         # Nothing was billed: the answer came from the cache.
-        return {"input_tokens": 0, "output_tokens": 0, "cached_tokens": 0}
+        return _usage_dict(
+            Usage(
+                input_tokens=0,
+                output_tokens=0,
+                cached_tokens=0,
+                cache_write_tokens=0,
+                cache_write_1h_tokens=0,
+            )
+        )
     return _usage_dict(result.usage) if result.usage is not None else None
 
 
@@ -234,6 +242,8 @@ def _usage_dict(usage: Usage) -> dict[str, Any]:
         "input_tokens": usage.input_tokens,
         "output_tokens": usage.output_tokens,
         "cached_tokens": usage.cached_tokens,
+        "cache_write_tokens": usage.cache_write_tokens,
+        "cache_write_1h_tokens": usage.cache_write_1h_tokens,
     }
 
 

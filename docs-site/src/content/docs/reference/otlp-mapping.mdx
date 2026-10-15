@@ -27,7 +27,8 @@ When a field lists several attributes, the first one that is present and not an 
 | `model` | `gen_ai.response.model`, else `gen_ai.request.model`. The response model is the snapshot that was billed. |
 | Input tokens | `gen_ai.usage.input_tokens`, else `gen_ai.usage.prompt_tokens` |
 | Output tokens | `gen_ai.usage.output_tokens`, else `gen_ai.usage.completion_tokens` |
-| Cached tokens | `gen_ai.usage.cache_read_input_tokens` |
+| Cached tokens | `gen_ai.usage.cache_read.input_tokens`, or the older `gen_ai.usage.cache_read_input_tokens` |
+| Cache write tokens | `gen_ai.usage.cache_creation.input_tokens`, or the older `gen_ai.usage.cache_creation_input_tokens` |
 | Input | `gen_ai.input.messages`, else `gen_ai.prompt` |
 | Output | `gen_ai.output.messages`, else `gen_ai.completion` |
 | Finish reason | See [Finish reason](#finish-reason) |
@@ -38,7 +39,7 @@ When a field lists several attributes, the first one that is present and not an 
 | Start and end time | `startTimeUnixNano` and `endTimeUnixNano` |
 | Parent | The parent span id. A span without one is a root span. |
 
-Include the cached tokens in the input token count. Spanlight prices the cached part at the cached rate and the rest at the input rate; see [How cost is calculated](/docs/concepts/cost/). Cost is worked out on the server from the model and the token counts. It is never read from the span. A span with an unknown model, or without token counts, has an unknown cost, not zero. The [price table](/docs/reference/prices/) lists the models that have a price.
+Include the cached tokens and the cache-write tokens in the input token count. Spanlight prices the cache reads at the cached rate, the cache writes at the model's cache-write rate and the rest at the input rate; see [How cost is calculated](/docs/concepts/cost/). OpenTelemetry has no attribute for the lifetime of a cache write, so every cache write sent over OTLP is priced at the 5-minute rate and the span's `cache_write_1h_tokens` stays unknown. Cost is worked out on the server from the model and the token counts. It is never read from the span. A span with an unknown model, or without token counts, has an unknown cost, not zero. The [price table](/docs/reference/prices/) lists the models that have a price.
 
 ### Prompts and completions
 
@@ -147,7 +148,7 @@ The server logs how many values of each kind it dropped in a request, never the 
 Spanlight reads the OpenTelemetry GenAI attributes listed on this page and nothing else. In particular:
 
 - **OpenInference.** The `llm.*` attributes (for example `llm.model_name` and `llm.token_count.*`) and the `input.value` and `output.value` attributes are not read. A span that has only OpenInference attributes is stored with kind `other` (unless the kind rules above apply for another reason), with no model, tokens, prompt or completion, and with an unknown cost. The attributes are kept in the span's attributes, so you can see them, but nothing is worked out from them. Use an exporter that writes the OpenTelemetry `gen_ai.*` attributes, or the [Python SDK](/docs/python-sdk/).
-- **Other GenAI attributes.** Attributes such as `gen_ai.request.temperature`, `gen_ai.operation.name` and `gen_ai.usage.cache_creation_input_tokens` are stored in the span's attributes but do not fill any field. Cache writes are not priced separately.
+- **Other GenAI attributes.** Attributes such as `gen_ai.request.temperature` and `gen_ai.operation.name` are stored in the span's attributes but do not fill any field.
 - **Span events and links.** They are ignored. A prompt or completion sent as a `gen_ai.*` event, not as an attribute, is not stored.
 - **Time to first token.** It is not set from OTLP data.
 - **Metrics and logs.** The OTLP endpoint accepts traces only.
