@@ -1,6 +1,6 @@
 # Spanlight
 
-[![CI](https://github.com/dheerajkarwasra/spanlight/actions/workflows/ci.yml/badge.svg)](https://github.com/dheerajkarwasra/spanlight/actions/workflows/ci.yml) [![CodeQL](https://github.com/dheerajkarwasra/spanlight/actions/workflows/codeql.yml/badge.svg)](https://github.com/dheerajkarwasra/spanlight/actions/workflows/codeql.yml) [![PyPI](https://img.shields.io/pypi/v/spanlight.svg)](https://pypi.org/project/spanlight/) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/dheerajkarwasra/spanlight/actions/workflows/ci.yml/badge.svg)](https://github.com/dheerajkarwasra/spanlight/actions/workflows/ci.yml) [![CodeQL](https://github.com/dheerajkarwasra/spanlight/actions/workflows/codeql.yml/badge.svg)](https://github.com/dheerajkarwasra/spanlight/actions/workflows/codeql.yml) [![PyPI](https://img.shields.io/pypi/v/spanlight.svg)](https://pypi.org/project/spanlight/) [![License: MIT core](https://img.shields.io/badge/license-MIT%20core-blue.svg)](#license)
 
 **Open-source observability for LLM applications.** Add three lines to your Python app, or change one `base_url`, and see each LLM call: prompts and completions, latency, time to first token, token usage, cost and errors, grouped into traces and user sessions.
 
@@ -127,4 +127,4 @@ Prompts, datasets and evals are in development and unreleased. After them: a Jav
 
 ## License
 
-[MIT](LICENSE)
+Spanlight is open core. Everything is [MIT](LICENSE) except code under directories named `ee`, which is under the [Spanlight Enterprise License](backend/app/ee/LICENSE) and runs only with a license key. Those directories hold no features yet; the community edition is the complete product and needs no key. The SDK is MIT. See [ADR 16](docs/decisions/0016-open-core-ee-directories.md).

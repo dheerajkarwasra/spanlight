@@ -1,0 +1,243 @@
+name: OTLP matrix (weekly)
+
+# Re-records every OTLP fixture against the latest exporter releases, diffs the mapped result
+# against the committed fixtures, and runs the ingest contract tests on the fresh recordings. A
+# breakage rewrites one issue labelled `otlp-matrix`; the job commits nothing to the repository.
+# Recording makes no provider call: the recorders talk to a fake provider on 127.0.0.1, and the
+# only network use is installing the exporter packages. scripts/check-otlp-matrix-workflow.py pins
+# the guarantees of this file in CI.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      force_failure:
+        description: Run the report job even when every check passes (proves the issue path)
+        type: boolean
+        default: false
+
+# Two runs never race on the issue: a second run waits for the first.
+concurrency:
+  group: otlp-matrix-weekly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash # -eo pipefail, so a failing recorder is not hidden by `tee`
+
+jobs:
+  record-python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: false
+    strategy:
+      fail-fast: false
+      matrix:
+        library:
+          - otel-genai-python
+          - litellm
+          - openinference-openai
+          - openinference-anthropic
+          - openinference-langchain
+          - traceloop-openai
+    defaults:
+      run:
+        working-directory: sdks/fixtures/otlp/record
+    env:
+      LIBRARY: ${{ matrix.library }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - name: Record the latest release and diff it with the committed fixture
+        id: record
+        run: |
+          mkdir -p "$RUNNER_TEMP/out/fixtures" "$RUNNER_TEMP/out/diffs" "$RUNNER_TEMP/out/status"
+          uv run --frozen python record.py --library "$LIBRARY" --version latest --check \
+            --out "$RUNNER_TEMP/out/fixtures" 2>&1 | tee "$RUNNER_TEMP/out/diffs/$LIBRARY.txt"
+      - name: Note the version tried and the result
+        if: always()
+        env:
+          OUTCOME: ${{ steps.record.outcome }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/out/status"
+          version="—"
+          for file in "$RUNNER_TEMP/out/fixtures/$LIBRARY"/*.json; do
+            [ -e "$file" ] && version=$(basename "$file" .json)
+          done
+          echo "| $LIBRARY | $version | $OUTCOME |" > "$RUNNER_TEMP/out/status/$LIBRARY.md"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: fixtures-${{ matrix.library }}
+          path: ${{ runner.temp }}/out
+          retention-days: 30
+
+  record-node:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: false
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - tag: latest
+            mode: genai
+          - tag: latest
+            mode: legacy
+          - tag: ai-v5
+            mode: legacy
+          - tag: ai-v6
+            mode: legacy
+    defaults:
+      run:
+        working-directory: sdks/fixtures/otlp/record
+    env:
+      TAG: ${{ matrix.tag }}
+      MODE: ${{ matrix.mode }}
+      NAME: vercel-ai-${{ matrix.mode }}-${{ matrix.tag }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Resolve the ai dist-tag
+        id: resolve
+        run: |
+          version=$(npm view "ai@$TAG" version 2>/dev/null || true)
+          if [ -z "$version" ]; then
+            echo "::notice::ai@$TAG does not resolve on npm; skipping the $MODE entry"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Install the recorder
+        if: steps.resolve.outputs.version != ''
+        working-directory: sdks/fixtures/otlp/record/node
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Record the release and diff it with the committed fixture
+        id: record
+        if: steps.resolve.outputs.version != ''
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/out/fixtures" "$RUNNER_TEMP/out/diffs" "$RUNNER_TEMP/out/status"
+          node node/record.mjs --version "$VERSION" --mode "$MODE" --check \
+            --out "$RUNNER_TEMP/out/fixtures" 2>&1 | tee "$RUNNER_TEMP/out/diffs/$NAME.txt"
+      - name: Note the version tried and the result
+        if: always()
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+          OUTCOME: ${{ steps.record.outcome }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/out/status"
+          echo "| vercel-ai-$MODE (ai@$TAG) | ${VERSION:-not on npm} | $OUTCOME |" \
+            > "$RUNNER_TEMP/out/status/$NAME.md"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: fixtures-${{ env.NAME }}
+          path: ${{ runner.temp }}/out
+          retention-days: 30
+
+  # Does the current mapper still read what the latest exporters send?
+  contract:
+    needs: [record-python, record-node]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: spanlight_test
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:55432/spanlight_test
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: fixtures-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/matrix
+      - run: uv sync --frozen
+      - name: Run the contract tests on the fresh fixtures
+        run: |
+          mkdir -p "$RUNNER_TEMP/contract"
+          SPANLIGHT_OTLP_FIXTURES="$RUNNER_TEMP/matrix/fixtures" uv run pytest \
+            tests/ingest/test_otlp_matrix.py tests/ingest/test_fixture_schema.py -q -rf 2>&1 \
+            | tee "$RUNNER_TEMP/contract/pytest.txt"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: contract-result
+          path: ${{ runner.temp }}/contract
+          retention-days: 30
+
+  # Keeps one open issue labelled `otlp-matrix` current. It never opens a second issue, never
+  # comments and never closes one: a person closes it after re-pinning or fixing the mapper.
+  report:
+    needs: [record-python, record-node, contract]
+    if: failure() || inputs.force_failure
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          merge-multiple: true
+          path: ${{ runner.temp }}/matrix
+      - name: Rewrite the breakage issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          FORCED: ${{ inputs.force_failure }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          root="$RUNNER_TEMP/matrix"
+          body="$RUNNER_TEMP/issue-body.md"
+          shopt -s nullglob
+          # Field paths and test ids only: diff values and failure messages can carry payload text.
+          {
+            echo "Weekly OTLP compatibility run: $RUN_URL"
+            [ "$FORCED" = "true" ] && echo "" && echo "Forced by workflow_dispatch (force_failure)."
+            echo ""
+            echo "| Library | Version tried | Recording and diff |"
+            echo "|---|---|---|"
+            statuses=("$root"/status/*.md)
+            if ((${#statuses[@]})); then cat "${statuses[@]}"; else echo "| — | — | no result |"; fi
+            echo ""
+            echo "### Field diffs against the committed fixtures"
+            for file in "$root"/diffs/*.txt; do
+              paths=$(sed -n 's/^\(scenarios\[[^:]*\):.*/\1/p' "$file")
+              [ -n "$paths" ] && printf '\n%s:\n%s\n' "$(basename "$file" .txt)" "$paths"
+            done
+            echo ""
+            echo "### Failing contract tests"
+            if [ -f "$root/pytest.txt" ]; then
+              sed -n 's/^FAILED \([^ ]*\).*/\1/p' "$root/pytest.txt"
+            else
+              echo "Not run: a recording job failed first."
+            fi
+          } > "$body"
+          number=$(gh issue list --label otlp-matrix --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file "$body"
+          else
+            gh label create otlp-matrix --force --color B60205 \
+              --description "Weekly OTLP compatibility matrix breakage"
+            gh issue create --title "OTLP compatibility matrix: breakage" --label otlp-matrix \
+              --body-file "$body"
+          fi

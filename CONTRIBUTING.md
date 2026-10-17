@@ -116,6 +116,10 @@ Every change is reviewed against this checklist. "The task" is the issue your pu
 
 The [pull request template](.github/pull_request_template.md) carries the same list as checkboxes.
 
+## Licensing of contributions
+
+Contributions outside `ee` directories are accepted under the [MIT license](LICENSE). Code under a directory named `ee` is under the [Spanlight Enterprise License](backend/app/ee/LICENSE), so a pull request that touches an `ee` directory needs a signed contributor license agreement before it can be merged; the maintainer will send it on the pull request. Core code must not import `app.ee` (ruff enforces it): enterprise features plug in through `app/ee/hooks.py`. See [ADR 16](docs/decisions/0016-open-core-ee-directories.md).
+
 ## Commits and pull requests
 
 Commit messages and pull request titles follow [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): summary`, in the imperative, with the types `feat`, `fix`, `docs`, `refactor`, `test`, `perf`, `build`, `ci` and `chore`.

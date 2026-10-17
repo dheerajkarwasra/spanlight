@@ -20,6 +20,11 @@ docs/architecture.md
 docs/plans/
 docs/specs/
 docs/design/
+docs/launch/
+
+# Doctor accuracy harness results (one JSON Lines file per run; the directory itself is kept)
+backend/accuracy/results/*
+!backend/accuracy/results/.gitkeep
 
 # Python
 .venv/
@@ -61,5 +66,11 @@ docs-site/src/content/docs/reference/prices.md
 
 # archify skill output (generated diagrams; keep the ones worth it under docs/design/diagrams)
 .archify/
+
+# graphify knowledge graph (graph.json, GRAPH_REPORT.md, cache; rebuilt locally)
+graphify-out/
+
+# ponytail plugin state, if a hook ever writes it into the project
+.ponytail-active
 
 .taste-skills/

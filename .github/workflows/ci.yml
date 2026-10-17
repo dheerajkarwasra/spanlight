@@ -39,7 +39,7 @@ jobs:
       - run: uv sync --frozen
       - run: uv run ruff check
       - run: uv run ruff format --check
-      - run: uv run mypy app load
+      - run: uv run mypy app load accuracy
       - run: uv run pytest -q
 
   sdk-python:
@@ -84,7 +84,8 @@ jobs:
   # security pages, changelog and API snapshot into the site, renders the API reference, fails on
   # any broken internal link or heading anchor, and checks that the pages load nothing from another
   # origin (the Content-Security-Policy of /docs/ depends on it). The configuration table is
-  # generated from the application's settings, so a setting without a docs entry fails here.
+  # generated from the application's settings, so a setting without a docs entry fails here. The
+  # OTLP compatibility page is generated from the recorded fixtures and cannot drift from them.
   docs-site:
     runs-on: ubuntu-latest
     env:
@@ -109,6 +110,8 @@ jobs:
         working-directory: backend
       - run: uv run python scripts/gen_config_table.py --check
         working-directory: backend
+      - run: uv run python scripts/gen_otlp_matrix.py --check
+        working-directory: backend
 
   # The release workflow cannot be run before a tag, so its tag routing, permissions and publish
   # order are checked on every change instead. The same job checks that the community and
@@ -121,6 +124,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: astral-sh/setup-uv@v6
       - run: uv run --no-project --with pyyaml python scripts/check-release-workflow.py
+      - run: uv run --no-project --with pyyaml python scripts/check-otlp-matrix-workflow.py
       - run: uv run --no-project --with pyyaml bash scripts/check-repo-files.sh
       - run: scripts/check-template-fixtures.sh
       - run: scripts/check-links.sh ./*.md backend/README.md frontend/README.md sdks/python/README.md docs/api-deviations.md docs/decisions/*.md docs/deploy/railway.md docs/performance.md backend/load/README.md
