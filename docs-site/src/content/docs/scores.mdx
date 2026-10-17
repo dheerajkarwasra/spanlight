@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-{/* Sources: backend/app/api/scores_ingest.py, backend/app/api/v1/scores.py, backend/app/api/annotation_problems.py, backend/app/explorer/score_filters.py, frontend/src/features/scores/scores-panel.tsx, frontend/src/features/scores/score-configs-card.tsx, sdks/python/src/spanlight/_exporter_delivery.py */}
+{/* Sources: backend/app/api/scores_ingest.py, backend/app/api/v1/scores.py, backend/app/api/annotation_problems.py, backend/app/scores/failure_category.py, backend/app/explorer/score_filters.py, frontend/src/features/scores/scores-panel.tsx, frontend/src/features/scores/score-configs-card.tsx, sdks/python/src/spanlight/_exporter_delivery.py */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
@@ -137,7 +137,8 @@ An **annotation queue** is a to-do list of traces for people to score. Create on
 - **Add traces** from the Traces page (select traces, then **Add to queue**) or by API (`POST .../annotation-queues/{queue_id}/items`, up to 200 traces, optionally one span of each). A trace already in the queue is skipped. If any trace is not in the project, the whole batch is refused (`422`) and nothing is queued.
 - **Review** with **Start reviewing**. Spanlight hands you the next item: the oldest pending item that is free, already yours, or claimed by someone else more than 30 minutes ago, so an abandoned claim cannot strand the queue. Two reviewers never get the same item at once.
 - **Finish** an item by scoring it, or **skip** it (it stays in the queue as skipped), or **release** it back to the queue. Scoring stores the scores with source `human`, attributed to you, and marks the item done in one step. Only the person holding an item can complete, skip or release it (`409 ITEM_NOT_ASSIGNED_TO_YOU`), and an item that is already done or skipped answers `409 ITEM_NOT_PENDING`. A score that is not one of the queue's configs is `422 SCORE_NOT_IN_QUEUE` and a missing one `422 SCORE_REQUIRED`.
-- **Progress** shows pending, done and skipped counts. Deleting a queue deletes its items and keeps the scores already given.
+- **Progress** shows pending, done and skipped counts, in total and for each reason. Deleting a queue deletes its items and keeps the scores already given. A queue that a [review policy](/docs/review/) fills cannot be deleted (`409 QUEUE_IN_USE`): delete the policy, or point it at another queue, first.
+- **Every item has a reason.** A trace you add by hand is `manual`. A review policy adds traces every night with the reason it picked them: `doctor_finding`, `error`, `cost_outlier` or `random`. The queue shows the reason as a chip on each item and can be filtered by it. See [Daily review](/docs/review/).
 
 Members, admins and owners can create queues and review (`annotations:write`); viewers can look at progress.
 
@@ -151,9 +152,23 @@ The review screen is built to be used without the mouse. A key does nothing whil
 | `0` to `9` | Type a value when a number score has focus |
 | `Enter` | Submit the scores and open the next item |
 | `S` | Skip this item |
+| `R` | Replay the item's failing span in the playground |
+| `D` | Save the trace as a dataset item |
 | `N` | Claim the next item |
 | `?` | Show or hide the list of shortcuts |
 | `Esc` | Close the list, then leave the review |
+
+## Failure categories
+
+A **failure category** says what went wrong in a trace a person reviewed. It is an ordinary categorical score named `failure_category`, so it is stored, filtered and charted like any other score. What makes it special is the convention: [daily review](/docs/review/) requires it on its queue, and the Releases page charts [its rate per release](/docs/releases-and-users/#failure-categories).
+
+Create its config with the set-up dialog of daily review, from the **Failure categories** row under **Settings, Project, Score configs**, or with `POST /score-configs/failure-category`:
+
+```json
+{ "categories": ["none", "wrong_answer", "hallucination", "format", "refusal", "other"] }
+```
+
+The list has 2 to 30 distinct categories, follows the usual category rule, and must include `none`, the label for a reviewed trace that was fine. The dashboard pre-fills a starting list (`none`, `wrong_answer`, `hallucination`, `ignored_instructions`, `format`, `refusal`, `tool_misuse`, `context_loss`, `truncated`, `too_slow`, `other`) for you to edit. When the project already has a config named `failure_category` the answer is `409 NAME_TAKEN`; edit that one with `PATCH /score-configs/{config_id}` instead. The list is closed, so a label outside it is refused; add a category by editing the config.
 
 ## Routes
 
@@ -168,7 +183,8 @@ Under `/api/v1/projects/{project_id}`, except `POST /v1/scores`.
 | `POST /traces/{trace_id}/scores` | `scores:write` | Add a human score |
 | `DELETE /scores/{score_id}` | `scores:write` | Delete (yours, or any as an admin) |
 | `GET`, `POST /annotation-queues`, `GET`, `DELETE /annotation-queues/{queue_id}` | read, `annotations:write` | Queues |
-| `POST`, `GET /annotation-queues/{queue_id}/items` | `annotations:write`, read | Queue traces, list items (`status` filters) |
+| `POST /score-configs/failure-category` | `scores:write` | Create the `failure_category` config |
+| `POST`, `GET /annotation-queues/{queue_id}/items` | `annotations:write`, read | Queue traces, list items (`status` and `reason` filter) |
 | `POST /annotation-queues/{queue_id}/claim` | `annotations:write` | Next item, or `204` when none |
 | `POST .../items/{item_id}/complete`, `/skip`, `/release` | `annotations:write` | Finish an item |
 
@@ -184,12 +200,14 @@ Send the request from [With HTTP](#with-http). The answer is `{ "accepted": 2, "
 - **A score is in `rejected`.** The `reason` names the field, for example `value: must be between 0 and 1`. The other scores in the batch are stored. See the reasons in [Score types and configs](#score-types-and-configs).
 - **The SDK logs "This Spanlight server does not accept scores (HTTP 404); dropping them".** The server is older than score ingestion. Upgrade the server.
 - **`409 SCORE_CONFIG_IN_USE` when you change a config's type or delete a config.** Changing a config's type, or deleting it, is refused while any score carries its name. Deleting a config is also refused while a review queue asks for it. Create a config under a new name instead.
+- **`409 QUEUE_IN_USE` when you delete a queue.** A [review policy](/docs/review/) fills it. Delete the policy, or point it at another queue, first.
 - **`409 ITEM_NOT_ASSIGNED_TO_YOU` in a review queue.** Another reviewer holds the item, or your claim expired after 30 minutes. Claim the next item.
 
 ## Next steps
 
 <NextSteps
   links={[
+    { title: 'Daily review', href: '/docs/review/', description: 'Let Spanlight fill a review queue with the traces worth reading.' },
     { title: 'Evaluators', href: '/docs/evaluators/', description: 'Score traces automatically with rules, a judge or your endpoint.' },
     { title: 'Experiments', href: '/docs/experiments/', description: 'Replay a dataset through a prompt and compare two runs.' },
     { title: 'Python SDK', href: '/docs/python-sdk/', description: 'Install the package and trace functions and provider calls.' },

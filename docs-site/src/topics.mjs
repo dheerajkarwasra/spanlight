@@ -19,7 +19,9 @@ export const TOPICS = [
       'concepts/ingest-paths',
       'concepts/ingestion',
       'concepts/cost',
+      'concepts/attribution',
       'concepts/doctor',
+      'concepts/telemetry-completeness',
       'concepts/tenancy',
     ],
   },
@@ -29,12 +31,12 @@ export const TOPICS = [
     icon: 'open-book',
     items: [
       { label: 'Instrument', items: ['python-sdk', 'otlp', 'releases-and-users'] },
-      { label: 'Debug', items: ['guides/traces', 'guides/overview', 'doctor'] },
+      { label: 'Debug', items: ['guides/traces', 'guides/overview', 'doctor', 'guides/provider-health'] },
       {
         label: 'Evaluate',
-        items: ['prompts', 'playground', 'datasets', 'scores', 'evaluators', 'experiments', 'eval-gate'],
+        items: ['prompts', 'playground', 'datasets', 'scores', 'review', 'evaluators', 'experiments', 'eval-gate'],
       },
-      { label: 'Operate', items: ['alerts', 'budgets', 'webhooks'] },
+      { label: 'Operate', items: ['alerts', 'budgets', 'guides/reconciliation', 'webhooks'] },
       {
         label: 'Gateway',
         items: [
@@ -56,6 +58,10 @@ export const TOPICS = [
     items: [
       'integrations',
       { label: 'Providers', items: ['integrations/openai', 'integrations/anthropic'] },
+      {
+        label: 'OpenTelemetry exporters',
+        items: ['integrations/vercel-ai', 'integrations/litellm', 'integrations/openllmetry', 'integrations/openinference'],
+      },
       { label: 'CI', items: ['integrations/github-action'] },
     ],
   },
@@ -87,6 +93,7 @@ export const TOPICS = [
       'reference/detectors',
       'reference/otlp-mapping',
       'reference/prices',
+      'reference/otlp-compatibility',
       'faq',
       { label: 'Security', items: [{ autogenerate: { directory: 'security' } }] },
       'changelog',

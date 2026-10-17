@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-{/* Sources: backend/app/evals/experiments.py, backend/app/api/experiment_problems.py, frontend/src/features/experiments/run-label.ts, frontend/src/features/experiments/start-run.tsx, frontend/src/features/experiments/run-list.tsx, frontend/src/features/experiments/run-scores.tsx */}
+{/* Sources: backend/app/evals/experiments.py, backend/app/api/experiment_problems.py, frontend/src/features/experiments/run-label.ts, frontend/src/features/experiments/start-run.tsx, frontend/src/features/experiments/run-list.tsx, frontend/src/features/experiments/run-scores.tsx, backend/app/evals/stats.py, backend/app/evals/compare.py, backend/app/evals/experiment_totals.py, sdks/python/src/spanlight/_experiments_report.py, docs/api-deviations.md */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
@@ -90,13 +90,13 @@ Gate **passed**. [Open the run](https://spanlight.example.com/<organization id>/
 
 Items 50, errors 0, cost 0.0412 USD, p50 812 ms, p95 1490 ms.
 
-| Score | Mean | Items | Threshold | Result |
-| --- | --- | --- | --- | --- |
-| format | 1 | 50 | >= 1 | pass |
-| relevance | 0.84 | 50 | >= 0.8 | pass |
+| Score | Mean | 95% CI | Items | Threshold | Result |
+| --- | --- | --- | --- | --- | --- |
+| format | 1 | 92–100% | 50 | >= 1 | pass |
+| relevance | 0.84 | — | 50 | >= 0.8 | pass |
 ```
 
-When a mean is below its threshold the report says **failed**, adds a `Below threshold:` list such as `relevance: 0.75 < 0.8`, and the command exits with `1`. The exit codes are listed in the [eval gate](/docs/eval-gate/#what-the-gate-does) page. If you leave out a required setting, the command exits with `2` and names what is missing:
+The **95% CI** column is the interval on the pass rate of a yes/no score (see [Intervals and significance](#intervals-and-significance)), and "—" for other scores. When a gated yes/no score's threshold lies inside its interval, the report adds a line such as `format: Interval includes the threshold; the result is not conclusive at this sample size.` The verdict does not change: the gate still compares the mean. When a mean is below its threshold the report says **failed**, adds a `Below threshold:` list such as `relevance: 0.75 < 0.8`, and the command exits with `1`. The exit codes are listed in the [eval gate](/docs/eval-gate/#what-the-gate-does) page. If you leave out a required setting, the command exits with `2` and names what is missing:
 
 ```text
 error: --host or SPANLIGHT_HOST is required; --project-id or SPANLIGHT_PROJECT_ID is required; --credential-id is required; --model is required; SPANLIGHT_TOKEN is required
@@ -207,7 +207,7 @@ When the run ends, its **totals** are worked out from the stored items:
 | Items, errors | How many items ran and how many ended in an error |
 | Cost | The sum of the items whose cost is known. If any call has no price or no usage, the cost is a lower bound and is flagged as such |
 | Latency p50, p95 | Nearest-rank percentiles over the answered items |
-| Scores | Per score name: the mean and count of a numeric or yes/no score (yes counts 1), or the count per category |
+| Scores | Per score name: the mean and count of a numeric or yes/no score (yes counts 1), or the count per category. A yes/no score also has the number of items that passed and a 95 % interval on the pass rate |
 
 Unknown values are shown as "—", never 0.
 
@@ -244,6 +244,17 @@ Choose two runs of an experiment and open **Compare**. Both must have finished; 
 - **Cost and p95 duration** show the difference between the runs. When either side's cost is unknown, the cost difference is "—" rather than a guess.
 
 The page also states the trade-off in a sentence built from the differences, for example "B scores +0.08 on relevance, costs +$0.012, p95 latency +310 ms."
+
+### Intervals and significance
+
+Fifty items is a small sample. A pass rate of 78 % on 50 items could well be 65 % or 88 % on the next 50, so Spanlight shows how sure each number is.
+
+- **A yes/no score has a 95 % interval.** The run's **Scores** card shows, for example, "78% (95% CI 65–88%, n = 50)", with the interval drawn as a thin range under the value. It is the Wilson score interval, which stays honest at small samples and at 0 % or 100 %. With no scored item there is no interval ("—"), never 0 to 100 %. Below 10 items the card adds "few items". A run that finished before intervals existed shows "—": its stored totals are not rewritten.
+- **Each score of a comparison has a test.** The items scored in both runs are paired. For a yes/no score the test is the exact McNemar test, which looks only at the items that flipped: "Pass rate 72% → 78% on 50 items (10 flipped: 8 up, 2 down). Not significant (exact McNemar, p = 0.1094): the runs may not differ." For a numeric score it is the paired sign test, which counts the items that went up and down and ignores the ties: "Mean 0.71 → 0.76 on 50 items (31 up, 12 down, 7 unchanged). Significant (sign test, p = 0.0054)." Categories have no test.
+- **What "significant" means.** A difference is called significant when `p` is below 0.05: if the two runs truly behaved the same, a difference this large would happen by chance less than one time in twenty. "Not significant" does not mean the runs are the same; it means this sample cannot tell them apart. Add items, or treat the change as unproven. Both sentences use a neutral colour, never red or green.
+- **When there is nothing to test.** When every paired item gave the same answer in both runs the comparison says "No items changed" (`p = 1`). When no item is scored in both runs it says "Nothing to compare: no item is scored in both runs."
+
+Both tests are exact (no approximation and no continuity correction), and 0.05 is not a setting. A yes/no score stored as the numbers 0 and 1, as an old SDK does, is treated as yes/no when its score config says so. In the API, a run's `totals.scores.<name>` gains `passed`, `ci_low` and `ci_high`, and each score of a comparison gains `ci_a`, `ci_b` and `test` (`kind` `mcnemar` or `sign`, `n`, `improved`, `regressed`, `unchanged`, `p_value`, `significant`); a value that does not apply is `null`.
 
 ## The demo seed
 

@@ -3,7 +3,7 @@ title: Error codes reference
 description: How Spanlight reports errors as problem+json, how to read the code field, and the common error codes with their HTTP status, meaning and fix.
 ---
 
-{/* Sources: backend/app/core/errors.py, backend/app/api/ingest.py, backend/app/api/deps.py, backend/app/core/middleware.py, backend/app/core/body_limit.py, backend/app/core/ratelimit.py, backend/app/api/v1/auth.py, backend/app/api/v1/orgs.py, backend/app/api/v1/projects.py, backend/app/api/v1/dataset_items.py, backend/app/core/permissions.py, backend/app/core/idempotency.py, backend/app/api/v1/exports.py, backend/app/api/v1/playground.py, backend/app/api/v1/experiments.py, backend/app/api/v1/alerts.py, docs/api-deviations.md */}
+{/* Sources: backend/app/core/errors.py, backend/app/api/ingest.py, backend/app/api/deps.py, backend/app/core/middleware.py, backend/app/core/body_limit.py, backend/app/core/ratelimit.py, backend/app/api/v1/auth.py, backend/app/api/v1/orgs.py, backend/app/api/v1/projects.py, backend/app/api/v1/dataset_items.py, backend/app/core/permissions.py, backend/app/core/idempotency.py, backend/app/api/v1/exports.py, backend/app/api/v1/playground.py, backend/app/api/v1/experiments.py, backend/app/api/v1/alerts.py, backend/app/api/v1/billing_sources.py, backend/app/api/v1/billing_source_runs.py, backend/app/api/v1/billing_reconciliation.py, backend/app/api/review_problems.py, backend/app/api/annotation_problems.py, backend/app/api/replay_problems.py, backend/app/playground/replay_errors.py, docs/api-deviations.md */}
 
 Every error from the Spanlight API is a JSON document with the media type `application/problem+json`, as defined by RFC 9457. This page explains how to read one and lists the codes you meet most often. The [API conventions](/docs/api/conventions/) page has the full catalogue, including the codes of single features such as prompts, datasets and experiments.
 
@@ -50,9 +50,9 @@ Two things behave in a way you might not expect. A resource that exists but that
 | `BAD_REQUEST` | 400 | The request could not be understood. On ingestion this is a body that could not be decompressed or was not fully sent. | Check the `Content-Encoding` header and send the whole body. |
 | `INVALID_JSON` | 400 | The ingestion body is not valid JSON. | Fix the JSON. |
 | `INVALID_OTLP` | 400 | The OTLP body could not be decoded. | Send OTLP JSON or protobuf with the matching `Content-Type`. |
-| `VALIDATION_ERROR` | 422 | A field is missing, has the wrong type or is out of range. | Read `errors` and fix each field. |
-| `PAYLOAD_TOO_LARGE` | 413 | The body is over its size limit, or an ingestion batch has too many spans. | Send smaller bodies and batches. See the [Limits reference](/docs/reference/limits/). |
-| `UNSUPPORTED_MEDIA_TYPE` | 415 | The `Content-Type` or `Content-Encoding` is not supported. | Use `application/json` or `application/x-protobuf`, and `gzip` or `deflate` encoding. |
+| `VALIDATION_ERROR` | 422 | A field is missing, has the wrong type or is out of range. For a refused cost CSV, each entry of `errors` has `field` `file` with the `row` and `column` at fault (up to 20), and nothing was stored. | Read `errors` and fix each field, or each row of the file. |
+| `PAYLOAD_TOO_LARGE` | 413 | The body is over its size limit, or an ingestion batch has too many spans. A dataset file or a billing source's cost CSV is over 5 MB. | Send smaller bodies and batches, or split the file. See the [Limits reference](/docs/reference/limits/). |
+| `UNSUPPORTED_MEDIA_TYPE` | 415 | The `Content-Type` or `Content-Encoding` is not supported. A billing source's cost CSV was not sent as `multipart/form-data`. | Use `application/json` or `application/x-protobuf`, and `gzip` or `deflate` encoding. Send a CSV upload as `multipart/form-data` with the file in a field named `file`. |
 | `CONFIRMATION_MISMATCH` | 422 | A deletion's typed `confirm` is not the slug of what it deletes. | Send the exact slug. |
 | `IDEMPOTENCY_MISMATCH` | 422 | The `Idempotency-Key` was first used for a different request. | Send a new key for a different request. |
 | `IDEMPOTENCY_IN_PROGRESS` | 409 | The first request with this `Idempotency-Key` has not answered yet. | Wait a moment and send the same request again. |
@@ -78,13 +78,31 @@ Two things behave in a way you might not expect. A resource that exists but that
 
 | Code | Status | Meaning | What to do |
 | --- | --- | --- | --- |
-| `NOT_CONFIGURED` | 409 | The request needs an optional integration that the operator has not set up. `detail` names the setting. | Set it. See [Configuration](/docs/configuration/). |
+| `NOT_CONFIGURED` | 409 | The request needs an optional integration that the operator has not set up. `detail` names the setting. For example, a billing source that fetches from a provider needs `CREDENTIALS_KEYS`, because its admin key is stored encrypted, and refreshing one needs `BILLING_SOURCES_ENABLED` on. | Set it. See [Configuration](/docs/configuration/). A billing source uploaded as CSV holds no key and works without it. |
 | `LAST_OWNER` | 409 | The change would leave the organization without an owner. | Make someone else an owner first. |
 | `EMAIL_TAKEN` | 409 | An account with this email already exists. | Sign in instead. |
 | `SLUG_UNAVAILABLE` | 409 | Spanlight could not find a free slug for the name. | Try another name. |
-| `RATE_LIMITED` | 429 | You sent too many requests. The `Retry-After` header says how long to wait. | Wait that long, then retry. Send larger batches in fewer requests. |
+| `BILLING_SOURCE_NAME_TAKEN` | 409 | Another billing source of the organization has this name. | Choose another name. |
+| `BILLING_SOURCE_PROJECT_TAKEN` | 409 | A project you mapped is already compared with another billing source of the same provider. `detail` names that source, and `errors` points at `project_ids`. | Remove the project from the other source first, or leave it out. |
+| `BILLING_SOURCE_DISABLED` | 409 | You asked to refresh a billing source that is turned off. | Turn the source on, then refresh it. Its report stays readable while it is off. |
+| `BILLING_FETCH_IN_PROGRESS` | 409 | A fetch or upload of the billing source is still running. | Wait for it to finish, then try again. A fetch still running after 15 minutes no longer blocks a new one. |
+| `RATE_LIMITED` | 429 | You sent too many requests. The `Retry-After` header says how long to wait. A billing source can be refreshed once every 5 minutes, with bursts of two. | Wait that long, then retry. Send larger batches in fewer requests. |
 | `INTERNAL_ERROR` | 500 | An unexpected error on the server. | Retry a `GET` once. Retry a write only with the same `Idempotency-Key`, on a route that accepts one (see step 1 of [How to read an error](#how-to-read-an-error)). If it persists, report it with the `request_id`. |
 | `SERVICE_UNAVAILABLE` | 503 | The database could not take the request in time. `Retry-After` is 5 seconds. | Retry a `GET` after the delay. Retry a write only with the same `Idempotency-Key`, on a route that accepts one (see step 1 of [How to read an error](#how-to-read-an-error)). The Python SDK retries trace ingestion by itself. |
+
+## Review and replay errors
+
+| Code | Status | Meaning | What to do |
+| --- | --- | --- | --- |
+| `QUEUE_LACKS_FAILURE_CATEGORY` | 422 | The queue of a review policy does not ask for the `failure_category` score, or that config is not categorical. | Add the categorical `failure_category` config to the queue, or pick a queue that has it. See [Daily review](/docs/review/). |
+| `NOTHING_SELECTED` | 422 | Every reason of the review policy is off and its random share is 0, so it would never pick a trace. | Turn on a reason or set a random share. |
+| `DAY_NOT_COMPLETE` | 422 | A manual selection asked for today or a later day. | Pick a finished UTC day. |
+| `DAY_TOO_OLD` | 422 | A manual selection asked for a day more than 7 days back. | Pick a day from yesterday back to 7 days. |
+| `ALREADY_SELECTED` | 409 | The day has been selected already, by the nightly run or by hand. | Nothing to do: its items are in the queue. |
+| `QUEUE_IN_USE` | 409 | A review policy fills the queue you tried to delete. | Delete the policy, or point it at another queue, first. |
+| `REPLAY_BUDGET_EXCEEDED` | 409 | The project's monthly replay budget cannot cover the replay, so nothing was sent. The body adds `spent_usd`, `reserved_usd`, `budget_usd` and `month_start`. | Wait for the next UTC month, or ask an operator to raise `REPLAY_MONTHLY_BUDGET_USD`. |
+
+A replay that cannot be sent as it was stored answers `422` with one of eight codes: `REPLAY_NOT_LLM`, `REPLAY_NO_PAYLOAD`, `REPLAY_PAYLOAD_TRUNCATED`, `REPLAY_PAYLOAD_REDACTED`, `REPLAY_UNSUPPORTED_INPUT`, `REPLAY_PROVIDER_MISMATCH`, `REPLAY_MODEL_UNPRICED` and `REPLAY_BODY_TOO_LARGE`. [When a replay is refused](/docs/playground/#when-a-replay-is-refused) says what each means and what to do. A replay with `REPLAY_MONTHLY_BUDGET_USD` set to 0 answers `409 NOT_CONFIGURED`.
 
 ## Related pages
 
@@ -93,3 +111,5 @@ Two things behave in a way you might not expect. A resource that exists but that
 - [Roles and permissions reference](/docs/reference/roles/): what `FORBIDDEN`, `KEY_SCOPE` and `TOKEN_SCOPE` check.
 - [Troubleshooting](/docs/troubleshooting/): fixes for rejected spans, missing traces and failing requests.
 - [Gateway errors](/docs/gateway/errors/): the error format of the gateway.
+- [Reconcile cost with your provider bill](/docs/guides/reconciliation/): billing sources, their refresh and the cost CSV.
+- [Daily review](/docs/review/): the review policy and its manual runs.

@@ -1,11 +1,11 @@
 ---
 title: How cost is calculated
-description: How Spanlight prices an LLM call. The versioned price table, the token convention, model matching, price overrides, and why an unknown cost is shown as a dash and never as zero.
+description: How Spanlight prices an LLM call. The versioned price table, the token convention, service tiers, web search fees, streams cut before their usage, the cost explanation, model and provider matching, price overrides, and why an unknown cost is shown as a dash and never as zero.
 sidebar:
   order: 4
 ---
 
-{/* Sources: backend/app/pricing/cost.py, backend/app/pricing/prices.py, backend/app/pricing/queries.py, backend/app/pricing/tokens.py, backend/app/pricing/overrides_service.py, backend/app/core/model_match.py, backend/app/ingest/normalize.py, backend/app/ingest/otlp.py, backend/app/ingest/store.py, backend/app/gateway/usage.py, backend/app/insights/detectors/unpriced_spend.py, sdks/python/src/spanlight/integrations/anthropic.py, frontend/src/components/cost-value.tsx, docs/api-deviations.md */}
+{/* Sources: backend/app/pricing/cost.py, backend/app/pricing/prices.py, backend/app/pricing/price_row.py, backend/app/pricing/tiers.py, backend/app/pricing/fees.py, backend/app/pricing/provider_alias.py, backend/app/pricing/explain.py, backend/app/pricing/explain_copy.py, backend/app/pricing/explain_service.py, backend/app/pricing/unreported.py, backend/app/api/v1/cost_explanation.py, backend/app/api/schemas/cost_explanation.py, backend/app/gateway/stream_forward.py, backend/app/gateway/tracing.py, sdks/python/src/spanlight/integrations/_streams.py, sdks/python/src/spanlight/integrations/_modifiers.py, sdks/python/src/spanlight/integrations/openai.py, frontend/src/features/traces/span-cost-card.tsx, backend/app/pricing/queries.py, backend/app/pricing/tokens.py, backend/app/pricing/overrides_service.py, backend/app/core/model_match.py, backend/app/ingest/normalize.py, backend/app/ingest/otlp.py, backend/app/ingest/store.py, backend/app/gateway/usage.py, backend/app/insights/detectors/unpriced_spend.py, sdks/python/src/spanlight/integrations/anthropic.py, frontend/src/components/cost-value.tsx, docs/api-deviations.md */}
 
 import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
@@ -28,14 +28,18 @@ writes_1h = cache_write_1h_tokens
 writes_5m = writes − writes_1h
 uncached  = input_tokens − reads − writes
 
-cost = uncached  × input_rate
-     + reads     × cached_rate
-     + writes_5m × cache_write_5m_rate
-     + writes_1h × cache_write_1h_rate
-     + output_tokens × output_rate
+tokens = ( uncached  × input_rate
+         + reads     × cached_rate
+         + writes_5m × cache_write_5m_rate
+         + writes_1h × cache_write_1h_rate
+         + output_tokens × output_rate ) / 1,000,000 × tier_factor
+
+fee    = web_search_requests × search_rate / 1,000
+
+cost   = tokens + fee
 ```
 
-all divided by 1,000,000 and rounded half up to 8 decimal places. A count the span does not report is 0. When a model has no published cached rate, cached tokens are billed at the input rate; when it has no cache-write rates, cache writes are billed at the input rate too. So a model without published write rates costs what it did before Spanlight priced cache writes.
+The sum is rounded once, half up, to 8 decimal places. A count the span does not report is 0. The tier factor is 1 for a standard call; [Service tiers](#service-tiers) lists the others. The fee is 0 for a call that made no web search; see [Fees (web search)](#fees-web-search). The span stores the whole figure in `cost_usd` and the fee part again in `fee_usd`. When a model has no published cached rate, cached tokens are billed at the input rate; when it has no cache-write rates, cache writes are billed at the input rate too. So a model without published write rates costs what it did before Spanlight priced cache writes.
 
 ### The token convention
 
@@ -56,6 +60,8 @@ The parts cannot add up to more than the whole, and a span that says so is refus
 - `cache_write_1h_tokens` larger than `cache_write_tokens`: `usage.cache_write_1h_tokens: cannot exceed usage.cache_write_tokens`.
 - `cache_write_1h_tokens` sent without `cache_write_tokens`: `usage.cache_write_1h_tokens: requires usage.cache_write_tokens`.
 
+`output_tokens` includes the model's reasoning or thinking tokens, which providers bill at the output rate. Gemini reports its thinking tokens (`thoughts_token_count`) apart from the answer (`candidates_token_count`), so a Gemini span must send their sum as `output_tokens`; with only the answer's count, the cost comes out too low.
+
 A missing `cache_write_1h_tokens` means every write was a 5-minute write, the provider's default. A missing `cache_write_tokens` means no writes were reported, and the prompt is priced as reads plus uncached input.
 
 The Python SDK follows this for you. Anthropic reports uncached input, cache reads and cache writes apart, so `wrap_anthropic` adds them up for `input_tokens` and fills `cached_tokens`, `cache_write_tokens` and `cache_write_1h_tokens` from the answer. The [gateway](/docs/gateway/quickstart/) does the same for the Anthropic answers it forwards. If you send OTLP or native JSON yourself, report the total in `input_tokens`; OpenTelemetry has an attribute for cache writes but none for their lifetime, so an OTLP span's writes are priced at the 5-minute rate. See [OTLP ingestion](/docs/otlp/) and [OTLP attribute mapping](/docs/reference/otlp-mapping/).
@@ -66,15 +72,62 @@ Some providers charge more per token once a prompt passes a size. Anthropic bill
 
 Among the rows that match a span's model, the one with the largest `min_prompt_tokens` that is not above the span's `input_tokens` wins. A prompt of exactly 100,000 tokens is priced by the base row; one of 100,001 by the higher row. Models without a published tier have only the base row. The [price table](/docs/reference/prices/) shows the tiers in its **Prompt** column.
 
+### Service tiers
+
+Providers bill the same tokens at other rates depending on how the call was served: a request sent through a batch API costs half. A span records the tier the provider billed in `service_tier`, one of `standard`, `batch`, `priority` or `flex`, and the token cost is multiplied by the factor of that tier:
+
+| Provider | Tier | Factor |
+| --- | --- | --- |
+| `anthropic` | `batch` | 0.5 |
+| `anthropic` | `priority` | 1, marked commitment billed |
+| `openai` | `batch` | 0.5 |
+| `openai` | `flex` | 0.5 |
+| `google` | `batch` | 0.5 |
+| Any provider | `standard`, or no tier reported | 1 |
+| Any provider | Any other tier, such as OpenAI `priority` | 1, marked unmodelled |
+
+- **Anthropic Priority Tier** is bought as a capacity commitment, not per token. Its tokens are priced at the standard rate and the cost explanation marks the tier as commitment billed.
+- **OpenAI priority** has no single factor: OpenAI publishes a separate priority rate for each model. Spanlight prices such a call at the standard rate and marks the tier as unmodelled, so the cost is lower than the bill and the explanation says so. Any other tier the table has no factor for is treated the same way.
+- **The factor applies to the token cost only.** A web search fee is never multiplied.
+- **The factors belong to the price snapshot.** A span is priced with the factors of the snapshot that priced its row; a span priced by an override uses the snapshot in force at its start time. An override cannot change a factor.
+
+Where the tier comes from:
+
+- **Python SDK.** `wrap_anthropic` reads `usage.service_tier` from the answer or the stream; `wrap_openai` reads the `service_tier` at the top of a Chat Completions or Responses answer, or of the last stream chunk. Batch results are always recorded as `batch`; see [Batch results](/docs/python-sdk/#batch-results).
+- **Gateway.** The same fields of the answers it forwards.
+- **OTLP.** `openai.response.service_tier`, `gen_ai.openai.response.service_tier` or `spanlight.usage.service_tier`; see [OTLP attribute mapping](/docs/reference/otlp-mapping/#service-tier-and-web-searches).
+- **Native JSON.** `usage.service_tier`, which must be one of the four values; any other value rejects the span.
+
+The SDK, the gateway and OTLP map the provider's own spelling first (`priority_on_demand`, `default`, `scale`, ...). A spelling Spanlight does not know is not an error: the span is priced at the standard rate and the value (its first 64 characters) is kept in the attribute `usage.service_tier_raw`. A span stored before the `2026-10-16` snapshot has no tier and was priced at the standard rate.
+
+Two request options change the bill and are not priced yet: Anthropic data residency (`inference_geo`, which costs more for `us`) and fast mode (`speed: "fast"`). When the Python SDK or the gateway sees one in the request and usage comes back, it prices the call at the standard rate and sets the attribute `usage.pricing_modifier_unknown` to `inference_geo_<value>` (for example `inference_geo_us`) or `fast_mode`, so you can find those calls. When both are present the data-residency value is used. `inference_geo: "global"` is the default routing at the standard price and sets nothing.
+
+### Fees (web search)
+
+Anthropic and OpenAI bill each web search the model runs on their side, apart from the tokens: $10.00 per 1,000 searches in the current price table. Spanlight adds that fee to the span's cost and reports it again in `fee_usd`, so `cost_usd` is always the whole figure. The fee rate, like the token rates, comes from the snapshot in force at the span's start time.
+
+| Path | Where the search count comes from |
+| --- | --- |
+| Python SDK, Anthropic | `usage.server_tool_use.web_search_requests` of the answer, or of the stream's last usage event |
+| Python SDK, OpenAI Responses | The answer's `web_search_call` output items whose status is `completed`; a failed search is not billed. An answer with no search item sends no count |
+| Python SDK, OpenAI Chat Completions | Not counted: the answer lists sources, not searches. A call that passes `web_search_options` gets the attribute `usage.fee_unknown` set to `openai_chat_web_search` instead |
+| Gateway | The same fields as the SDK, for Anthropic answers and OpenAI Responses answers and streams |
+| OTLP | `spanlight.usage.web_search_requests` |
+| Native JSON | `usage.server_tool_use.web_search_requests`, a whole number from 0 to 100,000 |
+
+You do not set the count by hand when you use a wrapper or the gateway: they read it from the provider's answer.
+
+A fee needs three things: a count, a provider and a rate for that provider. Without a count there is no fee line; with a count but no provider, or a provider the table has no search rate for (Google today), the fee is unknown and `fee_usd` stays empty. A fee is known even when the token cost is not, for example on a stream cut before its usage arrived: the span then has `fee_usd` and no `cost_usd`, and the trace total leaves the span out instead of counting the fee as the call's cost.
+
 ### When a cost is unknown
 
 A span gets a cost only when all of these are true:
 
 - It has a model.
 - It has both an input and an output token count.
-- The model matches a price in effect at the span's start time. If the span names a provider, the price must be for that provider.
+- The model matches a price in effect at the span's start time. If the span names a provider, the price must be for that provider, after its aliases are applied; see [Which provider names match which price](#which-provider-names-match-which-price).
 
-Otherwise the cost is unknown. In practice that happens for a model that is not in the table, for a call whose provider returned no usage, and for a streamed call where usage was not requested.
+Otherwise the cost is unknown. In practice that happens for a model that is not in the table, for a call whose provider returned no usage, for a streamed call where usage was not requested, and for a stream cut before its usage arrived (see [Streams cut before the usage arrives](#streams-cut-before-the-usage-arrives)). A web search fee does not make an unknown cost known: the span keeps the fee in `fee_usd` and its cost stays unknown.
 
 An unknown cost spreads in a controlled way:
 
@@ -85,6 +138,26 @@ An unknown cost spreads in a controlled way:
 
 To see which models are missing, ask `GET /api/v1/projects/{project_id}/unpriced-models`. It lists the models whose calls had a model and token counts but matched no price.
 
+### Streams cut before the usage arrives
+
+A provider reports the output token count at the end of a stream. When a stream ends without that final usage event, because the client stopped reading, the connection failed or the provider never sent it, the output count is unknown. Spanlight then stores:
+
+- the input counts, cache reads and cache writes, when the stream's first event reported them,
+- `output_tokens` as unknown (`null`), never a guess or a placeholder,
+- an unknown cost, and the trace counts the span as unpriced,
+- the attribute `usage.unreported_reason`, which says why.
+
+| `usage.unreported_reason` | Meaning | Set by |
+| --- | --- | --- |
+| `client_disconnected` | The client closed the stream, or left it, before its end | SDK and gateway |
+| `stream_error` | The stream failed with an error | SDK and gateway |
+| `stream_cut_by_fault` | A [gateway Lab](/docs/gateway/lab/) fault cut the stream | Gateway |
+| `include_usage_not_set` | An OpenAI Chat Completions stream that ended without any usage, usually because it was sent without `stream_options={"include_usage": True}`. The SDK uses this value for every Chat Completions stream that ran to its end with no usage, also when `include_usage` was sent (for example to a compatible API that ignores it) | SDK |
+| `no_final_usage` | The stream ran to its end without the final usage event: an Anthropic stream, or an OpenAI Responses stream without its terminal event (the SDK never uses it for Chat Completions). The gateway uses it for every provider, also for an OpenAI Chat Completions stream whose `stream_options` leaves out `include_usage`; when you send no `stream_options`, the gateway asks OpenAI for usage itself | SDK and gateway |
+| `not_exported` | The exporter sent no usage for the call | Clients that set it themselves |
+
+A native client can send the same thing: `output_tokens` left out or `null`, and one of these values in `attributes["usage.unreported_reason"]`. The Doctor's `unpriced_spend` finding leaves these spans out: it counts only calls that report both token counts and still got no price.
+
 ### Which model name matches which price
 
 A price is written for a model name, for example `gpt-4o`. A span's model matches that price when it is:
@@ -94,9 +167,24 @@ A price is written for a model name, for example `gpt-4o`. A span's model matche
 
 So the price for `gpt-4o` also prices `gpt-4o-2024-08-06`, and the price for `claude-haiku-4-5` prices `claude-haiku-4-5-20251001`. A plain prefix does not match: `gpt-4.1-nano` is not priced as `gpt-4.1`. Matching is case-sensitive, and the longest matching name wins. Whitespace around a model name is removed when the span is stored, and nothing else is changed.
 
+### Which provider names match which price
+
+Integrations name the same provider in several ways: a Gemini call can arrive as `gemini`, `vertex_ai` or `gcp.gen_ai`. The price table uses one name per provider, so to find a price Spanlight trims the span's provider, lower-cases it and folds the known spellings onto that name:
+
+| Span's provider | Prices it finds |
+| --- | --- |
+| `gemini`, `google`, `google_genai`, `google-genai`, `google_ai`, `vertex_ai`, `vertexai`, `gcp.gemini`, `gcp.vertex_ai`, `gcp.gen_ai` | `google` |
+| `anthropic`, `claude` | `anthropic` |
+| `openai` | `openai` |
+| Any other name | Rows of that name, compared in lower case |
+
+The provider is stored as it was sent: the folding is used only to find the price and the fee. Filters, alert rules, budgets and the per-model tables compare the provider as stored. A span with no provider can match a price of any provider, but it gets no web search fee, because each provider bills searches at its own rate. Whitespace around a provider is removed when the span is stored, and a provider that is only whitespace is stored as no provider.
+
+`azure` and `azure_openai` are not folded onto `openai`: Azure bills its own rates and the built-in table has no Azure prices, so an Azure OpenAI call has no cost ("—") until you add a price override for `azure` or `azure_openai` with your model or deployment name. The Python SDK's `wrap_openai` records an `AzureOpenAI` or `AsyncAzureOpenAI` client as `azure_openai` unless you pass `provider=`.
+
 ### The price table is versioned
 
-The built-in prices are a dated snapshot of the providers' published rates for standard use, including the prompt-cache read and write rates and the prompt-size tiers the providers publish. They leave out batch discounts, regional modifiers, server-tool fees and taxes. Only models whose prices are known with confidence are listed.
+The built-in prices are a dated snapshot of the providers' published rates for standard use, including the prompt-cache read and write rates and the prompt-size tiers the providers publish. Since the `2026-10-16` snapshot, a snapshot also holds the service-tier factors and the web search fees. It leaves out regional modifiers, fast mode and taxes. Only models whose prices are known with confidence are listed.
 
 Every priced span stores the version of the price it used in `pricing_version`, so a stored cost says which table made it. A span is priced by the snapshot in force when it started, and Spanlight keeps each earlier snapshot exactly as it was released, so a span up to 90 days old is priced the same on a fresh install as on an upgraded one. The server loads new prices with `spanlight sync-prices`. A span keeps the cost it was priced with; a new table affects spans ingested afterwards, and a span you send again is priced again with the table in force then. You can read the whole table at `GET /api/v1/prices`.
 
@@ -110,6 +198,32 @@ An organization can set its own rate for a model, for example a negotiated price
 - A missing cached or cache-write rate on an override falls back to the override's input rate, as it does for a built-in row.
 - It applies to spans that start at or after its start time, and only to spans ingested after you add it. Spans already stored keep their cost.
 - A span priced by an override stores `override:<id>` as its pricing version.
+- An override sets token rates only. The service-tier factors and the web search fees still come from the price snapshot in force at the span's start time.
+- An override's provider is folded the same way as the span's, so an override saved as `gemini`, `vertex_ai` or `google` matches a span sent under any of those names. A name with no aliases, such as `azure`, matches only itself. Two overrides saved under different spellings of the same provider (`gemini` and `google`, say) compete like any two overrides, by the rules above; when their model name, tier and start time are all equal, the one with the greater pricing version (`override:<id>`, compared as text) wins, so the same span always gets the same price. Keep one override per model to avoid relying on this.
+
+### Explaining a cost
+
+Every span of a model call can show where its figure comes from. On the trace page, select the span and expand **Cost breakdown**: it lists one line per kind of token and per fee, with the quantity, the rate, the tier factor and the amount, and the total beside the figure stored on the span. The same explanation is available from the API:
+
+```text
+GET /api/v1/projects/{project_id}/traces/{trace_id}/spans/{span_id}/cost-explanation
+```
+
+Members of the project can read it, and so can a project API key with the `traces:read` scope. The lines are `uncached_input`, `cache_read`, `cache_write_5m`, `cache_write_1h`, `output` and `web_search`. Reasoning tokens are part of `output` and are shown as a split of that line, never as a line of their own. The explanation also returns the price row that was used (`price`, with its version and start date), the tier factor and its note (`commitment_billed` or `unmodelled`), and the usage as stored.
+
+The explanation rebuilds the figure from the price row, tier factor and fee rate that priced the span when it was stored. It never prices the span again with today's table, so a later price change does not hide or rewrite anything. Its `status` says how the rebuilt figure compares with the stored one:
+
+| Status | Shown as | Meaning |
+| --- | --- | --- |
+| `ok` | Matches | The lines add up to the stored cost. |
+| `mismatch` | Mismatch | The lines add up to a different figure. This is a bug in Spanlight: report it with the span id. |
+| `no_usage` | No usage | The input or output count was not reported, so the cost is unknown. The message gives the `usage.unreported_reason` when there is one. A known web search fee is still listed. |
+| `no_price` | No price | No price matched the provider and model when the span was stored. |
+| `price_version_missing` | Price row gone | The price version the span was priced with is no longer in the table. The stored figure is shown as it was priced. |
+| `override_deleted` | Price row gone | The price override that priced the span was deleted. The stored figure is shown as it was priced. |
+| `cache_hit` | Cache hit | The gateway answered from its [response cache](/docs/gateway/cache/), so the cost is 0. `original_usage` holds the usage of the call that filled the cache. |
+
+Every status but `ok` comes with a `message`. The dashboard shows it under the status, except on `mismatch`, where it shows its own sentence asking you to report the span. A span stored before the `2026-10-16` snapshot explains as a standard-tier call without a fee line, and matches its stored figure.
 
 <Aside type="note">
 A single call priced at one million dollars or more is refused rather than stored, and a trace whose total reaches that figure shows an unknown cost. Only a price override can produce such a number.
@@ -123,6 +237,8 @@ A single call priced at one million dollars or more is refused rather than store
 - Report cache writes when your provider bills them. Without `cache_write_tokens`, a written prompt is priced as plain input, below what Anthropic charges; without `cache_write_1h_tokens`, a 1-hour write is priced as a 5-minute one.
 - Spell the model name the way the provider does. Matching is case-sensitive, and a snapshot name is priced as long as its base name is in the table.
 - For a model that is not listed, add an override. You get a cost, a working budget and no `unpriced_spend` finding.
+- Report the service tier and web searches if you send spans yourself. Without `usage.service_tier` a batch call is priced at the full standard rate; without the search count its fee is left out.
+- When a figure surprises you, open **Cost breakdown** on the span. It shows every line behind the figure and why a cost is unknown.
 - Use the cost as an estimate from your own token counts. It is not a copy of your provider's invoice.
 
 ## Related pages

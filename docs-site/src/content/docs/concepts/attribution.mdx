@@ -1,0 +1,129 @@
+---
+title: Attribution
+description: Tag traces with metadata such as a customer or a feature, from the SDK, native JSON, OTLP or the gateway, and see what each value, trace name, user or release cost, live for a day and from daily rollups beyond.
+sidebar:
+  order: 5
+---
+
+{/* Sources: backend/app/ingest/metadata.py, backend/app/ingest/trace_fields.py, backend/app/ingest/otlp_metadata.py, backend/app/ingest/otlp_fit.py, backend/app/gateway/trace_headers.py, backend/app/gateway/tracing.py, backend/app/attribution/service.py, backend/app/attribution/queries.py, backend/app/attribution/refresh.py, backend/app/attribution/jobs.py, backend/app/api/v1/attribution.py, backend/app/api/schemas/attribution.py, backend/app/api/schemas/projects.py, backend/app/cli_attribution.py, backend/app/core/redact.py, sdks/python/src/spanlight/_metadata.py, sdks/python/src/spanlight/_client.py, frontend/src/features/attribution/attribution-page.tsx, frontend/src/features/attribution/attribution-footer.tsx, frontend/src/features/attribution/group-by-picker.tsx, frontend/src/features/attribution/not-promoted-note.tsx, frontend/src/features/attribution/window-note.tsx, frontend/src/features/attribution/drill-down.ts, frontend/src/features/settings/promoted-keys-field.tsx, docs/api-deviations.md */}
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+**Attribution** answers "what did each customer, feature or team cost us?". You tag each trace with a few key-value pairs, its **metadata**, and the **Attribution** page (`G C`) groups the project's spend and usage by one key, by trace name, by end user or by release.
+
+## Trace metadata
+
+Metadata belongs to a trace, not to a span: a map such as `{"customer_id": "acme", "feature": "summarize-thread"}`. Every span of the trace counts toward its values.
+
+| Rule | Value |
+| --- | --- |
+| Keys per trace | At most 32 |
+| Key | 1 to 64 characters of `a-z`, `0-9`, `_`, `.` and `-`. Lower case only: `Customer` is not a key, and nothing is folded for you |
+| Value | A string of 1 to 256 characters (code points). A number or a boolean is stored as its JSON text: `42` becomes `"42"`, `true` becomes `"true"` |
+| `null` value | Drops the key. It never deletes a key the trace already has |
+| Object or array value | Invalid |
+
+What happens to an invalid entry depends on the path. `POST /v1/traces` is strict: the span is rejected with a reason such as `trace.metadata.Customer: key must match ^[a-z0-9_.-]{1,64}$`, and the rest of the batch is stored. The Python SDK, OTLP and the gateway drop the invalid entry and keep the span, and when more than 32 valid keys remain they keep the first 32 in code-point order of the key.
+
+## Set it
+
+From the **Python SDK**, anywhere inside the trace:
+
+```python
+import spanlight
+
+@spanlight.observe(name="summarize")
+def summarize(thread_id: str, customer_id: str) -> str:
+    spanlight.update_trace(metadata={"customer_id": customer_id, "feature": "summarize-thread"})
+    ...
+```
+
+Keys accumulate across calls, and a later value replaces a key's earlier one. An invalid entry is dropped with a `DEBUG` log that names the key, never the value. See [`update_trace`](/docs/reference/python-sdk/#update_trace).
+
+In **native JSON**, on any span of the trace:
+
+```json
+{
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "span_id": "00f067aa0ba902b7",
+  "name": "summarize",
+  "start_time": "2026-10-15T12:00:00Z",
+  "end_time": "2026-10-15T12:00:01Z",
+  "trace": { "metadata": { "customer_id": "acme", "plan": "pro" } }
+}
+```
+
+Over **OTLP**, as span or resource attributes named `spanlight.metadata.<key>`, on any span:
+
+```text
+spanlight.metadata.customer_id = "acme"      (span attribute)
+spanlight.metadata.team        = "search"    (resource attribute: every span of the service)
+```
+
+The span's value wins over the resource's for the same key. The key is lower-cased, and the attributes are not stored again on the span. See [OTLP ingestion](/docs/otlp/#trace-metadata).
+
+Through the **gateway**, with the `x-spanlight-metadata` header, one JSON object of at most 8 KiB:
+
+```text
+x-spanlight-metadata: {"customer_id": "acme", "feature": "summarize-thread"}
+```
+
+Write it as ASCII, with any other character as a `\uXXXX` escape, which is what `json.dumps` does by default. A header that is not one JSON object within 8 KiB is ignored as a whole; the call goes through without metadata. `x-spanlight-trace-name` names the trace. See [Join a trace you already started](/docs/gateway/quickstart/#join-a-trace-you-already-started).
+
+## How values merge
+
+A trace's spans can arrive in several batches and from several sources, so Spanlight merges metadata by one rule wherever it comes from:
+
+- Per key, the value that arrives last wins.
+- A key the trace already has can always be updated, even at 32 keys.
+- A new key is added only while the trace has fewer than 32. New keys that compete for the room left are taken in code-point order, so the result does not depend on which batch arrived first.
+- Nothing is deleted. Sending `null` or leaving a key out changes nothing.
+- Sources are not ranked. A gateway call that joins a trace your SDK started adds its header keys to the same trace.
+
+Sending the same batch again leaves the metadata as it was.
+
+## Redaction
+
+Values go through the same [secret redaction](/docs/guides/privacy/#redaction-always-runs) as payloads. A value that looked like a secret is kept under its key as `[REDACTED]`, so a leak shows up as a group named `[REDACTED]` on the Attribution page (with a **redacted** badge) instead of vanishing. Email addresses and JWTs are not redacted, so do not use an email address as a customer id unless you are content to store it. Metadata is stored whether or not the project captures prompts and completions.
+
+## The Attribution page
+
+Pick what to group by: **Metadata** (then a key), **Trace name**, **User** or **Release**. The page follows the top bar's time range and environment. Each row shows the value, traces, LLM calls, errors, unpriced calls, cost, share of cost, retries and retry cost; phones show tiles. A value links to the trace list filtered to that value, over the same window and environment.
+
+Two sources answer, depending on the window:
+
+| Window | Read from | Badge | Keys |
+| --- | --- | --- | --- |
+| 24 hours or less | The traces themselves, live and exact | **Live** | Any metadata key |
+| Longer than 24 hours | Daily rollups, over whole UTC days | **Updated every 15 min** | Promoted keys only (trace name, user and release always) |
+
+A longer window is widened to the UTC days it touches, and the page shows those days. For a key that is not promoted, the page says so and offers **Promote** to admins (others are asked to ask one) instead of sending the request; pick 24 hours or less to use any key now.
+
+Below the rows:
+
+- **None**, such as "No customer_id": the traces without the key, name, user or release. Unattributed spend is an answer too. For a metadata key it links to the traces that lack the key.
+- **Other**, on rollups only: each UTC day keeps the 1,000 costliest values per key and environment, and the rest of the day are added up here. It reads "Up to N more values, daily cap of 1,000": a value folded on two days is counted on both, so N is an upper bound. The trace list, filtered by key and value, still finds any value.
+- **Total**: every trace started in the window.
+
+The rows, **None** and **Other** add up to the total, for cost, traces, calls, errors, unpriced calls and tokens. Cost is the sum over every span of the trace, the same figure as the trace's own cost; the counts are of its LLM calls. A cost of **—** means no call in the group had a price, never zero. A retries cell of **—** means retries were not computed, because the traces were stored before retry tracking was added.
+
+The same table comes from `GET /api/v1/projects/{project_id}/attribution` (see the [Attribution endpoint](/docs/api/attribution/)), and from an attribution export as CSV (see [Exports](/docs/guides/exports/#export-the-attribution-table)).
+
+## Promote a key
+
+Admins and owners promote up to five keys under **Settings, Project, Promoted keys**, or with `PATCH /api/v1/projects/{project_id}` and `promoted_metadata_keys`. Promoting a key starts its daily rollup: the next refresh, within 15 minutes, backfills the last 7 UTC days. Removing a key deletes its rollup rows, so promoting it again brings back 7 days, not more. Trace name, user and release always have rollups.
+
+A budget on a metadata pair does not need the key promoted. See [Budgets](/docs/budgets/#scope-and-period).
+
+## Late spans and older days
+
+The refresh runs every 15 minutes over yesterday and today (UTC). Once a day it also recomputes the 6 days before them, so spans that arrive late for those days are counted. A window of 24 hours or less always reflects them at once. For older days, or for days before a key was promoted, an operator runs [`spanlight attribution backfill`](/docs/reference/cli/#attribution-backfill). Rollups follow the project's retention, and `ATTRIBUTION_ENABLED=false` stops the refresh (see [Configuration](/docs/configuration/#attribution)).
+
+## Related pages
+
+<CardGrid>
+  <LinkCard title="Traces and sessions" href="/docs/guides/traces/" description="Metadata chips, the metadata filter and the trace header." />
+  <LinkCard title="Budgets" href="/docs/budgets/" description="Spend limits per metadata pair or trace name." />
+  <LinkCard title="How cost is calculated" href="/docs/concepts/cost/" description="Where each span's cost comes from, and why some are unknown." />
+  <LinkCard title="API conventions" href="/docs/api/conventions/#trace-metadata-and-attribution-added-2026-10-15" description="Every rule of metadata and attribution, as the API applies it." />
+</CardGrid>

@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-{/* Sources: sdks/python/src/spanlight/_experiments.py, sdks/python/src/spanlight/_experiments_api.py, sdks/python/src/spanlight/_experiments_runs.py, sdks/python/src/spanlight/_experiments_report.py, backend/app/api/experiment_problems.py, frontend/src/features/gateway/credentials/credential-row.tsx */}
+{/* Sources: sdks/python/src/spanlight/_experiments.py, sdks/python/src/spanlight/_experiments_api.py, sdks/python/src/spanlight/_experiments_runs.py, sdks/python/src/spanlight/_experiments_report.py, backend/app/evals/stats.py, backend/app/api/experiment_problems.py, frontend/src/features/gateway/credentials/credential-row.tsx */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
@@ -92,6 +92,10 @@ Outputs: `run-id` and `run-url` (a link to the run page in the dashboard).
 3. Waits, within the timeout, until the experiment has no run in progress (it allows one at a time), then starts a run and follows it. Inside GitHub Actions the run is started with an `Idempotency-Key` made from `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT` and the experiment id, so a request that is retried within one attempt cannot start two runs. A re-run of the workflow is a new attempt and starts a new run.
 4. Compares each mean score in `fail-below` with its threshold, prints a Markdown table to the log and adds it to the job summary.
 
+The table has a **95% CI** column. For a yes/no score it is the interval on the pass rate, for example `64–88%` (the low bound rounded down and the high bound rounded up, so the range contains the interval); for any other score it is "—". The **Items** column is how many items carry the score.
+
+**The gate still compares the mean.** The interval changes no verdict and no exit code. It tells you how much to trust the verdict: with 50 items, a pass rate of 78 % is compatible with anything from about 65 % to 87 %. When a gated yes/no score's threshold lies inside its interval, the report adds a line such as `format: Interval includes the threshold; the result is not conclusive at this sample size.` A pass or a fail in that situation could flip on the next run with no change at all. Add dataset items to narrow the interval, or read the gate's verdict as a warning. Intervals and the comparison tests are explained in [Intervals and significance](/docs/experiments/#intervals-and-significance).
+
 | Exit code | Meaning |
 | --- | --- |
 | `0` | The run finished and every threshold held. |
@@ -120,6 +124,7 @@ python -m spanlight._experiments \
 ## Limits
 
 - Scores that are categories (a label rather than a number) cannot be compared with a threshold; use a numeric or boolean evaluator for the gate.
+- The gate compares the mean with a fixed threshold. It does not test whether the run differs from an earlier one; use [Compare two runs](/docs/experiments/#compare-two-runs) for that.
 - The Action runs one experiment per step. To gate several datasets, add one step for each.
 - Two gates for the same dataset, prompt and settings take turns: the second waits for the first to finish, and fails with exit code 2 if that takes longer than the timeout.
 - Experiments cannot be edited or deleted yet, so an unused `ci/...` experiment stays in the list.

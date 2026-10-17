@@ -183,10 +183,73 @@ test('renders the frontmatter, the version, the matching rule and the links', ()
   assert.match(page, /\(\/docs\/api\/prices\/\)/);
 });
 
-test('states that a span with a provider must match the row provider', () => {
+test('states that a span with a provider must match the row provider, after its aliases', () => {
   const page = renderPricesPage(parsePrices(FIXTURE), {});
   assert.match(page, /provider/i);
   assert.match(page, /`azure`/);
-  assert.match(page, /`gpt-4o`/);
-  assert.match(page, /`openai` row/);
+  assert.match(page, /`gemini`/);
+  assert.match(page, /`google` rows/);
+  assert.match(page, /override saved as `gemini` matches a span sent as `google`/);
+  assert.match(page, /`azure` and `azure_openai` are not aliases of `openai`/);
+  assert.doesNotMatch(page, /find the `openai` rows/);
+  assert.doesNotMatch(page, /gets no price from the `openai` row/);
+});
+
+const EXTRAS = `
+TIER_MULTIPLIERS: Mapping[tuple[str, str], Decimal] = MappingProxyType(
+    {
+        ("anthropic", "batch"): Decimal("0.5"),
+        ("anthropic", "priority"): Decimal("1.0"),
+        ("openai", "flex"): Decimal("0.5"),
+    }
+)
+COMMITMENT_BILLED: frozenset[tuple[str, str]] = frozenset({("anthropic", "priority")})
+
+SEED_FEES: tuple[SeedFee, ...] = (
+    _fee("anthropic", "web_search", "10.00"),
+    _fee("openai", "web_search", "12.50"),
+)
+`;
+
+test('parses the tier multipliers, the commitment-billed pairs and the fees', () => {
+  const parsed = parsePrices(FIXTURE + EXTRAS);
+  assert.deepEqual(parsed.tierMultipliers, [
+    { provider: 'anthropic', tier: 'batch', factor: '0.5', commitmentBilled: false },
+    { provider: 'anthropic', tier: 'priority', factor: '1.0', commitmentBilled: true },
+    { provider: 'openai', tier: 'flex', factor: '0.5', commitmentBilled: false },
+  ]);
+  assert.deepEqual(parsed.fees, [
+    { provider: 'anthropic', tool: 'web_search', usdPer1k: '10.00' },
+    { provider: 'openai', tool: 'web_search', usdPer1k: '12.50' },
+  ]);
+});
+
+test('renders the tier and fee tables', () => {
+  const page = renderPricesPage(parsePrices(FIXTURE + EXTRAS), {});
+  assert.match(page, /^## Service tiers$/m);
+  assert.match(page, /\| anthropic \| `batch` \| 0\.5 \| \|$/m);
+  assert.match(page, /\| anthropic \| `priority` \| 1\.0 \| Billed as a commitment/m);
+  assert.match(page, /\| openai \| `flex` \| 0\.5 \| \|$/m);
+  assert.match(page, /^## Web search and other tool fees$/m);
+  assert.match(page, /\| openai \| `web_search` \| 12\.50 \|$/m);
+});
+
+test('leaves the tier and fee tables out when the snapshot has none', () => {
+  const parsed = parsePrices(FIXTURE);
+  assert.deepEqual(parsed.tierMultipliers, []);
+  assert.deepEqual(parsed.fees, []);
+  const page = renderPricesPage(parsed, {});
+  assert.doesNotMatch(page, /^## Service tiers$/m);
+  assert.doesNotMatch(page, /^## Web search and other tool fees$/m);
+});
+
+test('reads the real tier multipliers and fees', () => {
+  const source = fs.readFileSync(path.join(REPO_ROOT, 'backend/app/pricing/prices.py'), 'utf8');
+  const { tierMultipliers, fees } = parsePrices(source);
+  const factor = (provider, tier) =>
+    tierMultipliers.find((row) => row.provider === provider && row.tier === tier);
+  assert.equal(factor('anthropic', 'batch')?.factor, '0.5');
+  assert.equal(factor('anthropic', 'priority')?.commitmentBilled, true);
+  assert.equal(factor('openai', 'priority'), undefined, 'OpenAI priority has no single factor');
+  assert.ok(fees.some((fee) => fee.provider === 'anthropic' && fee.tool === 'web_search'));
 });

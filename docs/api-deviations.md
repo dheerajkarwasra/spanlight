@@ -38,6 +38,8 @@ original design; everything else is a clarification.
   `TWO_FACTOR_REQUIRED` (403, the org requires two-factor and the caller has not turned it on),
   `INVALID_TOTP_CODE` (422 when enabling or disabling, 401 when signing in),
   `TOTP_CHALLENGE_INVALID` (401, the second step of signing in),
+  `EE_LICENSE_REQUIRED` (403, an enterprise-edition feature the instance's license does not grant; the
+  `feature` member names it, see "Enterprise edition" below),
   `CONFIRMATION_MISMATCH` (422, a deletion whose typed `confirm` is not the slug of what it deletes),
   `IDEMPOTENCY_MISMATCH` (422, an `Idempotency-Key` first used for a different request),
   `IDEMPOTENCY_IN_PROGRESS` (409, the first request with that key has not answered yet),
@@ -47,7 +49,8 @@ original design; everything else is a clarification.
   `INTERNAL_ERROR` (500), `SERVICE_UNAVAILABLE` (503, with `Retry-After`, the database could not take or
   finish the request in time).
 - The codes of prompts, scores, datasets, review queues, evaluators and experiments are listed in the section
-  "Prompts, scores, datasets, evaluators and experiments" below.
+  "Prompts, scores, datasets, evaluators and experiments" below; those of billing sources in "Auditable cost: tiers,
+  fees, cut streams, explanation, billing sources, reconciliation".
 - Validation `errors[].field` is the dotted path without the `body.`/`query.` prefix (e.g. `password`).
 - **NUL in a text parameter is a 422** (added 2026-10-10). Postgres text cannot hold NUL, so a query or path value with
   one could not be bound. The insights, releases and users parameters refuse it as `422 VALIDATION_ERROR` with the
@@ -218,7 +221,9 @@ original design; everything else is a clarification.
   snapshot suffix (`-YYYYMMDD`, `-YYYY-MM-DD`, `-latest`); longest pattern wins. Plain prefix
   matching (as in the original design) would price e.g. `gpt-4.1-nano` as `gpt-4.1`. Matching is
   case-sensitive (since 2026-10-13, see "Owner decisions 2026-10-13"); the provider is compared
-  case-insensitively, and when `provider` is sent it must match the price's provider.
+  case-insensitively, and when `provider` is sent it must match the price's provider. Since 2026-10-16 the
+  provider is compared after its aliases are folded onto the seeded name (see "Provider aliases for pricing
+  only" under "Auditable cost").
 - Unknown span fields are ignored (forward compatible) rather than rejected.
 - Per-span rejections (`rejected[].reason` is `"<field>: <message>"`): schema errors; `end_time`
   before `start_time`; `start_time` older than 90 days; `end_time` more than 10 minutes in the
@@ -252,7 +257,8 @@ original design; everything else is a clarification.
 
 - Model: `gen_ai.response.model` is preferred over `gen_ai.request.model` (it is the billed snapshot).
 - Kind: `llm` if any `gen_ai.*` attribute; `http` for client spans with `http.*`/`url.*`
-  attributes; `retrieval` with `db.*`; otherwise `other`.
+  attributes; `retrieval` with `db.*`; otherwise `other`. (Superseded on 2026-10-17 by the convention kinds in
+  "OTLP (`POST /v1/otlp/traces`) conventions, usage rollups and usage state" below.)
 - Trace name: the root span's name (falling back to `service.name`); non-root spans do not set it.
 - Cached input: `gen_ai.usage.cache_read.input_tokens` (current conventions, LiteLLM) is read first,
   then the older `gen_ai.usage.cache_read_input_tokens`. Either way `gen_ai.usage.input_tokens` is
@@ -1110,9 +1116,10 @@ Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anth
   byte of the answer can lead to a second request for the same call, and the provider may already have received
   and billed the first one; the gateway cannot tell. A retry (by default one more attempt on the target,
   `max_attempts` up to 5) happens only while the route's `timeout_ms` budget has room for the wait. A fallback to
-  the next target happens when the error matches the route's `fallback.on` conditions (by default all of them).
-  The span records the usage and cost of the attempt that answered and lists every attempt in
-  `spanlight.gateway.attempts`, so the failed attempt's spend, if any, is not in Spanlight's totals. A request
+  the next target happens when the error matches the route's `fallback.on` conditions (by default `status_5xx`,
+  `rate_limited`, `timeout` and `connection_error`; `auth_error` only when the route lists it).
+  The span records the usage and cost of the attempt that answered, counts every attempt in
+  `spanlight.gateway.attempts` and lists them in `spanlight.gateway.attempt_log`, so the failed attempt's spend, if any, is not in Spanlight's totals. A request
   that hangs uses the whole budget and is never retried, so it cannot be billed twice that way. Calls Spanlight
   makes for itself (judges, Explain with Claude, the playground, experiment items and the demo traffic job) go
   through a single-target route with one attempt and are never retried.
@@ -1278,8 +1285,8 @@ Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anth
 ## Span error class, request hash and finish reason (added 2026-10-10)
 
 - **Error class.** Spans carry `error_class` (`SpanOut.error_class`): one of `auth`, `rate_limit`, `timeout`,
-  `context_length`, `content_filter`, `provider_5xx`, `network`, `client`, `unknown`, and `null` exactly when the span
-  did not fail. Ingestion computes it. A numeric status decides first, read from the first of the attributes
+  `context_length`, `content_filter`, `provider_5xx`, `network`, `client`, `unknown` (and `gateway` since 2026-10-15;
+  see "Provider path", which also amends the rules below), and `null` exactly when the span did not fail. Ingestion computes it. A numeric status decides first, read from the first of the attributes
   `spanlight.gateway.upstream_status`, `http.status_code`, `error.status` that holds a whole number (an integer, a
   whole float or a string of digits): 401 and 403 are `auth`, 429 `rate_limit`, 408, 499 and 504 `timeout`, 413
   `context_length`, any 5xx (529 included) `provider_5xx`, any other 4xx `client` unless the message says the context
@@ -1425,12 +1432,14 @@ Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anth
 - **Reads.** `GET /projects/{id}/users` and `GET /projects/{id}/users/{external_user_id}` need `project:read` and are also
   open to an API key with `traces:read` for its own project, like the metrics routes. A non-member gets `404`.
 - **Source.** The figures come from `user_stats_daily`, one row per UTC day and end user (`traces.external_user_id`), which the
-  `refresh_user_stats` job recomputes for yesterday and today every 15 minutes for projects with a user-tagged trace since
-  the start of yesterday, UTC (`USER_STATS_ENABLED`). A trace counts for the day it started. `llm_calls`, `errors` and `tokens` are over the
+  `refresh_user_stats` job recomputes for the last three UTC days (today, yesterday and the day before) every 15 minutes, and
+  the `refresh_user_stats_deep` job for the last eight days once a day (runnable from 02:00 UTC), each for the projects with a
+  user-tagged trace since the first day it recomputes (`USER_STATS_ENABLED` turns both off; until 2026-10-16 the 15-minute
+  pass covered yesterday and today only and there was no nightly pass). A trace counts for the day it started. `llm_calls`, `errors` and `tokens` are over the
   trace's spans of kind `llm` (an error is a span with status `error`, so `errors` differs from the `error_count` of `recent_sessions`, which counts
   failed spans of every kind; tokens are input plus output, input already
-  including cached tokens). Days older than yesterday are only as complete as the job was when they were current: there is
-  no backfill. Rows older than the project's `retention_days` are deleted by the retention job.
+  including cached tokens). A day older than eight days is only as complete as the jobs were while it was in their window:
+  a span that arrives later is not counted, and there is no backfill. Rows older than the project's `retention_days` are deleted by the retention job.
 - **Window.** `from`/`to` (default last 24 h, at most 90 days) are widened to whole UTC days: `from` floored, `to` ceiled.
   The response's `window` (`start`, `end`, midnights in UTC, `end` exclusive) says which days were summed.
 - **`cost_usd`.** The sum of the priced calls over the days with activity: `null` when calls were made and none was priced,
@@ -1726,3 +1735,1004 @@ Calls made after the full test pass on behaviour the spec left open.
   bypass set for its own transaction, so a dangling reference fails the upgrade instead of being marked valid. A
   CHECK constraint is validated by scanning the table, which the policies never filtered; those migrations take
   the same path so every validation follows one rule.
+
+## Enterprise edition (added 2026-10-15)
+
+- Code under `ee/` directories is under the Spanlight Enterprise License and runs only with a license key in
+  `EE_LICENSE_KEY` ([ADR 16](decisions/0016-open-core-ee-directories.md)). No route uses it yet.
+- A route of an enterprise feature is mounted whether or not the instance is licensed. Unlicensed, or once the
+  license has expired, it answers `403 EE_LICENSE_REQUIRED` with a `feature` member naming the feature, for
+  example `{"code": "EE_LICENSE_REQUIRED", "feature": "scim", ...}`. The usual authentication and tenancy checks
+  run first, so a non-member still gets `404 NOT_FOUND` for another organization's resources.
+
+## Auditable cost: tiers, fees, cut streams, explanation, billing sources, reconciliation (added 2026-10-16)
+
+- **Usage fields.** `usage.service_tier` is one of `standard`, `batch`, `priority`, `flex` or absent; on `POST /v1/traces`
+  any other value rejects the span with a per-span reason (the native schema is strict, like the other usage fields).
+  `usage.server_tool_use.web_search_requests` is a JSON integer from 0 to 100,000 (a negative, larger or non-integer
+  value rejects the span); other keys under `server_tool_use` are ignored. `cost_usd` includes the web search fee, and
+  the fee alone is reported again as `fee_usd`, so every existing sum of `cost_usd` includes fees. Spans stored before
+  2026-10-16 have neither field and were priced at the standard rate without a fee.
+- **Tier spellings are normalized everywhere but the native route.** OTLP, the gateway and the Python SDK map the
+  provider's own spelling before building the native shape: the value is trimmed and lower-cased (a decision the
+  design left open), the four canonical names are accepted from any provider (the batch recorders send `batch`
+  whatever the provider), then the provider's spellings are read against the provider after its aliases: Anthropic
+  `priority_on_demand` is `priority` and `flex_discount` is `flex`; OpenAI `default`, `auto` and `scale` are `standard`
+  and `fast` is `priority`. A spelling that maps to nothing leaves the tier `null` (priced as standard) and is kept,
+  trimmed, in `attributes["usage.service_tier_raw"]`; the span is not rejected. A blank spelling is no spelling. The
+  kept spelling is cut to its first 64 characters on every path (the gateway, OTLP and the Python SDK), so an upstream
+  behind a custom base URL cannot push a span past the attribute limit with it.
+- **Span read model.** Spans of `GET /traces/{trace_id}` carry `service_tier`, `web_search_requests` and `fee_usd`, each
+  `null` when not reported or not priced. `fee_usd` is the non-token part of `cost_usd`.
+- **Provider trimmed at ingest.** Like the model since 2026-10-13, the span's `provider` is stored without surrounding
+  whitespace on every path, and an empty or whitespace-only provider is stored as `null` (an empty string was a `422`).
+  A span without a provider gets no fee.
+- **Fees.** The fee is `web_search_requests × rate / 1,000`, the rate being the latest row of the snapshot's fee table
+  for the span's canonical provider and the tool `web_search` in force at the span's start (USD 10.00 per 1,000 for
+  `anthropic` and `openai`; Google has no row). The token cost times the tier factor and the unrounded fee are added
+  and rounded once, half up to 8 decimals, into `cost_usd`; `fee_usd` is the fee rounded the same way. The tier factor
+  never applies to the fee. `web_search_requests: 0` is a known zero fee. A count without a provider or without a rate
+  leaves `fee_usd` `null`. A fee is priced even when the token cost is not: the span then has `fee_usd` set and
+  `cost_usd` and `pricing_version` `null`, the trace's totals leave the span out, and the trace's `has_unpriced` is set.
+  A wrapper or the gateway reads the count from the provider's answer: Anthropic `usage.server_tool_use`, OpenAI
+  Responses `web_search_call` items with status `completed` (a Responses answer with no such item sends no count). An
+  OpenAI Chat Completions answer does not count searches, so the SDK sets `attributes["usage.fee_unknown"] =
+  "openai_chat_web_search"` when the request had `web_search_options`, and no fee is priced.
+- **Tier factors and fees are part of the price snapshot**, not of a price row. A span priced by a seed row uses the
+  factors of that row's snapshot; one priced by an override uses the snapshot in force at its start. An override cannot
+  change a factor or a fee. Snapshot `2026-10-16`: Anthropic batch 0.5 and priority 1.0, flagged `commitment_billed`
+  (Anthropic bills Priority Tier as a commitment); OpenAI batch 0.5 and flex 0.5; Google batch 0.5. The 2026-10-01 and
+  2026-10-15 snapshots were released before tiers were modelled and carry no table of their own; a span priced under
+  them takes the factors of the oldest snapshot that carries a table (2026-10-16), because batch and flex were half
+  price on those dates too. Released rates are never edited. Fees are not back-dated: a web search on a span dated
+  before 2026-10-16 has `fee_usd` null and its explanation names the missing rate.
+- **OpenAI priority (Fast) is priced at the standard rate and counted as an unmodelled modifier**; the page publishes
+  per-model rates, not a multiplier (the ratio to standard runs from 1.67 to 2.0, and none of the OpenAI models the
+  snapshot prices is 2.0). Generally, a non-standard tier with no factor in the snapshot that is not commitment-billed
+  is priced at the standard rate and its cost explanation carries `tier_note: "unmodelled"`.
+- **Unpriced request options.** Data residency (`inference_geo`) and fast mode (`speed: "fast"`) are not priced. When the
+  Python SDK (keywords or `extra_body`) or the gateway (request body) sees one, the span is priced at the standard
+  rate and `attributes["usage.pricing_modifier_unknown"]` is `inference_geo_<value>` (trimmed and lower-cased; a value
+  that is not 1 to 32 characters of `a-z`, `0-9`, `_` or `-` is reported as `inference_geo_other`) or `fast_mode`.
+  Data residency wins when both are sent. `inference_geo: "global"` is the default routing at the standard price and
+  sets nothing. The SDK and the gateway set the attribute only on spans with usage: a call that failed before any
+  usage came back was not priced at any rate, so the SDK drops the attribute it set when the call started. The daily
+  cost rollup counts the attribute (`unmodelled_modifier_calls`) only on spans with an input token count, so a span
+  sent by another client obeys the same rule.
+- **Provider aliases for pricing only.** For the price and fee lookup, the provider is trimmed, lower-cased and folded:
+  `gemini`, `google_genai`, `google-genai`, `google_ai`, `vertex_ai`, `vertexai`, `gcp.gemini`, `gcp.vertex_ai` and
+  `gcp.gen_ai` to `google`; `claude` to `anthropic`. Any other name is compared lower-cased as it is. `azure` and
+  `azure_openai` are deliberately not folded onto `openai`: Azure bills its own rates and no Azure price is seeded, so
+  an Azure span stays unpriced (`null`) unless an override for `azure` or `azure_openai` prices it. The stored
+  `provider` never changes, and filters, alert rules, budgets and rollups compare what was stored. Both sides are
+  folded: the span's provider and each price row's or override's, so an override saved as `gemini` or `vertex_ai`
+  matches a span sent as `google` and the other way round. Overrides saved under two spellings of the same provider
+  compete by the usual tie-break (tier, then pattern length, then `effective_from`); with all three equal, the greater
+  `version` (`override:<id>`, compared as text) wins, so the result does not depend on load order and a replay prices
+  the same. The fee lookup folds both sides the same way. The Python SDK's `wrap_openai` records an `AzureOpenAI` or
+  `AsyncAzureOpenAI` client as `azure_openai` unless `provider=` is passed.
+- **Gemini output tokens include thinking.** By convention `output_tokens` of a Gemini span is the sum of its answer and
+  thinking tokens (`candidates_token_count + thoughts_token_count`), both billed at the output rate; an integration
+  that sends only the answer's tokens under-prices. Gemini prices have no cache-write rates (Gemini bills cache
+  storage per hour, which is not modelled).
+- **OTLP.** The tier is read from `openai.response.service_tier`, then `gen_ai.openai.response.service_tier`, then
+  `spanlight.usage.service_tier`; the web search count from `spanlight.usage.web_search_requests` (OpenTelemetry has no
+  convention). The count is fitted like a token count: a whole double is stored as an integer, a fraction, NaN or
+  infinity is dropped (the fee is then unknown), and any other invalid value rejects the span.
+- **Streams cut before the final usage.** A stream that ends without the provider's final usage event stores the input
+  counts the stream's first event reported, `output_tokens: null` and `cost_usd: null`, never a placeholder count, with
+  `attributes["usage.unreported_reason"]` one of `client_disconnected`, `stream_error`, `stream_cut_by_fault` (a gateway
+  Lab fault), `include_usage_not_set`, `no_final_usage` or `not_exported`. The gateway also uses `no_final_usage` for an
+  OpenAI Chat Completions stream whose `stream_options` leaves out `include_usage` (with no `stream_options` it asks for
+  usage itself). A native client may send the attribute with `output_tokens` absent or `null`; another string is stored
+  as sent, read as no reason by the cost explanation and not counted by the daily cost rollup. **Renamed:** the Python
+  SDK's former `usage.missing_reason = "stream_options.include_usage not set"` is now `usage.unreported_reason =
+  "include_usage_not_set"`. Such a span sets the trace's `has_unpriced`; the trace's `output_tokens` stays the sum of
+  the known counts (0 when none is known). The `unpriced_spend` detector needs both counts, so it ignores these spans.
+  The playground's run `usage.output_tokens` is nullable for the same reason, with the run's cost then `null`.
+- **Cost explanation.** `GET /projects/{project_id}/traces/{trace_id}/spans/{span_id}/cost-explanation` needs
+  `project:read`, or an API key with `traces:read` for its own project; a span that is not visible is `404`. It rebuilds
+  the stored figure from the row named by the span's `pricing_version` (the snapshot's factors and fee rate in force
+  then) and never re-prices with the current snapshot. `status`, in order of precedence: `usage_rollup` (in the enum;
+  no span has it today), `cache_hit` (cost 0; `original_usage` holds the usage of the call that filled the gateway
+  cache, the only status that carries it), `no_usage` (input or output count missing; the web search line is kept when
+  searches were counted and a rate exists), `no_price`, `price_version_missing` and `override_deleted` (both show the
+  stored figure as priced, with `price` `null` when the row cannot be produced), then `ok` or `mismatch`. `message` is
+  set for every status but `ok`, where it is set only when searches were counted without a rate. Lines are
+  `uncached_input`, `cache_read`, `cache_write_5m`, `cache_write_1h`, `output` and `web_search`; reasoning tokens are a
+  split of `output` (`output_breakdown`), never a line. A rate keeps the scale it is stored with (`"3.000000"`); a line's
+  `usd` is unrounded, written with at least 8 decimals and as many more as it has, and `"0"` for a zero line;
+  `recomputed_usd` is the sum rounded once, as `cost_usd` is. `usage.unreported_reason` outside the six values is
+  `null`. Each read counts `spanlight_feature_used_total{feature="cost_explanation"}`; a `mismatch` also counts
+  `spanlight_cost_explanation_mismatch_total` (per read, so one span read three times counts three) and logs
+  `cost_explanation_mismatch` with the project, the span and both figures.
+- **Billing sources.** `/orgs/{org_id}/billing-sources`: `GET /` (unpaginated, by name) and `GET /{id}` need `org:read`;
+  `POST /` (`201`), `PATCH /{id}`, `POST /{id}/rotate` and `DELETE /{id}` (`204`) need `billing_sources:manage`, a write
+  permission of admins and owners. A non-member gets `404`. Every response that describes a source carries
+  `Cache-Control: no-store`, and no route takes an `Idempotency-Key` (a kept request could only be matched by keeping
+  something derived from the key). `kind` is `anthropic_admin_api`, `openai_costs_api` or `csv_upload`; `provider` is
+  derived for the API kinds (`422` on `provider` when sent and different) and required for `csv_upload` (`anthropic`,
+  `openai` or `google`). `admin_key` is required for the API kinds and refused for `csv_upload` (`422` on `admin_key`);
+  it is trimmed and must be at most 512 characters of visible ASCII starting with `sk-ant-admin` (Anthropic) or
+  `sk-admin` (OpenAI), else `422` on `admin_key` with "does not look like an Admin API key" (the value is never
+  echoed). The key is write-only: no response, audit event or log line carries it; a source shows `key_set` and
+  `key_id`. `name` is trimmed, 1 to 128 characters and unique in the organization (`409 BILLING_SOURCE_NAME_TAKEN`);
+  `provider_scope` 1 to 128 characters. `project_ids` (at most 500, may be empty) must be projects of the organization
+  (`422` on `project_ids`), and a project is compared with one source per provider: a project another source of the
+  same provider covers is `409 BILLING_SOURCE_PROJECT_TAKEN` with `errors[].field` `project_ids` and a `detail` naming
+  that source. `PATCH` changes only the fields sent; `project_ids` replaces the whole mapping, `provider_scope: null`
+  clears it, and `null` for `name`, `enabled` or `project_ids` is a `422`. `POST /{id}/rotate` (`{admin_key}`) is for the
+  API kinds only: a CSV source is `422` on `kind`. An API kind needs `CREDENTIALS_KEYS`, which seals the key:
+  without it, create and rotate answer `409 NOT_CONFIGURED` with "Billing sources that fetch from a provider are
+  encrypted with a server key that isn't set. Ask your administrator to set CREDENTIALS_KEYS, or add a CSV source."
+  Create and rotate of an API kind run one check of the key (one request for yesterday's costs to the provider's fixed
+  host, 10 s at most); the source is stored whatever the outcome, which sets `status` (`ok` or `failing`) and
+  `last_error` (an HTTP status line such as `401 Unauthorized`, or a fixed phrase such as `timeout`, never a response
+  body). With `BILLING_SOURCES_ENABLED=false` no provider is called: the check is skipped and `status` is
+  `never_fetched`. The key checks are throttled per organization (Postgres token bucket `billing_key_check:{org_id}`,
+  one a minute, burst 5, creates and rotations together): past it, create and rotate of an API kind answer `429
+  RATE_LIMITED` with `Retry-After` before anything is checked or stored. A CSV source is neither checked nor
+  throttled, and nothing is throttled while `BILLING_SOURCES_ENABLED` is off. The request's database transaction is
+  ended before the check, so no connection waits on the provider. `DELETE` removes the source with its project
+  mappings, fetch runs and provider cost lines.
+- **Billing source tenancy.** `billing_sources` and its tables are organization-scoped without row-level security, like
+  `provider_credentials`: every query filters `org_id`. `billing_source_projects` is the documented exception to the
+  rule that a table with `project_id` gets a policy: it maps a source to projects, is read only through its source's
+  `org_id` and holds no telemetry; composite foreign keys make a mapping to another organization's project, or one that
+  disagrees with its source's provider, impossible to store.
+- **Billing source audit events.** `billing_source.create`, `billing_source.update`, `billing_source.rotate`,
+  `billing_source.delete`, `billing_source.refresh` and `billing_source.upload`, target type `billing_source`, metadata
+  `{kind, provider, project_ids}`, never the key or a file's content. A refresh adds `run_id`; an upload adds `run_id`,
+  `lines` (the lines written) and `days` (how many distinct days the file holds, a count rather than the list of days
+  the spec's response carries).
+- **Billing source runs.** Three more routes under `/orgs/{org_id}/billing-sources/{id}`: `POST /refresh` (`202
+  {run_id}`) and `POST /upload` (`200 {run_id, lines_upserted, days}`, `days` the distinct days of the file, ascending)
+  need `billing_sources:manage`; `GET /runs` needs `org:read`. Their schemas are named `RefreshAccepted`,
+  `CsvUploadOut` and `BillingRunOut`. A run has `trigger` (`scheduled`, `manual` or `csv_upload`), `day_from` and
+  `day_to` (both included), `status` (`running`, `ok` or `failed`), `error`, `lines_upserted`, `pages` (0 for an
+  upload, which reads no provider page), `requested_by` (a user object, `null` for a scheduled fetch), `started_at` and
+  `finished_at`. `GET /runs` is keyset-paginated by `(started_at desc, id)`, `limit` 1 to 100 (default 20) with
+  `cursor`, and carries `Cache-Control: no-store`. A failed run's `error` is an HTTP status line or one of the fixed
+  phrases of `last_error`, plus `source disabled`: a manual refresh whose source was turned off before the worker
+  picked it up is closed failed with that phrase, so the source does not look busy. A fetch job that finds the source
+  deleted, or `BILLING_SOURCES_ENABLED` off, ends done with the metric outcome `skipped`; a refresh queued just before
+  `BILLING_SOURCES_ENABLED` was turned off leaves its run `running` until it goes stale (15 minutes). The daily fetch
+  job closes every run still `running` after 15 minutes as failed with `timeout`, whatever its source (a disabled one
+  included), and a run closed that way is never turned `ok` by the fetch that was working under it: that fetch stores
+  nothing. A provider bucket of a day outside the fetch's window is dropped, and a provider count no `bigint` holds
+  (reported, or summed across rows) fails the fetch with `invalid response`.
+- **Refresh.** `POST /refresh` is for the API kinds only (`422` on `kind` for a CSV source). The checks come in this
+  order: the source is turned off, `409 BILLING_SOURCE_DISABLED`; `BILLING_SOURCES_ENABLED` is off, `409
+  NOT_CONFIGURED` with "BILLING_SOURCES_ENABLED is off, so this server calls no provider's cost API. Ask your
+  administrator to turn it on, or add a CSV source."; `CREDENTIALS_KEYS` is unset, `409 NOT_CONFIGURED` with the create
+  detail; the rate limit (Postgres token bucket `billing_refresh:{source_id}`, one every 300 seconds, burst 2), `429
+  RATE_LIMITED` with `Retry-After`; then a run of the source still `running` and younger than 15 minutes, `409
+  BILLING_FETCH_IN_PROGRESS`. The token is taken before the last check, so a refresh refused as in progress still
+  spends it. Two concurrent refreshes create one run. The fetch covers the last 7 whole UTC days, or 31 while the source
+  has never had a successful fetch; the daily scheduled fetch (from 03:30 UTC) uses the same window. Each accepted
+  refresh counts `spanlight_feature_used_total{feature="billing_source_refresh"}`.
+- **CSV upload.** `POST /upload` takes `multipart/form-data` with one field `file` (another body is `415
+  UNSUPPORTED_MEDIA_TYPE`; a form without the field, or one that cannot be read, `422` on `file`). The file may be 5 MB:
+  the upload path is exempt from the 1 MiB API body limit and has its own of 5 MB plus 64 KB of framing, checked while
+  the body streams, and the file itself over 5 MB is `413 PAYLOAD_TOO_LARGE`. Only a CSV source takes uploads (`422` on
+  `kind` otherwise); a source that is turned off still accepts them, and an upload is refused with `409
+  BILLING_FETCH_IN_PROGRESS` like a refresh. The format is the spec's ten columns; the header must name all ten (in any
+  order, none twice, no other), and "optional" means the cell may be blank. Rows are numbered as a spreadsheet shows
+  them (the header is row 1, row 0 is the file as a whole). A refused file is `422 VALIDATION_ERROR` with up to 20
+  `errors[]` of `{field: "file", row, column, message}`, `column` `null` when no single column is at fault; messages
+  name a column or a row, never a cell's content, and nothing is stored. A `day` must lie within the 400 days up to
+  the upload's UTC date, that date included (the 400 days provider lines are kept): an older or a later day is refused
+  on `day` ("day must be within the 400 days up to today (UTC)"). Without the bound one row dated `9999-12-31` or
+  `0001-01-01` opened a run window across centuries and queued a backfill per month of it. The same day and line twice
+  in one file (the line identified by scope, description, token type, tier, model and kind) is refused naming the
+  earlier row. An upload's run covers every day from the file's first day to its last, and the report reads, for each
+  day, only the lines of the latest successful run that covers it: a file that skips a day inside its range hides the
+  lines earlier runs stored for that day. The file's bytes are never stored or logged. After the upload Spanlight recomputes the cost
+  rollups of the source's projects for those days at once when the file spans at most 31 days, and otherwise queues
+  them as backfill jobs. Each upload counts `spanlight_feature_used_total{feature="billing_csv_upload"}`.
+- **Reconciliation report.** `GET /{id}/reconciliation` and `GET /{id}/reconciliation.csv` need `org:read` and are
+  marked `Cache-Control: no-store`. `from` and `to` are date-times (a value without an offset is UTC), widened to whole
+  UTC days; without `to` the window ends at the start of today (UTC), and without `from` it starts 14 days before `to`.
+  `422 VALIDATION_ERROR` on `to` for a window of more than 31 days, one ending after today, or a `from` after the start
+  of today with no `to`; on `from` when `from` is not earlier than `to`. Reading the report does not depend on
+  `BILLING_SOURCES_ENABLED`. Arithmetic: per UTC day and group, `residual_usd = provider_usd − spanlight_usd −
+  explained_usd`, signed and never folded into a line; `variance_ratio` is the residual over `provider_usd` with four
+  decimals, `null` when the provider billed 0. A day is `provisional` until 48 hours after it ends and until a
+  successful run covering it finished after that point (`fetched_at` is when the latest such run finished). Credits
+  (`credit` lines) and charges Spanlight cannot see (`code_execution`, `other`) are listed in `credits` and `other` and
+  never enter `provider_usd`, the residual or the variance. Groups are the seed or override pattern each side's model
+  matches (`unmapped:<name>` per side otherwise), matched when the report is read against the organization's patterns
+  of that moment; the pattern stored on a line or a rollup row is only a cache, so an override created or deleted after
+  the lines were stored never splits one model into two groups. Beyond the spec's example a day carries `note` (`"rollup pending"` or
+  `null`) and `unattributed_calls` (calls whose span named no provider), and a group carries `note` ("no provider line:
+  wrong source scope, or usage billed under another account" when Spanlight has calls and the provider no line, only on
+  a day the provider's side was read). Unknown is `null`: a day no successful run covers has `fetched_at`,
+  `provider_usd`, `credits_usd`, `other_usd`, `explained_usd`, `residual_usd` and `variance_ratio` `null`, keeps only
+  the explained lines computed from Spanlight's side, without USD, and its groups have `provider_tokens` all `null`. A
+  day whose rollups are pending has the Spanlight figures, `explained_usd`, the residual and the variance `null` and
+  `incomplete: true`; the report builds missing rollups inline up to 31 project-days per request and queues the rest
+  (one `rollup_cost_daily_backfill` job per project, deduplicated per project, window and UTC date of the request, so
+  a backfill that failed is queued again the next day). A day past a mapped project's retention is `incomplete`, gets the
+  `beyond_retention` line, and its `batch_spend`, `server_tool_fees` and `untraced_traffic` lines carry no USD.
+  `priority_commitment` carries minus the token cost Spanlight recorded for commitment-billed (Anthropic priority)
+  calls, `null` when the provider bills a priority `tokens` line. In a rollup, `fee_usd` sums the fees of spans whose
+  cost is known while `web_search_requests` counts every span's searches, so the `server_tool_fees` amount compares
+  known-cost fees and its note counts all recorded searches. `summary.days_within_2pct` and
+  `summary.max_abs_variance_ratio` read only settled days that are not `incomplete`, and the ratio only groups the
+  provider billed at least $0.01. Each read counts `spanlight_feature_used_total{feature="reconciliation_report"}`
+  (`"reconciliation_csv"` for the file).
+- **Reconciliation CSV.** One row per day and group: `day`, `provisional`, `incomplete`, `group`, `model_pattern`,
+  `provider_usd`, `spanlight_usd`, `explained_usd`, `residual_usd`, `variance_ratio`, `explained_kinds` (`;`-separated,
+  in the report's order). An unknown value is an empty cell; booleans are `true` and `false`. A money or ratio cell that
+  is a strict decimal (`-0.005`) is written as a plain number, so a spreadsheet reads a negative figure as a number;
+  every text cell, and a number cell that is not a strict decimal, goes through the export's formula escaping. The file
+  is named `reconciliation-<source id>-<first day>-<last day>.csv`, both days included.
+- **Users: `computed_at`.** `GET /projects/{id}/users` and `…/users/{external_user_id}` return `computed_at`, the latest
+  time a day of the window (or of the user, in the window) was recomputed, `null` when none has been; see "Users" for the
+  refresh schedule.
+- **Batch spans from the Python SDK.** `wrap_anthropic` records the results read through `messages.batches.results`, and
+  `record_openai_batch_output(lines, *, batch_id, provider="openai", spanlight=None) -> int` the lines of an OpenAI Batch
+  output or error file. Each request is one `llm` span named `batch <model>` in a trace named `batch <batch_id>` tagged
+  `spanlight:batch`. Ids are deterministic, so reading the same results again updates the same spans: trace id
+  `sha256("spanlight:batch:" + batch_id)[:32]`, span id `sha256(batch_id + ":" + custom_id)[:16]`. The span starts and
+  ends at the moment the result is read (duration 0, `timing.synthetic: true`), has no input
+  (`batch.request_available: false`), carries `batch.id`, `batch.custom_id` and `batch.result_type`, and records its
+  usage with `service_tier` forced to `batch` (the Batches APIs bill every request at the batch rate); the provider's
+  value is kept in `usage.service_tier_raw`. A failed request is an error span without usage, except an OpenAI
+  Responses body with `status: "failed"`, which keeps the usage it reports.
+
+## Provider path (added 2026-10-15)
+
+- **Span fields.** `SpanOut` gains `provider_error_type` and `provider_error_code` (each at most 64 characters) and
+  `rate_limit_kind`, all `null` when unknown. Ingestion computes them on every path (native, OTLP, the gateway's
+  recorder) from the span's `provider.*` attributes. Type and code are an error envelope's, so a span that did not fail
+  keeps both `null` even when its attributes carry them, and its kind is `null`. Spans stored before migration `0700`
+  keep `null` in all three, and a span sent again is classified again, like its cost.
+- **Error class `gateway`.** `error_class` gains `gateway`: Spanlight's gateway answered without a provider verdict and
+  without a caller mistake. A span whose `spanlight.gateway.error_code` is one of the gateway's own codes takes its
+  class from the code and no other rule runs: `INVALID_REQUEST`, `NO_COMPATIBLE_TARGET`, `MODEL_NOT_ALLOWED`,
+  `PAYLOAD_TOO_LARGE`, `NOT_FOUND`, `METHOD_NOT_ALLOWED` are `client`; `UNAUTHORIZED` is `auth`; `RATE_LIMITED` is
+  `rate_limit` (kind `gateway`); `BUDGET_EXCEEDED`, `UPSTREAM_BLOCKED`, `INTERNAL_ERROR`, `SERVICE_UNAVAILABLE` are
+  `gateway`; `UPSTREAM_TIMEOUT` is `timeout`; `UPSTREAM_UNREACHABLE` is `network`. Any other value (a Lab fault's
+  `FAULT_<SCENARIO>`) falls through to the status rules. `spanlight.gateway.status` is the last of the status
+  attributes, after `error.status`, so it never hides an upstream status. So the `provider_5xx` share no longer
+  includes Spanlight's own 500 and 503, and a gateway body that cannot be forwarded as strict JSON (`NaN`) is a
+  `400 INVALID_REQUEST` of class `client` with a status on its span (it used to be `unknown`).
+- **Two class refinements.** A `400` whose message contains `You have reached your specified API usage limits` or
+  `You have reached your specified workspace API usage limits` (Anthropic's self-set spend limit), and either starts
+  with it or has `provider.error.type` `invalid_request_error`, is `rate_limit`, not `client`, and its kind is
+  `spend_cap`. The second case covers the messages the gateway and the SDKs write, which put the status and the error
+  type in front (`400 invalid_request_error: You have reached …`). A `529` stays `provider_5xx`; its kind is `overloaded`.
+- **Rate-limit kind.** One of `requests`, `tokens`, `spend_cap`, `acceleration`, `overloaded`, `gateway`, `unknown`, or
+  `null` when the span is not a capacity refusal. A refusal is a span of class `rate_limit`, a `provider_5xx` span the
+  provider's table calls overloaded (status 529, `overloaded_error`, `server_is_overloaded`,
+  `service_unavailable_error`, or "overloaded" in the message), or a span with `spanlight.gateway.error_code`
+  `RATE_LIMITED`. The rules, first match wins: the gateway's own limiter is `gateway`; a Lab fault
+  (`FAULT_<SCENARIO>`) is `unknown`; an admitted `provider_5xx` is always `overloaded`, whatever its message says
+  (a provider outage is never charged to the caller's quota); then, for `rate_limit` spans, the provider's table, by
+  the provider lowercased: `anthropic`, `openai` (also used for `openai_compatible`) or a generic one. Each table tries
+  money first (Anthropic `enforced_spend_limit_reached` or a usage/spend limit message; OpenAI `insufficient_quota`,
+  `credit_balance_exhausted`, `organization_spend_limit_exceeded`, `project_spend_limit_exceeded`,
+  `organization_usage_limit_exceeded`, `billing_hard_limit_reached`, or a quota/billing/credit message), then
+  acceleration (`acceleration`; OpenAI `slow_down`), tokens, requests (OpenAI also by `error.type` `tokens` /
+  `requests`), overloaded, and last the `*-remaining` headers at `"0"`; every table ends in `unknown`. The generic
+  table reads the message only (`quota|billing|spend|credit|usage limit`, `acceleration|slow down`, `token`,
+  `request`, `overloaded` or status 529). Headers never make a refusal: a successful span is never classified.
+- **`provider.*` attributes.** `provider.error.type` and `provider.error.code` (strings, at most 64 characters),
+  `provider.request_id` (at most 128), `provider.retry_after_s` (a non-negative finite number; booleans and numeric
+  strings do not count) and `provider.ratelimit` (a flat object of header name to string value). Ingestion filters
+  them whoever sent them, the native route, an OTLP client that sets them itself, or the gateway: a value of the wrong
+  shape is dropped from the stored attributes, never a reason to reject the span. The OTLP mapper itself never makes
+  them from `gen_ai.*` attributes, so an OTLP span gets its kind from the message rules unless its client sets them.
+- **Rate-limit header allowlist.** `provider.ratelimit` keeps at most 29 lowercase names: `retry-after`,
+  `retry-after-ms`, OpenAI's `x-ratelimit-{limit,remaining,reset}-{requests,tokens,project-tokens}`, and Anthropic's `anthropic-ratelimit-{requests,tokens,input-tokens,output-tokens}-{limit,remaining,
+  reset}` and `anthropic-priority-{input-tokens,output-tokens}-{limit,remaining,reset}`. A value that is not printable
+  ASCII of at most 64 characters is dropped, and so is a name that is not ASCII. Nothing else survives, so
+  `authorization`, `x-api-key`, cookies and Anthropic's organization and workspace ids never reach a span. The gateway
+  and the Python SDK keep the whole set on a failed call and only the headroom headers on a success (names ending in
+  `-limit` or `-remaining`, and OpenAI's `x-ratelimit-limit-*` and `x-ratelimit-remaining-*`). Ingestion applies the
+  allowlist again but not that trim, so a native span that reports a success keeps any allowlisted header it sent.
+- **Gateway span attributes.** `spanlight.gateway.status` (the status the gateway answered with) is always set.
+  `spanlight.gateway.error_code` holds the `spanlight_code` of an error the gateway made, and is absent for a success
+  and for a provider error passed through (`UPSTREAM_ERROR`), which sets `provider.error.type` and
+  `provider.error.code` from the provider's envelope instead (OpenAI `error.code`, Anthropic
+  `error.details.error_code`). `provider.request_id` comes from `x-upstream-request-id`. `provider.request_id` and
+  `provider.ratelimit` are set only when the provider answered: never for a cache hit, and never from a gateway-made
+  error's own headers. A stream that fails after a `200` keeps that answer's headroom snapshot.
+- **Attempt log.** `spanlight.gateway.attempt_log` is an array of at most 10 objects, one per attempt in order:
+  `target` (the index in the route's targets), `name` (the credential's name, `null` when unknown), `status`
+  (`null` without a response), `error` (`timeout`, `connection_error`, `blocked`, `cancelled`, `response_too_large`
+  or `null`), `duration_ms`, `retry_after_s`. Past 10 attempts it keeps the first 9 and the last;
+  `spanlight.gateway.attempts` keeps the true count. It holds no headers, bodies or key material.
+- **Provider headers passed to the client.** The gateway now also passes the provider's `anthropic-priority-*`
+  response headers back to the client, matched by prefix like `x-ratelimit-*` and `anthropic-ratelimit-*`.
+- **Key-limit refusals are spans.** A call the `/gw/v1` router refuses with `429 RATE_LIMITED` (the organization
+  ceiling, the key's requests or tokens per minute) is recorded as a span under the key's project, with the key as
+  its source: name = the surface (`chat_completions`, `responses`, `messages`, `models`), `model`, `input`,
+  `request_hash` and the target `null` (the body was never read), class `rate_limit`, kind `gateway`, and
+  `spanlight.gateway.retry_after_s` the `Retry-After` the client was told. Such spans are queued at low priority: once
+  half of the recorder's backlog is taken they are dropped and counted as `gateway` / `overflow` losses. They do not
+  count in the key's per-minute usage. The Gateway overview's overhead percentiles include them.
+- **Refusal spans are sampled.** Each gateway process records at most one refusal span per gateway key per second.
+  Every refusal span carries `spanlight.gateway.refusals_suppressed`: the refusals of that key since its previous
+  span that got no span of their own (`0` when none). Each refusal span starts a trace of its own: a trace id or
+  parent span id the client pinned with `x-spanlight-trace-id` is ignored for a refusal, so a flood never grows one
+  trace. So refusal counts in charts and in the rate-limit kind table are a lower bound; add
+  `refusals_suppressed` for the true number. The client's `429` answer is unchanged.
+- **Refusals and the Doctor, costs and alerts.** Refusal spans (`rate_limit_kind = 'gateway'`) are left out of the
+  spans the Doctor's detectors read, before the per-run span cap, so no detector judges the gateway's own limiter as
+  a provider problem and a flood cannot push real calls out of the cap. They are also left out of a trace's
+  `has_unpriced` flag: a refusal never reached a provider, so its cost is a known zero, not an unknown one. They stay
+  in the unfiltered alert metrics (`error_rate`, `error_calls`, `llm_calls`, `p95_ms`), because the client did get a
+  `429`; a rule filtered with a `rate_limit_kind` other than `gateway` leaves them out.
+- **Credential names in the attempt log.** The attempt log stores the name of every credential tried, not only the
+  last target's, and anyone who can read the project's traces (viewers included) can read it. Names are never key
+  material, but do not put anything sensitive in a credential's name.
+- **A busy database is a 503 inside a call too.** A pool timeout or a statement timeout while the gateway serves a
+  call (for example during the budget check) now answers `503 SERVICE_UNAVAILABLE` with `Retry-After`, like the same
+  failure while checking the key, instead of `500 INTERNAL_ERROR`. It is logged as `gateway.db_busy` at warning level
+  without a traceback; its span is class `gateway`.
+- **`auth_error` fallback.** `fallback.on` accepts `auth_error` (a provider `401` or `403`). It is off unless listed:
+  the default of `fallback.on` is the other four conditions, for new and stored routes alike. A route that lists it
+  needs at least two targets on different credentials, else `422` with
+  `fallback.on: auth_error needs two targets on different credentials`. The check does not look at surfaces: a route
+  with one OpenAI and one Anthropic credential passes, but a call has only one compatible target, so it never falls
+  back. `401` and `403` are still not in the default `retry.on_statuses`.
+- **Retry cost.** `traces.retry_calls` and `traces.retry_cost_usd` (`TraceSummary` and trace detail). Among a trace's
+  `llm` spans with a request hash, gateway cache hits and Lab-faulted spans left out, every span of a hash but the last
+  by `(started_at, span_id)` is superseded; `retry_calls` counts them and `retry_cost_usd` sums their cost. Retries are
+  counted within a trace only. The cost is `null` when any superseded span has no cost, or when the sum is too large
+  for `numeric(14, 8)`; a superseded call that failed before generating (a `429`, an early `5xx`) reports no usage, so
+  its cost, and the trace's retry cost, is `null`. A trace with no superseded span has a known `0` for both. Traces
+  last recomputed before migration `0700` have both `null` until a span of theirs is sent again. An SDK span that is
+  the parent of a gateway span for the same call has the same request hash and counts as one retry; this happens only
+  when the client passes `x-spanlight-trace-id` and `x-spanlight-parent-span-id` itself.
+- **Trace list.** `has_retries=true` keeps traces with `retry_calls > 0` and `has_retries=false` those with
+  `retry_calls = 0`; a trace whose count is unknown is in neither. `sort=retry_cost_usd` orders by retry cost
+  descending with unknown costs last, then `started_at` and `trace_id` descending, with keyset pagination on those
+  three. No index backs this sort.
+- **`client` object on `POST /v1/traces`.** A spans batch may carry
+  `{"sdk", "version", "exporter_id", "dropped_total", "failed_total"}` beside `spans`. `exporter_id` is 32 hex
+  characters; the totals are cumulative for the exporter's lifetime, each in `[0, 2^63)`. Anything else makes the
+  server ignore the whole object; the batch is still accepted. The server stores the increase since the last totals of
+  that `(project, exporter_id)` as `sdk` losses (`dropped`, `failed`) in the current hour: a first sighting counts its
+  whole totals once, equal totals write nothing, a smaller total writes nothing. Exporters not heard from for 7 days
+  are forgotten, so one that reports again counts its whole totals once more. The Python SDK sends it from 0.2.0
+  (a forked child gets a new id and counters starting at 0); a server older than this ignores it.
+- **Telemetry losses.** `telemetry_losses_hourly` counts lost spans per project, hour, source and reason: `gateway`
+  (`overflow`, `error`, `rejected`), `ingest` (`validation`, `usage`, `too_old`, `in_future`, `self_parent`,
+  `attributes_too_large`, `cost_too_large`, `duplicate_in_batch`, `unprocessable`, `other`; the stored value is the
+  bucket, never the rejection text) and `sdk` (`dropped`, `failed`). The hour is the wall-clock hour of the loss, not
+  of the span. Ingest rejections of native and OTLP batches are written in the batch's transaction. Gateway losses are
+  counted in process memory (at most 10,000 keys, beyond which new reasons count as `other`) and written every 60
+  seconds per project, and once more at shutdown for at most 5 seconds; a killed process loses up to a minute of
+  counts, and a flush cut short may count a project twice. A count stops at the largest `bigint` instead of
+  overflowing.
+- **`GET /projects/{id}/telemetry-completeness`.** `stored_spans` (every kind, read like the metrics: rollups for
+  whole hours, raw spans for the rest), `losses` by source and reason over every hour that overlaps the window (a
+  partly covered hour counts whole), `completeness` and `lower_bound`. `completeness` is
+  `stored / (stored + losses)` to four places **rounded down**, so any loss keeps it below `"1.0000"`; `null` when
+  nothing was stored and nothing lost, `"0"` when nothing was stored and something was lost. `lower_bound` is true
+  when SDK `failed` and an ingest rejection are both counted (one span may be in both). Counts above `2^53 - 1` are
+  sent as `2^53 - 1`; the ratio uses the true totals.
+- **`GET /projects/{id}/providers/health`.** Providers seen in the window (calls, failures or retry figures), busiest
+  first (by calls, then failures; on a tie the unknown provider, `provider: null`, comes last). `llm_calls` counts every llm span, Lab-faulted ones
+  included, while `errors`, `by_class` and `rate_limit_kinds` leave faults out, as the error rollup does. `error_rate`
+  is a decimal string of at most six places, rounded half to even, `null` without calls. `with_retry_after` counts refusals that carried a
+  `retry-after` (the provider's, or the one the gateway told the client). Whole hours older than the previous hour come
+  from the hourly error rollup and the rest from raw spans, for the kind table too, at any window length (exact as of the
+  rollup's last run); `approximate` is true when a rollup hour was read. Retry figures cover the traces that started
+  in the window, each under the provider with most of its llm spans (ties by name), so providers add up;
+  `retry_calls` and `retry_cost_usd` are `null` when any such trace is unknown, `retry_cost_unknown` says so for the
+  cost, and `retry_cost_note` explains it. A trace whose retry figures are unknown (stored before the retry columns
+  existed) makes every provider's `retry_calls` and `retry_cost_usd` `null`, not only its own provider's: such a trace
+  is not split by provider, so no provider's figure can be known complete. Each provider lists up to 20 API-affected incidents that overlap the window,
+  with no grace period; an open incident counts as ending now.
+- **`GET /projects/{id}/providers/errors/timeseries`** and **`…/errors/samples`.** The timeseries answers one bucket
+  per hour or day with `by_class` (classes without failures absent) and `approximate`. Samples are the newest failed
+  llm calls with their provider fields, `attempts` (gateway calls only) and `request_id`; a window longer than 24 hours
+  is cut to its last 24 hours with `"clamped": true`, `limit` is 1 to 50 (default 20), and an unknown `error_class`
+  or `rate_limit_kind` is `422`. The cursor is opaque.
+- **Provider incidents.** Stored globally (no tenant data) from three fixed feeds: Anthropic
+  `https://status.claude.com/api/v2/incidents.json`, OpenAI `https://status.openai.com/api/v2/incidents.json` (with
+  `https://status.openai.com/history.rss` when the JSON is not a valid `200`) and Google
+  `https://status.cloud.google.com/incidents.json`, filtered to incidents naming a Vertex AI or Gemini product. Polled
+  every 5 minutes by the worker. `api_affected`: Anthropic when a component name contains `API`; OpenAI when the
+  title or newest update names an API product (`API`, Chat Completions, Responses API, Embeddings, Batch, Realtime,
+  Agents, Fine-tuning, Moderations, Files), or for an RSS row its affected components; Google always. `impact` is
+  `none`, `minor`, `major`, `critical` (Google: outage `critical`, disruption `major`, information `minor`) or
+  `unknown`; `status` is `investigating`, `identified`, `monitoring`, `resolved`, `postmortem` or `unknown` (Google:
+  `investigating` until it ends, then `resolved`). `url` is the provider's own status page: `https://status.claude.com/incidents/<id>` and
+  `https://status.openai.com/incidents/<id>` built from the feed's id (an id that is not a safe path segment skips the
+  incident), and Google's `uri` on `https://status.cloud.google.com/`; any other link skips the incident. An RSS
+  row has impact `unknown` and, once resolved, `resolved_at` = its newest update's time; a later JSON poll upgrades it,
+  and an RSS poll never downgrades a row a JSON poll wrote. A row follows the feed while the feed lists it, and keeps
+  its last state after. A `304` counts as a successful poll (it resets `consecutive_failures`). Incidents are deleted
+  730 days after they started.
+- **`GET /projects/{id}/provider-incidents`.** An incident overlaps `[from, to)` when it started before `to` and was
+  not resolved by `from`; `api_only` defaults to `true`; `provider` is `anthropic`, `openai` or `google` (else `422`);
+  `limit` 1 to 100 (default 50), newest first by `(started_at, id)`. `sources` gives each feed's `last_success_at`,
+  `last_polled_at`, `last_outcome` and `consecutive_failures`. With `PROVIDER_STATUS_POLLING_ENABLED=false` the answer
+  says `"polling": "disabled"` and still lists what was stored.
+- **`provider_incident` citation.** The finding cites the newest incident of its provider that touched the API and
+  overlaps the detector's 30-minute window, allowing 15 minutes after `resolved_at` (an open incident counts as ending
+  now): `evidence.metrics` gains `incident_id`, `incident_title`, `incident_url` and `incident_impact` (all `null`
+  without one), and the summary ends with `Matches the provider's status page incident “<title>” (<impact>).` or
+  `No matching incident on the provider's status page.` The citation only explains: thresholds, severity and the
+  fingerprint ignore it. The provider is matched by exact string, so a span whose provider is `OpenAI` is not matched
+  to the `openai` feed.
+- **Feedback.** `PUT /projects/{id}/insights/{insight_id}/feedback` with `{"verdict": "right"|"wrong", "note"?}` (note
+  at most 500 characters) answers `{verdict, note, updated_at}` and replaces the caller's earlier vote, note included (a vote sent without a
+  note clears the earlier one): one vote per person per insight. It needs the new permission `insights:feedback` (member and above, class `write`, so a read-only
+  token gets `403 TOKEN_SCOPE`); a resolved or muted insight can be voted on; `404` when the insight is not in the
+  project. `DELETE` withdraws the vote (`204`, `404` when there is none). A deleted user's votes are deleted with them.
+  `GET /projects/{id}/insights/{insight_id}` gains `feedback: {mine: {verdict, note} | null, right, wrong}`.
+- **Precision.** `GET /projects/{id}/insights/precision` lists every detector kind the project has an insight of:
+  `right`, `wrong`, `n`, `precision` (right / n) and its Wilson 95 % interval (`wilson_low`, `wilson_high`, z = 1.96),
+  decimal strings rounded half up to four places, `null` when `n` is 0. `meets_target` is precision ≥ 0.8 with
+  `wilson_low` ≥ 0.6 and n ≥ 20, compared on the unrounded values, so `0.79996` shows as `"0.8000"` and does not meet
+  it, and 17 of 21 shows `wilson_low` `"0.6000"` and does not meet it. `from` and `to` filter on the votes'
+  `updated_at` (default: all time; `from` must be earlier than `to`). Across projects, the same table is the operator
+  CLI `spanlight doctor precision [--org <id>]`; no API reads across projects.
+- **Alert rules.** A new metric `error_calls` counts the failed llm calls of the window (`0` when none; migration
+  `0705` adds it to the metric enum). `filters` accept `error_class` and `rate_limit_kind`, one known value each, on
+  `error_rate` and `error_calls` only. They narrow the failed calls, never the calls a rate is divided by:
+  `error_rate` with `error_class` is the failed calls of that class divided by all llm calls. A filtered metric counts
+  classified, non-fault failures, so a Lab drill fires unfiltered rules only, and some class and kind pairs can never
+  count (`rate_limit_kind` only exists on `rate_limit` and `provider_5xx` spans). On another metric the filter is
+  `422 VALIDATION_ERROR` naming the filter sent: `filters.error_class: applies to error_rate and error_calls`, or
+  `filters.rate_limit_kind: …` when only the kind is sent.
+- **Feature counters.** `spanlight_feature_used_total{feature}` counts `provider_health`, `provider_errors_samples`,
+  `provider_incidents`, `telemetry_completeness`, `insight_feedback` (each put and delete) and `insight_precision`.
+  The errors timeseries is part of the health page and counts nothing. `spanlight_provider_status_polls_total
+  {provider, outcome}` counts every feed request, a failed primary and its fallback separately.
+- **Migrations `0700`–`0705`.** `0700` adds the span and trace columns and replaces the `error_class` check;
+  `0701`–`0704` add the error rollup, the provider incident tables, the telemetry loss tables and the feedback table,
+  each project-scoped one under row-level security; `0705` adds `error_calls`. Downgrading below `0700` deletes the
+  spans of class `gateway`, whose class the older check does not allow.
+
+## Trace metadata and attribution (added 2026-10-15)
+
+- **`TraceIn.metadata`.** A trace carries a map of up to 32 string keys to string values, sent as
+  `spans[].trace.metadata` on any span of the trace. A key matches `^[a-z0-9_.-]{1,64}$` (lower case only, no
+  folding); a value is 1 to 256 characters, counted in code points as received. A JSON number or boolean is stored as
+  its JSON text (`42` is `"42"`, `true` is `"true"`, `1e3` is `"1000.0"`); a `null` value drops its key and never
+  deletes one; an object or an array is invalid. An empty object is allowed and means nothing to merge. The native
+  route is strict: the first violation rejects the span alone, reported in `rejected[]` as
+  `trace.metadata: must be an object` (the field is not a JSON object), `trace.metadata: at most 32 keys` (counted
+  after `null` values are dropped), or `trace.metadata.<key>: <rule>` with the rule `key must match
+  ^[a-z0-9_.-]{1,64}$`, `value must be 1 to 256 characters`, `value must be a finite number` or `value must be a
+  string, number or boolean`. Entries are checked in code-point key order, so the reported key is the first invalid
+  one in that order. The message names the key as sent; it is returned to the caller and never logged. The schema
+  types the field as any JSON value (so the OpenAPI document shows it untyped): every rule, the object check
+  included, is applied by the server after parsing, so the messages are the ones above rather than a schema
+  validator's.
+- **Merge rules.** Within a batch the spans of a trace merge in order, and across batches the trace upsert applies
+  the same rule: per key the incoming value wins; a key the trace already has is always updatable, whatever the
+  count; a new key is added only while the trace has fewer than 32, the new keys in Unicode code-point order, so the
+  result does not depend on which batch arrived first; nothing is ever deleted through ingestion. "Lexical order" is
+  code-point order everywhere (`ORDER BY key COLLATE "C"` in the database, Python's `sorted()` in the server and the
+  SDK), so two databases created with different collations keep the same keys. Sources are not ranked: the SDK,
+  native JSON, OTLP and the gateway header merge by arrival order, and a gateway call that joins a trace adds its
+  header keys to it. Replaying a batch leaves `metadata` unchanged. A new key that the cross-batch merge leaves out
+  because the stored trace already has 32 keys is dropped without a count: the design counted it as
+  `reason="count"`, but only the cap within one batch (OTLP and gateway) is counted in
+  `spanlight_trace_metadata_dropped_total`.
+- **Redaction.** Metadata values go through the same secret redaction as payloads, after the length check, so the
+  256-character limit applies to the value as received; a value redaction replaces is kept under its key as
+  `[REDACTED]`. Keys are not redacted (the key pattern admits no secret shape). `tags`, `user_id` and `session_id`
+  are still stored as sent, unredacted: redacting them would change stored values, and is left to a later decision.
+  Email addresses and JWTs are not redacted, in metadata as in payloads. Metadata is stored whether or not the
+  project captures payloads.
+- **No index on `metadata`.** The design planned a partial GIN index on `traces.metadata`. It was not built:
+  `traces` forces row-level security, and Postgres uses a condition as an index condition only when its operator is
+  leakproof, which the jsonb operators `@>`, `?` and `->>` are not, so under the app role the index could never
+  narrow a read. Every metadata read is bounded instead: the trace list and the trace export scan the traces of
+  their `started_at` window through `traces_project_started_idx`, as tag filters do; the attribution view reads the
+  window's traces (24 hours or less) or the daily rollups; budget spend starts from the period's spans. A metadata
+  filter over a long window on a very large project therefore scans that window's traces. The storage cost is the
+  column alone (about 130 bytes for three short pairs, at most about 10.5 KB for 32 maximum-length pairs).
+- **OTLP.** Span and resource attributes named `spanlight.metadata.<key>` are trace metadata, read on any span, not
+  only the root. The key is the rest of the name, lower-cased; when several spellings fold to one key, the one that
+  sorts last wins and each other counts as a dropped entry. The span's entries win over the resource's per key, and
+  the 32-key cap applies after that merge, in code-point order. The attributes are removed from the span's stored
+  `attributes`. Like the rest of the mapping, invalid entries are dropped one by one and never reject the span. A
+  batch that dropped any answers with `partialSuccess` carrying `rejectedSpans: 0` (or the number of spans rejected
+  for other reasons) and the note `trace metadata: <n> entries dropped (invalid spanlight.metadata.* key or value, or
+  over 32 keys)`. Only metadata drops are named there: the environment, release and token-count drops of the OTLP
+  mapping are still logged only, as before. The count is an upper bound: an invalid resource entry is counted once
+  per span of the resource, and a key cut by the cap on both the span and the resource counts twice. A metadata
+  value sent as a non-finite `doubleValue` arrives as the string `"NaN"`, `"Infinity"` or `"-Infinity"` and is kept
+  as that text. Drops are counted in `spanlight_trace_metadata_dropped_total{path, reason}` (`path` `otlp` or
+  `gateway`; `reason` `key`, `value`, `type`, `count` or `header`), never with the key or value.
+- **Gateway headers.** `x-spanlight-metadata` is one JSON object of at most 8,192 bytes. Send it as ASCII, with
+  non-ASCII characters as `\uXXXX` escapes (what `json.dumps` writes by default): header bytes outside ASCII are read
+  as Latin-1, so raw UTF-8 arrives garbled. A header that is too large, is not valid JSON, is nested too deeply or is
+  not an object is dropped whole (`reason="header"`) and the call proceeds without metadata; inside a valid object,
+  invalid entries are dropped one by one and the first 32 valid keys in code-point order are kept. An 8 KiB header
+  holds fewer than 32 maximum-length pairs. `x-spanlight-trace-name` names the trace: trimmed, 1 to 256 characters,
+  else dropped. It sets the name even on a call that joins a trace you started (sending it is asking for that name).
+  Neither header is forwarded upstream. A header sent more than once is read by its last value, for these two as for
+  every other `x-spanlight-*` header (the design said the first value; one rule for all the headers was kept).
+- **Gateway traces are named by the requested model.** A gateway call that starts a new trace names it
+  `"<surface> <model>"` with the model of the request body as the client sent it, before any route alias and before
+  the provider's echo, cut to 256 characters; a body without a model names it by the surface alone. The span's own
+  name and its `model` keep the model the provider answered with. Before this release the trace took the span's name,
+  so for a provider that echoes a snapshot (`gpt-4.1-mini` answered as `gpt-4.1-mini-2025-04-14`) the trace name now
+  carries the requested name; traces stored earlier keep their names. The name is known before the call, so the
+  budget guard, the stored trace and the spend measurement agree on it. A call that joins a trace and sends no
+  `x-spanlight-trace-name` sends no name, so the name the SDK gave the trace is kept.
+- **`GET /api/v1/projects/{id}/traces`** gains `name` (exact match on the trace name; `q` stays a substring search),
+  `metadata_key` (the key pattern) and `metadata_value` (at most 256 characters). Key and value keep the traces
+  whose metadata contains the pair; the key alone keeps the traces without that key (the attribution view's "none"
+  drill-down); a value alone is `422 VALIDATION_ERROR` on `metadata_value` (`metadata_value needs metadata_key.`).
+  Both are bound as parameters. `TraceSummaryOut`, and so the trace detail, gains `metadata` (an object of strings,
+  `{}` when none). `GET .../filters` gains `metadata_keys` and `trace_names`: the distinct metadata keys and trace
+  names of the traces started in the last 7 days (not 30 like the other lists, which would scan 30 days of
+  metadata), at most 100 each, sorted.
+- **`GET /api/v1/projects/{id}/attribution`.** Readable by every role and by an API key with `traces:read`.
+  Parameters: `group_by` (`metadata`, `trace_name`, `user` or `release`; required), `key` (a metadata key, required
+  with `metadata` and refused with any other kind: `422 VALIDATION_ERROR` on `key`), the shared `from`/`to` window
+  (default the last 24 hours, at most 90 days), `environment` (at most 64 characters), `sort` (`cost`, `calls`,
+  `errors` or `retry_cost`; default `cost`), `limit` (1 to 200, default 50) and `cursor`. `user` groups by the
+  trace's end-user id, `trace_name` by its name, `release` by its release. A window of 24 hours or less is read live
+  from the traces (`source: "raw"`, `updated_within_minutes: 0`, the window as requested, any metadata key). A
+  longer window is read from the daily rollups (`source: "rollup"`, `updated_within_minutes: 15`) over the UTC days
+  it touches, `from` floored and `to` ceiled to midnight, and `window` echoes those days; only promoted keys have
+  rollups, so another key is `422 KEY_NOT_PROMOTED` (``Promote `<key>` in project settings to group over more than
+  24 hours``). Omitting `environment` sums every environment; `environment=` with an empty value selects the traces
+  whose environment is the empty string, as on `/traces`, not "any".
+- **Attribution envelope.** `items` holds the values, sorted by `sort` descending with unknowns last, then by value
+  ascending; `next_cursor` is opaque (it holds the last sort value and value) and a forged one is `422`. `none` is
+  the traces without the dimension and `other`, on the rollup path only, the values folded past the daily cap; both
+  are envelope members on every page, never items, and `null` when they hold no traces. `totals` covers every trace
+  started in the window, whatever its group. The ledger property holds: `cost_usd`, `traces`, `llm_calls`,
+  `errors`, `unpriced_calls` and the token sums of the items, `none` and `other` add up to `totals`, which equal the
+  window's traces' own figures. Token and cost sums take every span of the trace; the counts take its `llm` spans.
+  `cost_usd` is a decimal string, `null` when nothing in the group was priced (and from USD 1,000,000 up, as
+  everywhere). `share_of_cost` is the item's cost over `totals.cost_usd` as a number rounded to 4 places, `null`
+  when either is unknown or the total is zero. `retries` and `retry_cost_usd` are `null` when they were not
+  computed (traces stored before retry tracking was added), never 0; `retry_cost_usd` is also `null` when a retried
+  call has no price. A known 0 is 0.
+- **Daily cap and `folded_values`.** The rollup keeps at most 1,000 values per project, UTC day, environment, kind
+  and key, ranked by cost (unknown last), then LLM calls, then value; the rest of the day are summed into one
+  `other` row. The window total stays exact, since every trace is in exactly one row per day. `folded_values` is the
+  sum of the per-day, per-environment folds, so a value folded on two days counts twice: it is an upper bound on
+  the distinct values in `other`, and the dashboard reads it as "Up to N more values, daily cap of 1,000" (the
+  design said "N more values"). The raw path has no cap and never returns `other`.
+- **Promoted keys.** `PATCH /api/v1/projects/{id}` takes `promoted_metadata_keys`: at most 5 keys after repeats are
+  dropped, in the order sent, each matching the key pattern (`422 VALIDATION_ERROR` otherwise); `[]` promotes none.
+  It needs `project:write` (admins and owners), and `ProjectOut` returns the list. A newly promoted key is backfilled
+  over the last 7 UTC days (today included) by the next refresh; a key removed from the list has its rollup rows
+  deleted by the same pass, so re-promoting it brings back 7 days, not more. The `project.update` audit event keeps
+  `changes` (the fields sent, as everywhere) and, when the promoted list changes, `previous:
+  {"promoted_metadata_keys": [...]}` with the list it replaced (the design said `changed`). Keys are identifiers,
+  never values, so they may be audited.
+- **Refresh.** The attribution refresh runs every 15 minutes over yesterday and today (UTC); the first pass of each
+  UTC day also recomputes the 6 days before them, for late spans and price replays. Spans later than that need
+  `spanlight attribution backfill --project <id> --from <day> --to <day> [--key <key>]`, bounded by retention.
+  Rollup rows follow the project's retention. `ATTRIBUTION_ENABLED=false` stops the refresh: windows over 24 hours
+  stop updating, shorter ones stay live.
+- **Exports.** `POST /api/v1/projects/{id}/exports` takes `kind`, `traces` by default, so every earlier body is
+  unchanged. `exports.kind` is the existing `export_kind` enum, which gains the value `attribution` (the design
+  described a text column with a CHECK). An attribution export is `{"kind": "attribution", "format": "csv",
+  "group_by", "key", "filters": {"from", "to", "environment"}}`, CSV only, checked like the attribution read before
+  anything is queued (the key rule, `422 KEY_NOT_PROMOTED` over 24 hours), with the window at most 90 days. Its
+  columns are `group_by, key, value, bucket, traces, llm_calls, errors, unpriced_calls, input_tokens, output_tokens,
+  cost_usd, retries, retry_cost_usd, folded_values`: values first by cost descending with unknowns last, then the
+  `none` row, then `other`; `bucket` is `value`, `none` or `other`; an unknown is an empty cell; every cell gets the
+  formula protection. More than 100,000 rows ends it `failed` with `EXPORT_TOO_LARGE`. `ExportOut` gains `kind`,
+  `group_by` and `key`; an attribution export's `filters` echoes its window and environment. Trace exports accept
+  `metadata_key` and `metadata_value` with the trace list's meaning (but not `name`); the trace CSV gains a last
+  column `metadata`, the JSON object with sorted keys and non-ASCII characters as they are, and JSONL a `metadata`
+  object.
+- **Export validation paths.** Trace-export `422 VALIDATION_ERROR` fields keep their paths (`format`, `filters.to`,
+  and so on). An attribution body's errors are named under its kind: `format: "jsonl"` with `kind: "attribution"` is
+  reported on `attribution.format`. A trace export's `metadata_value` without `metadata_key`, and a window whose
+  `from` is not earlier than `to`, are reported on `filters`, not on the field itself.
+- **Budget scopes.** `scope` gains `metadata` and `trace_name`. A `metadata` scope's `scope_id` is `<key>=<value>`,
+  split at the first `=` (a key has no `=`): the key matches the key pattern and the value is 1 to 256 characters,
+  stored as sent (a leading space makes a different value). A `trace_name` scope is the trace's name, trimmed and
+  stored trimmed, 1 to 256 characters. `scope_id` may now be 400 characters (it was 200; a metadata scope reaches
+  321). The key need not be promoted. A `scope_id` its scope cannot use is `422 UNKNOWN_SCOPE`, now with the detail
+  `The budget's scope_id does not name anything its scope can measure.` for every scope, and a `scope_id` field
+  error that says why: `Not a gateway key of this project`, ``A metadata budget's scope is `key=value` with a valid
+  key`` or `A trace name budget's scope is the trace's name`. The `budget.exceeded` and `alert.resolved` webhook
+  payloads carry the new `budget.scope` values, with the pair or the name in `budget.scope_id`; `scope_id` is still
+  kept out of the audit metadata.
+- **Budget spend and matching.** A metadata or trace-name budget measures the priced spans of the period whose trace
+  carries the pair or has the name, read from the spans and their traces rather than the hourly rollups, like a
+  `user` budget. Metadata belongs to the trace, so a key added to a trace later puts that trace's earlier spans of
+  the period under the budget. The gateway's guard matches a keyed call by its headers first. A call that joins a
+  trace by id and lacks either header adds the stored trace's name and metadata (one primary-key read; the header
+  wins per key); a trace no span of which is stored yet gives nothing, so matching is best effort for joining calls
+  (send the headers to be sure). A call that starts a new trace matches by the name it will get (see above).
+  In-process callers (judges, the playground, experiments, the demo job) keep the project, model and user checks.
+- **Blocking is a soft limit.** The `402 BUDGET_EXCEEDED` message, and the demo job's skip reason, end with
+  `(soft limit, measured every 60 s)`, for example `Blocked by a Spanlight budget: Budget "Acme daily" is exhausted:
+  $201.10 of $200.00 spent today (soft limit, measured every 60 s).` The `action` values are unchanged: `block`
+  still reads evaluated state, which the alert worker writes every 60 seconds. On 2026-10-14 a $0.002 budget started
+  blocking 85.5 s after its limit was crossed and spend reached $0.0122, six times the limit.
+- **Attribution page.** The `other` row reads "Up to N more values, daily cap of 1,000" (see above) and is not a
+  link. A row links to the trace list with the same window and environment: a metadata value with `metadata_key`
+  and `metadata_value`, the metadata `none` row with `metadata_key` alone, a trace name with `name`, a release with
+  `release`, and a user with the trace list's own `user` address parameter (the design said `user_id`). The `none`
+  rows of the trace name, user and release kinds ("No trace name", "No user", "No release") are not links, since
+  the trace list cannot filter on a missing name, user or release. A `null` retries cell has the tooltip "Retries
+  are not computed for traces stored before retry tracking was added".
+- **Feature counters.** `spanlight_feature_used_total{feature}` counts `metadata_set` (an ingest batch that stored
+  spans carrying metadata, even if the merge added nothing), `attribution_view`, `attribution_export`,
+  `budget_metadata_scope` and `budget_trace_name_scope` (a budget created with the scope).
+  `spanlight_attribution_refresh_duration_seconds` times each project's refresh, and
+  `spanlight_attribution_folded_values_total` counts values folded into `other` on every refresh that folds them.
+- **Migrations `0800`–`0804`.** `0800` adds `traces.metadata` (`NOT NULL DEFAULT '{}'`, no backfill, a CHECK that it
+  is an object) and the `merge_trace_metadata` function. The function keeps Postgres's default `EXECUTE` for
+  `PUBLIC`: it is pure (`IMMUTABLE`) and runs on every trace upsert, so a deploy that skips `spanlight
+  ensure-app-role` still ingests; no extra grant step is needed for it. `0801` adds `projects.promoted_metadata_keys`, `0802` the `attribution_rollups_daily` table under row-level
+  security, `0803` the `attribution` export kind and `0804` the two budget scopes with the 400-character
+  `scope_id`. Downgrades are lossy: below `0804` the budgets of the two scopes and every budget whose `scope_id` is
+  longer than 200 characters are deleted; below `0803` the attribution exports are deleted and their files are left
+  in the bucket; below `0800` every trace's metadata is lost.
+
+## OTLP (`POST /v1/otlp/traces`) conventions, usage rollups and usage state (added 2026-10-15)
+
+This section supersedes, for OTLP spans, the "Kind" bullet and the content-attribute sentence of the "OTLP" section
+above, and the status attribute list of "Span error class, request hash and finish reason". The public mapping
+reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
+
+- **Conventions and detection.** Each span is mapped on its own, never from its parent, so a trace may mix
+  conventions and a batch may arrive in any order. The first matching rule wins: `openinference.span.kind` present is
+  `openinference`; `ai.operationId` present, or any `ai.*` key together with `ai.model.id`, is `vercel_ai`;
+  `traceloop.span.kind` present is `traceloop`; any `gen_ai.*` key is `gen_ai`; otherwise `none` (the earlier kind
+  rules: `http` for a client span with `http.*`/`url.*`, `retrieval` with `db.*`, else `other`; no provider, model,
+  usage or content). When the detected convention is not `gen_ai` and the span has `gen_ai.*` keys, the `gen_ai`
+  reading fills every field the detected mapper left `null`, usage field by field; the detected mapper's metadata keys
+  win, the consumed keys are united, and the kind is always the detected mapper's.
+- **`spanlight.convention` and `spanlight.operation`.** Every OTLP span stores `spanlight.convention` (`gen_ai`,
+  `openinference`, `vercel_ai`, `traceloop`, `none`), overwriting a client value. `spanlight.operation` is the
+  convention's finer kind, stored only when non-empty: `gen_ai.operation.name` as sent, the OpenInference span kind
+  trimmed and lower-cased, `ai.operationId` as sent (lower-casing it would lose the camel case of the Vercel ids) and
+  `traceloop.span.kind` as sent (Traceloop emits only its lower-case enum, so a padded value is stored as sent). A
+  client-sent `spanlight.operation` is removed when the mapper gives none.
+- **Convention counter.** `spanlight_otlp_convention_spans_total{convention}` counts accepted OTLP spans. It is
+  incremented in the router after the batch is stored, from the spans that were not rejected, rather than in the
+  mapper as the design placed it, so a span that validation rejects is never counted.
+- **Field tables.** The attributes read for each field, per convention, are listed in the mapping reference. Calls
+  the design left open: OpenInference reads `llm.system` before `llm.provider` (the vendor prices are keyed on);
+  `input.value` / `output.value` are parsed as JSON only when the mime type is exactly `application/json`; the Vercel
+  provider drops a `.chat`, `.messages`, `.responses`, `.completion` or `.embedding` ending; the Vercel output is an
+  object `{text, tool_calls, object}` with absent members left out, `ai.toolCall.result` on tool spans, and `null` when
+  empty; a root span's trace name comes from `ai.telemetry.functionId`, or `traceloop.workflow.name` then
+  `traceloop.entity.name`, before the span name. Mapper output carries three fields the design did not list:
+  `trace_name`, `output_tokens_implied` and `dropped_messages` (and the usage carries the unknown tier spelling for
+  `usage.service_tier_raw`); convention metadata is passed as `dict[str, object]`, raw.
+- **One "first value" rule.** Every mapper reads with the rule the usage reader already had: the first key present
+  whose value is not an empty string. The mappers' read helper wraps that function rather than copying it. The
+  `gen_ai` usage still goes through the existing usage reader, so tier spellings, `usage.service_tier_raw` and
+  `spanlight.usage.web_search_requests` behave as before; the other conventions fill only the four token counts, and
+  the tier and web searches reach their spans only through the `gen_ai` fallback.
+- **Content attributes are consumed by presence.** Every content attribute a convention defines is removed from the
+  stored `attributes` when it is present, whether or not it was the one read, so prompt text is stored only as
+  `input`/`output`, under the payload capture setting, the redaction and the 32 KB cap, and a large unread copy cannot
+  trip the 64 KB attributes limit and reject the span. `gen_ai`: `gen_ai.input.messages`, `gen_ai.prompt`,
+  `gen_ai.output.messages`, `gen_ai.completion`, `gen_ai.system_instructions` (also when it is not prepended), and the
+  flattened `gen_ai.prompt.*` / `gen_ai.completion.*` keys when they are read. OpenInference: `input.value` and
+  `output.value` even when flattened messages win (the design kept `input.value` in `attributes`), and the flattened
+  `llm.input_messages.*` / `llm.output_messages.*` keys; the mime types stay. Vercel: `ai.prompt.messages`,
+  `ai.prompt`, `ai.toolCall.args`, `ai.value`, `ai.values`, `ai.response.text`, `ai.response.toolCalls`,
+  `ai.response.object`, `ai.toolCall.result`. Traceloop: `traceloop.entity.input`, `traceloop.entity.output`. Usage,
+  mime types, finish reasons, ids, `ai.usage.reasoningTokens` and `ai.usage.totalTokens` stay. A span carrying two
+  different texts in one slot keeps only the one read.
+- **Flattened messages.** `prefix.<index>.<rest>` keys are grouped by index in numeric order. An index is
+  `0*[0-9]{1,4}`: leading zeros are free and four significant digits remain (`00012` is 12; `012345` is not an index
+  and its key stays in `attributes`). At most 256 indices per prefix (the lowest kept) and four levels of lists, the
+  message index included; a key past a limit, or one that would overwrite a value already set, is dropped and
+  counted. Dropped keys are still removed from `attributes`. The count is logged as `messages` in
+  `otlp_values_dropped` and is not named in `partialSuccess`.
+- **Kinds.** `gen_ai.operation.name`: `chat`, `text_completion`, `generate_content`, `embeddings` are `llm`;
+  `execute_tool` is `tool`; `invoke_agent`, `create_agent`, `invoke_workflow` are `chain`; `retrieval` is
+  `retrieval`; any other value, a whitespace-only one included, is `other`; absent or empty is `llm` (the old rule).
+  **Changed:** a `gen_ai` span with `execute_tool` or `invoke_agent` was `llm` and is now `tool` or `chain`, so it no
+  longer counts as an LLM call. OpenInference `LLM`/`EMBEDDING` `llm`, `TOOL` `tool`, `CHAIN`/`AGENT` `chain`,
+  `RETRIEVER`/`RERANKER` `retrieval`, anything else `other`. Vercel `…doGenerate`/`…doStream`/`…doEmbed` `llm`,
+  `ai.toolCall` `tool`, any other `ai.*` operation `chain`. Traceloop `workflow`/`task`/`agent` `chain`, `tool`
+  `tool`, anything else `other`. Values are compared trimmed and lower-cased. No new `SpanKind` value.
+- **Error classification.** `STATUS_ATTRIBUTES` is `spanlight.gateway.upstream_status`, `http.response.status_code`,
+  `http.status_code`, `error.status`, `spanlight.gateway.status`. `error.type` holding 1 to 3 ASCII digits is a numeric
+  status read after those five (`503` is `provider_5xx`). Otherwise its text is matched against the message patterns
+  before the status message, as the more precise text, with one floor: when `error.type` classifies as `client`
+  (`BadRequestError`, which OpenAI raises for context-length and content-filter 400s too), the status message is tried
+  and `client` is only the fallback, so adding an attribute never makes the class worse. A span whose status is not
+  `error` has no class whatever `error.type` says. Patterns added: `ratelimiterror` (rate limit), `permissiondenied`
+  (auth), `contextwindowexceeded` (context length) and `badrequesterror` (a new `client` group, matched last so it
+  never shadows a more specific phrase). `authenticationerror`, `apitimeouterror` and `apiconnectionerror`, which the
+  design listed, are not added: `authentication`, `timeout` and `connection` already match them as substrings.
+- **Finish reasons.** New attribute sources after the existing four: `ai.response.finishReason`,
+  `llm.response.finish_reason`, `gen_ai.response.finish_reason`, `gen_ai.completion.0.finish_reason`,
+  `llm.finish_reason`. New canonical values: Vercel `content-filter` `content_filter`, `tool-calls` `tool_calls`,
+  `error` and `unknown` `other`; Gemini `safety`, `recitation`, `blocklist` `content_filter`,
+  `malformed_function_call` `other`. On OTLP the mapper passes its convention's raw value as the span's own finish
+  reason (the first source, at most 64 characters): `gen_ai.completion.0.finish_reason` for `gen_ai`, which must be
+  read before the flattened completions are consumed, `llm.finish_reason` for OpenInference and
+  `ai.response.finishReason` for Vercel. The `gen_ai.completion.0.finish_reason` entry in the attribute source list
+  therefore only serves spans sent to the native endpoint.
+- **Time to first token.** `ai.response.msToFirstChunk` in milliseconds; `gen_ai.client.operation.time_to_first_chunk`,
+  else `gen_ai.response.time_to_first_chunk`, in seconds times 1000. Numeric text (`"0.42"`) is read as the number. A
+  value that is negative, not finite or not numeric is dropped and counted as `ttft`; the span is kept.
+- **Embeddings.** An embeddings span (`gen_ai.operation.name = embeddings`, `llm.request.type = embedding`,
+  OpenInference `EMBEDDING`, a Vercel operation ending `.doEmbed`) with an input count and no output count stores
+  `output_tokens = 0` and the attribute `usage.output_tokens_implied = true`. Without an input count nothing is
+  implied.
+- **`usage.unreported_reason = "not_exported"`.** Set on an OTLP span mapped as `llm` with a model and none of the
+  four token counts (input, output, cached, cache write).
+- **Usage rollups.** A span is a usage rollup when it has an input or output token count and a descendant in the same
+  `(project_id, trace_id)`, reached through `parent_span_id`, has one too. Stored as `spans.usage_rollup` (migration
+  `0900`: `boolean NOT NULL DEFAULT false`, catalog-only, `lock_timeout = '5s'`; the downgrade drops it). The upsert
+  column list does not include it, so a replay never resets it. Every batch recomputes the flags of its traces in its
+  own transaction, after the span upsert and before the trace totals, under the same trace locks; the recursion stops
+  at depth 64, so a parent-id loop of usage spans flags both. The flag ignores the gateway-ownership guard of the
+  upsert (it is derived, not client data). Rows are kept as sent: tokens, cost, model and pricing version.
+- **Who leaves rollups out.** Every sum of tokens or cost, and every count of unpriced calls; counts of spans, calls
+  and errors are unchanged. Trace totals (`input_tokens`, `output_tokens`, `cost_usd`, `has_unpriced`) now exclude
+  rollups, so a trace's cost can be lower than the sum of its spans' costs; the hourly rollups (tokens, cached tokens,
+  cost, unpriced calls), the raw path of the metrics endpoints for windows up to 24 hours (KPIs, timeseries, models),
+  alert metrics and budget spend, the Doctor's LLM-span context, Users (`tokens`, `cost_usd` and also
+  `unpriced_calls`, which the design listed among the unchanged counts), prompt usage, the daily cost rollups behind
+  reconciliation (sums only), attribution, and the unpriced-models list. Retry grouping skips rollups, so an SDK span
+  that is the rollup parent of a gateway span for the same call is not a retry. The Doctor's context filter also hides
+  a failed rollup span from its error detectors; the failure still counts in the trace and the error metrics. The
+  gateway overview's per-key spend and the demo job's month-to-date spend are not filtered: they read gateway and demo
+  spans, which are not parents of other usage spans.
+- **Rollups elsewhere.** The cost explanation of a rollup has the status `usage_rollup` and the message "Usage rollup:
+  this span repeats the usage of its child spans and is excluded from totals.", ahead of every other status. Each span
+  of a JSONL trace export carries `usage_rollup` after `cost_usd`; there is no CSV column, because span rows exist
+  only in JSONL (a trace CSV row has the trace totals, which already exclude rollups). The hourly rollups recompute the
+  last 48 hours each run; a flag that flips on an older hour is corrected by `spanlight rollups backfill`.
+- **No backfill in the migration.** Rows stored before `0900` keep `false` until a batch touches their trace. The
+  admin command `spanlight recompute-usage-rollups --since <Nd|Nh> [--batch-size 500]` recomputes the flags and the
+  trace totals of the traces started in that window, one transaction per batch of traces of one project, through the
+  worker's row-level-security bypass; `--since` is required, and a value that is not `Nd` or `Nh` is a usage error.
+- **Span read model.** `SpanOut` gains `usage_rollup: bool` and `usage_state`, an enum computed on read from `kind`,
+  `model`, the two token counts, `cost_usd` and `usage_rollup` (in the OpenAPI schema), never stored. Precedence:
+  `rollup`, `priced`, `not_applicable`, `model_unknown`, `usage_not_reported`, `partial_usage`, `no_price`. `rollup`
+  comes before `priced` (the design listed `priced` first): a rollup's usage is counted on its children even when it
+  has a cost of its own. The trace page shows a rollup with the badge "Counted on child spans" (the design's tooltip
+  read "Counted on its child spans"), and a `partial_usage` cost with the tooltip "Usage is incomplete, so no cost was
+  computed" (the design was silent).
+- **Metadata from conventions.** Trace metadata has one owner on OTLP: the `spanlight.metadata.*` reader. The mappers
+  collect `ai.telemetry.metadata.*`, `ai.settings.context.*` (the first wins per key), `traceloop.association.properties.*`
+  and the OpenInference `metadata` JSON object, keys lower-cased and values raw, and the reader cleans them leniently
+  and puts them under the resource's and then the span's `spanlight.metadata.*`, before the 32-key cap. Numbers and
+  booleans become their JSON text; arrays and objects are dropped and counted (the design JSON-encoded non-string
+  OpenInference values; the trace metadata contract treats objects and arrays as invalid). A key is never rewritten.
+  The OpenInference `metadata` attribute is removed from the span only when it is an object. The `partialSuccess`
+  note still reads "invalid spanlight.metadata.* key or value, or over 32 keys", and its count includes the entries
+  dropped from the conventions' attributes.
+- **Support promise.** A library and version is supported when it has a green fixture: a recording of what its
+  exporter sends, under `sdks/fixtures/otlp/<library>/<version>.json`, replayed through the mapper by the test suite.
+  A weekly workflow (`otlp-matrix-weekly.yml`) records the latest versions against the committed fixtures and keeps
+  one labelled issue up to date when they differ. The recipes pin the library and every package they import beside it,
+  the model clients, LangChain, `@ai-sdk/openai` (one major per `ai` major) and `zod` included; dependencies those
+  packages pull in resolve at record time. The weekly job installs the `ai-v5`, `ai-v6` and `latest` dist-tags. A
+  fixture is recorded with `record.py --library <library> --version <version>` (Python) or
+  `node record.mjs --version <version> --mode genai|legacy` (Node); `--check` re-records and diffs `expected` field
+  by field against the committed file. Both recorders run with `TMPDIR=/tmp`, so no per-user temporary path reaches a
+  committed fixture. The Node recorder seeds `Math.random` and steps `performance.now` by one millisecond per call, so
+  span ids and the time to first token in the Vercel fixtures are stable harness values, not measured latencies. The
+  published Vercel AI SDK recipe is the file the `vercel-ai-genai` recorder imports; there is no separate recipe test
+  or CI job for it. Not recorded yet: the `openinference-anthropic` library, the LiteLLM Anthropic cache read and write
+  scenarios and the Traceloop embeddings scenario (they need captured Anthropic and embeddings response bodies), and a
+  successful `generateObject` (the fake provider has no JSON-object body, so that scenario records the failure path). The recording harness's fake provider picks its default scenario per route
+  (`chat` for Chat Completions, `responses`, `embeddings`, `messages`), not `chat` for every route as first designed;
+  the `x-fixture-scenario` header still overrides it.
+- **What the recorded exporters send, where it differs from the design (recorded 2026-10-17).**
+  - Traceloop 0.62.4 (`opentelemetry-instrumentation-openai` and `traceloop-sdk`) sends a provider span's messages as
+    `gen_ai.input.messages` and `gen_ai.output.messages`, not the flattened `gen_ai.prompt.<N>.*` /
+    `gen_ai.completion.<N>.*` keys the design expected; its only other mode (`use_attributes=False`) moves content to
+    log events. The flattened keys are still read for older releases.
+  - Traceloop sends the finish reason `tool_call` (the OpenTelemetry GenAI singular). It is now canonical `tool_calls`.
+  - LiteLLM 1.105.1 writes `gen_ai.usage.input_tokens` / `gen_ai.usage.output_tokens` and `gen_ai.input.messages` /
+    `gen_ai.output.messages` in its default (legacy) mode too, not `gen_ai.usage.prompt_tokens` and flattened
+    messages; the modes differ in the provider key (`gen_ai.system` or `gen_ai.provider.name`), the span name
+    (`litellm_request` or `chat <model>`) and the `raw_gen_ai_request` child, which only the default mode opens.
+    LiteLLM sends `gen_ai.response.finish_reasons` as text holding a JSON array (`'["stop"]'`); the finish reason
+    reader now parses such text in `response.finish_reasons` and `gen_ai.response.finish_reasons` as the list (text
+    that is not a JSON array is still not read). On the OpenAI route LiteLLM reports cached prompt tokens only inside
+    the `metadata.usage_object` text, so those spans have no cached count.
+  - OpenInference sends the time to first token of a stream as a span event (`First Token Stream Event`), not as a
+    metric as the design assumed. Span events are not read, so the field stays `null`; the compatibility page marks it
+    "not read". On a failed call `openinference-instrumentation-openai` 0.1.65 sets no `llm.model_name`; the request
+    model is only inside the `llm.invocation_parameters` JSON, which is not a model key, so the span is
+    `model_unknown`.
+  - The OpenInference LangChain instrumentation puts LangChain's run metadata (`ls_provider`, `ls_model_name`,
+    `ls_model_type`, `ls_integration`, `ls_retriever_name`) in the `metadata` attribute, so those keys land in trace
+    metadata and count towards its 32 keys; object values such as `lc_versions` are dropped and counted.
+  - The GenAI mode of the AI SDK 7 (`OpenTelemetry` from `@ai-sdk/otel` 1.0.142) sends no runtime-context metadata, and
+    sends `functionId` as `gen_ai.agent.name`, which is not read as the trace name, so its traces have no metadata
+    and are named after the root span (`invoke_agent <model>`). The legacy mode (`LegacyOpenTelemetry`) sends the
+    metadata as `ai.settings.context.<key>` and the trace name as `ai.telemetry.functionId`.
+
+## Review loop (added 2026-10-15)
+
+- **Queue items carry a `reason`.** `annotation_queue_items.reason` is one of `manual`, `doctor_finding`, `error`,
+  `cost_outlier` and `random`, default `manual`, so every item that existed before reads `manual` and an item added
+  with `POST …/annotation-queues/{queue_id}/items` is `manual` with no detail. `reason_detail` is a JSON object or
+  `null` and holds numbers, ids and the trace name only, never payload text: `doctor_finding` `{insight_id, kind}`,
+  `error` `{error_count, first_error_span_id, error_class}` (`error_class` is `null` when the span has none),
+  `cost_outlier` `{cost_usd, p99_usd, trace_name, sample}` (money as 4-place strings) and `random` `{rate}` (a
+  4-place string), each with `also`, the list of lower-priority reasons the same trace matched. `QueueItemOut` gains
+  `reason` and `reason_detail`; `QueueOut.progress` gains `by_reason`, `{reason: {pending, done, skipped}}` with every
+  reason present, zeros included; `GET …/items?reason=` keeps one reason.
+- **One review policy per project.** `GET`, `PUT`, `DELETE /api/v1/projects/{project_id}/review-policy`,
+  `POST …/review-policy/runs` and `GET …/review-policy/selections`. Reads need `project:read`; set, delete and run
+  need `annotations:write`. These routes take a session or a personal access token, never a project API key. `PUT`
+  creates or replaces the policy and omitted fields take their defaults (`enabled` true, `random_rate` `0.0100`,
+  every include true, `daily_cap` 50, `environments` empty). `random_rate` is 0 to 0.05 at 4 places; `daily_cap` is
+  1 to 500; `environments` holds at most 20 names of 1 to 64 characters, and naming an internal environment
+  (`evals`, `playground`, `experiments`, `doctor`) is `422 VALIDATION_ERROR`. A policy whose includes are all off with
+  a random rate of 0 is `422 NOTHING_SELECTED`. A queue of another project is `404`.
+- **`next_run_at`** is the next 01:00 UTC strictly after the moment of the read (at exactly 01:00 it is the next
+  day's), and `null` while the policy is disabled. Re-enabling a policy resumes from the next night; missed days are
+  not caught up (run them by hand).
+- **The selection window.** Every UTC day from 01:00 the worker selects the traces that **ended** during the previous
+  UTC day: `ended_at` in `[00:00, 24:00)`, half-open, so a trace ending exactly at midnight belongs to the next day.
+  The scan is bounded on `started_at` (no earlier than one hour before the day starts), so a trace that ran longer
+  than an hour is never selected. A candidate has at least one `llm` span, is not in an internal environment (even
+  when the policy lists one, for a row written before the check), carries none of the tags `spanlight:judge`,
+  `spanlight:playground`, `spanlight:replay` or `spanlight:experiment:*`, and, when the policy names environments, is
+  in one of them. `REVIEW_SELECTION_ENABLED=false` stops the nightly run; manual runs still work.
+- **Priority and the random floor.** Reasons rank `doctor_finding` (the trace is in `evidence.trace_ids` of an
+  `open` insight; acknowledged, resolved and muted insights do not select) > `error` (`error_count > 0`) >
+  `cost_outlier` > `random`. A trace becomes one item under its highest reason, the others listed in
+  `reason_detail.also`. The last `ceil(daily_cap / 4)` slots are held for random picks and released to the higher
+  reasons only when there are fewer random candidates. Inside a reason the order is the sampling hash
+  (`sha256("<policy_id>:<trace_id>")`, the evaluator sampler's function salted with the policy id), never time, so a
+  re-run picks the same traces and a higher rate only adds traces. Each reason's read stops at `daily_cap` rows.
+- **The cost outlier** is a trace whose `cost_usd` is strictly above `percentile_disc(0.99)` of the known costs of
+  the traces with the same `name` that ended in the 7 UTC days ending with the selected day, when that group has at
+  least 30 known costs. A trace with no name or no known cost is never an outlier. The 7-day group is every named,
+  priced trace of the project in those days: it is not narrowed by the policy's environments or by the candidate
+  rules (internal traces carry their own names, so they do not mix with an application's).
+- **Dedupe.** The candidate reads skip any trace that already has an item in the policy's queue, whatever its
+  `span_id` (a span queued by hand keeps the policy from queueing its trace), and the insert is
+  `ON CONFLICT DO NOTHING` on `(queue_id, trace_id, span_id)`. A trace is selected only for the day it ended in; a
+  late span that moves `ended_at` into the next day can make it a candidate again, and the conflict skips it unless
+  the policy points at another queue by then (the trace then appears in both). `skipped_duplicates` counts the
+  conflicts plus the traces of the day the queue already held, so it is not only "picked and then refused".
+  `cap_hit` is true when the cap was full and a candidate was left out (counted in distinct traces).
+- **One selection per project and day.** The per-project job claims the `review_selections (project_id, day)` row
+  first, then reads, inserts the items and completes the row in one transaction, so a crash leaves nothing and a
+  second run for the same day (two workers, a retry, a manual run) ends `done` with outcome `already_selected` and
+  queues nothing. Migration `1003` adds `already_selected` to the allowed values of `jobs.outcome`. A policy deleted
+  or disabled after its job was queued releases the claim and selects nothing. `candidates` and `queued` hold the
+  four reasons as keys, zeros included; a reason the policy leaves out reads 0.
+- **Manual runs.** `POST …/review-policy/runs {day}` covers a **completed** UTC day from yesterday back to 7 days:
+  today or later is `422 DAY_NOT_COMPLETE`, older is `422 DAY_TOO_OLD`, a day that already has a selection row is
+  `409 ALREADY_SELECTED`, no policy is `404`. It answers `202 {day, job_id}`, where `job_id` is the job's id as an
+  integer (jobs ids are 64-bit integers, not UUIDs). The run enqueues the same job and dedupe key as the nightly run,
+  so a run already queued for the day is returned, not duplicated. Known limit: a day whose job failed all three
+  attempts cannot be requested again (the dedupe key stays taken).
+- **Selection history.** `GET …/review-policy/selections` lists `SelectionOut` rows newest day first, at most 30 a
+  page, keyset by `day`. The history outlives the policy and the queue: deleting the queue sets `queue_id` to `null`.
+- **`QUEUE_IN_USE`.** `DELETE …/annotation-queues/{queue_id}` is `409 QUEUE_IN_USE` while a review policy fills the
+  queue (the foreign key refuses it too). Delete the policy or point it at another queue first. Chosen over a
+  cascade so that a policy never stops silently.
+- **The failure category is a convention.** A failure category is an ordinary categorical score named
+  `failure_category`. `POST …/score-configs/failure-category {categories}` (`scores:write`) creates the explicit
+  categorical config with 2 to 30 distinct categories that must include `none`, and answers `201`; a config of that
+  name already existing is `409 NAME_TAKEN` (edit it with `PATCH /score-configs/{config_id}`). `none` is checked only
+  at creation: a later `PATCH` may remove it. A review policy's queue must list that config in its
+  `score_config_ids`, else `PUT /review-policy` is `422 QUEUE_LACKS_FAILURE_CATEGORY`. A `failure_category` config
+  that is not categorical (an implicit numeric one created by a stray score) counts as missing: the policy is
+  `422 QUEUE_LACKS_FAILURE_CATEGORY` and the rates read below is `404`.
+- **Failure-category rates.** `GET …/releases/failure-categories?from&to&environment` (`project:read`, and a
+  project API key with `traces:read` for its own project) uses the window rules of `GET /releases` (default last
+  24 hours, at most 30 days, the same releases in the same order, traces without a release as `release: null`). A
+  trace counts once, under its **latest** `failure_category` score (highest `created_at`, ties by the higher id,
+  whatever its `span_id`). `reviewed` is the number of such traces of the release; each category has `count`,
+  `rate = count / reviewed` and the Wilson 95 % bounds `ci_low`, `ci_high`, all 4-place strings. A category no trace
+  of the release carries is `count 0` with the interval of 0 of n. A release with `reviewed = 0` has `rates: {}`,
+  never 0 %. Categories come in the config's order; a label no longer in the config is still counted, under its own
+  name, after the configured ones (alphabetically). `404 NOT_FOUND` until the project has a categorical
+  `failure_category` config.
+- **Replay classification.** `GET …/traces/{trace_id}/spans/{span_id}/replay-source` (`project:read`) classifies a
+  span without calling a provider; `POST …/playground/replays` applies the same rules. The first match wins:
+  1. not an `llm` span: `REPLAY_NOT_LLM`;
+  2. no stored input: `REPLAY_NO_PAYLOAD`;
+  3. `truncated` with a string input: `REPLAY_PAYLOAD_TRUNCATED` (ingest stores a cut payload as a string; a
+     truncated span with an object or list input had its output cut, and replays);
+  4. `[REDACTED]` or `[MAX_DEPTH]` in any key or string of the input, at any depth: `REPLAY_PAYLOAD_REDACTED` (a
+     prompt that contains the literal text `[REDACTED]` is refused too; edit it out);
+  5. an object with a string `model` and either a `messages` list or an `input` field: `exact`. The surface is the
+     gateway's recorded `spanlight.gateway.surface` when it names a request surface (`chat_completions`,
+     `responses`, `messages`), else `messages` for an Anthropic span, `responses` for a body with `input` and no
+     `messages`, else `chat_completions`;
+  6. a non-empty list of `{role, content}` objects (what OTLP ingest stores): `messages_only`, sent as
+     `{model: <span model>, messages}`;
+  7. anything else (a bare string, an object without a model): `REPLAY_UNSUPPORTED_INPUT`.
+
+  SDK and gateway spans store the provider-native request, so they replay exactly; OTLP spans store only the
+  messages, never the tools or parameters, so they replay as `messages_only` (not exact). Anthropic spans need an
+  Anthropic credential; every other provider (`openai`, `azure`, `groq`, `ollama`, unknown) speaks the OpenAI API and
+  needs an OpenAI or OpenAI-compatible credential.
+- **What a replay changes.** Every key of the stored body is passed through untouched (`messages`, `input`, `system`,
+  `tools`, `tool_choice`, `response_format`, `text`, `stop`, `temperature`, `seed`, `metadata`, `reasoning`,
+  `thinking`, and any other) except: `stream` and `stream_options` are removed (a replay is never streamed;
+  `ttft_ms` is `null`); `n` above 1 becomes 1; every output cap present, `max_tokens`, `max_completion_tokens` and the
+  Responses API's `max_output_tokens`, is clamped to `min(stored, max_tokens override, 4096)` (the design named only the
+  first two; without the third a Responses body could bypass the cap); a `messages` body with no cap gets
+  `min(1024, override)`; `model` is replaced by an override only when it differs from the body's. Each change is
+  listed in `changed`, plus `body` when `edited_body` was sent. `fidelity` is `exact` only when the source was exact
+  and `changed` holds nothing but `stream` and `stream_options`; otherwise `modified`, and a `messages_only` source
+  stays `messages_only`. An output cap that is not an integer is `REPLAY_UNSUPPORTED_INPUT`.
+- **Edited bodies.** `edited_body` replaces the stored request as a whole: a JSON object of at most 256 KB
+  (`REPLAY_BODY_TOO_LARGE`), no NUL characters, re-checked by rules 4, 5 and 7, so markers cannot be sent and the
+  body stays a request. An edit keeps the stored span's surface.
+- **A replay needs a model.** A `messages_only` source whose span recorded no model, with no `model` in the request,
+  is `REPLAY_UNSUPPORTED_INPUT`; the dashboard asks for a model.
+- **Provider mismatch is refused, not converted.** A credential of the other family is
+  `422 REPLAY_PROVIDER_MISMATCH`. Converting Chat Completions to Messages would rewrite tools, system handling, stop
+  sequences and response formats, and the result would no longer be the stored request. The playground's typed
+  messages are the cross-provider route, and are not a replay.
+- **The replay call.** One attempt through one credential of the caller's organization (another organization's
+  credential is `404`), no fallbacks, `experiments:run`, `Idempotency-Key` accepted, 30 a minute per person shared
+  with playground runs (`429 RATE_LIMITED`). The call is a trace in environment `playground`, named `replay`, tagged
+  `spanlight:replay`, with the caller's user id and the source trace's release; the span carries
+  `spanlight.replay.source_trace_id`, `spanlight.replay.source_span_id`, `spanlight.replay.fidelity`,
+  `spanlight.replay.changed` and `spanlight.replay.id`. The project's `block` budgets apply: the result's `error` is
+  `BUDGET_EXCEEDED` and the ledger row is `failed` with `gateway_budget_blocked`. A provider failure is the result's
+  `error`, not an HTTP error. `same_request_hash` is `true` when the replayed span's request hash equals the
+  source's, `false` when it differs, and `null` when the replayed span was not stored (nothing to compare).
+- **The per-project monthly replay budget.** Replays spend at most `REPLAY_MONTHLY_BUDGET_USD` (default 5.00) per
+  project per UTC month; `0` turns replay off with `409 NOT_CONFIGURED`, as do a missing gateway runtime and missing
+  `CREDENTIALS_KEYS`. Each replay reserves its worst case (the body's text as input tokens, every allowed output
+  token) under a per-project lock before the call, so concurrent replays cannot pass the limit together. A replay
+  that does not fit sends nothing and is `409 REPLAY_BUDGET_EXCEEDED` with `spent_usd`, `reserved_usd`, `budget_usd`
+  and `month_start` as extension members; the ledger keeps a `failed` / `budget_exceeded` row for it. A model with no
+  price, or a price of zero (an override), is `422 REPLAY_MODEL_UNPRICED`: the budget could not count it. A call that
+  breaks after it was sent is charged its estimate; a replay that stops sending its heartbeat for 10 minutes is failed
+  by the reaper (`abandoned`) and charged its reservation. `GET …/playground/replays/budget` (`project:read`) answers
+  `{monthly_budget_usd, spent_usd, reserved_usd, remaining_usd, month_start}`;
+  `GET …/playground/replays?trace_id&span_id` lists the ledger newest first.
+- **Statistics.** A boolean score (its config says boolean, or every value is a JSON boolean; 0 / 1 numbers under a
+  boolean config count as boolean) gains `passed`, `ci_low` and `ci_high` in a run's totals: the Wilson 95 % score
+  interval (z = 1.959964, no continuity correction), 4 places, half-even, clamped to `[0, 1]`. `n = 0` gives `null`,
+  never `[0, 1]`; numeric and categorical scores carry `null`; totals stored before this change lack the keys and
+  read as `null`. A comparison's `ScoreDeltaOut` gains `ci_a`, `ci_b` (boolean only) and `test`: the exact McNemar
+  test on the items scored in both runs for a boolean score (`improved` = fail in A and pass in B, `regressed` = the
+  reverse, concordant pairs `unchanged`), the paired sign test (ties dropped) for a numeric score, both an exact
+  two-sided binomial capped at 1, `p_value` at 4 places, `significant` when `p < 0.05` decided on the exact value.
+  `n = 0` (no item changed) is `p = 1.0000`, not significant. `test` is `null` for a categorical score and when fewer
+  than 2 matched items carry the score. Alpha is not a setting. The eval gate still compares the mean with its
+  threshold; the interval is reported beside it.
+- **Usage counters.** `spanlight_feature_used_total{feature}` counts `review_selection` once per completed
+  project-day selection, `review_item_completed` per completed item whose reason is not `manual`,
+  `failure_category` per failure-category config created, `replay` per replay answered,
+  `dataset_item_from_review` per dataset item `PATCH` whose `metadata` sets a `review` object (the dashboard sends it
+  after copying a reviewed trace into a dataset), and `experiment_interval` per run read or comparison whose answer
+  carries an interval or a test. `spanlight_review_selected_total{reason}` counts items queued by the policy;
+  `spanlight_replay_runs_total{outcome}` (`done`, `failed`, `budget_exceeded`, `gateway_budget_blocked`, `abandoned`)
+  and `spanlight_replay_cost_usd_total` count replays and their charge.
+- **Annotate shortcuts.** On the annotate screen `R` opens the replay of the item's failing span and `D` saves the
+  trace as a dataset item. The design said `S` for save; `S` was already Skip, so it stays Skip.
+- **Audit.** `review_policy.create`, `review_policy.update`, `review_policy.delete`, `review_policy.run` (metadata
+  `{day}`) and `replay.run` (metadata
+  `{source_trace_id, source_span_id, credential_id, model, fidelity, cost_usd}`, never content). A replay the reaper settled first is still audited when its call returns.
+- **New problem codes.** `409`: `QUEUE_IN_USE`, `ALREADY_SELECTED`, `REPLAY_BUDGET_EXCEEDED`. `422`:
+  `QUEUE_LACKS_FAILURE_CATEGORY`, `NOTHING_SELECTED`, `DAY_NOT_COMPLETE`, `DAY_TOO_OLD`, `REPLAY_NOT_LLM`,
+  `REPLAY_NO_PAYLOAD`, `REPLAY_PAYLOAD_TRUNCATED`, `REPLAY_PAYLOAD_REDACTED`, `REPLAY_UNSUPPORTED_INPUT`,
+  `REPLAY_PROVIDER_MISMATCH`, `REPLAY_MODEL_UNPRICED`, `REPLAY_BODY_TOO_LARGE`. Run-level strings (not HTTP): a
+  replay row's `error` `budget_exceeded`, `abandoned`, `gateway_budget_blocked` or the call's own error
+  (`replay_failed`, or the provider's message); a result's `error` `BUDGET_EXCEEDED`; the job outcome
+  `already_selected`.
+- **Migrations.** `1000` adds `reason` and `reason_detail` to `annotation_queue_items` with the index
+  `(queue_id, reason, status)`; `1001` adds `review_policies` and `review_selections` and the new audit actions;
+  `1002` adds `replay_runs`; `1003` widens `jobs.outcome`. The three new tables are project-scoped with forced
+  row-level security; the nightly listing of enabled policies is the only new read that bypasses it.
+- **`POST …/datasets/{id}/items/from-traces` returns `item_ids`.** The answer gains `item_ids` (the ids of the items
+  it created, in insertion order) next to the existing counts, so "Save as dataset item" from a review queue can write
+  `metadata.review` on the new item with `PATCH …/items/{item_id}`. The change is additive.
+- **Edit and replay.** A span refused as `REPLAY_PAYLOAD_REDACTED` or `REPLAY_PAYLOAD_TRUNCATED` can be replayed
+  when the request carries `edited_body`: the edited body is checked again (size, markers, request shape, provider
+  family) and the replay is always `modified`, never `exact`. Every other refusal stays a refusal with or without
+  an edit.

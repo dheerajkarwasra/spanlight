@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-{/* Sources: sdks/python/src/spanlight/_client.py, sdks/python/src/spanlight/_exporter.py, sdks/python/src/spanlight/_exporter_delivery.py, sdks/python/src/spanlight/_decorator.py, frontend/src/features/traces/trace-header.tsx, frontend/src/features/traces/trace-attribute-chips.tsx, docs/api-deviations.md */}
+{/* Sources: sdks/python/src/spanlight/_client.py, sdks/python/src/spanlight/_metadata.py, sdks/python/src/spanlight/_exporter.py, sdks/python/src/spanlight/_exporter_delivery.py, sdks/python/src/spanlight/_decorator.py, sdks/python/src/spanlight/_usage.py, sdks/python/src/spanlight/integrations/_batch.py, sdks/python/src/spanlight/integrations/_anthropic_batch.py, sdks/python/src/spanlight/integrations/_openai_batch.py, sdks/python/src/spanlight/integrations/_streams.py, sdks/python/src/spanlight/integrations/_modifiers.py, sdks/python/src/spanlight/integrations/_provider_errors.py, sdks/python/src/spanlight/_ratelimit_headers.py, frontend/src/features/traces/trace-header.tsx, frontend/src/features/traces/trace-attribute-chips.tsx, docs/api-deviations.md */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
@@ -79,7 +79,9 @@ def search_docs(query: str) -> list[str]:
 
 @spanlight.observe(name="support-request")
 def handle(question: str, user_id: str) -> str:
-    spanlight.update_trace(user_id=user_id, session_id="chat-123", tags=["beta"])
+    spanlight.update_trace(
+        user_id=user_id, session_id="chat-123", tags=["beta"], metadata={"customer_id": "acme"}
+    )
     docs = search_docs(question)
     with spanlight.span("format-answer", kind="chain") as span:
         answer = f"From our docs: {docs[0]}"
@@ -91,7 +93,7 @@ This produces one trace with three nested spans.
 
 - `@observe(name=None, kind="chain", capture_input=True, capture_output=True)` traces plain functions, `async def`, generators and async generators. `kind` is one of `llm`, `tool`, `retrieval`, `chain`, `http` or `other`. Both `@observe` and `@observe(...)` work.
 - `span(name, kind="chain", input=None, attributes=None)` is a context manager (also `async with`) that yields a `Span` with `set_input`, `set_output`, `set_attribute`, `set_attributes`, `set_model`, `set_usage`, `mark_first_token` and `record_error`. An exception that escapes the block marks the span as failed and is re-raised.
-- `update_trace(name=None, user_id=None, session_id=None, tags=None)` sets trace-level fields from anywhere inside the trace. Tags accumulate.
+- `update_trace(name=None, user_id=None, session_id=None, tags=None, metadata=None)` sets trace-level fields from anywhere inside the trace. Tags accumulate. Metadata keys accumulate too, a later value replacing a key's earlier one; the [Attribution](/docs/concepts/attribution/) page groups cost by them. Up to 32 keys of `a-z`, `0-9`, `_`, `.` and `-`, values of 1 to 256 characters; an invalid entry is dropped with a debug log.
 
 Long-running servers need nothing else. Short scripts, CLIs and serverless handlers should call `spanlight.flush()` before they exit; an `atexit` hook also flushes, with a timeout.
 
@@ -137,7 +139,7 @@ anthropic_client = spanlight.wrap_anthropic(Anthropic())
 openai_client = spanlight.wrap_openai(OpenAI())
 ```
 
-`wrap_anthropic` instruments `messages.create` (including `stream=True`) and `messages.stream` on `Anthropic` and `AsyncAnthropic`. `wrap_openai` instruments `chat.completions.create` and `responses.create` on `OpenAI`, `AsyncOpenAI` and the Azure variants. Streaming works without changes to your code and records time to first token. For OpenAI Chat Completions, ask for usage in the stream with `stream_options={"include_usage": True}`.
+`wrap_anthropic` instruments `messages.create` (including `stream=True`) and `messages.stream` on `Anthropic` and `AsyncAnthropic`. `wrap_openai` instruments `chat.completions.create` and `responses.create` on `OpenAI`, `AsyncOpenAI` and the Azure variants; an Azure client is recorded with the provider `azure_openai`, which stays unpriced until you add a price override for it. Streaming works without changes to your code and records time to first token. For OpenAI Chat Completions, ask for usage in the stream with `stream_options={"include_usage": True}`.
 
 If you point the OpenAI client at a compatible API, name the provider yourself: `wrap_openai(client, provider="openrouter")`.
 
@@ -145,13 +147,111 @@ For every LLM call the SDK records the provider, the model (from the response, f
 
 Token counts follow one rule everywhere: `input_tokens` **includes** cached tokens, and `cached_tokens` says how many of them came from the provider's prompt cache. For Anthropic, the wrapper also reports the tokens written to the cache as `cache_write_tokens`, and the part written with a 1-hour lifetime as `cache_write_1h_tokens` (since SDK 0.1.2), because Anthropic bills writes above the input rate. [How cost is calculated](/docs/concepts/cost/) explains the convention.
 
+SDK 0.2.0, the next release, also records what changes the price of a call beyond its tokens:
+
+- **The service tier** the provider billed (`usage.service_tier` for Anthropic, the top-level `service_tier` for OpenAI), so a batch or flex call is priced at its own rate. See [Service tiers](/docs/concepts/cost/#service-tiers).
+- **Web searches** the model ran: Anthropic's `server_tool_use.web_search_requests`, and the completed `web_search_call` items of an OpenAI Responses answer. Each search adds the provider's fee to the cost. See [Fees (web search)](/docs/concepts/cost/#fees-web-search).
+- **Streams cut before their usage.** When a stream ends without the provider's final usage event (you closed it early, it failed, or an OpenAI Chat Completions stream had no `include_usage`), the span keeps the counts that did arrive, leaves the output count and the cost unknown, and says why in `usage.unreported_reason`. See [Streams cut before the usage arrives](/docs/concepts/cost/#streams-cut-before-the-usage-arrives).
+- **Options Spanlight does not price.** A call that passes `inference_geo` (other than `global`) or `speed="fast"` gets the attribute `usage.pricing_modifier_unknown`, and is priced at the standard rate. A call that fails before any usage comes back was not priced, so its span drops the attribute.
+
+## Failed calls
+
+When a provider call fails with an HTTP error, the span records what the provider said besides its message, so [Provider health](/docs/guides/provider-health/) can tell which limit refused the call. From SDK 0.2.0, the next release, a failed call's span carries:
+
+| Attribute | Value |
+| --- | --- |
+| `provider.error.type` | The provider's error type, such as `rate_limit_error` or `insufficient_quota`. |
+| `provider.error.code` | The provider's error code: OpenAI's `error.code`, or Anthropic's `error.details.error_code`, such as `enforced_spend_limit_reached`. |
+| `provider.retry_after_s` | The wait the provider asked for, in seconds: `retry-after-ms` divided by 1000, else a numeric `retry-after`. A date in `retry-after` is ignored. |
+| `provider.ratelimit` | The response's rate-limit headers, as an object of header name to value. |
+| `http.status_code`, `provider.request_id` | The status and the provider's request id, as before. |
+
+Connection errors and timeouts have no response, so they add none of these.
+
+When your client talks to the Spanlight gateway and the gateway itself refused the call, for example for your gateway key's rate limit, the answer is the gateway's, not the provider's. The SDK reads the gateway's `X-Spanlight-Code` header, records the code as `spanlight.gateway.error_code` and sets none of the `provider.*` fields, so the refusal shows as the gateway key limit, not as a provider limit.
+
+## Batch results
+
+A batch request is answered hours later, without its request, and billed at the batch rate. The SDK records each result as an `llm` span when you read it. These need SDK 0.2.0, the next release.
+
+**Anthropic.** Results you read through a wrapped client are recorded as you iterate, sync or async. Pass the batch id, positionally or as `message_batch_id`:
+
+```python
+import spanlight
+from anthropic import Anthropic
+
+spanlight.init()
+client = spanlight.wrap_anthropic(Anthropic())
+
+for result in client.messages.batches.results("msgbatch_..."):
+    if result.result.type == "succeeded":
+        print(result.custom_id, result.result.message.content)
+
+spanlight.flush()
+```
+
+**OpenAI.** The Batch API writes its results to a file, so pass the file's lines to `record_openai_batch_output`. It returns the number of spans it recorded and never raises:
+
+{/* snippet-test */}
+```python
+import json
+
+import spanlight
+
+spanlight.init()
+
+line = json.dumps(
+    {
+        "id": "batch_req_1",
+        "custom_id": "request-1",
+        "response": {
+            "status_code": 200,
+            "body": {
+                "model": "gpt-4o-mini",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "Hello!"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15},
+            },
+        },
+        "error": None,
+    }
+)
+recorded = spanlight.record_openai_batch_output([line], batch_id="batch_abc123")
+print(recorded)  # 1
+spanlight.flush()
+```
+
+With a real batch, read the output file with the OpenAI client and pass its text, or its lines: `spanlight.record_openai_batch_output(client.files.content(batch.output_file_id).text, batch_id=batch.id)`. Pass the error file the same way to record the requests that failed.
+
+What a batch result records:
+
+- One trace per batch, named `batch <batch_id>` and tagged `spanlight:batch`, with one span per request, named `batch <model>`.
+- The usage at the `batch` tier, whatever tier the provider reported; the provider's value is kept in `usage.service_tier_raw`.
+- The output and the finish reason. There is no input, because the result does not carry the request (`batch.request_available` is `false`).
+- The attributes `batch.id`, `batch.custom_id` and `batch.result_type`.
+- A start and end time equal to the moment you read the result, so the duration is 0; `timing.synthetic` is `true` to say so.
+- For a request that failed (Anthropic `errored`, `canceled` or `expired`; OpenAI a status other than 200 or an `error`), an error span without usage, because it was not billed. An OpenAI Responses body with `status: "failed"` keeps the usage it reports.
+
+The trace and span ids are derived from the batch id and each `custom_id`, so reading the same results twice updates the same spans instead of adding new ones.
+
 ## Privacy
 
 The server redacts common secret patterns from payloads on ingestion, and a project can switch payload capture off entirely, so inputs and outputs are dropped. To keep payloads out of the SDK for one function, use `@observe(capture_input=False, capture_output=False)`.
 
+The rate-limit headers of a failed call pass a fixed allowlist of 29 names before they leave your process: `retry-after`, `retry-after-ms`, OpenAI's `x-ratelimit-*` headers and Anthropic's `anthropic-ratelimit-*` and `anthropic-priority-*` headers. Each value must be printable ASCII of at most 64 characters. Every other response header is dropped, including `authorization`, `x-api-key`, `cookie`, `set-cookie` and Anthropic's organization and workspace ids. The server applies the same allowlist again to whatever it receives.
+
 ## Delivery guarantees
 
-A batch goes out when it reaches `batch_size` spans or after `flush_interval` seconds. Network errors, `429` and `5xx` are retried with jittered exponential backoff, and `Retry-After` is honoured. Other `4xx` responses are not retried; they are logged to the `spanlight` logger, as are spans the server rejects. Ingestion is idempotent by design: a retried batch upserts the same rows, so it does not double-count. See what the SDK is doing with:
+A batch goes out when it reaches `batch_size` spans or after `flush_interval` seconds. Network errors, `429` and `5xx` are retried with jittered exponential backoff, and `Retry-After` is honoured. Other `4xx` responses are not retried; they are logged to the `spanlight` logger, as are spans the server rejects. Ingestion is idempotent by design: a retried batch upserts the same rows, so it does not double-count.
+
+From SDK 0.2.0, the next release, every batch of spans also reports what the SDK lost: a `client` object with the SDK's name and version, a random exporter id (new in each process, and in a forked child) and two running totals, the spans and scores dropped because the queue was full and those lost after retries or rejected by the server. It holds no span content. The server turns the totals into [telemetry completeness](/docs/concepts/telemetry-completeness/); an older server ignores the object.
+
+See what the SDK is doing with:
 
 ```python
 import logging

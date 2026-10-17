@@ -1,0 +1,72 @@
+---
+title: Telemetry completeness
+description: How many spans were lost before Spanlight stored them, where they were lost (the gateway, ingestion or the Python SDK), why the completeness ratio is a lower bound, and what to do when it drops.
+sidebar:
+  order: 7
+---
+
+{/* Sources: frontend/src/features/overview/completeness-card.tsx, frontend/src/features/overview/completeness-format.ts, backend/app/telemetry_losses/reasons.py, backend/app/telemetry_losses/counter.py, backend/app/telemetry_losses/flush.py, backend/app/telemetry_losses/service.py, backend/app/telemetry_losses/queries.py, backend/app/telemetry_losses/stored.py, backend/app/telemetry_losses/completeness.py, backend/app/telemetry_losses/report.py, backend/app/api/v1/telemetry_completeness.py, backend/app/api/ingest.py, backend/app/gateway/recorder.py, backend/app/gateway/span_losses.py, backend/app/jobs/tasks/cleanup.py, sdks/python/src/spanlight/_exporter.py */}
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Every number Spanlight shows is computed from the spans it stored. A span that was lost on the way, dropped by a full queue or refused by the server, is in none of them. **Telemetry completeness** counts those losses, so you know how far to trust an error rate or a cost total for a window.
+
+## The idea
+
+A dashboard that silently misses spans is worse than one that says it does. So Spanlight counts every span it knows was lost, by where and why, and compares them with the spans it stored:
+
+```text
+completeness = stored / (stored + lost)
+```
+
+A completeness of `0.9987` means at least 99.87 % of the spans that were sent reached the database. The Overview shows it as the **Telemetry completeness** card, under the calls and errors chart: the ratio as a percentage (never rounded up to 100 % while a span was lost), a **lower bound** badge when it applies, the spans stored and lost, and three tiles, **Gateway**, **Ingest rejected** and **SDK dropped or failed**, each with its count and its reasons, such as "validation 9 · too_old 3". The Gateway and Ingest rejected tiles are counted by the server, so a 0 there is a real zero ("none"). The SDK tile shows **—** and "none reported" until an SDK reports a loss, because only the Python SDK from 0.2.0 reports its losses: other senders report nothing, and silence is not a zero. For the same reason the line under the ratio says "no losses reported", not "none lost". `GET /api/v1/projects/{project_id}/telemetry-completeness` returns the same numbers.
+
+## Where spans are lost
+
+Losses come from three places.
+
+| Source | Reasons | What happened |
+| --- | --- | --- |
+| `gateway` | `overflow`, `error`, `rejected` | The gateway's span recorder could not keep up and its backlog was full (`overflow`), a span could not be built or written (`error`), or ingestion refused a span the gateway built (`rejected`). |
+| `ingest` | `validation`, `usage`, `too_old`, `in_future`, `self_parent`, `attributes_too_large`, `cost_too_large`, `duplicate_in_batch`, `unprocessable`, `other` | The server rejected a span sent to `POST /v1/traces` or `POST /v1/otlp/traces`. The reasons group the per-span rejection messages: a schema error, a bad usage field, a start time too far in the past or the future, a span that is its own parent, too many attributes, a cost too large to store, the same span twice in one batch, or a span that could not be processed. |
+| `sdk` | `dropped`, `failed` | The Python SDK dropped spans because its queue was full (`dropped`), or gave up on them after its retries, or had them rejected by the server (`failed`). |
+
+The SDK reports its losses itself, from version 0.2.0. Every batch of spans carries a small `client` object with the SDK's name and version, a random id for the exporter (new in each process) and two running totals, the items dropped and the items failed since the process started. The totals count scores as well as spans, so they can only make the ratio lower, never higher. The server stores only the increase since the last total it saw, so a batch delivered twice never counts a loss twice. The object holds no span content. Older SDKs send no such object, and their losses are not counted.
+
+A gateway call refused by the gateway key's own rate limit is recorded as a span too. Those spans are the first to go when the recorder is busy: once half of its backlog is taken, they are dropped and counted as `overflow`, so a flood of refused calls cannot crowd out the spans of calls that were served. Before that, refused calls are sampled: at most one span per gateway key per second, each carrying `spanlight.gateway.refusals_suppressed`, the refusals since the key's previous span that got none. Those skipped refusals are not losses, since they are counted on the next span, so they do not lower completeness.
+
+## Why the ratio is a lower bound
+
+Three reasons, all on the side of reading too low rather than too high:
+
+- **A span can be counted twice.** When the server rejects a span, ingestion counts it as an `ingest` loss, and the SDK counts the same span as `failed`. The API says `"lower_bound": true` whenever both are above zero, and the card's tooltip says so.
+- **Losses are counted per hour.** A loss is stored in the hour it happened, not the hour of the span, because a lost span has no reliable time. A window that cuts an hour in half counts that hour's losses whole.
+- **It never rounds up to 100 %.** The ratio is cut, not rounded, to four places, so any loss keeps it below `1.0000`.
+
+When nothing was stored and nothing was lost, completeness is unknown (**—**), not 100 %. When nothing was stored but something was lost, it is `0`.
+
+Some losses are never seen, so the ratio cannot be exact either way: an SDK older than 0.2.0, an exporter you wrote yourself, an OpenTelemetry collector that drops spans before sending them, or a process killed before it reported.
+
+## How the counts are kept
+
+- **Gateway** losses are counted in memory and written every minute, one short transaction per project, and once more when the process stops (for at most 5 seconds). If the database is down, the counts wait for the next minute. A flush cut short may count a project's losses twice, which keeps the ratio a lower bound. A process killed outright loses up to a minute of counts. The counts also go to the Prometheus counter `spanlight_gateway_record_failures_total` and to `gateway_spans_lost` on `/health/ready`, which do not depend on the database.
+- **Ingest** rejections are written in the same transaction as the batch, only when a span was rejected, so a clean batch costs nothing.
+- **SDK** totals are stored per exporter. An exporter not heard from for 7 days is forgotten; if it reports again, its totals are counted again from the start, once.
+- The losses follow the project's retention, like the hourly rollups.
+
+## What to do when it drops
+
+1. **Find the source.** The card's tiles, and the API, list each source and reason with its count for the window.
+2. **`ingest`:** read the rejection reasons your client logs. The SDK logs every rejected span to the `spanlight` logger, and `POST /v1/traces` answers with the reason for each rejected span. Fix the client, or see [Spans are rejected](/docs/troubleshooting/#spans-are-rejected).
+3. **`sdk` `dropped`:** the SDK's queue filled up faster than it could send. Call `spanlight.flush()` before a short process exits, raise `max_queue` (see [`init`](/docs/reference/python-sdk/#init)), or check that the server answers quickly. See [Delivery guarantees](/docs/python-sdk/#delivery-guarantees).
+4. **`sdk` `failed`:** batches failed after every retry. Check the SDK's host and key, and the server's health.
+5. **`gateway` `overflow`:** the recorder's backlog was full. The database is too slow for the gateway's traffic; see [Run the LLM gateway](/docs/runbooks/gateway/) and [Scale](/docs/runbooks/scale/).
+
+## Related pages
+
+<CardGrid>
+  <LinkCard title="Provider health" href="/docs/guides/provider-health/" description="Failures by class and kind, retry cost and status page incidents." />
+  <LinkCard title="How ingestion works" href="/docs/concepts/ingestion/" description="What happens to a span between the client and the database." />
+  <LinkCard title="The Python SDK" href="/docs/python-sdk/" description="Batching, retries and the dropped and failed counters." />
+  <LinkCard title="Troubleshooting" href="/docs/troubleshooting/" description="No trace arrived, spans rejected, a stopped worker." />
+</CardGrid>

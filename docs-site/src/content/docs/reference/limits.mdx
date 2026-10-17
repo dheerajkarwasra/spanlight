@@ -1,9 +1,9 @@
 ---
 title: Limits reference
-description: The size, count, time and rate limits that Spanlight enforces on ingestion, the API, exports, datasets, retention, sign-in, experiments and the playground, with the status code you get when you exceed it.
+description: The size, count, time and rate limits that Spanlight enforces on ingestion, the API, exports, datasets, billing sources, retention, sign-in, experiments and the playground, with the status code you get when you exceed it.
 ---
 
-{/* Sources: backend/app/ingest/normalize.py, backend/app/ingest/schemas.py, backend/app/api/ingest.py, backend/app/core/ratelimit.py, backend/app/core/body_limit.py, backend/app/core/errors.py, backend/app/api/deps.py, backend/app/api/scores_ingest.py, backend/app/api/v1/prompts_read.py, backend/app/api/v1/demo.py, backend/app/api/v1/alert_rules.py, backend/app/api/v1/alerts.py, backend/app/scores/queries.py, backend/app/scores/configs.py, backend/app/scores/service.py, backend/app/api/v1/scores.py, backend/app/alerts/channel_test.py, backend/app/playground/service.py, backend/app/gateway/limits.py, backend/app/gateway/key_limits.py, backend/app/config.py, backend/app/services/invites.py, backend/app/api/v1/auth.py, backend/app/auth/login_throttle.py, backend/app/api/window.py, backend/app/exports/service.py, backend/app/exports/audit.py, backend/app/datasets/schemas.py, backend/app/datasets/service.py, backend/app/api/schemas/projects.py, backend/app/db/models/projects.py, backend/app/jobs/tasks/retention.py, backend/app/jobs/scheduler.py, backend/app/auth/password_reset.py, backend/app/api/v1/totp.py, backend/app/prompts/service.py, backend/app/api/prompt_problems.py, backend/app/alerts/service.py, backend/app/alerts/rules_service.py, backend/app/alerts/rule_spec.py, backend/app/budgets/service.py, backend/app/api/scores_ingest.py, backend/app/core/pagination.py, backend/app/playground/schemas.py, backend/app/api/dataset_problems.py, backend/app/api/v1/dataset_items.py, backend/app/evals/experiment_config.py, backend/app/evals/config.py, backend/app/insights/service.py, backend/app/core/idempotency.py, docs/api-deviations.md */}
+{/* Sources: backend/app/ingest/normalize.py, backend/app/ingest/metadata.py, backend/app/api/schemas/projects.py, backend/app/ingest/schemas.py, backend/app/api/ingest.py, backend/app/core/ratelimit.py, backend/app/core/body_limit.py, backend/app/core/errors.py, backend/app/api/deps.py, backend/app/api/scores_ingest.py, backend/app/api/v1/prompts_read.py, backend/app/api/v1/demo.py, backend/app/api/v1/alert_rules.py, backend/app/api/v1/alerts.py, backend/app/scores/queries.py, backend/app/scores/configs.py, backend/app/scores/service.py, backend/app/api/v1/scores.py, backend/app/alerts/channel_test.py, backend/app/playground/service.py, backend/app/gateway/limits.py, backend/app/gateway/key_limits.py, backend/app/config.py, backend/app/services/invites.py, backend/app/api/v1/auth.py, backend/app/auth/login_throttle.py, backend/app/api/window.py, backend/app/exports/service.py, backend/app/exports/audit.py, backend/app/datasets/schemas.py, backend/app/datasets/service.py, backend/app/api/schemas/projects.py, backend/app/db/models/projects.py, backend/app/jobs/tasks/retention.py, backend/app/jobs/scheduler.py, backend/app/auth/password_reset.py, backend/app/api/v1/totp.py, backend/app/prompts/service.py, backend/app/api/prompt_problems.py, backend/app/alerts/service.py, backend/app/alerts/rules_service.py, backend/app/alerts/rule_spec.py, backend/app/budgets/service.py, backend/app/api/scores_ingest.py, backend/app/core/pagination.py, backend/app/playground/schemas.py, backend/app/api/dataset_problems.py, backend/app/api/v1/dataset_items.py, backend/app/evals/experiment_config.py, backend/app/evals/config.py, backend/app/insights/service.py, backend/app/core/idempotency.py, backend/app/api/schemas/billing_sources.py, backend/app/reconciliation/source_rules.py, backend/app/reconciliation/source_keys.py, backend/app/api/v1/billing_source_runs.py, backend/app/api/v1/billing_reconciliation.py, backend/app/reconciliation/csv_import.py, backend/app/reconciliation/fetch_policy.py, backend/app/reconciliation/report.py, backend/app/reconciliation/retention.py, backend/app/end_users/days.py, backend/app/review/schemas.py, backend/app/review/calendar.py, backend/app/review/select.py, backend/app/review/outliers.py, backend/app/api/v1/review_policy.py, backend/app/scores/failure_category.py, backend/app/playground/replay_request.py, backend/app/api/v1/replays.py, docs/api-deviations.md */}
 
 This page lists the main limits that Spanlight enforces. Each value comes from the code, so it is exact. Limits that belong to one feature are also on that feature's page. A limit you cannot change is fixed in the code. A limit that has a setting names it.
 
@@ -19,12 +19,14 @@ These limits apply to `POST /v1/traces` and `POST /v1/otlp/traces`. See [How ing
 | Attributes of a span | 64 KB of JSON and 256 entries | The span is refused. Attributes are never truncated. |
 | Age of a span | A span may not start more than 90 days ago | The span is rejected. |
 | Clock skew | A span may not end more than 10 minutes in the future | The span is rejected. |
+| Web searches on a span (`usage.server_tool_use.web_search_requests`) | 0 to 100,000 | The span is rejected. |
+| Trace metadata | 32 keys of 1 to 64 characters (`a-z`, `0-9`, `_`, `.`, `-`), values of 1 to 256 characters | Native JSON rejects the span. The SDK, OTLP and the gateway drop the entry. See [Attribution](/docs/concepts/attribution/#trace-metadata). |
 
 A rejected span does not fail the other spans of the batch. The response lists each rejection.
 
 ## API request bodies
 
-Every `/api/v1` request body is limited to 1 MiB. A larger body gets `413 PAYLOAD_TOO_LARGE`. Ingestion has its own limit (5 MB, above). The dataset upload route has a limit of 5 MB of file plus 64 KB of multipart framing.
+Every `/api/v1` request body is limited to 1 MiB. A larger body gets `413 PAYLOAD_TOO_LARGE`. Ingestion has its own limit (5 MB, above). The dataset upload route and the billing source CSV upload route have a limit of 5 MB of file plus 64 KB of multipart framing.
 
 ## Rate limits
 
@@ -35,15 +37,17 @@ Most rate limits are token buckets. A bucket refills at a steady rate and holds 
 | Ingestion, score ingestion and prompt fetches with an API key | 50 a second | 100 | API key |
 | Reads with an API key or a personal access token | 20 a second | 40 | Credential |
 | Starting a demo session | 10 an hour | 10 | Client address |
-| Playground runs | 30 a minute | 30 | Person |
+| Playground runs and replays, together | 30 a minute | 30 | Person |
 | Alert rule previews | 30 a minute | 30 | Person |
 | Test deliveries to an alert channel | 10 an hour | 10 | Channel |
+| Billing source refreshes | 1 every 5 minutes | 2 | Billing source |
 
 Three notes on that table:
 
 - The first row is one bucket. `POST /v1/traces`, `POST /v1/otlp/traces`, `POST /v1/scores` and `GET /v1/prompts/{name}` all draw from the same bucket of the same key.
 - The second row applies to read requests that carry a bearer credential. Requests from the dashboard with a session cookie are not limited by it.
 - A key that has no `ingest:write` scope does not spend tokens on ingestion routes.
+- A billing source refresh refused because a fetch of the source is still running (`409 BILLING_FETCH_IN_PROGRESS`) has already spent its token.
 
 ### Gateway limits
 
@@ -80,6 +84,7 @@ Link-only invitations are not counted. A prompt gets at most 100 new versions in
 | Alert channels in an organization | 20 | `422 LIMIT_EXCEEDED` |
 | Alert rules in a project (budget rules do not count) | 100 | `422 LIMIT_EXCEEDED` |
 | Budgets in a project | 50 | `422 LIMIT_EXCEEDED` |
+| Promoted metadata keys in a project | 5 | `422 VALIDATION_ERROR` |
 | Score configs (distinct score names) in a project | 500 | Creating a config answers `422 VALIDATION_ERROR` with a `name` field error. In `POST /v1/scores`, a score whose new name would pass the cap is listed in `rejected` and the rest of the batch is stored. |
 | Alert channels on one rule | 10 | The rule is refused. |
 | Scores in one `POST /v1/scores` batch | 1,000 | `422 VALIDATION_ERROR` |
@@ -98,6 +103,26 @@ Link-only invitations are not counted. A prompt gets at most 100 new versions in
 | Length of an insight mute | At most 90 days ahead | `422 INVALID_MUTE` |
 | Reason for an insight mute | 1 to 500 characters | `422 INVALID_MUTE` |
 | `Idempotency-Key` header | 1 to 128 visible ASCII characters | `422 VALIDATION_ERROR` |
+| Output tokens of a replay | 4,096. A stored request that allows more is sent with 4,096; a `max_tokens` above 4,096 in the request is refused | `422 VALIDATION_ERROR` |
+| Edited request of a replay | 256 KB | `422 REPLAY_BODY_TOO_LARGE` |
+| Replay spend in a project | `REPLAY_MONTHLY_BUDGET_USD` a UTC month, 5 US dollars by default | `409 REPLAY_BUDGET_EXCEEDED`; nothing is sent |
+
+## Daily review
+
+| Limit | Value | When you exceed it |
+| --- | --- | --- |
+| Review policies in a project | 1 | `PUT /review-policy` replaces the one there is |
+| Traces queued a day (`daily_cap`) | 1 to 500, 50 by default; a quarter, rounded up, is held for random picks | `422 VALIDATION_ERROR`. Over the cap, candidates are left out and the day's selection says the cap was reached |
+| Random share (`random_rate`) | 0 to 0.05, four decimals | `422 VALIDATION_ERROR` |
+| Environments in a policy | 20, each 1 to 64 characters, none of `evals`, `playground`, `experiments` or `doctor` | `422 VALIDATION_ERROR` |
+| Days a manual selection can cover | A finished UTC day, from yesterday back to 7 days | `422 DAY_NOT_COMPLETE`, `422 DAY_TOO_OLD` |
+| Selections of one day | 1 per project | `409 ALREADY_SELECTED` |
+| Duration of a trace the policy can pick | 1 hour | A longer trace is never selected |
+| Traces of a name needed for a cost outlier | 30 priced traces in the 7 UTC days | With fewer, no trace of that name is a cost outlier |
+| Selection history page | 30 days | `422 VALIDATION_ERROR` |
+| Failure categories | 2 to 30, including `none` | `422 VALIDATION_ERROR` |
+
+The nightly selection runs from 01:00 UTC and reads the traces that ended during the previous UTC day. See [Daily review](/docs/review/).
 
 ## Exports
 
@@ -122,11 +147,33 @@ See [Exports](/docs/guides/exports/) for how to request one.
 
 An item that is over a size limit is refused with `422 VALIDATION_ERROR`. Adding items that would pass 10,000 is refused with `422 DATASET_FULL`, and the whole batch is refused. An upload over the limit gets `413 PAYLOAD_TOO_LARGE`. See [Datasets](/docs/datasets/).
 
+## Billing sources
+
+A billing source connects a provider account to an organization, with an admin key or as CSV uploads. See [Reconcile cost with your provider bill](/docs/guides/reconciliation/).
+
+| Limit | Value | When you exceed it |
+| --- | --- | --- |
+| Admin key | At most 512 characters after trimming, starting with `sk-ant-admin` (Anthropic) or `sk-admin` (OpenAI) | `422 VALIDATION_ERROR` on `admin_key` |
+| Name | 1 to 128 characters, unique in the organization | `422 VALIDATION_ERROR`, or `409 BILLING_SOURCE_NAME_TAKEN` |
+| Provider scope | 1 to 128 characters | `422 VALIDATION_ERROR` |
+| Projects on one source | 500 | `422 VALIDATION_ERROR` |
+| Sources one project is compared with | One per provider | `409 BILLING_SOURCE_PROJECT_TAKEN` |
+| Key check when a source is added or its key replaced | One request to the provider, 10 seconds at most | The source is stored anyway, with status `failing` and the reason in `last_error`: an HTTP status line such as `401 Unauthorized`, or a short phrase such as `timeout`. With `BILLING_SOURCES_ENABLED` off, no check runs and the status is `never_fetched`. |
+| Key checks in one organization | Five, then one a minute (adding and replacing keys together) | `429 RATE_LIMITED` with `Retry-After`; nothing is checked or stored |
+| Manual refresh | One every 5 minutes per source, bursts of 2; one fetch of a source at a time | `429 RATE_LIMITED` with `Retry-After`; `409 BILLING_FETCH_IN_PROGRESS` while a fetch or upload of the source runs (a fetch still running after 15 minutes no longer counts) |
+| Days one fetch reads | The last 7 whole UTC days, or 31 on a source's first successful fetch | Not configurable. The daily fetch runs from 03:30 UTC. |
+| Provider pages one fetch reads | 40 pages, 4 MB each | The fetch fails with `too many pages` or `response too large`, and nothing from it is stored. |
+| Cost CSV upload | 5 MB, 100,000 data rows, UTF-8, a header with all ten columns, each `day` within the 400 days up to today (UTC) | `413 PAYLOAD_TOO_LARGE` over 5 MB; `422 VALIDATION_ERROR` with up to 20 reasons by row and column otherwise, and nothing is stored |
+| Reconciliation report window | At most 31 whole UTC days, ending today at the latest; the last 14 days by default | `422 VALIDATION_ERROR` on `to` |
+| Provider cost lines kept | 400 days | Older lines are deleted by the retention job. |
+
 ## Retention
 
 Each project keeps its spans for a number of days. The default is 30. You can set any whole number from 1 to 90 with `retention_days` on the project. The worker runs the retention job every hour and deletes the traces, and with them the spans, that are older than the project keeps. Ingestion refuses spans that started more than 90 days ago, so 90 days is the longest retention that makes sense.
 
 Time windows in the trace and metrics API are limited to 90 days as well.
+
+Per-user figures on the Users page are recomputed every 15 minutes for the last three UTC days and nightly for the last eight. A trace counts for the UTC day it started, and the last pass that covers that day is the nightly one seven days later, so a span that arrives after it, about a week after the trace's day, is not counted in them. Send spans soon after the call. See [Releases and users](/docs/releases-and-users/#users).
 
 ## Related pages
 

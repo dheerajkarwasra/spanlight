@@ -3,7 +3,7 @@ title: Python SDK reference
 description: Every public name of the spanlight Python package, with its signature, parameters, defaults, errors and an example, plus the limits of the provider wrappers.
 ---
 
-{/* Sources: sdks/python/src/spanlight/__init__.py, sdks/python/src/spanlight/_globals.py, sdks/python/src/spanlight/_client.py, sdks/python/src/spanlight/_config.py, sdks/python/src/spanlight/_span.py, sdks/python/src/spanlight/_context.py, sdks/python/src/spanlight/_decorator.py, sdks/python/src/spanlight/_serialize.py, sdks/python/src/spanlight/_ids.py, sdks/python/src/spanlight/_request_hash.py, sdks/python/src/spanlight/_scores.py, sdks/python/src/spanlight/_prompts.py, sdks/python/src/spanlight/_prompt_client.py, sdks/python/src/spanlight/_templates.py, sdks/python/src/spanlight/_exporter.py, sdks/python/src/spanlight/_exporter_delivery.py, sdks/python/src/spanlight/_experiments.py, sdks/python/src/spanlight/_version.py, sdks/python/src/spanlight/integrations/_common.py, sdks/python/src/spanlight/integrations/openai.py, sdks/python/src/spanlight/integrations/anthropic.py, sdks/python/pyproject.toml, sdks/python/README.md */}
+{/* Sources: sdks/python/src/spanlight/__init__.py, sdks/python/src/spanlight/_globals.py, sdks/python/src/spanlight/_client.py, sdks/python/src/spanlight/_metadata.py, sdks/python/src/spanlight/_config.py, sdks/python/src/spanlight/_span.py, sdks/python/src/spanlight/_context.py, sdks/python/src/spanlight/_decorator.py, sdks/python/src/spanlight/_serialize.py, sdks/python/src/spanlight/_ids.py, sdks/python/src/spanlight/_request_hash.py, sdks/python/src/spanlight/_scores.py, sdks/python/src/spanlight/_prompts.py, sdks/python/src/spanlight/_prompt_client.py, sdks/python/src/spanlight/_templates.py, sdks/python/src/spanlight/_exporter.py, sdks/python/src/spanlight/_exporter_delivery.py, sdks/python/src/spanlight/_experiments.py, sdks/python/src/spanlight/_version.py, sdks/python/src/spanlight/integrations/_common.py, sdks/python/src/spanlight/integrations/openai.py, sdks/python/src/spanlight/integrations/anthropic.py, sdks/python/src/spanlight/_usage.py, sdks/python/src/spanlight/integrations/_batch.py, sdks/python/src/spanlight/integrations/_anthropic_batch.py, sdks/python/src/spanlight/integrations/_openai_batch.py, sdks/python/src/spanlight/integrations/_streams.py, sdks/python/src/spanlight/integrations/_modifiers.py, sdks/python/src/spanlight/integrations/_provider_errors.py, sdks/python/src/spanlight/_ratelimit_headers.py, sdks/python/pyproject.toml, sdks/python/README.md */}
 
 import { Aside } from '@astrojs/starlight/components';
 
@@ -121,7 +121,7 @@ The client has these members:
 | `start_span(name, *, kind="chain", parent=None)` | Creates and starts a `Span` without making it current. Without a `parent` it uses the current span; without either it starts a new trace. You must call `Span.end()` yourself. |
 | `span(name, *, kind="chain", input=None, attributes=None)` | Same as the module-level [`span`](#span), bound to this client. |
 | `observe(...)` | Same as the module-level [`observe`](#observe), bound to this client. |
-| `update_trace(*, name=None, user_id=None, session_id=None, tags=None)` | Same as the module-level [`update_trace`](#update_trace). It acts on the trace of the current span, whichever client created it. |
+| `update_trace(*, name=None, user_id=None, session_id=None, tags=None, metadata=None)` | Same as the module-level [`update_trace`](#update_trace). It acts on the trace of the current span, whichever client created it. |
 | `score(trace_id, name, value, *, span_id=None, comment=None)` | Same as the module-level [`score`](#score), bound to this client. |
 | `flush(timeout=None)` and `shutdown(timeout=None)` | Same as the module-level functions, bound to this client. |
 
@@ -256,10 +256,11 @@ spanlight.update_trace(
     user_id: str | None = None,
     session_id: str | None = None,
     tags: Iterable[str] | None = None,
+    metadata: Mapping[str, object] | None = None,
 ) -> None
 ```
 
-Sets fields on the trace of the current span. Call it anywhere inside the trace. A field left as `None` stays as it is, and tags are added to the existing set without duplicates. Outside any span the call does nothing.
+Sets fields on the trace of the current span. Call it anywhere inside the trace. A field left as `None` stays as it is, tags are added to the existing set without duplicates, and metadata keys are added to the trace's, a later value replacing a key's earlier one. Outside any span the call does nothing.
 
 | Parameter | Meaning |
 | --- | --- |
@@ -267,6 +268,7 @@ Sets fields on the trace of the current span. Call it anywhere inside the trace.
 | `user_id` | Your application's identifier for the user. |
 | `session_id` | Groups traces into a conversation. |
 | `tags` | Free-form labels for filtering. |
+| `metadata` | Key-value pairs that [attribution](/docs/concepts/attribution/) groups by, such as `{"customer_id": "acme"}`. A key is 1 to 64 characters of `a-z`, `0-9`, `_`, `.` and `-`; a value is a string of 1 to 256 characters, and a number or boolean is sent as its JSON text. A `None` value is ignored. An invalid entry is dropped with a `DEBUG` log that names the key, never the value. A trace keeps at most 32 keys: a key it has can always be updated, and new keys are added in code-point order while there is room. |
 
 {/* snippet-test */}
 ```python
@@ -276,7 +278,12 @@ spanlight.init()
 
 @spanlight.observe
 def answer(question: str, user_id: str) -> str:
-    spanlight.update_trace(user_id=user_id, session_id="chat-123", tags=["beta"])
+    spanlight.update_trace(
+        user_id=user_id,
+        session_id="chat-123",
+        tags=["beta"],
+        metadata={"customer_id": "acme", "feature": "refunds"},
+    )
     return "Refunds take 5-7 business days."
 
 answer("How long do refunds take?", "u_42")
@@ -316,7 +323,8 @@ A timed unit of work. You receive spans from `span`, `observe`-decorated code th
 | `set_attribute(key, value)` | Attaches one custom attribute. The key is converted to a string. |
 | `set_attributes(attributes)` | Attaches several attributes from a mapping. |
 | `set_model(model, *, provider=None)` | Records the model and, optionally, the provider that served the call. |
-| `set_usage(*, input_tokens=None, output_tokens=None, cached_tokens=None, cache_write_tokens=None, cache_write_1h_tokens=None)` | Records token usage. A value left as `None` is unchanged. `input_tokens` is the total prompt size: uncached tokens plus prompt-cache reads plus prompt-cache writes. `cached_tokens` is the part read from the provider's prompt cache, `cache_write_tokens` the part written to it, and `cache_write_1h_tokens` the part of those writes made with a 1-hour lifetime (the rest are 5-minute writes). Leave the write fields unset when the provider reports none. The write fields exist since SDK 0.1.2. |
+| `set_usage(*, input_tokens=None, output_tokens=None, cached_tokens=None, cache_write_tokens=None, cache_write_1h_tokens=None, service_tier=None, web_search_requests=None)` | Records token usage. A value left as `None` is unchanged. `input_tokens` is the total prompt size: uncached tokens plus prompt-cache reads plus prompt-cache writes. `cached_tokens` is the part read from the provider's prompt cache, `cache_write_tokens` the part written to it, and `cache_write_1h_tokens` the part of those writes made with a 1-hour lifetime (the rest are 5-minute writes). Leave the write fields unset when the provider reports none. The write fields exist since SDK 0.1.2. `service_tier` is the tier the provider billed, in the provider's spelling (`"batch"`, `"flex"`, `"priority_on_demand"`, ...); it is mapped against the provider set by `set_model`, so call `set_model` first. A spelling the SDK does not know is kept in the attribute `usage.service_tier_raw` and the span is priced at the standard rate. `web_search_requests` is the number of server-side web searches the call made; the provider wrappers read it from the answer, so set it only on a span you record yourself. `service_tier` and `web_search_requests` need SDK 0.2.0, the next release. |
+| `clear_output_tokens()` | Forgets the output token count, even one recorded earlier, so the span is sent with the count unknown. The wrappers call it for a stream that ended before the provider's final usage event. |
 | `set_finish_reason(reason)` | Records why generation stopped, as the provider reports it. Cut to 64 characters. `None` clears it. |
 | `set_request_hash(value)` | Records the hash that groups identical requests. The provider wrappers set it for you. A value that is not 32 lowercase hex characters is ignored, because the server would reject the whole batch. |
 | `set_prompt_version(version_id)` | Links the span to a prompt version. `CompiledPrompt` does this for you. A value that is not a UUID is ignored; `None` removes the link. |
@@ -362,7 +370,7 @@ spanlight.wrap_openai(
     client: ClientT,
     *,
     spanlight: Spanlight | None = None,
-    provider: str = "openai",
+    provider: str | None = None,
 ) -> ClientT
 ```
 
@@ -372,7 +380,7 @@ Instruments `chat.completions.create` and `responses.create` of an `OpenAI`, `As
 | --- | --- |
 | `client` | The client to instrument. |
 | `spanlight` | The `Spanlight` client to report to. It defaults to the global client, looked up on every call, so `init` may run after wrapping. |
-| `provider` | The provider name recorded on spans. Set it when you point the OpenAI SDK at a compatible API, for example `"openrouter"`. |
+| `provider` | The provider name recorded on spans. It defaults to `"azure_openai"` for an `AzureOpenAI` or `AsyncAzureOpenAI` client and `"openai"` for any other. Azure spans stay unpriced unless you add a [price override](/docs/concepts/cost/#price-overrides) for `azure_openai`, because Azure bills its own rates. Set it when you point the OpenAI SDK at a compatible API, for example `"openrouter"`. |
 
 ```python
 import spanlight
@@ -386,7 +394,9 @@ completion = client.chat.completions.create(
 )
 ```
 
-For streamed Chat Completions, ask OpenAI for usage with `stream_options={"include_usage": True}`. Without it the span has no token counts and carries the attribute `usage.missing_reason`.
+For streamed Chat Completions, ask OpenAI for usage with `stream_options={"include_usage": True}`. Without it the span has no token counts and carries the attribute `usage.unreported_reason` set to `include_usage_not_set`. SDK 0.1.2 and earlier set `usage.missing_reason` instead.
+
+A Chat Completions call that passes `web_search_options` gets the attribute `usage.fee_unknown` set to `openai_chat_web_search`: the answer does not say how many searches were billed, so the fee is not priced. A Responses call counts its completed `web_search_call` items.
 
 ### `wrap_anthropic`
 
@@ -398,7 +408,7 @@ spanlight.wrap_anthropic(
 ) -> ClientT
 ```
 
-Instruments `messages.create` (including `stream=True`) and `messages.stream` of an `Anthropic` or `AsyncAnthropic` client. The parameters mean the same as for `wrap_openai`.
+Instruments `messages.create` (including `stream=True`) and `messages.stream` of an `Anthropic` or `AsyncAnthropic` client. From SDK 0.2.0, the next release, it also instruments `messages.batches.results`: every result you iterate is recorded as a span, as described under [`record_openai_batch_output`](#record_openai_batch_output). The parameters mean the same as for `wrap_openai`.
 
 ```python
 import spanlight
@@ -413,6 +423,46 @@ message = client.messages.create(
 )
 ```
 
+### `record_openai_batch_output`
+
+```python
+spanlight.record_openai_batch_output(
+    lines: Iterable[str | bytes],
+    *,
+    batch_id: str,
+    provider: str = "openai",
+    spanlight: Spanlight | None = None,
+) -> int
+```
+
+Records the lines of an OpenAI Batch output or error file as `llm` spans, one per request, and returns how many spans it recorded. It never raises: a line it cannot read is skipped and logged at debug level. It needs SDK 0.2.0, the next release, and it does not import the `openai` package.
+
+| Parameter | Meaning |
+| --- | --- |
+| `lines` | The file's lines. A whole file passed as one `str` or `bytes` is split into lines. |
+| `batch_id` | The batch's id (`batch_...`). The trace and span ids are derived from it and each line's `custom_id`, so recording the same file twice updates the same spans. |
+| `provider` | The provider name recorded on spans. Set it for a compatible batch API. |
+| `spanlight` | The `Spanlight` client to report to. It defaults to the global client. |
+
+```python
+import spanlight
+from openai import OpenAI
+
+spanlight.init()
+client = OpenAI()
+batch = client.batches.retrieve("batch_abc123")
+output = client.files.content(batch.output_file_id).text
+spanlight.record_openai_batch_output(output, batch_id=batch.id)
+```
+
+Each line's body may be a Chat Completions or a Responses object. A batch span, from this function or from a wrapped Anthropic client's `messages.batches.results`, has these properties:
+
+- The trace is named `batch <batch_id>` and tagged `spanlight:batch`; the span is named `batch <model>`.
+- The usage is recorded at the `batch` tier whatever the body reported; the reported value is kept in `usage.service_tier_raw`. Cached tokens and web searches are read as for a live call.
+- There is no input (`batch.request_available` is `false`). The attributes `batch.id`, `batch.custom_id` and `batch.result_type` are set.
+- The span starts and ends when the result is read, so its duration is 0, and `timing.synthetic` is `true`.
+- A failed request is an error span without usage: an OpenAI line with a status other than 200 or an `error`, or an Anthropic result of type `errored`, `canceled` or `expired`. An OpenAI Responses body with `status: "failed"` is an error span that keeps the usage it reports, and one with `status: "incomplete"` is a normal span whose finish reason is `incomplete_details.reason`.
+
 ### What a wrapped call records
 
 Each call becomes an `llm` span named after the operation and the model, for example `chat gpt-4o-mini` or `responses gpt-4o-mini`.
@@ -422,8 +472,11 @@ Each call becomes an `llm` span named after the operation and the model, for exa
 - The time to first token, for streams.
 - The request parameters as the input, the assistant message as the output, and the first finish reason.
 - A request hash, so identical requests can be grouped.
-- For a failed call, the status `error` and the provider's message. The attributes `http.status_code` and `provider.request_id` are added when the provider exception has them.
+- For a failed call, the status `error` and the provider's message. The attributes `http.status_code` and `provider.request_id` are added when the provider exception has them. From SDK 0.2.0, the next release, an HTTP error also adds `provider.error.type`, `provider.error.code`, `provider.retry_after_s` and `provider.ratelimit` (the response's rate-limit headers, filtered through an allowlist of 29 names, each value at most 64 printable ASCII characters). When the Spanlight gateway refused the call itself (its `X-Spanlight-Code` header names one of its own codes), the code is recorded as `spanlight.gateway.error_code` and none of the `provider.*` fields is set. See [Failed calls](/docs/python-sdk/#failed-calls).
 - Extra attributes where the provider supplies them: `response.id`, `response.finish_reasons`, `response.stop_reason`, `response.status`, `request.stream` and `usage.reasoning_tokens`.
+- The service tier the provider billed, and the number of web searches it ran (from SDK 0.2.0, the next release). See [How cost is calculated](/docs/concepts/cost/#service-tiers).
+- For a stream that ends before the provider's final usage event: the counts that arrived, an unknown output count and the attribute `usage.unreported_reason`, which is `client_disconnected` (you closed the stream early), `stream_error` (it failed), `include_usage_not_set` (an OpenAI Chat Completions stream that ran to its end with no usage, usually because `include_usage` was not set) or `no_final_usage` (an Anthropic or Responses stream that ran to its end without the event). The cost is then unknown.
+- `usage.pricing_modifier_unknown` when the call passes an option Spanlight does not price: `inference_geo_<value>` for a data-residency value other than `global`, or `fast_mode` for `speed="fast"`. The call is priced at the standard rate.
 
 API keys, `extra_headers`, `extra_query`, `extra_body`, `timeout` and `http_client` are never recorded.
 
@@ -595,6 +648,8 @@ The SDK defines these exceptions. All except `PromptUnavailableError` subclass `
 ## Delivery
 
 A batch goes out when it reaches `batch_size` spans or after `flush_interval` seconds. Network errors, `429` and `5xx` are retried with jittered exponential backoff, and `Retry-After` is honoured. A `413` splits the batch in two and sends the halves. Other `4xx` responses are not retried; they are logged to the `spanlight` logger, as are spans the server rejects. Ingestion is idempotent by design, so a retried batch does not double-count.
+
+From SDK 0.2.0, the next release, every batch of spans carries a `client` object beside the spans: `sdk` (`spanlight-python`), `version`, `exporter_id` (32 random hex characters, new in each process and in a forked child, whose counters start again at 0), `dropped_total` and `failed_total`. The totals are cumulative for the exporter's lifetime, so a batch delivered twice reports the same totals and the server counts the increase only once. Batches of scores do not carry it. The server ignores an invalid `client` object without rejecting the batch, and a server older than this release ignores it altogether. See [Telemetry completeness](/docs/concepts/telemetry-completeness/).
 
 To see what the SDK is doing, turn on debug logging:
 

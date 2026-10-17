@@ -1,11 +1,11 @@
 ---
 title: Playground
-description: Run a prompt or typed messages against up to three models side by side, with real provider calls recorded as traces, and learn what it costs and how it is limited.
+description: Run a prompt or typed messages against up to three models side by side, or replay a stored request exactly, with real provider calls recorded as traces, and learn what it costs and how it is limited.
 sidebar:
   order: 1
 ---
 
-{/* Sources: backend/app/playground/service.py, backend/app/playground/request.py, backend/app/playground/output.py, frontend/src/features/playground/result-error.ts, frontend/src/features/playground/result-metrics.tsx, frontend/src/features/playground/playground-page.tsx */}
+{/* Sources: backend/app/playground/service.py, backend/app/playground/request.py, backend/app/playground/output.py, frontend/src/features/playground/result-error.ts, frontend/src/features/playground/result-metrics.tsx, frontend/src/features/playground/playground-page.tsx, backend/app/playground/replay_source.py, backend/app/playground/replay_request.py, backend/app/playground/replay_errors.py, backend/app/playground/replay_service.py, backend/app/playground/replay_settle.py, backend/app/api/v1/replays.py, backend/app/api/replay_problems.py, docs/api-deviations.md */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
@@ -119,6 +119,91 @@ The answer has one result per configuration, in the same order:
 
 `cost_usd` is a decimal string, or `null` when unknown. A credential that is not your organization's, or a prompt version that is not your project's, answers `404` for the whole request.
 
+## Replay a stored request
+
+A **replay** sends the request a span recorded to the provider once more, as it was, and shows the new answer beside the recorded one. Use it to reproduce a failure a reviewer found, or to check that a fixed provider or model now answers well. Like a run, a replay is a real provider call, recorded as a trace.
+
+Open a span on a trace's page and select **Replay**, or **Replay failing span** while you [review a queue](/docs/review/#work-the-queue). The playground opens a replay column with:
+
+- the stored request, read-only, with **Edit** to change it as JSON;
+- a credential of the span's provider, each shown with its base URL so you can see where the request goes;
+- an optional model of the same provider, and the most output tokens (at most 4096, the stored value by default);
+- the project's replay budget for the month, for example "$1.20 of $5.00 this month".
+
+**Run replay** shows the **Recorded output** and the **Replay output** side by side, the tokens, cost and duration, and a line that says how faithful the replay was. **Save as dataset item** keeps the case. The span's **Replays** tab lists its earlier replays with who ran them, the model, the fidelity and the cost.
+
+### What can be replayed exactly
+
+| The span came from | It stored | Replay |
+| --- | --- | --- |
+| The Python SDK (`wrap_openai`, `wrap_anthropic`) | The provider request body, without transport options such as the API key or timeouts | Exact |
+| The gateway, including the playground, judges, experiments and replays | The request body as the client sent it | Exact |
+| OTLP | Only the messages: no tools and no parameters | Not exact: the messages, sent to the model the span names. Add tools and parameters yourself with **Edit** |
+| `POST /v1/traces` from another client | Whatever it sent | Exact when the input is a request body with a `model` and `messages` or `input` |
+
+A span from Anthropic needs an Anthropic credential. A span from OpenAI or any server that speaks its API (`azure`, `groq`, `ollama` and others) needs an OpenAI or OpenAI-compatible credential. The request is never converted from one provider's format to the other's: that would rewrite the tools, the system prompt, the stop sequences and the response format, and the result would no longer be the request that failed. To try the messages on another provider, use a playground run instead.
+
+### What a replay changes
+
+Every field of the stored request is sent untouched, the tools, `tool_choice`, `response_format`, `system`, `stop`, `temperature`, `seed` and `metadata` included, except:
+
+| Field | Change | Why |
+| --- | --- | --- |
+| `stream`, `stream_options` | Removed | A replay is never streamed, so its usage is certain. First token is "—" |
+| `n` | Set to 1 when above 1 | It multiplies the bill |
+| `max_tokens`, `max_completion_tokens`, `max_output_tokens` | Lowered to the smaller of the stored value, your value and 4096 | A replay is bounded like a playground run |
+| `max_tokens` on an Anthropic request that has none | Set to 1024, or your value when lower | Anthropic requires it |
+| `model` | Replaced when you pick another model | |
+
+The result says which fields changed. **"Exact replay — identical request"** appears only when the replayed span's request hash equals the stored one's, which holds when nothing but the streaming fields changed. Any other change, an edit included, makes the replay "Modified", and an OTLP span's replay is "Not exact".
+
+### When a replay is refused
+
+The **Replay** button says why a span cannot be replayed, and the API answers `422` with one of these codes. For a redacted or truncated request, **Edit and replay** lets you repair it first.
+
+| Code | The stored span | What to do |
+| --- | --- | --- |
+| `REPLAY_NOT_LLM` | Is not an LLM call | Replay the LLM span inside it |
+| `REPLAY_NO_PAYLOAD` | Has no stored request: payload capture was off, or retention removed it | Nothing to send. Turn on payload capture for future calls |
+| `REPLAY_PAYLOAD_TRUNCATED` | Was cut at the 32 KB payload limit when it was stored | Edit the request into a complete one |
+| `REPLAY_PAYLOAD_REDACTED` | Holds `[REDACTED]` or `[MAX_DEPTH]` where a secret or a too-deep value was removed at ingest | Edit those parts out. **Run replay** stays disabled while a marker remains |
+| `REPLAY_UNSUPPORTED_INPUT` | Is not a provider request (a plain text prompt, a body without a model), or an edit is not one, or an OTLP span has no model and none was picked | Pick a model, or fix the edit |
+| `REPLAY_PROVIDER_MISMATCH` | Needs a credential of the other provider | Pick a credential of the span's provider |
+| `REPLAY_MODEL_UNPRICED` | Uses a model with no price | Add a price override, or pick a priced model |
+| `REPLAY_BODY_TOO_LARGE` | Your edited request is larger than 256 KB | Shorten it |
+
+### The replay budget
+
+Replays are a paid call anyone with the member role can repeat with one click, so each project has a **monthly replay budget**, `REPLAY_MONTHLY_BUDGET_USD` on the server (5 US dollars by default, per UTC month). Before each call Spanlight reserves the most it could cost (the request's text counted as input tokens, plus every allowed output token) and refuses the replay when that would pass the budget: nothing is sent, the API answers `409 REPLAY_BUDGET_EXCEEDED` with the month's figures, and the column says "Skipped: this month's replay budget is spent." After the call the replay is charged its real cost. A call that broke after it was sent is charged the reservation, because the provider may have billed it. Setting the budget to `0` turns replay off (`409 NOT_CONFIGURED`).
+
+The budget is the replay's own. The project's [budgets](/docs/budgets/) still apply: one set to block stops the call, and the result shows `BUDGET_EXCEEDED`. Replays also share the limit of 30 playground runs a minute per person.
+
+### Where replay traces go
+
+A replay leaves a trace in environment `playground`, named `replay`, tagged `spanlight:replay`, with your account id as its user and the release of the trace it replays. Its span carries `spanlight.replay.source_trace_id`, `spanlight.replay.source_span_id`, `spanlight.replay.fidelity`, `spanlight.replay.changed` and `spanlight.replay.id`. Replays are recorded in the audit log with the credential, the model and the cost, never the content. The answer is shown as it came back: a tool call in it is shown, never executed.
+
+### Replay from the API
+
+Under `/api/v1/projects/{project_id}`:
+
+| Route | Needs | Does |
+| --- | --- | --- |
+| `GET /traces/{trace_id}/spans/{span_id}/replay-source` | `project:read` | What a replay would send (`fidelity`, `surface`, `provider_kind`, `body`) or the `refusal`, and the span's last 10 replays. Calls nothing |
+| `POST /playground/replays` | `experiments:run` | Replay a span. Accepts an `Idempotency-Key` |
+| `GET /playground/replays?trace_id&span_id` | `project:read` | Replays, newest first |
+| `GET /playground/replays/budget` | `project:read` | `monthly_budget_usd`, `spent_usd`, `reserved_usd`, `remaining_usd`, `month_start` |
+
+```json
+{
+  "trace_id": "5b8efff798038103d269b633813fc60c",
+  "span_id": "eee19b7ec3c1b174",
+  "credential_id": "0192f3a1-0000-7000-8000-000000000001",
+  "max_tokens": 1024
+}
+```
+
+`model` and `edited_body` (the whole request, as a JSON object) are optional too. The answer has `replay_id`, `fidelity` (`exact`, `modified` or `messages_only`), `changed`, `same_request_hash`, `source` (the replayed span and its recorded output text), and the `output`, `usage`, `cost_usd`, `latency_ms`, `trace_id`, `span_id` and `error` of a playground result. `same_request_hash` is `null` when the replayed span could not be stored, so the two requests could not be compared. A span outside the project or a credential outside the organization answers `404`.
+
 ## Check it worked
 
 Choose a credential and a model, write a message and select **Run**. The column shows the answer and a row of figures labelled Tokens, Cost, Latency and First token. First token is "—" because answers are not streamed. Then open **Traces** and filter the environment to `playground`: the run left a trace named `playground`.
@@ -131,6 +216,8 @@ Choose a credential and a model, write a message and select **Run**. The column 
 - **The columns say "Nothing to run".** A credential or prompt version in the run no longer exists (`404`). Pick them again and run.
 - **A column says "Budget reached".** A budget set to block stops the call (`BUDGET_EXCEEDED`). Raise the budget or wait for the next period. See [Budgets](/docs/budgets/).
 - **A column says "Missing variables".** Every variable of the prompt needs a value in each configuration. Fill in the names it lists and run again.
+- **A replay is refused with a `REPLAY_*` code.** The table in [When a replay is refused](#when-a-replay-is-refused) says why and what to do.
+- **"Skipped: this month's replay budget is spent."** The project's replays this month have used `REPLAY_MONTHLY_BUDGET_USD` (`409 REPLAY_BUDGET_EXCEEDED`). Wait for the next UTC month, or ask an operator to raise it.
 - **A card says "Too many runs".** The limit is 30 runs a minute for each person (`429 RATE_LIMITED`). Wait for `Retry-After`. See [Limits](/docs/reference/limits/#rate-limits).
 
 ## Next steps

@@ -5,7 +5,7 @@ sidebar:
   order: 6
 ---
 
-{/* Sources: backend/app/api/deps.py, backend/app/api/principals.py, backend/app/core/permissions.py, backend/app/core/scopes.py, backend/app/core/security.py, backend/app/db/rls.py, backend/app/db/roles.py, backend/app/db/models/identity.py, backend/app/db/models/projects.py, backend/app/services/sessions.py, backend/tests/rls/test_rls.py, backend/tests/rls/test_policy_inventory.py, docs/decisions/0003-row-level-security.md */}
+{/* Sources: backend/app/api/deps.py, backend/app/api/principals.py, backend/app/core/permissions.py, backend/app/core/scopes.py, backend/app/core/security.py, backend/app/db/rls.py, backend/app/db/roles.py, backend/app/db/models/identity.py, backend/app/db/models/projects.py, backend/app/services/sessions.py, backend/tests/rls/test_rls.py, backend/tests/rls/test_policy_inventory.py, backend/alembic/versions/1001_add_review_policies.py, backend/alembic/versions/1002_add_replay_runs.py, backend/app/review/jobs.py, backend/app/review/selection.py, docs/decisions/0003-row-level-security.md */}
 
 import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 
@@ -51,12 +51,14 @@ If an organization requires two-factor authentication, a member without it gets 
 
 The third layer works like this. Telemetry tables, and every other table that belongs to a project, have row-level security switched on and **forced**. A policy says a row is visible only when its project is the one the current transaction is bound to. The binding is set for the length of one transaction and cannot leak to the next user of a pooled connection.
 
+The tables of [daily review](/docs/review/) and [replays](/docs/playground/#replay-a-stored-request), `review_policies`, `review_selections` and `replay_runs`, belong to a project and follow the same rule.
+
 The result is that a query written without any `WHERE project_id = …` returns nothing instead of everyone's data. A forgotten filter becomes an empty page, not a leak. Tests check this directly: with no binding, no rows are visible; with a binding, only that project's rows are; and a write for another project is refused. A further test reads the database catalog to make sure every table with a `project_id` has these policies, so a migration that adds a table and forgets its policy fails the build.
 
 Two details keep the guarantee real.
 
 - **The application connects as an ordinary database role.** Superusers and roles that bypass row-level security ignore the policies silently, so the API and the worker connect as a role that cannot.
-- **Bypassing is explicit and rare.** Background jobs that must look across projects, such as retention, set a bypass flag themselves. They are the only code allowed to. The one table with a project column and no row-level security is the table of project API keys, because a key is looked up by its prefix before the project is known.
+- **Bypassing is explicit and rare.** Background jobs that must look across projects, such as retention, set a bypass flag themselves. They are the only code allowed to. The nightly [daily review](/docs/review/) selection is an example of how narrow that is: it bypasses the policies only to list which projects have a review policy turned on, then selects each project's traces in a transaction bound to that project alone, so one project's traces can never land in another's queue. The one table with a project column and no row-level security is the table of project API keys, because a key is looked up by its prefix before the project is known.
 
 ### Four kinds of credential
 

@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-{/* Sources: backend/app/api/v1/gateway_routes.py, frontend/src/features/gateway/routes/use-route-save.ts, frontend/src/features/gateway/routes/version-conflict-callout.tsx, backend/app/gateway/errors.py */}
+{/* Sources: backend/app/api/v1/gateway_routes.py, backend/app/gateway/route_config.py, backend/app/gateway/routing.py, backend/app/gateway/attempt_log.py, frontend/src/features/gateway/routes/use-route-save.ts, frontend/src/features/gateway/routes/version-conflict-callout.tsx, backend/app/gateway/errors.py */}
 
 import NextSteps from '../../../components/NextSteps.astro';
 import Prerequisites from '../../../components/Prerequisites.astro';
@@ -99,8 +99,19 @@ A retry only happens when the wait fits inside the time budget with at least one
 | `rate_limited` | The provider answered 429 |
 | `timeout` | The provider did not answer in time |
 | `connection_error` | The gateway could not connect or the connection broke |
+| `auth_error` | The provider answered 401 or 403. Off unless the route lists it |
 
-An empty list means never fall back. By default all four are on. Other client errors never fall back, because another provider would not fix a bad request.
+An empty list means never fall back. By default the first four are on, and `auth_error` is off. Other client errors never fall back, because another provider would not fix a bad request.
+
+### Falling back on a rejected key
+
+`auth_error` (**Auth errors (401/403)** in the route editor) is opt-in on purpose. When another credential quietly answers for a key the provider rejected, a revoked or expired key goes unnoticed and its traffic, and its spend, moves to the other credential. List it only when that is what you want:
+
+```json
+"fallback": { "on": ["status_5xx", "rate_limited", "timeout", "connection_error", "auth_error"] }
+```
+
+A route that lists `auth_error` needs at least two targets on different credentials. Otherwise saving it is refused with `422` and the message `fallback.on: auth_error needs two targets on different credentials`. The two credentials must also be able to serve the same calls: a route with one OpenAI and one Anthropic credential passes the check, but a chat completions call has only the OpenAI target to use, so it never falls back. A 401 or 403 is still not retried on the same target unless you add it to `on_statuses`. Each version of the route records the change, so the route history shows who turned it on.
 
 A request to a private or local address is never retried and never falls back (`502 UPSTREAM_BLOCKED`); that is a configuration error, not a provider failure. See [Provider credentials](/docs/gateway/credentials/#base-urls-and-private-addresses).
 
@@ -114,7 +125,7 @@ Each attempt gets whatever is left of the budget, so a slow first target leaves 
 
 ## What a span records
 
-The span of a call records the route name and version, the credential that answered, the number of attempts, how many other targets were used and the last provider status. The attempt count is also in the `X-Spanlight-Attempts` response header. `GET /api/v1/projects/{project_id}/gateway/overview` and the **Gateway, Overview** page total retries and fallbacks per target.
+The span of a call records the route name and version, the credential that answered, the number of attempts, how many other targets were used and the last provider status. The attempt count is also in the `X-Spanlight-Attempts` response header. The attribute `spanlight.gateway.attempt_log` lists every attempt in order, with its target, credential name, status, error, duration and `Retry-After`; see [What a span records](/docs/gateway/errors/#what-a-span-records). Anyone who can read the project's traces, viewers included, can read these credential names, so keep anything sensitive out of a credential's name; names never contain key material. `GET /api/v1/projects/{project_id}/gateway/overview` and the **Gateway, Overview** page total retries and fallbacks per target.
 
 ## Versions and revert
 
@@ -148,6 +159,7 @@ The response carries `X-Spanlight-Attempts` with the same attempt count.
 - **A call goes to a credential you did not expect.** Weights pick the first target at random among the targets that can serve the surface. Check the route version in the span (`spanlight.gateway.route_version`) and that the key uses this route. See [Targets](#targets).
 - **`400 NO_COMPATIBLE_TARGET`.** No target can serve the surface: chat completions and responses need an `openai` or `openai_compatible` credential, messages needs an `anthropic` one.
 - **A `4xx` from the provider is not retried and no fallback happens.** By design: another try or another provider would not fix a bad request. Only `on_statuses` are retried, and fallbacks follow `fallback.on`. See [Retries](#retries) and [Fallbacks](#fallbacks).
+- **A `401` or `403` does not fall back to the next credential.** `auth_error` is off by default. Add it to `fallback.on`, with a second target on another credential that serves the same surface. See [Falling back on a rejected key](#falling-back-on-a-rejected-key).
 - **Saving answers `409 ROUTE_VERSION_CONFLICT`** ("Someone saved version N while you were editing."). In the editor, **Reload latest**, then apply your change again.
 - **Deleting answers `409 ROUTE_IN_USE`.** A gateway key still uses the route. Move the key to another route first. A credential used by the route's current version answers `409 CREDENTIAL_IN_USE` the same way.
 - **`504 UPSTREAM_TIMEOUT`.** The whole call, every attempt and wait included, ran past `timeout_ms`. See [The time budget](#the-time-budget).

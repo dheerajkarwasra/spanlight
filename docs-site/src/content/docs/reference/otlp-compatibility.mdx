@@ -1,0 +1,127 @@
+---
+title: OTLP compatibility
+description: What each OpenTelemetry exporter library sends to Spanlight, scenario by scenario, generated from the recorded fixtures that the contract test replays on every change.
+editUrl: "https://github.com/dheerajkarwasra/spanlight/edit/main/backend/scripts/gen_otlp_matrix.py"
+---
+
+{/* Sources: sdks/fixtures/otlp/schema.json, backend/scripts/gen_otlp_matrix.py */}
+
+{/* Generated from sdks/fixtures/otlp. Do not edit by hand: run cd backend && uv run python scripts/gen_otlp_matrix.py */}
+
+This page lists, for each exporter library and pinned version, which Spanlight fields a span sent through [OTLP ingestion](/docs/otlp/) fills. Supported means a green fixture: each table below comes from a fixture that holds the exact bytes the library exported for each scenario and the rows Spanlight is expected to store for them. The contract test posts those bytes on every change and checks every field, so the tables cannot drift from what the code does. The [`otlp-matrix-weekly`](https://github.com/dheerajkarwasra/spanlight/actions/workflows/otlp-matrix-weekly.yml) workflow re-records every library at its latest release each week and reports any breakage.
+
+Each cell says one of four things:
+
+- **captured**: Spanlight stores the field from what the library sends.
+- **not sent by the exporter**: the library does not send the field in this scenario, so it stays empty ("—" in the app).
+- **not read**: the library sends the field in a form Spanlight does not read, a documented non-goal of the OTLP path (OpenInference sends the time to first token as a span event, and span events are not read).
+- **not captured**: the scenario stores no value for the field, for example no finish reason on a request that failed.
+
+For which attribute fills which field, see [OTLP attribute mapping](/docs/reference/otlp-mapping/).
+
+## Recorded libraries
+
+### litellm 1.105.1
+
+Recorded 2026-10-17T20:42:33Z on python 3.13.9 with OpenTelemetry SDK 1.45.1 (harness `sdks/fixtures/otlp/record@e0893b3`). Fixture: `sdks/fixtures/otlp/litellm/1.105.1.json`.
+
+| Scenario | Provider | Model | Input tokens | Output tokens | Cached | Cache writes | Prompt | Completion | Finish reason | TTFT | Kind | Error class | Trace fields | Metadata | Usage rollup |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `chat_genai_latest` | captured | captured | captured | captured | not sent by the exporter | not captured | captured | captured | captured | not sent by the exporter | captured | not captured | captured | not captured | captured |
+| `chat_legacy` | captured | captured | captured | captured | not sent by the exporter | not captured | captured | captured | captured | not sent by the exporter | captured | not captured | captured | not captured | captured |
+| `error_429` | captured | captured | not sent by the exporter | not sent by the exporter | not sent by the exporter | not sent by the exporter | captured | not captured | not captured | not sent by the exporter | captured | captured | captured | not captured | captured |
+| `joined_parent_span` | captured | captured | captured | captured | not sent by the exporter | not captured | captured | captured | captured | not sent by the exporter | captured | not captured | captured | not captured | captured |
+
+### openinference-langchain 0.1.79
+
+Recorded 2026-10-17T20:37:03Z on python 3.13.9 with OpenTelemetry SDK 1.45.1 (harness `sdks/fixtures/otlp/record@e0893b3`). Fixture: `sdks/fixtures/otlp/openinference-langchain/0.1.79.json`.
+
+| Scenario | Provider | Model | Input tokens | Output tokens | Cached | Cache writes | Prompt | Completion | Finish reason | TTFT | Kind | Error class | Trace fields | Metadata | Usage rollup |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `agent_tool_llm` | captured | captured | captured | captured | captured | not captured | captured | captured | captured | not sent by the exporter | captured | not captured | captured | captured | captured |
+| `chain_llm` | captured | captured | captured | captured | captured | not captured | captured | captured | captured | not sent by the exporter | captured | not captured | captured | captured | captured |
+| `retriever` | captured | captured | captured | captured | captured | not captured | captured | captured | captured | not sent by the exporter | captured | not captured | captured | captured | captured |
+
+### openinference-openai 0.1.65
+
+Recorded 2026-10-17T20:44:16Z on python 3.13.9 with OpenTelemetry SDK 1.45.1 (harness `sdks/fixtures/otlp/record@e0893b3`). Fixture: `sdks/fixtures/otlp/openinference-openai/0.1.65.json`.
+
+| Scenario | Provider | Model | Input tokens | Output tokens | Cached | Cache writes | Prompt | Completion | Finish reason | TTFT | Kind | Error class | Trace fields | Metadata | Usage rollup |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `chat` | captured | captured | captured | captured | captured | not captured | captured | captured | captured | not sent by the exporter | captured | not captured | captured | not captured | captured |
+| `error` | captured | not sent by the exporter | not sent by the exporter | not sent by the exporter | not sent by the exporter | not sent by the exporter | captured | not captured | not captured | not read | captured | captured | captured | not captured | captured |
+| `streaming` | captured | captured | captured | captured | captured | not captured | captured | captured | captured | not read | captured | not captured | captured | not captured | captured |
+| `tool_call` | captured | captured | captured | captured | captured | not captured | captured | captured | captured | not sent by the exporter | captured | not captured | captured | not captured | captured |
+
+### otel-genai-python 2.4b0
+
+Recorded 2026-10-17T20:35:37Z on python 3.13.9 with OpenTelemetry SDK 1.45.1 (harness `sdks/fixtures/otlp/record@e0893b3`). Fixture: `sdks/fixtures/otlp/otel-genai-python/2.4b0.json`.
+
+| Scenario | Provider | Model | Input tokens | Output tokens | Cached | Cache writes | Prompt | Completion | Finish reason | TTFT | Kind | Error class | Trace fields | Metadata | Usage rollup |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `chat` | captured | captured | captured | captured | not sent by the exporter | not captured | captured | captured | captured | not sent by the exporter | captured | not captured | captured | not captured | captured |
+| `chat_tool_call` | captured | captured | captured | captured | not sent by the exporter | not captured | captured | captured | captured | not sent by the exporter | captured | not captured | captured | not captured | captured |
+| `error_429` | captured | captured | not sent by the exporter | not sent by the exporter | not sent by the exporter | not sent by the exporter | captured | not sent by the exporter | not captured | not captured | captured | captured | captured | not captured | captured |
+| `streaming` | captured | captured | captured | captured | not sent by the exporter | not captured | captured | captured | not sent by the exporter | not sent by the exporter | captured | not captured | captured | not captured | captured |
+
+### traceloop-openai 0.62.4
+
+Recorded 2026-10-17T20:39:23Z on python 3.13.9 with OpenTelemetry SDK 1.45.1 (harness `sdks/fixtures/otlp/record@e0893b3`). Fixture: `sdks/fixtures/otlp/traceloop-openai/0.62.4.json`.
+
+| Scenario | Provider | Model | Input tokens | Output tokens | Cached | Cache writes | Prompt | Completion | Finish reason | TTFT | Kind | Error class | Trace fields | Metadata | Usage rollup |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `agent_tool` | captured | captured | captured | captured | captured | not captured | captured | captured | captured | not sent by the exporter | captured | not captured | captured | not captured | captured |
+| `workflow_task_chat` | captured | captured | captured | captured | captured | not captured | captured | captured | captured | not sent by the exporter | captured | not captured | captured | not captured | captured |
+
+### vercel-ai-genai 7.0.142
+
+Recorded 2026-10-17T20:45:24Z on node 24.11.1 with OpenTelemetry SDK 2.12.0 (harness `sdks/fixtures/otlp/record@e0893b3`). Fixture: `sdks/fixtures/otlp/vercel-ai-genai/7.0.142.json`.
+
+| Scenario | Provider | Model | Input tokens | Output tokens | Cached | Cache writes | Prompt | Completion | Finish reason | TTFT | Kind | Error class | Trace fields | Metadata | Usage rollup |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `error` | captured | captured | not sent by the exporter | not sent by the exporter | not sent by the exporter | not sent by the exporter | captured | not sent by the exporter | not captured | not captured | captured | captured | captured | not captured | captured |
+| `generate_object` | captured | captured | captured | captured | captured | not sent by the exporter | captured | captured | captured | not sent by the exporter | captured | captured | captured | not captured | captured |
+| `generate_text_with_metadata` | captured | captured | captured | captured | captured | not sent by the exporter | captured | captured | captured | not sent by the exporter | captured | not captured | captured | not sent by the exporter | captured |
+| `stream_text` | captured | captured | captured | captured | captured | not sent by the exporter | captured | captured | captured | captured | captured | not captured | captured | not captured | captured |
+| `tool_call` | captured | captured | captured | captured | captured | not sent by the exporter | captured | captured | captured | not sent by the exporter | captured | not captured | captured | not captured | captured |
+
+### vercel-ai-legacy 5.0.0
+
+Recorded 2026-10-17T20:45:12Z on node 24.11.1 with OpenTelemetry SDK 2.12.0 (harness `sdks/fixtures/otlp/record@e0893b3`). Fixture: `sdks/fixtures/otlp/vercel-ai-legacy/5.0.0.json`.
+
+| Scenario | Provider | Model | Input tokens | Output tokens | Cached | Cache writes | Prompt | Completion | Finish reason | TTFT | Kind | Error class | Trace fields | Metadata | Usage rollup |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `error` | captured | captured | not sent by the exporter | not sent by the exporter | not sent by the exporter | not sent by the exporter | captured | not sent by the exporter | not captured | not captured | captured | captured | captured | not captured | captured |
+| `generate_object` | captured | captured | captured | captured | not sent by the exporter | not sent by the exporter | captured | captured | captured | not sent by the exporter | captured | captured | captured | not captured | captured |
+| `generate_text_with_metadata` | captured | captured | captured | captured | not sent by the exporter | not sent by the exporter | captured | captured | captured | not sent by the exporter | captured | not captured | captured | captured | captured |
+| `stream_text` | captured | captured | captured | captured | captured | not sent by the exporter | captured | captured | captured | captured | captured | not captured | captured | not captured | captured |
+| `tool_call` | captured | captured | captured | captured | not sent by the exporter | not sent by the exporter | captured | captured | captured | not sent by the exporter | captured | not captured | captured | not captured | captured |
+
+### vercel-ai-legacy 6.0.0
+
+Recorded 2026-10-17T20:45:16Z on node 24.11.1 with OpenTelemetry SDK 2.12.0 (harness `sdks/fixtures/otlp/record@e0893b3`). Fixture: `sdks/fixtures/otlp/vercel-ai-legacy/6.0.0.json`.
+
+| Scenario | Provider | Model | Input tokens | Output tokens | Cached | Cache writes | Prompt | Completion | Finish reason | TTFT | Kind | Error class | Trace fields | Metadata | Usage rollup |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `error` | captured | captured | not sent by the exporter | not sent by the exporter | not sent by the exporter | not sent by the exporter | captured | not sent by the exporter | not captured | not captured | captured | captured | captured | not captured | captured |
+| `generate_object` | captured | captured | captured | captured | not sent by the exporter | not sent by the exporter | captured | captured | captured | not sent by the exporter | captured | captured | captured | not captured | captured |
+| `generate_text_with_metadata` | captured | captured | captured | captured | not sent by the exporter | not sent by the exporter | captured | captured | captured | not sent by the exporter | captured | not captured | captured | captured | captured |
+| `stream_text` | captured | captured | captured | captured | captured | not sent by the exporter | captured | captured | captured | captured | captured | not captured | captured | not captured | captured |
+| `tool_call` | captured | captured | captured | captured | not sent by the exporter | not sent by the exporter | captured | captured | captured | not sent by the exporter | captured | not captured | captured | not captured | captured |
+
+### vercel-ai-legacy 7.0.142
+
+Recorded 2026-10-17T20:45:20Z on node 24.11.1 with OpenTelemetry SDK 2.12.0 (harness `sdks/fixtures/otlp/record@e0893b3`). Fixture: `sdks/fixtures/otlp/vercel-ai-legacy/7.0.142.json`.
+
+| Scenario | Provider | Model | Input tokens | Output tokens | Cached | Cache writes | Prompt | Completion | Finish reason | TTFT | Kind | Error class | Trace fields | Metadata | Usage rollup |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `error` | captured | captured | not sent by the exporter | not sent by the exporter | not sent by the exporter | not sent by the exporter | captured | not sent by the exporter | not captured | not captured | captured | captured | captured | not captured | captured |
+| `generate_object` | captured | captured | captured | captured | captured | not sent by the exporter | captured | captured | captured | not sent by the exporter | captured | captured | captured | not captured | captured |
+| `generate_text_with_metadata` | captured | captured | captured | captured | captured | not sent by the exporter | captured | captured | captured | not sent by the exporter | captured | not captured | captured | captured | captured |
+| `stream_text` | captured | captured | captured | captured | captured | not sent by the exporter | captured | captured | captured | captured | captured | not captured | captured | not captured | captured |
+| `tool_call` | captured | captured | captured | captured | captured | not sent by the exporter | captured | captured | captured | not sent by the exporter | captured | not captured | captured | not captured | captured |
+
+## Related pages
+
+- [OTLP ingestion](/docs/otlp/): send traces from any OpenTelemetry exporter.
+- [OTLP attribute mapping](/docs/reference/otlp-mapping/): which attribute fills which field.

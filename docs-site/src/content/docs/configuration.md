@@ -125,6 +125,7 @@ Detectors read each project's recent spans every 15 minutes and turn what they f
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
 | `DETECTORS_ENABLED` | boolean | `true` | Schedule the detector job, which looks for problems in every project with traffic every 15 minutes. Off, no new insights appear. |
+| `PROVIDER_STATUS_POLLING_ENABLED` | boolean | `true` | Schedule the poll of the Anthropic, OpenAI and Google public status pages every 5 minutes, whose incidents the provider pages and the Doctor cite. The feed URLs are fixed. Off, nothing is fetched (an air-gapped instance) and the incident list says polling is disabled. |
 | `EXPLAIN_MODEL` | string | `claude-sonnet-5-5` | Claude model that explains an insight. It must have a price, or explanations answer `409 EXPLAIN_MODEL_UNPRICED`. |
 | `EXPLAIN_MONTHLY_BUDGET_USD` | decimal (min 0) | `1.00` | Most an organization may spend on explanations per UTC month, in US dollars. `0` turns explanations off (`409 NOT_CONFIGURED`). |
 | `USER_STATS_ENABLED` | boolean | `true` | Schedule the refresh of per-user daily statistics behind the Users page. Off, the page stops updating. |
@@ -138,6 +139,31 @@ Evaluators score traces: heuristics run locally, LLM judges call a model through
 | `EVALS_ENABLED` | boolean | `true` | Schedule online evaluation, which samples recent spans for every enabled evaluator once a minute. Off, evaluators run only inside experiments and test runs. |
 | `EVAL_SAMPLER_MAX_RUNS_PER_CYCLE` | integer (min 1, max 10000) | `50` | Most evaluation runs one evaluator gets per one-minute sampling cycle. Spans past it are not sampled in that cycle. An LLM judge whose monthly budget is used up is not sampled at all. |
 | `EXPERIMENT_MAX_ITEMS` | integer (min 1, max 100000) | `1000` | Ceiling for an experiment's `max_items`: the most dataset items one experiment run processes. |
+
+### Review loop
+
+Every UTC day a project's review policy fills its review queue with the traces worth reading, each with its reason. A replay sends a stored LLM request again through one of the organization's provider credentials, sealed with `CREDENTIALS_KEYS`; without it replay answers `409 NOT_CONFIGURED`.
+
+| Variable | Type | Default | Description |
+| --- | --- | --- | --- |
+| `REVIEW_SELECTION_ENABLED` | boolean | `true` | Schedule the nightly selection of traces into each project's review queue. Off, a review policy can still be run by hand. |
+| `REPLAY_MONTHLY_BUDGET_USD` | decimal (min 0) | `5.00` | Most a project may spend on replays per UTC month, in US dollars. `0` turns replay off (`409 NOT_CONFIGURED`). |
+
+### Billing sources
+
+A billing source connects a provider's cost report (an Anthropic or OpenAI admin key, or a CSV upload) so the reconciliation page can compare what the provider billed with what Spanlight priced. Admin keys are sealed with `CREDENTIALS_KEYS`; without it an API-kind source cannot be created or rotated (`409 NOT_CONFIGURED`). CSV sources work without it.
+
+| Variable | Type | Default | Description |
+| --- | --- | --- | --- |
+| `BILLING_SOURCES_ENABLED` | boolean | `true` | Schedules the daily fetch of connected provider cost reports; `false` stops every provider cost-API call, the routes stay and a manual refresh answers `409 NOT_CONFIGURED`. |
+
+### Attribution
+
+The attribution view groups spend and usage by trace metadata, trace name, end user or release. Windows of 24 hours or less read the traces live; longer windows read daily rollups that the refresh job rebuilds every 15 minutes.
+
+| Variable | Type | Default | Description |
+| --- | --- | --- | --- |
+| `ATTRIBUTION_ENABLED` | boolean | `true` | Schedule the attribution refresh, which rebuilds the daily rollups behind windows longer than 24 hours every 15 minutes. Off, those windows stop updating; windows of 24 hours or less stay live. |
 
 ### API request limits
 
@@ -169,6 +195,14 @@ Idempotency keys and rate limiting each use a small pool of their own, so they c
 | `OTEL_SERVICE_NAME` | string | `spanlight-api` | Service name on Spanlight's own spans. |
 | `LOG_LEVEL` | string | `INFO` | Log level: `DEBUG`, `INFO`, `WARNING` or `ERROR`. |
 | `LOG_JSON` | boolean | `true` | Write logs as JSON lines. Turn off for human-readable development output. |
+
+### Enterprise edition
+
+Code under `ee/` directories is licensed separately from the MIT core and runs only with a license key. Without one the application runs as the community edition, which is complete on its own. `spanlight license-status` shows what a key grants.
+
+| Variable | Type | Default | Description |
+| --- | --- | --- | --- |
+| `EE_LICENSE_KEY` | secret | unset | An enterprise license key, `spl_lic_...`. Unset runs the community edition. A key that does not verify stops the application at startup; an expired key turns the features it granted off, and requests for them answer `403 EE_LICENSE_REQUIRED`. Set the same value on the API and the worker. Verified offline: nothing is sent anywhere. |
 
 <!-- END GENERATED SETTINGS -->
 

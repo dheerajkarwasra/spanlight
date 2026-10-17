@@ -3,7 +3,7 @@ title: Admin CLI reference
 description: Every command of the spanlight admin CLI, with its arguments, options, what it changes, exit codes and an example, for operators of a self-hosted Spanlight.
 ---
 
-{/* Sources: backend/app/cli.py, backend/app/cli_alerts.py, backend/app/cli_demo.py, backend/pyproject.toml, backend/app/config.py, backend/app/alerts/cli_support.py, backend/app/core/security.py, backend/app/db/models/identity.py, backend/app/rollups/jobs.py, deploy/compose.yaml, deploy/Dockerfile */}
+{/* Sources: backend/app/cli.py, backend/app/cli_alerts.py, backend/app/cli_attribution.py, backend/app/attribution/jobs.py, backend/app/cli_demo.py, backend/app/cli_doctor.py, backend/app/insights/precision.py, backend/pyproject.toml, backend/app/config.py, backend/app/alerts/cli_support.py, backend/app/core/security.py, backend/app/db/models/identity.py, backend/app/ee/license.py, backend/app/rollups/jobs.py, deploy/compose.yaml, deploy/Dockerfile */}
 
 The `spanlight` command is the operator's tool for a self-hosted Spanlight. It creates users, resets credentials, runs migrations, takes backups and runs maintenance jobs by hand. It is not the Python SDK; for that see the [Python SDK reference](/docs/reference/python-sdk/).
 
@@ -30,10 +30,12 @@ Every command takes `--help`. Two kinds of failure exit with a non-zero status:
 | [`reset-password`](#reset-password) | Sets a new password and signs the user out everywhere. |
 | [`reset-2fa`](#reset-2fa) | Turns two-factor authentication off for a user. |
 | [`sync-prices`](#sync-prices) | Inserts the bundled model price snapshot. |
-| [`reseal-credentials`](#reseal-credentials) | Re-seals provider credentials under the first encryption key. |
+| [`reseal-credentials`](#reseal-credentials) | Re-seals provider credentials and billing source admin keys under the first encryption key. |
+| [`license-status`](#license-status) | Shows the edition and what the enterprise license key grants. |
 | [`migrate`](#migrate) | Applies database migrations. |
 | [`ensure-app-role`](#ensure-app-role) | Creates the database role the API and worker connect as. |
 | [`rollups backfill`](#rollups-backfill) | Recomputes hourly metric rollups for a time range. |
+| [`recompute-usage-rollups`](#recompute-usage-rollups) | Flags usage rollups and retotals the traces of a recent period. |
 | [`alerts evaluate`](#alerts-evaluate) | Runs one alert evaluation pass now. |
 | [`demo seed-evals`](#demo-seed-evals) | Seeds the demo workspace with an experiment. |
 | [`backup now`](#backup-now) | Takes a database backup now. |
@@ -131,9 +133,9 @@ APP_DB_PASSWORD="$(openssl rand -hex 24)" spanlight ensure-app-role --role spanl
 spanlight reseal-credentials
 ```
 
-Re-seals every provider credential under the first key of `CREDENTIALS_KEYS`. Run it after you put a new key first in that list. It counts again afterwards, and exits with status `1` while any credential is still sealed under an older key. When it succeeds, nothing needs the older keys any more, and you can remove them.
+Re-seals every provider credential and every billing source admin key under the first key of `CREDENTIALS_KEYS` (a billing source uploaded as CSV holds no key and is skipped). Run it after you put a new key first in that list. It counts again afterwards, and exits with status `1` while any credential or billing source is still sealed under an older key. When it succeeds, nothing needs the older keys any more, and you can remove them.
 
-It prints `Re-sealed <n> provider credentials.` and never prints a key. Credentials that no key in `CREDENTIALS_KEYS` can open are left as they are and reported on standard error, with their ids in the log. Without `CREDENTIALS_KEYS` it fails with `Error: CREDENTIALS_KEYS is not set`. The full procedure is in the [rotate secrets runbook](/docs/runbooks/rotate-secrets/).
+It prints `Re-sealed <n> provider credentials and <m> billing source keys.` and never prints a key. Credentials and billing sources that no key in `CREDENTIALS_KEYS` can open are left as they are and reported on standard error, with their ids in the log. Without `CREDENTIALS_KEYS` it fails with `Error: CREDENTIALS_KEYS is not set`. The full procedure is in the [rotate secrets runbook](/docs/runbooks/rotate-secrets/).
 
 ### `sync-prices`
 
@@ -142,6 +144,16 @@ spanlight sync-prices
 ```
 
 Inserts the model price snapshots bundled with the server, the current one and the historical ones, into the price table. Rows that already exist are kept. It prints `Inserted <n> price rows (snapshots up to <version>).`, `<version>` being the current snapshot. The `api` and `worker` run the same seeding when they start. See [Cost](/docs/concepts/cost/).
+
+### `license-status`
+
+```text
+spanlight license-status
+```
+
+Shows which edition the instance runs and what the license key in `EE_LICENSE_KEY` grants. It reads only that variable, from the environment or a `.env` file in the working directory, and never prints the key. It takes no options.
+
+Without a key it prints `Edition: community (EE_LICENSE_KEY is not set)`. With a key that verifies it prints `Edition: enterprise`, then the license id, the licensee, the signing key id, the expiry date with the days left (or `expired: ee features are off`) and the features the license grants. A key that does not verify exits with status `1` and `Error: EE_LICENSE_KEY is invalid: ...`; the API and worker refuse to start with such a key, so run this command to find out why. The key is verified offline: nothing is sent anywhere.
 
 ## Maintenance
 
@@ -163,6 +175,46 @@ The range may not be longer than 90 days, and `--from` must be earlier than `--t
 
 ```bash
 spanlight rollups backfill --project 3f1c9a52-8d0e-4c1b-9a6e-2b7d5e41c0aa --from 2026-09-01 --to 2026-10-01
+```
+
+### `recompute-usage-rollups`
+
+```text
+spanlight recompute-usage-rollups --since DURATION [--batch-size N]
+```
+
+| Option | Required | Meaning |
+| --- | --- | --- |
+| `--since` | yes | How far back to recompute: days as `30d` or hours as `12h`. |
+| `--batch-size` | no | Traces per transaction. The default is 500. |
+
+Flags the spans whose usage repeats a descendant's (a framework span over the provider call it wraps) and recomputes the token, cost and span totals of every trace started within `--since`, across all projects, the way ingestion does after each batch. Spans stored before the upgrade that added usage rollups are not re-evaluated otherwise; see [Cost](/docs/concepts/cost/).
+
+Each batch of traces of one project is its own transaction, so a run that stops can be repeated: a second run changes nothing it already corrected. A duration that is not `Nd` or `Nh` exits with status `2`. It prints `Recomputed <n> traces.`
+
+```bash
+spanlight recompute-usage-rollups --since 30d
+```
+
+### `attribution backfill`
+
+```text
+spanlight attribution backfill --project UUID --from DATE --to DATE [--key KEY]
+```
+
+| Option | Required | Meaning |
+| --- | --- | --- |
+| `--project` | yes | The project id. |
+| `--from` | yes | First UTC day, inclusive, as `YYYY-MM-DD`. |
+| `--to` | yes | Last UTC day, inclusive, as `YYYY-MM-DD`. |
+| `--key` | no | Recompute only this promoted metadata key. By default every kind (trace name, user, release) and every promoted key. |
+
+Recomputes one project's daily [attribution](/docs/concepts/attribution/) rollups over the days `[--from, --to]`, 31 days per transaction. The scheduled refresh covers the last 8 days, so use this for spans that arrived later than that, or to build the days before a key was promoted, which the refresh backfills over 7 days only.
+
+`--from` may not be later than `--to`, and may not be before the project's retention (the next retention pass would delete those days). An unknown project and a key that is not promoted are refused. It prints `Wrote <n> rollup rows, removed <n>, folded <n> values.`
+
+```bash
+spanlight attribution backfill --project 3f1c9a52-8d0e-4c1b-9a6e-2b7d5e41c0aa --from 2026-09-01 --to 2026-09-30 --key customer_id
 ```
 
 ### `alerts evaluate`
@@ -199,6 +251,26 @@ The command exits with status `1` when a rule or a project failed. See [Alerts](
 ```bash
 spanlight alerts evaluate --dry-run --json
 ```
+
+### `doctor precision`
+
+```text
+spanlight doctor precision [--org UUID]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--org` | Only the projects of this organization. Without it, every project counts. |
+
+Prints how often the Doctor was right, per detector kind, from the "Was this right?" votes members gave on insights. It reads across projects the way the worker does, and prints only counts: no project, insight or person. The output is a Markdown table:
+
+```text
+| kind | right | wrong | n | precision | wilson_low | wilson_high | meets_target |
+|---|---|---|---|---|---|---|---|
+| rate_limit_pressure | 18 | 2 | 20 | 0.9000 | 0.6990 | 0.9721 | yes |
+```
+
+`precision` is right divided by `n`, and `wilson_low` and `wilson_high` are its Wilson 95 % interval, rounded half up to four places. A kind without votes shows "—" for the three ratios. `meets_target` is `yes` when the precision is at least 0.8, the lower bound at least 0.6 and `n` at least 20, compared before rounding. An unknown `--org` exits with status `2` and `Invalid value for '--org': no organization with id <id>`. The same numbers for one project are on the Doctor's **Precision** tab; see [The Doctor](/docs/doctor/#was-this-right).
 
 ### `demo seed-evals`
 

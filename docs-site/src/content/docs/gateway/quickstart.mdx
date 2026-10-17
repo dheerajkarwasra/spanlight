@@ -100,7 +100,7 @@ Send the key as `Authorization: Bearer spl_gw_…` or as `x-api-key: spl_gw_…`
 
 Run one of the examples from step 2. It prints the model's reply, and the call shows up as a trace.
 
-Open **Traces**. Each call is one `llm` span named after the surface and model, for example `chat_completions gpt-4.1-mini`. A call that starts a new trace gives the trace the same name; a call that joins a trace you started (with `x-spanlight-trace-id`, below) leaves that trace's name as it is. Streaming calls are recorded when the stream ends, or when the client goes away.
+Open **Traces**. Each call is one `llm` span named after the surface and the model the provider answered with, for example `chat_completions gpt-4.1-mini-2025-04-14`. A call that starts a new trace names the trace after the surface and the model your client asked for, before any route alias, for example `chat_completions gpt-4.1-mini`, so the name is one you know in advance. A call that joins a trace you started (with `x-spanlight-trace-id`, below) leaves that trace's name as it is, unless it sends `x-spanlight-trace-name`. Streaming calls are recorded when the stream ends, or when the client goes away.
 
 A gateway span carries the usual fields (provider, model, input and output, token usage, time to first token for streams, cost) and these attributes:
 
@@ -153,7 +153,7 @@ Retries are the extra attempts that were not a move to another target. See [Retr
 
 ## Join a trace you already started
 
-Send these headers to attach the call to your own trace, session or user. All are optional.
+Send these headers to attach the call to your own trace, session or user, or to give it metadata and a trace name. All are optional.
 
 | Header | Value | Bounds |
 | --- | --- | --- |
@@ -162,12 +162,16 @@ Send these headers to attach the call to your own trace, session or user. All ar
 | `x-spanlight-session` | A session id | 1 to 256 characters |
 | `x-spanlight-user` | An end-user id | 1 to 256 characters |
 | `x-spanlight-tags` | Comma-separated tags | At most 20 tags of at most 64 characters; longer ones are dropped, repeats are ignored |
+| `x-spanlight-metadata` | The trace's [metadata](/docs/concepts/attribution/), as one JSON object: `{"customer_id": "acme"}` | At most 8 KiB, written as ASCII with any other character as a `\uXXXX` escape (what `json.dumps` writes). A header that is not one JSON object within 8 KiB is ignored whole; an invalid key or value is dropped on its own; at most 32 keys are kept |
+| `x-spanlight-trace-name` | The trace's name | 1 to 256 characters after surrounding spaces are removed. It renames a trace the call joins too |
 
-If either id is present but invalid, both are ignored and the call starts a new trace. A parent id without a trace id is ignored. A session or user id outside its bounds is ignored. The final tag list is the Lab tag (if a fault fired), the key's default tags, then the header tags, at most 20 in all.
+If either id is present but invalid, both are ignored and the call starts a new trace. A parent id without a trace id is ignored. A session or user id outside its bounds is ignored. The final tag list is the Lab tag (if a fault fired), the key's default tags, then the header tags, at most 20 in all. Header metadata merges into the trace's metadata by the [merge rule](/docs/concepts/attribution/#how-values-merge), and a [budget](/docs/budgets/#scope-and-period) on a metadata pair or a trace name matches the call by these headers. A header sent twice counts by its last value. A header never rejects the call: an invalid value is dropped.
 
 With the Spanlight Python SDK, pass the ids of the active span:
 
 ```python
+import json
+
 import spanlight
 
 with spanlight.span("answer") as current:
@@ -179,6 +183,7 @@ with spanlight.span("answer") as current:
             "x-spanlight-parent-span-id": current.span_id,
             "x-spanlight-session": "session-42",
             "x-spanlight-tags": "checkout,beta",
+            "x-spanlight-metadata": json.dumps({"customer_id": "acme"}),
         },
     )
 ```

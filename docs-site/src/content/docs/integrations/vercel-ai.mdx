@@ -1,0 +1,198 @@
+---
+title: Vercel AI SDK
+description: Send Vercel AI SDK traces to Spanlight over OpenTelemetry from a Node.js or Next.js server. The tested setup for AI SDK 7, the per-call form for AI SDK 5 and 6, and what Spanlight records from each call.
+---
+
+{/* Sources: sdks/fixtures/otlp/record/node/recipes/recipe.ts, sdks/fixtures/otlp/record/node/recipes/v7-genai.ts, sdks/fixtures/otlp/record/node/recipes/v7-legacy.ts, sdks/fixtures/otlp/record/node/recipes/v5.ts, sdks/fixtures/otlp/record/node/recipes/v6.ts, sdks/fixtures/otlp/record/node/recipes/_scenarios.ts, sdks/fixtures/otlp/record/node/record.mjs, sdks/fixtures/otlp/vercel-ai-genai/7.0.142.json, sdks/fixtures/otlp/vercel-ai-legacy/5.0.0.json, sdks/fixtures/otlp/vercel-ai-legacy/6.0.0.json, sdks/fixtures/otlp/vercel-ai-legacy/7.0.142.json, backend/app/ingest/conventions/vercel_ai.py, backend/app/ingest/conventions/gen_ai.py, backend/app/ingest/usage_rollup.py */}
+
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+import Verified from '../../../components/Verified.astro';
+
+The Vercel AI SDK can export a span for every `generateText`, `streamText` and tool call through OpenTelemetry. Point that export at Spanlight's [OTLP endpoint](/docs/otlp/) and each call becomes a trace with its prompt, answer, tokens, cost and time to first token. No Spanlight package is installed in your application.
+
+<Prerequisites
+  items={[
+    'A running Spanlight instance that your server can reach',
+    'A project API key with the ingest:write scope (the default). Creating one needs the member, admin or owner role',
+    'Node.js 24 (the version this page was tested with), in a Node service or the Next.js server runtime',
+  ]}
+/>
+
+<Verified
+  date="2026-10-17"
+  packages={[
+    { name: 'ai', version: '7.0.142' },
+    { name: '@ai-sdk/otel', version: '1.0.142' },
+    { name: '@ai-sdk/openai', version: '4.0.96' },
+    { name: '@opentelemetry/sdk-trace-node', version: '2.12.0' },
+    { name: '@opentelemetry/exporter-trace-otlp-http', version: '0.223.0' },
+    { name: '@opentelemetry/resources', version: '2.12.0' },
+  ]}
+  note="Recorded with Node 24.11.1 against a local stand-in for the OpenAI Chat Completions API, not against OpenAI itself. AI SDK 5.0.0 and 6.0.0 were recorded the same way with @ai-sdk/openai 2.0.135 and 3.0.130. The @vercel/otel alternative was not run."
+/>
+
+## Install
+
+```bash
+npm install ai@7.0.142 @ai-sdk/otel@1.0.142 @ai-sdk/openai@4.0.96 @opentelemetry/sdk-trace-node@2.12.0 @opentelemetry/exporter-trace-otlp-http@0.223.0 @opentelemetry/resources@2.12.0
+```
+
+Give the exporter your Spanlight address and project API key:
+
+```bash
+export SPANLIGHT_HOST=http://localhost:8080
+export SPANLIGHT_API_KEY=spl_live_...
+```
+
+## Set up tracing (AI SDK 7)
+
+AI SDK 7 sends telemetry once you register it; you do not change your calls. This is the file the GenAI fixture is recorded through, unchanged. Save it as `instrumentation.ts` in a Next.js app, or import it first in a Node service:
+
+```ts
+// instrumentation.ts (Next.js) or the first import of a Node service
+import { NodeTracerProvider, BatchSpanProcessor } from '@opentelemetry/sdk-trace-node';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+import { resourceFromAttributes } from '@opentelemetry/resources';
+import { registerTelemetry } from 'ai';
+import { OpenTelemetry } from '@ai-sdk/otel';
+
+const provider = new NodeTracerProvider({
+  resource: resourceFromAttributes({
+    'service.name': 'support-bot',
+    'service.version': process.env.RELEASE,
+    'deployment.environment.name': process.env.NODE_ENV,
+  }),
+  spanProcessors: [
+    new BatchSpanProcessor(
+      new OTLPTraceExporter({
+        url: `${process.env.SPANLIGHT_HOST}/v1/otlp/traces`,
+        headers: { Authorization: `Bearer ${process.env.SPANLIGHT_API_KEY}` },
+      }),
+    ),
+  ],
+});
+provider.register();
+registerTelemetry(new OpenTelemetry({ tracer: provider.getTracer('spanlight') }));
+```
+
+`service.version` becomes the trace's release and `deployment.environment.name` its environment; see [Trace fields](/docs/reference/otlp-mapping/#trace-fields). The URL must end in `/v1/otlp/traces`: `/v1/traces` is Spanlight's native endpoint and rejects OTLP.
+
+`OpenTelemetry` writes the OpenTelemetry GenAI attributes (`gen_ai.*`), the mode the AI SDK recommends. `LegacyOpenTelemetry`, from the same package, keeps the `ai.*` attributes of AI SDK 5 and 6 instead. Both are read. Use the legacy mode when you need trace metadata, because the GenAI mode does not send it (see [What is not recorded](#what-is-not-recorded)):
+
+```ts
+import { LegacyOpenTelemetry } from '@ai-sdk/otel';
+
+registerTelemetry(new LegacyOpenTelemetry({ tracer: provider.getTracer('spanlight') }));
+```
+
+In legacy mode, pass the metadata on the call as runtime context. Each key you include becomes a trace metadata key, and `functionId` names the trace:
+
+```ts
+await generateText({
+  model: openai.chat('gpt-4.1-mini'),
+  prompt: 'Say hello in five words.',
+  telemetry: { functionId: 'answer', includeRuntimeContext: { tenant: true } },
+  runtimeContext: { tenant: 'acme' },
+});
+```
+
+### With `@vercel/otel`
+
+A Next.js app that already uses `@vercel/otel` can hand it the same exporter. This form was not run for this page:
+
+```ts
+import { registerOTel } from '@vercel/otel';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+import { trace } from '@opentelemetry/api';
+import { registerTelemetry } from 'ai';
+import { OpenTelemetry } from '@ai-sdk/otel';
+
+export function register() {
+  registerOTel({
+    serviceName: 'support-bot',
+    traceExporter: new OTLPTraceExporter({
+      url: `${process.env.SPANLIGHT_HOST}/v1/otlp/traces`,
+      headers: { Authorization: `Bearer ${process.env.SPANLIGHT_API_KEY}` },
+    }),
+  });
+  registerTelemetry(new OpenTelemetry({ tracer: trace.getTracer('spanlight') }));
+}
+```
+
+## AI SDK 5 and 6
+
+AI SDK 5 and 6 have no `registerTelemetry`. Register the same tracer provider (the `provider` block above, without the last line), then turn telemetry on in each call with `experimental_telemetry`:
+
+```ts
+await generateText({
+  model: openai.chat('gpt-4.1-mini'),
+  prompt: 'Say hello in five words.',
+  experimental_telemetry: { isEnabled: true, functionId: 'answer', metadata: { tenant: 'acme' } },
+});
+```
+
+`functionId` names the trace, and each `metadata` key becomes a trace metadata key.
+
+| AI SDK | How telemetry is turned on | Attributes | Recorded with |
+| --- | --- | --- | --- |
+| 7 | `registerTelemetry(new OpenTelemetry(...))` | `gen_ai.*` | `ai` 7.0.142, `@ai-sdk/otel` 1.0.142, `@ai-sdk/openai` 4.0.96 |
+| 7 | `registerTelemetry(new LegacyOpenTelemetry(...))` | `ai.*` | `ai` 7.0.142, `@ai-sdk/otel` 1.0.142, `@ai-sdk/openai` 4.0.96 |
+| 6 | `experimental_telemetry` on each call | `ai.*` | `ai` 6.0.0, `@ai-sdk/openai` 3.0.130 |
+| 5 | `experimental_telemetry` on each call | `ai.*` | `ai` 5.0.0, `@ai-sdk/openai` 2.0.135 |
+
+Every row was recorded with `@opentelemetry/sdk-trace-node` 2.12.0, `@opentelemetry/resources` 2.12.0 and `@opentelemetry/exporter-trace-otlp-http` 0.223.0. [OTLP compatibility](/docs/reference/otlp-compatibility/#vercel-ai-genai-70142) shows, scenario by scenario, which fields each version fills.
+
+## Check it worked
+
+Make one `generateText` call, then open **Traces** in the dashboard and pick the project that owns your key.
+
+- In GenAI mode the trace is named `invoke_agent gpt-4.1-mini`. It holds the `invoke_agent` span, a `step 1` span and the `chat gpt-4.1-mini` model call.
+- In legacy mode, and on AI SDK 5 and 6, the trace is named after `functionId` when you set one, else `ai.generateText`. It holds the `ai.generateText` step and the `ai.generateText.doGenerate` model call.
+
+Open the model call. It shows the prompt, the answer, the token counts and the cost.
+
+## What is recorded
+
+Each `generateText`, `streamText` or `generateObject` call is one trace.
+
+| Span | Kind | What Spanlight stores |
+| --- | --- | --- |
+| The provider call (`chat <model>`, or `ai.generateText.doGenerate` and the other `do…` spans) | `llm` | Provider, the billed model snapshot (`gpt-4.1-mini-2025-04-14`), input, output and cached tokens, prompt, answer, finish reason, cost |
+| The outer call (`invoke_agent <model>`, or `ai.generateText`) | `chain` | The same usage again, marked as a [usage rollup](/docs/reference/otlp-mapping/#usage-counted-once) so the call is counted once |
+| Each tool call (`execute_tool <name>`, or `ai.toolCall`) | `tool` | The tool's span, with no usage |
+| `step 1` (GenAI mode only) | `other` | Timing only |
+
+- **Time to first token** on `streamText`, from `gen_ai.client.operation.time_to_first_chunk` (GenAI mode) or `ai.response.msToFirstChunk` (legacy mode).
+- **Errors.** A failed call is `error` on every span of the trace. A rate limit gets the error class `rate_limit` from the status or the message the SDK records.
+- **Cost** is computed by Spanlight from the model and the token counts; see [How cost is calculated](/docs/concepts/cost/).
+- **Trace metadata** from `experimental_telemetry.metadata` (AI SDK 5 and 6) or the runtime context (AI SDK 7 in legacy mode).
+
+## What is not recorded
+
+- **Trace metadata and the trace name in GenAI mode.** AI SDK 7's `OpenTelemetry` integration does not send the runtime context. It sends `functionId` as `gen_ai.agent.name`, which Spanlight does not use as the trace name, so the trace is named after its root span. Use `LegacyOpenTelemetry` for both.
+- **Cached tokens of a non-streamed call on AI SDK 5 and 6.** Only `streamText` writes `ai.usage.cachedInputTokens` there. AI SDK 7 sends them on every call.
+- **The lifetime of a cache write.** AI SDK 5 and 6 send no cache-write count. When AI SDK 7 sends one (`ai.usage.inputTokenDetails.cacheWriteTokens`), no attribute says whether it was a 5-minute or a 1-hour write, so every cache write is priced at the 5-minute rate. The recorded calls went to OpenAI, which reports no cache writes.
+- **Time to first token of a call that does not stream.** There is no first chunk.
+- **Usage and output of a failed call.** The span keeps the error and the prompt.
+- **Calls outside the AI SDK, browser calls, and edge runtimes without an OpenTelemetry SDK.** Only what the AI SDK exports on a Node.js server is sent.
+- **A cost the exporter computes.** Spanlight never reads one; it prices every span itself.
+
+## Troubleshooting
+
+- **No trace arrives.** Check that `instrumentation.ts` runs before your first AI SDK call and that `SPANLIGHT_HOST` is set in the server's environment. A short script must call `await provider.forceFlush()` before it exits, or the batch is lost. Then work through [No trace arrives](/docs/troubleshooting/#no-trace-arrives).
+- **The exporter gets `422 VALIDATION_ERROR`.** The URL ends in `/v1/traces`. Use `/v1/otlp/traces`.
+- **`401 UNAUTHORIZED`.** The `Authorization` header is missing or the key is not a project API key. See [The `Authorization` header does not reach Spanlight](/docs/troubleshooting/#the-authorization-header-does-not-reach-spanlight).
+- **Some calls have no trace (AI SDK 5 or 6).** Telemetry is off for those calls. Add `experimental_telemetry: { isEnabled: true }` to each one.
+- **The cost of a call looks doubled.** The outer span and the provider call are in different traces, so the rollup cannot be found. Keep both in one process and one tracer provider. See [My agent's cost is doubled](/docs/otlp/#troubleshooting).
+- **The trace has no metadata.** You are in GenAI mode. Switch to `LegacyOpenTelemetry` and pass `runtimeContext`.
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'OTLP compatibility', href: '/docs/reference/otlp-compatibility/', description: 'What each recorded version captures and loses, scenario by scenario.' },
+    { title: 'OTLP attribute mapping', href: '/docs/reference/otlp-mapping/#vercel-ai-sdk', description: 'Which AI SDK attribute fills which field.' },
+    { title: 'OTLP ingestion', href: '/docs/otlp/', description: 'The endpoint, the limits and trace metadata.' },
+  ]}
+/>

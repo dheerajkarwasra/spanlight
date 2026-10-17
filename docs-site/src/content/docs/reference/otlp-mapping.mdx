@@ -1,9 +1,9 @@
 ---
 title: OTLP attribute mapping
-description: How Spanlight turns an OpenTelemetry GenAI span into a Spanlight span. Which attribute fills which field, which fallback is used, how the finish reason and error class are worked out, and which attributes are not read.
+description: How Spanlight turns an OpenTelemetry span into a Spanlight span. Which exporter conventions it reads (OpenTelemetry GenAI, OpenInference, the Vercel AI SDK and Traceloop), which attribute fills which field, how usage is counted once, and how the finish reason and error class are worked out.
 ---
 
-{/* Sources: backend/app/ingest/otlp.py, backend/app/ingest/otlp_values.py, backend/app/ingest/otlp_fit.py, backend/app/ingest/finish_reason.py, backend/app/ingest/error_class.py, backend/app/ingest/jsondepth.py, backend/app/ingest/normalize.py, backend/app/api/ingest.py */}
+{/* Sources: backend/app/ingest/otlp.py, backend/app/ingest/otlp_span.py, backend/app/ingest/conventions/__init__.py, backend/app/ingest/conventions/types.py, backend/app/ingest/conventions/read.py, backend/app/ingest/conventions/flatten.py, backend/app/ingest/conventions/kinds.py, backend/app/ingest/conventions/gen_ai.py, backend/app/ingest/conventions/openinference.py, backend/app/ingest/conventions/vercel_ai.py, backend/app/ingest/conventions/traceloop.py, backend/app/ingest/otlp_metadata.py, backend/app/ingest/otlp_usage.py, backend/app/ingest/otlp_values.py, backend/app/ingest/otlp_fit.py, backend/app/ingest/finish_reason.py, backend/app/ingest/error_class.py, backend/app/ingest/rate_limit_kind.py, backend/app/ingest/provider_fields.py, backend/app/ingest/jsondepth.py, backend/app/ingest/normalize.py, backend/app/ingest/usage_rollup.py, backend/app/ingest/usage_state.py, backend/app/ingest/store.py, backend/app/api/ingest.py, backend/app/api/schemas/traces.py, backend/app/pricing/tiers.py, backend/app/pricing/provider_alias.py, backend/app/pricing/fees.py, backend/app/pricing/prices.py, backend/app/rollups/usage_rollup_cli.py */}
 
 This page lists, attribute by attribute, how Spanlight reads a span sent to `POST /v1/otlp/traces`. To send traces, see [OTLP ingestion](/docs/otlp/). Both encodings, protobuf and JSON, are decoded to the same shape and then mapped by the same code, so the result does not depend on the encoding.
 
@@ -17,9 +17,42 @@ This page lists, attribute by attribute, how Spanlight reads a span sent to `POS
 - **Value types.** Strings, booleans, integers, doubles, arrays and key-value lists are kept as they are. A protobuf `bytes_value` is stored as base64. A value of any other type becomes `null`.
 - **Resource attributes.** The attributes of the resource apply to every span under it.
 
+## Conventions
+
+Exporters describe a model call in different vocabularies. Spanlight reads four of them, and decides for each span on its own which one it speaks. The first rule that matches wins:
+
+| Rule | Convention | Who writes it |
+| --- | --- | --- |
+| The span has `openinference.span.kind` | `openinference` | The OpenInference instrumentations (Arize Phoenix) |
+| The span has `ai.operationId`, or any `ai.*` attribute together with `ai.model.id` | `vercel_ai` | The Vercel AI SDK's own attributes (`ai` 5 and 6, and 7 through its legacy telemetry) |
+| The span has `traceloop.span.kind` | `traceloop` | Traceloop and OpenLLMetry workflow, task, agent and tool spans |
+| The span has any `gen_ai.*` attribute | `gen_ai` | The OpenTelemetry GenAI conventions: the official instrumentations, LiteLLM, the GenAI mode of the Vercel AI SDK 7, and Traceloop's provider spans |
+| None of the above | `none` | Any other span |
+
+The OpenTelemetry `gen_ai.*` attributes are the shared vocabulary that the Vercel AI SDK, Traceloop and LiteLLM all borrow, so they are the fallback rather than the signal. When a span is detected as another convention and also carries `gen_ai.*` attributes, the detected convention fills each field first, and the `gen_ai` reading fills only the fields it left empty. This is how a Vercel AI SDK provider span gets its billed model from `gen_ai.response.model` when `ai.response.model` is absent, and how an OpenInference span with `gen_ai.usage.*` attributes is still priced. The span kind always comes from the detected convention.
+
+Detection never looks at the parent span, so the spans of one trace may use different conventions and a batch can arrive in any order. Spanlight stores the convention it used on every span as the attribute `spanlight.convention` (one of the five values above), and the convention's finer kind of operation, when it has one, as `spanlight.operation`. Both are set by Spanlight only: a value a client sends under either name is replaced or removed.
+
 ## Which attribute fills which field
 
-When a field lists several attributes, the first one that is present and not an empty string wins.
+When a field lists several attributes, the first one that is present and not an empty string wins. A token count sent as text or as a double is handled as described in [Values that are dropped, not rejected](#values-that-are-dropped-not-rejected). A field that no attribute fills stays unknown; Spanlight never invents a value.
+
+### Fields every span gets
+
+These are read the same way whatever the convention.
+
+| Spanlight field | Read from |
+| --- | --- |
+| Span name | The name of the span; if it has none, the resource's `service.name`; if there is none, `span` |
+| Span kind | See [Span kind](#span-kind) |
+| Status | The OTLP status code: 0 is `unset`, 1 is `ok`, 2 is `error`. Any other code is `unset`. |
+| Status message | The OTLP status message; when it is empty, an OpenInference span's `exception.message` |
+| Start and end time | `startTimeUnixNano` and `endTimeUnixNano` |
+| Parent | The parent span id. A span without one is a root span. |
+| Finish reason | See [Finish reason](#finish-reason) |
+| Time to first token | See [Time to first token](#time-to-first-token) |
+
+### OpenTelemetry GenAI (`gen_ai`)
 
 | Spanlight field | Read from |
 | --- | --- |
@@ -29,34 +62,158 @@ When a field lists several attributes, the first one that is present and not an 
 | Output tokens | `gen_ai.usage.output_tokens`, else `gen_ai.usage.completion_tokens` |
 | Cached tokens | `gen_ai.usage.cache_read.input_tokens`, or the older `gen_ai.usage.cache_read_input_tokens` |
 | Cache write tokens | `gen_ai.usage.cache_creation.input_tokens`, or the older `gen_ai.usage.cache_creation_input_tokens` |
-| Input | `gen_ai.input.messages`, else `gen_ai.prompt` |
-| Output | `gen_ai.output.messages`, else `gen_ai.completion` |
-| Finish reason | See [Finish reason](#finish-reason) |
-| Span name | The name of the span; if it has none, the resource's `service.name`; if there is none, `span` |
-| Span kind | See [Span kind](#span-kind) |
-| Status | The OTLP status code: 0 is `unset`, 1 is `ok`, 2 is `error`. Any other code is `unset`. |
-| Status message | The OTLP status message |
-| Start and end time | `startTimeUnixNano` and `endTimeUnixNano` |
-| Parent | The parent span id. A span without one is a root span. |
+| Service tier | `openai.response.service_tier`, else the older `gen_ai.openai.response.service_tier`, else `spanlight.usage.service_tier`. See [Service tier and web searches](#service-tier-and-web-searches). |
+| Web searches | `spanlight.usage.web_search_requests`. OpenTelemetry has no attribute for it. |
+| Input | `gen_ai.input.messages`, else `gen_ai.prompt`; when neither holds a value, the flattened `gen_ai.prompt.<N>.*` attributes that older exporter releases write (see [Flattened messages](#flattened-messages)). When the input is a list of messages and the span has `gen_ai.system_instructions`, the instructions are added first, as `{"role": "system", "parts": …}`, so the stored input is complete. |
+| Output | `gen_ai.output.messages`, else `gen_ai.completion`; when neither holds a value, the flattened `gen_ai.completion.<N>.*` attributes |
+| Operation (`spanlight.operation`) | `gen_ai.operation.name`, as sent |
+| Finish reason | `gen_ai.completion.0.finish_reason`, the first flattened completion's reason (Traceloop). The other `gen_ai.*` finish reason attributes are read as described in [Finish reason](#finish-reason). |
+| Time to first token | `gen_ai.client.operation.time_to_first_chunk`, else `gen_ai.response.time_to_first_chunk`, both in seconds, multiplied by 1000 |
 
 Include the cached tokens and the cache-write tokens in the input token count. Spanlight prices the cache reads at the cached rate, the cache writes at the model's cache-write rate and the rest at the input rate; see [How cost is calculated](/docs/concepts/cost/). OpenTelemetry has no attribute for the lifetime of a cache write, so every cache write sent over OTLP is priced at the 5-minute rate and the span's `cache_write_1h_tokens` stays unknown. Cost is worked out on the server from the model and the token counts. It is never read from the span. A span with an unknown model, or without token counts, has an unknown cost, not zero. The [price table](/docs/reference/prices/) lists the models that have a price.
 
+LiteLLM writes this convention in both of its modes. In LiteLLM 1.105.1 both write `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.input.messages` and `gen_ai.output.messages`; the default mode names the provider with `gen_ai.system` and the span `litellm_request`, and the newer mode (`OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental`) uses `gen_ai.provider.name` and names the span `chat <model>`. LiteLLM sends `gen_ai.response.finish_reasons` as text holding a JSON array, which is read like a list; see [Finish reason](#finish-reason). In its default mode LiteLLM also opens a `raw_gen_ai_request` child span that carries only `llm.<provider>.*` copies of the request and no usage. It is detected as `none`, stored for inspection, and never counted as a model call.
+
+### OpenInference
+
+| Spanlight field | Read from |
+| --- | --- |
+| `provider` | `llm.system`, else `llm.provider`. `llm.system` names the vendor, which is what prices are keyed on; `llm.provider` may name a host such as `azure`. |
+| `model` | `llm.model_name`, else `llm.response.model_name`, else `llm.request.model_name`, else `embedding.model_name` |
+| Input tokens | `llm.token_count.prompt`. OpenInference includes the cached tokens in it, as Spanlight does. |
+| Output tokens | `llm.token_count.completion` |
+| Cached tokens | `llm.token_count.prompt_details.cache_read` |
+| Cache write tokens | `llm.token_count.prompt_details.cache_write` |
+| Input | The flattened `llm.input_messages.*` attributes when the span has any (see [Flattened messages](#flattened-messages)), else `input.value`, parsed as JSON when `input.mime_type` is `application/json` and kept as text otherwise |
+| Output | The flattened `llm.output_messages.*` attributes, else `output.value`, with the same rule on `output.mime_type` |
+| Operation (`spanlight.operation`) | `openinference.span.kind`, trimmed and lower-cased, such as `llm`, `embedding` or `chain` |
+| Finish reason | `llm.finish_reason` |
+| Trace metadata | The `metadata` attribute, read when it is a JSON object; see [Trace fields](#trace-fields) |
+
+`llm.token_count.total` is not read, since it is the sum of the others. The reasoning and audio details of the token counts are kept in the span's attributes and are not priced. The user and the session come from `user.id` and `session.id`, which every span is read for; see [Trace fields](#trace-fields).
+
+### Vercel AI SDK
+
+These are the AI SDK's own `ai.*` attributes, written by `ai` 5 and 6 and by `ai` 7 through its legacy telemetry. The GenAI mode of `ai` 7 writes `gen_ai.*` attributes without `ai.model.id` or `ai.operationId`, and is read as the `gen_ai` convention.
+
+| Spanlight field | Read from |
+| --- | --- |
+| `provider` | `ai.model.provider` without its `.chat`, `.messages`, `.responses`, `.completion` or `.embedding` ending (`openai.chat` is `openai`, `anthropic.messages` is `anthropic`), else `gen_ai.system` |
+| `model` | `ai.response.model`, else `gen_ai.response.model`, else `ai.model.id`, else `gen_ai.request.model` |
+| Input tokens | `ai.usage.inputTokens`, else `ai.usage.promptTokens`, else `gen_ai.usage.input_tokens` |
+| Output tokens | `ai.usage.outputTokens`, else `ai.usage.completionTokens`, else `gen_ai.usage.output_tokens` |
+| Cached tokens | `ai.usage.inputTokenDetails.cacheReadTokens`, else `ai.usage.cachedInputTokens` |
+| Cache write tokens | `ai.usage.inputTokenDetails.cacheWriteTokens` |
+| Input | `ai.prompt.messages` (the provider call), else `ai.prompt` (the outer step), else `ai.toolCall.args` (a tool call), else `ai.value` or `ai.values` (embeddings), parsed as JSON when it is JSON text |
+| Output | An object with `text` from `ai.response.text`, `tool_calls` from `ai.response.toolCalls` and `object` from `ai.response.object`, the absent ones left out; on a tool call, `ai.toolCall.result` |
+| Operation (`spanlight.operation`) | `ai.operationId`, as sent, such as `ai.generateText.doGenerate` |
+| Finish reason | `ai.response.finishReason` |
+| Time to first token | `ai.response.msToFirstChunk`, in milliseconds |
+| Trace name | On a root span, `ai.telemetry.functionId` |
+| Trace metadata | `ai.telemetry.metadata.<key>` (`ai` 5 and 6) and `ai.settings.context.<key>` (`ai` 7); see [Trace fields](#trace-fields) |
+
+The AI SDK writes different usage names within one release: `generateText` writes `ai.usage.promptTokens` and `ai.usage.completionTokens`, `streamText` writes `ai.usage.inputTokens` and `ai.usage.outputTokens`. Both are read. `ai.usage.reasoningTokens` and `ai.usage.totalTokens` are kept in the span's attributes and are not read.
+
+### Traceloop and OpenLLMetry
+
+Traceloop's workflow, task, agent and tool spans carry `traceloop.span.kind`. Its provider spans, such as `openai.chat`, do not: they carry `gen_ai.*` attributes and are read as the `gen_ai` convention. Traceloop 0.62.4 sends the messages of a provider span as `gen_ai.input.messages` and `gen_ai.output.messages`; older releases sent the flattened `gen_ai.prompt.<N>.*` and `gen_ai.completion.<N>.*` attributes, which are still read.
+
+| Spanlight field | Read from |
+| --- | --- |
+| Input | `traceloop.entity.input`, parsed as JSON when it is JSON text, else kept as text |
+| Output | `traceloop.entity.output`, the same way |
+| Operation (`spanlight.operation`) | `traceloop.span.kind`, as sent |
+| Trace name | On a root span, `traceloop.workflow.name`, else `traceloop.entity.name` |
+| Trace metadata | `traceloop.association.properties.<key>`; see [Trace fields](#trace-fields) |
+
+These spans have no provider, model or usage. If an exporter puts `gen_ai.*` attributes on them, the `gen_ai` reading fills those fields.
+
+### Spans with no convention
+
+A span detected as `none` has no provider, model, usage, input or output. Its attributes are stored, and its kind follows the last rules of [Span kind](#span-kind).
+
+### Embeddings
+
+An embeddings call produces no output tokens. When a span is an embeddings call and reports an input token count but no output token count, Spanlight stores the output count as `0` and sets the attribute `usage.output_tokens_implied` to `true`, so the span is priced and the inference stays visible. Without an input count nothing is implied. A span is an embeddings call when its `gen_ai.operation.name` is `embeddings`, its `llm.request.type` is `embedding` (Traceloop), its `openinference.span.kind` is `EMBEDDING`, or its `ai.operationId` ends with `.doEmbed`.
+
+### Usage not exported
+
+A model call (kind `llm`) with a model but with no token count at all gets the attribute `usage.unreported_reason` set to `not_exported`. Its cost is unknown, and its usage state says why; see [Usage state](#usage-state).
+
+### Flattened messages
+
+OpenInference, and older Traceloop releases, write each message as several attributes, such as `llm.input_messages.<N>.message.role` and `llm.input_messages.<N>.message.content`, or `gen_ai.prompt.<N>.role` and `gen_ai.prompt.<N>.content`, where `<N>` is the message's index. Spanlight rebuilds them into a list of messages:
+
+- The number after the prefix is the message's index. Messages are ordered by index, and gaps are ignored, so a span with only index 3 has one message. Leading zeros do not count: `00012` is index 12. An index has at most four digits after them. A key whose index is not a number, such as `llm.input_messages.x.message.role`, is not a message and stays in the span's attributes.
+- The rest of the key, split on `.`, gives the message's fields. A number inside it, as in `llm.input_messages.0.message.contents.1.message_content.text` or `llm.output_messages.0.message.tool_calls.0.tool_call.function.name`, makes a nested list the same way. The wrapper word after an index (`message`, `message_content`, `tool_call`, `prompt`, `completion`) is dropped, so a message reads `{"role": "user", "content": "…"}`.
+- Values are kept as sent. A `content` that holds JSON text is not parsed.
+- At most 256 messages are kept for each prefix, the lowest indices first, and a key may nest at most four levels of lists, the message index included. A key past either limit, or one that would overwrite a value already set, is dropped and counted.
+
+The flattened attributes are not stored again in the span's attributes, the dropped ones included.
+
+### Service tier and web searches
+
+A provider can bill the same tokens at another rate depending on the service tier: a batch request costs half. Spanlight stores one of four tiers, `standard`, `batch`, `priority` or `flex`, and prices the span with that tier's factor. The tier attribute holds the provider's own spelling, which Spanlight trims, lower-cases and maps:
+
+| Sent value | Stored tier |
+| --- | --- |
+| `standard`, `batch`, `priority`, `flex`, from any provider | The same |
+| `default`, `auto`, `scale` (OpenAI) | `standard` |
+| `fast` (OpenAI) | `priority` |
+| `priority_on_demand` (Anthropic) | `priority` |
+| `flex_discount` (Anthropic) | `flex` |
+
+The provider spellings are read against the span's provider, after its aliases (below) are applied. A value Spanlight does not know does not reject the span: the tier stays unknown, the span is priced at the standard rate, and the value is kept in the span's attributes as `usage.service_tier_raw`. A span without the attribute is priced at the standard rate too. [How cost is calculated](/docs/concepts/cost/#service-tiers) lists the factors.
+
+`spanlight.usage.web_search_requests` is the number of server-side web searches the call made. Spanlight adds the provider's per-search fee to the span's cost; see [Fees (web search)](/docs/concepts/cost/#fees-web-search). It is read and checked like a token count: a whole double is stored as an integer, a fraction or a value that is not finite is dropped (the fee is then unknown), and a negative count or one above 100,000 rejects the span.
+
+The tier and web search attributes are read on `gen_ai` spans and on spans of the other conventions that also carry `gen_ai.*` attributes.
+
+### Provider names and Gemini
+
+The provider is stored as it was sent. To find a price, Spanlight folds the common spellings onto the provider the price table uses: `gemini`, `google_genai`, `google-genai`, `google_ai`, `vertex_ai`, `vertexai`, `gcp.gemini`, `gcp.vertex_ai` and `gcp.gen_ai` find the `google` prices, and `claude` finds the `anthropic` prices. `azure` and `azure_openai` are not folded onto `openai`, because Azure bills its own rates, so an Azure span has no cost until a price override for its provider name prices it. [Which provider names match which price](/docs/concepts/cost/#which-provider-names-match-which-price) has the full rule.
+
+For Gemini, send the thinking tokens inside the output count. Gemini reports them apart from the answer (`thoughts_token_count` beside `candidates_token_count`) and bills both at the output rate, so `gen_ai.usage.output_tokens` must be their sum. An instrumentation that sends only the answer's tokens makes the cost too low.
+
 ### Prompts and completions
 
-The four content attributes (`gen_ai.input.messages`, `gen_ai.prompt`, `gen_ai.output.messages`, `gen_ai.completion`) usually hold JSON text. Spanlight parses the text and stores the result. If the text is not valid JSON, or nests more than 64 levels, it is stored as the plain string. Numbers in it that are not finite, or too large for a double, become strings. A value that is not a string is stored as it is.
+A content attribute that holds JSON text, such as `gen_ai.input.messages`, `input.value` under a JSON mime type, `ai.prompt.messages` or `traceloop.entity.input`, is parsed and the result is stored. If the text is not valid JSON, or nests more than 64 levels, it is stored as the plain string. Numbers in it that are not finite, or too large for a double, become strings. A value that is not a string is stored as it is.
 
-The content attributes are not repeated in the span's attributes. Secrets are redacted and large values are cut as for every other ingestion path; see [Limits](/docs/reference/limits/).
+Every content attribute a convention defines is removed from the span's attributes when it is present, whether or not it was the one read. For example, an OpenInference span with both `llm.input_messages.*` and `input.value` stores the messages as its input and keeps neither attribute. The prompt text is therefore stored only as the span's input and output, where secrets are redacted, large values are cut and the project's payload capture setting applies; see [Limits](/docs/reference/limits/). The content attributes are:
+
+- `gen_ai`: `gen_ai.input.messages`, `gen_ai.prompt`, `gen_ai.output.messages`, `gen_ai.completion` and `gen_ai.system_instructions`, and the flattened `gen_ai.prompt.*` and `gen_ai.completion.*` attributes when they are read.
+- `openinference`: `input.value`, `output.value` and the flattened `llm.input_messages.*` and `llm.output_messages.*` attributes. `input.mime_type` and `output.mime_type` are kept.
+- `vercel_ai`: `ai.prompt.messages`, `ai.prompt`, `ai.toolCall.args`, `ai.value`, `ai.values`, `ai.response.text`, `ai.response.toolCalls`, `ai.response.object` and `ai.toolCall.result`.
+- `traceloop`: `traceloop.entity.input` and `traceloop.entity.output`.
 
 ### Span kind
 
-Spanlight sets the kind in this order. The first rule that applies wins.
+The kind comes from the detected convention. No convention has a kind of its own in Spanlight: each value is mapped onto `llm`, `tool`, `chain`, `retrieval`, `http` or `other`, and the convention's own value is kept in `spanlight.operation`. Values are compared trimmed and lower-cased.
 
-1. `llm`, if the span has any attribute whose key starts with `gen_ai.`.
-2. `http`, if it is a client span (OTLP kind 3) with any attribute that starts with `http.` or `url.`.
-3. `retrieval`, if it has any attribute that starts with `db.`.
-4. `other`.
+| Source value | Kind |
+| --- | --- |
+| `gen_ai.operation.name` is `chat`, `text_completion`, `generate_content` or `embeddings` | `llm` |
+| `gen_ai.operation.name` is `execute_tool` | `tool` |
+| `gen_ai.operation.name` is `invoke_agent`, `create_agent` or `invoke_workflow` | `chain` |
+| `gen_ai.operation.name` is `retrieval` | `retrieval` |
+| `gen_ai.operation.name` has any other value | `other` |
+| A `gen_ai` span without `gen_ai.operation.name`, or with an empty one | `llm` |
+| `openinference.span.kind` is `LLM` or `EMBEDDING` | `llm` |
+| `openinference.span.kind` is `TOOL` | `tool` |
+| `openinference.span.kind` is `CHAIN` or `AGENT` | `chain` |
+| `openinference.span.kind` is `RETRIEVER` or `RERANKER` | `retrieval` |
+| `openinference.span.kind` has any other value (`GUARDRAIL`, `EVALUATOR`, `PROMPT`, …) | `other` |
+| `ai.operationId` ends with `.doGenerate`, `.doStream` or `.doEmbed` (the provider call) | `llm` |
+| `ai.operationId` is `ai.toolCall` | `tool` |
+| Any other `ai.operationId` that starts with `ai.`, such as `ai.generateText` (the outer step) | `chain` |
+| `traceloop.span.kind` is `workflow`, `task` or `agent` | `chain` |
+| `traceloop.span.kind` is `tool` | `tool` |
+| `traceloop.span.kind` has any other value | `other` |
+| No convention: a client span (OTLP kind 3) with an attribute that starts with `http.` or `url.` | `http` |
+| No convention: an attribute that starts with `db.` | `retrieval` |
+| No convention, otherwise | `other` |
 
-The kinds `tool` and `chain` are never set from OTLP data.
+A `gen_ai` span whose operation is `execute_tool` or `invoke_agent` used to be `llm` and is now `tool` or `chain`, so tool executions and agent steps are no longer counted as LLM calls. The outer step of an agent framework usually repeats the usage of the calls inside it; [Usage counted once](#usage-counted-once) explains how it is kept out of totals.
 
 ### Trace fields
 
@@ -64,45 +221,124 @@ A trace takes its fields from the spans that belong to it. These are read for ev
 
 | Trace field | Read from |
 | --- | --- |
-| Name | Only on a root span: the span's name; if it has none, the resource's `service.name`. A span with a parent does not name the trace. |
+| Name | Only on a root span: the convention's trace name (above), else the span's name, else the resource's `service.name`. A span with a parent does not name the trace. |
 | Environment | The resource attribute `deployment.environment.name`, else `deployment.environment` |
 | Release | The resource attribute `service.version` |
 | User | `user.id` on the span, else `user.id` on the resource |
 | Session | `session.id` on the span, else `session.id` on the resource |
+| Metadata | `spanlight.metadata.<key>` on the span, then on the resource, then the convention's metadata attributes, the first winning per key. See below. |
+
+Trace metadata comes from these attributes, on any span of the trace:
+
+- `spanlight.metadata.<key>` on the span and on the resource; see [Trace metadata](/docs/otlp/#trace-metadata).
+- `ai.telemetry.metadata.<key>` and `ai.settings.context.<key>` (Vercel AI SDK; `ai.telemetry.metadata.<key>` wins when both name a key).
+- `traceloop.association.properties.<key>` (Traceloop).
+- The OpenInference `metadata` attribute, when it holds a JSON object. Text that is not JSON, or JSON that is not an object, is ignored and the attribute is kept on the span. The LangChain instrumentation puts LangChain's own run metadata there, so a LangChain trace gets keys such as `ls_provider`, `ls_model_name` and `ls_model_type`.
+
+The key is the part after the prefix, or the object's key, lower-cased and otherwise unchanged. The same rules apply to every source: a key must then be 1 to 64 characters of `a-z`, `0-9`, `_`, `.` and `-`, a value 1 to 256 characters, a number or boolean is stored as its text, and a trace keeps at most 32 keys. An entry that breaks a rule, including a list or an object as a value, is dropped and counted; the span is kept. A key is never rewritten to fit, so `tenant id` (with a space) is dropped rather than changed.
 
 ### Stored attributes
 
-Every attribute of the span is stored on the span, except the four content attributes above. The resource's `service.name` is added as `service.name`, unless the span has an attribute of that name. No other resource attribute is stored on the span. Only the ones in the tables above are read, and they go to the trace.
+Every attribute of the span is stored on the span, except the content attributes listed in [Prompts and completions](#prompts-and-completions) and the metadata attributes that were read, which go to the trace. Spanlight adds:
+
+- `service.name`, the resource's, unless the span has an attribute of that name.
+- `spanlight.convention`, always, and `spanlight.operation` when the convention gives one.
+- `usage.service_tier_raw`, `usage.output_tokens_implied` and `usage.unreported_reason`, in the cases described above.
+
+No other resource attribute is stored on the span. Only the ones in the tables above are read, and they go to the trace.
+
+## Time to first token
+
+| Attribute | Unit | Convention |
+| --- | --- | --- |
+| `ai.response.msToFirstChunk` | milliseconds | Vercel AI SDK, on the inner span of `streamText` and `streamObject` |
+| `gen_ai.client.operation.time_to_first_chunk` | seconds, multiplied by 1000 | OpenTelemetry GenAI, as the GenAI mode of the Vercel AI SDK 7 writes it |
+| `gen_ai.response.time_to_first_chunk` | seconds, multiplied by 1000 | The older OpenTelemetry GenAI name |
+
+A number sent as text, such as `"0.42"`, is read as that number, so `0.42` seconds is stored as 420 milliseconds. A value that is negative, not finite, or text that is not a number is dropped and counted, and the span is kept. LiteLLM reports the time to first token as a metric only, and OpenInference as a span event (`First Token Stream Event`) on a streamed call. Span events and metrics are not read, so their spans have none, and the recorded Traceloop scenarios send none either.
+
+## Usage counted once
+
+Agent frameworks and the Vercel AI SDK often report the same usage twice: once on the provider call and again on the step that wraps it. Summing every span would count that call twice. Spanlight keeps each span as it was sent and marks the ones that repeat usage.
+
+A span **carries usage** when it has an input or an output token count. A span is a **usage rollup** when it carries usage and at least one span below it in the same trace, reached through the parent span ids at any depth, carries usage too. Usage rollups are left out of every sum of tokens and cost; the spans below them are counted.
+
+| Spans | Result |
+| --- | --- |
+| A (usage), its child B (usage), B's child C (usage) | A and B are rollups. Totals are C. |
+| A (usage) with two children B and C (usage) | A is a rollup. Totals are B plus C. |
+| A (usage), its child B (no usage), B's child C (usage) | A is a rollup. B is not touched. |
+| A Vercel AI SDK `ai.generateText` step with usage over its `ai.generateText.doGenerate` call | The step is a rollup; the call is counted. |
+| An `invoke_agent` span with usage over its `chat` spans | The agent span is a rollup; the `chat` spans are counted. |
+| A child span whose parent never arrives | The child is counted. |
+
+The rule depends only on the stored spans, not on the convention or the kind, so spans from the Python SDK, the gateway and OTLP follow it alike. Every batch recomputes the rollups of the traces it touches, so the result is the same whichever span arrives first, and sending a batch again changes nothing. When the parent ids of two spans with usage form a loop (`a` under `b` under `a`), both are rollups and both are left out.
+
+What a rollup changes:
+
+- The span keeps everything it was sent with: tokens, cost, model and pricing version. The span read model has `usage_rollup: true` and the usage state `rollup`, and the trace page marks its usage "Counted on child spans". Its cost explanation has the status `usage_rollup`.
+- Trace totals, the Overview, hourly and daily rollups, alerts and budgets, the Doctor, Users, prompt usage, attribution and the reconciliation with a provider bill leave its tokens and cost out, and never count it as an unpriced call. Counts of spans, LLM calls and errors still include it.
+- A rollup is never a retry. A Python SDK span that is the parent of a gateway span for the same call is a rollup, so the gateway's record of the call is counted once.
+- In a JSONL trace export, each span carries `usage_rollup`.
+
+Spans stored before the upgrade that added rollups are not checked again until a new span of their trace arrives. To correct older traces, an operator runs [`spanlight recompute-usage-rollups --since 30d`](/docs/reference/cli/), which recomputes the traces started in that window.
+
+## Usage state
+
+Every span in the trace API has a `usage_state` that says what its usage and cost are, and why a cost is unknown. It is worked out when the span is read, not stored. The first matching row wins.
+
+| State | When | Tooltip on the "—" in the trace page |
+| --- | --- | --- |
+| `rollup` | The span is a usage rollup | None; the usage card says "Counted on child spans" |
+| `priced` | The span has a cost | None |
+| `not_applicable` | The span is not a model call (kind other than `llm`) | None |
+| `model_unknown` | A model call without a model | "No model name on this span" |
+| `usage_not_reported` | A model call with a model and neither token count | "The exporter sent no token counts" |
+| `partial_usage` | A model call with a model and only one of the two token counts | "The exporter sent only input tokens" or "only output tokens"; the cost says "Usage is incomplete, so no cost was computed" |
+| `no_price` | A model call with a model and both token counts, and no price | The usual no-price tooltip |
+
+A rollup is `rollup` even when it has a cost, because its usage is counted on the spans below it.
 
 ## Finish reason
 
 The finish reason says why the model stopped. Spanlight stores one value from a fixed set: `stop`, `length`, `tool_calls`, `content_filter` or `other`. It reads the first of these that holds a non-empty string:
 
-1. The span's own finish reason. An OTLP span has no such field, so this is empty here.
+1. The convention's finish reason: `gen_ai.completion.0.finish_reason` (`gen_ai`), `llm.finish_reason` (OpenInference) or `ai.response.finishReason` (Vercel AI SDK). A raw value longer than 64 characters is not used.
 2. The attribute `finish_reason`.
 3. The first element of the list in the attribute `response.finish_reasons`.
 4. The attribute `response.stop_reason`.
 5. The first element of the list in the attribute `gen_ai.response.finish_reasons`.
+6. The attribute `ai.response.finishReason`.
+7. The attribute `llm.response.finish_reason`.
+8. The attribute `gen_ai.response.finish_reason`, the singular form Traceloop writes.
+9. The attribute `gen_ai.completion.0.finish_reason`.
+10. The attribute `llm.finish_reason`.
 
-`gen_ai.response.finish_reasons` must be a list, as the OpenTelemetry convention says. A plain string in that attribute is not read. Only the first element is used. The raw value stays in the attributes. The stored value is the raw value, trimmed and lower-cased, mapped like this:
+Steps 6 to 10 also serve spans sent to the native endpoint, and OTLP spans whose convention did not give a finish reason. On OTLP spans, `gen_ai.completion.0.finish_reason` is read only in step 1: the flattened completion attributes are removed from the stored attributes once they are read.
+
+`response.finish_reasons` and `gen_ai.response.finish_reasons` are lists, as the OpenTelemetry convention says. Text that holds a JSON array, such as `["stop"]`, which LiteLLM sends, is read as that list; any other text in those attributes is not read. Only the first element is used. The raw value stays in the attributes, except for the flattened completion's. The stored value is the raw value, trimmed and lower-cased, mapped like this:
 
 | Raw value | Stored value |
 | --- | --- |
 | `stop`, `end_turn`, `stop_sequence` | `stop` |
 | `length`, `max_tokens` | `length` |
-| `tool_calls`, `function_call`, `tool_use` | `tool_calls` |
-| `content_filter`, `refusal` | `content_filter` |
-| `pause_turn`, and any value not listed here | `other` |
+| `tool_calls`, `function_call`, `tool_use`, `tool-calls`, `tool_call` | `tool_calls` |
+| `content_filter`, `refusal`, `content-filter`, `safety`, `recitation`, `blocklist` | `content_filter` |
+| `pause_turn`, `error`, `unknown`, `malformed_function_call`, and any value not listed here | `other` |
 
-A span with no finish reason has an unknown one, not `other`.
+`tool-calls`, `content-filter`, `error` and `unknown` are the Vercel AI SDK's spellings; `tool_call` is the singular of the OpenTelemetry GenAI conventions, which Traceloop sends; `safety`, `recitation`, `blocklist` and `malformed_function_call` are Gemini's (its `STOP` and `MAX_TOKENS` are covered by lower-casing). A span with no finish reason has an unknown one, not `other`.
 
 ## Error class
 
-Every span with status `error` gets one error class, so you can filter on it and the Doctor can count failures by cause. A span that did not fail has none. The class is decided in this order.
+Every span with status `error` gets one error class, so you can filter on it and the Doctor can count failures by cause. A span that did not fail has none, even when it carries `error.type`. The class is decided in this order.
 
-### 1. A numeric status
+### 1. An error the Spanlight gateway made
 
-Spanlight reads the first of these attributes that holds a whole number: `spanlight.gateway.upstream_status`, `http.status_code`, `error.status`. The number may be an integer, a float with no fraction, or a string of one to three ASCII digits. The newer attribute `http.response.status_code` is not read.
+A span whose `spanlight.gateway.error_code` attribute holds one of the gateway's own codes takes its class from the code, and no other rule runs. The gateway sets it on the spans it records; see [Gateway error responses](/docs/gateway/errors/#the-error-class-of-a-gateway-span). Any other value of the attribute, such as a Lab fault's `FAULT_<SCENARIO>`, is ignored here.
+
+### 2. A numeric status
+
+Spanlight reads the first of these attributes that holds a whole number: `spanlight.gateway.upstream_status`, `http.response.status_code`, `http.status_code`, `error.status`, `spanlight.gateway.status`. The number may be an integer, a float with no fraction, or a string of one to three ASCII digits. When none of them holds one, `error.type` is read the same way: the OpenTelemetry GenAI conventions put the provider's status code there, so `error.type` set to `503` is a status.
 
 | Status | Class |
 | --- | --- |
@@ -111,27 +347,51 @@ Spanlight reads the first of these attributes that holds a whole number: `spanli
 | 408, 499, 504 | `timeout` |
 | 413 | `context_length` |
 | any other 500 to 599 (529 included) | `provider_5xx` |
-| any other 400 to 499 | `client`, unless the message names `context_length` or `content_filter` (below), which is more specific |
+| any other 400 to 499 | `client`, unless the text (below) names `context_length` or `content_filter`, which is more specific |
 
-A number outside 400 to 599 does not decide. The message does.
+One more 400 is not `client`: a message that starts with Anthropic's self-set spend limit text, `You have reached your specified API usage limits` or `You have reached your specified workspace API usage limits`, is `rate_limit`.
 
-### 2. The status message
+A number outside 400 to 599 does not decide. The text does.
 
-Without a deciding status, Spanlight looks for these phrases in the status message, ignoring case. The first group that has a match wins, in this order.
+### 3. The text
+
+Without a deciding status, Spanlight looks for these phrases, ignoring case, in two texts: first `error.type` when it is not a number, then the status message. `error.type` comes first because it is the more precise of the two: OpenInference, Traceloop and LiteLLM put the exception's class name there, such as `RateLimitError` or `APITimeoutError`. The first group that has a match wins, in this order.
 
 | Class | Phrases |
 | --- | --- |
-| `auth` | `unauthorized`, `invalid api key`, `authentication`, `permission denied`, `forbidden` |
-| `rate_limit` | `rate limit`, `too many requests`, `quota` |
+| `auth` | `unauthorized`, `invalid api key`, `authentication`, `permission denied`, `permissiondenied`, `forbidden` |
+| `rate_limit` | `rate limit`, `too many requests`, `quota`, `ratelimiterror` |
 | `timeout` | `timed out`, `timeout`, `deadline exceeded`, `client disconnected`, `aborted` |
-| `context_length` | `context length`, `context window`, `maximum context`, `too many tokens`, `prompt is too long` |
+| `context_length` | `context length`, `context window`, `maximum context`, `too many tokens`, `prompt is too long`, `contextwindowexceeded` |
 | `content_filter` | `content filter`, `content_policy`, `safety`, `refusal` |
 | `network` | `connection`, `dns`, `ssl`, `reset by peer`, `econnrefused` |
 | `provider_5xx` | `overloaded`, `internal server error`, `service unavailable`, `bad gateway`, `upstream` |
+| `client` | `badrequesterror` |
 
-### 3. Otherwise
+The exception names `AuthenticationError`, `APITimeoutError` and `APIConnectionError` already contain `authentication`, `timeout` and `connection`. When `error.type` gives `client` (`BadRequestError` names no cause, and OpenAI raises it for a prompt that is too long as well as for a malformed request), the status message is tried, and `client` is kept only when the message names nothing more specific.
+
+### 4. Otherwise
 
 A failed span with no deciding status and no matching phrase is `unknown`.
+
+The tenth class, `gateway`, comes only from step 1: Spanlight's own gateway refused or failed the call.
+
+## Rate-limit kind
+
+A failed span that is a capacity refusal also gets a rate-limit kind: `requests`, `tokens`, `spend_cap`, `acceleration`, `overloaded`, `gateway` or `unknown`. A refusal is a span of class `rate_limit`, or a `provider_5xx` span that says the provider is overloaded (status 529, or the word "overloaded" in the message), which is always `overloaded`.
+
+An OTLP span gets its kind from the status message only, because the OpenTelemetry GenAI attributes carry no provider error type or code. When `gen_ai.provider.name` or `gen_ai.system` names `anthropic` or `openai`, that provider's message rules apply; otherwise these generic rules, first match wins, ignoring case:
+
+| Message contains | Kind |
+| --- | --- |
+| `quota`, `billing`, `spend`, `credit` or `usage limit` | `spend_cap` |
+| `acceleration` or `slow down` | `acceleration` |
+| `token` | `tokens` |
+| `request` | `requests` |
+| `overloaded`, or the status is 529 | `overloaded` |
+| anything else | `unknown` |
+
+So a 429 with no message is `rate_limit` with kind `unknown`. The OTLP mapper never sets `provider_error_type` or `provider_error_code`. A client that sets the `provider.*` attributes itself (`provider.error.type`, `provider.error.code`, `provider.ratelimit`) has them read like those of a native span; see [Provider health](/docs/guides/provider-health/#the-rate-limit-kinds).
 
 ## Values that are dropped, not rejected
 
@@ -140,22 +400,27 @@ An OpenTelemetry exporter describes a whole service in its resource attributes. 
 - An environment longer than 64 characters, or a release longer than 128, is dropped. The trace has no environment or release from that span.
 - A token count sent as a double with no fraction (`12.0`) is stored as an integer (`12`).
 - A token count sent as a double with a fraction, or as `NaN` or an infinity, is dropped. The span's usage is then unknown, so its cost is unknown, not zero.
+- The web search count is handled the same way. When it is dropped, the span's fee is unknown.
+- A time to first token that is negative, not finite, or text that is not a number is dropped. The span's time to first token is then unknown.
+- A flattened message past 256 messages or four levels of lists, or one that would overwrite a value already set, is dropped; see [Flattened messages](#flattened-messages).
+- A trace metadata entry with an invalid key or value, or past 32 keys, is dropped, whichever attribute it came from. Unlike the other drops on this list, it is reported in the response's `partialSuccess` message as well as logged. The message names `spanlight.metadata.*`, and its count includes the entries dropped from the conventions' metadata attributes. A value sent as a double that is not finite arrives as the text `NaN`, `Infinity` or `-Infinity` and is kept as that text.
+- A service tier Spanlight does not know is not stored as the tier. It is kept in the attribute `usage.service_tier_raw`, and the span is priced at the standard rate.
 
-The server logs how many values of each kind it dropped in a request, never the values. Every other invalid value is a rejection of that span only: a user or session id that is too long, a negative or huge token count, or a count sent as a string. The response lists the rejected spans in `partialSuccess`; see [OTLP ingestion](/docs/otlp/).
+The server logs how many values of each kind it dropped in a request, never the values. Every other invalid value is a rejection of that span only: a user or session id that is too long, a negative or huge token count, or a count sent as a string that is not a number. The response lists the rejected spans in `partialSuccess`; see [OTLP ingestion](/docs/otlp/).
 
 ## What is not mapped
 
-Spanlight reads the OpenTelemetry GenAI attributes listed on this page and nothing else. In particular:
+- **Span events and links.** They are ignored. A prompt or completion sent as an event, such as a `gen_ai.*` event, not as an attribute, is not stored.
+- **Metrics and logs.** The OTLP endpoint accepts traces only, so a time to first token or a token count that an exporter sends only as a metric is not received.
+- **Cost computed by the exporter.** Spanlight prices every span itself from its model and token counts. A cost attribute an exporter sends, such as LiteLLM's `gen_ai.cost.*`, is stored with the other attributes and never read, so a disagreement between the two cannot be hidden.
+- **`llm.<provider>.*` request copies.** LiteLLM's `raw_gen_ai_request` span copies the request into attributes such as `llm.openai.messages`. They are not a convention, are stored as sent, and fill no field.
 
-- **OpenInference.** The `llm.*` attributes (for example `llm.model_name` and `llm.token_count.*`) and the `input.value` and `output.value` attributes are not read. A span that has only OpenInference attributes is stored with kind `other` (unless the kind rules above apply for another reason), with no model, tokens, prompt or completion, and with an unknown cost. The attributes are kept in the span's attributes, so you can see them, but nothing is worked out from them. Use an exporter that writes the OpenTelemetry `gen_ai.*` attributes, or the [Python SDK](/docs/python-sdk/).
-- **Other GenAI attributes.** Attributes such as `gen_ai.request.temperature` and `gen_ai.operation.name` are stored in the span's attributes but do not fill any field.
-- **Span events and links.** They are ignored. A prompt or completion sent as a `gen_ai.*` event, not as an attribute, is not stored.
-- **Time to first token.** It is not set from OTLP data.
-- **Metrics and logs.** The OTLP endpoint accepts traces only.
+Any other attribute, such as `gen_ai.request.temperature` or `gen_ai.tool.definitions`, is stored in the span's attributes and fills no field.
 
 ## Related pages
 
 - [OTLP ingestion](/docs/otlp/): the endpoint, the limits and how to configure an exporter.
+- [OTLP compatibility](/docs/reference/otlp-compatibility/): what each recorded exporter library and version captures and loses.
 - [How ingestion works](/docs/concepts/ingestion/): what happens to a span after it is mapped.
 - [Prices](/docs/reference/prices/): the models that have a built-in price.
 - [How cost is calculated](/docs/concepts/cost/): the formula, the token convention and unknown costs.

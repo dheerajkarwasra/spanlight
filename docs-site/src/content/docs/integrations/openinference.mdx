@@ -1,0 +1,152 @@
+---
+title: OpenInference
+description: Send OpenInference traces to Spanlight from the OpenAI and LangChain instrumentations (the ones Arize Phoenix uses), exporting through an OpenTelemetry tracer provider. Shows the tested setup and what Spanlight records from each span.
+---
+
+{/* Sources: sdks/fixtures/otlp/record/python/recipes/openinference_openai.py, sdks/fixtures/otlp/record/python/recipes/openinference_langchain.py, sdks/fixtures/otlp/record/python/recipes/_otel.py, sdks/fixtures/otlp/record/record.py, sdks/fixtures/otlp/openinference-openai/0.1.65.json, sdks/fixtures/otlp/openinference-langchain/0.1.79.json, backend/app/ingest/conventions/openinference.py, backend/app/ingest/otlp_metadata.py */}
+
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+import Verified from '../../../components/Verified.astro';
+
+OpenInference is the set of OpenTelemetry instrumentations behind Arize Phoenix. Its spans carry `openinference.span.kind` and `llm.*` attributes, which Spanlight reads for the model, the token counts and the messages, so an OpenInference model call is priced like any other. Send the spans to Spanlight's [OTLP endpoint](/docs/otlp/) with an OpenTelemetry tracer provider. This page covers the two instrumentations that were recorded: OpenAI and LangChain.
+
+<Prerequisites
+  items={[
+    'A running Spanlight instance that your application can reach',
+    'A project API key with the ingest:write scope (the default). Creating one needs the member, admin or owner role',
+    'Python 3.13 (the version this page was tested with)',
+  ]}
+/>
+
+<Verified
+  date="2026-10-17"
+  packages={[
+    { name: 'openinference-instrumentation-openai', version: '0.1.65' },
+    { name: 'openinference-instrumentation-langchain', version: '0.1.79' },
+    { name: 'openai', version: '3.33.0' },
+    { name: 'langchain-core', version: '1.6.12' },
+    { name: 'langchain-openai', version: '1.7.2' },
+    { name: 'opentelemetry-sdk', version: '1.45.1' },
+    { name: 'opentelemetry-exporter-otlp-proto-http', version: '1.45.1' },
+  ]}
+  note="Recorded with Python 3.13.9 against a local stand-in for the OpenAI Chat Completions API, not against OpenAI itself. The Anthropic instrumentation was not recorded."
+/>
+
+## Install
+
+For the OpenAI client:
+
+```bash
+pip install "openinference-instrumentation-openai==0.1.65" "openai==3.33.0" "opentelemetry-sdk==1.45.1" "opentelemetry-exporter-otlp-proto-http==1.45.1"
+```
+
+For LangChain:
+
+```bash
+pip install "openinference-instrumentation-langchain==0.1.79" "langchain-core==1.6.12" "langchain-openai==1.7.2" "openai==3.33.0" "opentelemetry-sdk==1.45.1" "opentelemetry-exporter-otlp-proto-http==1.45.1"
+```
+
+Point the OpenTelemetry exporter at Spanlight with the standard variables:
+
+```bash
+export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:8080/v1/otlp/traces
+export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20spl_live_..."
+```
+
+Use the traces-specific endpoint variable with the full path. [Configure an exporter](/docs/otlp/#configure-an-exporter) explains why. OpenInference records the messages on the span by default, so no other setting is needed.
+
+## Set up tracing
+
+Create a tracer provider that exports over OTLP and pass it to the instrumentor. With the OpenAI client:
+
+```python
+from openai import OpenAI
+from openinference.instrumentation.openai import OpenAIInstrumentor
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+provider = TracerProvider()
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(provider)
+OpenAIInstrumentor().instrument(tracer_provider=provider)
+
+client = OpenAI()
+client.chat.completions.create(
+    model="gpt-4.1-mini",
+    messages=[{"role": "user", "content": "Say hello in five words."}],
+)
+provider.force_flush()
+```
+
+With LangChain, instrument LangChain instead and use your chains as before:
+
+```python
+from openinference.instrumentation.langchain import LangChainInstrumentor
+
+LangChainInstrumentor().instrument(tracer_provider=provider)
+```
+
+A long-running server does not need `provider.force_flush()`; a short script does, or its last spans are lost. For a stream, ask OpenAI for usage with `stream_options={"include_usage": True}`; the recorded stream did.
+
+## Check it worked
+
+Open **Traces** in the dashboard and pick the project that owns your key.
+
+- With the OpenAI instrumentation you see a trace named `ChatCompletion` that holds one `llm` span of the same name.
+- With LangChain a prompt, model and parser chain gives a trace named `RunnableSequence`, with the `ChatOpenAI` model call among its spans.
+
+Open the model call. It shows the messages, the answer, the token counts and the cost.
+
+## What is recorded
+
+| OpenInference span kind | Spanlight kind | Example from the recorded runs |
+| --- | --- | --- |
+| `LLM` | `llm` | `ChatCompletion`, `ChatOpenAI` |
+| `CHAIN`, `AGENT` | `chain` | `RunnableSequence`, `StrOutputParser`, a runnable named `weather_agent` |
+| `TOOL` | `tool` | A LangChain tool such as `get_weather` |
+| `RETRIEVER` | `retrieval` | A LangChain retriever |
+| Anything else, such as `PROMPT` | `other` | `ChatPromptTemplate` |
+
+On each model call:
+
+- **Provider and model** from `llm.system` and `llm.model_name`, the billed snapshot such as `gpt-4.1-mini-2025-04-14`.
+- **Input, output and cached tokens** from `llm.token_count.prompt`, `llm.token_count.completion` and `llm.token_count.prompt_details.cache_read`. Cached tokens are priced at the cached rate.
+- **Messages and answer** from the flattened `llm.input_messages.*` and `llm.output_messages.*` attributes. Spans without them, such as chains and tools, keep `input.value` and `output.value` as their input and output.
+- **Finish reason** from `llm.finish_reason`, including `tool_calls` for a call answered with tool calls.
+- **Cost**, computed by Spanlight from the model and the token counts; see [How cost is calculated](/docs/concepts/cost/).
+- **Errors.** A failed call is `error`, and a 429 gets the error class `rate_limit` from the error message.
+
+LangChain adds its own run metadata to the `metadata` attribute of each model call and retriever, and Spanlight puts it in the trace metadata. A LangChain trace therefore gets keys such as `ls_provider`, `ls_model_name`, `ls_model_type` and `ls_integration`, which count towards the trace's 32 metadata keys. Values that are objects, such as `lc_versions`, or null are dropped.
+
+Which attribute fills which field is listed in [OpenInference](/docs/reference/otlp-mapping/#openinference).
+
+## What is not recorded
+
+- **Time to first token.** On a stream OpenInference sends it as a span event named `First Token Stream Event`, not as an attribute. Spanlight does not read span events, so the span has no time to first token.
+- **The model of a failed call.** OpenInference 0.1.65 sets no `llm.model_name` when the call fails; the requested model is only inside the `llm.invocation_parameters` text, which is not read. The span has no model and no usage, and its usage state is `model_unknown`.
+- **Cache writes.** The recorded calls went to OpenAI, which reports none. `llm.token_count.prompt_details.cache_write` is read when an instrumentation sends it.
+- **Anthropic and LangGraph.** They were not recorded, so this page makes no claim about them. The recorded agent is a LangChain runnable that drives the tool loop itself.
+- **Exporter-computed cost.** Spanlight never reads one; it prices every span itself.
+
+[OTLP compatibility](/docs/reference/otlp-compatibility/#openinference-openai-0165) shows each recorded scenario field by field, for [OpenAI](/docs/reference/otlp-compatibility/#openinference-openai-0165) and [LangChain](/docs/reference/otlp-compatibility/#openinference-langchain-0179).
+
+## Troubleshooting
+
+- **No trace arrives.** Pass the tracer provider to `instrument()`, and flush it before a script exits. Then work through [No trace arrives](/docs/troubleshooting/#no-trace-arrives).
+- **The exporter gets `422 VALIDATION_ERROR`.** It sent to `/v1/traces`. Set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` to the full `/v1/otlp/traces` URL.
+- **A failed call shows no model and no cost.** That is what OpenInference sends for a failed call; see [What is not recorded](#what-is-not-recorded).
+- **A trace has more metadata keys than you set.** They are LangChain's `ls_*` keys. If they push the trace past 32 keys, the keys after the 32nd are dropped and counted.
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'OTLP compatibility', href: '/docs/reference/otlp-compatibility/', description: 'What each recorded exporter captures and loses, scenario by scenario.' },
+    { title: 'OTLP ingestion', href: '/docs/otlp/', description: 'The endpoint, the limits and trace metadata.' },
+    { title: 'How cost is calculated', href: '/docs/concepts/cost/', description: 'The price table and when a cost is unknown.' },
+  ]}
+/>

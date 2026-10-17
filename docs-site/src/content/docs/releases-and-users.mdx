@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-{/* Sources: frontend/src/features/releases/releases-page.tsx, frontend/src/features/releases/release-picker.tsx, frontend/src/features/users/users-page.tsx, docs/api-deviations.md */}
+{/* Sources: frontend/src/features/releases/releases-page.tsx, frontend/src/features/releases/release-picker.tsx, frontend/src/features/users/users-page.tsx, frontend/src/features/users/computed-at.ts, backend/app/end_users/days.py, backend/app/end_users/jobs.py, backend/app/jobs/scheduler.py, backend/app/releases/failure_categories.py, backend/app/releases/failure_category_queries.py, backend/app/api/v1/releases.py, docs/api-deviations.md */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
@@ -63,12 +63,24 @@ Latency percentiles are exact: they are computed over the stored spans, not esti
 
 A release comparison is also a cheap safety check after a deploy: set the range to the day around it, put the previous release in A and the new one in B, and look at error rate, p95 and the new errors before the [Doctor](/docs/doctor/) has seen enough traffic to say anything.
 
+### Failure categories
+
+When your team reviews traces with a [failure category](/docs/review/#failure-categories), the **Failure categories** card on **Releases** shows how often each category happened in each release of the range: a bar per category per release, with whiskers for the 95 % interval, and a table view with the exact numbers (also the form on narrow screens). It follows the page's range and environment.
+
+- **The rate is over reviewed traces.** For each release, `reviewed` is the number of its traces in the range that carry a failure category, and a category's rate is how many of those carry it. Traces nobody reviewed are not counted at all, so the rate says what reviewers found, not what all traffic did.
+- **One label per trace.** A trace counts once, under its latest failure category, whatever span it was given on.
+- **The interval** is the Wilson 95 % interval of the count over the reviewed traces, so a release with 48 reviewed traces and 7 `wrong_answer` labels shows 14.6 %, with an interval from about 7 % to 27 %. A small sample gives a wide interval, and the card says "few items" below 10 reviewed traces. A category that no reviewed trace of the release carries shows 0 with its interval, which is not zero wide.
+- **A release nobody reviewed** is listed with no rates ("—"), never 0 %. The card says "No reviewed traces in this window" when no release in the range has any.
+- **Edited lists.** The categories come in the order of the config. A label that is no longer in the list still counts, under its own name, after the others.
+- **Not set up yet.** Without a `failure_category` config the card offers to create one ("No failure categories yet"), and the API answers `404 NOT_FOUND`.
+
 ## Users
 
 **Users** lists the end users who had traces in the range, with their traces, LLM calls, errors, cost, tokens and when they were last seen. Sort by cost, errors or traces; the list loads in pages. Open a user to see a day-by-day chart of their activity and their 20 most recent sessions.
 
 - **Whole UTC days.** Figures are kept per user per UTC day, so the range is rounded out to whole days, and the page says which days it covers.
-- **Refreshed every 15 minutes.** A background job recomputes yesterday and today, so today's numbers can be up to about 15 minutes behind the traces. A day with no traces left (for example after retention removed them) is removed from the figures.
+- **Refreshed every 15 minutes, and again nightly.** A background job recomputes the last three UTC days (today, yesterday and the day before) every 15 minutes, so today's numbers can be up to about 15 minutes behind the traces. A second pass, once a day from 02:00 UTC, recomputes the last eight days. A trace counts for the day it started, so a span that arrives for an older trace is counted only while its day is still in one of those passes; one that arrives later than that is not counted. A day with no traces left (for example after retention removed them) is removed from the figures.
+- **"Updated N min ago".** Both pages show when the figures were last recomputed, for example "Updated 4 min ago"; hover or tap it for the refresh schedule. "Updated —" means no pass has covered the range yet. The API returns the same moment as `computed_at` (`null` before the first pass).
 - **Cost is a lower bound.** It adds only the priced calls. When a user made calls and none was priced, their cost is "—", not 0; a day with no activity at all shows 0.
 - **Retention.** Per-user figures older than the project's retention period are deleted with the traces.
 - **Switch it off.** Operators can stop the refresh with `USER_STATS_ENABLED` (see [Configuration](/docs/configuration/)). The page then stops updating.
@@ -88,8 +100,9 @@ curl -sS -H "Authorization: Bearer $SPANLIGHT_API_KEY" \
 | --- | --- |
 | `GET /api/v1/projects/{project_id}/releases?from&to&environment` | The releases in the range |
 | `GET /api/v1/projects/{project_id}/releases/compare?a&b&from&to&environment` | The comparison of release `a` with release `b` |
-| `GET /api/v1/projects/{project_id}/users?from&to&sort&limit&cursor` | A page of users, `sort` being `cost`, `errors` or `traces` |
-| `GET /api/v1/projects/{project_id}/users/{external_user_id}?from&to` | One user, with the daily series and recent sessions |
+| `GET /api/v1/projects/{project_id}/releases/failure-categories?from&to&environment` | The rate of each failure category per release, with `reviewed`, `count`, `rate`, `ci_low` and `ci_high` |
+| `GET /api/v1/projects/{project_id}/users?from&to&sort&limit&cursor` | A page of users, `sort` being `cost`, `errors` or `traces`, and `computed_at` |
+| `GET /api/v1/projects/{project_id}/users/{external_user_id}?from&to` | One user, with the daily series, recent sessions and `computed_at` |
 
 Insights are not readable with a project API key: they need a signed-in user or a personal access token. The full request and response shapes are in the [API reference](/docs/api/).
 
@@ -105,7 +118,8 @@ Send a trace with a release and a user id, then wait up to 15 minutes for the us
 | "No end users in this window" | Traces carry no user id. Set `user_id`, `user.id` or `x-spanlight-user`. |
 | A release is missing from the picker | It has no traces in the range or in the chosen environment. |
 | `RELEASE_WINDOW_TOO_LARGE` | Use a range of 30 days or less. |
-| Today's user numbers look low | The refresh runs every 15 minutes. Check `USER_STATS_ENABLED` and that the worker is running. |
+| Today's user numbers look low | The refresh runs every 15 minutes; "Updated N min ago" says when it last ran. If that keeps growing, check `USER_STATS_ENABLED` and that the worker is running. |
+| A user's older figures miss calls you sent late | A span is counted only until the nightly pass seven days after its trace's UTC day, so one that arrives about a week late is not counted. Send spans soon after the call. |
 | A user's cost shows "—" | None of their calls had a price. Add a price override for the model; see [Budgets](/docs/budgets/) for how unpriced calls are treated. |
 
 ## Next steps

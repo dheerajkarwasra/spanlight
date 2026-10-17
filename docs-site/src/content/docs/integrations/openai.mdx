@@ -3,7 +3,7 @@ title: OpenAI
 description: Trace OpenAI calls with the Spanlight Python SDK, or send them through the Spanlight gateway from Python, JavaScript or cURL. Shows what Spanlight records from each call and what it leaves out.
 ---
 
-{/* Sources: backend/app/gateway/errors.py, sdks/python/src/spanlight/integrations/openai.py, sdks/python/src/spanlight/integrations/_common.py, backend/app/gateway/tracing.py, backend/app/gateway/adapters/openai.py, backend/app/gateway/adapters/openai_compatible.py, backend/app/gateway/execute.py, backend/app/ingest/normalize.py, backend/app/ingest/finish_reason.py, backend/app/pricing/prices.py, backend/app/gateway/adapters/base.py, backend/app/gateway/usage_chunk.py, backend/app/gateway/trace_headers.py, backend/app/gateway/response_summary.py, backend/app/gateway/context.py, backend/app/db/models/gateway.py, backend/app/pricing/cost.py, sdks/python/src/spanlight/_span.py, sdks/python/src/spanlight/_client.py */}
+{/* Sources: backend/app/gateway/errors.py, sdks/python/src/spanlight/integrations/openai.py, sdks/python/src/spanlight/integrations/_common.py, backend/app/gateway/tracing.py, backend/app/gateway/adapters/openai.py, backend/app/gateway/adapters/openai_compatible.py, backend/app/gateway/execute.py, backend/app/ingest/normalize.py, backend/app/ingest/finish_reason.py, backend/app/pricing/prices.py, backend/app/gateway/adapters/base.py, backend/app/gateway/usage_chunk.py, backend/app/gateway/trace_headers.py, backend/app/gateway/response_summary.py, backend/app/gateway/context.py, backend/app/db/models/gateway.py, backend/app/pricing/cost.py, sdks/python/src/spanlight/_span.py, sdks/python/src/spanlight/_client.py, sdks/python/src/spanlight/integrations/_openai_response.py, sdks/python/src/spanlight/integrations/_openai_stream.py, sdks/python/src/spanlight/integrations/_openai_batch.py, backend/app/gateway/responses_observer.py, backend/app/gateway/stream_forward.py, backend/app/gateway/usage.py, backend/app/pricing/tiers.py */}
 
 import { TabItem, Tabs } from '@astrojs/starlight/components';
 import NextSteps from '../../../components/NextSteps.astro';
@@ -103,9 +103,21 @@ spanlight.flush()
 
 You iterate the stream as before. The wrapper returns a transparent proxy that records the chunks as you read them, and the span ends when the stream is exhausted or closed. It also records the time to first token.
 
-Ask OpenAI for usage with `stream_options={"include_usage": True}`. Without it OpenAI sends no token counts for a stream, so the span has no tokens and no cost.
+Ask OpenAI for usage with `stream_options={"include_usage": True}`. Without it OpenAI sends no token counts for a stream, so the span has no tokens and no cost, and its attribute `usage.unreported_reason` is `include_usage_not_set`. A stream you close early or that fails is marked `client_disconnected` or `stream_error` the same way. A Responses stream that ends without its terminal event keeps the input counts it saw, with the output count and the cost unknown.
 
 The wrapper also instruments `client.responses.create`. The samples on this page use Chat Completions only. To name the provider yourself when you point the OpenAI client at a compatible API, pass `provider=` to `wrap_openai`; see the [reference](/docs/reference/python-sdk/#wrap_openai).
+
+### Batch results
+
+The Batch API writes its results to a file, so the wrapper cannot see them. Pass the output file to `record_openai_batch_output` once the batch has completed, and each request becomes an `llm` span priced at the batch rate:
+
+```python
+batch = client.batches.retrieve("batch_abc123")
+output = client.files.content(batch.output_file_id).text
+spanlight.record_openai_batch_output(output, batch_id=batch.id)
+```
+
+Pass the error file the same way to record the requests that failed. The spans have no input and a duration of 0, because the result carries neither; [Batch results](/docs/python-sdk/#batch-results) describes them in full. The function needs SDK 0.2.0, the next release.
 
 ## Gateway
 
@@ -216,22 +228,27 @@ Each call is one `llm` span. Where a column says "empty", Spanlight stores nothi
 | Output | The assistant message | The assistant message |
 | Input and output tokens | From OpenAI's usage. A streamed call has them only with `include_usage` | From OpenAI's usage. A streamed chat call without any `stream_options` has them, because the gateway adds `include_usage`. If you send `stream_options` without `include_usage: true`, it does not. On a [response cache](/docs/gateway/cache/) hit the tokens are recorded as 0, because nothing was billed |
 | Cached tokens | When OpenAI reports them, otherwise empty | The same. On a [response cache](/docs/gateway/cache/) hit it is recorded as 0 |
-| Cost | From the price table and your [price overrides](/docs/concepts/cost/#price-overrides), empty for a model with neither | The same |
+| Service tier | The `service_tier` at the top of the answer or the last stream chunk: `default`, `auto` and `scale` are stored as `standard`, `flex` as `flex`, `priority` and `fast` as `priority`. A batch result is always `batch` | The same |
+| Web searches | For Responses, the answer's `web_search_call` items whose status is `completed`. Chat Completions does not report a count | For Responses answers and streams, the same |
+| Cost | From the price table and your [price overrides](/docs/concepts/cost/#price-overrides), times the [tier factor](/docs/concepts/cost/#service-tiers), plus $10.00 per 1,000 [web searches](/docs/concepts/cost/#fees-web-search). Empty for a model with no price, and for a stream without usage | The same |
 | Finish reason | `stop`, `length`, `tool_calls`, `content_filter` or `other` | The same |
 | Time to first token | For streamed calls | For streamed calls |
 | Status | `ok`, or `error` with the exception type (`error.type`), plus `http.status_code` and `provider.request_id` when the exception carries them | `ok`, or `error` with a status message |
 | Environment | The `environment` you pass to `spanlight.init` | The environment of the gateway key |
 | User and session | Set with `spanlight.update_trace` | Set with the `x-spanlight-user` and `x-spanlight-session` headers |
 
-The SDK and the gateway also store attributes. The SDK adds `response.id`, `response.finish_reasons` and `finish_reason` (the raw value from OpenAI). A streamed call adds `request.stream`, and a streamed call without usage adds `usage.missing_reason`. A call that reasons adds `usage.reasoning_tokens` when OpenAI reports a count. The gateway adds `spanlight.gateway.*` attributes (the key, route, target, attempts, overhead and upstream status) and `spanlight.cache`. [Gateway quickstart](/docs/gateway/quickstart/#check-it-worked) lists them. A call with an unknown model or without usage has no cost; [How cost is calculated](/docs/concepts/cost/) explains when.
+OpenAI bills `flex` and batch calls at half price, and Spanlight prices them that way. OpenAI publishes a separate priority rate for each model rather than one factor, so a `priority` call is priced at the standard rate and its cost explanation marks the tier as unmodelled: the figure is lower than the bill. Through the SDK, a Chat Completions call that passes `web_search_options` gets the attribute `usage.fee_unknown` set to `openai_chat_web_search`, because the answer lists sources, not billed searches, so the search fee is not priced.
+
+The SDK and the gateway also store attributes. The SDK adds `response.id`, `response.finish_reasons` and `finish_reason` (the raw value from OpenAI). A streamed call adds `request.stream`, and a streamed call that ended without usage adds `usage.unreported_reason`. A call that reasons adds `usage.reasoning_tokens` when OpenAI reports a count. The gateway adds `spanlight.gateway.*` attributes (the key, route, target, attempts, overhead and upstream status) and `spanlight.cache`. [Gateway quickstart](/docs/gateway/quickstart/#check-it-worked) lists them. A call with an unknown model or without usage has no cost; [How cost is calculated](/docs/concepts/cost/) explains when.
 
 ## What is not recorded
 
 * **Your keys and headers.** The wrapper never records `api_key`, `extra_headers`, `extra_query`, `extra_body`, `timeout` or `http_client`. The gateway does not forward your gateway key, cookies or any header outside a short allowlist to OpenAI.
 * **Prompts and completions, when the project turns capture off.** Spanlight then keeps the model, tokens, cost and timing and drops the text. See [Privacy](/docs/guides/privacy/#turn-off-prompt-and-completion-capture). The server also redacts common secret patterns from payloads and truncates very large ones.
-* **Token counts of a streamed Python call without `include_usage`.** The span carries the attribute `usage.missing_reason` instead.
+* **Token counts of a streamed Python call without `include_usage`.** The span carries the attribute `usage.unreported_reason` set to `include_usage_not_set` instead. SDK 0.1.2 and earlier named it `usage.missing_reason`.
+* **The web search fee of a Chat Completions call.** OpenAI does not report how many searches it billed; the span carries `usage.fee_unknown` instead.
 * **Output of a call that fails before an answer arrives.** The span has the error and the request, and no output. A stream that fails midway keeps the part of the answer that arrived, and is marked `error`.
-* **Calls the wrapper does not see.** It instruments the client you wrap and the two methods `chat.completions.create` and `responses.create`. Embeddings, images, audio and other endpoints are not traced. A call made through `with_raw_response` or `with_streaming_response` is passed through untraced.
+* **Calls the wrapper does not see.** It instruments the client you wrap and the two methods `chat.completions.create` and `responses.create`. Embeddings, images, audio and other endpoints are not traced, and batch results only through `record_openai_batch_output`. A call made through `with_raw_response` or `with_streaming_response` is passed through untraced.
 * **A stream you abandon.** The span of a stream ends when you read it to the end or close it. If you drop it without either, its span is never sent.
 * **Anything that bypasses the gateway.** Calls that do not use the gateway base URL do not appear.
 

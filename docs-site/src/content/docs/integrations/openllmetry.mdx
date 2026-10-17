@@ -1,0 +1,147 @@
+---
+title: OpenLLMetry (Traceloop)
+description: Send OpenLLMetry traces to Spanlight with the Traceloop SDK and its OpenAI instrumentation, exporting through your own OpenTelemetry tracer provider. Shows the tested setup and what Spanlight records from workflows, tasks, agents, tools and model calls.
+---
+
+{/* Sources: sdks/fixtures/otlp/record/python/recipes/traceloop_openai.py, sdks/fixtures/otlp/record/python/recipes/_otel.py, sdks/fixtures/otlp/record/record.py, sdks/fixtures/otlp/traceloop-openai/0.62.4.json, backend/app/ingest/conventions/traceloop.py, backend/app/ingest/conventions/gen_ai.py, backend/app/ingest/finish_reason.py */}
+
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+import Verified from '../../../components/Verified.astro';
+
+OpenLLMetry is Traceloop's set of OpenTelemetry instrumentations. The Traceloop SDK adds decorators that turn your functions into workflow, task, agent and tool spans, and its OpenAI instrumentation writes a span for every OpenAI call. Spanlight reads both: the decorator spans from their `traceloop.*` attributes and the model calls from their OpenTelemetry GenAI attributes (`gen_ai.*`). Send them to Spanlight's [OTLP endpoint](/docs/otlp/) through your own tracer provider.
+
+<Prerequisites
+  items={[
+    'A running Spanlight instance that your application can reach',
+    'A project API key with the ingest:write scope (the default). Creating one needs the member, admin or owner role',
+    'Python 3.13 (the version this page was tested with)',
+  ]}
+/>
+
+<Verified
+  date="2026-10-17"
+  packages={[
+    { name: 'traceloop-sdk', version: '0.62.4' },
+    { name: 'opentelemetry-instrumentation-openai', version: '0.62.4' },
+    { name: 'openai', version: '2.54.0' },
+    { name: 'opentelemetry-sdk', version: '1.45.1' },
+    { name: 'opentelemetry-exporter-otlp-proto-http', version: '1.45.1' },
+  ]}
+  note="Recorded with Python 3.13.9 against a local stand-in for the OpenAI Chat Completions API, not against OpenAI itself. Only the OpenAI instrumentation was recorded; embeddings were not."
+/>
+
+## Install
+
+```bash
+pip install "traceloop-sdk==0.62.4" "opentelemetry-instrumentation-openai==0.62.4" "openai==2.54.0" "opentelemetry-sdk==1.45.1" "opentelemetry-exporter-otlp-proto-http==1.45.1"
+```
+
+Point the OpenTelemetry exporter at Spanlight, and keep the Traceloop SDK's own telemetry, metrics and logs off:
+
+```bash
+export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:8080/v1/otlp/traces
+export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20spl_live_..."
+export TRACELOOP_TELEMETRY=false
+export TRACELOOP_METRICS_ENABLED=false
+export TRACELOOP_LOGGING_ENABLED=false
+export TRACELOOP_TRACE_CONTENT=true
+```
+
+`TRACELOOP_TRACE_CONTENT=true` keeps the prompts and answers on the spans. Leave `TRACELOOP_API_KEY` unset, as the recorder does: Spanlight needs no Traceloop account.
+
+## Set up tracing
+
+Install your own tracer provider that exports to Spanlight, then start the Traceloop SDK on top of it. Pass a no-op `SpanProcessor` so the SDK adds no exporter of its own: your provider already exports every span.
+
+```python
+import os
+
+from openai import OpenAI
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from traceloop.sdk import Traceloop
+from traceloop.sdk.decorators import task, workflow
+from traceloop.sdk.instruments import Instruments
+
+provider = TracerProvider()
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(provider)
+
+Traceloop.init(
+    app_name="support-bot",
+    api_endpoint=os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"],
+    telemetry_enabled=False,
+    processor=SpanProcessor(),
+    instruments={Instruments.OPENAI},
+    traceloop_sync_enabled=False,
+)
+client = OpenAI()
+
+
+@task(name="ask_model")
+def ask_model(messages):
+    response = client.chat.completions.create(model="gpt-4.1-mini", messages=messages)
+    return response.choices[0].message.content
+
+
+@workflow(name="greeting")
+def greeting():
+    return ask_model([{"role": "user", "content": "Say hello in five words."}])
+
+
+greeting()
+provider.force_flush()
+```
+
+`api_endpoint` points at the same URL as the exporter. With it, telemetry off and prompt sync off, the recorder's runs sent nothing to Traceloop's service. A long-running server does not need `provider.force_flush()`; a short script does, or its last spans are lost.
+
+The `@agent` and `@tool` decorators work the same way: an agent that calls a tool gives an agent span with the model call and one tool span per call below it.
+
+## Check it worked
+
+Open **Traces** in the dashboard and pick the project that owns your key. You see a trace named `greeting` (the workflow name) that holds three spans: `greeting.workflow`, `ask_model.task` and the `openai.chat` model call. Open `openai.chat`: it shows the messages, the answer, the token counts and the cost.
+
+## What is recorded
+
+| Span | Kind | What Spanlight stores |
+| --- | --- | --- |
+| `<name>.workflow`, `<name>.task`, `<name>.agent` | `chain` | The function's arguments and return value, from `traceloop.entity.input` and `traceloop.entity.output` |
+| `<name>.tool` | `tool` | The same |
+| `openai.chat` | `llm` | Provider, the billed model snapshot (`gpt-4.1-mini-2025-04-14`), input, output and cached tokens, prompt, answer, finish reason, cost |
+
+- **Trace name.** On the root span, `traceloop.workflow.name`, else the decorator's name (`traceloop.entity.name`), so a workflow's trace is named after the workflow and an agent's after the agent.
+- **Messages.** Traceloop 0.62.4 sends the messages of a model call as `gen_ai.input.messages` and `gen_ai.output.messages`. Older releases sent flattened `gen_ai.prompt.<N>.*` attributes; Spanlight still reads them.
+- **Finish reason.** Traceloop sends `tool_call`, the singular of the OpenTelemetry GenAI conventions, for a call answered with tool calls. Spanlight stores it as `tool_calls`, like every other source.
+- **Trace metadata** from `traceloop.association.properties.<key>` attributes, when the spans carry them. The recorded scenarios set none.
+- **Cost** is computed by Spanlight from the model and the token counts; see [How cost is calculated](/docs/concepts/cost/).
+
+Which attribute fills which field is listed in [Traceloop and OpenLLMetry](/docs/reference/otlp-mapping/#traceloop-and-openllmetry).
+
+## What is not recorded
+
+- **Time to first token.** The recorded model calls send none, and Spanlight reads no metrics.
+- **Usage on the decorator spans.** Workflow, task, agent and tool spans have no model, tokens or cost. The model call below them has.
+- **Embeddings and providers other than OpenAI.** Only the OpenAI chat instrumentation was recorded, so this page makes no claim about the others.
+- **Content sent as log events.** The SDK's `use_attributes=False` mode moves prompts and answers to log events, which Spanlight does not receive. Keep the default.
+
+[OTLP compatibility](/docs/reference/otlp-compatibility/#traceloop-openai-0624) shows each recorded scenario field by field.
+
+## Troubleshooting
+
+- **No trace arrives.** Set the tracer provider before `Traceloop.init`, and flush it before a script exits. Then work through [No trace arrives](/docs/troubleshooting/#no-trace-arrives).
+- **The exporter gets `422 VALIDATION_ERROR`.** It sent to `/v1/traces`. Set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` to the full `/v1/otlp/traces` URL.
+- **The spans have no prompt or answer.** Set `TRACELOOP_TRACE_CONTENT=true`, and check that the project has prompt capture on; see [Privacy](/docs/guides/privacy/#turn-off-prompt-and-completion-capture).
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'OTLP compatibility', href: '/docs/reference/otlp-compatibility/', description: 'What each recorded exporter captures and loses, scenario by scenario.' },
+    { title: 'OTLP ingestion', href: '/docs/otlp/', description: 'The endpoint, the limits and trace metadata.' },
+    { title: 'How cost is calculated', href: '/docs/concepts/cost/', description: 'The price table and when a cost is unknown.' },
+  ]}
+/>

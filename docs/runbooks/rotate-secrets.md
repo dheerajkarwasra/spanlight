@@ -202,9 +202,9 @@ Watch `railway logs --service api --latest` for `Role spanlight_app is ready (no
 
 A key id is 1 to 64 letters, digits, `.`, `_` or `-`. The base64 is the standard alphabet, with padding. **The first entry seals new data; every entry can open data sealed under its id.** That is what makes rotation possible, and it is why you keep the old entry. The api and the worker must hold the same value. A value that breaks the format stops the process at startup with a message such as `CREDENTIALS_KEYS is invalid: entry 1 ...` that names the entry and the rule, never the value.
 
-**Back it up first.** A lost key cannot be recovered: every seed sealed under it becomes unreadable and those users have to enrol again, and every provider credential sealed under it has to be entered again. Keep a copy of the whole value outside the database backups. See [the decision record](../decisions/0009-application-master-key-encryption.md).
+**Back it up first.** A lost key cannot be recovered: every seed sealed under it becomes unreadable and those users have to enrol again, and every provider credential and billing source admin key sealed under it has to be entered again. Keep a copy of the whole value outside the database backups. See [the decision record](../decisions/0009-application-master-key-encryption.md).
 
-Putting a new key first changes the key that seals **new** data; the old key stays for the old data. Provider credentials can be moved to the new key with `spanlight reseal-credentials` (step 6 below). Two-factor seeds have no such command: they move to the new key when the user enrols again, so a seed stays under its old key until then.
+Putting a new key first changes the key that seals **new** data; the old key stays for the old data. Provider credentials and billing source admin keys can be moved to the new key with `spanlight reseal-credentials` (step 6 below). Two-factor seeds have no such command: they move to the new key when the user enrols again, so a seed stays under its old key until then.
 
 ### Steps: add a new key (two phases)
 
@@ -248,26 +248,28 @@ Why two phases: the api seals and the worker opens. If the new key went first on
      "SELECT totp_key_id, count(*) FROM users WHERE totp_key_id IS NOT NULL GROUP BY 1"
    ```
 
-6. Re-seal the gateway's provider credentials under the new first key:
+6. Re-seal the gateway's provider credentials and the billing sources' admin keys under the new first key:
 
    ```bash
    spl exec worker spanlight reseal-credentials
    ```
 
-   Expected: `Re-sealed <n> provider credentials.` and exit status 0. The command counts again afterwards. It exits non-zero with `<n> provider credentials are still sealed under an older key` while any is left, and prints `<n> provider credentials could not be opened with any key in CREDENTIALS_KEYS` on standard error for a credential no listed key opens; its id is in the log. Keep every key in the list and run it again; a credential that stays unopenable has to be entered again in the dashboard. See [the gateway runbook](gateway.md).
+   Expected: `Re-sealed <n> provider credentials and <m> billing source keys.` and exit status 0. A billing source uploaded as CSV holds no key and is skipped. The command counts both tables again afterwards. It exits non-zero with `<n> provider credentials or billing sources are still sealed under an older key` while any row is left, and prints `<n> provider credentials or billing sources could not be opened with any key in CREDENTIALS_KEYS` on standard error for a row no listed key opens; its id is in the log. Keep every key in the list and run it again; a credential or billing source key that stays unopenable has to be entered again in the dashboard. See [the gateway runbook](gateway.md).
 
 ### Steps: retire an old key
 
-Only when no row is sealed under it. Check both kinds of sealed data:
+Only when no row is sealed under it. Check every kind of sealed data:
 
 ```bash
 spl exec postgres psql -U postgres -d spanlight -c \
   "SELECT 'user' AS kind, count(*) FROM users WHERE totp_key_id = 'v1'
    UNION ALL
-   SELECT 'provider_credential', count(*) FROM provider_credentials WHERE key_id = 'v1'"
+   SELECT 'provider_credential', count(*) FROM provider_credentials WHERE key_id = 'v1'
+   UNION ALL
+   SELECT 'billing_source', count(*) FROM billing_sources WHERE key_id = 'v1'"
 ```
 
-Both counts must be `0`. If the provider credential count is not, run `spl exec worker spanlight reseal-credentials` (step 6 above) until it exits 0, and run the query again. **Stop here if either count is still above zero:** do not remove the key.
+Every count must be `0`. If the provider credential or billing source count is not, run `spl exec worker spanlight reseal-credentials` (step 6 above) until it exits 0, and run the query again. **Stop here if any count is still above zero:** do not remove the key. A billing source still under a removed key fails every fetch with `key cannot be decrypted` until its admin key is entered again.
 
 If the key leaked and you must retire it with seeds still under it, turn two-factor off for those users so they enrol again under the new key. List them:
 
@@ -277,7 +279,7 @@ spl exec postgres psql -U postgres -d spanlight -c \
 spl exec worker spanlight reset-2fa --email ada@example.com
 ```
 
-Expected: `Two-factor authentication turned off for <ada@example.com>; recovery codes deleted.` Repeat for each user in the list, then confirm the check above shows `0` for both kinds. Only then remove `v1:<old key>` from `CREDENTIALS_KEYS` on every service (api, worker and a standalone gateway) and redeploy. If you remove a key too early, a user whose seed is sealed under it cannot complete sign-in (the api fails to open the seed with an unknown-key error), and a gateway route that uses a credential sealed under it fails its calls. Put the key back to recover.
+Expected: `Two-factor authentication turned off for <ada@example.com>; recovery codes deleted.` Repeat for each user in the list, then confirm the check above shows `0` for every kind. Only then remove `v1:<old key>` from `CREDENTIALS_KEYS` on every service (api, worker and a standalone gateway) and redeploy. If you remove a key too early, a user whose seed is sealed under it cannot complete sign-in (the api fails to open the seed with an unknown-key error), a gateway route that uses a credential sealed under it fails its calls, and a billing source whose admin key is sealed under it fails every fetch with `key cannot be decrypted`. Put the key back to recover.
 
 **Roll back:** put the previous value back on both services. As long as the old key is still in the list, nothing sealed is lost. Data sealed under `v2` in the meantime opens only while `v2` stays in the keyring, so do not drop `v2` once a user has enrolled under it.
 

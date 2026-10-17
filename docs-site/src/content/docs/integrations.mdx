@@ -1,6 +1,6 @@
 ---
 title: Integrations
-description: Send traces to Spanlight from the provider SDK or CI system you already use. Every guide states the package versions it was tested with and what Spanlight records and leaves out.
+description: Send traces to Spanlight from the provider SDK, OpenTelemetry instrumentation or CI system you already use. Every guide states the package versions it was tested with and what Spanlight records and leaves out.
 ---
 
 import { CardGrid, LinkCard } from '@astrojs/starlight/components';
@@ -41,6 +41,33 @@ Send the calls you make to a model provider. Each guide covers the Python SDK, t
   />
 </CardGrid>
 
+## OpenTelemetry exporters
+
+Send the spans an OpenTelemetry instrumentation library already writes. Each guide shows the exporter setup its library's recording was made with, and links to [OTLP compatibility](/docs/reference/otlp-compatibility/), which lists field by field what each library captures and loses.
+
+<CardGrid>
+  <LinkCard
+    title="Vercel AI SDK"
+    href="/docs/integrations/vercel-ai/"
+    description="<span class='spl-lang'><span class='sr-only'>Language: </span>TypeScript<span class='sr-only'>. </span></span>Export generateText, streamText and tool calls from a Node.js or Next.js server, on AI SDK 5, 6 and 7."
+  />
+  <LinkCard
+    title="LiteLLM"
+    href="/docs/integrations/litellm/"
+    description="<span class='spl-lang'><span class='sr-only'>Language: </span>Python<span class='sr-only'>. </span></span>Trace litellm.completion calls with LiteLLM's own OpenTelemetry callback, in either of its modes."
+  />
+  <LinkCard
+    title="OpenLLMetry (Traceloop)"
+    href="/docs/integrations/openllmetry/"
+    description="<span class='spl-lang'><span class='sr-only'>Language: </span>Python<span class='sr-only'>. </span></span>Trace workflows, tasks, agents, tools and OpenAI calls with the Traceloop SDK."
+  />
+  <LinkCard
+    title="OpenInference"
+    href="/docs/integrations/openinference/"
+    description="<span class='spl-lang'><span class='sr-only'>Language: </span>Python<span class='sr-only'>. </span></span>Trace the OpenAI client and LangChain with the instrumentations behind Arize Phoenix."
+  />
+</CardGrid>
+
 ## CI
 
 Check a prompt change before it merges.
@@ -64,5 +91,6 @@ Each guide also lists what Spanlight records from that library and what it does 
 <CardGrid>
   <LinkCard title="Ways to send data" href="/docs/concepts/ingest-paths/" description="Compare the Python SDK, OTLP and the gateway." />
   <LinkCard title="OTLP attribute mapping" href="/docs/reference/otlp-mapping/" description="Which OpenTelemetry attribute fills which Spanlight field." />
+  <LinkCard title="OTLP compatibility" href="/docs/reference/otlp-compatibility/" description="What each recorded exporter library and version captures and loses." />
   <LinkCard title="Troubleshooting" href="/docs/troubleshooting/" description="Find out why no trace arrived." />
 </CardGrid>

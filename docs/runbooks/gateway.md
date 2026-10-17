@@ -104,7 +104,7 @@ Provider credentials are sealed under the first key of `CREDENTIALS_KEYS` and op
    spl exec worker spanlight reseal-credentials
    ```
 
-   Expected: `Re-sealed <n> provider credentials.` and exit status 0. The command recounts afterwards and exits non-zero while any credential is still sealed under an older key. A credential that no key in the list can open is left as it is and reported on standard error with a count; its id is in the log. That credential has to be replaced in the dashboard.
+   Expected: `Re-sealed <n> provider credentials and <m> billing source keys.` and exit status 0. The command recounts afterwards and exits non-zero while any credential or billing source is still sealed under an older key. A credential or billing source that no key in the list can open is left as it is and reported on standard error with a count; its id is in the log. That credential has to be replaced in the dashboard, and that billing source's admin key entered again.
 5. Only after step 4 succeeds, remove `v1` from the value on every service and restart them.
 
 Verify: send a call through a route that uses a credential. It must reach the provider and be answered; a credential that cannot be opened fails the call and is logged by the api or gateway. Roll back before step 5 by putting `v1` first again; nothing is lost while both keys are in the list.

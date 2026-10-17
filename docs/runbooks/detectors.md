@@ -8,7 +8,8 @@ The Doctor's detectors run in the worker every 15 minutes. For each project with
 - a detector shows errors in `GET /detector-runs`, or `spanlight_detector_runs_total{outcome="error"}` grows;
 - one project's runs time out, so none of its detectors report;
 - an insight is too noisy and you want to mute it, or the whole feature must be switched off;
-- "Explain with Claude" is refused, or the monthly explanation budget needs a look.
+- "Explain with Claude" is refused, or the monthly explanation budget needs a look;
+- the provider status feeds show a stale badge, or `spanlight_provider_status_polls_total{outcome="parse_error"}` rises.
 
 Detectors are deterministic code over your stored spans. They call no model, send nothing anywhere, and write only to `insights` and `detector_runs` (plus notification rows for a critical insight that opens). Switching them off loses nothing already found.
 
@@ -164,6 +165,48 @@ Use this while you restore a database, migrate data, or when the detectors overl
 While the detectors are off nothing is opened or resolved, so open insights stay open and no automatic resolution happens. Notifications already queued are still delivered. Insights, their history and the Doctor screen remain readable. The health score keeps working: it reads the open counts and the metrics, not the detectors. To turn them back on, remove the line (or set `true`) and recreate the worker. The first pass resolves what has not been seen for 24 hours and opens what is happening now.
 
 `USER_STATS_ENABLED=false` is the separate switch for the Users page's refresh job; see [Configuration](../../docs-site/src/content/docs/configuration.md).
+
+## Provider status feeds
+
+The worker polls the status pages of Anthropic, OpenAI and Google every 5 minutes (job `poll_provider_status`, one attempt, deduplicated per period like the detectors), so the Provider health page and the `provider_incident` insight can cite official incidents. The feeds are fixed in `backend/app/provider_status/adapters/`. Each feed is polled on its own: one failing never stops the others, and incidents already stored are kept whatever happens.
+
+Every request is counted in `spanlight_provider_status_polls_total{provider,outcome}` and logged as one `provider_status_polled` line per provider and run, with the outcome and counts, never the feed body:
+
+| Outcome | Meaning | What to do |
+| --- | --- | --- |
+| `fetched` | The feed answered `200` and was parsed. | Nothing. |
+| `not_modified` | The feed answered `304`: nothing new since the last poll. Counts as a success. | Nothing. |
+| `http_error` | Any other status, a redirect, or a transport error. | Check that the worker can reach the host on port 443. Usually the feed recovers by itself. |
+| `timeout` | No answer within 10 seconds. | As `http_error`. |
+| `too_large` | The body was over 2 MB. | The feed grew or changed; treat it as `parse_error`. |
+| `parse_error` | The body is not the JSON or RSS the adapter expects. | The provider changed the feed format. See below. |
+| `blocked` | The host resolved to a private or local address, so the egress check refused it. Logged at error. | A DNS or network configuration problem on your side. |
+
+For OpenAI, a failed JSON feed is followed by its RSS feed in the same run, and both requests are counted.
+
+**Is the job running?** Read the poll state of each feed:
+
+```bash
+spl exec postgres psql -U postgres -d spanlight -c \
+  "SELECT provider, last_polled_at, last_success_at, last_outcome, consecutive_failures, last_error_type
+     FROM provider_status_sources ORDER BY provider"
+```
+
+`last_polled_at` older than 10 minutes means the worker is not polling: check that it runs (see [Is the worker alive?](README.md#is-the-worker-alive)) and that `PROVIDER_STATUS_POLLING_ENABLED` is not `false`. The Provider health page shows a stale badge when a feed has not been fetched for 30 minutes or its last poll failed. `GET /api/v1/projects/<project-id>/provider-incidents` returns the same poll state in `sources`.
+
+**`parse_error` keeps firing.** The provider changed its feed format, and the adapter no longer reads it.
+
+```promql
+sum by (provider) (increase(spanlight_provider_status_polls_total{outcome="parse_error"}[1h])) > 0
+```
+
+1. Fetch the live feed as the fixtures were fetched; the commands are in [the fixtures README](../../backend/tests/provider_status/fixtures/README.md).
+2. Refresh that provider's recorded fixture with the new response, and run `uv run pytest tests/provider_status` in `backend/`. The adapter tests now fail the way the live feed does.
+3. Fix the adapter in `backend/app/provider_status/adapters/<provider>.py` until the tests pass, and deploy. The next poll writes the incidents the feed still lists; incidents that dropped out of the feed meanwhile are not recovered.
+
+**Air-gapped servers.** Set `PROVIDER_STATUS_POLLING_ENABLED=false` on the api and the worker and recreate both. Nothing is fetched, a run queued before the change is skipped, and the Provider health page says the feeds are off on this server.
+
+Incidents are kept for 730 days, then deleted by the retention job.
 
 ## Explanation budget
 

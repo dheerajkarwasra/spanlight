@@ -428,7 +428,9 @@ const lookupSources = ingestSources;
 
 test('lists every Python file of the ingest package', () => {
   const names = ingestSourceFiles(INGEST_DIR).map((file) => path.basename(file));
-  for (const expected of ['otlp.py', 'finish_reason.py', 'error_class.py', 'normalize.py']) {
+  const expectedFiles = ['otlp.py', 'otlp_span.py', 'finish_reason.py', 'error_class.py', 'normalize.py'];
+  // The convention mappers live in the `conventions/` sub-package.
+  for (const expected of [...expectedFiles, 'gen_ai.py', 'openinference.py', 'vercel_ai.py', 'traceloop.py']) {
     assert.ok(names.includes(expected), `${expected} is missing from ${names.join(', ')}`);
   }
 });
@@ -454,12 +456,17 @@ test('reads the other attribute keys and prefixes the mapper looks up', () => {
   const found = otlpLookupKeys([
     'a = first("service.name", "x.y", source=resource)\nb = key.startswith(("http.", "url."))\n' +
       'c = ("finish_reason", False),\nSTATUS_ATTRIBUTES = ("error.status", "http.status_code")\n' +
-      '_ATTRIBUTE_SOURCES = (\n    ("response.finish_reasons", True),\n)\n',
+      '_ATTRIBUTE_SOURCES = (\n    ("response.finish_reasons", True),\n)\n' +
+      'd = has_prefix(attributes, "ai.")\ne = has_prefix(attributes, old_key + ".")\n' +
+      'f = unflatten(attributes, "llm.input_messages")\n' +
+      '"""Call `first(attributes, "doc.example")` in a docstring."""\n',
   ]);
   assert.deepEqual(found, [
+    'ai.',
     'error.status',
     'http.status_code',
     'http.',
+    'llm.input_messages.',
     'response.finish_reasons',
     'service.name',
     'url.',
@@ -470,20 +477,74 @@ test('reads the other attribute keys and prefixes the mapper looks up', () => {
 // The attribute keys that are not gen_ai.*, exactly as the code reads them today. When the code
 // reads a new one, or stops reading one, this list, the page and the test fail together.
 const EXPECTED_LOOKUPS = [
+  'ai.',
+  'ai.model.id',
+  'ai.model.provider',
+  'ai.operationId',
+  'ai.prompt',
+  'ai.prompt.messages',
+  'ai.response.finishReason',
+  'ai.response.model',
+  'ai.response.msToFirstChunk',
+  'ai.response.object',
+  'ai.response.text',
+  'ai.response.toolCalls',
+  'ai.settings.context.',
+  'ai.telemetry.functionId',
+  'ai.telemetry.metadata.',
+  'ai.toolCall.args',
+  'ai.toolCall.result',
+  'ai.usage.cachedInputTokens',
+  'ai.usage.completionTokens',
+  'ai.usage.inputTokenDetails.cacheReadTokens',
+  'ai.usage.inputTokenDetails.cacheWriteTokens',
+  'ai.usage.inputTokens',
+  'ai.usage.outputTokens',
+  'ai.usage.promptTokens',
+  'ai.value',
+  'ai.values',
   'db.',
   'deployment.environment',
   'deployment.environment.name',
+  'embedding.model_name',
   'error.status',
+  'exception.message',
   'finish_reason',
   'gen_ai.',
   'http.',
+  'http.response.status_code',
   'http.status_code',
+  'input.mime_type',
+  'input.value',
+  'llm.finish_reason',
+  'llm.input_messages.',
+  'llm.model_name',
+  'llm.output_messages.',
+  'llm.provider',
+  'llm.request.model_name',
+  'llm.request.type',
+  'llm.response.finish_reason',
+  'llm.response.model_name',
+  'llm.system',
+  'llm.token_count.completion',
+  'llm.token_count.prompt',
+  'llm.token_count.prompt_details.cache_read',
+  'llm.token_count.prompt_details.cache_write',
+  'metadata',
+  'openinference.span.kind',
+  'output.mime_type',
+  'output.value',
   'response.finish_reasons',
   'response.stop_reason',
   'service.name',
   'service.version',
   'session.id',
+  'spanlight.gateway.status',
   'spanlight.gateway.upstream_status',
+  'traceloop.association.properties.',
+  'traceloop.entity.name',
+  'traceloop.span.kind',
+  'traceloop.workflow.name',
   'url.',
   'user.id',
 ].sort();

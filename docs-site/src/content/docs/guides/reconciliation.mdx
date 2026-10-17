@@ -1,0 +1,288 @@
+---
+title: Reconcile cost with your provider bill
+description: Connect an Anthropic or OpenAI admin key, or upload a cost CSV, and compare what the provider billed each day with the cost Spanlight computed for your projects.
+---
+
+{/* Sources: backend/app/api/v1/billing_sources.py, backend/app/api/v1/billing_source_runs.py, backend/app/api/v1/billing_reconciliation.py, backend/app/api/schemas/reconciliation.py, backend/app/reconciliation/arithmetic.py, backend/app/reconciliation/explained.py, backend/app/reconciliation/report.py, backend/app/reconciliation/report_csv.py, backend/app/reconciliation/csv_import.py, backend/app/reconciliation/csv_rows.py, backend/app/reconciliation/line_items.py, backend/app/reconciliation/fetch_policy.py, backend/app/reconciliation/rollups.py, backend/app/reconciliation/source_actions.py, backend/app/jobs/scheduler.py, backend/app/core/ratelimit.py, frontend/src/features/billing-sources/billing-sources-page.tsx, frontend/src/features/billing-sources/source-row.tsx, frontend/src/features/billing-sources/source-detail-fields.tsx, frontend/src/features/billing-sources/source-model.ts, frontend/src/features/billing-sources/refresh-button.tsx, frontend/src/features/billing-sources/upload-csv-form.tsx, frontend/src/features/billing-sources/reconciliation-page.tsx, frontend/src/features/billing-sources/reconciliation-header.tsx, frontend/src/features/billing-sources/reconciliation-copy.ts, frontend/src/features/billing-sources/reconciliation-summary.ts, frontend/src/features/billing-sources/reconciliation-day-table.tsx, frontend/src/features/billing-sources/reconciliation-day-detail.tsx, frontend/src/features/billing-sources/reconciliation-table.ts, frontend/src/features/billing-sources/reconciliation-figures.ts, frontend/src/features/billing-sources/window-picker-popover.tsx, docs/api-deviations.md */}
+
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+
+Spanlight prices every model call from its token counts (see [How cost is calculated](/docs/concepts/cost/)). Your provider bills from its own meters. A **billing source** brings the provider's side in, so you can see, for each UTC day and model, whether the two agree and why they do not.
+
+A billing source is one of three kinds:
+
+- **Anthropic Admin API**: Spanlight fetches the cost report and the usage report of your Anthropic organization with an Admin API key.
+- **OpenAI Admin API**: Spanlight fetches the costs and the completions usage of your OpenAI organization with an admin key.
+- **CSV upload**: you upload the provider's costs in Spanlight's CSV format. Use it for Google, or when you cannot give Spanlight an admin key.
+
+Each source is compared with the projects you map to it. The result is the **reconciliation report**: the provider's amount, Spanlight's amount, the known causes of the difference, and what is left.
+
+<Prerequisites
+  items={[
+    'The admin or owner role in the organization to add, refresh or change a source. Every member can read sources and reports',
+    'For an API source: an Anthropic Admin API key (it starts with sk-ant-admin) or an OpenAI admin key (it starts with sk-admin)',
+    { text: 'For an API source: CREDENTIALS_KEYS set on the server, and BILLING_SOURCES_ENABLED on (the default)', href: '/docs/configuration/' },
+    'Projects that already send model calls with token usage',
+  ]}
+/>
+
+## Connect a provider account
+
+Open **Settings**, then **Billing sources** under **Organization**, and press **Add source**.
+
+1. Pick the **Kind**: **Anthropic Admin API**, **OpenAI Admin API** or **CSV upload**. For a CSV source, also pick the **Provider** (Anthropic, OpenAI or Google); every row of its files must name it in the `provider` column.
+2. Give the source a **Name**, such as "Prod account". Names are unique in the organization.
+3. Paste the **Admin API key**. An administrator of the provider organization creates admin keys, in the Anthropic Console or in the OpenAI platform settings.
+4. Optionally set a **Provider scope** (see [Scope a source](#scope-a-source)).
+5. Tick the **Projects to compare** (see [Map projects](#map-projects)) and press **Add source**.
+
+The key is handled like a password:
+
+- It is encrypted with the server's `CREDENTIALS_KEYS` before it is stored, and it is never shown again. No response, audit event or log line carries it; the source only says whether a key is stored.
+- Spanlight sends only read requests with it, to two fixed hosts (`https://api.anthropic.com` and `https://api.openai.com`): the cost report and the usage report. An admin key can usually do more than that at the provider, so treat it like any other admin credential, and limit it to read access if your provider lets you.
+- When you save the source, Spanlight checks the key once with one request for yesterday's costs, 10 seconds at most. The source is saved whatever the result. Its status shows **OK**, or **Failing** with the reason, such as `401 Unauthorized`.
+- To replace a key, edit the source, press **Rotate key** and enter the **New Admin API key**. The same check runs. If the server's master keys are rotated, `spanlight reseal-credentials` re-encrypts billing source keys with the gateway's provider credentials (see [Rotate the master keys](/docs/gateway/credentials/#rotate-the-master-keys)).
+
+If the server has no `CREDENTIALS_KEYS`, the API kinds are unavailable and the page offers the CSV kind only. A CSV source holds no key and needs no server setting.
+
+### When fetches run
+
+The worker fetches every enabled API source once a day, from 03:30 UTC. Each fetch reads the last seven whole UTC days, so a correction the provider makes to a recent day replaces the earlier figure. A source that has never been fetched successfully reads the last 31 days instead.
+
+A fetch is all or nothing. If any page fails, nothing from that fetch is stored, and the source shows **Failing** with an HTTP status line or a short reason such as `timeout`. A fetch that hits a rate limit or a passing error is tried up to three times.
+
+To fetch now, press **Refresh** on the source. A source can be refreshed once every 5 minutes, with bursts of two; the button counts down until the next one. With `BILLING_SOURCES_ENABLED` off, the server calls no provider: no fetch runs, Refresh is refused, and a new or re-keyed source is saved without a check.
+
+Turning a source off (the **Fetch daily** switch) stops its fetches and its refreshes. Its report stays readable.
+
+## Scope a source
+
+The **Provider scope** limits a source to part of the provider account. Leave it empty to compare the whole account.
+
+- **Anthropic**: a workspace id. Only costs of that workspace are read. Use `default` for the default workspace, which the cost report lists without an id.
+- **OpenAI**: a project id (`proj_…`). Only costs of that project are read. Use `default` for costs the provider lists without a project.
+
+Scope a source when one provider account pays for more than Spanlight sees, for example a workspace used by another team. Unscoped, those costs show up as differences in the report.
+
+## Map projects
+
+The projects you tick are Spanlight's side of the comparison: the report adds up their cost for each day. Map exactly the projects whose model calls the provider account (and scope) pays for.
+
+- A project can be compared with **one source per provider**. Mapping it to a second Anthropic source, say, is refused with `409 BILLING_SOURCE_PROJECT_TAKEN`, which names the other source, because the same calls would otherwise be counted twice.
+- A source with no projects is allowed. Its report shows the provider's side only.
+- Two sources may use the same key with different projects and scopes. Each one fetches its own copy of the costs.
+- Only spans whose provider matches the source's provider count (after the [provider aliases](/docs/concepts/cost/#which-provider-names-match-which-price), so a `gemini` span counts for a Google source). A span with no provider cannot be billed by any source; the report counts such calls in `unattributed_calls`.
+
+## Read the report
+
+### In the app
+
+On **Billing sources**, select a source's name to open its reconciliation page. Every member can read it.
+
+- The header shows the source's status and what it compares, with the window picker, **Refresh** (for an API source) or **Upload CSV** (for a CSV source), and **Download CSV**. Only admins and owners see Refresh and Upload CSV.
+- The window picker names the window in whole UTC days. Pick **Last 7 days**, **Last 14 days** or **Last 31 days**, or set a **First day** and a **Last day** and press **Apply window**. The page opens on the last 14 days.
+- Five summary tiles total the window: **Provider USD**, **Spanlight USD**, **Explained**, **Residual** with its variance, and **Settled days**, such as "12 of 14".
+- **Daily reconciliation** lists the days, newest first, with the columns **Day**, **Status**, **Provider**, **Spanlight**, **Explained**, **Residual** and **Variance**. A day can carry the chips **Provisional**, **Rollup pending** or **Spans no longer retained**. Each variance badge names its band, in words as well as colour: **≤ 2 %**, **2–10 %** or **> 10 %**.
+- Expand a day to see its model groups. Each group shows the four figures, the token classes on both sides, and its **Explained** lines, such as **Batch spend** or **Usage not reported**. **Credits** and **Other provider charges** follow, listed apart and never subtracted.
+- A figure Spanlight does not have shows "—". Hover or focus it for the reason, such as "Not fetched yet" or "Rollup pending".
+- When the source has no provider data yet, or its last fetch failed, a notice above the tiles says so and which days it leaves open. If the provider refused the key, it offers admins and owners **Rotate key**.
+
+### With the API
+
+The report is also served by the API, as JSON or as a CSV file with one row per day and model group:
+
+```bash
+curl -H "Authorization: Bearer $SPANLIGHT_TOKEN" \
+  "https://spanlight.example.com/api/v1/orgs/$ORG_ID/billing-sources/$SOURCE_ID/reconciliation?from=2026-10-01&to=2026-10-15"
+```
+
+Use a [personal access token](/docs/guides/access/#personal-access-tokens) of any member. Add `.csv` after `reconciliation` for the CSV file. `from` and `to` are widened to whole UTC days. The window may cover at most 31 days and may not end after today; without `from` and `to` it covers the last 14 whole days.
+
+### Days, groups and the residual
+
+The report has one entry per UTC day, and each day one entry per **model group**. Both sides are grouped by the price pattern their model name matches, so `claude-sonnet-4-6` on the invoice and `claude-sonnet-4-6-20260301` on a span land in the same group. A name that matches no pattern stays in its own group, `unmapped:<name>`, on its own side.
+
+For each day and group:
+
+- `provider_usd`: what the provider billed for tokens and web searches.
+- `spanlight_usd`: what Spanlight recorded for the mapped projects (fees included).
+- `explained_usd`: the sum of the explained lines that have an amount.
+- `residual_usd`: `provider_usd − spanlight_usd − explained_usd`, always shown and signed. A **positive** residual means the provider billed more than Spanlight recorded and explained, for example calls that were never traced. A **negative** one means Spanlight recorded more, for example a price override above the real rate, a project mapped to the wrong account, or calls billed under another account.
+- `variance_ratio`: the residual divided by `provider_usd`, or `null` when the provider billed nothing.
+
+A group where Spanlight has calls and the provider has no line has `provider_usd` 0 and the note "no provider line: wrong source scope, or usage billed under another account".
+
+Spanlight counts a call on the UTC day it **started**. A call that starts just before midnight and is billed when it ends can fall on the next day at the provider, a difference of one call at the day boundary.
+
+### Explained lines
+
+An explained line names one known cause of a difference. Only some causes have an amount; the others give a count or a token total and leave the money in the residual.
+
+| Kind | Amount | What it means |
+| --- | --- | --- |
+| `batch_spend` | Yes | Batch-tier spend the provider billed beyond the cost of traced batch calls. Record batch results with the Python SDK to close it. |
+| `server_tool_fees` | Yes, signed | The provider's web search charges minus the fees Spanlight recorded inside a known cost; a fee on a call whose cost is unknown is not subtracted, so its charge stays in this gap. `count` is the number of searches billed; the note also counts every search Spanlight recorded. |
+| `untraced_traffic` | Yes | All of the provider's amount for a group with no Spanlight call that day: "no span with this model". |
+| `priority_commitment` | Negative, when known | Anthropic Priority Tier calls. Anthropic bills them under a capacity commitment, not in the cost report, so the standard-rate cost Spanlight recorded for them is taken back out. The token total comes from the usage report. When the provider does bill a priority line, both sides hold the calls and the line has no amount. |
+| `unpriced_spans` | No | Calls with a model and token counts but no price. |
+| `usage_not_reported` | No | Calls whose output tokens were never reported, such as streams cut before the final usage. The note says how many were cut streams. |
+| `unmodelled_modifiers` | No | Calls priced at the standard rate with a modifier Spanlight does not price: OpenAI priority, fast mode, data residency. |
+| `beyond_retention` | No | Spans of the day are past the retention of a mapped project. The day is marked `incomplete`, and the batch, fee and untraced lines lose their amounts, because the spans behind them may have been deleted. |
+
+See [Explaining a cost](/docs/concepts/cost/#explaining-a-cost) for how Spanlight priced a single span.
+
+### Credits and other charges
+
+Credits and refunds are listed in the day's `credits`, with their total in `credits_usd`. Charges Spanlight cannot see, such as code execution, Anthropic session usage and OpenAI line items that are not a model (`assistants api | file search`), are listed in `other`, with the total in `other_usd`. Neither is part of `provider_usd`, the residual or the variance.
+
+### Provisional and unknown days
+
+Providers keep adjusting a day for a while after it ends. A day is `provisional` until 48 hours after it ends **and** until a successful fetch (or upload) that covers it finishes after that point. The daily fetch rereads the last week, so a day normally settles two to three days after it ends.
+
+Unknown figures are `null`, never 0:
+
+- A day no successful fetch or upload has covered has `fetched_at`, `provider_usd` and the residual `null`, and is provisional.
+- A day whose Spanlight figures are not built yet has `spanlight_usd`, `explained_usd` and the residual `null`, `incomplete: true` and the note `rollup pending`. Spanlight keeps daily cost figures for each project: recomputed every 15 minutes for the last three days and nightly for the last eight. Older days are built when a report asks for them, up to 31 project-days per request; the rest are queued, so load the report again a minute later.
+- A day with no provider line and no Spanlight call is left out.
+
+`summary` counts the days shown and the settled ones. `days_within_2pct` counts the settled, complete days within 2 % either way, and `max_abs_variance_ratio` reads only settled, complete days, and the ratio only groups the provider billed at least $0.01.
+
+### A worked example
+
+On 14 October the provider billed $8.95 for `claude-sonnet-4-6`: $7.80 at the standard tier, $0.75 of batch output and $0.40 for 40 web searches. Spanlight recorded $8.07 for the mapped project, including $0.30 for the 30 web searches it saw, and no batch calls. The report's group reads, in part:
+
+```json
+{
+  "group": "claude-sonnet-4-6",
+  "provider_usd": "8.95000000",
+  "spanlight_usd": "8.07000000",
+  "explained_usd": "0.85000000",
+  "residual_usd": "0.03000000",
+  "variance_ratio": "0.0034",
+  "explained": [
+    { "kind": "batch_spend", "usd": "0.75000000", "count": null, "tokens": null, "note": "batch-tier spend not covered by traced batch calls" },
+    { "kind": "server_tool_fees", "usd": "0.10000000", "count": 40, "tokens": null, "note": "40 web searches on the provider side, 30 recorded" },
+    { "kind": "usage_not_reported", "usd": null, "count": 3, "tokens": null, "note": "3 calls whose output tokens were never reported (2 cut streams)" }
+  ]
+}
+```
+
+The batch results were never recorded, and ten web searches came from calls that were not traced. The $0.03 left is the cost of the three calls whose output was never reported: Spanlight leaves their whole cost unknown, input included, rather than guessing.
+
+## Upload a cost CSV
+
+A CSV source takes files in Spanlight's own format, not a provider's console export: the provider exports change without notice, and a fixed format is read the same way every time. Press **Upload** on the source and choose the file. Download the template, which holds the example of the next section: [reconciliation-template.csv](/docs/examples/reconciliation-template.csv).
+
+The header must list all ten columns, in any order. The optional cells may be left blank.
+
+| Column | Required | Value |
+| --- | --- | --- |
+| `day` | Yes | The UTC day, `YYYY-MM-DD`. |
+| `provider` | Yes | `anthropic`, `openai` or `google`; the source's provider. |
+| `line_kind` | Yes | `tokens`, `web_search`, `code_execution`, `credit` or `other`. |
+| `amount_usd` | Yes | US dollars as a plain decimal with at most 8 decimals, such as `3.6`. No currency sign, thousands separator or exponent. At least 0, except on a `credit` line. |
+| `model` | No | The model the line was billed for, up to 256 characters. Give web search lines a model too, or they group as `unmapped:`. |
+| `token_type` | No | `uncached_input`, `cache_read`, `cache_write_5m`, `cache_write_1h`, `output`, or `input` and `cached_input` for a provider that does not split them further. |
+| `service_tier` | No | `standard`, `batch`, `priority` or `flex`. |
+| `quantity` | No | A whole number: tokens on a `tokens` line, searches on a `web_search` line. |
+| `description` | No | Up to 512 characters. Blank means `<model> <token_type>`. |
+| `provider_scope` | No | The workspace or project the line belongs to, up to 128 characters. |
+
+How the lines are used:
+
+- `tokens` and `web_search` lines are the provider's amount; `credit` lines are listed as credits; `code_execution` and `other` lines are listed as other charges.
+- A day and line may appear once. A line is identified by its kind, model, token type, tier, description and scope, so two rows that differ only in amount are refused ("the same day and line as row 3"). Add them up, or tell them apart with `description`.
+- **Each upload replaces the provider's figures for every day from its first to its last day.** For those days the report reads only the new file's lines, so a file must hold every line of every day it covers. A file with only 1 and 10 October hides the earlier lines of 2 to 9 October.
+- The whole file is checked before anything is stored. A refused file lists up to 20 reasons by row and column (the header is row 1), and nothing is stored. A reason names the column, never the cell's content.
+- Spanlight keeps the lines, not the file. A cell that looks like a formula is stored as text and never evaluated.
+- An upload of more than 31 days queues the recomputation of Spanlight's figures for those days instead of doing it at once; the report shows `rollup pending` until it is done.
+
+### Turn an Anthropic Console export into the template
+
+The Anthropic Console can export an organization's costs. Its columns are not documented and change from time to time, so match them by meaning, not by name:
+
+| In the Console export | In the template |
+| --- | --- |
+| The date of the cost, in UTC | `day`, as `2026-10-14` |
+| The model, such as Claude Sonnet 4.6 | `model`, as the API model id: `claude-sonnet-4-6` |
+| The kind of token: input, cache read, cache write (5 minutes or 1 hour), output | `line_kind` `tokens`, `token_type` `uncached_input`, `cache_read`, `cache_write_5m`, `cache_write_1h` or `output` |
+| Batch usage | `service_tier` `batch` |
+| Web search | `line_kind` `web_search`, the model in `model`, the number of searches in `quantity` |
+| Code execution, session usage | `line_kind` `code_execution` or `other` |
+| A credit or refund | `line_kind` `credit`, a negative `amount_usd` |
+| The workspace | `provider_scope` (optional) |
+| The cost | `amount_usd`, in dollars |
+
+Then, in a spreadsheet:
+
+1. Export the costs of the days you want from the Console, grouped by day, model and token type if it offers that.
+2. Add a sheet with the template's header row and copy each export row into it as one line, mapped as in the table above. Write every line of every day in the range, including days with only small amounts.
+3. Make sure the amounts are dollars, not cents (the Admin API reports cents; the Console usually shows dollars), and plain decimals without a `$` or a thousands separator.
+4. Save the sheet as **CSV UTF-8** and upload it.
+
+For one day of `claude-sonnet-4-6` traffic, the result is the template file:
+
+```csv
+day,provider,line_kind,amount_usd,model,token_type,service_tier,quantity,description,provider_scope
+2026-10-14,anthropic,tokens,3.6,claude-sonnet-4-6,uncached_input,standard,1200000,,
+2026-10-14,anthropic,tokens,1.2,claude-sonnet-4-6,cache_read,standard,4000000,,
+2026-10-14,anthropic,tokens,0.75,claude-sonnet-4-6,cache_write_5m,standard,200000,,
+2026-10-14,anthropic,tokens,2.25,claude-sonnet-4-6,output,standard,150000,,
+2026-10-14,anthropic,tokens,0.75,claude-sonnet-4-6,output,batch,100000,,
+2026-10-14,anthropic,web_search,0.4,claude-sonnet-4-6,,,40,Web search,
+2026-10-14,anthropic,code_execution,0.05,,,,,Code execution,
+2026-10-14,anthropic,credit,-5,,,,,Promotional credit,
+```
+
+The two `output` lines differ in `service_tier`, so they are two lines. This file gives the report of [the worked example](#a-worked-example), with a $0.05 other charge and a $5.00 credit listed apart.
+
+## Limits
+
+| Limit | Value |
+| --- | --- |
+| Report window | At most 31 whole UTC days, ending today at the latest. Default: the last 14 days. |
+| Refresh | One every 5 minutes per source, bursts of 2. Refused while a fetch of the source is running. |
+| Key checks | Adding an API source or replacing its key checks the key with the provider: five checks per organization, then one a minute. |
+| Daily fetch | Once a day from 03:30 UTC: the last 7 days, or 31 on a source's first successful fetch. |
+| CSV file | 5 MB, 100,000 data rows, UTF-8, each day within the last 400 days up to today (UTC). Up to 20 reasons are reported for a refused file. |
+| Sources one project is compared with | One per provider. |
+| Provider lines kept | 400 days. |
+
+The [limits reference](/docs/reference/limits/#billing-sources) lists the limits on keys, names and scopes.
+
+## Check it worked
+
+1. On **Billing sources**, the source shows **OK · fetched** with how long ago, or **Never fetched** until its first fetch. Press **Refresh** for an API source; the message says the refresh is queued. The page does not update by itself: reload it a minute later to see the new status and figures. For a CSV source, an upload ends with "Imported N lines covering N days".
+2. Select the source's name. On its reconciliation page, the **Provider USD** tile has a figure, and the days the source covers show a provider amount in **Daily reconciliation** instead of "—". Days older than about two days lose the **Provisional** chip after the next daily fetch, and **Settled days** counts them.
+3. From the API, `GET /api/v1/orgs/{org_id}/billing-sources/{source_id}/runs` lists the fetches and uploads, newest first, each `ok`, `running` or `failed` with its `error`, and the report has a `fetched_at` and a `provider_usd` on each covered day.
+
+## Troubleshooting
+
+- **The source shows "Failing · 401 Unauthorized" or "403 Forbidden".** The key is wrong, revoked, or not an admin key. Press **Rotate key** and enter a new Admin API key.
+- **"Failing · key cannot be decrypted" or "CREDENTIALS_KEYS is not set".** The server cannot open the stored key: `CREDENTIALS_KEYS` is unset on the worker, or the master key that sealed it was removed. Set the value the API uses, or rotate the source's key.
+- **"Failing · timeout", "connection error", "host not found" or "blocked address".** The worker could not reach `api.anthropic.com` or `api.openai.com`. Allow outbound HTTPS to the provider's host.
+- **"Failing · too many pages" or "response too large".** The fetch would read more than 40 pages, or a page over 4 MB. Scope the source to a workspace or project.
+- **"Failing · invalid response".** The provider answered with something Spanlight could not read, such as a missing field or an unknown token type; nothing was stored. Refresh later; if it persists, report it with the run's time.
+- **A run failed with "source disabled".** The source was turned off after a refresh was queued, so the fetch was not made. Turn it on and refresh again.
+- **"Failing · unsupported currency".** The provider reported an amount in a currency other than US dollars; nothing was stored. Use a CSV source with amounts in dollars.
+- **Refresh answers `409 NOT_CONFIGURED`.** `BILLING_SOURCES_ENABLED` is off or `CREDENTIALS_KEYS` is not set on the server. Ask your administrator, or use a CSV source.
+- **Refresh answers `409 BILLING_FETCH_IN_PROGRESS`.** A fetch of the source is still running. Wait for it; a fetch still running after 15 minutes is treated as dead and no longer blocks a refresh.
+- **Refresh answers `409 BILLING_SOURCE_DISABLED`.** The source is turned off. Edit it and turn **Fetch daily** on.
+- **Refresh answers `429 RATE_LIMITED`.** The source was refreshed recently. Wait for the time in `Retry-After`; a refused refresh counts towards the limit too.
+- **The upload is refused with "missing column".** The header must list all ten columns, even the ones you leave blank. Start from the template.
+- **"provider must be anthropic, the source's".** A row names another provider than the source. A CSV source holds one provider's costs.
+- **"the same day and line as row N".** Two rows describe the same line. Add their amounts up, or tell them apart with `description`.
+- **A whole group is `untraced_traffic`, or `unmapped:<name>` on one side only.** The provider bills a model that no mapped project calls, or under a name no price pattern matches. Check the mapped projects and the scope, and add a [price override](/docs/concepts/cost/#price-overrides) for a model Spanlight does not price.
+- **The residual is negative day after day.** Spanlight records more than the provider bills. Check overrides above the real rate, projects mapped to the wrong account, and calls billed under another account or workspace.
+- **A day stays provisional.** No successful fetch covering the day has finished since 48 hours after it ended. Check that the source fetches daily, or press **Refresh**.
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'How cost is calculated', href: '/docs/concepts/cost/', description: 'Tiers, fees, unknown costs and the cost explanation of a span.' },
+    { title: 'Billing sources endpoints', href: '/docs/api/billing-sources/', description: 'Every route behind sources, runs, uploads and the report.' },
+    { title: 'Budgets', href: '/docs/budgets/', description: 'Set spend limits on the cost Spanlight records.' },
+  ]}
+/>

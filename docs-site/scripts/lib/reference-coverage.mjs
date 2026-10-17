@@ -375,13 +375,14 @@ export function otlpKeysIn(otlpSources) {
 }
 
 /**
- * The Python files of a directory, sorted, as full paths.
+ * The Python files of a directory and its sub-packages (such as `ingest/conventions/`), sorted, as
+ * full paths.
  * @param {string} dir
  * @returns {string[]}
  */
 export function ingestSourceFiles(dir) {
   return fs
-    .readdirSync(dir)
+    .readdirSync(dir, { recursive: true })
     .filter((name) => name.endsWith('.py'))
     .sort()
     .map((name) => path.join(dir, name));
@@ -391,14 +392,18 @@ const quotedStrings = (text) => [...text.matchAll(/["']([^"']+)["']/g)].map((mat
 
 /**
  * The attribute keys, other than the `gen_ai.*` ones, that the OTLP mapper looks up: the string
- * arguments of `first(...)`, the keys of `attributes.get(...)` and `resource.get(...)`, the names in `STATUS_ATTRIBUTES` and in `_ATTRIBUTE_SOURCES`, and the
- * prefixes tested with `startswith(...)` (they end in a dot). Sorted, without duplicates.
+ * arguments of `first(...)`, the keys of `attributes.get(...)` and `resource.get(...)`, the names in
+ * `STATUS_ATTRIBUTES` and in `_ATTRIBUTE_SOURCES`, the prefixes tested with `startswith(...)` (they
+ * end in a dot), and the literal prefixes passed to `has_prefix(attributes, "…")` and
+ * `unflatten(attributes, "…")` (`unflatten` reads `<prefix>.<index>.…`, so its prefix is listed with
+ * the dot). Text inside `"""` strings (docstrings, SQL) is skipped: an example there is not a
+ * lookup. Sorted, without duplicates.
  * @param {string[]} otlpSources
  * @returns {string[]}
  */
 export function otlpLookupKeys(otlpSources) {
   const keys = new Set();
-  for (const source of otlpSources) {
+  for (const source of otlpSources.map((text) => text.replace(/"""[\s\S]*?"""/g, ''))) {
     for (const match of source.matchAll(/\bfirst\(([^)]*)\)/g)) {
       for (const key of quotedStrings(match[1])) if (!key.startsWith('gen_ai.')) keys.add(key);
     }
@@ -407,6 +412,13 @@ export function otlpLookupKeys(otlpSources) {
     }
     for (const match of source.matchAll(/\bstartswith\(([^)]*)\)/g)) {
       for (const prefix of quotedStrings(match[1])) if (prefix.endsWith('.')) keys.add(prefix);
+    }
+    // Only a literal second argument: `has_prefix(attributes, old_key + ".")` names no prefix.
+    for (const match of source.matchAll(/\bhas_prefix\(\s*\w+\s*,\s*["']([^"']+)["']\s*\)/g)) {
+      keys.add(match[1]);
+    }
+    for (const match of source.matchAll(/\bunflatten\(\s*\w+\s*,\s*["']([^"']+)["']\s*\)/g)) {
+      if (!match[1].startsWith('gen_ai.')) keys.add(`${match[1]}.`);
     }
     const statusAttributes = /^STATUS_ATTRIBUTES\s*=\s*\(([^)]*)\)/m.exec(source);
     if (statusAttributes) for (const key of quotedStrings(statusAttributes[1])) keys.add(key);

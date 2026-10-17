@@ -1,0 +1,137 @@
+---
+title: Provider health
+description: Tell a provider's outage or limit from your own bug or Spanlight's gateway limiter. Read failures by error class, the kinds of 429, retry cost, sample failed calls and the providers' own status page incidents.
+---
+
+{/* Sources: backend/app/api/v1/providers.py, backend/app/api/v1/provider_incidents.py, backend/app/api/schemas/providers.py, backend/app/providers/service.py, backend/app/providers/queries.py, backend/app/providers/sample_queries.py, backend/app/ingest/error_class.py, backend/app/ingest/rate_limit_kind.py, backend/app/ingest/provider_attributes.py, backend/app/ingest/ratelimit_headers.py, backend/app/ingest/store.py, backend/app/gateway/refusal_span.py, backend/app/provider_status/adapters/anthropic.py, backend/app/provider_status/adapters/openai.py, backend/app/provider_status/adapters/google.py, backend/app/provider_status/queries.py, backend/app/insights/detectors/provider_incident.py, frontend/src/lib/rate-limit-kind.ts, frontend/src/features/providers/providers-format.ts, frontend/src/lib/provider-label.ts, frontend/src/lib/status-page-url.ts, frontend/src/lib/error-class.ts, frontend/src/features/traces/provider-error-block.tsx, backend/app/gateway/refusal_sampler.py, docs/api-deviations.md */}
+
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+
+<Prerequisites
+  items={[
+    'A project that has received LLM calls, from the Python SDK, the gateway or OTLP',
+    'Any role in the project can open Provider health',
+    'For the status page incidents: the worker running and PROVIDER_STATUS_POLLING_ENABLED on (the default)',
+  ]}
+/>
+
+When calls start failing, the first question is whose fault it is: the provider's, your own code's, or a limit you set yourself. **Provider health**, in the project navigation after the Doctor, answers it for a time window. It shows, per provider, how many LLM calls failed and why, which limit refused them, what retries cost, the newest failed calls, and the incidents the providers published on their own status pages.
+
+The page reads every LLM span of the project, whatever sent it, and follows the time range and environment controls like the [Overview](/docs/guides/overview/).
+
+## Provider, not us: three checks
+
+1. **Who answered.** Read the error classes. `provider_5xx` is the provider failing, and `timeout` the provider too slow or your client giving up first. `auth`, `client`, `context_length` and `content_filter` are your request. `gateway` is Spanlight's own gateway: a blocking budget, a blocked upstream address, or the gateway failing. A `rate_limit` needs the next check.
+2. **Which limit refused it.** Read the rate-limit kinds. `tokens`, `requests` and `acceleration` are your quota at the provider. `spend_cap` is money on your provider account. `overloaded` is the provider out of capacity, not your quota. `gateway` is the per-key limit of your Spanlight gateway key, never the provider.
+3. **Whether the provider says so.** Look for an incident badge on the provider's card and in the incident list. An incident that overlaps your failures, on an API component, is the provider confirming the problem. No incident does not prove the provider is healthy: status pages are often late.
+
+The [Doctor](/docs/doctor/) runs the same reasoning every 15 minutes: its `provider_incident` finding fires when a provider fails across your whole organization and names the overlapping status page incident when there is one.
+
+## The provider cards
+
+One card per provider that had LLM calls in the window, busiest first: by LLM calls, then by failed calls. Calls whose provider is unknown get a card of their own, titled "Unknown provider", ordered by its calls like the others (on a tie it comes last).
+
+- **LLM calls** in the window.
+- **Error rate**: failed LLM calls divided by LLM calls, with the number of failed calls under it. Calls the [Integration Lab](/docs/gateway/lab/) faulted on purpose are not counted as failures.
+- **429s**: the provider's own refusals (every rate-limit kind except Overloaded and Gateway key limit) as a share of the failed calls, with the line "N of M failed calls". **—** when nothing failed.
+- **Mostly**: the most common kind of provider 429, with "N of M refusals" under it, or "None".
+- **An incident badge**, "Incident ongoing", or "Incident ended 02:05 UTC" with the time in UTC, when a status page incident that touched the provider's API overlapped the window.
+
+The **Retry cost** tile sits beside the cards; see [Retry cost](#retry-cost).
+
+## Errors by class
+
+A stacked bar chart of failed LLM calls per hour or day (UTC), one colour per error class, always in this order: Rate limited (`rate_limit`), Provider error (`provider_5xx`), Timed out, Network, Authentication, Context too long, Content filtered, Client error, Gateway and Unknown. The legend gives each class's total, and classes with no failures in the window are left out. The **Provider** pill limits the chart to one provider, and **Show table** shows the same numbers as a table.
+
+How a failure gets its class is described in [Error class](/docs/reference/otlp-mapping/#error-class). The class `gateway` is new: a call that Spanlight's gateway refused or failed by itself (`BUDGET_EXCEEDED`, `UPSTREAM_BLOCKED`, `INTERNAL_ERROR`, `SERVICE_UNAVAILABLE`), so it is never counted as the provider's 5xx. See [Gateway error responses](/docs/gateway/errors/#the-error-class-of-a-gateway-span).
+
+## The rate-limit kinds
+
+Every failed call that is a capacity refusal also gets a **rate-limit kind**. A refusal is a call of class `rate_limit`, or a `provider_5xx` the provider marked as overloaded: the type `overloaded_error` or `service_unavailable_error`, the code `server_is_overloaded`, or "overloaded" in the message. Status 529 alone counts for Anthropic and for providers without their own rules. The **Rate-limit kinds** card lists each provider's kinds with the stored value (**Code**), their **Count**, their **Share** of that provider's rows in the table, and how many carried a `retry-after` (**With retry-after**, a count and a share). The `retry-after` can be the provider's, or, for the Gateway key limit, the one the gateway told your client.
+
+| Kind | Shown as | What the provider said |
+| --- | --- | --- |
+| `tokens` | Token limit | Anthropic names the limit in the message, such as "output tokens per minute". OpenAI answers `type: "tokens"`, or a message about "tokens per min (TPM)". |
+| `requests` | Request limit | Anthropic names "requests per minute". OpenAI answers "Rate limit reached for requests", or `type: "requests"`. |
+| `spend_cap` | Spend cap | Anthropic: "You have reached your API usage limits", with the code `enforced_spend_limit_reached` and no `retry-after`; also a `400` that starts "You have reached your specified API usage limits" (a limit you set yourself). OpenAI: `insufficient_quota` ("You exceeded your current quota"), or the codes `credit_balance_exhausted`, `organization_spend_limit_exceeded`, `project_spend_limit_exceeded` and `organization_usage_limit_exceeded`. |
+| `acceleration` | Ramp-up limit | Anthropic's acceleration limit, for traffic that grows too fast. OpenAI's `slow_down` code. |
+| `overloaded` | Overloaded | Anthropic `529 overloaded_error`. OpenAI `503 service_unavailable_error` with the code `server_is_overloaded`. |
+| `gateway` | Gateway key limit | Spanlight's gateway refused the call for the gateway key's own limit (the organization ceiling, requests or tokens per minute). The provider never saw it. |
+| `unknown` | Unknown | A refusal that names none of the above. |
+
+The rules are tried in a fixed order and the first match wins. Money comes first, because a spend cap message can also mention tokens. The provider's `x-ratelimit-remaining-*` or `anthropic-ratelimit-*-remaining` headers are read last, and only for a call that already failed: a header alone never makes a refusal. OpenAI-compatible providers use OpenAI's rules. Any other provider, and OTLP spans that only carry a message, use generic rules on the message: `quota`, `billing`, `spend`, `credit` or `usage limit` is a spend cap, `acceleration` or `slow down` a ramp-up limit, `token` a token limit and `request` a request limit.
+
+A call of the gateway key limit kind exists because the gateway records a span for calls its key limit refused. Such a span has no model and no input, because the gateway refused it before reading the body, and it starts a trace of its own even when your client pinned a trace id.
+
+Refusal spans are sampled so that a flood of refused calls cannot flood your project: each gateway process records at most one per gateway key per second. Every refusal span carries the attribute `spanlight.gateway.refusals_suppressed`, the number of that key's refusals since its previous span that got no span of their own. So the Gateway key limit counts on this page are a lower bound; add `refusals_suppressed` for the true number.
+
+The Doctor leaves refusal spans out of everything it reads, so your own limiter never reads as provider pressure, and a refusal never makes a trace's cost unknown: it never reached a provider, so it cost nothing. Alerts on the unfiltered error rate, failed calls, LLM calls and p95 latency do count them, because your client did get a 429. To leave them out of an alert, filter it on another rate-limit kind.
+
+Spans stored before this release have no kind; they are classified only if they are sent again.
+
+## Retry cost
+
+The **Retry cost** tile adds up what the window's retries cost, across providers, with "N retried calls in the window" and the cost per provider under it. Its info button says how retries are counted.
+
+A retry is counted within one trace. Among the trace's LLM calls with the same [request hash](/docs/doctor/#what-the-doctor-reads), every call but the last one is a retried call, and its cost is retry cost. Gateway cache hits and calls the Lab faulted are left out. The gateway's own retries and fallbacks inside one call are one span, not retries here; the span's attempt log shows them.
+
+- **The cost is "—"** with the tooltip "a retried call has no known cost" when any retried call in the window has no price. A call refused before generating, such as a 429, reports no usage, so its cost is unknown, and so is the retry cost of a trace that retried it.
+- **Both are "—"** with the tooltip "not computed for traces stored before 2026-10-15" for traces stored before this release, until one of their spans is sent again. One such trace in the window makes the retries and retry cost of every provider "—", not only its own provider's, because its retries were never split by provider.
+- **A trace's retries count under one provider**: the one that served most of its LLM calls, so the providers add up to the tile.
+
+On **Traces**, filter with **Has retries** and sort by **Retry cost ↓** to find the trace that paid for the same prompt again and again. The trace page header shows a line such as "3 retries · $0.0412 retry cost". See [Traces and sessions](/docs/guides/traces/#read-a-row).
+
+## Sample failures
+
+The **Sample failures** card lists the newest failed LLM calls of the window: time, model, error class, kind, the provider's error type and code, the `retry-after` and the number of gateway attempts. The **Class** and **Kind** pills narrow it. **—** means the provider sent no value, or the call was not a capacity refusal. Each row opens its trace. Samples come from the last 24 hours of the window at most; a longer window says so above the list.
+
+In the trace, the failed span's **Provider error** block shows the same fields (titled **Gateway error**, with a **Gateway code** row, when Spanlight's gateway made the failure itself, such as a budget or key limit refusal), the provider's request id with a copy button (quote it to the provider's support), its rate-limit headers, and for a gateway call the attempt log: one row per attempt, with its credential, result, time and `retry-after`. See [The span panel](/docs/guides/traces/#the-span-panel).
+
+## Status page incidents
+
+Spanlight polls the providers' public status pages every five minutes and keeps their incidents for two years:
+
+| Provider | Feed |
+| --- | --- |
+| Anthropic | `https://status.claude.com/api/v2/incidents.json` |
+| OpenAI | `https://status.openai.com/api/v2/incidents.json`, with `https://status.openai.com/history.rss` when that is not available |
+| Google | `https://status.cloud.google.com/incidents.json`, only the incidents of Vertex AI and Gemini products |
+
+The **Provider incidents** card lists the incidents that overlap the window, newest first, with title, provider, impact, status, start and end ("ongoing" while open), and a link to the provider's page. An incident that did not touch the provider's API is greyed out and marked **Not API**:
+
+- **Anthropic**: an incident touches the API when a component name contains `API`.
+- **OpenAI**: the feed has no components, so the title or the newest update must name an API product (`API`, Chat Completions, Responses, Embeddings, Batch, Realtime, Agents, Fine-tuning, Moderations, Files).
+- **Google**: always, since only Vertex AI and Gemini incidents are kept.
+
+Under the list, one line per feed says when it was last fetched, such as "Anthropic feed: last fetched 3 min ago", with the number of failed polls in a row, and a **Stale** badge when the feed has not been fetched for 30 minutes or its last poll failed. Incidents come from the providers' status pages: they explain failures, and nothing is hidden or resolved because of them, here, in the Doctor or in alerts.
+
+On the Overview, the calls and errors chart shades the API incidents of the providers your project used in the window, with a **Provider incident** legend item (critical ones hatched) and a **Show incidents** switch that is remembered in your browser.
+
+Azure OpenAI and Amazon Bedrock are not polled: neither publishes an incident feed in a stable machine-readable form.
+
+When the server has polling off, the card reads "Provider status feeds are off on this server (`PROVIDER_STATUS_POLLING_ENABLED=false`)" instead of an empty or stale list, and the page of a `provider_incident` insight says that no status page incident could be matched. See [Self-hosting](/docs/self-hosting/#outbound-connections).
+
+## Check it worked
+
+Open **Provider health** on a window with LLM calls. Each provider your project called has a card with its LLM calls and error rate. If calls failed, **Errors by class** shows bars and **Sample failures** lists them; open one and its trace opens. When the worker polls the feeds, the lines under **Provider incidents** name each feed with the time it was last fetched.
+
+## Troubleshooting
+
+- **The page says "No LLM calls in this window".** Widen the time range, or choose **All environments**. Only spans of kind `llm` count.
+- **Failed calls have no kind or no provider error type.** They were stored before this release, or the client did not send the fields: OTLP spans get a kind from the message only, and the Python SDK records the error type, code and rate-limit headers from version 0.2.0. See [the Python SDK](/docs/python-sdk/#failed-calls).
+- **A card is titled "Unknown provider".** Those calls have no provider. With OTLP, set `gen_ai.provider.name`.
+- **A feed shows a Stale badge.** The worker has not fetched that feed recently, or the feed answered with an error. Check that the worker runs and that the host can reach the feed; see the [detectors runbook](/docs/runbooks/detectors/#provider-status-feeds).
+- **The list says provider status feeds are off.** `PROVIDER_STATUS_POLLING_ENABLED` is `false` on this server. Stored incidents stay readable through the API.
+- **Retry cost is "—".** A retried call has no price, or the traces were stored before retries were tracked. See [Retry cost](#retry-cost).
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'The Doctor', href: '/docs/doctor/', description: 'Findings such as rate-limit pressure and provider incidents, every 15 minutes.' },
+    { title: 'Telemetry completeness', href: '/docs/concepts/telemetry-completeness/', description: 'How many spans were lost before they were stored.' },
+    { title: 'Routes, retries and fallbacks', href: '/docs/gateway/routing/', description: 'Fall back to another credential when a provider fails.' },
+    { title: 'Alert rules', href: '/docs/alerts/', description: 'Get told when one error class or kind rises.' },
+  ]}
+/>

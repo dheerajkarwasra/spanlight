@@ -1,22 +1,22 @@
 ---
 title: OTLP ingestion
-description: Send OpenTelemetry GenAI traces to Spanlight over OTLP/HTTP, in JSON or protobuf, and send the same data from a language without an SDK.
+description: Send OpenTelemetry traces to Spanlight over OTLP/HTTP, in JSON or protobuf, from OpenTelemetry GenAI, OpenInference, Vercel AI SDK or Traceloop instrumentation, and send the same data from a language without an SDK.
 sidebar:
   order: 3
 ---
 
-{/* Sources: backend/app/api/ingest.py, backend/app/ingest/otlp.py, backend/app/core/errors.py, backend/app/api/deps.py, frontend/src/features/traces/traces-empty-state.tsx, docs/api-deviations.md */}
+{/* Sources: backend/app/api/ingest.py, backend/app/ingest/otlp.py, backend/app/ingest/otlp_span.py, backend/app/ingest/conventions/__init__.py, backend/app/ingest/usage_rollup.py, backend/app/rollups/usage_rollup_cli.py, backend/app/ingest/rate_limit_kind.py, backend/app/ingest/provider_attributes.py, backend/app/ingest/otlp_metadata.py, backend/app/ingest/otlp_fit.py, backend/app/core/errors.py, backend/app/api/deps.py, frontend/src/features/traces/traces-empty-state.tsx, docs/api-deviations.md */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
 
-Spanlight accepts OTLP/HTTP traces, so any OpenTelemetry GenAI exporter can report to it without the Python SDK. The native JSON endpoint (`POST /v1/traces`) is described at the end of this page.
+Spanlight accepts OTLP/HTTP traces, so an OpenTelemetry exporter can report to it without the Python SDK. The native JSON endpoint (`POST /v1/traces`) is described at the end of this page.
 
 <Prerequisites
   items={[
     'A running Spanlight instance that your exporter can reach',
     'A project API key with the ingest:write scope, which is the default scope',
-    'An OpenTelemetry exporter that sends GenAI spans (gen_ai.* attributes) over OTLP/HTTP, as JSON or protobuf',
+    'An OpenTelemetry exporter that sends model calls over OTLP/HTTP, as JSON or protobuf, with OpenTelemetry GenAI, OpenInference, Vercel AI SDK or Traceloop attributes',
   ]}
 />
 
@@ -103,9 +103,37 @@ A successful call prints `{}`. Spans that started more than 90 days ago are reje
 
 ## How attributes map
 
-Spanlight reads the OpenTelemetry GenAI attributes and keeps the others on the span. Every attribute, fallback and error rule is listed in [OTLP attribute mapping](/docs/reference/otlp-mapping/).
+Spanlight reads four conventions: the OpenTelemetry GenAI attributes (`gen_ai.*`, also written by LiteLLM and by Traceloop's provider spans), OpenInference (`llm.*`), the Vercel AI SDK (`ai.*`) and Traceloop's workflow spans (`traceloop.*`). It works out for each span on its own which one the span speaks, so one trace may mix them, and fills the gaps of the other three from any `gen_ai.*` attributes on the same span. The convention it used is stored on the span as `spanlight.convention`, and the attributes it did not read are kept on the span. Every attribute, fallback and error rule is listed in [OTLP attribute mapping](/docs/reference/otlp-mapping/). [OTLP compatibility](/docs/reference/otlp-compatibility/) shows, for each recorded exporter library and version, which fields it fills and which it does not send, and the integration guides for the [Vercel AI SDK](/docs/integrations/vercel-ai/), [LiteLLM](/docs/integrations/litellm/), [OpenLLMetry](/docs/integrations/openllmetry/) and [OpenInference](/docs/integrations/openinference/) show the setups those recordings were made with.
+
+Frameworks often report a call's usage twice, on the step and on the provider call inside it. Spanlight counts it once, on the innermost span that reports it, and marks the outer span as a usage rollup; see [Usage counted once](/docs/reference/otlp-mapping/#usage-counted-once).
 
 Cost is computed on the server from the model and the token counts. A span with an unknown model, or without token counts, has an unknown cost, not zero. As with the SDK, secrets are redacted from payloads before they are stored, and a project can switch payload capture off. Include cached tokens in the input token count.
+
+A failed span gets an error class from its status or message. When it is a 429 or an overloaded provider, it also gets a [rate-limit kind](/docs/reference/otlp-mapping/#rate-limit-kind), worked out from the status message only: the OpenTelemetry GenAI attributes carry no provider error type or code, so a 429 with no message has the kind `unknown`. To give [Provider health](/docs/guides/provider-health/) more to work with, set the provider (`gen_ai.provider.name`) and keep the provider's error message in the span status. A client may also set the `provider.error.type`, `provider.error.code` and `provider.ratelimit` attributes itself; they are filtered and read like those of a native span.
+
+## Trace metadata
+
+Give a trace [metadata](/docs/concepts/attribution/), such as a customer or a feature, with attributes named `spanlight.metadata.<key>`. Spanlight reads them on any span of the trace, not only the root, and on the resource, so a resource attribute such as `spanlight.metadata.team` tags every span of the service. A span's value wins over its resource's for the same key.
+
+```python
+from opentelemetry import trace
+
+span = trace.get_current_span()
+span.set_attribute("spanlight.metadata.customer_id", "acme")
+span.set_attribute("spanlight.metadata.feature", "summarize-thread")
+```
+
+The key is the rest of the name, lower-cased, and must then be 1 to 64 characters of `a-z`, `0-9`, `_`, `.` and `-`. A value is 1 to 256 characters; a number or boolean is stored as its text. A trace keeps at most 32 keys. These attributes are not stored again on the span.
+
+The metadata attributes of the other conventions are read the same way, and lose to `spanlight.metadata.<key>` when both name a key: `ai.telemetry.metadata.<key>` and `ai.settings.context.<key>` (Vercel AI SDK), `traceloop.association.properties.<key>` (Traceloop) and the OpenInference `metadata` attribute. See [Trace fields](/docs/reference/otlp-mapping/#trace-fields).
+
+An invalid key or value is dropped on its own, never the span. The response then carries a warning in `partialSuccess`, with `rejectedSpans` at `0` when no span was rejected:
+
+```json
+{"partialSuccess": {"rejectedSpans": "0", "errorMessage": "trace metadata: 2 entries dropped (invalid spanlight.metadata.* key or value, or over 32 keys)"}}
+```
+
+The count can be higher than the entries you sent: an invalid resource attribute is counted once for each span of the resource.
 
 ## Native JSON
 
@@ -151,6 +179,7 @@ Run the request by hand from [Configure an exporter](#configure-an-exporter). A 
 - **`401 UNAUTHORIZED`.** The `Authorization` header did not arrive, the key is wrong or revoked, or you used a personal access token. Encode the space as `%20` in `OTEL_EXPORTER_OTLP_HEADERS` and use a project API key. See [The `Authorization` header does not reach Spanlight](/docs/troubleshooting/#the-authorization-header-does-not-reach-spanlight).
 - **`415 UNSUPPORTED_MEDIA_TYPE`, or a gRPC exporter cannot connect.** Spanlight accepts OTLP over HTTP only, as protobuf or JSON. Set `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf`. See [The protocol is not OTLP over HTTP](/docs/troubleshooting/#the-protocol-is-not-otlp-over-http).
 - **`403 KEY_SCOPE`.** The key was created without the `ingest:write` scope. Scopes are fixed at creation, so create a new key. See [The key lacks the `ingest:write` scope](/docs/troubleshooting/#the-key-lacks-the-ingestwrite-scope).
+- **My agent's cost is doubled.** Spanlight counts a call's usage once when the outer span and the provider call are in the same trace and linked by their parent span ids: the outer span is then a usage rollup and is left out of totals. Check that your instrumentation passes the trace context from the step to the provider call. Traces stored before your server had usage rollups are corrected when one of their spans arrives again, or by an operator with `spanlight recompute-usage-rollups --since 30d`. See [Usage counted once](/docs/reference/otlp-mapping/#usage-counted-once).
 - **The answer is `200` but a trace is missing.** The response body holds `partialSuccess` with `rejectedSpans`. Read the `errorMessage`, then see [Spans are rejected](/docs/troubleshooting/#spans-are-rejected).
 
 ## Next steps

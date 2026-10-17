@@ -27,6 +27,8 @@ Fifteen kinds, in five groups. **Where it fails** names the layer an insight poi
 
 In the entries below, "calls" means LLM spans, a "window" ends at the moment the detector runs, and shares and rates are shown to one decimal place in the insight text.
 
+Each insight page asks **Was this right?**. The votes give every detector a precision on your own traffic, shown on the Doctor's **Precision** tab with a Wilson 95 % interval. A detector meets the target at a precision of at least 0.8 with the lower end of the interval at least 0.6, over at least 20 votes. See [The Doctor](/docs/doctor/#was-this-right).
+
 ## Traffic
 
 These three compare the recent past with the previous 7 days. They need a baseline of at least 100 calls in the same slice, and they ignore calls the Integration Lab faulted.
@@ -35,8 +37,8 @@ These three compare the recent past with the previous 7 days. They need a baseli
 
 - **Reads:** LLM calls of the last 15 minutes, per environment and model, against that slice's error rate over the previous 7 days.
 - **Fires when:** the slice has at least 50 calls and its error rate is at least the larger of three times the baseline and the baseline plus 5 points (so it is also at least 5 %). Warning; critical when the error rate is 25 % or more.
-- **Guards:** needs a baseline; lab faults are not counted, minimum sample included.
-- **Fix:** open the example traces and filter by error class. One class usually names the cause: `rate_limit` means slow down or raise limits, `auth` means rotate the key, `provider_5xx` means add a fallback target to the gateway route, `context_length` means trim the input.
+- **Guards:** needs a baseline; lab faults are not counted, minimum sample included. Calls refused by a gateway key's own rate limit are not counted either: they never reached a model.
+- **Fix:** open the example traces and filter by error class. One class usually names the cause: `rate_limit` means slow down or raise limits, `auth` means rotate the key, `provider_5xx` means add a fallback target to the gateway route, `context_length` means trim the input, `gateway` means Spanlight's gateway refused the call (a budget, for example).
 - **Verify:** the error rate on Overview stays under the threshold, and the insight resolves after 24 hours without a recurrence.
 
 ### `latency_regression`: p95 rose
@@ -204,15 +206,16 @@ slow = client.with_options(timeout=180.0)
 
 - **Reads:** calls of the last 15 minutes, per environment and provider.
 - **Fires when:** the group has at least 50 calls and at least 10 % of them were rate limited. Warning; critical at 30 %.
-- **Guards:** lab faults are not counted, so a simulated 429 never suggests a real limit.
-- **Fix:** smooth bursts with a client-side queue or token bucket, spread load with a fallback target on the gateway route, or ask the provider for a higher limit.
+- **Guards:** lab faults are not counted, so a simulated 429 never suggests a real limit. Calls refused by a gateway key's own rate limit (rate-limit kind `gateway`) are not counted either, so Spanlight's limiter never reads as provider pressure.
+- **Fix:** read the rate-limit kind on [Provider health](/docs/guides/provider-health/#the-rate-limit-kinds) first: a `spend_cap` needs money on the account, not a slower client. For `tokens` and `requests`, smooth bursts with a client-side queue or token bucket, spread load with a fallback target on the gateway route, or ask the provider for a higher limit.
 - **Verify:** filter Traces by error class `rate_limit`; the share stays under 10 %.
 
 ### `provider_incident`: a provider is failing for the whole organization
 
-- **Reads:** the last 30 minutes of 5xx responses and calls per provider across **all projects of the organization**.
+- **Reads:** the last 30 minutes of 5xx responses and calls per provider across **all projects of the organization**. Only error class `provider_5xx` counts: a 500 or 503 that Spanlight's own gateway made is class `gateway`.
 - **Fires when:** a provider has at least 20 5xx responses and they are at least 20 % of its calls, spread over at least 2 projects, or 50 or more errors in a single project. It is shown in a project only when that project had at least one such error itself. Warning; critical at 50 % or more.
 - **Guards:** lab faults are not counted, so a fault-injected 5xx never opens an incident. The evidence lists only this project's traces.
+- **Status page:** the summary names the provider's status page incident that overlaps the window and touched its API (with 15 minutes of grace after it was resolved), or says there is none. The citation never changes when the insight opens, its severity or when it resolves. The provider is matched by its exact name, such as `openai`; see [Status page incidents](/docs/guides/provider-health/#status-page-incidents).
 - **Fix:** check the provider's status page, add a fallback target on another provider to the gateway route, and keep retries bounded.
 - **Verify:** the 5xx share for the provider falls under 20 %; the insight resolves after 24 hours without a recurrence.
 

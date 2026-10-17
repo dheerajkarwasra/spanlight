@@ -10,8 +10,8 @@
 //                "Troubleshooting" and "Next steps"
 //   migration    Prerequisites, a Verified date, the four migration sections, "Next steps"
 //                and at least one https:// source
-// Generated pages (api, runbooks, security, deploy, changelog, reference/prices) and the
-// splash page (index.mdx) are not listed.
+// Generated pages (api, runbooks, security, deploy, changelog, reference/prices,
+// reference/otlp-compatibility) and the splash page (index.mdx) are not listed.
 
 /** @type {Record<string, 'how-to' | 'concept' | 'reference' | 'integration' | 'tutorial' | 'migration'>} */
 export const PAGE_KINDS = {
@@ -25,6 +25,10 @@ export const PAGE_KINDS = {
   'integrations/openai': 'integration',
   'integrations/anthropic': 'integration',
   'integrations/github-action': 'integration',
+  'integrations/vercel-ai': 'integration',
+  'integrations/litellm': 'integration',
+  'integrations/openllmetry': 'integration',
+  'integrations/openinference': 'integration',
   'python-sdk': 'how-to',
   otlp: 'how-to',
   'releases-and-users': 'how-to',
@@ -33,6 +37,7 @@ export const PAGE_KINDS = {
   playground: 'how-to',
   datasets: 'how-to',
   scores: 'how-to',
+  review: 'how-to',
   evaluators: 'how-to',
   experiments: 'how-to',
   'eval-gate': 'how-to',
@@ -50,8 +55,10 @@ export const PAGE_KINDS = {
   'guides/data': 'how-to',
   'guides/exports': 'how-to',
   'guides/privacy': 'how-to',
+  'guides/reconciliation': 'how-to',
   'guides/traces': 'how-to',
   'guides/overview': 'how-to',
+  'guides/provider-health': 'how-to',
   'self-hosting': 'how-to',
   'self-hosting/upgrades': 'how-to',
   'self-hosting/backups': 'how-to',
@@ -68,7 +75,9 @@ export const PAGE_KINDS = {
   'concepts/ingest-paths': 'concept',
   'concepts/ingestion': 'concept',
   'concepts/cost': 'concept',
+  'concepts/attribution': 'concept',
   'concepts/doctor': 'concept',
+  'concepts/telemetry-completeness': 'concept',
   'concepts/tenancy': 'concept',
 };
 

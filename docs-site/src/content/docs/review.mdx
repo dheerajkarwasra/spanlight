@@ -1,0 +1,145 @@
+---
+title: Daily review
+description: Let Spanlight pick the traces worth reading every day (open Doctor findings, errors, cost outliers and a random share), label each with a failure category, see the rate per release, and keep the failures as dataset items or replay them.
+sidebar:
+  order: 1
+---
+
+{/* Sources: backend/app/review/calendar.py, backend/app/review/select.py, backend/app/review/outliers.py, backend/app/review/reasons.py, backend/app/review/schemas.py, backend/app/review/selection.py, backend/app/review/selection_sql.py, backend/app/review/jobs.py, backend/app/api/v1/review_policy.py, backend/app/api/review_problems.py, backend/app/api/annotation_problems.py, backend/app/api/v1/annotations.py, backend/app/api/v1/dataset_items.py, backend/app/scores/failure_category.py, backend/app/api/v1/scores.py, backend/app/releases/failure_categories.py, backend/app/api/v1/releases.py, backend/app/config.py, docs/api-deviations.md */}
+
+import NextSteps from '../../components/NextSteps.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+
+You cannot read every trace, and searching for the bad ones only finds the failures you already know about. The proven method is to **sample**: read about a hundred traces, label each failure with a category, count how often each category happens, keep the failures as test cases, and check again after the next release.
+
+A **review policy** does the sampling for you. Every UTC night it picks the traces of the day before that are worth reading and puts them in a [review queue](/docs/scores/#review-queues), each with the **reason** it was picked. Reviewers work the queue as usual, give every trace a **failure category**, and from the same screen keep a case in a dataset or replay the failing call. The Releases page then shows how often each category happens per release, with an honest interval.
+
+A project has at most one review policy. Nothing is picked by a language model: the rules below are fixed, and the same day always gives the same picks.
+
+<Prerequisites
+  items={[
+    'The member, admin or owner role in the project, to set up the policy and work the queue. Viewers can read the policy, the queue and its history',
+    'Traces with at least one LLM span in the project',
+    'The worker running. It selects the traces every night from 01:00 UTC, unless an operator turned off REVIEW_SELECTION_ENABLED',
+    'To replay a span: a provider credential in your organization, CREDENTIALS_KEYS set on the server and a replay budget above zero (REPLAY_MONTHLY_BUDGET_USD, 5 US dollars a month per project by default)',
+  ]}
+/>
+
+## Set up daily review
+
+Open **Review** and select **Set up daily review** on the **Daily review** card. The dialog has three steps:
+
+1. **Failure categories.** The list of categories reviewers choose from, pre-filled with a starting list you edit. `none` is always in it and cannot be removed. Skipped when the project already has the `failure_category` config.
+2. **Queue.** Create a queue named `Daily review`, or pick an existing queue that already asks for `failure_category`. A queue that does not is listed but cannot be picked ("Doesn't ask for failure_category").
+3. **Selection.** The random share (0 to 5 %), whether to include errors, cost outliers and open Doctor findings, the daily cap (1 to 500 traces, 50 by default) and, optionally, the environments to read (at most 20; none means every environment).
+
+**Confirm** makes the requests in that order and says which step failed if one does. The first selection runs the next night at 01:00 UTC, so the dialog then offers **Select yesterday now** to fill the queue straight away.
+
+The card then shows the queue, the four reasons with the rate and the cap, the next run ("Next selection: tomorrow 01:00 UTC"), the last selection ("Yesterday: 50 queued of 212 candidates · 12 findings · 20 errors · 6 outliers · 12 random · cap reached"), and **Select a day…**, **Pause** or **Resume**, and **Delete policy**. Pausing keeps the history; a paused policy resumes from the next night and does not catch up on the days it missed.
+
+## What is selected and why
+
+A policy reads the traces that **ended** during the previous UTC day, from 00:00 up to, but not including, 00:00 of the next day. A trace is a candidate when:
+
+- it has at least one LLM span (there is nothing else for a reviewer to score);
+- it is not one of Spanlight's own traces: not in the environments `evals`, `playground`, `experiments` or `doctor`, and without the tags `spanlight:judge`, `spanlight:playground`, `spanlight:replay` or `spanlight:experiment:*`. A policy cannot list those environments;
+- it is in one of the policy's environments, when the policy names any;
+- it is not already in the policy's queue, with or without a span.
+
+Each candidate is picked for the first reason it matches, in this order:
+
+| Reason | The trace is picked when | Shown with |
+| --- | --- | --- |
+| `doctor_finding` | An **open** [Doctor](/docs/doctor/) insight lists it as evidence. Acknowledged, resolved and muted insights do not pick traces: someone already owns them. | The insight and its kind |
+| `error` | It has at least one failed span. | The number of failed spans, the first one and its error class |
+| `cost_outlier` | Its cost is above the 99th percentile of the cost of the traces with the same name over the 7 UTC days ending with that day, and that name had at least 30 priced traces in those days. | The cost, the threshold, the trace name and how many traces the threshold came from |
+| `random` | A fixed hash of the policy and the trace falls under the random share. | The share |
+
+A trace that matches several reasons becomes **one item**, under the first reason, and lists the others too ("also an error"). A trace with no name or no known cost is never a cost outlier, and when every trace of a name costs the same, none is.
+
+**The daily cap.** At most `daily_cap` traces are queued a day. A quarter of the cap, rounded up, is held for random picks, so a day full of errors still gives you some random reads: those are what find the kinds of failure nobody has named yet. Held places that random picks cannot fill go back to the other reasons. Inside a reason, traces are taken in the order of the same fixed hash, not by time, so the picks are spread over the day and running the same day again picks the same traces. When the cap left traces out, the last selection says "cap reached" and lists how many candidates each reason had, so you can raise the cap or narrow the environments.
+
+Some consequences of these rules:
+
+- A trace that ran for **more than one hour** is never selected.
+- A trace is selected only for the day it ended. If a late span moves its end into the next day, it can be picked again on that day, but a queue never holds the same trace twice. If you point the policy at another queue in between, the trace can be in both.
+- With a 1 % random share, a project with a few traces a day usually gets no random pick. Errors and findings are always taken.
+- An item stays in the queue after its insight is resolved; the banner links to the insight in its current state.
+
+## Work the queue
+
+Open the queue under **Review**. Each item shows its reason as a chip (`Doctor finding`, `Error`, `Cost outlier`, `Random` or `Manual` for a trace added by hand), you can filter the items by reason, and the progress shows pending, done and skipped items per reason.
+
+Select **Start reviewing**. Above each trace, one line says why it is there, for example "Why this trace: cost outlier — $0.4213 against a p99 of $0.1102 for `support-bot` (412 traces, 7 days)". Give the queue's scores, including the failure category, and submit as usual. Beside **Skip** there are two more actions:
+
+| Action | Key | Does |
+| --- | --- | --- |
+| **Replay failing span** | `R` | Opens the [replay](/docs/playground/#replay-a-stored-request) of the first failed span of the trace, or of its last LLM span when none failed |
+| **Save as dataset item** | `D` | Copies the trace into a dataset you pick, and records why it was kept |
+
+`S` is still **Skip**. Both keys do nothing while you type in a field. The other keys are in [Keyboard shortcuts](/docs/scores/#keyboard-shortcuts).
+
+## Failure categories
+
+A **failure category** is an ordinary categorical [score](/docs/scores/) named `failure_category`. Nothing else is stored for it; the name is the convention. The set-up dialog creates its config with the list you approved, and you can edit the list later under **Settings, Project, Score configs**. The starting list is:
+
+`none` · `wrong_answer` · `hallucination` · `ignored_instructions` · `format` · `refusal` · `tool_misuse` · `context_loss` · `truncated` · `too_slow` · `other`
+
+Treat it as a prompt, not a taxonomy: the useful categories come from the notes you take while reading, so rename, add and remove them as you learn. `none` is there because a category's rate is counted over the traces someone reviewed, and a reviewed trace that was fine needs a label too. A label outside the list is refused, so adding a category is an edit of the config. Labels already given keep counting under their own name after the list changes.
+
+A review policy's queue must ask for `failure_category`; otherwise the policy is refused with `422 QUEUE_LACKS_FAILURE_CATEGORY`.
+
+The **Failure categories** card on **Releases** shows how often each category happens per release, with a 95 % interval. See [Releases and users](/docs/releases-and-users/#failure-categories).
+
+## Keep a case in a dataset
+
+**Save as dataset item** copies the trace's stored input and output into the dataset you pick, through the same route as **Add to dataset** on the Traces page. Edit the expected output afterwards: the recorded output is only a starting point. The item's metadata also gets `review`, with the queue, the item, the reason and the failure category you gave, so a dataset built from review keeps why each case was kept. The dataset can then run in an [experiment](/docs/experiments/) after every change.
+
+## Select a day by hand
+
+**Select a day…** on the card selects a completed UTC day from yesterday back to 7 days ago. Today cannot be selected: a selection of a half day would block that night's run. Each day is selected once per project, whether by the nightly run or by hand; asking again answers `409 ALREADY_SELECTED`. Every selection is listed in the policy's history with the candidates and queued items per reason, the duplicates skipped, whether the cap was reached and how long it took. The history stays when the policy or its queue is deleted.
+
+A queue that a policy fills cannot be deleted (`409 QUEUE_IN_USE`). Delete the policy, or point it at another queue, first.
+
+## Routes
+
+Under `/api/v1/projects/{project_id}`. The review policy routes take a signed-in session or a personal access token, never a project API key.
+
+| Route | Needs | Does |
+| --- | --- | --- |
+| `GET /review-policy` | `project:read` | The policy with `next_run_at` and `last_selection`; `404` when there is none |
+| `PUT /review-policy` | `annotations:write` | Create or replace the policy; omitted fields take their defaults |
+| `DELETE /review-policy` | `annotations:write` | Delete the policy; the history stays |
+| `POST /review-policy/runs` | `annotations:write` | `{"day": "YYYY-MM-DD"}`, answers `202 {day, job_id}` |
+| `GET /review-policy/selections` | `project:read` | The selection history, newest day first, 30 a page |
+| `POST /score-configs/failure-category` | `scores:write` | Create the `failure_category` config: `{"categories": [...]}`, 2 to 30, with `none` |
+| `GET /annotation-queues/{queue_id}/items?reason=` | `project:read` | The queue's items, each with `reason` and `reason_detail` |
+| `GET /releases/failure-categories?from&to&environment` | `project:read` | The rate of each category per release; also readable with a project API key that has `traces:read` |
+
+A `PUT` body is `{"queue_id", "enabled"?, "random_rate"?, "include_errors"?, "include_cost_outliers"?, "include_doctor_findings"?, "daily_cap"?, "environments"?}`. `random_rate` is a decimal string or number from 0 to 0.05.
+
+## Check it worked
+
+After **Confirm**, select **Select yesterday now**. Within a minute, once the worker has run the selection, the card's last selection reads "Yesterday: … queued of … candidates", and the queue lists the picked traces with their reason chips. If yesterday had no trace that matched, the line says 0 queued: check the troubleshooting list below.
+
+## Troubleshooting
+
+- **`422 QUEUE_LACKS_FAILURE_CATEGORY` when you save the policy.** The queue does not ask for the `failure_category` score, or the project's `failure_category` config is not categorical (a stray numeric score created it). Add the config to the queue, or create a new queue in the set-up dialog.
+- **`422 NOTHING_SELECTED`.** Every include is off and the random share is 0, so the policy would never pick a trace. Turn on a reason or set a share.
+- **`422 VALIDATION_ERROR` on `environments`.** An internal environment (`evals`, `playground`, `experiments`, `doctor`) is listed. Remove it.
+- **`409 ALREADY_SELECTED` on Select a day.** That day has been selected already, by the nightly run or by hand. Its items are in the queue it went to; the history says which.
+- **`422 DAY_NOT_COMPLETE` or `422 DAY_TOO_OLD`.** Only a finished UTC day, from yesterday back to 7 days, can be selected.
+- **Nothing was queued.** The day had no candidates: no trace ended that day with an LLM span in the policy's environments, or every candidate was already in the queue (the history counts those as skipped duplicates). Traces that ran for more than an hour are never selected. Check the environments of the policy and of your traces.
+- **No selection ran last night.** The worker was not running, the policy is paused, or the operator turned off `REVIEW_SELECTION_ENABLED`. Select the day by hand.
+- **`409 QUEUE_IN_USE` when you delete a queue.** A review policy fills it. Delete the policy, or point it at another queue, first.
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Scores and review queues', href: '/docs/scores/', description: 'Score configs, review queues and their keyboard shortcuts.' },
+    { title: 'Playground', href: '/docs/playground/#replay-a-stored-request', description: 'Replay a stored request exactly, under a monthly budget.' },
+    { title: 'Releases and users', href: '/docs/releases-and-users/#failure-categories', description: 'The rate of each failure category per release.' },
+    { title: 'Datasets', href: '/docs/datasets/', description: 'Test cases built from your traces or from a file.' },
+  ]}
+/>

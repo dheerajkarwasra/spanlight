@@ -5,7 +5,7 @@ sidebar:
   order: 20
 ---
 
-{/* Sources: deploy/compose.yaml, backend/app/config.py, backend/app/api/health.py, deploy/.env.example */}
+{/* Sources: deploy/compose.yaml, backend/app/config.py, backend/app/provider_status/http.py, backend/app/provider_status/adapters/anthropic.py, backend/app/provider_status/adapters/openai.py, backend/app/provider_status/adapters/google.py, backend/app/jobs/scheduler.py, backend/app/api/v1/provider_incidents.py, backend/app/api/health.py, deploy/.env.example */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
@@ -27,8 +27,10 @@ Spanlight is one Docker image with three roles and Postgres. Postgres is the onl
 | `postgres` | PostgreSQL 17. Traces, spans, users, sessions, rollups and the job queue. | 5432, internal |
 | `migrate` | Applies the database migrations as the database owner, creates the unprivileged `spanlight_app` role, then exits. | none |
 | `api` | The FastAPI application: authentication, ingestion and queries. | 8000, internal |
-| `worker` | Background jobs: retention, cleanup, hourly rollups, notifications, backups and exports, demo traffic. | 9100 for `/metrics`, internal |
+| `worker` | Background jobs: retention, cleanup, hourly rollups, the daily attribution rollups, notifications, backups and exports, demo traffic. | 9100 for `/metrics`, internal |
 | `web` | Caddy. Serves the dashboard and this documentation, and proxies `/api`, `/v1` and `/health` to the API. | `WEB_PORT`, 8080 by default |
+
+The worker's attribution refresh rebuilds the daily rollups behind attribution windows longer than 24 hours every 15 minutes. Set `ATTRIBUTION_ENABLED=false` to stop it: those windows then stop updating, and windows of 24 hours or less stay live. See [Configuration](/docs/configuration/#attribution).
 
 The API and worker connect as `spanlight_app`, a role that is neither a superuser nor able to bypass row-level security. Row-level security on the trace tables is what keeps one project's data from another's even if a query forgets its filter, so never point `DATABASE_URL` at the database owner.
 
@@ -58,6 +60,18 @@ Each is switched on by its own variables; see [Configuration](/docs/configuratio
 - **More than one API replica**: rate limits and idempotency state live in Postgres, so replicas share them. `deploy/compose.replicas.yaml` is an example that runs two.
 - **Metrics**: set `METRICS_TOKEN` and scrape `api:8000/metrics` and `worker:9100/metrics` on the internal network with `Authorization: Bearer <token>`. `deploy/prometheus.yml` is an example scrape configuration. `/metrics` is not served through the web port.
 - **Error reporting and self-tracing**: `SENTRY_DSN`, and `OTEL_EXPORTER_OTLP_ENDPOINT` for OpenTelemetry spans about Spanlight's own requests and queries.
+
+## Outbound connections
+
+Spanlight connects out to the providers your gateway credentials, judges and demo traffic use, and to the services you configure (email, sign-in providers, object storage, Sentry). One more connection is on by default: every five minutes the worker polls the public status pages of three providers, so the [Provider health](/docs/guides/provider-health/#status-page-incidents) page and the Doctor can show their incidents. If your network restricts egress, allow these hosts on port 443:
+
+- `status.claude.com`
+- `status.openai.com`
+- `status.cloud.google.com`
+
+The feed addresses are fixed in the code; no setting changes them. The requests use https only, follow no redirects, give up after 10 seconds, read at most 2 MB, refuse any host that resolves to a private or local address, and connect directly: `HTTP_PROXY` and `HTTPS_PROXY` are not read.
+
+**In an air-gapped network**, set `PROVIDER_STATUS_POLLING_ENABLED=false` on both the `api` and the `worker`. The worker then fetches nothing, and the API says so: the incident list answers `"polling": "disabled"` and the dashboard reads "Provider status feeds are off on this server" instead of showing an empty or stale list. Incidents stored earlier stay readable.
 
 ## Tuning Postgres
 
@@ -126,7 +140,7 @@ The `spanlight` command inside the `api` container is the operator's tool:
 docker compose -f deploy/compose.yaml --env-file deploy/.env exec api spanlight --help
 ```
 
-It creates users (`create-user`), resets passwords (`reset-password`) and two-factor authentication (`reset-2fa`), refreshes the price table (`sync-prices`), runs migrations (`migrate`), and restores a backup (`restore`; see the [restore runbook](/docs/runbooks/restore/)).
+It creates users (`create-user`), resets passwords (`reset-password`) and two-factor authentication (`reset-2fa`), refreshes the price table (`sync-prices`), runs migrations (`migrate`), rebuilds older days of the [attribution](/docs/concepts/attribution/) rollups (`attribution backfill`), and restores a backup (`restore`; see the [restore runbook](/docs/runbooks/restore/)).
 
 ## Check it worked
 

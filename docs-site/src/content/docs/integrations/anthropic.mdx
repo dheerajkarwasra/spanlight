@@ -3,7 +3,7 @@ title: Anthropic
 description: Trace Anthropic Claude calls with the Spanlight Python SDK, or send them through the Spanlight gateway from Python, JavaScript or cURL. Shows what Spanlight records from each call and what it leaves out.
 ---
 
-{/* Sources: backend/app/gateway/errors.py, sdks/python/src/spanlight/integrations/anthropic.py, sdks/python/src/spanlight/integrations/_common.py, backend/app/gateway/tracing.py, backend/app/gateway/usage.py, backend/app/gateway/adapters/anthropic.py, backend/app/gateway/execute.py, backend/app/ingest/normalize.py, backend/app/ingest/finish_reason.py, backend/app/pricing/prices.py, backend/tests/gateway/test_gateway_smoke.py, backend/app/gateway/adapters/base.py, backend/app/gateway/usage_chunk.py, backend/app/gateway/trace_headers.py, backend/app/gateway/response_summary.py, backend/app/gateway/context.py, backend/app/db/models/gateway.py, backend/app/pricing/cost.py, sdks/python/src/spanlight/_span.py, sdks/python/src/spanlight/_client.py */}
+{/* Sources: backend/app/gateway/errors.py, sdks/python/src/spanlight/integrations/anthropic.py, sdks/python/src/spanlight/integrations/_common.py, backend/app/gateway/tracing.py, backend/app/gateway/usage.py, backend/app/gateway/adapters/anthropic.py, backend/app/gateway/execute.py, backend/app/ingest/normalize.py, backend/app/ingest/finish_reason.py, backend/app/pricing/prices.py, backend/tests/gateway/test_gateway_smoke.py, backend/app/gateway/adapters/base.py, backend/app/gateway/usage_chunk.py, backend/app/gateway/trace_headers.py, backend/app/gateway/response_summary.py, backend/app/gateway/context.py, backend/app/db/models/gateway.py, backend/app/pricing/cost.py, sdks/python/src/spanlight/_span.py, sdks/python/src/spanlight/_client.py, sdks/python/src/spanlight/integrations/_anthropic_message.py, sdks/python/src/spanlight/integrations/_anthropic_stream.py, sdks/python/src/spanlight/integrations/_anthropic_batch.py, sdks/python/src/spanlight/integrations/_modifiers.py, backend/app/gateway/stream_observers.py, backend/app/gateway/stream_forward.py, backend/app/pricing/tiers.py */}
 
 import { TabItem, Tabs } from '@astrojs/starlight/components';
 import NextSteps from '../../../components/NextSteps.astro';
@@ -102,7 +102,18 @@ spanlight.flush()
 
 You use the stream as before, including `text_stream` and `get_final_message()`. The wrapper observes each event as you read it. The span starts when you enter the `with` block and ends when you leave it. It also records the time to first token.
 
-Streaming with `messages.create(..., stream=True)` is traced the same way. Anthropic sends usage inside the stream events, so you need no extra option.
+Streaming with `messages.create(..., stream=True)` is traced the same way. Anthropic sends usage inside the stream events, so you need no extra option. If the stream ends before Anthropic's final usage event, because you closed it early or it failed, the span keeps the input counts from the first event, leaves the output count and the cost unknown, and says why in `usage.unreported_reason` (`client_disconnected`, `stream_error` or `no_final_usage`).
+
+### Batch results
+
+Results of the Message Batches API that you read through a wrapped client are recorded too, one `llm` span per request, in a trace named `batch <batch_id>`:
+
+```python
+for result in client.messages.batches.results("msgbatch_..."):
+    print(result.custom_id, result.result.type)
+```
+
+Each succeeded result is priced at the batch rate. The result carries no request, so the span has no input, and its duration is 0. [Batch results](/docs/python-sdk/#batch-results) describes the spans in full. Batch results need SDK 0.2.0, the next release.
 
 ## Gateway
 
@@ -221,7 +232,9 @@ Each call is one `llm` span. Where a column says "empty", Spanlight stores nothi
 | Output tokens | From Anthropic's usage | The same |
 | Cached tokens | Cache reads, when Anthropic reports them | The same. On a [response cache](/docs/gateway/cache/) hit it is recorded as 0 |
 | Cache writes | Cache writes (`cache_creation_input_tokens`), and the part of them with a 1-hour lifetime (`cache_creation.ephemeral_1h_input_tokens`), when Anthropic reports them | The same. On a [response cache](/docs/gateway/cache/) hit they are recorded as 0 |
-| Cost | From the price table and your [price overrides](/docs/concepts/cost/#price-overrides), empty for a model with neither | The same |
+| Service tier | `usage.service_tier`: `standard`, `batch`, or `priority` for Anthropic's `priority_on_demand`. A batch result is always `batch` | `usage.service_tier` of the answer or stream |
+| Web searches | `usage.server_tool_use.web_search_requests`, when the model used the web search tool | The same |
+| Cost | From the price table and your [price overrides](/docs/concepts/cost/#price-overrides), times the [tier factor](/docs/concepts/cost/#service-tiers), plus $10.00 per 1,000 [web searches](/docs/concepts/cost/#fees-web-search). Empty for a model with no price, and for a stream cut before its usage arrived | The same |
 | Finish reason | `stop`, `length`, `tool_calls`, `content_filter` or `other`. Anthropic's `end_turn` is stored as `stop` | The same |
 | Time to first token | For streamed calls | For streamed calls |
 | Status | `ok`, or `error` with the exception type (`error.type`), plus `http.status_code` and `provider.request_id` when the exception carries them | `ok`, or `error` with a status message |
@@ -230,14 +243,16 @@ Each call is one `llm` span. Where a column says "empty", Spanlight stores nothi
 
 Spanlight counts input tokens the same way for every provider: `input_tokens` includes cache reads and cache writes. Anthropic reports uncached input, cache reads and cache writes apart, so Spanlight adds them up for `input_tokens` and keeps the reads in `cached_tokens` and the writes in `cache_write_tokens`, with the 1-hour part in `cache_write_1h_tokens` (the SDK reports the writes since 0.1.2; the gateway always has). Anthropic bills a cache write above the input rate (1.25 times for a 5-minute cache, 2 times for 1 hour), and Spanlight prices it that way; see [How cost is calculated](/docs/concepts/cost/#the-formula). The trace page shows the writes in the **Usage** card as **Cache writes**, with the 1-hour part after it when there is one.
 
+Anthropic bills Priority Tier as a capacity commitment, so a `priority` call is priced at the standard token rate and its cost explanation marks it as commitment billed. A call that passes `inference_geo` (other than `global`) or `speed: "fast"` is priced at the standard rate too, and the SDK and the gateway set `usage.pricing_modifier_unknown` on its span (`inference_geo_us` or `fast_mode`), because Spanlight does not price those options yet. The SDK reads these options from the call's keywords or from `extra_body`.
+
 The SDK and the gateway also store attributes. The SDK adds `response.id`, `response.stop_reason` (Anthropic's own value, such as `end_turn`) and `finish_reason`. A streamed call adds `request.stream`. The gateway adds `spanlight.gateway.*` attributes (the key, route, target, attempts, overhead and upstream status) and `spanlight.cache`. [Gateway quickstart](/docs/gateway/quickstart/#check-it-worked) lists them. [How cost is calculated](/docs/concepts/cost/) explains when a cost is unknown.
 
 ## What is not recorded
 
 * **Your keys and headers.** The wrapper never records `api_key`, `extra_headers`, `extra_query`, `extra_body`, `timeout` or `http_client`. The gateway does not forward your gateway key, cookies or any header outside a short allowlist to Anthropic.
 * **Prompts and completions, when the project turns capture off.** Spanlight then keeps the model, tokens, cost and timing and drops the text. See [Privacy](/docs/guides/privacy/#turn-off-prompt-and-completion-capture). The server also redacts common secret patterns from payloads and truncates very large ones.
-* **Output of a call that fails before an answer arrives.** The span has the error and the request, and no output. A stream that fails midway keeps the part of the answer that arrived, and is marked `error`.
-* **Calls the wrapper does not see.** It instruments the client you wrap and the methods `messages.create` and `messages.stream`. Other endpoints, such as token counting or batches, are not traced. A call made through `with_raw_response` or `with_streaming_response` is passed through untraced.
+* **Output of a call that fails before an answer arrives.** The span has the error and the request, and no output. A stream that fails midway keeps the part of the answer that arrived, and is marked `error`; its output token count and cost are unknown.
+* **Calls the wrapper does not see.** It instruments the client you wrap and the methods `messages.create`, `messages.stream` and `messages.batches.results`. Other endpoints, such as token counting or creating a batch, are not traced, and a batch's requests appear only when you read its results through the wrapped client. A call made through `with_raw_response` or `with_streaming_response` is passed through untraced.
 * **A stream you abandon.** The span of a `messages.create(..., stream=True)` stream ends when you read it to the end or close it. If you drop it without either, its span is never sent.
 * **Anything that bypasses the gateway.** Calls that do not use the gateway base URL do not appear.
 

@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-{/* Sources: backend/app/api/v1/alerts.py, backend/app/alerts/channel_test.py, backend/app/alerts/channels/http.py, frontend/src/features/alerts/rule-state.ts, frontend/src/features/alerts/delivery-status.ts, frontend/src/features/alerts/test-send-button.tsx, frontend/src/features/alerts/channel-row.tsx, frontend/src/features/alerts/delivery-log-sheet.tsx */}
+{/* Sources: backend/app/api/v1/alerts.py, backend/app/alerts/rule_spec.py, backend/app/alerts/types.py, frontend/src/features/alerts/error-filter-fields.tsx, frontend/src/features/alerts/metric-labels.ts, backend/app/alerts/channel_test.py, backend/app/alerts/channels/http.py, frontend/src/features/alerts/rule-state.ts, frontend/src/features/alerts/delivery-status.ts, frontend/src/features/alerts/test-send-button.tsx, frontend/src/features/alerts/channel-row.tsx, frontend/src/features/alerts/delivery-log-sheet.tsx */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
@@ -54,6 +54,7 @@ A rule has a name, a metric, a window, a condition, optional filters, a cooldown
 | --- | --- | --- |
 | `llm_calls` | Number of LLM calls | `0` |
 | `error_rate` | LLM calls that ended in error divided by LLM calls | Unknown |
+| `error_calls` | Number of LLM calls that ended in error, shown as **Failed LLM calls** | `0` |
 | `p95_ms` | 95th percentile duration of LLM calls | Unknown |
 | `ttft_p95_ms` | 95th percentile time to first token, over calls that have one | Unknown |
 | `tokens` | Input plus output tokens of all spans | `0` |
@@ -64,6 +65,8 @@ Unknown is never treated as zero. A rule whose metric is unknown in a window **d
 `cost_usd` counts only priced spans, so it is a lower bound when some models have no known price, like the overview.
 
 Filters narrow the rule to an `environment`, a `provider` or a `model`. The environment matches exactly. A model filter matches the model exactly or with a snapshot suffix (`-YYYYMMDD`, `-YYYY-MM-DD` or `-latest`), like prices do: `gpt-4o` also covers `gpt-4o-2024-08-06` but not `gpt-4o-mini`.
+
+Two more filters apply to `error_rate` and `error_calls` only, and the rule editor shows them as **Error class** and **Rate-limit kind** ("Any" by default) only for **Error rate** and **Failed LLM calls**: `error_class` (one [error class](/docs/reference/otlp-mapping/#error-class), such as `provider_5xx`) and `rate_limit_kind` (one [rate-limit kind](/docs/guides/provider-health/#the-rate-limit-kinds), such as `spend_cap`). They narrow the failed calls a rule counts, never the calls a rate is divided by: `error_rate` with `error_class` `rate_limit` is the rate-limited calls divided by all LLM calls. "Any `spend_cap` refusal in 15 minutes" is `error_calls` above 0 with `rate_limit_kind` `spend_cap`. On any other metric these filters are refused with `422`, for example `filters.error_class: applies to error_rate and error_calls`. With either filter, calls the [Integration Lab](/docs/gateway/lab/) faulted are not counted, so a Lab drill only fires rules without them.
 
 ### Threshold rules
 

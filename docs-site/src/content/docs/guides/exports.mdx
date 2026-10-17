@@ -1,9 +1,9 @@
 ---
 title: Exports
-description: Export the traces that match your filters as CSV or JSONL, download them, and request exports through the API without running one twice.
+description: Export the traces that match your filters as CSV or JSONL, or the attribution table as CSV, download them, and request exports through the API without running one twice.
 ---
 
-{/* Sources: frontend/src/features/exports/export-status.ts, frontend/src/features/exports/exports-list.tsx, frontend/src/features/traces/export-dialog.tsx, frontend/src/features/traces/export-summary.tsx, frontend/src/features/traces/export-trigger.tsx, backend/app/exports/service.py, backend/app/api/v1/exports.py */}
+{/* Sources: frontend/src/features/exports/export-status.ts, frontend/src/features/exports/exports-list.tsx, frontend/src/features/traces/export-dialog.tsx, frontend/src/features/traces/export-summary.tsx, frontend/src/features/traces/export-trigger.tsx, backend/app/exports/service.py, backend/app/api/v1/exports.py, backend/app/exports/schemas.py, backend/app/exports/writers.py, backend/app/exports/attribution_job.py, frontend/src/features/attribution/attribution-export-dialog.tsx, frontend/src/features/attribution/attribution-export-summary.tsx */}
 
 import NextSteps from '../../../components/NextSteps.astro';
 import Prerequisites from '../../../components/Prerequisites.astro';
@@ -22,8 +22,37 @@ Start an export from the **Traces** page: it exports the traces that match the f
 - The export runs in the background. When it is done, the dashboard offers a download link that is valid for one hour; open the export again for a fresh one.
 - Files are deleted seven days after they are made, and when the project is deleted.
 - Spreadsheet cells that begin with `=`, `+`, `-` or `@` are prefixed with an apostrophe, so opening the file cannot run a formula.
+- The trace's [metadata](/docs/concepts/attribution/) is in the last CSV column, `metadata`, as a JSON object with its keys sorted, and in JSONL as a `metadata` object. A metadata filter on the Traces page applies to the export.
 
 Requesting an export (`POST /api/v1/projects/{project_id}/exports`) accepts an `Idempotency-Key` header, so a retried request runs once and returns the same export. Use a fresh random key, such as a UUID, for each intended export. A key belongs to the caller that sent it (a user, or an API key), is remembered for 24 hours, and the same key with a different body is `422 IDEMPOTENCY_MISMATCH`. A `409 NOT_CONFIGURED` is remembered too, so after switching object storage on, retry with a new key. Other routes ignore the header.
+
+## Export the attribution table
+
+On the **Attribution** page, **Export** opens **Export attribution**: the format is CSV, and **What's exported** repeats the window, the group, the environment and whether the table is live or read from the daily rollup. **Start export** queues it like a trace export. The button is off for viewers, before a metadata key is picked, and for a key that is not promoted over a window longer than 24 hours.
+
+Through the API, the request follows the same rules as the page: a window over 24 hours reads the daily rollups, so a metadata key must be promoted (`422 KEY_NOT_PROMOTED` otherwise), and the window can span at most 90 days. `SPANLIGHT_TOKEN` is a personal access token with the `write` scope; an API key cannot export.
+
+```bash
+curl -sS -X POST "$SPANLIGHT_HOST/api/v1/projects/$PROJECT/exports" \
+  -H "Authorization: Bearer $SPANLIGHT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"kind": "attribution", "format": "csv", "group_by": "metadata", "key": "customer_id",
+       "filters": {"from": "2026-09-16T00:00:00Z", "to": "2026-10-16T00:00:00Z", "environment": "production"}}'
+```
+
+`group_by` is `metadata` (with `key`), `trace_name`, `user` or `release`, and `environment` is optional. Only CSV is offered. The file has one row per value, costliest first, then the traces without the dimension, then, over more than 24 hours, the values folded past the daily cap:
+
+| Column | Holds |
+| --- | --- |
+| `group_by`, `key` | What the table is grouped by |
+| `value` | The value; empty on the `none` and `other` rows |
+| `bucket` | `value`, `none` or `other` |
+| `traces`, `llm_calls`, `errors`, `unpriced_calls`, `input_tokens`, `output_tokens` | The group's counts and tokens |
+| `cost_usd`, `retries`, `retry_cost_usd` | The group's cost and retries; an empty cell is unknown, never zero |
+| `folded_values` | On the `other` row only: how many values it folds, at most (a value folded on two days counts twice) |
+
+A value such as `=HYPERLINK(…)` gets the apostrophe like any other cell. More than 100,000 rows fail the export with `EXPORT_TOO_LARGE`. The export is listed and downloaded like a trace export.
 
 The audit log has its own CSV download in **Settings, Organization, Audit log**. The filters you set apply, and up to 50 000 events fit in one file.
 

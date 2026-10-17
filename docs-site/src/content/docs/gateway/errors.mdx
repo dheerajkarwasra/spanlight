@@ -5,7 +5,7 @@ sidebar:
   order: 6
 ---
 
-{/* Sources: backend/app/gateway/errors.py, backend/app/api/gw_errors.py, backend/app/api/gw.py, backend/app/core/request_context.py, backend/app/core/logging.py */}
+{/* Sources: backend/app/gateway/errors.py, backend/app/api/gw_errors.py, backend/app/api/gw.py, backend/app/gateway/execute.py, backend/app/core/db_errors.py, backend/app/gateway/provider_attributes.py, backend/app/gateway/attempt_log.py, backend/app/gateway/refusal_span.py, backend/app/gateway/adapters/base.py, backend/app/ingest/error_class.py, backend/app/core/request_context.py, backend/app/core/logging.py */}
 
 import NextSteps from '../../../components/NextSteps.astro';
 import Prerequisites from '../../../components/Prerequisites.astro';
@@ -75,15 +75,15 @@ Anthropic:
 | `UPSTREAM_TIMEOUT` | 504 | `server_error` | `timeout_error` | The route's `timeout_ms` budget ran out |
 | `NOT_FOUND` | 404 | `invalid_request_error` | `not_found_error` | An unknown path under `/gw/` |
 | `METHOD_NOT_ALLOWED` | 405 | `invalid_request_error` | `invalid_request_error` | A known path with the wrong method; the `Allow` header lists the right ones. A browser preflight (`OPTIONS`) also gets this, because the gateway sends no CORS headers |
-| `SERVICE_UNAVAILABLE` | 503 | `server_error` | `overloaded_error` | The database is too busy to check the key. `Retry-After: 5`; both official SDKs retry it |
+| `SERVICE_UNAVAILABLE` | 503 | `server_error` | `overloaded_error` | The database is too busy to check the key or to serve the call: no pooled connection came free in time, or a query ran past its statement timeout. `Retry-After: 5`; both official SDKs retry it |
 | `INTERNAL_ERROR` | 500 | `server_error` | `api_error` | An unexpected gateway failure. The message names the request id |
 | `ERROR` | as raised | `invalid_request_error` below 500, `server_error` from 500 | `invalid_request_error` below 500, `api_error` from 500 | Any other HTTP status the framework raises |
 
 ## Errors from the provider
 
-When the provider itself answers with an error that the route does not retry, the gateway returns that response **unchanged**: the provider's status and body, with `X-Spanlight-Code: UPSTREAM_ERROR` added. Your SDK raises the provider's own exception. The call's span is marked as an error and records the provider's error type.
+When the provider itself answers with an error that the route does not retry, the gateway returns that response **unchanged**: the provider's status and body, with `X-Spanlight-Code: UPSTREAM_ERROR` added. Your SDK raises the provider's own exception. The call's span is marked as an error and records the provider's error type and code, its request id and its rate-limit headers; see [What a span records](#what-a-span-records).
 
-Only a short allowlist of provider headers is passed back: `content-type`, `retry-after`, `retry-after-ms`, `x-ratelimit-*`, `anthropic-ratelimit-*` and `openai-processing-ms`; the provider's `request-id` becomes `x-upstream-request-id`.
+Only a short allowlist of provider headers is passed back: `content-type`, `retry-after`, `retry-after-ms`, `x-ratelimit-*`, `anthropic-ratelimit-*`, `anthropic-priority-*` and `openai-processing-ms`; the provider's `request-id` becomes `x-upstream-request-id`.
 
 ## Errors from the Lab
 
@@ -99,6 +99,42 @@ A [Lab fault](/docs/gateway/lab/) is returned in the provider's shape and wordin
 | `timeout` | `FAULT_TIMEOUT` | 504 |
 
 The other three scenarios (`malformed_json`, `truncated_stream`, `slow_response`) change a real answer and have no error body of their own.
+
+## The error class of a gateway span
+
+Every call the gateway answers leaves a span, refused calls included, and a failed span gets an [error class](/docs/reference/otlp-mapping/#error-class). When the gateway made the error itself, the class comes from its code, so Spanlight's own refusals and failures are never counted as the provider's:
+
+| `spanlight_code` | Error class |
+| --- | --- |
+| `INVALID_REQUEST`, `NO_COMPATIBLE_TARGET`, `MODEL_NOT_ALLOWED`, `PAYLOAD_TOO_LARGE`, `NOT_FOUND`, `METHOD_NOT_ALLOWED` | `client`: the request was wrong |
+| `UNAUTHORIZED` | `auth` |
+| `RATE_LIMITED` | `rate_limit`, with the rate-limit kind `gateway`: your gateway key's own limit, not the provider's |
+| `BUDGET_EXCEEDED`, `UPSTREAM_BLOCKED`, `INTERNAL_ERROR`, `SERVICE_UNAVAILABLE` | `gateway`: Spanlight's policy or Spanlight failing |
+| `UPSTREAM_TIMEOUT` | `timeout` |
+| `UPSTREAM_UNREACHABLE` | `network` |
+
+A provider error passed through as `UPSTREAM_ERROR` is classed by the provider's status, like any other span. A body the gateway cannot forward as strict JSON, such as one with `NaN` in it, is `400 INVALID_REQUEST` and class `client`.
+
+A call that `RATE_LIMITED` refused is recorded although the gateway never read its body: the span is named after the surface, such as `chat_completions`, and has no model, no input and no target. It records the `Retry-After` your client was told. These spans are the first to be dropped when the gateway's span recorder is busy, and they are counted as lost; see [Telemetry completeness](/docs/concepts/telemetry-completeness/).
+
+## What a span records
+
+Besides the route, the target and the attempt count described in [Routes, retries and fallbacks](/docs/gateway/routing/#what-a-span-records), a gateway span carries:
+
+| Attribute | Value |
+| --- | --- |
+| `spanlight.gateway.status` | The status the gateway answered with. Always set. |
+| `spanlight.gateway.error_code` | The `spanlight_code` when the gateway made the error itself. Absent for a success and for a provider error passed through. |
+| `provider.error.type`, `provider.error.code` | The provider's error type and code, for a provider error passed through. The code is OpenAI's `error.code`, or Anthropic's `error.details.error_code`. |
+| `provider.request_id` | The provider's request id, also sent to your application as `x-upstream-request-id`. |
+| `provider.ratelimit` | The provider's rate-limit headers, as an object of header name to value. On a failed call, every header of the allowlist; on a successful one, only the limit and remaining headers. |
+| `spanlight.gateway.attempt_log` | One entry per attempt, in order: `target` (the index in the route's targets), `name` (the credential's name), `status` (the provider's status, `null` without a response), `error` (`timeout`, `connection_error`, `blocked`, `cancelled` or `response_too_large`, else `null`), `duration_ms` and `retry_after_s`. |
+
+The rate-limit allowlist has 29 names: `retry-after`, `retry-after-ms`, OpenAI's `x-ratelimit-limit-*`, `x-ratelimit-remaining-*` and `x-ratelimit-reset-*` for requests, tokens and project tokens, and Anthropic's `anthropic-ratelimit-*` (requests, tokens, input tokens, output tokens) and `anthropic-priority-*` (input and output tokens) limit, remaining and reset headers. A value longer than 64 characters, or not printable ASCII, is dropped. No other header, and nothing of your key, ever reaches a span.
+
+A route allows up to 40 attempts. The attempt log keeps at most 10 entries: the first 9 and the last. `spanlight.gateway.attempts` still holds the true count. An entry holds no headers, bodies or key material.
+
+A cache hit never reached a provider, so its span has no provider fields. A stream that fails after the provider answered `200` keeps the limit and remaining headers of that answer.
 
 ## Statuses and the official SDKs
 

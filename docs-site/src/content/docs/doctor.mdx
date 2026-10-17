@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-{/* Sources: frontend/src/features/doctor/last-checked-pill.tsx, frontend/src/features/doctor/insight-format.ts, frontend/src/features/doctor/insight-empty.tsx, docs/runbooks/detectors.md */}
+{/* Sources: frontend/src/features/doctor/last-checked-pill.tsx, frontend/src/features/doctor/insight-format.ts, frontend/src/features/doctor/insight-empty.tsx, frontend/src/features/doctor/feedback-state.ts, frontend/src/features/doctor/precision-format.ts, frontend/src/features/doctor/incident-citation.ts, backend/app/api/v1/insight_feedback.py, backend/app/insights/precision.py, backend/app/insights/detectors/provider_incident.py, backend/app/insights/detectors/baselines.py, backend/app/ingest/error_class.py, backend/app/cli_doctor.py, docs/runbooks/detectors.md */}
 
 import CatalogueRedirect from '../../components/CatalogueRedirect.astro';
 import NextSteps from '../../components/NextSteps.astro';
@@ -19,13 +19,13 @@ The Doctor is deterministic. Fifteen detectors apply fixed rules to your spans; 
 
 The thresholds are constants in the code, the same for every project and not tuned to yours, so a finding can be a false alarm for your traffic; the evidence traces are there so you can check.
 
-The **Doctor** screen lists a project's insights. The Overview shows a [health score](#the-health-score), and a trace that is part of an insight's evidence carries a badge that links to it. Anyone who can see the project can read insights. Organization **admins and owners** can acknowledge, resolve, mute and unmute them, and ask for explanations.
+The **Doctor** screen lists a project's insights. The Overview shows a [health score](#the-health-score), and a trace that is part of an insight's evidence carries a badge that links to it. Anyone who can see the project can read insights. Members, admins and owners can say whether an insight was [right or wrong](#was-this-right). Organization **admins and owners** can acknowledge, resolve, mute and unmute them, and ask for explanations.
 
 <Prerequisites
   items={[
     'Traces from the last 24 hours in the project',
     'The worker running, with DETECTORS_ENABLED on (the default). The detectors run every 15 minutes',
-    'The admin or owner role, to acknowledge, resolve or mute an insight. Every role can read them',
+    'The admin or owner role, to acknowledge, resolve or mute an insight. The member role or above, to mark one right or wrong. Every role can read them',
     'To ask Claude for an explanation: an Anthropic credential under Gateway, Credentials, CREDENTIALS_KEYS set on the server, and the gateway running in the API process (GATEWAY_MODE=embedded, the default)',
   ]}
 />
@@ -34,21 +34,22 @@ The **Doctor** screen lists a project's insights. The Overview shows a [health s
 
 Detectors work from the LLM and tool spans of a project. Spanlight 0.5.0 adds three fields to LLM spans so that client behaviour can be seen at all.
 
-**Error class.** Every failed span gets one class, worked out when it is ingested from the HTTP status (`spanlight.gateway.upstream_status`, `http.status_code` or `error.status`, in that order) and, when there is no status, from the error message.
+**Error class.** Every failed span gets one class, worked out when it is ingested. An error the Spanlight gateway made itself takes its class from the gateway's code. Otherwise the HTTP status decides (`spanlight.gateway.upstream_status`, `http.status_code`, `error.status` or `spanlight.gateway.status`, in that order) and, when there is no status, the error message. The full rules are in [Error class](/docs/reference/otlp-mapping/#error-class).
 
 | Class | Typical cause |
 | --- | --- |
 | `auth` | 401 and 403, an invalid or expired key, missing permission |
-| `rate_limit` | 429, "rate limit", "too many requests", quota |
+| `rate_limit` | 429, "rate limit", "too many requests", quota, and Anthropic's 400 for a spend limit you set yourself |
 | `timeout` | 408, 499 and 504, "timed out", "deadline exceeded", a client that disconnected |
 | `context_length` | 413, or a 400 that talks about the context window or too many tokens |
 | `content_filter` | A 400 that names a content filter, safety or a refusal |
 | `provider_5xx` | 500 to 599 (529 included), "overloaded", "bad gateway" |
 | `network` | Connection reset or refused, DNS, TLS |
-| `client` | Any other 4xx |
+| `client` | Any other 4xx, and a request the gateway refused as malformed |
+| `gateway` | Spanlight's gateway refused or failed the call itself: a blocking budget, a blocked upstream address, a busy database or a gateway failure. Never the provider's |
 | `unknown` | A failure that matches nothing above |
 
-A span that did not fail has no class. Filter **Traces** by error class to see every trace with a failure of one class.
+A span that did not fail has no class. Filter **Traces** by error class to see every trace with a failure of one class. A capacity refusal also gets a rate-limit kind (`requests`, `tokens`, `spend_cap`, `acceleration`, `overloaded`, `gateway` or `unknown`); see [Provider health](/docs/guides/provider-health/#the-rate-limit-kinds).
 
 **Request hash.** A 32-character hash of the model and the request (the same prompt, messages, tools and parameters give the same hash). It lets the Doctor see "the same request, again". Options that do not change what is asked, such as `stream`, `user`, `metadata`, `timeout` and extra headers, are left out of the hash. The hash is computed before payload capture, so it exists even for projects that do not store prompts. The Python SDK and the gateway send it. For other sources Spanlight computes it from the span input when one is sent (the input as received, before payload capture drops it); only native JSON spans may send their own `request_hash` (32 lowercase hex characters).
 
@@ -62,7 +63,7 @@ The worker runs every detector over every project that received a span in the la
 
 - **A run is bounded.** One pass starts no new project after 40 seconds, and one project may take at most 30 seconds. A project the pass did not reach goes first in the next one. A detector that raises an error is recorded and skipped; the others still run.
 - **Nothing is invented from thin data.** Every detector has a minimum sample size and returns nothing below it. A baseline needs at least 100 calls in the same slice; without one, the spike detectors say nothing.
-- **Faults and cache hits are not traffic.** Calls that the [Integration Lab](/docs/gateway/lab/) faulted on purpose are left out of the detectors that judge the health of your traffic or your provider (`error_spike`, `latency_regression`, `cost_spike`, `rate_limit_pressure`, `provider_incident`, `unpriced_spend`). Gateway cache hits never reached a provider and are left out of `retry_storm`, `cache_opportunity` and `unpriced_spend`. The detectors that judge client behaviour (the lab findings) use the faulted calls on purpose.
+- **Faults and cache hits are not traffic.** Calls that the [Integration Lab](/docs/gateway/lab/) faulted on purpose are left out of the detectors that judge the health of your traffic or your provider (`error_spike`, `latency_regression`, `cost_spike`, `rate_limit_pressure`, `provider_incident`, `unpriced_spend`). Gateway cache hits never reached a provider and are left out of `retry_storm`, `cache_opportunity` and `unpriced_spend`. The detectors that judge client behaviour (the lab findings) use the faulted calls on purpose. Calls refused by your gateway key's own rate limit never reached a provider, so `error_spike` and `rate_limit_pressure` leave them out too.
 - **Evidence is real traces.** Each insight lists up to 20 trace ids that contributed to the finding, most recent first, and the numbers behind it. Open them to confirm the finding.
 
 Operators can switch the schedule off with `DETECTORS_ENABLED` (see [Configuration](/docs/configuration/)) and read each run's outcome at `GET /api/v1/projects/{project_id}/detector-runs`; see the [detectors runbook](/docs/runbooks/detectors/).
@@ -102,6 +103,28 @@ Where it goes is set per project under **Settings, Project, Insight notification
 - **PagerDuty:** a `trigger` with severity `critical` and a dedup key that is stable for the insight, so a reopening does not page a second incident while the first is still open in PagerDuty. Insights never send a `resolve` to PagerDuty: an insight resolves after a quiet day, which is not a recovery signal, so close the incident in PagerDuty yourself.
 
 The [weekly digest](/docs/budgets/#the-weekly-digest) gains an Insights section: the number of open insights and up to five of them, critical first.
+
+## Was this right?
+
+Every insight page ends with a **Was this right?** row with two buttons, **Right** and **Wrong**. After a click you can add a note of up to 500 characters, and the row then reads, for example, "You said this was right on 14 Oct". Clicking your verdict again withdraws it. Each person has one vote per insight: a second vote replaces the first, note included, so changing your verdict clears the note you wrote; add it again if it still applies. You can vote on a resolved or muted insight too. Members, admins and owners can vote; viewers see the row disabled.
+
+The votes measure how often the Doctor is right on your own traffic, which a benchmark of planted problems cannot. The **Precision** tab of the Doctor, after the status tabs, shows "How often each check is right" from all the votes ever given, per detector:
+
+| Column | Meaning |
+| --- | --- |
+| Check | The detector |
+| Right, Wrong, N | The votes, and their total |
+| Precision | Right divided by N |
+| Wilson 95 % | The Wilson 95 % interval of the precision, drawn as a bar. With few votes it is wide, so read it before the precision |
+| Status | **Meets target** or **Below target**, from 20 votes on |
+
+A detector meets the target when its precision is at least 0.8, the lower end of its interval at least 0.6, and it has at least 20 votes. Below 20 votes the row says "not enough feedback yet", and a detector with no votes shows "—" and "no answers yet". The tab shows the ratios to two places; the API gives them to four, rounded half up. The target is checked on the exact values, so a ratio shown as 0.80 can still miss it. The tab lists every detector that has an insight in the project.
+
+Operators can read the same table across every project with [`spanlight doctor precision`](/docs/reference/cli/#doctor-precision).
+
+## Provider incidents and status pages
+
+When `provider_incident` fires, it looks for an incident on the provider's own status page that overlaps its 30-minute window (allowing 15 minutes after the provider marked it resolved) and that touched the provider's API. The summary then ends with "Matches the provider's status page incident" and the incident's title and impact, and the insight page shows a line "Matches the provider’s status page incident:" with the title linked to the provider's page. Without one the summary ends with "No matching incident on the provider's status page." When the server does not poll status pages, the insight page says the feeds are off, so no incident could be matched. The citation only explains a finding: the thresholds, the severity and when the insight opens or resolves are the same with or without it. See [Status page incidents](/docs/guides/provider-health/#status-page-incidents).
 
 ## The health score
 
@@ -171,6 +194,7 @@ Open **Doctor** after your project has had traffic for 15 minutes or more. The p
 | A finding you expected is missing | Each detector has a minimum sample size (see its entry). The client detectors need `request_hash`, so spans must come from the current SDK or the gateway; `tool_loop` needs stored inputs. |
 | An insight does not go away | It resolves after 24 hours without a sighting. Resolve it by hand if you have fixed the cause; it reopens if the problem is seen again. |
 | A critical insight did not notify | The project needs insight channels under Settings, Project. A muted insight does not notify until its mute ends, and only the first opening notifies. |
+| The **Right** and **Wrong** buttons are disabled | You are a viewer. Members, admins and owners can vote. |
 | "Explain with Claude" is disabled | You are not an admin or owner, no Anthropic credential is set, or the monthly budget is spent. The message says which. |
 | The pill reads "Not checked yet", or "Last check failed" with a time | No detector run has finished, or the last one failed. Check that the worker is running and `DETECTORS_ENABLED` is on, then see the [detectors runbook](/docs/runbooks/detectors/). |
 | Detector runs show errors | See the [detectors runbook](/docs/runbooks/detectors/). |

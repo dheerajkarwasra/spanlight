@@ -1,0 +1,9 @@
+day,provider,line_kind,amount_usd,model,token_type,service_tier,quantity,description,provider_scope
+2026-10-14,anthropic,tokens,3.6,claude-sonnet-4-6,uncached_input,standard,1200000,,
+2026-10-14,anthropic,tokens,1.2,claude-sonnet-4-6,cache_read,standard,4000000,,
+2026-10-14,anthropic,tokens,0.75,claude-sonnet-4-6,cache_write_5m,standard,200000,,
+2026-10-14,anthropic,tokens,2.25,claude-sonnet-4-6,output,standard,150000,,
+2026-10-14,anthropic,tokens,0.75,claude-sonnet-4-6,output,batch,100000,,
+2026-10-14,anthropic,web_search,0.4,claude-sonnet-4-6,,,40,Web search,
+2026-10-14,anthropic,code_execution,0.05,,,,,Code execution,
+2026-10-14,anthropic,credit,-5,,,,,Promotional credit,

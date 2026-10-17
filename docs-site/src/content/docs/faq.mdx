@@ -5,7 +5,7 @@ sidebar:
   order: 4
 ---
 
-{/* Sources: deploy/compose.yaml, deploy/.env.example, backend/app/jobs/tasks/retention.py, backend/app/db/models/projects.py, backend/app/ingest/normalize.py, backend/app/ingest/otlp.py, backend/app/pricing/cost.py, backend/app/datasets/importers.py, backend/app/evals/config.py, backend/app/gateway/call.py, sdks/python/src/spanlight/_config.py, sdks/python/src/spanlight/_exporter.py, sdks/python/src/spanlight/integrations/openai.py, sdks/python/src/spanlight/integrations/anthropic.py */}
+{/* Sources: deploy/compose.yaml, deploy/.env.example, backend/app/jobs/tasks/retention.py, backend/app/db/models/projects.py, backend/app/ingest/normalize.py, backend/app/ingest/otlp.py, backend/app/ingest/conventions/__init__.py, backend/app/ingest/usage_rollup.py, backend/app/pricing/cost.py, backend/app/datasets/importers.py, backend/app/evals/config.py, backend/app/gateway/call.py, sdks/python/src/spanlight/_config.py, sdks/python/src/spanlight/_exporter.py, sdks/python/src/spanlight/integrations/openai.py, sdks/python/src/spanlight/integrations/anthropic.py */}
 
 Each answer is short and links the page that holds the details.
 
@@ -51,7 +51,15 @@ No. It is an estimate from your own token counts and a dated price table that le
 
 ### Does it work with OpenInference?
 
-No. Spanlight reads the OpenTelemetry `gen_ai.*` attributes and does not read the OpenInference `llm.*` attributes. Those attributes are kept on the span but fill no field, so the span has no model, tokens or cost; see [What is not mapped](/docs/reference/otlp-mapping/#what-is-not-mapped).
+Yes, since 2026-10. Send the OpenInference spans over [OTLP](/docs/otlp/). Spanlight reads the `llm.*` attributes for the model, the token counts and the messages, and `input.value` and `output.value` when there are no messages, so an OpenInference span gets its cost like any other. [OpenInference](/docs/integrations/openinference/) shows the tested setup for the OpenAI and LangChain instrumentations, and [OTLP compatibility](/docs/reference/otlp-compatibility/) what each exporter captures and loses.
+
+### Does it work with the Vercel AI SDK?
+
+Yes, over [OTLP](/docs/otlp/) with the AI SDK's OpenTelemetry telemetry turned on. Spanlight reads both the AI SDK's own `ai.*` attributes (`ai` 5 and 6, and 7 through its legacy telemetry) and the `gen_ai.*` attributes of the GenAI mode of `ai` 7. The AI SDK reports a call's usage on the step and again on the provider call inside it; Spanlight counts it once. [Vercel AI SDK](/docs/integrations/vercel-ai/) has the tested setup, and [OTLP compatibility](/docs/reference/otlp-compatibility/) what each AI SDK version captures and loses.
+
+### Does it work with LiteLLM, OpenLLMetry or Traceloop?
+
+Yes, over [OTLP](/docs/otlp/). LiteLLM's OpenTelemetry callback writes the OpenTelemetry `gen_ai.*` attributes, in its default mode and in its newer one. OpenLLMetry (Traceloop) provider spans carry `gen_ai.*` attributes, and its workflow, task, agent and tool spans are read from the `traceloop.*` attributes. See [LiteLLM](/docs/integrations/litellm/) and [OpenLLMetry](/docs/integrations/openllmetry/) for the tested setups, and [OTLP compatibility](/docs/reference/otlp-compatibility/) for what each captures and loses.
 
 ### Can I import data from Langfuse, LangSmith or Helicone?
 

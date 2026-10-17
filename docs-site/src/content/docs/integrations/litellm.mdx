@@ -1,0 +1,156 @@
+---
+title: LiteLLM
+description: Send LiteLLM calls to Spanlight through LiteLLM's own OpenTelemetry callback, in its default mode or its newer GenAI mode. Shows the tested exporter setup and what Spanlight records from each call and what it leaves out.
+---
+
+{/* Sources: sdks/fixtures/otlp/record/python/recipes/litellm.py, sdks/fixtures/otlp/record/python/recipes/_otel.py, sdks/fixtures/otlp/record/record.py, sdks/fixtures/otlp/litellm/1.105.1.json, backend/app/ingest/conventions/gen_ai.py, backend/app/ingest/finish_reason.py */}
+
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+import Verified from '../../../components/Verified.astro';
+
+LiteLLM has its own OpenTelemetry callback. It writes a span for every `litellm.completion` call with the OpenTelemetry GenAI attributes (`gen_ai.*`), which Spanlight reads. Send those spans to Spanlight's [OTLP endpoint](/docs/otlp/) and each call becomes an `llm` span with its prompt, answer, tokens and cost.
+
+This page covers LiteLLM as a Python library. The LiteLLM proxy server was not tested.
+
+<Prerequisites
+  items={[
+    'A running Spanlight instance that your application can reach',
+    'A project API key with the ingest:write scope (the default). Creating one needs the member, admin or owner role',
+    'Python 3.13 (the version this page was tested with)',
+  ]}
+/>
+
+<Verified
+  date="2026-10-17"
+  packages={[
+    { name: 'litellm', version: '1.105.1' },
+    { name: 'openai', version: '2.54.0' },
+    { name: 'opentelemetry-sdk', version: '1.45.1' },
+    { name: 'opentelemetry-exporter-otlp-proto-http', version: '1.45.1' },
+  ]}
+  note="Recorded with Python 3.13.9 through LiteLLM's OpenAI route, against a local stand-in for the OpenAI Chat Completions API, not against OpenAI itself. The Anthropic route was not recorded."
+/>
+
+## Install
+
+```bash
+pip install "litellm==1.105.1" "openai==2.54.0" "opentelemetry-sdk==1.45.1" "opentelemetry-exporter-otlp-proto-http==1.45.1"
+```
+
+Point the OpenTelemetry exporter at Spanlight with the standard variables:
+
+```bash
+export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:8080/v1/otlp/traces
+export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20spl_live_..."
+```
+
+Use the traces-specific endpoint variable with the full path. [Configure an exporter](/docs/otlp/#configure-an-exporter) explains why.
+
+## Set up tracing
+
+Install a tracer provider that exports over OTLP, then add LiteLLM's callback. The callback uses the global tracer provider, so set it first:
+
+```python
+import litellm
+from litellm.integrations.opentelemetry import OpenTelemetry, OpenTelemetryConfig
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+provider = TracerProvider()
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(provider)
+
+litellm.callbacks = [
+    OpenTelemetry(config=OpenTelemetryConfig(capture_message_content="SPAN_ONLY"))
+]
+
+reply = litellm.completion(
+    model="openai/gpt-4.1-mini",
+    messages=[{"role": "user", "content": "Say hello in five words."}],
+)
+print(reply.choices[0].message.content)
+```
+
+`capture_message_content="SPAN_ONLY"` puts the prompt and the answer on the span. Spanlight reads only span attributes, so without it the span has no prompt and no answer.
+
+LiteLLM writes the span from a background logging thread after the call returns. A long-running server needs nothing more. A short script must wait for that thread and then flush the provider before it exits, or the span is lost. The recorder does it like this:
+
+```python
+from litellm.litellm_core_utils.thread_pool_executor import executor
+
+executor.shutdown(wait=True)
+provider.force_flush()
+```
+
+### The newer GenAI mode
+
+Set `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental` before LiteLLM is imported to use the latest OpenTelemetry GenAI names. Both modes are read and give the same model, tokens, prompt, answer and cost. They differ in what you see:
+
+| | Default mode | `gen_ai_latest_experimental` |
+| --- | --- | --- |
+| Span name | `litellm_request` | `chat <model>`, for example `chat gpt-4.1-mini` |
+| Provider attribute | `gen_ai.system` | `gen_ai.provider.name` |
+| Child span `raw_gen_ai_request` | Yes, with copies of the raw request and response | No |
+
+In both modes LiteLLM 1.105.1 sends the token counts as `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens` and the messages as `gen_ai.input.messages` and `gen_ai.output.messages`.
+
+### Calls inside your own span
+
+When you call LiteLLM while a span of your own is active, LiteLLM writes its attributes onto your span instead of opening `litellm_request`. Spanlight then reads your span as the model call: it gets the model, the tokens and the cost, and keeps its name.
+
+```python
+with trace.get_tracer("my-app").start_as_current_span("handle_request"):
+    litellm.completion(model="openai/gpt-4.1-mini", messages=messages)
+```
+
+## Check it worked
+
+Open **Traces** in the dashboard and pick the project that owns your key. In the default mode you see a trace named `litellm_request` with an `llm` span of the same name and a `raw_gen_ai_request` child. Open the `llm` span: it shows the messages, the answer, the token counts and the cost.
+
+## What is recorded
+
+| Field | From LiteLLM |
+| --- | --- |
+| Kind | `llm` for the call. The `raw_gen_ai_request` child is `other` and is never counted as a model call. |
+| Provider | `gen_ai.system` or `gen_ai.provider.name`, for example `openai` |
+| Model | The model the provider answered with, such as `gpt-4.1-mini-2025-04-14` |
+| Input and output tokens | `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens` |
+| Prompt and answer | `gen_ai.input.messages` and `gen_ai.output.messages`, with `capture_message_content="SPAN_ONLY"` |
+| Finish reason | `gen_ai.response.finish_reasons`, which LiteLLM sends as text holding a JSON array (`["stop"]`) and Spanlight reads as a list |
+| Cost | Computed by Spanlight from the model and the token counts; see [How cost is calculated](/docs/concepts/cost/) |
+| Error | A failed call is `error`. A 429 gets the error class `rate_limit` from `http.response.status_code`. |
+| Trace name | The name of the root span: `litellm_request`, `chat <model>`, or your own span's name |
+
+The other attributes LiteLLM writes, such as its `metadata.*` keys and `hidden_params`, are kept on the span and fill no field. Which attribute fills which field is listed in [OpenTelemetry GenAI](/docs/reference/otlp-mapping/#opentelemetry-genai-gen_ai).
+
+## What is not recorded
+
+- **Cached tokens on the OpenAI route.** LiteLLM puts them only inside the text of `metadata.usage_object`, not in `gen_ai.usage.cache_read.input_tokens`, so the span has no cached count and cached tokens are priced at the full input rate.
+- **Time to first token.** LiteLLM sends it as a metric only, and Spanlight's OTLP endpoint accepts traces.
+- **Usage of a failed call.** A 429 carries no token counts, so its cost is unknown.
+- **LiteLLM's own cost.** LiteLLM writes `gen_ai.cost.*` attributes. Spanlight stores them and never reads them; it prices every span itself from the [price table](/docs/reference/prices/).
+- **Trace metadata.** LiteLLM's `metadata.*` attributes describe its proxy keys and budgets and are not trace metadata. To set metadata, add `spanlight.metadata.<key>` to your own span; see [Trace metadata](/docs/otlp/#trace-metadata).
+- **Anthropic cache reads and writes.** The Anthropic route was not recorded, so this page makes no claim about it.
+
+[OTLP compatibility](/docs/reference/otlp-compatibility/#litellm-11051) shows each recorded scenario field by field.
+
+## Troubleshooting
+
+- **No trace arrives.** A short script exits before LiteLLM's logging thread writes the span; wait for it and flush as shown above. Check that the tracer provider is set before `litellm.callbacks`. Then work through [No trace arrives](/docs/troubleshooting/#no-trace-arrives).
+- **The exporter gets `422 VALIDATION_ERROR`.** It sent to `/v1/traces`. Set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` to the full `/v1/otlp/traces` URL.
+- **The span has no prompt or answer.** Pass `capture_message_content="SPAN_ONLY"` to `OpenTelemetryConfig`, and check that the project has prompt capture on; see [Privacy](/docs/guides/privacy/#turn-off-prompt-and-completion-capture).
+- **The cost is higher than the provider's bill.** The call used cached tokens, which LiteLLM does not report on the OpenAI route. See [What is not recorded](#what-is-not-recorded).
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'OTLP compatibility', href: '/docs/reference/otlp-compatibility/', description: 'What each recorded exporter captures and loses, scenario by scenario.' },
+    { title: 'OTLP ingestion', href: '/docs/otlp/', description: 'The endpoint, the limits and trace metadata.' },
+    { title: 'How cost is calculated', href: '/docs/concepts/cost/', description: 'The price table and when a cost is unknown.' },
+  ]}
+/>
