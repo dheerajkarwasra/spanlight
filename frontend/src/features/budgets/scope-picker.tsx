@@ -16,6 +16,7 @@ import type { GatewayKey } from "@/lib/api";
 import { SCOPE_LABELS } from "./budget-period";
 import { SCOPE_ID_MAX_LENGTH, SCOPES, type BudgetFormValues } from "./budget-schema";
 import { useGatewayKeysQuery } from "./budgets-queries";
+import { MetadataScopeFields, TraceNameScopeField } from "./scope-fields";
 
 interface ScopePickerProps {
   form: UseFormReturn<BudgetFormValues>;
@@ -23,9 +24,10 @@ interface ScopePickerProps {
 }
 
 /**
- * Figma budget dialog "Scope": Project, Gateway key, End user or Model (§2.3: no SDK API keys),
- * then the scope's own value: nothing for the project, a key of this project, or free text of at
- * most 200 characters for an end user or a model.
+ * Figma budget dialog "Scope" and "Budgets / Scope picker (metadata, trace name)": Project,
+ * Gateway key, End user, Model, Metadata or Trace name (§2.3: no SDK API keys; 3 × 2 on phones),
+ * then the scope's own value: nothing for the project, a key of this project, free text for an
+ * end user or a model, a metadata key and value, or a trace name.
  */
 export function ScopePicker({ form, projectName }: ScopePickerProps) {
   const scope = useWatch({ control: form.control, name: "scope" });
@@ -42,9 +44,16 @@ export function ScopePicker({ form, projectName }: ScopePickerProps) {
           options={SCOPES.map((value) => ({ value, label: SCOPE_LABELS[value] }))}
           onValueChange={(next) => {
             form.setValue("scope", next);
-            form.clearErrors(["gatewayKeyId", "userId", "model"]);
+            form.clearErrors([
+              "gatewayKeyId",
+              "userId",
+              "model",
+              "metadataKey",
+              "metadataValue",
+              "traceName",
+            ]);
           }}
-          className="grid w-full grid-cols-2 sm:grid-cols-4"
+          className="grid w-full grid-cols-3 rounded-tile md:grid-cols-6 md:rounded-full max-md:[&>*]:min-h-11 md:[&>*]:px-2"
         />
       </div>
       {scope === "project" ? (
@@ -71,7 +80,7 @@ export function ScopePicker({ form, projectName }: ScopePickerProps) {
       {scope === "user" ? (
         <FormField
           label="End user ID"
-          hint="The user ID your app sends on traces and gateway calls. Up to 200 characters."
+          hint={`The user ID your app sends on traces and gateway calls. Up to ${String(SCOPE_ID_MAX_LENGTH)} characters.`}
           error={errors.userId?.message}
         >
           <Input
@@ -100,6 +109,8 @@ export function ScopePicker({ form, projectName }: ScopePickerProps) {
           />
         </FormField>
       ) : null}
+      {scope === "metadata" ? <MetadataScopeFields form={form} /> : null}
+      {scope === "trace_name" ? <TraceNameScopeField form={form} /> : null}
     </>
   );
 }

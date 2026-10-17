@@ -5,10 +5,42 @@ import type { Page } from "./types";
 
 export type QueueItemStatus = "pending" | "done" | "skipped";
 
-export interface QueueProgress {
+/** Why an item is in its queue: added by hand, or picked by the daily review policy. */
+export type ReviewReason = "manual" | "doctor_finding" | "error" | "cost_outlier" | "random";
+
+export interface ReasonProgress {
   pending: number;
   done: number;
   skipped: number;
+}
+
+export interface QueueProgress extends ReasonProgress {
+  /** The same counts per reason; every reason is present, zeros included. */
+  by_reason: Record<ReviewReason, ReasonProgress>;
+}
+
+/**
+ * What the selection recorded about an item: numbers, ids and the trace name, never payload
+ * text. Which keys are present depends on the item's reason; money and rates are 4-place decimal
+ * strings. A key the server did not send is unknown.
+ */
+export interface ReasonDetail {
+  /** `doctor_finding`: the open insight and its detector kind. */
+  insight_id?: string;
+  kind?: string;
+  /** `error`: failed spans in the trace, the first of them, and its error class. */
+  error_count?: number;
+  first_error_span_id?: string | null;
+  error_class?: string | null;
+  /** `cost_outlier`: the trace's cost against the p99 of its name over 7 days (`sample` traces). */
+  cost_usd?: string;
+  p99_usd?: string;
+  trace_name?: string;
+  sample?: number;
+  /** `random`: the policy's random share when the item was picked. */
+  rate?: string;
+  /** The lower-priority reasons the trace matched too. */
+  also?: ReviewReason[];
 }
 
 export interface AnnotationQueue {
@@ -32,6 +64,14 @@ export interface QueueItem {
   trace_id: string;
   span_id: string | null;
   status: QueueItemStatus;
+  /**
+   * Why the item was queued and what the selection saw; the server always sends both. A missing
+   * `reason` reads as `manual`.
+   * shortcut: optional only because `use-work-session.test.ts`'s fixture predates reasons; make
+   * both required once that fixture sets them.
+   */
+  reason?: ReviewReason;
+  reason_detail?: ReasonDetail | null;
   /** The reviewer holding the item; null while it waits. */
   assigned_to: string | null;
   assigned_at: string | null;
@@ -42,6 +82,7 @@ export interface QueueItem {
 
 export interface QueueItemListQuery {
   status?: QueueItemStatus | undefined;
+  reason?: ReviewReason | undefined;
   limit?: number | undefined;
   cursor?: string | null | undefined;
 }
@@ -74,7 +115,8 @@ function itemPath(projectId: string, queueId: string, itemId: string): string {
 /**
  * Annotation (review) queues under `/projects/{id}/annotation-queues`. Reads need `project:read`;
  * everything that changes a queue or an item needs `annotations:write` (member). Errors:
- * `409 NAME_TAKEN`, `409 ITEM_NOT_ASSIGNED_TO_YOU`, `409 ITEM_NOT_PENDING`, `422 UNKNOWN_SCORE_CONFIG`,
+ * `409 NAME_TAKEN`, `409 QUEUE_IN_USE` (deleting the queue a review policy fills),
+ * `409 ITEM_NOT_ASSIGNED_TO_YOU`, `409 ITEM_NOT_PENDING`, `422 UNKNOWN_SCORE_CONFIG`,
  * `422 SCORE_NOT_IN_QUEUE`, `422 SCORE_REQUIRED`.
  */
 export const annotationsApi = {

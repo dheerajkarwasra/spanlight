@@ -16,6 +16,7 @@ import { ensureMe } from "@/features/auth/queries";
 import { authSearchSchema, safeNextPath } from "@/features/auth/search";
 import { SignupPage } from "@/features/auth/signup-page";
 import { TwoFactorPage } from "@/features/auth/two-factor-page";
+import { attributionSearchSchema } from "@/features/attribution/search";
 import { doctorSearchSchema } from "@/features/doctor/search";
 import { compareSearchSchema, experimentSearchSchema } from "@/features/experiments/search";
 import { onboardingSearchSchema } from "@/features/onboarding/search";
@@ -24,6 +25,7 @@ import { promptDetailSearchSchema, promptsSearchSchema } from "@/features/prompt
 import { releasesSearchSchema } from "@/features/releases/search";
 import { AppShell } from "@/features/shell/app-shell";
 import { resolveHomeDestination } from "@/features/shell/home-redirect";
+import { reconciliationSearchSchema } from "@/features/billing-sources/reconciliation-search";
 import { auditSearchSchema } from "@/features/settings/audit-search";
 import { securitySearchSchema } from "@/features/settings/security/search";
 import { traceDetailSearchSchema, traceFiltersSchema } from "@/features/traces/search";
@@ -293,6 +295,16 @@ const insightDetailRoute = createRoute({
   ),
 });
 
+const providersRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/providers",
+  head: () => pageTitle("Provider health"),
+  component: lazyRouteComponent(
+    () => import("@/features/providers/providers-page"),
+    "ProvidersPage",
+  ),
+});
+
 const releasesRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/releases",
@@ -316,6 +328,17 @@ const userDetailRoute = createRoute({
   component: lazyRouteComponent(
     () => import("@/features/users/user-detail-page"),
     "UserDetailPage",
+  ),
+});
+
+const attributionRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/attribution",
+  validateSearch: attributionSearchSchema,
+  head: () => pageTitle("Attribution"),
+  component: lazyRouteComponent(
+    () => import("@/features/attribution/attribution-page"),
+    "AttributionPage",
   ),
 });
 
@@ -632,6 +655,31 @@ const membersRoute = createRoute({
   component: lazyRouteComponent(() => import("@/features/settings/members-page"), "MembersPage"),
 });
 
+const billingSourcesRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/billing-sources",
+  head: () => pageTitle("Billing sources"),
+  component: lazyRouteComponent(
+    () => import("@/features/billing-sources/billing-sources-page"),
+    "BillingSourcesPage",
+  ),
+});
+
+/**
+ * A billing source's reconciliation. A sibling of the settings layout, not its child: the page has
+ * its own header and back link instead of the settings navigation (Figma "Reconciliation / *").
+ */
+const reconciliationRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/settings/billing-sources/$sourceId",
+  validateSearch: reconciliationSearchSchema,
+  head: () => pageTitle("Reconciliation"),
+  component: lazyRouteComponent(
+    () => import("@/features/billing-sources/reconciliation-page"),
+    "ReconciliationPage",
+  ),
+});
+
 const auditRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/audit",
@@ -689,9 +737,11 @@ const routeTree = rootRoute.addChildren([
       sessionDetailRoute,
       doctorRoute,
       insightDetailRoute,
+      providersRoute,
       releasesRoute,
       usersRoute,
       userDetailRoute,
+      attributionRoute,
       gatewayRoute,
       gatewayKeysRoute,
       gatewayRoutesRoute,
@@ -719,6 +769,7 @@ const routeTree = rootRoute.addChildren([
       alertChannelsRoute,
       alertRuleRoute,
       budgetsRoute,
+      reconciliationRoute,
       settingsRoute.addChildren([
         settingsIndexRoute,
         projectSettingsRoute,
@@ -726,6 +777,7 @@ const routeTree = rootRoute.addChildren([
         exportsRoute,
         organizationRoute,
         membersRoute,
+        billingSourcesRoute,
         auditRoute,
         accountRoute,
         securityRoute,

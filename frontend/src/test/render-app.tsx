@@ -33,6 +33,7 @@ export function makeProject(id: string, name: string): Project {
     capture_payloads: true,
     weekly_digest_enabled: true,
     insight_channel_ids: [],
+    promoted_metadata_keys: [],
     created_at: "2026-10-01T00:00:00Z",
   };
 }

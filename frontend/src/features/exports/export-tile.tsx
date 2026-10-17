@@ -4,7 +4,7 @@ import { ValueOrUnknown } from "@/components/unknown-value";
 import type { TraceExport } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-import { describeExport, exportFormatLabel } from "./export-display";
+import { describeExport } from "./export-display";
 import { DownloadAction, ExportFailureLine, FormatTag, StatusBadge } from "./export-parts";
 import { isDownloadable, unknownExpiryReason, unknownReason } from "./export-status";
 
@@ -73,11 +73,7 @@ export function ExportTile({ entry }: ExportTileProps) {
         </TilePair>
       </dl>
       {isDownloadable(entry) ? (
-        <DownloadAction
-          exportId={entry.id}
-          label={`${exportFormatLabel(entry.format)} export, ${text.range}`}
-          className="w-full"
-        />
+        <DownloadAction exportId={entry.id} label={text.downloadLabel} className="w-full" />
       ) : null}
       {entry.status === "failed" ? (
         <ExportFailureLine errorCode={entry.error_code} stacked />

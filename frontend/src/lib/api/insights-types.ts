@@ -56,9 +56,63 @@ export interface Explanation {
   created_at: string;
 }
 
+/** A member's verdict on whether an insight was right. */
+export type FeedbackVerdict = "right" | "wrong";
+
+/** The body of a vote. `note` is at most 500 characters. */
+export interface FeedbackInput {
+  verdict: FeedbackVerdict;
+  note?: string | undefined;
+}
+
+/** The caller's stored vote, as `PUT .../feedback` answers it. */
+export interface Feedback {
+  verdict: FeedbackVerdict;
+  note: string | null;
+  updated_at: string;
+}
+
+/** The votes on one insight: the caller's own, and everyone's counts. */
+export interface InsightFeedback {
+  /** Null until the caller votes; `updated_at` is when the vote was last given. */
+  mine: { verdict: FeedbackVerdict; note: string | null; updated_at: string } | null;
+  right: number;
+  wrong: number;
+}
+
 /** The insight and its completed explanations, newest first (at most 20). */
 export interface InsightDetail extends Insight {
   explanations: Explanation[];
+  feedback: InsightFeedback;
+}
+
+/**
+ * Doctor precision for one detector kind, from member feedback. Decimals are strings, `null` when
+ * `n` is 0. `meets_target`: precision at least 0.8, Wilson lower bound at least 0.6, `n` at least
+ * 20, computed on the server.
+ */
+export interface PrecisionKind {
+  kind: string;
+  /** The catalogue's name for the kind (the kind itself when unknown to the server). */
+  label: string;
+  right: number;
+  wrong: number;
+  /** `right + wrong`. */
+  n: number;
+  precision: string | null;
+  wilson_low: string | null;
+  wilson_high: string | null;
+  meets_target: boolean;
+}
+
+export interface PrecisionOut {
+  kinds: PrecisionKind[];
+}
+
+/** On the votes' `updated_at`; all time when both are left out. */
+export interface PrecisionQuery {
+  from?: string | undefined;
+  to?: string | undefined;
 }
 
 /** Insights that still need a person (open and acknowledged), by severity. */

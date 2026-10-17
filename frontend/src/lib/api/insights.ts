@@ -3,6 +3,8 @@ import { projectPath } from "./paths";
 import type {
   DetectorRun,
   Explanation,
+  Feedback,
+  FeedbackInput,
   Health,
   HealthQuery,
   Insight,
@@ -11,6 +13,8 @@ import type {
   InsightSummary,
   MuteInput,
   Page,
+  PrecisionOut,
+  PrecisionQuery,
 } from "./types";
 
 function insightsPath(projectId: string): string {
@@ -54,6 +58,15 @@ export const insightsApi = {
   /** Newest first, at most 100. */
   detectorRuns: (projectId: string, limit?: number): Promise<DetectorRun[]> =>
     api.get<DetectorRun[]>(`${projectPath(projectId)}/detector-runs`, { limit }),
+  /** Records or replaces the caller's vote; needs `insights:feedback` (member and above). */
+  putFeedback: (projectId: string, insightId: string, input: FeedbackInput): Promise<Feedback> =>
+    api.put<Feedback>(`${insightPath(projectId, insightId)}/feedback`, input),
+  /** Removes the caller's vote (204); `404` when there is none. */
+  deleteFeedback: (projectId: string, insightId: string): Promise<void> =>
+    api.delete(`${insightPath(projectId, insightId)}/feedback`),
+  /** Precision per detector kind from member feedback. */
+  precision: (projectId: string, query: PrecisionQuery = {}): Promise<PrecisionOut> =>
+    api.get<PrecisionOut>(`${insightsPath(projectId)}/precision`, { ...query }),
   /** The health score over the window; `value` is `null` without LLM calls. */
   health: (projectId: string, query: HealthQuery = {}): Promise<Health> =>
     api.get<Health>(`${projectPath(projectId)}/health`, { ...query }),

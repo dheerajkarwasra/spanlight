@@ -26,7 +26,8 @@ function TraceLink({ traceId }: { traceId: string }) {
   );
 }
 
-function ProblemTile({ problem }: { problem: ResultProblem }) {
+/** A failed run's tile: warning for a stop the user can lift, danger for a failure. */
+export function ProblemTile({ problem }: { problem: ResultProblem }) {
   const warning = problem.tone === "warning";
   const Icon = warning ? Ban : CircleAlert;
   return (

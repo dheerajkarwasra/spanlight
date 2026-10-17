@@ -76,7 +76,13 @@ export interface PriceOverrideCreate {
 
 /* ---------- Routes ---------- */
 
-export type FallbackCondition = "status_5xx" | "rate_limited" | "timeout" | "connection_error";
+/**
+ * A failure after which the gateway tries the route's next target. `auth_error` (a 401 or 403) is
+ * opt-in: the server's default lists the other four, and it needs two targets on different
+ * credentials.
+ */
+export type FallbackCondition =
+  "status_5xx" | "rate_limited" | "timeout" | "connection_error" | "auth_error";
 
 export interface RouteTarget {
   credential_id: string;

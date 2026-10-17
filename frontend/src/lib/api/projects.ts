@@ -16,6 +16,7 @@ import type {
   SessionSummary,
   TimeseriesPoint,
   TraceDetail,
+  TraceSort,
   TraceStatusFilter,
   TraceSummary,
 } from "./types";
@@ -48,6 +49,15 @@ export interface TraceListQuery extends TimeWindow {
   /** A categorical score's value. */
   score_value?: string | undefined;
   has_scores?: boolean | undefined;
+  /** Only traces with at least one retried call. */
+  has_retries?: boolean | undefined;
+  /** Traces whose metadata has this key; with `metadata_value`, that value for it. */
+  metadata_key?: string | undefined;
+  metadata_value?: string | undefined;
+  /** Traces with exactly this name. */
+  name?: string | undefined;
+  /** The server's default is `started_at` (newest first). */
+  sort?: TraceSort | undefined;
   limit?: number | undefined;
   cursor?: string | null | undefined;
 }

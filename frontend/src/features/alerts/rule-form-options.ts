@@ -15,6 +15,8 @@ export const RULE_EDITOR_COPY = {
   cooldownHint:
     "After a rule resolves, it stays quiet this long even if the metric breaches again.",
   filtersHint: "Leave a filter on “Any” to include everything.",
+  errorFiltersHint:
+    "Error class and Rate-limit kind appear only for Error rate and Failed LLM calls. Leave a filter on “Any” to include everything.",
   channelsHint: "Up to 10 channels.",
   channelsPlaceholder: "Add a channel",
   noChannelsPlaceholder: "No channels yet",

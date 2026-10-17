@@ -49,6 +49,9 @@ function makeTrace(index: number): TraceSummary {
     has_scores: false,
     scores: [],
     error_class: null,
+    retry_calls: 0,
+    metadata: {},
+    retry_cost_usd: "0",
   };
 }
 

@@ -3,7 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { CopyButton } from "@/components/copy-button";
-import { CostValue } from "@/components/cost-value";
+import { CostValue, UNKNOWN_TOTAL_REASON } from "@/components/cost-value";
 import { UnknownValue } from "@/components/unknown-value";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,10 +14,12 @@ import { cn } from "@/lib/utils";
 
 import { InsightBadges } from "./insight-badges";
 import { recallTracesSearch } from "./last-traces-search";
+import { MetadataBlock } from "./metadata-block";
 import { failedSpanCount } from "./span-tree";
 import { TraceStatusBadge } from "./status";
 import { TraceActions } from "./trace-actions";
 import { TraceAttributeChips } from "./trace-attribute-chips";
+import { TraceRetryLine } from "./trace-retry-line";
 
 export function BackToTracesLink() {
   const { orgId, projectId } = useProjectParams();
@@ -34,7 +36,10 @@ export function BackToTracesLink() {
   );
 }
 
-/** Figma "Trace header": title and status, trace ID, the ink summary strip and attribute chips. */
+/**
+ * Figma "Trace header": title and status, trace ID, the ink summary strip, attribute chips and the
+ * metadata block.
+ */
 export function TraceHeader({ trace }: { trace: TraceDetail }) {
   return (
     <Card className="flex flex-col gap-4 p-5 sm:p-6">
@@ -61,8 +66,10 @@ export function TraceHeader({ trace }: { trace: TraceDetail }) {
         <CopyButton value={trace.trace_id} label="Copy trace ID" className="size-7 shrink-0" />
       </div>
 
+      <TraceRetryLine trace={trace} />
       <TraceSummaryStrip trace={trace} />
       <TraceAttributeChips trace={trace} />
+      <MetadataBlock metadata={trace.metadata} />
     </Card>
   );
 }
@@ -103,7 +110,12 @@ function TraceSummaryStrip({ trace }: { trace: TraceDetail }) {
         </span>
       </Stat>
       <Stat label="Cost">
-        <CostValue cost={trace.cost_usd} hasUnpriced={trace.has_unpriced} unknownTone="on-ink" />
+        <CostValue
+          cost={trace.cost_usd}
+          hasUnpriced={trace.has_unpriced}
+          unknownReason={UNKNOWN_TOTAL_REASON}
+          unknownTone="on-ink"
+        />
       </Stat>
       <Stat label="Environment">
         <ValueOnInk value={trace.environment} reason="The SDK didn't send an environment" />

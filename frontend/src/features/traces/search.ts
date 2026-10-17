@@ -3,6 +3,8 @@ import { z } from "zod";
 import { ERROR_CLASSES } from "@/lib/error-class";
 import { projectSearchSchema } from "@/lib/time-range";
 
+import { isMetadataValueTooLong, METADATA_KEY_PATTERN } from "./metadata-filter";
+
 /** URL-synced facet filters for the traces list. Keys are short to keep URLs readable. */
 export const traceFiltersSchema = projectSearchSchema.extend({
   release: z.string().optional().catch(undefined),
@@ -23,6 +25,21 @@ export const traceFiltersSchema = projectSearchSchema.extend({
   has_scores: z.boolean().optional().catch(undefined),
   /** The prompt version id (a UUID) the trace was produced by. */
   prompt_version: z.string().optional().catch(undefined),
+  /** Only traces with at least one retried call. */
+  has_retries: z.boolean().optional().catch(undefined),
+  /** Traces whose metadata has this key; alone, the traces without it (the "none" drill-down). */
+  metadata_key: z.string().regex(METADATA_KEY_PATTERN).optional().catch(undefined),
+  /** That key's value, exactly as stored; ignored without `metadata_key`. */
+  metadata_value: z
+    .string()
+    .min(1)
+    .refine((value) => !isMetadataValueTooLong(value))
+    .optional()
+    .catch(undefined),
+  /** Traces with exactly this name (`q` is a substring search). */
+  name: z.string().optional().catch(undefined),
+  /** Absent for newest first (the server's default); `retry_cost_usd` for the costliest retries. */
+  sort: z.enum(["retry_cost_usd"]).optional().catch(undefined),
 });
 
 export type TraceFilters = z.infer<typeof traceFiltersSchema>;

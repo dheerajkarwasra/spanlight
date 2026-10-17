@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 
 import { SectionCard } from "@/components/section-card";
 import type { AlertChannel, AlertRule } from "@/lib/api";
+import { errorClassLabel } from "@/lib/error-class";
+import { rateLimitKindLabel } from "@/lib/rate-limit-kind";
 
 import { ChannelChips } from "./channel-chips";
 import { METRIC_LABELS } from "./metric-labels";
@@ -14,11 +16,12 @@ interface RuleSettingsCardProps {
 }
 
 /**
- * Figma "Rule": what the rule measures, as key/value rows, then its channels. Provider and model
- * rows appear only when the rule filters on them; the environment reads "Any" when it doesn't.
+ * Figma "Rule": what the rule measures, as key/value rows, then its channels. Provider, model,
+ * error class and rate-limit kind rows appear only when the rule filters on them; the environment
+ * reads "Any" when it doesn't.
  */
 export function RuleSettingsCard({ rule, channels }: RuleSettingsCardProps) {
-  const { environment, provider, model } = rule.filters;
+  const { environment, provider, model, error_class, rate_limit_kind } = rule.filters;
 
   return (
     <SectionCard title="Rule" className="gap-1">
@@ -35,6 +38,10 @@ export function RuleSettingsCard({ rule, channels }: RuleSettingsCardProps) {
         <Row label="Environment">{environment ?? "Any"}</Row>
         {provider ? <Row label="Provider">{provider}</Row> : null}
         {model ? <Row label="Model">{model}</Row> : null}
+        {error_class ? <Row label="Error class">{errorClassLabel(error_class)}</Row> : null}
+        {rate_limit_kind ? (
+          <Row label="Rate-limit kind">{rateLimitKindLabel(rate_limit_kind)}</Row>
+        ) : null}
         <div className="flex flex-col gap-2 pt-3">
           <dt className="text-xs leading-[1.4] font-medium text-muted-foreground">Channels</dt>
           <dd>

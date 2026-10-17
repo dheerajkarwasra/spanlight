@@ -1,13 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import { useId, type ComponentProps } from "react";
-import type { UseFormReturn } from "react-hook-form";
+import { useWatch, type UseFormReturn } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
 import { Input } from "@/components/ui/input";
 import { projectsApi, queryKeys } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+import { ErrorFilterFields } from "./error-filter-fields";
+import { takesErrorFilters } from "./rule-filters";
 import { RULE_EDITOR_COPY } from "./rule-form-options";
 import { FILTER_MAX_LENGTH, type FilterField, type RuleFormValues } from "./rule-form-schema";
 
@@ -37,10 +39,13 @@ interface FilterFieldsProps {
 /**
  * Figma "Filters": environment, provider and model, each left empty for "Any". The values are
  * exact matches, so each field suggests what the project's traces already carry but accepts any
- * name, e.g. an environment that has no traffic yet.
+ * name, e.g. an environment that has no traffic yet. For Error rate and Failed LLM calls a second
+ * row adds Error class and Rate-limit kind (Figma "Alerts/Rule editor/Error filters").
  */
 export function FilterFields({ form, projectId }: FilterFieldsProps) {
   const suggestions = useFilterSuggestions(projectId).data;
+  const metric = useWatch({ control: form.control, name: "metric" });
+  const errorFilters = takesErrorFilters(metric);
   const errors = form.formState.errors;
   const lists: Record<FilterField, readonly string[]> = {
     environment: suggestions?.environments ?? [],
@@ -62,8 +67,11 @@ export function FilterFields({ form, projectId }: FilterFieldsProps) {
             />
           </FormField>
         ))}
+        {errorFilters ? <ErrorFilterFields form={form} /> : null}
       </div>
-      <p className="text-xs font-medium text-muted-foreground">{RULE_EDITOR_COPY.filtersHint}</p>
+      <p className="text-xs font-medium text-muted-foreground">
+        {errorFilters ? RULE_EDITOR_COPY.errorFiltersHint : RULE_EDITOR_COPY.filtersHint}
+      </p>
     </fieldset>
   );
 }

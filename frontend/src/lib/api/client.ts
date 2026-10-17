@@ -1,4 +1,4 @@
-import { ApiError, NetworkError } from "./errors";
+import { ApiError, NetworkError, parseRetryAfter } from "./errors";
 import type { ProblemDetails } from "./types";
 
 type QueryValue = string | number | boolean | null | undefined | readonly string[];
@@ -131,7 +131,11 @@ async function send(
     if (response.status === 401 && !UNAUTHENTICATED_PATHS.includes(path)) {
       onUnauthorized();
     }
-    throw new ApiError(response.status, problem);
+    throw new ApiError(
+      response.status,
+      problem,
+      parseRetryAfter(response.headers.get("Retry-After"), Date.now()),
+    );
   }
 
   return response;

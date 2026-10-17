@@ -5,26 +5,30 @@ import { ListFooter } from "@/components/list-footer";
 import { PageHeader } from "@/components/page-header";
 import { UnknownValue } from "@/components/unknown-value";
 import { Card } from "@/components/ui/card";
-import { useProjectFilters } from "@/features/shell/project-context";
-import { formatInteger } from "@/lib/format";
+import { useProjectFilters, useProjectQuery } from "@/features/shell/project-context";
 import { rangePhrase } from "@/lib/time-range";
 
 import { BulkSelectionBar } from "./bulk-selection-bar";
 import { recallOpenedTrace, rememberTracesSearch } from "./last-traces-search";
-import { loadedSummary, tracesNoun } from "./list-summary";
+import { retryCostColumn } from "./retry-format";
+import { loadedSummary, windowCountLine } from "./list-summary";
 import { useTraceCountQuery, useTraceListQuery } from "./trace-queries";
 import { ExportTracesButton } from "./export-trigger";
 import { TraceTiles, TraceTilesSkeleton } from "./trace-tiles";
 import { TracesEmptyState } from "./traces-empty-state";
 import { TracesTable, TracesTableSkeleton } from "./traces-table";
+import { tableLayout } from "./traces-table-grid";
 import { TracesToolbar } from "./traces-toolbar";
-import { useTraceFilters } from "./use-trace-filters";
+import { onlyRetriesFilter, useTraceFilters } from "./use-trace-filters";
 import { useTraceSelection } from "./use-trace-selection";
+
+const NO_KEYS: readonly string[] = [];
 
 export function TracesPage() {
   const filters = useTraceFilters();
   const tracesQuery = useTraceListQuery(filters.search);
   const countQuery = useTraceCountQuery();
+  const promotedKeys = useProjectQuery().data?.promoted_metadata_keys ?? NO_KEYS;
   const { search } = filters;
 
   useEffect(() => {
@@ -37,6 +41,8 @@ export function TracesPage() {
     tracesQuery.isFetching && !tracesQuery.isFetchingNextPage && !tracesQuery.isPending;
   const stale = tracesQuery.isPlaceholderData;
   const selectedTraceId = recallOpenedTrace();
+  const retryCost = retryCostColumn(search);
+  const layout = tableLayout(retryCost !== "hidden", promotedKeys.length > 0);
 
   const summary = loadedSummary({
     loaded: traces.length,
@@ -68,7 +74,7 @@ export function TracesPage() {
       return (
         <>
           <Card className="hidden p-2 md:block">
-            <TracesTableSkeleton />
+            <TracesTableSkeleton layout={layout} />
           </Card>
           <div className="md:hidden">
             <TraceTilesSkeleton />
@@ -95,6 +101,13 @@ export function TracesPage() {
           <TracesEmptyState
             hasFacetFilters={filters.hasFacetFilters}
             onClearFilters={filters.clearFilters}
+            onClearRetries={
+              onlyRetriesFilter(filters.activeFilters)
+                ? () => {
+                    filters.setFilters({ has_retries: undefined });
+                  }
+                : undefined
+            }
           />
         </Card>
       );
@@ -107,11 +120,17 @@ export function TracesPage() {
             selectedTraceId={selectedTraceId}
             stale={stale}
             selection={selection}
+            retryCost={retryCost}
           />
           {loadMoreError ?? <ListFooter layout="card" {...footerProps} />}
         </Card>
         <div className="flex flex-col gap-4 md:hidden">
-          <TraceTiles traces={traces} selectedTraceId={selectedTraceId} stale={stale} />
+          <TraceTiles
+            traces={traces}
+            selectedTraceId={selectedTraceId}
+            stale={stale}
+            promotedKeys={promotedKeys}
+          />
           {loadMoreError ? (
             <Card>{loadMoreError}</Card>
           ) : (
@@ -126,7 +145,7 @@ export function TracesPage() {
     <div className="flex flex-col gap-4 md:gap-6">
       <PageHeader
         title="Traces"
-        description={<TraceCountLine countQuery={countQuery} />}
+        description={<TraceCountLine countQuery={countQuery} filtered={filters.hasFacetFilters} />}
         actions={<ExportTracesButton />}
       />
       <TracesToolbar
@@ -144,7 +163,13 @@ export function TracesPage() {
 }
 
 /** "12,904 traces in the last 24 hours": the overview KPI for the same window and environment. */
-function TraceCountLine({ countQuery }: { countQuery: ReturnType<typeof useTraceCountQuery> }) {
+function TraceCountLine({
+  countQuery,
+  filtered,
+}: {
+  countQuery: ReturnType<typeof useTraceCountQuery>;
+  filtered: boolean;
+}) {
   const { range } = useProjectFilters();
   const phrase = rangePhrase(range);
 
@@ -153,13 +178,9 @@ function TraceCountLine({ countQuery }: { countQuery: ReturnType<typeof useTrace
     return (
       <>
         <UnknownValue reason={reason} /> traces {phrase}
+        {filtered ? " before filters" : null}
       </>
     );
   }
-  const count = countQuery.data;
-  return (
-    <span className="tabular">
-      {formatInteger(count) ?? count} {tracesNoun(count)} {phrase}
-    </span>
-  );
+  return <span className="tabular">{windowCountLine(countQuery.data, phrase, filtered)}</span>;
 }

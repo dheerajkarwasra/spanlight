@@ -8,11 +8,11 @@ import type { FallbackCondition } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import { FALLBACK_LABELS } from "./config-labels";
-import { FALLBACK_CONDITIONS, type RouteFormValues } from "./route-form";
+import { FALLBACK_CONDITIONS, toggledConditions, type RouteFormValues } from "./route-form";
 
 /**
- * The Fallback card: the four §9.1 conditions as checkbox cards, each with its config value in
- * mono. The value keeps the canonical order whatever order they are ticked in.
+ * The Fallback card: the §9.1 conditions and the opt-in `auth_error` as checkbox cards, each with
+ * its config value in mono. The value keeps the canonical order whatever order they are ticked in.
  */
 export function FallbackFields() {
   const labelId = useId();
@@ -20,13 +20,7 @@ export function FallbackFields() {
   const selected = field.value;
 
   function toggle(condition: FallbackCondition, checked: boolean) {
-    const next = new Set(selected);
-    if (checked) {
-      next.add(condition);
-    } else {
-      next.delete(condition);
-    }
-    field.onChange(FALLBACK_CONDITIONS.filter((candidate) => next.has(candidate)));
+    field.onChange(toggledConditions(selected, condition, checked));
   }
 
   return (

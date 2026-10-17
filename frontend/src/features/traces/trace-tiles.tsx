@@ -1,12 +1,15 @@
 import { Link } from "@tanstack/react-router";
 
-import { NO_PRICE_REASON } from "@/components/cost-value";
+import { UNKNOWN_TOTAL_REASON } from "@/components/cost-value";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectParams } from "@/features/shell/project-context";
 import type { TraceSummary } from "@/lib/api";
 import { formatCost, formatDuration, formatRelativeTime, formatTimestamp } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+import { MetadataChips } from "./metadata-chips";
+import { RetryBadge } from "./retry-cell";
+import { hasUnknownRetries, RETRY_TILES_FOOTNOTE } from "./retry-format";
 import { TraceStatusDot } from "./status";
 import { MonoBadge, TraceErrorLine } from "./trace-cells";
 
@@ -14,26 +17,49 @@ interface TraceTilesProps {
   traces: TraceSummary[];
   selectedTraceId?: string | null;
   stale?: boolean;
+  /** The project's promoted metadata keys, shown as chips on each tile that carries them. */
+  promotedKeys?: readonly string[];
 }
 
 /** Phone layout of the traces list (Figma "Traces/Mobile tile"): one tappable card per trace. */
-export function TraceTiles({ traces, selectedTraceId = null, stale = false }: TraceTilesProps) {
+export function TraceTiles({
+  traces,
+  selectedTraceId = null,
+  stale = false,
+  promotedKeys = [],
+}: TraceTilesProps) {
   return (
-    <ul
-      aria-label="Traces"
-      aria-busy={stale || undefined}
-      className={cn("flex flex-col gap-2 transition-opacity", stale && "opacity-60")}
-    >
-      {traces.map((trace) => (
-        <li key={trace.trace_id}>
-          <TraceTile trace={trace} selected={trace.trace_id === selectedTraceId} />
-        </li>
-      ))}
-    </ul>
+    <div className="flex flex-col gap-3">
+      <ul
+        aria-label="Traces"
+        aria-busy={stale || undefined}
+        className={cn("flex flex-col gap-2 transition-opacity", stale && "opacity-60")}
+      >
+        {traces.map((trace) => (
+          <li key={trace.trace_id}>
+            <TraceTile
+              trace={trace}
+              selected={trace.trace_id === selectedTraceId}
+              promotedKeys={promotedKeys}
+            />
+          </li>
+        ))}
+      </ul>
+      {/* The badges sit inside links, so the "—" forms are explained here, not in tooltips. */}
+      {hasUnknownRetries(traces) ? (
+        <p className="text-xs font-medium text-muted-foreground">{RETRY_TILES_FOOTNOTE}</p>
+      ) : null}
+    </div>
   );
 }
 
-function TraceTile({ trace, selected }: { trace: TraceSummary; selected: boolean }) {
+interface TraceTileProps {
+  trace: TraceSummary;
+  selected: boolean;
+  promotedKeys: readonly string[];
+}
+
+function TraceTile({ trace, selected, promotedKeys }: TraceTileProps) {
   const { orgId, projectId } = useProjectParams();
   const hasName = trace.name !== null && trace.name !== "";
   const cost = formatCost(trace.cost_usd);
@@ -62,7 +88,7 @@ function TraceTile({ trace, selected }: { trace: TraceSummary; selected: boolean
           {hasName ? trace.name : "Unnamed trace"}
         </span>
         <span className="shrink-0 font-medium text-foreground tabular">
-          {cost ?? <UnknownInLink reason={NO_PRICE_REASON} />}
+          {cost ?? <UnknownInLink reason={UNKNOWN_TOTAL_REASON} />}
         </span>
       </span>
       <span className="flex min-w-0 items-center gap-2 pl-4 text-xs font-medium text-muted-foreground">
@@ -83,12 +109,17 @@ function TraceTile({ trace, selected }: { trace: TraceSummary; selected: boolean
             </time>
           </>
         ) : null}
+        <span className="ml-auto flex shrink-0">
+          <RetryBadge trace={trace} />
+        </span>
       </span>
       <TraceErrorLine
         errorClass={trace.error_class}
         message={trace.error_message}
         className="pl-4"
       />
+      {/* Plain chips: the tile is already a link. */}
+      <MetadataChips metadata={trace.metadata} promoted={promotedKeys} className="flex-wrap pl-4" />
     </Link>
   );
 }

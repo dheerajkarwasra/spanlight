@@ -13,6 +13,10 @@ export interface Page<T> {
 export interface ProblemFieldError {
   field: string;
   message: string;
+  /** An uploaded file's error only: the row as a spreadsheet numbers it (0 = the whole file). */
+  row?: number;
+  /** An uploaded file's error only: the column at fault, or null when no one column is. */
+  column?: string | null;
 }
 
 export interface ProblemDetails {
@@ -27,6 +31,14 @@ export interface ProblemDetails {
   current_version?: number;
   /** An RFC 9457 extension member of `502 EVALUATOR_FAILED`: the run's error code. */
   error?: string;
+  /**
+   * Extension members of `409 REPLAY_BUDGET_EXCEEDED`: the month's settled and reserved replay
+   * spend and the budget (decimal strings), and the UTC month's start.
+   */
+  spent_usd?: string;
+  reserved_usd?: string;
+  budget_usd?: string;
+  month_start?: string;
 }
 
 export type * from "./identity-types";
@@ -35,3 +47,4 @@ export type * from "./gateway-types";
 export type * from "./alerts-types";
 export type * from "./insights-types";
 export type * from "./analytics-types";
+export type * from "./providers-types";

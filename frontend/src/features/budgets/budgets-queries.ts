@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { useProjectParams } from "@/features/shell";
+import { useFilterOptionsQuery, useProjectParams, useProjectQuery } from "@/features/shell";
 import { budgetsApi, queryKeys, type BudgetInput, type BudgetUpdate } from "@/lib/api";
 
 export { useAlertChannelsQuery } from "@/features/alerts";
@@ -14,6 +14,35 @@ export function useBudgetsQuery() {
     queryFn: () => budgetsApi.list(projectId),
     refetchInterval: 60_000,
   });
+}
+
+export interface MetadataKeyOption {
+  value: string;
+  promoted: boolean;
+}
+
+/**
+ * What the scope picker suggests: the project's promoted metadata keys first, then the keys and
+ * the trace names seen in the last 7 days (`/filters`, the shell's cache entry). Empty while
+ * loading or on an older server; the fields accept free text either way.
+ */
+export function useScopeSuggestions(): {
+  metadataKeys: MetadataKeyOption[];
+  traceNames: readonly string[];
+  promotedKeys: readonly string[] | undefined;
+} {
+  const project = useProjectQuery();
+  const filters = useFilterOptionsQuery();
+  const promoted = project.data?.promoted_metadata_keys;
+  const seen = (filters.data?.metadata_keys ?? []).filter((key) => !promoted?.includes(key));
+  return {
+    metadataKeys: [
+      ...(promoted ?? []).map((value) => ({ value, promoted: true })),
+      ...seen.map((value) => ({ value, promoted: false })),
+    ],
+    traceNames: filters.data?.trace_names ?? [],
+    promotedKeys: promoted,
+  };
 }
 
 function useInvalidateBudgets() {

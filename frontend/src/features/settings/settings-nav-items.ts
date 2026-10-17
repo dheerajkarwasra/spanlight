@@ -8,6 +8,7 @@ export type SettingsPath =
   | "/$orgId/$projectId/settings/exports"
   | "/$orgId/$projectId/settings/organization"
   | "/$orgId/$projectId/settings/members"
+  | "/$orgId/$projectId/settings/billing-sources"
   | "/$orgId/$projectId/settings/audit"
   | "/$orgId/$projectId/settings/account"
   | "/$orgId/$projectId/settings/security"
@@ -53,6 +54,11 @@ export const SETTINGS_NAV_GROUPS: readonly SettingsNavGroup[] = [
         permission: "org:read",
       },
       { label: "Members", to: "/$orgId/$projectId/settings/members", permission: "org:read" },
+      {
+        label: "Billing sources",
+        to: "/$orgId/$projectId/settings/billing-sources",
+        permission: "org:read",
+      },
       { label: "Audit log", to: "/$orgId/$projectId/settings/audit", permission: "audit:read" },
     ],
   },

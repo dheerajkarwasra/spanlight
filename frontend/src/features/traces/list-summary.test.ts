@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { loadedSummary, tracesNoun } from "./list-summary";
+import { loadedSummary, tracesNoun, windowCountLine } from "./list-summary";
 
 describe("loadedSummary", () => {
   it("shows loaded of total for an unfiltered list", () => {
@@ -39,5 +39,17 @@ describe("tracesNoun", () => {
     expect(tracesNoun(0)).toBe("traces");
     expect(tracesNoun(1)).toBe("trace");
     expect(tracesNoun(2)).toBe("traces");
+  });
+});
+
+describe("windowCountLine", () => {
+  it("names the window total, and says it is before filters when facets narrow the list", () => {
+    expect(windowCountLine(12_904, "in the last 24 hours", false)).toBe(
+      "12,904 traces in the last 24 hours",
+    );
+    expect(windowCountLine(1, "in the last hour", false)).toBe("1 trace in the last hour");
+    expect(windowCountLine(3, "in the last hour", true)).toBe(
+      "3 traces in the last hour before filters",
+    );
   });
 });

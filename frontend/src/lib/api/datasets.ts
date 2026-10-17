@@ -62,6 +62,8 @@ export interface ItemsAdded {
 export interface TracesAdded {
   accepted: number;
   rejected: { trace_id: string; reason: string }[];
+  /** The new items' ids, in the order of the accepted traces. */
+  item_ids: string[];
 }
 
 /** A `.jsonl` or `.csv` upload; each bad line is listed and the rest is accepted. */

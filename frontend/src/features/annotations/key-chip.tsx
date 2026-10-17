@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
 
@@ -12,5 +14,19 @@ export function KeyChip({ children, className }: { children: string; className?:
     >
       {children}
     </Kbd>
+  );
+}
+
+/** A work-mode action with its key hint beside it (an empty slot when it has no key). */
+export function ActionRow({ keyHint, children }: { keyHint: string | null; children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      {children}
+      {keyHint === null ? (
+        <span aria-hidden className="hidden size-6 sm:block" />
+      ) : (
+        <KeyChip className="hidden sm:inline-flex">{keyHint}</KeyChip>
+      )}
+    </div>
   );
 }

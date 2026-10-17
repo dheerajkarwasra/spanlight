@@ -1,8 +1,12 @@
 /**
  * What other features may use from `features/datasets`: the "Add to dataset" and "Add to queue"
- * dialogs the traces screens open. The router loads the pages from their own modules, so they
+ * dialogs the traces screens open, and the dataset picker and error copy review work mode's
+ * "Save as dataset item" reuses. The router loads the pages from their own modules, so they
  * stay out of the traces bundle.
  */
 export { AddToDatasetDialog, type AddTarget } from "./add-to-dataset-dialog";
 export { AddToQueueDialog } from "./add-to-queue-dialog";
+export { datasetErrorMessage, rejectionLabel } from "./dataset-errors";
+export { useDatasetOption } from "./dataset-queries";
+export { DatasetSelect } from "./dataset-select";
 export type { TraceRef } from "./span-pick";

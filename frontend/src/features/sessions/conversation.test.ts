@@ -31,6 +31,9 @@ function makeSpan({
     status: "ok",
     status_message: null,
     error_class: null,
+    provider_error_type: null,
+    provider_error_code: null,
+    rate_limit_kind: null,
     started_at: new Date(BASE + start).toISOString(),
     ended_at: new Date(BASE + start + 10).toISOString(),
     duration_ms: 10,
@@ -41,7 +44,10 @@ function makeSpan({
     cached_tokens: null,
     cache_write_tokens: null,
     cache_write_1h_tokens: null,
+    service_tier: null,
+    web_search_requests: null,
     cost_usd: null,
+    fee_usd: null,
     pricing_version: null,
     time_to_first_token_ms: null,
     input,
@@ -50,6 +56,8 @@ function makeSpan({
     truncated: false,
     finish_reason: null,
     prompt_version_id: null,
+    usage_rollup: false,
+    usage_state: "not_applicable",
   };
 }
 

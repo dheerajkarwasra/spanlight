@@ -4,6 +4,7 @@ import { FieldSelect } from "@/components/field-select";
 import { FormField } from "@/components/form-field";
 
 import { METRIC_LABELS, METRICS } from "./metric-labels";
+import { takesErrorFilters } from "./rule-filters";
 import {
   COMPARATORS,
   CONDITION_OPTIONS,
@@ -47,6 +48,14 @@ export function ConditionFields({ form }: ConditionFieldsProps) {
                 value={field.value}
                 onChange={(next) => {
                   field.onChange(next);
+                  const metricNow = form.getValues("metric");
+                  if (!takesErrorFilters(metricNow)) {
+                    // The error filters disappear for this metric; clear them so a hidden
+                    // filter is never kept or refused.
+                    form.setValue("errorClass", "");
+                    form.setValue("rateLimitKind", "");
+                    form.clearErrors(["errorClass", "rateLimitKind"]);
+                  }
                   // The typed number now reads in the new metric's unit: check it again.
                   if (form.getValues("threshold") !== "") {
                     void form.trigger("threshold");

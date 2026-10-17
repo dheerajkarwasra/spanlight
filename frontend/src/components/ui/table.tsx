@@ -7,9 +7,19 @@ import { cn } from "@/lib/utils";
  * hover. For short lists (≤ 10 items) prefer tile rows: `rounded-2xl bg-surface-muted` items
  * with a 6px gap, as in the Overview "Latest traces" card.
  */
-function Table({ className, ...props }: ComponentProps<"table">) {
+function Table({
+  className,
+  containerClassName,
+  ...props
+}: ComponentProps<"table"> & {
+  /**
+   * Classes for the wrapper, which scrolls sideways by default. Pass `overflow-visible` when an
+   * outer element is the scroll region, so there is one keyboard-reachable scroller, not two.
+   */
+  containerClassName?: string;
+}) {
   return (
-    <div className="relative w-full overflow-x-auto">
+    <div className={cn("relative w-full overflow-x-auto", containerClassName)}>
       <table
         className={cn("w-full caption-bottom border-separate border-spacing-0 text-sm", className)}
         {...props}

@@ -7,6 +7,7 @@ import type { ScoreDataType } from "@/lib/api";
 import { errorClassLabel, isErrorClass } from "@/lib/error-class";
 import { formatPromptVersion } from "@/lib/format";
 
+import { metadataFilterLabel } from "./metadata-filter";
 import type { TraceFilters } from "./search";
 
 const tracesRoute = getRouteApi("/_authed/$orgId/$projectId/traces");
@@ -21,6 +22,7 @@ export const FACET_KEYS = [
   "user",
   "session",
   "prompt_version",
+  "name",
   "q",
 ] as const;
 export type FacetKey = (typeof FACET_KEYS)[number];
@@ -42,24 +44,38 @@ export const FILTER_LABELS: Record<FilterKey, string> = {
   user: "User",
   session: "Session",
   prompt_version: "Prompt version",
+  name: "Trace name",
   q: "Search",
 };
 
 /** The score facet's URL params, and "has scores". They show as one chip each. */
 type ScoreKey = "score" | "score_min" | "score_max" | "score_value" | "has_scores";
 
-export type FilterPatch = Partial<Pick<TraceFilters, FilterKey | ScoreKey>>;
+/** "Has retries" (a chip) and the list's order (no chip: it filters nothing). */
+type RetryKey = "has_retries" | "sort";
+
+/** The metadata pair's URL params; they show as one chip. */
+type MetadataParam = "metadata_key" | "metadata_value";
+
+export type FilterPatch = Partial<
+  Pick<TraceFilters, FilterKey | ScoreKey | RetryKey | MetadataParam>
+>;
 
 /** A prompt version id is a UUID; its chip shows the first block, like a short commit hash. */
 const SHORT_ID_LENGTH = 8;
 
-/** A chip's key: a facet, the whole score filter (`score`), or `has_scores`. */
-export type ActiveFilterKey = FilterKey | "score" | "has_scores";
+/**
+ * A chip's key: a facet, the whole score filter (`score`), `has_scores`, `has_retries` or the
+ * metadata pair (`metadata`).
+ */
+export type ActiveFilterKey = FilterKey | "score" | "has_scores" | "has_retries" | "metadata";
 
 export interface ActiveFilter {
   key: ActiveFilterKey;
   label: string;
   value: string;
+  /** The metadata chip's key and value; no value is the "without this key" filter. */
+  pair?: { key: string; value: string | undefined };
 }
 
 const STATUS_LABELS: Record<NonNullable<TraceFilters["status"]>, string> = {
@@ -94,6 +110,15 @@ export function activeFiltersOf(
     }
     active.push({ key, label: FILTER_LABELS[key], value });
   }
+  if (search.metadata_key !== undefined) {
+    const pair = { key: search.metadata_key, value: search.metadata_value };
+    active.push({
+      key: "metadata",
+      label: "Metadata",
+      value: metadataFilterLabel(pair.key, pair.value),
+      pair,
+    });
+  }
   const score = scoreFilterText(search, search.score ? (scoreTypeOf(search.score) ?? null) : null);
   if (score !== null) {
     active.push({ key: "score", label: "Score", value: score });
@@ -109,7 +134,18 @@ export function activeFiltersOf(
       value: search.has_scores ? "has scores" : "no scores",
     });
   }
+  if (search.has_retries === true) {
+    active.push({ key: "has_retries", label: "Retries", value: "has retries" });
+  }
   return active;
+}
+
+/** True when "has retries" is the only filter narrowing the list (the environment aside). */
+export function onlyRetriesFilter(active: readonly ActiveFilter[]): boolean {
+  return (
+    active.some((filter) => filter.key === "has_retries") &&
+    active.every((filter) => filter.key === "has_retries" || filter.key === "env")
+  );
 }
 
 function hasOrphanScoreParams(search: TraceFilters): boolean {
@@ -120,20 +156,49 @@ function hasOrphanScoreParams(search: TraceFilters): boolean {
   );
 }
 
-/** What removing a chip changes: the score chip clears the whole score filter. */
+/** What removing a chip changes: the score and metadata chips clear their whole filter. */
 export function removalPatch(key: ActiveFilterKey): FilterPatch {
   if (key === "score") {
     return { ...CLEARED_SCORE_FILTER };
+  }
+  if (key === "metadata") {
+    return { metadata_key: undefined, metadata_value: undefined };
   }
   const patch: FilterPatch = {};
   patch[key] = undefined;
   return patch;
 }
 
-function clearedFilters(): Record<FilterKey | ScoreKey, undefined> {
+/**
+ * Blank facet values clear their filter. No metadata key clears the value too; an empty value is
+ * the "without this key" filter. A value is matched as stored, so it is never trimmed.
+ */
+export function normaliseFilterPatch(patch: FilterPatch): FilterPatch {
+  const normalised: FilterPatch = { ...patch };
+  for (const key of FILTER_KEYS) {
+    const value = normalised[key];
+    if (value !== undefined && value.trim() === "") {
+      normalised[key] = undefined;
+    }
+  }
+  if ("metadata_key" in normalised && !normalised.metadata_key?.trim()) {
+    normalised.metadata_key = undefined;
+    normalised.metadata_value = undefined;
+  }
+  if (normalised.metadata_value === "") {
+    normalised.metadata_value = undefined;
+  }
+  return normalised;
+}
+
+function clearedFilters(): Record<FilterKey | ScoreKey | MetadataParam | "has_retries", undefined> {
   return {
     ...CLEARED_SCORE_FILTER,
+    metadata_key: undefined,
+    metadata_value: undefined,
+    name: undefined,
     has_scores: undefined,
+    has_retries: undefined,
     env: undefined,
     status: undefined,
     error_class: undefined,
@@ -156,13 +221,7 @@ export function useTraceFilters() {
   /** Applies several filter changes in one navigation; blank values clear a filter. */
   const setFilters = useCallback(
     (patch: FilterPatch) => {
-      const normalised: FilterPatch = { ...patch };
-      for (const key of FILTER_KEYS) {
-        const value = normalised[key];
-        if (value !== undefined && value.trim() === "") {
-          normalised[key] = undefined;
-        }
-      }
+      const normalised = normaliseFilterPatch(patch);
       void navigate({
         search: (prev) => ({ ...prev, ...normalised }),
         // Typing in the search box shouldn't flood the history stack.

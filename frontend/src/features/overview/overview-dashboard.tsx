@@ -1,7 +1,8 @@
 import { cn } from "@/lib/utils";
 
-import { CallsErrorsChartSkeleton } from "./calls-errors-chart";
+import { CallsErrorsChartSkeleton } from "./calls-errors-card";
 import { toChartPoints } from "./chart-data";
+import { CompletenessCardSkeleton } from "./completeness-card";
 import { HealthTileSkeleton } from "./health-tile";
 import { KpiCardsSkeleton } from "./kpi-card-placeholders";
 import { KpiCards } from "./kpi-cards";
@@ -11,6 +12,7 @@ import { loadable, sparklinePoints } from "./loadable";
 import { ModelTableSkeleton } from "./model-table";
 import {
   CallsSection,
+  CompletenessSection,
   HealthSection,
   LatestTracesSection,
   ModelsSection,
@@ -20,7 +22,8 @@ import { RecentErrorsSkeleton } from "./recent-errors";
 import { SpendCard, SpendCardSkeleton } from "./spend-card";
 import type { OverviewQueries } from "./use-overview-queries";
 
-/* Desktop bento: the spend card beside the health tile, calls chart and KPI grid, then latest traces beside
+/* Desktop bento: the spend card beside the health tile, calls chart, telemetry completeness and KPI
+ * grid, then latest traces beside
  * recent errors, then models. Below xl everything stacks; on phones the KPI cards come before
  * the chart, with the health tile after them, as in the mobile design. */
 const ROW_ONE = "grid gap-4 xl:grid-cols-[minmax(0,442fr)_minmax(0,626fr)]";
@@ -50,6 +53,7 @@ export function OverviewDashboard({ queries, now }: { queries: OverviewQueries; 
         <div className="flex min-w-0 flex-col gap-4">
           <HealthSection queries={queries} className="max-sm:order-3" />
           <CallsSection queries={queries} now={now} className="max-sm:order-2" />
+          <CompletenessSection queries={queries} className="max-sm:order-2" />
           <KpiCards
             className={cn("transition-opacity max-sm:order-1", dimMetrics)}
             metrics={metrics}
@@ -76,6 +80,7 @@ export function OverviewSkeleton() {
         <div className="flex min-w-0 flex-col gap-4">
           <HealthTileSkeleton className="max-sm:order-3" />
           <CallsErrorsChartSkeleton className="max-sm:order-2" />
+          <CompletenessCardSkeleton className="max-sm:order-2" />
           <KpiCardsSkeleton className="max-sm:order-1" />
         </div>
       </div>

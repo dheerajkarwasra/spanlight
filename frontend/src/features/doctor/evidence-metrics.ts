@@ -1,5 +1,7 @@
 import { formatCost, formatDuration, formatInteger, formatPercent } from "@/lib/format";
 
+import { isIncidentMetric } from "./incident-citation";
+
 /*
  * Evidence metrics arrive as a name and a decimal string, an integer or null. The name says what
  * the number is, so it picks the unit: rates and shares are fractions shown as percents,
@@ -101,13 +103,16 @@ export interface MetricTile {
   hint: string | null;
 }
 
+/** One tile per metric, except the provider-incident citation (drawn as its own line). */
 export function metricTiles(
   metrics: Readonly<Record<string, string | number | null>>,
 ): MetricTile[] {
-  return Object.entries(metrics).map(([name, value]) => ({
-    name,
-    label: metricLabel(name),
-    value: formatMetric(name, value),
-    hint: metricHint(name),
-  }));
+  return Object.entries(metrics)
+    .filter(([name]) => !isIncidentMetric(name))
+    .map(([name, value]) => ({
+      name,
+      label: metricLabel(name),
+      value: formatMetric(name, value),
+      hint: metricHint(name),
+    }));
 }

@@ -8,6 +8,9 @@ describe("can", () => {
     expect(can("viewer", "key:create")).toBe(false);
     expect(can("member", "key:create")).toBe(true);
     expect(can("member", "key:revoke_any")).toBe(false);
+    expect(can("viewer", "insights:feedback")).toBe(false);
+    expect(can("member", "insights:feedback")).toBe(true);
+    expect(can("member", "insights:manage")).toBe(false);
     expect(can("admin", "member:manage")).toBe(true);
     expect(can("admin", "org:delete")).toBe(false);
     expect(can("owner", "org:delete")).toBe(true);

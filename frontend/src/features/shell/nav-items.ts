@@ -1,4 +1,5 @@
 import {
+  Activity,
   BellRing,
   ClipboardCheck,
   Database,
@@ -10,6 +11,7 @@ import {
   ListChecks,
   ListTree,
   MessagesSquare,
+  PieChart,
   Settings,
   Stethoscope,
   Users,
@@ -25,8 +27,10 @@ export interface NavItem {
     | "/$orgId/$projectId/traces"
     | "/$orgId/$projectId/sessions"
     | "/$orgId/$projectId/doctor"
+    | "/$orgId/$projectId/providers"
     | "/$orgId/$projectId/releases"
     | "/$orgId/$projectId/users"
+    | "/$orgId/$projectId/attribution"
     | "/$orgId/$projectId/gateway"
     | "/$orgId/$projectId/alerts"
     | "/$orgId/$projectId/budgets"
@@ -99,12 +103,24 @@ export const NAV_GROUPS: NavGroup[] = [
         badge: "open-critical",
       },
       {
+        label: "Provider health",
+        to: "/$orgId/$projectId/providers",
+        icon: Activity,
+        shortcut: "G V",
+      },
+      {
         label: "Releases",
         to: "/$orgId/$projectId/releases",
         icon: GitCompareArrows,
         shortcut: "G R",
       },
       { label: "Users", to: "/$orgId/$projectId/users", icon: Users, shortcut: "G U" },
+      {
+        label: "Attribution",
+        to: "/$orgId/$projectId/attribution",
+        icon: PieChart,
+        shortcut: "G C",
+      },
     ],
   },
   { heading: "Improve", items: IMPROVE_ITEMS },

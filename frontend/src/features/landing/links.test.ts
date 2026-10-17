@@ -1,13 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  DOCS_LINKS,
-  EXTERNAL_LINKS,
-  NAV_LINKS,
-  REPOSITORY_URL,
-  docsLink,
-  repositoryLink,
-} from "./links";
+import { docsLink } from "@/lib/docs-links";
+
+import { DOCS_LINKS, EXTERNAL_LINKS, NAV_LINKS, REPOSITORY_URL, repositoryLink } from "./links";
 
 /**
  * The hand-written pages of the docs site ("…/content/docs/gateway/lab.md"). The folders that

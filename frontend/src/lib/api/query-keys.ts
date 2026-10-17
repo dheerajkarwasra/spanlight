@@ -1,14 +1,22 @@
 import type { AlertEventQuery, AlertRulePreviewInput } from "./alerts-types";
 import type { QueueItemListQuery } from "./annotations";
+import type { AttributionQuery } from "./attribution-types";
 import type { DatasetListQuery, ItemListQuery } from "./datasets";
 import type { EvaluatorRunListQuery } from "./evaluators";
 import type { PromptListQuery } from "./prompts";
+import type { ReplayListQuery } from "./replays";
 import type { AuditFilters } from "./orgs";
 import type { MetricsQuery, SessionListQuery, TimeWindow, TraceListQuery } from "./projects";
 import type {
   Bucket,
+  CompletenessQuery,
+  ErrorSamplesQuery,
+  ErrorTimeseriesQuery,
   HealthQuery,
+  IncidentListQuery,
   InsightListQuery,
+  PrecisionQuery,
+  ProviderHealthQuery,
   ReleaseCompareQuery,
   ReleaseListQuery,
   UserDetailQuery,
@@ -43,6 +51,11 @@ export const queryKeys = {
       auditEvents: (filters: AuditFilters) => [...audit, filters] as const,
       credentials: [...all, "credentials"] as const,
       priceOverrides: [...all, "price-overrides"] as const,
+      /** The org's billing sources; one source and its runs sit under it, so this covers them. */
+      billingSources: [...all, "billing-sources"] as const,
+      billingSource: (sourceId: string) => [...all, "billing-sources", sourceId] as const,
+      billingSourceRuns: (sourceId: string) =>
+        [...all, "billing-sources", sourceId, "runs"] as const,
       alertChannels: [...all, "alert-channels"] as const,
       /** The delivery log of one channel; filters ride in the key. */
       deliveries: (channelId: string, filters: { status?: string | undefined } = {}) =>
@@ -54,10 +67,13 @@ export const queryKeys = {
     const all = ["project", projectId] as const;
     const gateway = [...all, "gateway"] as const;
     const doctor = [...all, "doctor"] as const;
+    const providers = [...all, "providers"] as const;
     const prompts = [...all, "prompts"] as const;
     const datasets = [...all, "datasets"] as const;
     const annotations = [...all, "annotation-queues"] as const;
     const evaluators = [...all, "evaluators"] as const;
+    const review = [...all, "review-policy"] as const;
+    const replays = [...all, "replays"] as const;
     return {
       all,
       detail: [...all, "detail"] as const,
@@ -69,6 +85,9 @@ export const queryKeys = {
       filters: [...all, "filters"] as const,
       traces: (query: Omit<TraceListQuery, "cursor">) => [...all, "traces", query] as const,
       trace: (traceId: string) => [...all, "trace", traceId] as const,
+      /** One span's cost explanation; under `trace(traceId)` so invalidating a trace covers it. */
+      costExplanation: (traceId: string, spanId: string) =>
+        [...all, "trace", traceId, "span", spanId, "cost-explanation"] as const,
       sessions: (query: Omit<SessionListQuery, "cursor">) => [...all, "sessions", query] as const,
       overview: (query: MetricsQuery) => [...all, "overview", query] as const,
       timeseries: (query: MetricsQuery & { bucket: Bucket }) =>
@@ -90,10 +109,25 @@ export const queryKeys = {
       insightsSummary: [...doctor, "summary"] as const,
       health: (query: HealthQuery) => [...doctor, "health", query] as const,
       detectorRuns: [...doctor, "detector-runs"] as const,
+      precision: (query: PrecisionQuery) => [...doctor, "precision", query] as const,
+      /** Every provider health query of the project: invalidate with this. */
+      providers,
+      providerHealth: (query: ProviderHealthQuery) => [...providers, "health", query] as const,
+      providerErrors: (query: ErrorTimeseriesQuery) => [...providers, "errors", query] as const,
+      providerSamples: (query: Omit<ErrorSamplesQuery, "cursor">) =>
+        [...providers, "samples", query] as const,
+      providerIncidents: (query: Omit<IncidentListQuery, "cursor">) =>
+        [...providers, "incidents", query] as const,
+      completeness: (query: CompletenessQuery) => [...all, "completeness", query] as const,
       releases: (query: ReleaseListQuery) => [...all, "releases", query] as const,
       releaseCompare: (query: ReleaseCompareQuery) => [...all, "release-compare", query] as const,
+      /** Under the `releases` scope, so invalidating the release list covers it. */
+      releaseFailureCategories: (query: ReleaseListQuery) =>
+        [...all, "releases", "failure-categories", query] as const,
       users: (query: Omit<UserListQuery, "cursor">) => [...all, "users", query] as const,
       user: (userId: string, query: UserDetailQuery) => [...all, "user", userId, query] as const,
+      attribution: (query: Omit<AttributionQuery, "cursor">) =>
+        [...all, "attribution", query] as const,
       gateway: {
         /** Every gateway query of the project: invalidate with this. */
         all: gateway,
@@ -142,6 +176,20 @@ export const queryKeys = {
         detail: (queueId: string) => [...annotations, "queue", queueId] as const,
         items: (queueId: string, query: Omit<QueueItemListQuery, "cursor"> = {}) =>
           [...annotations, "queue", queueId, "items", query] as const,
+      },
+      review: {
+        /** The policy and its selection history: invalidate with this. */
+        all: review,
+        policy: [...review, "policy"] as const,
+        selections: [...review, "selections"] as const,
+      },
+      replays: {
+        /** Every replay query of the project (sources, lists, budget): invalidate after a run. */
+        all: replays,
+        source: (traceId: string, spanId: string) =>
+          [...replays, "source", traceId, spanId] as const,
+        list: (query: Omit<ReplayListQuery, "cursor"> = {}) => [...replays, "list", query] as const,
+        budget: [...replays, "budget"] as const,
       },
       evaluators: {
         all: evaluators,

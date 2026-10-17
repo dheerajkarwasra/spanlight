@@ -1,5 +1,6 @@
-import type { CompletedScore, QueueItem, ScoreConfig } from "@/lib/api";
+import type { CompletedScore, QueueItem, ReasonProgress, ScoreConfig } from "@/lib/api";
 
+import { progressTotal } from "./queue-format";
 import { toCompletedScores, type ScoreDraft } from "./score-draft";
 
 /**
@@ -99,4 +100,23 @@ export function completionFor(
 /** `N` and "Claim next item" act only when no item is held. */
 export function canClaim(state: WorkState): boolean {
   return state.phase === "released" || state.phase === "failed";
+}
+
+/** The claimed item's place in the queue, "25": the finished items plus one; "?" while unknown. */
+export function itemPosition(progress: ReasonProgress | null): string {
+  return progress === null ? "?" : String(progress.done + progress.skipped + 1);
+}
+
+/** The work bar's line: "Item 25 of 60 · claimed by you", "Queue finished", … */
+export function workSubtitle(state: WorkState, progress: ReasonProgress | null): string {
+  if (state.phase === "empty") {
+    return "Queue finished";
+  }
+  if (state.phase === "released") {
+    return "No item claimed";
+  }
+  if (state.phase !== "working" || progress === null) {
+    return "Claiming an item…";
+  }
+  return `Item ${itemPosition(progress)} of ${String(progressTotal(progress))} · claimed by you`;
 }

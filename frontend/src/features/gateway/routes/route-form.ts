@@ -26,12 +26,40 @@ export const ROUTE_NAME_MAX_LENGTH = 100;
 /** The backend's `ModelName`: what a client requests or a provider knows, e.g. `claude-sonnet-4-5`. */
 export const MODEL_NAME_PATTERN = /^[A-Za-z0-9._:/-]{1,128}$/;
 
-export const FALLBACK_CONDITIONS: readonly FallbackCondition[] = [
+/**
+ * The server's default `fallback.on` (`DEFAULT_FALLBACK_CONDITIONS` in `route_config.py`): every
+ * condition but `auth_error`, which a route has to list itself.
+ */
+export const DEFAULT_FALLBACK_CONDITIONS: readonly FallbackCondition[] = [
   "status_5xx",
   "rate_limited",
   "timeout",
   "connection_error",
 ];
+
+/** Every condition, in the canonical order the form shows and sends them. */
+export const FALLBACK_CONDITIONS = [
+  ...DEFAULT_FALLBACK_CONDITIONS,
+  "auth_error",
+] as const satisfies readonly FallbackCondition[];
+
+/**
+ * `selected` with `condition` ticked or cleared, in canonical order. Conditions the person did not
+ * touch stay as they were, so an opt-in made through the API survives a save from the form.
+ */
+export function toggledConditions(
+  selected: readonly FallbackCondition[],
+  condition: FallbackCondition,
+  checked: boolean,
+): FallbackCondition[] {
+  const next = new Set(selected);
+  if (checked) {
+    next.add(condition);
+  } else {
+    next.delete(condition);
+  }
+  return FALLBACK_CONDITIONS.filter((candidate) => next.has(candidate));
+}
 
 export const DEFAULT_RETRY_STATUSES: readonly number[] = [408, 409, 429, 500, 502, 503, 504];
 
@@ -101,23 +129,36 @@ const retrySchema = z
     }
   });
 
-export const routeFormSchema = z.object({
-  targets: z
-    .array(targetSchema)
-    .min(1, "A route needs at least one target.")
-    .max(MAX_TARGETS, `A route can have up to ${MAX_TARGETS} targets.`),
-  retry: retrySchema,
-  fallback: z.object({
-    on: z
-      .array(z.enum(["status_5xx", "rate_limited", "timeout", "connection_error"]))
-      .refine((conditions) => new Set(conditions).size === conditions.length),
-  }),
-  timeout_ms: wholeNumber(
-    TIMEOUT_MIN_MS,
-    TIMEOUT_MAX_MS,
-    "Timeout must be a whole number from 1,000 to 600,000.",
-  ),
-});
+export const routeFormSchema = z
+  .object({
+    targets: z
+      .array(targetSchema)
+      .min(1, "A route needs at least one target.")
+      .max(MAX_TARGETS, `A route can have up to ${MAX_TARGETS} targets.`),
+    retry: retrySchema,
+    fallback: z.object({
+      on: z
+        .array(z.enum(FALLBACK_CONDITIONS))
+        .refine((conditions) => new Set(conditions).size === conditions.length),
+    }),
+    timeout_ms: wholeNumber(
+      TIMEOUT_MIN_MS,
+      TIMEOUT_MAX_MS,
+      "Timeout must be a whole number from 1,000 to 600,000.",
+    ),
+  })
+  .superRefine((values, context) => {
+    // The server's `auth_error_fallback` rule: falling back to the key that was just refused
+    // would only be refused again.
+    const credentials = new Set(values.targets.map((target) => target.credential_id));
+    if (values.fallback.on.includes("auth_error") && credentials.size < 2) {
+      context.addIssue({
+        code: "custom",
+        path: ["fallback", "on"],
+        message: "Auth errors need two targets on different credentials.",
+      });
+    }
+  });
 
 export type RouteFormValues = z.infer<typeof routeFormSchema>;
 export type AliasRow = RouteFormValues["targets"][number]["aliases"][number];
@@ -154,7 +195,7 @@ export function formValuesFromConfig(config: RouteConfig): RouteFormValues {
       honour_retry_after: config.retry.honour_retry_after ?? true,
       on_statuses: [...(config.retry.on_statuses ?? DEFAULT_RETRY_STATUSES)],
     },
-    fallback: { on: [...(config.fallback.on ?? FALLBACK_CONDITIONS)] },
+    fallback: { on: [...(config.fallback.on ?? DEFAULT_FALLBACK_CONDITIONS)] },
     timeout_ms: config.timeout_ms ?? 60_000,
   };
 }

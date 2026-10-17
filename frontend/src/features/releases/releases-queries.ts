@@ -40,3 +40,19 @@ export function useReleaseCompareQuery(
     enabled: ready,
   });
 }
+
+/**
+ * Each failure category's rate per release in the page's window and environment. A 404 means the
+ * project has no `failure_category` config yet; the card then shows the set-up step.
+ */
+export function useFailureCategoriesQuery(enabled: boolean) {
+  const { projectId } = useProjectParams();
+  const { range, environment } = useProjectFilters();
+  const query: ReleaseListQuery = { from: range.from, to: range.to, environment };
+  return useQuery({
+    queryKey: queryKeys.project(projectId).releaseFailureCategories(query),
+    queryFn: () => releasesApi.failureCategories(projectId, query),
+    placeholderData: keepPreviousData,
+    enabled,
+  });
+}

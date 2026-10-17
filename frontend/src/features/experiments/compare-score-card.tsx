@@ -12,6 +12,7 @@ import {
   deltaTone,
   formatMean,
   formatScoreDelta,
+  testSentence,
   type ChangeCounts,
 } from "./compare-view";
 import { sideReason, type RunSide, type SidePair } from "./compare-sides";
@@ -86,6 +87,7 @@ function Numeric({ meta, delta, counts, sides }: CompareScoreCardProps) {
   const improved = delta?.improved ?? 0;
   const regressed = delta?.regressed ?? 0;
   const unchanged = delta?.unchanged ?? 0;
+  const sentence = delta ? testSentence(delta, meta.kind, counts.scoredBoth) : null;
   return (
     <>
       <Values a={mean(delta?.mean_a)} b={mean(delta?.mean_b)} sides={sides} />
@@ -106,6 +108,10 @@ function Numeric({ meta, delta, counts, sides }: CompareScoreCardProps) {
           )}
         </span>
       </div>
+      {/* Neutral on purpose: significance says the runs differ, not which one is better. */}
+      {sentence ? (
+        <p className="text-sm font-medium text-muted-foreground">{sentence.text}</p>
+      ) : null}
       <div className="flex flex-wrap gap-1.5">
         <Count tone="good">{formatInteger(improved)} improved</Count>
         <Count tone="bad">{formatInteger(regressed)} regressed</Count>

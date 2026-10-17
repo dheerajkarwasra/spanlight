@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import type { FallbackCondition, RouteConfig } from "@/lib/api";
+
 import {
+  DEFAULT_FALLBACK_CONDITIONS,
   DEFAULT_RETRY_STATUSES,
   FALLBACK_CONDITIONS,
   configFromFormValues,
@@ -10,6 +13,7 @@ import {
   newRouteFormValues,
   routeFormSchema,
   routeNameSchema,
+  toggledConditions,
   type RouteFormValues,
 } from "./route-form";
 
@@ -41,7 +45,8 @@ describe("newRouteFormValues", () => {
       honour_retry_after: true,
       on_statuses: [...DEFAULT_RETRY_STATUSES],
     });
-    expect(values.fallback.on).toEqual([...FALLBACK_CONDITIONS]);
+    expect(values.fallback.on).toEqual([...DEFAULT_FALLBACK_CONDITIONS]);
+    expect(values.fallback.on).not.toContain("auth_error");
     expect(values.timeout_ms).toBe(60_000);
     expect(issuePaths(values)).toEqual([]);
   });
@@ -115,6 +120,50 @@ describe("config round trip", () => {
   it("keeps an explicitly empty fallback list (never fall back) instead of the default", () => {
     const config = configFromFormValues({ ...valid(), fallback: { on: [] } });
     expect(formValuesFromConfig(config).fallback.on).toEqual([]);
+  });
+});
+
+describe("auth_error fallback (opt-in)", () => {
+  const optedIn: RouteConfig = {
+    targets: [
+      { credential_id: "cred_1", weight: 1, model_aliases: {} },
+      { credential_id: "cred_2", weight: 1, model_aliases: {} },
+    ],
+    retry: {},
+    fallback: { on: ["status_5xx", "auth_error"] },
+  };
+
+  it("offers every condition, auth_error last, and defaults to every condition but it", () => {
+    expect(FALLBACK_CONDITIONS).toEqual([...DEFAULT_FALLBACK_CONDITIONS, "auth_error"]);
+  });
+
+  it("loads a route opted in through the API and keeps the opt-in on save", () => {
+    const values = formValuesFromConfig(optedIn);
+    expect(values.fallback.on).toEqual(["status_5xx", "auth_error"]);
+    expect(issuePaths(values)).toEqual([]);
+    const parsed = routeFormSchema.parse(values);
+    expect(configFromFormValues(parsed).fallback.on).toEqual(["status_5xx", "auth_error"]);
+  });
+
+  it("keeps auth_error when another condition is ticked or cleared", () => {
+    const selected: FallbackCondition[] = ["status_5xx", "auth_error"];
+    expect(toggledConditions(selected, "timeout", true)).toEqual([
+      "status_5xx",
+      "timeout",
+      "auth_error",
+    ]);
+    expect(toggledConditions(selected, "status_5xx", false)).toEqual(["auth_error"]);
+    expect(toggledConditions(selected, "auth_error", false)).toEqual(["status_5xx"]);
+  });
+
+  it("needs two targets on different credentials, as the server does", () => {
+    const values = formValuesFromConfig(optedIn);
+    const oneCredential = {
+      ...values,
+      targets: values.targets.map((target) => ({ ...target, credential_id: "cred_1" })),
+    };
+    expect(issuePaths(oneCredential)).toEqual(["fallback.on"]);
+    expect(issuePaths({ ...values, targets: values.targets.slice(0, 1) })).toEqual(["fallback.on"]);
   });
 });
 

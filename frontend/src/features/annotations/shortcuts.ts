@@ -4,6 +4,7 @@
  * - `1`–`9` pick that option of a category or yes/no score.
  * - Digits type into a focused number input (the browser does that; the keymap stays out of it).
  * - `Enter` submits, `S` skips, `N` claims the next item, `?` shows or hides the help.
+ * - `R` replays the failing span in the playground, `D` saves the trace as a dataset item.
  * - `Esc` closes the help, then exits review.
  * - Every key is ignored while typing in the comment field (or another free-text field).
  */
@@ -31,6 +32,8 @@ export type ShortcutAction =
   | { type: "submit" }
   | { type: "skip" }
   | { type: "next" }
+  | { type: "replay" }
+  | { type: "save_dataset" }
   | { type: "toggle_help" }
   | { type: "escape" };
 
@@ -41,6 +44,8 @@ export const SHORTCUT_ROWS: readonly { keys: readonly string[]; range: boolean; 
     { keys: ["0", "9"], range: true, label: "Type a value when a number score has focus" },
     { keys: ["↵"], range: false, label: "Submit and open the next item" },
     { keys: ["S"], range: false, label: "Skip this item" },
+    { keys: ["R"], range: false, label: "Replay the failing span in the playground" },
+    { keys: ["D"], range: false, label: "Save this trace as a dataset item" },
     { keys: ["N"], range: false, label: "Claim the next item" },
     { keys: ["?"], range: false, label: "Show or hide this list" },
     { keys: ["Esc"], range: false, label: "Close this list, then exit review" },
@@ -49,6 +54,8 @@ export const SHORTCUT_ROWS: readonly { keys: readonly string[]; range: boolean; 
 const LETTERS: Record<string, ShortcutAction> = {
   s: { type: "skip" },
   n: { type: "next" },
+  r: { type: "replay" },
+  d: { type: "save_dataset" },
 };
 
 /**

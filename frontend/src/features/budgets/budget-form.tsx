@@ -13,6 +13,7 @@ import { useProjectQuery } from "@/features/shell";
 import type { Budget } from "@/lib/api";
 
 import { BudgetChannelsField } from "./budget-channels-field";
+import { BLOCKED_RESPONSE } from "./budget-enforcement";
 import { PERIOD_LABELS } from "./budget-period";
 import {
   ACTION_HINTS,
@@ -96,7 +97,7 @@ export function BudgetForm({ budget, onPendingChange, onSaved }: BudgetFormProps
             value={period}
             options={PERIOD_OPTIONS}
             onValueChange={(next) => form.setValue("period", next)}
-            className="grid h-[46px] w-full grid-cols-2"
+            className="grid w-full grid-cols-2 sm:h-[46px] max-sm:[&>*]:min-h-11"
           />
         </div>
         <FormField label="Amount (USD)" error={errors.amount?.message}>
@@ -111,9 +112,11 @@ export function BudgetForm({ budget, onPendingChange, onSaved }: BudgetFormProps
           value={action}
           options={ACTION_OPTIONS}
           onValueChange={(next) => form.setValue("action", next)}
-          className="grid w-full grid-cols-2"
+          className="grid w-full grid-cols-2 max-sm:[&>*]:min-h-11"
         />
-        <p className="text-xs font-medium text-muted-foreground">{ACTION_HINTS[action]}</p>
+        <p className="text-xs font-medium text-muted-foreground">
+          <ActionHint text={ACTION_HINTS[action]} />
+        </p>
       </div>
       <Controller
         control={form.control}
@@ -135,6 +138,20 @@ export function BudgetForm({ budget, onPendingChange, onSaved }: BudgetFormProps
         </Button>
       </DialogFooter>
     </form>
+  );
+}
+
+/** The action hint, with `402 BUDGET_EXCEEDED` set in mono as the frame shows it. */
+function ActionHint({ text }: { text: string }) {
+  const [before, after] = text.split(BLOCKED_RESPONSE);
+  return after === undefined ? (
+    text
+  ) : (
+    <>
+      {before}
+      <span className="font-mono text-[13px]">{BLOCKED_RESPONSE}</span>
+      {after}
+    </>
   );
 }
 

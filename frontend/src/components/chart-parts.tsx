@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { AREA_FILL_OPACITY } from "@/lib/chart-theme";
 
 export interface ChartTooltipRow {
@@ -11,13 +13,15 @@ interface ChartTooltipProps {
   active: boolean | undefined;
   title: string;
   rows: ChartTooltipRow[];
+  /** Extra lines under the rows, e.g. the provider incidents overlapping the bucket. */
+  footer?: ReactNode;
 }
 
 /**
  * Tooltip body for Recharts' `content` prop: an ink card (dark in both themes) where values
  * lead, series names follow, and each row is keyed with a dot in the series colour.
  */
-export function ChartTooltip({ active, title, rows }: ChartTooltipProps) {
+export function ChartTooltip({ active, title, rows, footer }: ChartTooltipProps) {
   if (!active || rows.length === 0) {
     return null;
   }
@@ -33,6 +37,7 @@ export function ChartTooltip({ active, title, rows }: ChartTooltipProps) {
           </li>
         ))}
       </ul>
+      {footer}
     </div>
   );
 }

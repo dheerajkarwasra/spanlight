@@ -11,6 +11,14 @@ const TONE_CLASSES: Record<UnknownTone, string> = {
   "on-ink": "text-rail-muted-foreground decoration-rail-subtle-foreground",
 };
 
+const DASH_UNDERLINE = "underline decoration-dotted underline-offset-4";
+
+/**
+ * The dash's look (default tone), for an unknown value shown inside a control that already
+ * carries the explanation, where a nested `UnknownValue` trigger would be invalid.
+ */
+export const UNKNOWN_DASH_CLASS = `${DASH_UNDERLINE} ${TONE_CLASSES.default}`;
+
 interface UnknownValueProps {
   /**
    * Why the value is missing, e.g. "No price for this model". A reason that already leads with
@@ -31,11 +39,7 @@ export function UnknownValue({ reason, tone = "default", className }: UnknownVal
       <span
         tabIndex={0}
         aria-label={LEADING_CLAUSE.test(reason) ? reason : `Unknown: ${reason}`}
-        className={cn(
-          "cursor-help rounded-sm underline decoration-dotted underline-offset-4",
-          TONE_CLASSES[tone],
-          className,
-        )}
+        className={cn("cursor-help rounded-sm", DASH_UNDERLINE, TONE_CLASSES[tone], className)}
       >
         —
       </span>

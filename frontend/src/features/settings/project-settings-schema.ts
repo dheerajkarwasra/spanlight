@@ -3,6 +3,8 @@ import { z } from "zod";
 import { MAX_RULE_CHANNELS } from "@/features/alerts";
 import type { Project, ProjectUpdate } from "@/lib/api";
 
+import { KEY_PATTERN_MESSAGE, MAX_PROMOTED_KEYS, METADATA_KEY_PATTERN } from "./promoted-keys";
+
 export const PROJECT_NAME_MAX_LENGTH = 100;
 export const RETENTION_MIN_DAYS = 1;
 export const RETENTION_MAX_DAYS = 90;
@@ -37,6 +39,12 @@ export const weeklyDigestSchema = z.object({
   weekly_digest_enabled: z.boolean(),
 });
 
+export const promotedKeysSchema = z.object({
+  promoted_metadata_keys: z
+    .array(z.string().regex(METADATA_KEY_PATTERN, KEY_PATTERN_MESSAGE))
+    .max(MAX_PROMOTED_KEYS, `Promote at most ${MAX_PROMOTED_KEYS} keys.`),
+});
+
 /** The whole project form: the General, Data and Email cards share one "Save changes". */
 export const projectSettingsSchema = z.object({
   ...projectNameSchema.shape,
@@ -44,6 +52,7 @@ export const projectSettingsSchema = z.object({
   ...capturePayloadsSchema.shape,
   ...weeklyDigestSchema.shape,
   ...insightChannelsSchema.shape,
+  ...promotedKeysSchema.shape,
 });
 
 export type ProjectSettingsValues = z.infer<typeof projectSettingsSchema>;
@@ -53,6 +62,11 @@ type EditableProjectFields = Required<ProjectUpdate>;
 /** The same channels, whatever their order. */
 function sameChannels(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((id) => b.includes(id));
+}
+
+/** The same keys in the same order: the order is the one the server keeps. */
+function sameKeys(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((key, index) => key === b[index]);
 }
 
 /**
@@ -88,6 +102,12 @@ export function changedProjectFields(
   ) {
     update.insight_channel_ids = values.insight_channel_ids;
   }
+  if (
+    values.promoted_metadata_keys !== undefined &&
+    !sameKeys(values.promoted_metadata_keys, project.promoted_metadata_keys)
+  ) {
+    update.promoted_metadata_keys = values.promoted_metadata_keys;
+  }
   return update;
 }
 
@@ -120,6 +140,9 @@ export function projectSavedMessage(update: ProjectUpdate): string {
     return update.insight_channel_ids.length === 0
       ? "Insight notifications are turned off."
       : "Insight notification channels saved.";
+  }
+  if (update.promoted_metadata_keys !== undefined) {
+    return "Promoted metadata keys saved.";
   }
   return update.capture_payloads
     ? "Prompts and completions will be captured."

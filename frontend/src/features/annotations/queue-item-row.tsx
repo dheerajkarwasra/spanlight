@@ -4,6 +4,7 @@ import { ChevronRight, Link2 } from "lucide-react";
 import { RelativeTime } from "@/components/relative-time";
 import { UnknownValue } from "@/components/unknown-value";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ReasonChip } from "@/features/review";
 import { useProjectParams } from "@/features/shell";
 import type { QueueItem } from "@/lib/api";
 import { shortId } from "@/lib/format";
@@ -18,7 +19,7 @@ import {
 } from "./queue-format";
 
 export const ITEM_COLUMNS =
-  "md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,150px)_130px_minmax(0,130px)_96px_16px] md:items-center md:gap-4";
+  "md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,130px)_minmax(0,150px)_130px_minmax(0,130px)_96px_16px] md:items-center md:gap-4";
 
 const STATUS_TONES: Record<ItemStatusTone, string> = {
   done: "border-success bg-success-subtle text-success",
@@ -58,6 +59,10 @@ export function QueueItemRow({ item, myUserId, names }: QueueItemRowProps) {
           <span className="truncate">{shortId(item.trace_id, 12)}</span>
         </span>
         <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground md:hidden" />
+      </span>
+      <span className="flex">
+        <span className="sr-only">Reason </span>
+        <ReasonChip reason={item.reason ?? "manual"} />
       </span>
       <span className="text-label text-foreground">{reviewingText(item)}</span>
       <span>

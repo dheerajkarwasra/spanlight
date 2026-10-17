@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/page-header";
 import { SectionCard } from "@/components/section-card";
 import { TileListSkeleton } from "@/components/tile-list";
 import { Button } from "@/components/ui/button";
+import { ReviewPolicyCard } from "@/features/review";
 import { usePermission } from "@/features/shell";
 import { pluralize } from "@/lib/format";
 
@@ -46,6 +47,10 @@ export function QueuesPage() {
         title="Review"
         description="Annotation queues hold traces for people to score by hand. Reviewers claim one item at a time."
         actions={newQueue("New queue")}
+      />
+      <ReviewPolicyCard
+        queues={query.data === undefined ? undefined : queues}
+        configs={configs.data}
       />
       <SectionCard
         title="Annotation queues"

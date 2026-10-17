@@ -1,4 +1,5 @@
 import { X } from "lucide-react";
+import type { ReactNode } from "react";
 
 import {
   Select,
@@ -75,6 +76,52 @@ export function FacetSelect({
   );
 }
 
+function Mono({ value }: { value: string }) {
+  return (
+    <span title={value} className="min-w-0 truncate font-mono">
+      {value}
+    </span>
+  );
+}
+
+/**
+ * The chip's words: "environment: production", "customer_id = acme", "No customer_id" (Figma
+ * "Traces / Metadata chips and filter") or "Trace name = summarize".
+ */
+function chipText(filter: ActiveFilter): ReactNode {
+  if (filter.pair) {
+    return filter.pair.value === undefined ? (
+      <>
+        <span className="shrink-0">No</span>
+        <Mono value={filter.pair.key} />
+      </>
+    ) : (
+      <>
+        <span className="max-w-40 shrink-0 truncate font-mono">{filter.pair.key}</span>
+        <span className="shrink-0">=</span>
+        <Mono value={filter.pair.value} />
+      </>
+    );
+  }
+  if (filter.key === "name") {
+    return (
+      <>
+        <span className="shrink-0">{filter.label} =</span>
+        <Mono value={filter.value} />
+      </>
+    );
+  }
+  const isIdentifier = filter.key === "user" || filter.key === "session";
+  return (
+    <>
+      <span className="shrink-0">{filter.label.toLowerCase()}:</span>
+      <span title={filter.value} className={cn("min-w-0 truncate", isIdentifier && "font-mono")}>
+        {filter.value}
+      </span>
+    </>
+  );
+}
+
 /** Figma filter chip, applied state: violet "environment: production ×". */
 export function AppliedFilterChip({
   filter,
@@ -83,21 +130,20 @@ export function AppliedFilterChip({
   filter: ActiveFilter;
   onRemove: () => void;
 }) {
-  const isIdentifier = filter.key === "user" || filter.key === "session";
-  const label = filter.label.toLowerCase();
   return (
     <span className={cn(CHIP_BASE, "max-w-full bg-accent-subtle pr-2 text-accent")}>
-      <span className="flex min-w-0 items-center gap-1">
-        <span className="shrink-0">{label}:</span>
-        <span title={filter.value} className={cn("min-w-0 truncate", isIdentifier && "font-mono")}>
-          {filter.value}
-        </span>
+      <span
+        title={filter.pair ? filter.value : undefined}
+        className="flex min-w-0 items-center gap-1"
+      >
+        {chipText(filter)}
       </span>
+      {/* An 8 px vertical hit inset on phones (ruling T20-4); the chip stays 36 px. */}
       <button
         type="button"
         onClick={onRemove}
-        aria-label={`Remove ${label} filter`}
-        className="-my-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-accent/10"
+        aria-label={`Remove ${filter.pair ? filter.value : filter.label.toLowerCase()} filter`}
+        className="relative -my-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full transition-colors before:absolute before:inset-x-0 before:-inset-y-2 hover:bg-accent/10 md:before:hidden"
       >
         <X aria-hidden className="size-3.5" />
       </button>

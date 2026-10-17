@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, type ReactNode } from "react";
 
 import { Card } from "@/components/ui/card";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -8,8 +8,14 @@ import { EvidenceTraceLinks } from "./evidence-trace-links";
 import { metricTiles, type MetricTile } from "./evidence-metrics";
 import { formatWindow } from "./insight-format";
 
+interface EvidenceCardProps {
+  evidence: InsightEvidence;
+  /** Lines under the metric tiles, e.g. the provider-incident citation. */
+  children?: ReactNode;
+}
+
 /** Figma "Doctor/Evidence": the numbers the detector saw and the traces that show them. */
-export function EvidenceCard({ evidence }: { evidence: InsightEvidence }) {
+export function EvidenceCard({ evidence, children }: EvidenceCardProps) {
   const titleId = useId();
   const tiles = metricTiles(evidence.metrics);
   const window = formatWindow(evidence.window.start, evidence.window.end);
@@ -35,6 +41,7 @@ export function EvidenceCard({ evidence }: { evidence: InsightEvidence }) {
           ))}
         </ul>
       )}
+      {children}
       <EvidenceTraceLinks traceIds={evidence.trace_ids} />
     </Card>
   );

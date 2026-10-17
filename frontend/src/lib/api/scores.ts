@@ -98,6 +98,13 @@ export const scoresApi = {
   createConfig: (projectId: string, input: ScoreConfigCreate): Promise<ScoreConfig> =>
     api.post<ScoreConfig>(configsPath(projectId), input),
   /**
+   * Creates the categorical `failure_category` config with these categories in this order (2 to
+   * 30, distinct, `none` included). `409 NAME_TAKEN` when the project has one: edit its list with
+   * `updateConfig`.
+   */
+  createFailureCategory: (projectId: string, categories: string[]): Promise<ScoreConfig> =>
+    api.post<ScoreConfig>(`${configsPath(projectId)}/failure-category`, { categories }),
+  /**
    * Replaces the fields sent; the name never changes. A new `data_type` is `409
    * SCORE_CONFIG_IN_USE` once scores carry the name.
    */

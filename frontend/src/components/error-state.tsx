@@ -8,6 +8,10 @@ interface ErrorStateProps {
   error: unknown;
   onRetry?: () => void;
   title?: string;
+  /** Replaces the error's own message, for a design with fixed copy. */
+  description?: string;
+  /** A retry is in flight: the button shows a spinner and is disabled. */
+  retrying?: boolean;
   className?: string;
   /** Tighter spacing for use inside a card. */
   compact?: boolean;
@@ -18,6 +22,8 @@ export function ErrorState({
   error,
   onRetry,
   title = "Couldn't load this data",
+  description,
+  retrying = false,
   className,
   compact = false,
 }: ErrorStateProps) {
@@ -49,13 +55,13 @@ export function ErrorState({
         >
           {title}
         </h3>
-        <p className="text-sm text-muted-foreground">{errorMessage(error)}</p>
+        <p className="text-sm text-muted-foreground">{description ?? errorMessage(error)}</p>
         {requestId ? (
           <p className="font-mono text-xs text-muted-foreground">Request ID: {requestId}</p>
         ) : null}
       </div>
       {onRetry ? (
-        <Button size="sm" onClick={onRetry}>
+        <Button size="sm" onClick={onRetry} loading={retrying}>
           <RotateCw aria-hidden />
           Try again
         </Button>

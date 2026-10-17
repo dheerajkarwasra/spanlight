@@ -6,9 +6,10 @@ import { useProjectParams, useProjectQuery } from "@/features/shell";
 import { SectionCard } from "@/components/section-card";
 
 /**
- * Settings › Exports: the project's trace exports, newest first. Exports are started from the
- * Traces page; this is where they are followed and downloaded. Nothing here asks whether the
- * server can write exports: that only shows when someone tries to start one.
+ * Settings › Exports: the project's trace and attribution exports, newest first. Exports are
+ * started from the Traces and Attribution pages; this is where they are followed and downloaded.
+ * Nothing here asks whether the server can write exports: that only shows when someone tries to
+ * start one.
  */
 export function ExportsPage() {
   const query = useExportsQuery();
@@ -19,7 +20,7 @@ export function ExportsPage() {
   return (
     <SectionCard
       title="Exports"
-      description={`Trace exports for ${name}, newest first.${isEmpty ? "" : " Start one from the Traces page."}`}
+      description={`Trace and attribution exports for ${name}, newest first.${isEmpty ? "" : " Start one from the Traces or Attribution page."}`}
       actions={isEmpty ? null : <GoToTraces variant="secondary" />}
       className="gap-3"
     >

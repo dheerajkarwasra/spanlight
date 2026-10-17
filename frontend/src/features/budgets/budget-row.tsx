@@ -1,10 +1,12 @@
 import { RowAction } from "@/components/tile-list";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip } from "@/components/ui/tooltip";
 import { UnknownValue } from "@/components/unknown-value";
 import type { Budget } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import { BudgetDialog } from "./budget-dialog";
+import { softLimitBadgeTooltip } from "./budget-enforcement";
 import {
   ACTION_LABELS,
   isBlocking,
@@ -27,7 +29,7 @@ interface BudgetRowProps {
 
 /**
  * Figma "Budgets/Budget row" (normal, blocking, unknown) and its 375 px tile: name with the
- * "Blocking" badge, scope, period, spend, reset, Edit and more. The tile stacks the same parts.
+ * "Blocking (soft)" badge (Figma "Budgets / Soft-limit label", its tooltip on hover and focus), scope, period, spend, reset, Edit and more. The tile stacks the same parts.
  */
 export function BudgetRow({ budget, scopeName, canWrite, readOnlyId }: BudgetRowProps) {
   const blocking = isBlocking(budget);
@@ -42,7 +44,13 @@ export function BudgetRow({ budget, scopeName, canWrite, readOnlyId }: BudgetRow
           <p className="truncate text-sm font-semibold text-foreground" title={budget.name}>
             {budget.name}
           </p>
-          {blocking ? <Badge variant="danger">Blocking</Badge> : null}
+          {blocking ? (
+            <Tooltip content={softLimitBadgeTooltip()} caret="start" side="bottom">
+              <Badge variant="danger" tabIndex={0}>
+                Blocking (soft)
+              </Badge>
+            </Tooltip>
+          ) : null}
         </div>
         <p className="hidden text-xs font-medium text-muted-foreground @[56rem]:block">
           {ACTION_LABELS[budget.action]}

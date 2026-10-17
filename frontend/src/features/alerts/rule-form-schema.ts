@@ -2,15 +2,19 @@ import { z } from "zod";
 
 import type {
   AlertRule,
-  AlertRuleFilters,
   AlertRuleInput,
   AlertRuleKind,
   AlertRulePreviewInput,
   Comparator,
+  ErrorClass,
   Metric,
+  RateLimitKind,
 } from "@/lib/api";
+import { ERROR_CLASSES } from "@/lib/error-class";
+import { RATE_LIMIT_KIND_ORDER } from "@/lib/rate-limit-kind";
 
 import { METRICS } from "./metric-labels";
+import { FILTER_FIELDS, filterFieldOf, filtersOf, filterValuesOf } from "./rule-filters";
 import { fromApiThreshold, thresholdError, toApiThreshold } from "./threshold-units";
 
 /*
@@ -46,14 +50,16 @@ export interface RuleFormValues {
   environment: string;
   provider: string;
   model: string;
+  /** "" means any; sent for `error_rate` and `error_calls` only. */
+  errorClass: ErrorClass | "";
+  rateLimitKind: RateLimitKind | "";
   cooldownMinutes: string;
   enabled: boolean;
   channelIds: string[];
 }
 
 export type RuleFormField = keyof RuleFormValues;
-export type FilterField = "environment" | "provider" | "model";
-export const FILTER_FIELDS: readonly FilterField[] = ["environment", "provider", "model"];
+export { FILTER_FIELDS, type FilterField } from "./rule-filters";
 type Issue = readonly [RuleFormField, string];
 
 export const EMPTY_RULE_VALUES: RuleFormValues = {
@@ -68,6 +74,8 @@ export const EMPTY_RULE_VALUES: RuleFormValues = {
   environment: "",
   provider: "",
   model: "",
+  errorClass: "",
+  rateLimitKind: "",
   cooldownMinutes: DEFAULT_COOLDOWN,
   enabled: true,
   channelIds: [],
@@ -152,6 +160,8 @@ export const ruleFormSchema = z
     environment: z.string(),
     provider: z.string(),
     model: z.string(),
+    errorClass: z.union([z.enum(ERROR_CLASSES), z.literal("")]),
+    rateLimitKind: z.union([z.enum(RATE_LIMIT_KIND_ORDER), z.literal("")]),
     cooldownMinutes: z.string(),
     enabled: z.boolean(),
     channelIds: z.array(z.string()),
@@ -161,17 +171,6 @@ export const ruleFormSchema = z
       context.addIssue({ code: "custom", path: [field], message });
     }
   });
-
-function filtersOf(values: RuleFormValues): AlertRuleFilters {
-  const filters: AlertRuleFilters = {};
-  for (const field of FILTER_FIELDS) {
-    const value = values[field].trim();
-    if (value !== "") {
-      filters[field] = value;
-    }
-  }
-  return filters;
-}
 
 /**
  * The preview's body: what the rule measures and when it breaches. Fields that don't apply to
@@ -215,9 +214,7 @@ export function valuesFromRule(rule: AlertRule): RuleFormValues {
     windowMinutes: rule.window_minutes,
     baselineWindows: rule.baseline_windows?.toString() ?? DEFAULT_BASELINE_WINDOWS,
     sensitivity: rule.sensitivity ?? DEFAULT_SENSITIVITY,
-    environment: rule.filters.environment ?? "",
-    provider: rule.filters.provider ?? "",
-    model: rule.filters.model ?? "",
+    ...filterValuesOf(rule.filters),
     cooldownMinutes: String(rule.cooldown_minutes),
     enabled: rule.enabled,
     channelIds: [...rule.channel_ids],
@@ -241,7 +238,7 @@ const API_FIELDS: Readonly<Record<string, RuleFormField>> = {
 export function ruleFieldOf(path: string): RuleFormField | null {
   const [head = "", second = ""] = path.split(".");
   if (head === "filters") {
-    return FILTER_FIELDS.find((field) => field === second) ?? "environment";
+    return filterFieldOf(second);
   }
   return API_FIELDS[head] ?? null;
 }

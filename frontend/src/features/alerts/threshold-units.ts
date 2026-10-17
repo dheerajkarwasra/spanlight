@@ -30,6 +30,7 @@ export const THRESHOLD_UNITS: Record<Metric, ThresholdUnit> = {
   cost_usd: { prefix: "$", shift: 0, maxDecimals: 6, spoken: "US dollars" },
   llm_calls: { suffix: "calls", shift: 0, maxDecimals: 6, spoken: "LLM calls" },
   tokens: { suffix: "tokens", shift: 0, maxDecimals: 6, spoken: "tokens" },
+  error_calls: { suffix: "calls", shift: 0, maxDecimals: 6, spoken: "failed LLM calls" },
 };
 
 /** The API keeps 21 digits with 6 decimals, so at most 15 before the point. */

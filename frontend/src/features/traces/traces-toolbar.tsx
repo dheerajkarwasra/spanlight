@@ -2,12 +2,14 @@ import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { HasScoresToggle, ScoreFacet } from "@/features/scores";
-import { useFilterOptionsQuery } from "@/features/shell/project-context";
+import { useFilterOptionsQuery, useProjectQuery } from "@/features/shell/project-context";
 import { ERROR_CLASSES, errorClassLabel, isErrorClass } from "@/lib/error-class";
 import { cn } from "@/lib/utils";
 
 import { AddFilterPopover } from "./add-filter-popover";
 import { AppliedFilterChip, CHIP_BASE, FacetSelect } from "./facet-chips";
+import { metadataKeyOptions } from "./metadata-filter";
+import { RetryFacets } from "./retry-facets";
 import type { TraceFilters } from "./search";
 import { TraceSearchInput } from "./trace-search-input";
 import {
@@ -46,6 +48,7 @@ export function TracesToolbar({
 }: TracesToolbarProps) {
   const optionsQuery = useFilterOptionsQuery();
   const options = optionsQuery.data;
+  const promotedKeys = useProjectQuery().data?.promoted_metadata_keys ?? [];
   const chips = activeFilters.filter((filter) => filter.key !== "q");
 
   return (
@@ -123,7 +126,16 @@ export function TracesToolbar({
             }}
             chipClassName={SCORE_CHIP}
           />
-          <AddFilterPopover search={search} onApply={onFiltersChange} />
+          <RetryFacets search={search} onChange={onFiltersChange} />
+          <AddFilterPopover
+            search={search}
+            metadataKeys={metadataKeyOptions(
+              promotedKeys,
+              options?.metadata_keys ?? [],
+              search.metadata_key,
+            )}
+            onApply={onFiltersChange}
+          />
         </div>
         {isRefreshing ? (
           <span

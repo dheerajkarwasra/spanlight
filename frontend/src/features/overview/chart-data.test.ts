@@ -149,10 +149,10 @@ describe("models", () => {
     expect(modelErrorRate({ calls: 0, errors: 0 })).toBeNull();
   });
 
-  it("names known providers and capitalises the rest", () => {
+  it("names known providers and shows the rest as sent", () => {
     expect(formatProvider("openai")).toBe("OpenAI");
     expect(formatProvider("anthropic")).toBe("Anthropic");
-    expect(formatProvider("acme")).toBe("Acme");
+    expect(formatProvider("acme")).toBe("acme");
     expect(formatProvider(null)).toBeNull();
     expect(formatProvider("  ")).toBeNull();
   });

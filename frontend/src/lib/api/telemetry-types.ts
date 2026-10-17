@@ -4,6 +4,7 @@
  * Re-exported through `types.ts`.
  */
 
+import type { AttributionGroupBy } from "./attribution-types";
 import type { User } from "./identity-types";
 import type { ScoreSummary } from "./scores";
 
@@ -18,6 +19,8 @@ export interface Project {
   weekly_digest_enabled?: boolean;
   /** Alert channels of the org that hear about critical insights; `[]` is off. */
   insight_channel_ids: string[];
+  /** Metadata keys the daily attribution rollup keeps, in the order they were set. */
+  promoted_metadata_keys: string[];
   created_at: string;
 }
 
@@ -28,6 +31,11 @@ export interface ProjectUpdate {
   weekly_digest_enabled?: boolean;
   /** At most 10 channels of the project's org (else `422 UNKNOWN_CHANNEL`); `[]` turns it off. */
   insight_channel_ids?: string[];
+  /**
+   * At most 5 metadata keys, order kept; `[]` promotes none. A new key is backfilled over the
+   * last 7 UTC days.
+   */
+  promoted_metadata_keys?: string[];
 }
 
 /**
@@ -72,7 +80,19 @@ export type ErrorClass =
   | "provider_5xx"
   | "network"
   | "client"
-  | "unknown";
+  | "unknown"
+  /** Spanlight's own gateway refused or failed the call; never the provider's fault. */
+  | "gateway";
+
+/**
+ * Which capacity limit refused a call: `gateway` is Spanlight's own per-key limiter, `overloaded`
+ * a provider at capacity (a 529 or an overloaded 5xx), the rest the caller's provider quota.
+ */
+export type RateLimitKind =
+  "requests" | "tokens" | "spend_cap" | "acceleration" | "overloaded" | "gateway" | "unknown";
+
+/** The trace list's order: newest first, or the most expensive retries first (unknown last). */
+export type TraceSort = "started_at" | "retry_cost_usd";
 
 /** Backend values: `stop`, `length`, `tool_calls`, `content_filter` or `other`. */
 export type FinishReason = "stop" | "length" | "tool_calls" | "content_filter" | "other";
@@ -101,9 +121,31 @@ export interface TraceSummary {
   error_class: ErrorClass | null;
   /** True once the trace has any score, from a person, the SDK or an evaluator. */
   has_scores: boolean;
+  /**
+   * LLM calls of the same request that a later call replaced (cache hits and Lab faults left
+   * out). Null for a trace stored before 2026-10-15 and not recomputed since.
+   */
+  retry_calls: number | null;
+  /** The cost of those calls; null when any of them is unpriced or `retry_calls` is null. */
+  retry_cost_usd: string | null;
   /** The latest score of each name, most recently scored first; at most 10 names. */
   scores: ScoreSummary[];
+  /** The trace's metadata as stored: at most 32 keys, every value a string. */
+  metadata: Record<string, string>;
 }
+
+/** The tier a provider billed a call at, normalised from each provider's spelling. */
+export type ServiceTier = "standard" | "batch" | "priority" | "flex";
+
+/** Why a span has or lacks a cost; derived by the server on every read. */
+export type UsageState =
+  | "priced"
+  | "rollup"
+  | "usage_not_reported"
+  | "partial_usage"
+  | "model_unknown"
+  | "no_price"
+  | "not_applicable";
 
 export interface Span {
   span_id: string;
@@ -114,6 +156,12 @@ export interface Span {
   status_message: string | null;
   /** Why the span failed; null when it did not, or failed before classification. */
   error_class: ErrorClass | null;
+  /** The error type the provider's envelope named; null when it succeeded or none was sent. */
+  provider_error_type: string | null;
+  /** The error code the provider's envelope carried; null when it succeeded or none was sent. */
+  provider_error_code: string | null;
+  /** Which capacity limit refused the call; null when it was not a capacity refusal. */
+  rate_limit_kind: RateLimitKind | null;
   started_at: string;
   ended_at: string;
   duration_ms: number;
@@ -126,7 +174,14 @@ export interface Span {
   cache_write_tokens: number | null;
   /** The part of `cache_write_tokens` written with the 1-hour TTL; null when not reported. */
   cache_write_1h_tokens: number | null;
+  /** The tier the provider billed at; null when not reported (priced at the standard rate). */
+  service_tier: ServiceTier | null;
+  /** Web searches the provider ran for the call; null when not reported. */
+  web_search_requests: number | null;
+  /** The whole cost: token cost plus `fee_usd`. Null when the token cost is unknown. */
   cost_usd: string | null;
+  /** The non-token part of `cost_usd` (web search fees); null when no fee was priced. */
+  fee_usd: string | null;
   pricing_version: string | null;
   time_to_first_token_ms: number | null;
   input: unknown;
@@ -137,6 +192,9 @@ export interface Span {
   finish_reason: FinishReason | null;
   /** The prompt version that produced this call; null when it was not linked to one. */
   prompt_version_id: string | null;
+  /** The span repeats the usage of its child spans, so trace totals leave it out. */
+  usage_rollup: boolean;
+  usage_state: UsageState;
 }
 
 export interface TraceDetail extends TraceSummary {
@@ -226,14 +284,18 @@ export interface UnpricedModel {
 export type ExportFormat = "jsonl" | "csv";
 export type ExportStatus = "queued" | "running" | "done" | "failed" | "expired";
 
+/** An attribution export's window (at most 90 days) and environment. */
+export interface AttributionExportFilters {
+  from: string;
+  to: string;
+  environment?: string | null;
+}
+
 /**
  * The trace-list filters an export applies. `from` and `to` are required and at most 90 days
  * apart. The server returns the filters it stored with `null` for those that were not set.
  */
-export interface ExportFilters {
-  from: string;
-  to: string;
-  environment?: string | null;
+export interface ExportFilters extends AttributionExportFilters {
   release?: string | null;
   model?: string | null;
   status?: TraceStatusFilter | null;
@@ -241,13 +303,23 @@ export interface ExportFilters {
   user_id?: string | null;
   session_id?: string | null;
   tag?: string | null;
+  /** With `metadata_value`, the traces carrying the pair; alone, the traces without the key. */
+  metadata_key?: string | null;
+  metadata_value?: string | null;
   q?: string | null;
 }
 
+export type ExportKind = "traces" | "attribution";
+
 export interface TraceExport {
   id: string;
+  kind: ExportKind;
   format: ExportFormat;
+  /** An attribution export carries only the window and environment. */
   filters: ExportFilters;
+  /** Set on an attribution export, with `key` when the group is a metadata key. */
+  group_by: AttributionGroupBy | null;
+  key: string | null;
   status: ExportStatus;
   row_count: number | null;
   size_bytes: number | null;
@@ -268,4 +340,8 @@ export interface FilterOptions {
   tags: string[];
   /** Score names written in the last 30 days. */
   score_names: string[];
+  /** Metadata keys seen on the project's traces in the last 7 days; at most 100. */
+  metadata_keys: string[];
+  /** Trace names seen on the project's traces in the last 7 days; at most 100. */
+  trace_names: string[];
 }

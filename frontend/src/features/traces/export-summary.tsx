@@ -1,10 +1,10 @@
-import { CalendarDays, CircleAlert, Filter, Hash, type LucideIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { CalendarDays, CircleAlert, Filter, Hash } from "lucide-react";
 
 import { UnknownValue } from "@/components/unknown-value";
 import { Badge } from "@/components/ui/badge";
 import {
   MAX_EXPORT_DAYS,
+  SummaryRow,
   exportFilterEntries,
   formatExportInstant,
   formatTraceCount,
@@ -106,25 +106,6 @@ export function ExportSummary({ draft, problem }: ExportSummaryProps) {
           {`Exports don’t apply ${notApplied.join(", ")} yet, so the file also includes the traces ${notApplied.length === 1 ? "that filter hides" : "those filters hide"}.`}
         </p>
       ) : null}
-    </div>
-  );
-}
-
-interface SummaryRowProps {
-  icon: LucideIcon;
-  label: string;
-  align?: "start" | "center";
-  children: ReactNode;
-}
-
-function SummaryRow({ icon: Icon, label, align = "center", children }: SummaryRowProps) {
-  return (
-    <div className={cn("flex gap-3", align === "start" ? "items-start" : "items-center")}>
-      <div className="flex h-[21px] w-24 shrink-0 items-center gap-2 text-sm text-muted-foreground sm:w-[120px]">
-        <Icon aria-hidden className="size-4 shrink-0 text-foreground" />
-        {label}
-      </div>
-      <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
 }

@@ -1,25 +1,21 @@
-import { X } from "lucide-react";
 import { useState, type ReactElement } from "react";
 
-import { Callout } from "@/components/callout";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
+  DialogHeading,
+  EXPORT_DIALOG_CLASS,
+  ExportQueued,
+  SubmitError,
+  blockWhile,
+  exportFormatLabel,
   exportWindowProblem,
-  isExportNotConfigured,
+  formatTraceCount,
   useExportSubmission,
 } from "@/features/exports";
-import { errorMessage, type ExportFormat } from "@/lib/api";
+import type { ExportFormat } from "@/lib/api";
 
 import { ExportFormatPicker } from "./export-format-picker";
-import { ExportQueued } from "./export-queued";
 import { ExportSummary } from "./export-summary";
 import { useExportDraft } from "./use-export-draft";
 
@@ -51,15 +47,6 @@ export function ExportDialog({ trigger }: ExportDialogProps) {
   );
 }
 
-/** A Radix dismiss handler that cancels the dismissal while `blocked`. */
-function blockWhile(blocked: boolean) {
-  return (event: Event) => {
-    if (blocked) {
-      event.preventDefault();
-    }
-  };
-}
-
 function ExportDialogContent({ onClose }: { onClose: () => void }) {
   const live = useExportDraft();
   // What is sent is frozen at opening, so the summary and the request cannot drift apart when the
@@ -78,12 +65,12 @@ function ExportDialogContent({ onClose }: { onClose: () => void }) {
       // reopen could then queue a duplicate. Esc, a click outside and both buttons wait for it.
       onEscapeKeyDown={blockWhile(submission.isPending)}
       onInteractOutside={blockWhile(submission.isPending)}
-      className="max-w-[560px] gap-5 rounded-card p-7 max-sm:top-auto max-sm:bottom-0 max-sm:max-h-[calc(100dvh-1rem)] max-sm:w-full max-sm:max-w-none max-sm:translate-y-0 max-sm:overflow-y-auto max-sm:rounded-b-none max-sm:p-5 max-sm:pb-7"
+      className={EXPORT_DIALOG_CLASS}
     >
       {submission.created ? (
         <>
           <DialogHeading title="Export queued" />
-          <ExportQueued format={format} rows={draft.rows} onDone={onClose} />
+          <ExportQueued title={queuedTitle(format, draft.rows)} onDone={onClose} />
         </>
       ) : (
         <>
@@ -118,52 +105,8 @@ function ExportDialogContent({ onClose }: { onClose: () => void }) {
   );
 }
 
-interface DialogHeadingProps {
-  title: string;
-  /** Left out in the queued state, where the success tile carries the description. */
-  description?: string;
-  /** Off while the request is out, so the dialog cannot be closed mid-submit. */
-  closeDisabled?: boolean;
-}
-
-/** Title, optional description and the round muted close button of the Figma dialog. */
-function DialogHeading({ title, description, closeDisabled = false }: DialogHeadingProps) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <div className="flex min-w-0 flex-col gap-1.5">
-        <DialogTitle>{title}</DialogTitle>
-        {description ? <DialogDescription>{description}</DialogDescription> : null}
-      </div>
-      <DialogClose asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Close"
-          disabled={closeDisabled}
-          className="bg-surface-muted"
-        >
-          <X aria-hidden />
-        </Button>
-      </DialogClose>
-    </div>
-  );
-}
-
-/**
- * Why Start export failed. `409 NOT_CONFIGURED` is the warning from the Figma frame: the button
- * stays enabled so the person can try again once storage is set up. Anything else is an error.
- */
-function SubmitError({ error }: { error: unknown }) {
-  if (isExportNotConfigured(error)) {
-    return (
-      <Callout tone="warning" role="status" title="Not available on this server">
-        Exports need object storage. Ask your administrator to set the S3 settings.
-      </Callout>
-    );
-  }
-  return (
-    <Callout tone="danger" role="alert" title="Couldn't start the export">
-      {errorMessage(error)}
-    </Callout>
-  );
+/** "12,904 traces · CSV", or "CSV export" when the count was not known. */
+function queuedTitle(format: ExportFormat, rows: number | null): string {
+  const formatName = exportFormatLabel(format);
+  return rows === null ? `${formatName} export` : `${formatTraceCount(rows)} · ${formatName}`;
 }

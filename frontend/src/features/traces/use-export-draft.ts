@@ -15,8 +15,9 @@ export interface ExportDraft {
   /** How many traces match, or null when that is not known. */
   rows: number | null;
   /**
-   * List filters an export cannot apply yet (the score filter, "has scores", the prompt
-   * version), as their chips read: the file includes the traces they hide.
+   * List filters an export cannot apply yet (the score filter, "has scores", "has retries", the
+   * prompt version, the trace name), as their chips read: the file includes the traces
+   * they hide.
    */
   notApplied: string[];
 }
@@ -37,9 +38,13 @@ export function useExportDraft(): ExportDraft {
     rows: !hasFacetFilters && countQuery.data !== undefined ? countQuery.data : null,
     notApplied: [
       ...activeFilters
-        .filter((filter) => filter.key === "score" || filter.key === "has_scores")
+        .filter(
+          (filter) =>
+            filter.key === "score" || filter.key === "has_scores" || filter.key === "has_retries",
+        )
         .map((filter) => `${filter.label.toLowerCase()}: ${filter.value}`),
       ...(search.prompt_version ? ["prompt version"] : []),
+      ...(search.name ? ["trace name"] : []),
     ],
   };
 }

@@ -2,22 +2,37 @@ import { z } from "zod";
 
 import type { Budget, BudgetInput, BudgetScope, BudgetUpdate } from "@/lib/api";
 
+import { softLimitHint } from "./budget-enforcement";
+
 /*
- * The budget dialog's form. The bounds mirror the server's (`budgets/schemas.py`, migration 0304):
- * names of 1 to 80 characters, an amount above 0 with at most 4 decimals and 10 whole digits, a
- * scope value of at most 200 characters, at most 10 channels.
+ * The budget dialog's form. The bounds mirror the server's (`budgets/schemas.py`,
+ * `budgets/scope_parse.py`, migrations 0304 and 0804): names of 1 to 80 characters, an amount
+ * above 0 with at most 4 decimals and 10 whole digits, a scope value of at most 400 characters
+ * (a metadata key and value, or a trace name, of at most 256), at most 10 channels.
  */
 
 export const BUDGET_NAME_MAX_LENGTH = 80;
-export const SCOPE_ID_MAX_LENGTH = 200;
+export const SCOPE_ID_MAX_LENGTH = 400;
+export const METADATA_VALUE_MAX_LENGTH = 256;
+export const TRACE_NAME_MAX_LENGTH = 256;
 export const MAX_BUDGET_CHANNELS = 10;
+/** The trace metadata key pattern (program §3.1). */
+export const METADATA_KEY_PATTERN = /^[a-z0-9_.-]{1,64}$/;
+const KEY_PATTERN_MESSAGE =
+  "Use lower-case letters, digits, dots, dashes or underscores, up to 64 characters.";
 
-export const SCOPES: readonly BudgetScope[] = ["project", "gateway_key", "user", "model"];
+export const SCOPES = [
+  "project",
+  "gateway_key",
+  "user",
+  "model",
+  "metadata",
+  "trace_name",
+] as const satisfies readonly BudgetScope[];
 
-/** Spec §11.1 action hints. */
+/** Spec §8.4 and §11.1 action hints. */
 export const ACTION_HINTS = {
-  block:
-    "Gateway calls in this scope get a 402 error until the period resets. Traces sent with the SDK are never blocked.",
+  block: softLimitHint(),
   notify: "Sends an alert; nothing is blocked.",
 } as const;
 
@@ -28,6 +43,10 @@ export interface BudgetFormValues {
   gatewayKeyId: string;
   userId: string;
   model: string;
+  metadataKey: string;
+  /** Kept as typed: a value with a leading space is a different value. */
+  metadataValue: string;
+  traceName: string;
   period: "daily" | "monthly";
   /** Dollars as typed, e.g. "50.00". Sent as a decimal string, never parsed for logic. */
   amount: string;
@@ -63,6 +82,11 @@ export function normalizeAmount(amount: string): string {
   return trimmed.startsWith(".") ? `0${trimmed}` : trimmed;
 }
 
+/** Length in code points, as the server counts it, not UTF-16 units. */
+function codePoints(text: string): number {
+  return Array.from(text).length;
+}
+
 const scopeValue = z
   .string()
   .trim()
@@ -75,10 +99,24 @@ export const budgetFormSchema = z
       .trim()
       .min(1, "Enter a name for this budget.")
       .max(BUDGET_NAME_MAX_LENGTH, `Use ${BUDGET_NAME_MAX_LENGTH} characters or fewer.`),
-    scope: z.enum(["project", "gateway_key", "user", "model"]),
+    scope: z.enum(SCOPES),
     gatewayKeyId: z.string(),
     userId: scopeValue,
     model: scopeValue,
+    metadataKey: z.string().trim(),
+    metadataValue: z
+      .string()
+      .refine(
+        (value) => codePoints(value) <= METADATA_VALUE_MAX_LENGTH,
+        `Use ${METADATA_VALUE_MAX_LENGTH} characters or fewer.`,
+      ),
+    traceName: z
+      .string()
+      .trim()
+      .refine(
+        (value) => codePoints(value) <= TRACE_NAME_MAX_LENGTH,
+        `Use ${TRACE_NAME_MAX_LENGTH} characters or fewer.`,
+      ),
     period: z.enum(["daily", "monthly"]),
     amount: z.string().trim(),
     action: z.enum(["notify", "block"]),
@@ -95,10 +133,20 @@ export const budgetFormSchema = z
       gateway_key: ["gatewayKeyId", "Pick a gateway key."],
       user: ["userId", "Enter the end user ID."],
       model: ["model", "Enter the model name."],
+      metadata: ["metadataKey", "Enter a metadata key."],
+      trace_name: ["traceName", "Enter a trace name."],
     };
     const required = missing[values.scope];
     if (required && values[required[0]] === "") {
       context.addIssue({ code: "custom", path: [required[0]], message: required[1] });
+    }
+    if (values.scope === "metadata") {
+      if (values.metadataKey !== "" && !METADATA_KEY_PATTERN.test(values.metadataKey)) {
+        context.addIssue({ code: "custom", path: ["metadataKey"], message: KEY_PATTERN_MESSAGE });
+      }
+      if (values.metadataValue === "") {
+        context.addIssue({ code: "custom", path: ["metadataValue"], message: "Enter a value." });
+      }
     }
   });
 
@@ -108,21 +156,30 @@ export const EMPTY_BUDGET_VALUES: BudgetFormValues = {
   gatewayKeyId: "",
   userId: "",
   model: "",
+  metadataKey: "",
+  metadataValue: "",
+  traceName: "",
   period: "monthly",
   amount: "",
   action: "notify",
   channelIds: [],
 };
 
-/** The form field that holds `scope_id` for a scope, or null for `project`. */
-export function scopeField(scope: BudgetScope): "gatewayKeyId" | "userId" | "model" | null {
-  return scope === "gateway_key"
-    ? "gatewayKeyId"
-    : scope === "user"
-      ? "userId"
-      : scope === "model"
-        ? "model"
-        : null;
+type ScopeField = "gatewayKeyId" | "userId" | "model" | "metadataKey" | "traceName";
+
+const SCOPE_FIELDS: Record<BudgetScope, ScopeField | null> = {
+  project: null,
+  gateway_key: "gatewayKeyId",
+  user: "userId",
+  model: "model",
+  // A metadata scope is two fields; a `scope_id` refusal is shown with the key.
+  metadata: "metadataKey",
+  trace_name: "traceName",
+};
+
+/** The form field that holds (or, for metadata, starts) `scope_id`; null for `project`. */
+export function scopeField(scope: BudgetScope): ScopeField | null {
+  return SCOPE_FIELDS[scope];
 }
 
 /** "50.0000" → "50.00", "0.1250" → "0.125": the stored amount as a person would type it. */
@@ -145,14 +202,25 @@ export function valuesFromBudget(budget: Budget): BudgetFormValues {
     action: budget.action,
     channelIds: [...budget.channel_ids],
   };
+  const scopeId = budget.scope_id ?? "";
+  if (budget.scope === "metadata") {
+    // Split at the first `=`: a key never holds one, a value may.
+    const at = scopeId.indexOf("=");
+    values.metadataKey = at === -1 ? scopeId : scopeId.slice(0, at);
+    values.metadataValue = at === -1 ? "" : scopeId.slice(at + 1);
+    return values;
+  }
   const field = scopeField(budget.scope);
   if (field) {
-    values[field] = budget.scope_id ?? "";
+    values[field] = scopeId;
   }
   return values;
 }
 
 function scopeIdOf(values: BudgetFormValues): string | null {
+  if (values.scope === "metadata") {
+    return `${values.metadataKey}=${values.metadataValue}`;
+  }
   const field = scopeField(values.scope);
   return field ? values[field] : null;
 }

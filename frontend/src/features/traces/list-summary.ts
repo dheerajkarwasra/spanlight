@@ -38,3 +38,11 @@ export function loadedSummary({
   }
   return loaded === 1 ? `1 ${noun}` : `All ${formatCount(loaded)} ${noun} loaded`;
 }
+
+/**
+ * Header line, e.g. "12,904 traces in the last 24 hours". The count is the window total, so a
+ * list narrowed by facet filters says so instead of contradicting its own footer.
+ */
+export function windowCountLine(count: number, phrase: string, filtered: boolean): string {
+  return `${formatCount(count)} ${tracesNoun(count)} ${phrase}${filtered ? " before filters" : ""}`;
+}

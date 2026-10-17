@@ -28,6 +28,8 @@ function scopeName(
         : budget.scope_id;
     case "user":
     case "model":
+    case "metadata":
+    case "trace_name":
       return budget.scope_id;
   }
 }

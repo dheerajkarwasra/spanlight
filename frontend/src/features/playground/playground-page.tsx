@@ -1,3 +1,4 @@
+import { getRouteApi } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -24,6 +25,7 @@ import {
   updateColumn,
 } from "./config-state";
 import { useCredentialsQuery, usePricesQuery } from "./playground-queries";
+import { ReplayColumn } from "./replay-column";
 import { IDLE } from "./run-state";
 import { usePlaygroundRun } from "./use-playground-run";
 import { useSeedColumn } from "./use-seed-column";
@@ -37,8 +39,38 @@ const GRID: Record<number, string> = {
   3: "grid-cols-1 md:grid-cols-2 xl:grid-cols-3",
 };
 
-/** Figma "Playground" (1, 2 and 3 columns, running, results, errors, 375 px). */
+const playgroundRoute = getRouteApi("/_authed/$orgId/$projectId/playground");
+
+const REPLAY_DESCRIPTION =
+  "Send a stored request again, as it was. Every replay is a real provider call charged to this project's monthly replay budget.";
+
+/**
+ * Figma "Playground": the run columns, or, with `?replay=<trace_id>:<span_id>`, the replay
+ * column for that span (Figma "Playground / Replay column").
+ */
 export function PlaygroundPage() {
+  const { replay, edit } = playgroundRoute.useSearch();
+  const canRun = usePermission("experiments:run");
+  if (replay === undefined) {
+    return <RunColumnsPage />;
+  }
+  const [traceId = "", spanId = ""] = replay.split(":");
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader title="Playground" description={REPLAY_DESCRIPTION} />
+      <ReplayColumn
+        key={replay}
+        traceId={traceId}
+        spanId={spanId}
+        editing={edit === true}
+        canRun={canRun}
+      />
+    </div>
+  );
+}
+
+/** Figma "Playground" (1, 2 and 3 columns, running, results, errors, 375 px). */
+function RunColumnsPage() {
   const canRun = usePermission("experiments:run");
   const credentialsQuery = useCredentialsQuery();
   const prices = usePricesQuery();

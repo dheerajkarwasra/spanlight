@@ -82,6 +82,14 @@ export interface ScoreStat {
   count: number;
   /** Items per category of a categorical score; null for a numeric one. */
   categories: Record<string, number> | null;
+  /**
+   * Boolean scores only: the items that passed and the Wilson 95% interval on the pass rate
+   * (4-place decimal strings). Null for numeric and categorical scores, with no scored item, and
+   * on totals stored before intervals existed.
+   */
+  passed: number | null;
+  ci_low: string | null;
+  ci_high: string | null;
 }
 
 export interface RunTotals {
@@ -166,6 +174,31 @@ export interface ScoreDelta {
   improved: number;
   regressed: number;
   unchanged: number;
+  /** Boolean scores only: each run's Wilson 95% interval on its pass rate. */
+  ci_a: ScoreInterval | null;
+  ci_b: ScoreInterval | null;
+  /** Null for a categorical score, or when fewer than two matched items carry the score. */
+  test: PairedTest | null;
+}
+
+/** A 95% interval on a rate, as 4-place decimal strings in [0, 1]. */
+export interface ScoreInterval {
+  low: string;
+  high: string;
+}
+
+/** The paired test of two runs on the same items: exact McNemar (boolean) or the sign test. */
+export interface PairedTest {
+  kind: "mcnemar" | "sign";
+  /** Matched items that changed (`improved + regressed`). */
+  n: number;
+  improved: number;
+  regressed: number;
+  unchanged: number;
+  /** Exact two-sided p-value, a 4-place decimal string. */
+  p_value: string;
+  /** Decided at alpha 0.05 on the exact value. */
+  significant: boolean;
 }
 
 export interface RunComparison {

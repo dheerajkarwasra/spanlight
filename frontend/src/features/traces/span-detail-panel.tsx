@@ -13,12 +13,16 @@ import { cn } from "@/lib/utils";
 import { payloadToClipboardText } from "./chat-messages";
 import { PayloadView } from "./payload-view";
 import { PromptVersionRef } from "./prompt-version-ref";
+import { ProviderErrorBlock } from "./provider-error-block";
+import { showsProviderErrorBlock } from "./provider-error-format";
+import { ReplayButton } from "./replay-button";
 import { SpanKindBadge } from "./span-kind";
 import { SpanMetadata } from "./span-metadata";
+import { SpanReplaysTab } from "./span-replays-tab";
 import { SpanStatusBadge } from "./status";
 import { TruncatedBadge } from "./truncated-badge";
 
-const SPAN_DETAIL_TABS = ["io", "metadata", "raw", "scores"] as const;
+const SPAN_DETAIL_TABS = ["io", "metadata", "raw", "scores", "replays"] as const;
 export type SpanDetailTab = (typeof SPAN_DETAIL_TABS)[number];
 
 function isSpanDetailTab(value: string): value is SpanDetailTab {
@@ -26,12 +30,13 @@ function isSpanDetailTab(value: string): value is SpanDetailTab {
 }
 
 /**
- * Figma "Traces/Pill tab": equal-width pills on a surface-muted track. Four labels need about
- * 450 px in one row, so a narrower card shows them as a 2×2 grid (Figma "Fixes 2026-10-13",
- * T7-06); the breakpoint is the card's own width, since the panel is narrow on desktop too.
+ * Figma "Traces/Pill tab": equal-width pills on a surface-muted track. Five labels need about
+ * 570 px in one row, so a narrower card shows them as a two-column grid (Figma "Fixes
+ * 2026-10-13", T7-06); the breakpoint is the card's own width, since the panel is narrow on
+ * desktop too.
  */
-const TAB_LIST = "grid w-full grid-cols-2 gap-1 rounded-tile border-0 @md:flex @md:rounded-full";
-const TAB_TRIGGER = "h-[34px] min-w-0 px-3.5 @md:flex-1";
+const TAB_LIST = "grid w-full grid-cols-2 gap-1 rounded-tile border-0 @xl:flex @xl:rounded-full";
+const TAB_TRIGGER = "h-[34px] min-w-0 px-3.5 @xl:flex-1";
 
 interface SpanDetailPanelProps {
   span: Span;
@@ -43,7 +48,10 @@ interface SpanDetailPanelProps {
   className?: string;
 }
 
-/** Figma "Span detail": header, then Input / Output, Metadata, Raw JSON and Scores tabs. */
+/**
+ * Figma "Span detail": header with the Replay button, then Input / Output, Metadata, Raw JSON,
+ * Scores and (LLM spans only) Replays tabs.
+ */
 export function SpanDetailPanel({
   span,
   tab,
@@ -51,12 +59,16 @@ export function SpanDetailPanel({
   traceId,
   className,
 }: SpanDetailPanelProps) {
+  const isLlm = span.kind === "llm";
+  // Only LLM spans have replays; a kept "replays" tab falls back to Input / Output elsewhere.
+  const shownTab = tab === "replays" && !isLlm ? "io" : tab;
   return (
     <Card className={cn("flex min-w-0 flex-col gap-4 p-5 sm:p-6", className)}>
       <section aria-label={`Span ${span.name}`} className="flex min-w-0 flex-col gap-4">
-        <SpanDetailHeader span={span} />
+        <SpanDetailHeader span={span} traceId={traceId} />
+        {showsProviderErrorBlock(span) ? <ProviderErrorBlock span={span} /> : null}
         <Tabs
-          value={tab}
+          value={shownTab}
           onValueChange={(next) => {
             if (isSpanDetailTab(next)) {
               onTabChange(next);
@@ -77,6 +89,11 @@ export function SpanDetailPanel({
             <TabsTrigger value="scores" className={TAB_TRIGGER}>
               Scores
             </TabsTrigger>
+            {isLlm ? (
+              <TabsTrigger value="replays" className={TAB_TRIGGER}>
+                Replays
+              </TabsTrigger>
+            ) : null}
           </TabsList>
           <TabsContent value="io" className="flex flex-col gap-2.5">
             <PayloadView label="Input" value={span.input} spanTruncated={span.truncated} />
@@ -94,13 +111,18 @@ export function SpanDetailPanel({
           <TabsContent value="scores">
             <SpanScores traceId={traceId} spanId={span.span_id} />
           </TabsContent>
+          {isLlm ? (
+            <TabsContent value="replays">
+              <SpanReplaysTab traceId={traceId} spanId={span.span_id} />
+            </TabsContent>
+          ) : null}
         </Tabs>
       </section>
     </Card>
   );
 }
 
-function SpanDetailHeader({ span }: { span: Span }) {
+function SpanDetailHeader({ span, traceId }: { span: Span; traceId: string }) {
   return (
     <header className="flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 items-center gap-2">
@@ -126,6 +148,7 @@ function SpanDetailHeader({ span }: { span: Span }) {
         ) : null}
         {span.prompt_version_id ? <PromptVersionRef versionId={span.prompt_version_id} /> : null}
       </div>
+      <ReplayButton traceId={traceId} span={span} />
       {span.status === "error" ? (
         <div
           role="note"

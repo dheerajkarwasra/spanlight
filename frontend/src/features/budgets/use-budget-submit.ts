@@ -16,7 +16,8 @@ import { useCreateBudget, useUpdateBudget } from "./budgets-queries";
 
 /**
  * Saves the budget form and maps every refusal to where the frames show it:
- * `BUDGET_NAME_TAKEN` on Name, `UNKNOWN_SCOPE` on the gateway key, `UNKNOWN_CHANNEL` on Channels,
+ * `BUDGET_NAME_TAKEN` on Name, `UNKNOWN_SCOPE` on the scope's field (the gateway key, the metadata
+ * key or the trace name), `UNKNOWN_CHANNEL` on Channels,
  * `LIMIT_EXCEEDED` above the form, other 422 field errors on their fields.
  */
 export function useBudgetSubmit(
@@ -40,7 +41,10 @@ export function useBudgetSubmit(
     } else if (code === "UNKNOWN_SCOPE" && scopeTarget) {
       form.setError(scopeTarget, {
         type: "server",
-        message: "This gateway key isn't in this project any more. Pick another.",
+        message:
+          values.scope === "gateway_key"
+            ? "This gateway key isn't in this project any more. Pick another."
+            : errorMessage(error),
       });
     } else if (code === "UNKNOWN_CHANNEL") {
       form.setError("channelIds", {

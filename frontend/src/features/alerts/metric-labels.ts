@@ -32,11 +32,21 @@ export const METRIC_LABELS: Record<Metric, MetricLabel> = {
   cost_usd: { label: "Cost", noun: "cost", unit: "usd", canBeApproximate: false },
   llm_calls: { label: "LLM calls", noun: "LLM calls", unit: "count", canBeApproximate: false },
   tokens: { label: "Tokens", noun: "tokens", unit: "count", canBeApproximate: false },
+  error_calls: {
+    label: "Failed LLM calls",
+    noun: "failed LLM calls",
+    unit: "count",
+    canBeApproximate: false,
+  },
 };
 
-/** The metrics in the order the rule editor lists them. */
+/**
+ * The metrics in the order the rule editor lists them; the two error metrics sit together
+ * (Figma "Alerts/Rule editor/Error filters").
+ */
 export const METRICS: readonly Metric[] = [
   "error_rate",
+  "error_calls",
   "p95_ms",
   "ttft_p95_ms",
   "cost_usd",

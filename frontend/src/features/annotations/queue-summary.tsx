@@ -1,6 +1,7 @@
 import { Check, List, SkipForward } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
+import { ReasonProgress } from "@/features/review";
 import type { AnnotationQueue, ScoreConfig } from "@/lib/api";
 import { formatInteger } from "@/lib/format";
 
@@ -16,12 +17,15 @@ interface QueueSummaryProps {
   configs: readonly ScoreConfig[] | undefined;
 }
 
-/** Figma "Review — Queue detail": the ink progress card and the instructions card. */
+/**
+ * Figma "Review — Queue detail": the ink progress card, the progress per reason and the
+ * instructions card.
+ */
 export function QueueSummary({ queue, configs }: QueueSummaryProps) {
   const { pending, done, skipped } = queue.progress;
   const chosen = queueConfigs(queue, configs);
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
       <Card variant="hero" className="flex flex-col gap-3 p-6">
         <h2 className="text-overline text-rail-muted-foreground uppercase">Progress</h2>
         <p className="flex items-baseline gap-2">
@@ -48,7 +52,8 @@ export function QueueSummary({ queue, configs }: QueueSummaryProps) {
           </li>
         </ul>
       </Card>
-      <Card className="flex flex-col gap-2.5 p-5">
+      <ReasonProgress progress={queue.progress} />
+      <Card className="flex flex-col gap-2.5 p-5 lg:col-span-2">
         <h2 className="text-overline text-muted-foreground uppercase">Instructions</h2>
         <p className="text-label whitespace-pre-wrap text-foreground">
           {queue.instructions ?? (

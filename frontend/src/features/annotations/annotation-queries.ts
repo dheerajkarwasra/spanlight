@@ -8,6 +8,7 @@ import {
   queryKeys,
   type QueueCreate,
   type QueueItemStatus,
+  type ReviewReason,
 } from "@/lib/api";
 
 export { useScoreConfigsQuery } from "@/features/scores";
@@ -34,13 +35,22 @@ export function useQueueQuery(queueId: string) {
   });
 }
 
-/** One queue's items, oldest first; `status` keeps one status. */
-export function useQueueItemsQuery(queueId: string, status: QueueItemStatus | undefined) {
+/** One queue's items, oldest first; `status` keeps one status and `reason` one reason. */
+export function useQueueItemsQuery(
+  queueId: string,
+  status: QueueItemStatus | undefined,
+  reason: ReviewReason | undefined,
+) {
   const { projectId } = useProjectParams();
   return useInfiniteQuery({
-    queryKey: queryKeys.project(projectId).annotations.items(queueId, { status }),
+    queryKey: queryKeys.project(projectId).annotations.items(queueId, { status, reason }),
     queryFn: ({ pageParam }) =>
-      annotationsApi.items(projectId, queueId, { status, cursor: pageParam, limit: PAGE_SIZE }),
+      annotationsApi.items(projectId, queueId, {
+        status,
+        reason,
+        cursor: pageParam,
+        limit: PAGE_SIZE,
+      }),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor,
   });

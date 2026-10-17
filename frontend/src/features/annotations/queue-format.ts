@@ -1,4 +1,4 @@
-import type { AnnotationQueue, QueueItem, QueueProgress, ScoreConfig, Span } from "@/lib/api";
+import type { AnnotationQueue, QueueItem, ReasonProgress, ScoreConfig, Span } from "@/lib/api";
 import { formatInteger, shortId } from "@/lib/format";
 import { allowedValuesText } from "@/lib/score-format";
 
@@ -26,18 +26,18 @@ export function configSummary(config: ScoreConfig): string {
   return `${config.name} · ${allowedValuesText(config)}`;
 }
 
-export function progressTotal(progress: QueueProgress): number {
+export function progressTotal(progress: ReasonProgress): number {
   return progress.pending + progress.done + progress.skipped;
 }
 
 /** The share of the queue that is finished (done or skipped), 0–1. */
-export function progressRatio(progress: QueueProgress): number {
+export function progressRatio(progress: ReasonProgress): number {
   const total = progressTotal(progress);
   return total === 0 ? 0 : (progress.done + progress.skipped) / total;
 }
 
 /** "24 of 60 done · 1 skipped", "All 12 done", "0 of 25 done". */
-export function progressSummary(progress: QueueProgress): string {
+export function progressSummary(progress: ReasonProgress): string {
   const total = progressTotal(progress);
   if (total > 0 && progress.pending === 0 && progress.skipped === 0) {
     return `All ${count(total)} done`;

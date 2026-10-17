@@ -74,6 +74,35 @@ export interface ReleaseCompareQuery extends ReleaseListQuery {
   b: string;
 }
 
+/** One failure category in one release: `count` of the reviewed traces, 4-place decimal strings. */
+export interface CategoryRate {
+  count: number;
+  rate: string;
+  /** The Wilson 95% interval on `rate`. */
+  ci_low: string;
+  ci_high: string;
+}
+
+export interface ReleaseFailureRates {
+  /** `null` is the traces without a release. */
+  release: string | null;
+  /** Traces of the release in the window whose latest `failure_category` score was read. */
+  reviewed: number;
+  /** Keyed by category; empty when nothing was reviewed (unknown, never 0%). */
+  rates: Record<string, CategoryRate>;
+}
+
+/**
+ * The rate of each failure category per release. `categories` is the config's list in its order;
+ * a label no longer in it still appears in `rates`, after the configured ones.
+ */
+export interface FailureCategoryRates {
+  score_name: string;
+  categories: string[];
+  /** The same releases, in the same order, as the release list. */
+  releases: ReleaseFailureRates[];
+}
+
 /* ---------- End users ---------- */
 
 export type UserSort = "cost" | "errors" | "traces";
@@ -112,6 +141,8 @@ export interface UserStatsWindow {
 
 export interface UserList extends Page<UserStats> {
   window: UserStatsWindow;
+  /** When the window's figures were last recomputed; null when no day has been computed yet. */
+  computed_at: string | null;
 }
 
 export interface UserDetail {
@@ -119,6 +150,8 @@ export interface UserDetail {
   daily: UserDayStats[];
   recent_sessions: SessionSummary[];
   window: UserStatsWindow;
+  /** When the user's figures were last recomputed; null when no day has been computed yet. */
+  computed_at: string | null;
 }
 
 export interface UserListQuery {

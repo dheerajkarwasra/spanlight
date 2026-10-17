@@ -6,6 +6,7 @@ import {
   projectNameSchema,
   projectSavedMessage,
   projectSettingsSchema,
+  promotedKeysSchema,
   retentionSchema,
 } from "./project-settings-schema";
 
@@ -15,6 +16,7 @@ const project = {
   capture_payloads: true,
   weekly_digest_enabled: true,
   insight_channel_ids: [] as string[],
+  promoted_metadata_keys: [] as string[],
 };
 
 describe("changedProjectFields", () => {
@@ -83,5 +85,38 @@ describe("projectSavedMessage", () => {
 
   it("stays general when several settings changed", () => {
     expect(projectSavedMessage({ name: "Bot", retention_days: 7 })).toBe("Project settings saved.");
+  });
+});
+
+describe("promoted metadata keys", () => {
+  const promoted = { ...project, promoted_metadata_keys: ["customer_id", "feature"] };
+
+  it("sends the list only when it changed, order included", () => {
+    expect(
+      changedProjectFields(promoted, { promoted_metadata_keys: ["customer_id", "feature"] }),
+    ).toEqual({});
+    expect(
+      changedProjectFields(promoted, { promoted_metadata_keys: ["feature", "customer_id"] }),
+    ).toEqual({
+      promoted_metadata_keys: ["feature", "customer_id"],
+    });
+    expect(changedProjectFields(promoted, { promoted_metadata_keys: [] })).toEqual({
+      promoted_metadata_keys: [],
+    });
+  });
+
+  it("validates the keys and the cap", () => {
+    expect(promotedKeysSchema.safeParse({ promoted_metadata_keys: ["plan"] }).success).toBe(true);
+    expect(promotedKeysSchema.safeParse({ promoted_metadata_keys: ["Plan"] }).success).toBe(false);
+    expect(
+      promotedKeysSchema.safeParse({ promoted_metadata_keys: ["a", "b", "c", "d", "e", "f"] })
+        .success,
+    ).toBe(false);
+  });
+
+  it("has its own saved message", () => {
+    expect(projectSavedMessage({ promoted_metadata_keys: ["plan"] })).toBe(
+      "Promoted metadata keys saved.",
+    );
   });
 });

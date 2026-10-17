@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { allowedValuesText } from "@/lib/score-format";
 
 import { DeleteScoreConfigDialog } from "./delete-score-config-dialog";
+import { FailureCategoriesRow } from "./failure-categories-row";
 import { ScoreConfigDialog } from "./score-config-dialog";
 import { useScoreConfigsQuery } from "./scores-queries";
 
@@ -70,6 +71,9 @@ export function ScoreConfigsCard() {
         ) : null
       }
     >
+      {configsQuery.data ? (
+        <FailureCategoriesRow configs={configsQuery.data} canWrite={canWrite} />
+      ) : null}
       {body()}
       <p className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
         <Info aria-hidden className="size-3.5 shrink-0" />

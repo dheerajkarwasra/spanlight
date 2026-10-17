@@ -4,21 +4,25 @@ import { useMemo, useState } from "react";
 import { ErrorState } from "@/components/error-state";
 import { MeshBackdrop } from "@/components/mesh-backdrop";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ReasonBanner, SaveFromReviewDialog } from "@/features/review";
+import { FAILURE_CATEGORY_SCORE } from "@/features/scores";
 import { useProjectParams } from "@/features/shell";
 
 import { useQueueQuery, useScoreConfigsQuery } from "./annotation-queries";
-import { progressTotal, queueConfigs } from "./queue-format";
+import { queueConfigs } from "./queue-format";
+import { ReviewActions } from "./review-actions";
 import { activeChoiceScore, choicesOf } from "./score-draft";
 import { ScoresPanel } from "./scores-panel";
 import { ShortcutHelp } from "./shortcut-help";
 import type { ShortcutAction } from "./shortcuts";
 import { useItemDraft } from "./use-item-draft";
+import { useReviewActions } from "./use-review-actions";
 import { useWorkSession } from "./use-work-session";
 import { useWorkShortcuts } from "./use-work-shortcuts";
 import { WorkBar } from "./work-bar";
 import { AllDoneCard, ReleasedCard } from "./work-end";
 import { WorkItem } from "./work-item";
-import { completionFor, visibleItem, type WorkState } from "./work-state";
+import { completionFor, itemPosition, visibleItem, workSubtitle } from "./work-state";
 
 const annotateRoute = getRouteApi("/_authed/$orgId/$projectId/annotate/$queueId");
 
@@ -42,6 +46,7 @@ export function AnnotatePage() {
   const item = visibleItem(state);
   const draft = useItemDraft(item?.id ?? null, configs);
   const [helpOpen, setHelpOpen] = useState(false);
+  const review = useReviewActions(item);
 
   function submit() {
     const scores = completionFor(state, configs, draft.values, draft.comment);
@@ -51,6 +56,9 @@ export function AnnotatePage() {
   }
 
   function onAction(action: ShortcutAction) {
+    if (review.saveOpen) {
+      return;
+    }
     switch (action.type) {
       case "toggle_help":
         setHelpOpen((open) => !open);
@@ -69,6 +77,12 @@ export function AnnotatePage() {
         return;
       case "next":
         void session.claim();
+        return;
+      case "replay":
+        review.openReplay();
+        return;
+      case "save_dataset":
+        review.setSaveOpen(review.trace !== undefined);
         return;
       case "pick": {
         const target = activeChoiceScore(configs, draft.values, draft.focused);
@@ -90,7 +104,7 @@ export function AnnotatePage() {
           <WorkBar
             queueId={queueId}
             queueName={queue.data?.name ?? null}
-            subtitle={subtitleOf(state, progress)}
+            subtitle={workSubtitle(state, progress)}
             progress={progress}
             onOpenHelp={() => setHelpOpen(true)}
           />
@@ -122,7 +136,10 @@ export function AnnotatePage() {
             <WorkSkeleton />
           ) : (
             <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-              <WorkItem item={item} />
+              <div className="flex min-w-0 flex-1 flex-col gap-3">
+                <ReasonBanner item={item} trace={review.trace ?? null} />
+                <WorkItem item={item} />
+              </div>
               <ScoresPanel
                 configs={configs}
                 instructions={queue.data?.instructions ?? null}
@@ -133,32 +150,34 @@ export function AnnotatePage() {
                   onSubmit: submit,
                   onSkip: () => void session.skip(),
                   onRelease: () => void session.release(),
+                  moreActions: (
+                    <ReviewActions
+                      actions={review}
+                      busy={state.phase === "claiming" || state.saving !== null}
+                    />
+                  ),
                 }}
               />
             </div>
           )}
+          {item !== null && review.trace !== undefined ? (
+            <SaveFromReviewDialog
+              item={item}
+              trace={review.trace}
+              source={{
+                queueId,
+                queueLabel: `${queue.data?.name ?? "Review"} · item ${itemPosition(progress)}`,
+                failureCategory: draft.values[FAILURE_CATEGORY_SCORE] ?? null,
+              }}
+              open={review.saveOpen}
+              onClose={() => review.setSaveOpen(false)}
+            />
+          ) : null}
         </main>
       </div>
       <ShortcutHelp open={helpOpen} onOpenChange={setHelpOpen} />
     </div>
   );
-}
-
-function subtitleOf(
-  state: WorkState,
-  progress: { pending: number; done: number; skipped: number } | null,
-) {
-  if (state.phase === "empty") {
-    return "Queue finished";
-  }
-  if (state.phase === "released") {
-    return "No item claimed";
-  }
-  if (state.phase !== "working" || progress === null) {
-    return "Claiming an item…";
-  }
-  const position = progress.done + progress.skipped + 1;
-  return `Item ${String(position)} of ${String(progressTotal(progress))} · claimed by you`;
 }
 
 function WorkSkeleton() {

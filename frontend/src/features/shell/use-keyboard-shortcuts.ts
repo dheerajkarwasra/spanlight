@@ -22,7 +22,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 /**
  * Global shortcuts: ⌘K / Ctrl+K toggles the command palette, and Linear-style "G then <key>"
- * sequences jump between pages. The keys come from `NAV_ITEMS`: O T S D R U G A B ",", and for the
+ * sequences jump between pages. The keys come from `NAV_ITEMS`: O T S D V (provider health) R U G A B ",", and for the
  * Improve pages P (prompts), L (playground), N (datasets), Q (review queues), E (evaluators) and
  * X (experiments).
  */

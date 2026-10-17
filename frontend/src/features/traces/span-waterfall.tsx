@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Span } from "@/lib/api";
 import { formatDuration, formatInteger } from "@/lib/format";
+import { useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
 
 import { SpanKindIcon } from "./span-kind";
@@ -30,11 +31,17 @@ import {
 
 /**
  * Name column | timeline | duration (Figma "Traces/Span row": 244 / 262 / 60 at 582px). Shared
- * by the time axis and every row so the ticks line up with the bars.
+ * by the time axis and every row so the ticks line up with the bars. Phones get a narrower
+ * duration column and fewer ticks, so the whole timeline fits the card and every bar shows
+ * without scrolling sideways.
  */
-const ROW_GRID = "grid grid-cols-[minmax(0,42%)_minmax(0,1fr)_3.75rem] items-center gap-2";
-/** Below this width names and ticks get cramped, so phones scroll the waterfall sideways. */
-const MIN_WATERFALL_WIDTH = "min-w-[28rem]";
+const ROW_GRID =
+  "grid grid-cols-[minmax(0,42%)_minmax(0,1fr)_3.25rem] items-center gap-2 sm:grid-cols-[minmax(0,42%)_minmax(0,1fr)_3.75rem]";
+/** Below this width the ticks would overlap, so only the narrowest screens scroll sideways. */
+const MIN_WATERFALL_WIDTH = "min-w-[17rem]";
+/** Fewer axis ticks on a phone, so their labels never collide in the narrower timeline. */
+const PHONE_QUERY = "(max-width: 639px)";
+const PHONE_MAX_TICKS = 3;
 /** Figma: name cell padding-left = 8px + 18px per depth level. */
 const BASE_INDENT_PX = 8;
 const INDENT_PER_LEVEL_PX = 18;
@@ -62,7 +69,8 @@ export function SpanWaterfall({ spans, roots, selectedSpanId, onSelect }: SpanWa
   const effectiveCollapsed = new Set([...collapsed].filter((id) => !hiddenAncestors.has(id)));
   const rows = flattenSpanTree(roots, effectiveCollapsed);
   const timeline = computeTimeline(spans);
-  const ticks = timelineTicks(timeline.durationMs);
+  const phone = useMediaQuery(PHONE_QUERY);
+  const ticks = timelineTicks(timeline.durationMs, phone ? PHONE_MAX_TICKS : undefined);
   const parents = parentSpanIds(roots);
   const failed = failedSpanCount(spans);
   const focusableId = rows.some((row) => row.span.span_id === selectedSpanId)

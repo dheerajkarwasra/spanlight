@@ -3,6 +3,7 @@ import { DeltaPill } from "@/components/delta-pill";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { OverviewMetrics } from "@/lib/api";
+import { fittedMetricFontSize } from "@/lib/metric-fit";
 import { cn } from "@/lib/utils";
 
 import type { ChartPoint } from "./chart-data";
@@ -36,14 +37,27 @@ interface KpiCardsProps {
   className?: string;
 }
 
-/** p95 latency, error rate, LLM calls and tokens, each with a delta and a sparkline. */
+/**
+ * p95 latency, error rate, LLM calls and tokens, each with a delta and a sparkline. The values
+ * share one size, fitted to the widest of them, so none is ever cut short ("50. …").
+ */
 export function KpiCards({ metrics, points, comparisonLabel, className }: KpiCardsProps) {
   const cards = buildKpiCards(metrics);
+  const valueFontSize = fittedMetricFontSize(
+    cards.map((card) =>
+      card.value === null ? null : `${card.approximate ? "≈ " : ""}${card.value}`,
+    ),
+  );
   return (
     <ul aria-label="Key metrics" className={cn("grid gap-4 sm:grid-cols-2", className)}>
       {cards.map((card) => (
         <li key={card.id} className="min-w-0">
-          <KpiCard card={card} points={points} comparisonLabel={comparisonLabel} />
+          <KpiCard
+            card={card}
+            points={points}
+            comparisonLabel={comparisonLabel}
+            valueFontSize={valueFontSize}
+          />
         </li>
       ))}
     </ul>
@@ -54,9 +68,10 @@ interface KpiCardProps {
   card: KpiCardModel;
   points: KpiCardsProps["points"];
   comparisonLabel: string;
+  valueFontSize: string | undefined;
 }
 
-function KpiCard({ card, points, comparisonLabel }: KpiCardProps) {
+function KpiCard({ card, points, comparisonLabel, valueFontSize }: KpiCardProps) {
   const accent = card.id === ACCENT_KPI;
 
   return (
@@ -72,13 +87,20 @@ function KpiCard({ card, points, comparisonLabel }: KpiCardProps) {
         <p className={cn("text-sm font-medium", accent ? "" : "text-muted-foreground")}>
           {card.label}
         </p>
-        <p className={cn("truncate text-metric", accent ? "" : "text-foreground")}>
-          <ApproxValue
-            value={card.value}
-            approximate={card.approximate}
-            unknownReason={card.unknownReason}
-          />
-        </p>
+        {/* The size container the fitted font size is measured against. */}
+        <div className="@container">
+          <p
+            data-kpi-value
+            style={valueFontSize ? { fontSize: valueFontSize } : undefined}
+            className={cn("text-metric whitespace-nowrap", accent ? "" : "text-foreground")}
+          >
+            <ApproxValue
+              value={card.value}
+              approximate={card.approximate}
+              unknownReason={card.unknownReason}
+            />
+          </p>
+        </div>
         {card.detail ? (
           <p
             className={cn(

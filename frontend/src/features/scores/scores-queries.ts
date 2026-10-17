@@ -137,3 +137,26 @@ export function useDeleteScoreConfig() {
     onSuccess: refresh,
   });
 }
+
+/**
+ * Saves the failure categories: creates the `failure_category` config, or replaces the list of
+ * the existing one. Refreshes the configs and the Releases card that counts them.
+ */
+export function useSaveFailureCategories(config: ScoreConfig | undefined) {
+  const { projectId } = useProjectParams();
+  const queryClient = useQueryClient();
+  const keys = queryKeys.project(projectId);
+  return useMutation({
+    mutationFn: (categories: string[]): Promise<ScoreConfig> =>
+      config
+        ? scoresApi.updateConfig(projectId, config.id, { categories })
+        : scoresApi.createFailureCategory(projectId, categories),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: keys.scoreConfigs }),
+        queryClient.invalidateQueries({
+          queryKey: [...keys.all, "releases", "failure-categories"],
+        }),
+      ]),
+  });
+}

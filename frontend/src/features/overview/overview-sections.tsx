@@ -1,13 +1,16 @@
 import { cn } from "@/lib/utils";
 
-import {
-  CallsErrorsChart,
-  CallsErrorsChartError,
-  CallsErrorsChartSkeleton,
-} from "./calls-errors-chart";
+import { CallsErrorsChartError, CallsErrorsChartSkeleton } from "./calls-errors-card";
+import { CallsErrorsChart } from "./calls-errors-chart";
 import { toChartPoints } from "./chart-data";
+import {
+  CompletenessCard,
+  CompletenessCardError,
+  CompletenessCardSkeleton,
+} from "./completeness-card";
 import { shortRangeLabel } from "./hero";
 import { HealthTile, HealthTileError, HealthTileSkeleton } from "./health-tile";
+import { overviewBands, usedProviders } from "./incident-overlay";
 import { LatestTraces, LatestTracesError, LatestTracesSkeleton } from "./latest-traces";
 import { ModelTable, ModelTableError, ModelTableSkeleton } from "./model-table";
 import { RecentErrors, RecentErrorsError, RecentErrorsSkeleton } from "./recent-errors";
@@ -19,8 +22,23 @@ interface SectionProps {
   className?: string;
 }
 
+/**
+ * The incidents the overlay shades: null while either the incidents or the models (which name the
+ * providers in use) are unknown, so the switch only appears once the bands are known.
+ */
+function incidentBands(queries: OverviewQueries) {
+  const { incidents, models, range } = queries;
+  if (!incidents.data || !models.data) {
+    return undefined;
+  }
+  return overviewBands(incidents.data.items, usedProviders(models.data), {
+    start: new Date(range.from),
+    end: new Date(range.to),
+  });
+}
+
 export function CallsSection({ queries, now, className }: SectionProps) {
-  const { timeseries, bucket, range } = queries;
+  const { timeseries, bucket, range, incidents } = queries;
   if (timeseries.isPending) {
     return <CallsErrorsChartSkeleton className={className} />;
   }
@@ -38,11 +56,44 @@ export function CallsSection({ queries, now, className }: SectionProps) {
   return (
     <CallsErrorsChart
       className={className}
-      points={toChartPoints(timeseries.data)}
-      bucket={bucket}
-      rangeLabel={shortRangeLabel(range)}
+      data={{
+        points: toChartPoints(timeseries.data),
+        bucket,
+        rangeLabel: shortRangeLabel(range),
+        now,
+      }}
+      bands={incidentBands(queries)}
+      pollingOff={incidents.data?.polling === "disabled"}
       isRefreshing={timeseries.isPlaceholderData}
-      now={now}
+    />
+  );
+}
+
+export function CompletenessSection({ queries, className }: Omit<SectionProps, "now">) {
+  const { completeness, range } = queries;
+  if (completeness.isPending) {
+    return <CompletenessCardSkeleton className={className} />;
+  }
+  if (completeness.isError) {
+    return (
+      <CompletenessCardError
+        className={className}
+        error={completeness.error}
+        onRetry={() => {
+          void completeness.refetch();
+        }}
+      />
+    );
+  }
+  return (
+    <CompletenessCard
+      className={cn(
+        "transition-opacity",
+        completeness.isPlaceholderData && "opacity-60",
+        className,
+      )}
+      result={completeness.data}
+      rangeLabel={shortRangeLabel(range)}
     />
   );
 }

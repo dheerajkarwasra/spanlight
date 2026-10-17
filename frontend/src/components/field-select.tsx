@@ -1,4 +1,4 @@
-import type { Ref } from "react";
+import type { ReactNode, Ref } from "react";
 
 import {
   Select,
@@ -11,6 +11,10 @@ import {
 export interface FieldSelectOption {
   value: string;
   label: string;
+  /** Shown before the label in the list only (a colour dot). */
+  leading?: ReactNode;
+  /** Shown after the label in the list only (the stored value in mono). */
+  trailing?: ReactNode;
 }
 
 interface FieldSelectProps {
@@ -51,7 +55,12 @@ export function FieldSelect({
       </SelectTrigger>
       <SelectContent>
         {options.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
+          <SelectItem
+            key={option.value}
+            value={option.value}
+            leading={option.leading}
+            trailing={option.trailing}
+          >
             {option.label}
           </SelectItem>
         ))}

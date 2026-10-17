@@ -142,10 +142,63 @@ describe("valuesFromRule", () => {
   });
 });
 
+describe("error filters", () => {
+  const stored: AlertRule = {
+    id: "r2",
+    project_id: "p1",
+    name: "Anthropic rate limits",
+    kind: "threshold",
+    metric: "error_calls",
+    comparator: "gt",
+    threshold: "10",
+    window_minutes: 10,
+    baseline_windows: null,
+    sensitivity: null,
+    filters: { provider: "anthropic", error_class: "rate_limit", rate_limit_kind: "tokens" },
+    cooldown_minutes: 15,
+    enabled: true,
+    channel_ids: [],
+    muted_until: null,
+    created_by: null,
+    created_at: "2026-10-01T00:00:00Z",
+    updated_at: "2026-10-01T00:00:00Z",
+    state: null,
+  };
+
+  it("keeps the error class and rate-limit kind when a stored rule is saved again", () => {
+    const form = valuesFromRule(stored);
+    expect(form).toMatchObject({ errorClass: "rate_limit", rateLimitKind: "tokens" });
+    expect(toRuleInput(form).filters).toEqual({
+      provider: "anthropic",
+      error_class: "rate_limit",
+      rate_limit_kind: "tokens",
+    });
+  });
+
+  it("sends them for error rate and failed LLM calls only", () => {
+    const values = rule({ errorClass: "rate_limit", rateLimitKind: "spend_cap" });
+    expect(toPreviewInput(values).filters).toEqual({
+      error_class: "rate_limit",
+      rate_limit_kind: "spend_cap",
+    });
+    expect(toPreviewInput({ ...values, metric: "error_calls" }).filters).toEqual({
+      error_class: "rate_limit",
+      rate_limit_kind: "spend_cap",
+    });
+    expect(toPreviewInput({ ...values, metric: "p95_ms", threshold: "1" }).filters).toEqual({});
+  });
+
+  it("leaves an Any filter out of the body", () => {
+    expect(toPreviewInput(rule({ errorClass: "", rateLimitKind: "" })).filters).toEqual({});
+  });
+});
+
 describe("ruleFieldOf", () => {
   it("maps server error paths onto form fields", () => {
     expect(ruleFieldOf("window_minutes")).toBe("windowMinutes");
     expect(ruleFieldOf("filters.provider")).toBe("provider");
+    expect(ruleFieldOf("filters.error_class")).toBe("errorClass");
+    expect(ruleFieldOf("filters.rate_limit_kind")).toBe("rateLimitKind");
     expect(ruleFieldOf("channel_ids.2")).toBe("channelIds");
     expect(ruleFieldOf("unknown")).toBeNull();
   });

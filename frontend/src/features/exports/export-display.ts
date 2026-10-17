@@ -4,10 +4,10 @@
  * formatter takes `now` so a test can pin it, and returns null for an unknown value so the
  * caller can show the shared "—" placeholder instead of a zero.
  */
-import type { ExportFormat, TraceExport } from "@/lib/api";
+import type { AttributionGroupBy, ExportFormat, TraceExport } from "@/lib/api";
 import { formatInteger, formatRelativeTime } from "@/lib/format";
 
-import { exportFilterSummary } from "./export-filters";
+import { exportFilterEntries, exportFilterSummary } from "./export-filters";
 
 /** Same local-time display as the trace list, written day-first: "7 Oct 2026, 14:20". */
 const instantFormat = new Intl.DateTimeFormat("en-GB", {
@@ -151,14 +151,49 @@ export function exportFormatLabel(format: ExportFormat): string {
   return format === "jsonl" ? "JSONL" : "CSV";
 }
 
+const GROUP_NAMES: Record<Exclude<AttributionGroupBy, "metadata">, string> = {
+  trace_name: "trace name",
+  user: "user",
+  release: "release",
+};
+
+/**
+ * What an export holds, under its range: "status: error · model: gpt-4.1" or "All traces" for
+ * traces, "Attribution by customer_id · environment: production" for an attribution table.
+ */
+function exportSummary(entry: TraceExport): string {
+  if (entry.kind !== "attribution") {
+    return exportFilterSummary(entry.filters);
+  }
+  const filters = exportFilterEntries(entry.filters).map((item) => `${item.key}: ${item.value}`);
+  return [`Attribution by ${attributionGroup(entry)}`, ...filters].join(" · ");
+}
+
+/** The metadata key itself, or "trace name", "user", "release". */
+function attributionGroup(entry: TraceExport): string {
+  return entry.group_by === "metadata" || entry.group_by === null
+    ? (entry.key ?? "metadata")
+    : GROUP_NAMES[entry.group_by];
+}
+
+/** "JSONL export, Oct 1 – Oct 8, 2026" or "Attribution CSV export, customer_id, Oct 1 – Oct 8". */
+function downloadLabel(entry: TraceExport, range: string): string {
+  const format = exportFormatLabel(entry.format);
+  return entry.kind === "attribution"
+    ? `Attribution ${format} export, ${attributionGroup(entry)}, ${range}`
+    : `${format} export, ${range}`;
+}
+
 /** Everything a list row or tile writes about an export, ready to render. */
 export interface ExportDescription {
   /** "Oct 8 – Oct 9, 2026". */
   range: string;
   /** The exact start and end, for a tooltip. */
   rangeDetail: string | null;
-  /** "status: error · model: gpt-4.1", or "All traces". */
+  /** "status: error · model: gpt-4.1", "All traces", or "Attribution by customer_id". */
   summary: string;
+  /** Names the download button for assistive technology. */
+  downloadLabel: string;
   rows: string | null;
   size: string | null;
   created: string;
@@ -169,10 +204,12 @@ export interface ExportDescription {
 
 export function describeExport(entry: TraceExport, now: Date = new Date()): ExportDescription {
   const { from, to } = entry.filters;
+  const range = formatExportRange(from, to) ?? "Unknown range";
   return {
-    range: formatExportRange(from, to) ?? "Unknown range",
+    range,
     rangeDetail: formatExportRangeDetail(from, to),
-    summary: exportFilterSummary(entry.filters),
+    summary: exportSummary(entry),
+    downloadLabel: downloadLabel(entry, range),
     rows: formatExportRows(entry.row_count),
     size: formatExportSize(entry.size_bytes),
     created: formatExportCreated(entry.created_at, now) ?? entry.created_at,

@@ -3,14 +3,11 @@ import { ArrowUpRight, CircleCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { DialogDescription } from "@/components/ui/dialog";
-import { exportFormatLabel, formatTraceCount } from "@/features/exports";
 import { useProjectParams } from "@/features/shell/project-context";
-import type { ExportFormat } from "@/lib/api";
 
 interface ExportQueuedProps {
-  format: ExportFormat;
-  /** The traces the export will hold, when that was known; null otherwise. */
-  rows: number | null;
+  /** What was requested, e.g. "12,904 traces · CSV" or "customer_id · 30 days · CSV". */
+  title: string;
   onDone: () => void;
 }
 
@@ -19,9 +16,8 @@ interface ExportQueuedProps {
  * what was requested, where it will appear and how long it lasts, a link to Settings › Exports and
  * "Done". The file is built in the background, so this does not wait for it.
  */
-export function ExportQueued({ format, rows, onDone }: ExportQueuedProps) {
+export function ExportQueued({ title, onDone }: ExportQueuedProps) {
   const { orgId, projectId } = useProjectParams();
-  const formatName = exportFormatLabel(format);
 
   return (
     <>
@@ -34,7 +30,7 @@ export function ExportQueued({ format, rows, onDone }: ExportQueuedProps) {
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
           <p role="status" className="font-semibold text-foreground">
-            {rows === null ? `${formatName} export` : `${formatTraceCount(rows)} · ${formatName}`}
+            {title}
           </p>
           <DialogDescription className="text-sm">
             We&apos;re building the file in the background. It appears in Settings › Exports when

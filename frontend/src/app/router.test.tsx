@@ -51,6 +51,12 @@ describe("document titles", () => {
     await expectTitle("Traces · Spanlight");
   });
 
+  it("names the attribution page", async () => {
+    mockSignedIn([makeProject("proj_1", "Checkout")]);
+    renderApp(`/${ORG_ID}/proj_1/attribution`);
+    await expectTitle("Attribution · Spanlight");
+  });
+
   it("says when a page doesn't exist", async () => {
     mockSignedOut();
     renderApp("/no/such/page/here");

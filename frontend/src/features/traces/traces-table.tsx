@@ -1,23 +1,28 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { MouseEvent } from "react";
 
-import { CostValue } from "@/components/cost-value";
+import { CostValue, UNKNOWN_TOTAL_REASON } from "@/components/cost-value";
 import { RelativeTime } from "@/components/relative-time";
 import { ValueOrUnknown } from "@/components/unknown-value";
 import { ScoresCell, useScoreTypeOf } from "@/features/scores";
-import { useProjectParams } from "@/features/shell/project-context";
+import { useProjectParams, useProjectQuery } from "@/features/shell/project-context";
 import type { TraceSummary } from "@/lib/api";
 import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+import { RetryCostCell, RetryCountCell } from "./retry-cell";
+import type { RetryCostColumn } from "./retry-format";
+import { MetadataChips } from "./metadata-chips";
 import { RowCheckbox } from "./row-checkbox";
 import { TraceStatusDot } from "./status";
 import { ModelBadges, TagBadges, TokenPair, TraceErrorLine, UserSession } from "./trace-cells";
 import { Cell, TracesTableHead } from "./traces-table-columns";
-import { ROW_GRID, SHOW_SCORES_AND_TAGS, SHOW_TOKENS, SHOW_USER } from "./traces-table-grid";
+import { tableLayout } from "./traces-table-grid";
 import type { TraceSelection } from "./use-trace-selection";
 
 export { TracesTableSkeleton } from "./traces-table-columns";
+
+const NO_KEYS: readonly string[] = [];
 
 interface TracesTableProps {
   traces: TraceSummary[];
@@ -27,6 +32,8 @@ interface TracesTableProps {
   stale?: boolean;
   /** Ticked rows for the bulk actions; without it the checkbox column stays empty. */
   selection?: TraceSelection;
+  /** The Retry cost column, shown while the list is sorted or filtered by retries. */
+  retryCost?: RetryCostColumn;
 }
 
 export function TracesTable({
@@ -34,8 +41,11 @@ export function TracesTable({
   selectedTraceId = null,
   stale = false,
   selection,
+  retryCost = "hidden",
 }: TracesTableProps) {
   const navigate = useNavigate();
+  const promotedKeys = useProjectQuery().data?.promoted_metadata_keys ?? NO_KEYS;
+  const layout = tableLayout(retryCost !== "hidden", promotedKeys.length > 0);
   const { orgId, projectId } = useProjectParams();
   const scoreTypeOf = useScoreTypeOf();
 
@@ -62,7 +72,11 @@ export function TracesTable({
       aria-busy={stale || undefined}
       className={cn("flex flex-col gap-0.5 transition-opacity", stale && "opacity-60")}
     >
-      <TracesTableHead selection={selection} />
+      <TracesTableHead
+        selection={selection}
+        layout={layout}
+        sortedByRetryCost={retryCost === "sorted"}
+      />
       <div role="rowgroup" className="flex flex-col gap-0.5">
         {traces.map((trace) => {
           const ticked = selection?.isSelected(trace.trace_id) ?? false;
@@ -76,7 +90,7 @@ export function TracesTable({
                 openTrace(event, trace.trace_id);
               }}
               className={cn(
-                ROW_GRID,
+                layout.row,
                 "group/row h-14 cursor-pointer rounded-input text-sm transition-colors",
                 selected ? "bg-surface-selected" : "hover:bg-surface-hover",
               )}
@@ -98,6 +112,11 @@ export function TracesTable({
               <Cell className="min-w-0">
                 <TraceName trace={trace} orgId={orgId} projectId={projectId} />
               </Cell>
+              {layout.metadata !== null ? (
+                <Cell className={cn(layout.metadata, "min-w-0")}>
+                  <MetadataChips metadata={trace.metadata} promoted={promotedKeys} max={1} linked />
+                </Cell>
+              ) : null}
               <Cell className="truncate text-muted-foreground">
                 <RelativeTime iso={trace.started_at} />
               </Cell>
@@ -107,22 +126,34 @@ export function TracesTable({
                   reason="Duration isn't known yet"
                 />
               </Cell>
-              <Cell className="min-w-0">
+              <Cell className={cn(layout.models, "min-w-0")}>
                 <ModelBadges models={trace.models} />
               </Cell>
-              <Cell className={cn(SHOW_TOKENS, "text-right text-muted-foreground")}>
+              <Cell className={cn(layout.tokens, "text-right text-muted-foreground")}>
                 <TokenPair input={trace.input_tokens} output={trace.output_tokens} />
               </Cell>
               <Cell className="text-right font-medium text-foreground">
-                <CostValue cost={trace.cost_usd} hasUnpriced={trace.has_unpriced} />
+                <CostValue
+                  cost={trace.cost_usd}
+                  hasUnpriced={trace.has_unpriced}
+                  unknownReason={UNKNOWN_TOTAL_REASON}
+                />
               </Cell>
-              <Cell className={cn(SHOW_SCORES_AND_TAGS, "min-w-0 overflow-hidden")}>
+              <Cell className={cn(layout.retries, "text-right")}>
+                <RetryCountCell trace={trace} />
+              </Cell>
+              {layout.retryCost ? (
+                <Cell className="text-right">
+                  <RetryCostCell trace={trace} />
+                </Cell>
+              ) : null}
+              <Cell className={cn(layout.scoresAndTags, "min-w-0 overflow-hidden")}>
                 <ScoresCell scores={trace.scores} typeOf={scoreTypeOf} />
               </Cell>
-              <Cell className={cn(SHOW_SCORES_AND_TAGS, "min-w-0 overflow-hidden")}>
+              <Cell className={cn(layout.scoresAndTags, "min-w-0 overflow-hidden")}>
                 <TagBadges tags={trace.tags} max={1} />
               </Cell>
-              <Cell className={cn(SHOW_USER, "min-w-0")}>
+              <Cell className={cn(layout.user, "min-w-0")}>
                 <UserSession userId={trace.external_user_id} sessionId={trace.session_id} />
               </Cell>
             </div>

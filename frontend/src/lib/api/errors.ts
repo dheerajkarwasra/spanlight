@@ -12,8 +12,10 @@ export class ApiError extends Error {
   readonly currentVersion: number | null;
   /** `502 EVALUATOR_FAILED` only: why the run failed, e.g. `verdict_unparseable`. Null otherwise. */
   readonly runError: string | null;
+  /** Seconds to wait before retrying, from the `Retry-After` header (429, 503). Null without one. */
+  readonly retryAfterSeconds: number | null;
 
-  constructor(status: number, problem: ProblemDetails) {
+  constructor(status: number, problem: ProblemDetails, retryAfterSeconds: number | null = null) {
     const title = problem.title ?? defaultTitle(status);
     super(problem.detail ?? title);
     this.name = "ApiError";
@@ -25,6 +27,7 @@ export class ApiError extends Error {
     this.fieldErrors = problem.errors ?? [];
     this.currentVersion = problem.current_version ?? null;
     this.runError = typeof problem.error === "string" ? problem.error : null;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 
   get isNotFound(): boolean {
@@ -52,6 +55,25 @@ export class ExportTooLargeError extends ApiError {
     });
     this.name = "ExportTooLargeError";
   }
+}
+
+/**
+ * The `Retry-After` header as whole seconds from `now`: either a delay in seconds or an HTTP date
+ * (rounded up). Null when the header is missing or unreadable.
+ */
+export function parseRetryAfter(header: string | null, now: number): number | null {
+  if (header === null) {
+    return null;
+  }
+  const value = header.trim();
+  if (/^\d+$/.test(value)) {
+    return Number(value);
+  }
+  const at = Date.parse(value);
+  if (Number.isNaN(at) || !/[a-z]/i.test(value)) {
+    return null;
+  }
+  return Math.max(0, Math.ceil((at - now) / 1000));
 }
 
 /** Thrown when the request never produced an HTTP response (offline, DNS, CORS, abort). */

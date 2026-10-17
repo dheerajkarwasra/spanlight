@@ -25,6 +25,7 @@ export function useDataFilters(): TimeRangeOptions | null {
     matchRoute({ to: "/$orgId/$projectId/overview" }) ||
     matchRoute({ to: "/$orgId/$projectId/traces" }) ||
     matchRoute({ to: "/$orgId/$projectId/sessions" }) ||
+    matchRoute({ to: "/$orgId/$projectId/providers" }) ||
     matchRoute({ to: "/$orgId/$projectId/releases" });
   return windowed ? DEFAULT_TIME_RANGE_OPTIONS : null;
 }

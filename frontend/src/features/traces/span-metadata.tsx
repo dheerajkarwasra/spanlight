@@ -6,10 +6,17 @@ import { formatDuration, formatInteger, formatTimestamp } from "@/lib/format";
 import { payloadToClipboardText } from "./chat-messages";
 import { MetaField } from "./meta-field";
 import { PromptVersionRef } from "./prompt-version-ref";
+import { metadataAttributes } from "./provider-error-format";
 
-/** Figma "Panel / Metadata": timing and IDs, then the custom attributes as JSON. */
+/**
+ * Figma "Panel / Metadata": timing and IDs, then the custom attributes as JSON. The keys the
+ * provider error block above renders are left out of the list while it shows; the Raw JSON tab
+ * keeps every key.
+ */
 export function SpanMetadata({ span }: { span: Span }) {
-  const attributeCount = Object.keys(span.attributes).length;
+  const attributes = metadataAttributes(span);
+  const attributeCount = Object.keys(attributes).length;
+  const hiddenCount = Object.keys(span.attributes).length - attributeCount;
 
   return (
     <div className="flex flex-col gap-5">
@@ -67,17 +74,22 @@ export function SpanMetadata({ span }: { span: Span }) {
           </span>
           {attributeCount > 0 ? (
             <CopyButton
-              value={payloadToClipboardText(span.attributes)}
+              value={payloadToClipboardText(attributes)}
               label="Copy attributes"
               className="ml-auto size-7"
             />
           ) : null}
         </div>
+        {hiddenCount > 0 ? (
+          <p className="text-xs font-medium text-muted-foreground">
+            Keys shown in the block above are left out here; Raw JSON has every key.
+          </p>
+        ) : null}
         {attributeCount === 0 ? (
           <p className="text-sm text-muted-foreground">No custom attributes on this span.</p>
         ) : (
           <JsonViewer
-            value={span.attributes}
+            value={attributes}
             defaultExpandDepth={3}
             className="rounded-input px-3 py-3.5"
           />

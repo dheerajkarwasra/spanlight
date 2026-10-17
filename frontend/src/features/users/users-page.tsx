@@ -14,6 +14,7 @@ import type { UserSort } from "@/lib/api";
 import { formatInteger } from "@/lib/format";
 import { rangePhrase } from "@/lib/time-range";
 
+import { ComputedAtChip } from "./computed-at-chip";
 import { rememberUsersSort, SORT_COLUMNS, sortPhrase, withSort } from "./user-sort";
 import { UserTiles, UserTilesSkeleton, UsersTable, UsersTableSkeleton } from "./users-table";
 import { useUserListQuery } from "./users-queries";
@@ -60,6 +61,21 @@ export function UsersPage() {
       onRetry={loadMore}
     />
   ) : null;
+
+  function headerDescription() {
+    if (usersQuery.isPending) {
+      return `End users ${rangePhrase(range)}`;
+    }
+    if (usersQuery.isError && users.length === 0) {
+      return "Count unavailable";
+    }
+    return (
+      <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span>{`${usersQuery.hasNextPage ? "Top " : ""}${count} end ${noun} ${rangePhrase(range)}`}</span>
+        <ComputedAtChip value={usersQuery.data?.pages[0]?.computed_at ?? null} />
+      </span>
+    );
+  }
 
   function renderBody() {
     if (usersQuery.isPending) {
@@ -114,16 +130,7 @@ export function UsersPage() {
 
   return (
     <div className="flex flex-col gap-4 md:gap-6">
-      <PageHeader
-        title="Users"
-        description={
-          usersQuery.isPending || (usersQuery.isError && users.length === 0)
-            ? usersQuery.isError
-              ? "Count unavailable"
-              : `End users ${rangePhrase(range)}`
-            : `${usersQuery.hasNextPage ? "Top " : ""}${count} end ${noun} ${rangePhrase(range)}`
-        }
-      />
+      <PageHeader title="Users" description={headerDescription()} />
       <div className="flex flex-col gap-1.5 md:hidden">
         <Label htmlFor="users-sort">Sort by</Label>
         <FieldSelect

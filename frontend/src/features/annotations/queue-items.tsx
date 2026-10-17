@@ -8,6 +8,7 @@ import { SectionCard } from "@/components/section-card";
 import { TileListSkeleton } from "@/components/tile-list";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useMe } from "@/features/auth";
+import { ReasonFilter, type ReasonFilterValue } from "@/features/review";
 import type { AnnotationQueue, QueueItemStatus } from "@/lib/api";
 import { formatInteger, pluralize } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -24,10 +25,15 @@ interface QueueItemsProps {
   addButton: ReactNode;
 }
 
-/** Figma "Review — Queue detail" Items card: the queue's items, filtered by status. */
+/** Figma "Review — Queue detail" Items card: the queue's items, filtered by status and reason. */
 export function QueueItems({ queue, addButton }: QueueItemsProps) {
   const [filter, setFilter] = useState<Filter>("all");
-  const query = useQueueItemsQuery(queue.id, filter === "all" ? undefined : filter);
+  const [reason, setReason] = useState<ReasonFilterValue>("all");
+  const query = useQueueItemsQuery(
+    queue.id,
+    filter === "all" ? undefined : filter,
+    reason === "all" ? undefined : reason,
+  );
   const me = useMe();
   const members = useMembersQuery();
   const names = useMemo<MemberNames>(
@@ -40,8 +46,11 @@ export function QueueItems({ queue, addButton }: QueueItemsProps) {
     [members.data, members.isError],
   );
   const items = query.data?.pages.flatMap((page) => page.items) ?? [];
-  const { pending, done, skipped } = queue.progress;
+  // The status counts follow the reason picked.
+  const scope = reason === "all" ? queue.progress : queue.progress.by_reason[reason];
+  const { pending, done, skipped } = scope;
   const total = progressTotal(queue.progress);
+  const scopeTotal = progressTotal(scope);
   const n = (value: number) => formatInteger(value) ?? String(value);
 
   return (
@@ -57,7 +66,7 @@ export function QueueItems({ queue, addButton }: QueueItemsProps) {
             value={filter}
             onValueChange={setFilter}
             options={[
-              { value: "all", label: `All ${n(total)}` },
+              { value: "all", label: `All ${n(scopeTotal)}` },
               { value: "pending", label: `Pending ${n(pending)}` },
               { value: "done", label: `Done ${n(done)}` },
               { value: "skipped", label: `Skipped ${n(skipped)}` },
@@ -67,6 +76,9 @@ export function QueueItems({ queue, addButton }: QueueItemsProps) {
         )
       }
     >
+      {total === 0 ? null : (
+        <ReasonFilter progress={queue.progress} value={reason} onChange={setReason} />
+      )}
       {query.isPending ? (
         <TileListSkeleton label="Loading items" rows={5} className="h-[58px]" />
       ) : query.data === undefined ? (
@@ -81,11 +93,11 @@ export function QueueItems({ queue, addButton }: QueueItemsProps) {
       ) : items.length === 0 ? (
         <EmptyState
           icon={ClipboardCheck}
-          title={total === 0 ? "No items in this queue" : "No items with this status"}
+          title={total === 0 ? "No items in this queue" : "No items match these filters"}
           description={
             total === 0
               ? "Add traces from the Traces page with “Add to queue”, or add them here by trace id."
-              : "Pick another status to see the rest of the queue."
+              : "Pick another status or reason to see the rest of the queue."
           }
           action={total === 0 ? (addButton ?? undefined) : undefined}
           className="rounded-tile bg-surface-muted"
@@ -100,6 +112,7 @@ export function QueueItems({ queue, addButton }: QueueItemsProps) {
             )}
           >
             <span>Trace</span>
+            <span>Reason</span>
             <span>Reviewing</span>
             <span>Status</span>
             <span>Reviewer</span>
@@ -126,7 +139,8 @@ export function QueueItems({ queue, addButton }: QueueItemsProps) {
           <p className="flex items-center gap-2 px-1 pt-2 text-xs font-medium text-muted-foreground">
             <Info aria-hidden className="size-3.5 shrink-0" />
             An item you claimed shows as assigned to you. Idle claims return to pending after 30
-            minutes.
+            minutes. A trace that matched several reasons shows the first; the annotate screen lists
+            the others.
           </p>
         </div>
       )}

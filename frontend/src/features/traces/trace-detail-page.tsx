@@ -10,9 +10,11 @@ import { ScoresPanel } from "@/features/scores";
 import { useProjectParams } from "@/features/shell/project-context";
 import { isApiError, type TraceDetail } from "@/lib/api";
 
+import { hasModelCall } from "./cost-explanation";
 import { recallTracesSearch, rememberOpenedTrace } from "./last-traces-search";
 import { SpanDetailPanel, SpanDetailSkeleton, type SpanDetailTab } from "./span-detail-panel";
 import { buildSpanTree } from "./span-tree";
+import { SpanCostCard } from "./span-cost-card";
 import { SpanUsageCard, SpanUsageSkeleton } from "./span-usage-card";
 import { SpanWaterfall, SpanWaterfallSkeleton } from "./span-waterfall";
 import { useTraceQuery } from "./trace-queries";
@@ -123,6 +125,9 @@ function TraceBody({ trace }: { trace: TraceDetail }) {
             onSelect={selectSpan}
           />
           {selectedSpan ? <SpanUsageCard span={selectedSpan} /> : null}
+          {selectedSpan && hasModelCall(selectedSpan) ? (
+            <SpanCostCard key={selectedSpan.span_id} span={selectedSpan} traceId={trace.trace_id} />
+          ) : null}
           <ScoresPanel traceId={trace.trace_id} />
         </>
       }

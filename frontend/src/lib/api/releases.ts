@@ -1,6 +1,12 @@
 import { api } from "./client";
 import { projectPath } from "./paths";
-import type { Comparison, ReleaseCompareQuery, ReleaseListQuery, ReleaseStats } from "./types";
+import type {
+  Comparison,
+  FailureCategoryRates,
+  ReleaseCompareQuery,
+  ReleaseListQuery,
+  ReleaseStats,
+} from "./types";
 
 function releasesPath(projectId: string): string {
   return `${projectPath(projectId)}/releases`;
@@ -17,4 +23,14 @@ export const releasesApi = {
   /** `a` is the baseline, `b` the candidate; deltas are `b - a`. */
   compare: (projectId: string, query: ReleaseCompareQuery): Promise<Comparison> =>
     api.get<Comparison>(`${releasesPath(projectId)}/compare`, { ...query }),
+  /**
+   * Each failure category's rate per release over the reviewed traces, with Wilson 95% bounds;
+   * the window rules of `list`. `404 NOT_FOUND` until the project has a `failure_category`
+   * score config.
+   */
+  failureCategories: (
+    projectId: string,
+    query: ReleaseListQuery = {},
+  ): Promise<FailureCategoryRates> =>
+    api.get<FailureCategoryRates>(`${releasesPath(projectId)}/failure-categories`, { ...query }),
 };

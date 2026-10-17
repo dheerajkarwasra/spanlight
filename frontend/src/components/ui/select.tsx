@@ -1,6 +1,6 @@
 import { Check, ChevronDown } from "lucide-react";
 import { Select as SelectPrimitive } from "radix-ui";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -57,11 +57,14 @@ function SelectContent({
   );
 }
 
-function SelectItem({
-  className,
-  children,
-  ...props
-}: ComponentProps<typeof SelectPrimitive.Item>) {
+interface SelectItemProps extends ComponentProps<typeof SelectPrimitive.Item> {
+  /** Shown before the label in the list only, not in the trigger (a colour dot). */
+  leading?: ReactNode;
+  /** Shown after the label in the list only, not in the trigger (the stored value in mono). */
+  trailing?: ReactNode;
+}
+
+function SelectItem({ className, children, leading, trailing, ...props }: SelectItemProps) {
   return (
     <SelectPrimitive.Item
       className={cn(
@@ -72,7 +75,9 @@ function SelectItem({
       )}
       {...props}
     >
+      {leading}
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      {trailing}
       <SelectPrimitive.ItemIndicator className="absolute right-3 flex items-center">
         <Check className="size-4 text-muted-foreground" aria-hidden />
       </SelectPrimitive.ItemIndicator>

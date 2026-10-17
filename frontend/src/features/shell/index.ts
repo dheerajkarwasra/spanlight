@@ -7,6 +7,7 @@ export { AccountShell } from "./account-shell";
 export {
   useCurrentOrg,
   useCurrentRole,
+  useFilterOptionsQuery,
   useOrgProjectsQuery,
   usePermission,
   useProjectFilters,

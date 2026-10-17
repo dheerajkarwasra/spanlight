@@ -2,7 +2,7 @@ import { ValueOrUnknown } from "@/components/unknown-value";
 import type { TraceExport } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-import { describeExport, exportFormatLabel } from "./export-display";
+import { describeExport } from "./export-display";
 import { DownloadAction, ExportFailureLine, FormatTag, StatusBadge } from "./export-parts";
 import { isDownloadable, unknownExpiryReason, unknownReason } from "./export-status";
 
@@ -94,10 +94,7 @@ export function ExportRow({ entry }: ExportRowProps) {
         </div>
         <div className="flex h-10 w-30 shrink-0 items-center justify-end">
           {isDownloadable(entry) ? (
-            <DownloadAction
-              exportId={entry.id}
-              label={`${exportFormatLabel(entry.format)} export, ${text.range}`}
-            />
+            <DownloadAction exportId={entry.id} label={text.downloadLabel} />
           ) : null}
         </div>
       </div>

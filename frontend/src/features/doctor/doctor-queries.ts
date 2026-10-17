@@ -1,7 +1,16 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useProjectParams } from "@/features/shell";
-import { insightsApi, queryKeys, type MuteInput } from "@/lib/api";
+import {
+  insightsApi,
+  isApiError,
+  providersApi,
+  queryKeys,
+  type FeedbackInput,
+  type InsightDetail,
+  type InsightFeedback,
+  type MuteInput,
+} from "@/lib/api";
 
 import type { InsightQuery } from "./insight-filters";
 
@@ -125,6 +134,80 @@ export function useExplainInsight(insightId: string) {
   const invalidate = useInvalidateDoctor();
   return useMutation({
     mutationFn: () => insightsApi.explain(projectId, insightId),
+    onSettled: invalidate,
+  });
+}
+
+/** Precision per detector kind from members' answers, all time. */
+export function usePrecision() {
+  const { projectId } = useProjectParams();
+  const query = {} as const;
+  return useQuery({
+    queryKey: queryKeys.project(projectId).precision(query),
+    queryFn: () => insightsApi.precision(projectId, query),
+  });
+}
+
+/**
+ * Whether this server polls the providers' status pages (`limit=1`: only `polling` is read).
+ * Asked only for a `provider_incident` finding without a matched incident, to say why none was.
+ */
+export function useIncidentPolling(enabled: boolean) {
+  const { projectId } = useProjectParams();
+  const query = { limit: 1 } as const;
+  return useQuery({
+    queryKey: queryKeys.project(projectId).providerIncidents(query),
+    queryFn: () => providersApi.incidents(projectId, query),
+    select: (list) => list.polling,
+    enabled,
+  });
+}
+
+/** Writes the caller's own vote into the cached insight, so the row answers before the refetch. */
+function useSetMine(insightId: string) {
+  const { projectId } = useProjectParams();
+  const queryClient = useQueryClient();
+  return (mine: InsightFeedback["mine"]) => {
+    queryClient.setQueryData<InsightDetail>(
+      queryKeys.project(projectId).insight(insightId),
+      (insight) =>
+        insight === undefined ? insight : { ...insight, feedback: { ...insight.feedback, mine } },
+    );
+  };
+}
+
+/** Records or replaces the caller's vote; the counts and the Precision tab refetch after. */
+export function usePutFeedback(insightId: string) {
+  const { projectId } = useProjectParams();
+  const invalidate = useInvalidateDoctor();
+  const setMine = useSetMine(insightId);
+  return useMutation({
+    mutationFn: (input: FeedbackInput) => insightsApi.putFeedback(projectId, insightId, input),
+    onSuccess: (saved) => {
+      setMine({ verdict: saved.verdict, note: saved.note, updated_at: saved.updated_at });
+    },
+    onSettled: invalidate,
+  });
+}
+
+export function useDeleteFeedback(insightId: string) {
+  const { projectId } = useProjectParams();
+  const invalidate = useInvalidateDoctor();
+  const setMine = useSetMine(insightId);
+  return useMutation({
+    // A 404 means there is no vote to remove any more (another tab took it back): done.
+    mutationFn: async () => {
+      try {
+        await insightsApi.deleteFeedback(projectId, insightId);
+      } catch (error) {
+        if (!(isApiError(error) && error.status === 404)) {
+          throw error;
+        }
+      }
+    },
+    onSuccess: () => {
+      setMine(null);
+    },
     onSettled: invalidate,
   });
 }

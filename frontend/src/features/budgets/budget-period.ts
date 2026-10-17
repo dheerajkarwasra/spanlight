@@ -13,6 +13,8 @@ export const SCOPE_LABELS: Record<BudgetScope, string> = {
   gateway_key: "Gateway key",
   user: "End user",
   model: "Model",
+  metadata: "Metadata",
+  trace_name: "Trace name",
 };
 
 export const ACTION_LABELS: Record<BudgetAction, string> = {

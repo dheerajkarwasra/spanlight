@@ -10,6 +10,7 @@ import {
   displayAmount,
   toBudgetInput,
   toBudgetUpdate,
+  valuesFromBudget,
   type BudgetFormValues,
 } from "./budget-schema";
 
@@ -82,6 +83,35 @@ describe("budgetFormSchema", () => {
     expect(issuePaths(form({ channelIds: eleven }))).toEqual(["channelIds"]);
   });
 
+  it("needs a valid key and a value for a metadata budget, and a name for a trace name one", () => {
+    expect(issuePaths(form({ scope: "metadata" }))).toEqual(["metadataKey", "metadataValue"]);
+    expect(
+      issuePaths(form({ scope: "metadata", metadataKey: "a.b-c_1", metadataValue: "x" })),
+    ).toEqual([]);
+    expect(
+      issuePaths(form({ scope: "metadata", metadataKey: "Customer ID", metadataValue: "acme" })),
+    ).toEqual(["metadataKey"]);
+    expect(
+      issuePaths(form({ scope: "metadata", metadataKey: "k".repeat(65), metadataValue: "acme" })),
+    ).toEqual(["metadataKey"]);
+    expect(issuePaths(form({ scope: "trace_name", traceName: "   " }))).toEqual(["traceName"]);
+    expect(issuePaths(form({ scope: "trace_name", traceName: "😀".repeat(256) }))).toEqual([]);
+    expect(issuePaths(form({ scope: "trace_name", traceName: "t".repeat(257) }))).toEqual([
+      "traceName",
+    ]);
+  });
+
+  it("counts a metadata value in code points, up to 256", () => {
+    // Two UTF-16 units each: a UTF-16 length check would refuse 256 of them.
+    const value = "😀".repeat(256);
+    expect(
+      issuePaths(form({ scope: "metadata", metadataKey: "region", metadataValue: value })),
+    ).toEqual([]);
+    expect(
+      issuePaths(form({ scope: "metadata", metadataKey: "region", metadataValue: `${value}😀` })),
+    ).toEqual(["metadataValue"]);
+  });
+
   it("checks the amount after trimming spaces", () => {
     expect(issuePaths(form({ amount: " 25.5 " }))).toEqual([]);
   });
@@ -100,6 +130,43 @@ describe("toBudgetInput", () => {
   it("sends only the value of the chosen scope", () => {
     const values = form({ scope: "user", userId: "u-42", model: "gpt-4.1", gatewayKeyId: "k1" });
     expect(toBudgetInput(values)).toMatchObject({ scope: "user", scope_id: "u-42" });
+  });
+});
+
+describe("metadata and trace name scopes", () => {
+  it("composes key=value, keeping the value as typed", () => {
+    const values = form({ scope: "metadata", metadataKey: "customer_id", metadataValue: "acme" });
+    expect(toBudgetInput(values)).toMatchObject({
+      scope: "metadata",
+      scope_id: "customer_id=acme",
+    });
+    expect(
+      toBudgetInput(form({ scope: "metadata", metadataKey: "k", metadataValue: " a" })).scope_id,
+    ).toBe("k= a");
+  });
+
+  it("splits a stored scope at the first =", () => {
+    const values = valuesFromBudget(
+      budget({ scope: "metadata", scope_id: "customer_id=acme=prod" }),
+    );
+    expect(values).toMatchObject({ metadataKey: "customer_id", metadataValue: "acme=prod" });
+    expect(
+      toBudgetUpdate(
+        { ...values, amount: "50.00" },
+        budget({ scope: "metadata", scope_id: "customer_id=acme=prod" }),
+      ),
+    ).toEqual({});
+  });
+
+  it("sends the trace name as the scope", () => {
+    const values = form({ scope: "trace_name", traceName: "summarize-thread" });
+    expect(toBudgetInput(values)).toMatchObject({
+      scope: "trace_name",
+      scope_id: "summarize-thread",
+    });
+    expect(
+      valuesFromBudget(budget({ scope: "trace_name", scope_id: "summarize-thread" })).traceName,
+    ).toBe("summarize-thread");
   });
 });
 
@@ -136,6 +203,8 @@ describe("budgetFieldOf", () => {
   it("puts a scope_id error on the field of the current scope", () => {
     expect(budgetFieldOf("scope_id", "gateway_key")).toBe("gatewayKeyId");
     expect(budgetFieldOf("scope_id", "project")).toBeNull();
+    expect(budgetFieldOf("scope_id", "metadata")).toBe("metadataKey");
+    expect(budgetFieldOf("scope_id", "trace_name")).toBe("traceName");
     expect(budgetFieldOf("amount_usd", "project")).toBe("amount");
   });
 });

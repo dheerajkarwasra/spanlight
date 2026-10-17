@@ -9,7 +9,7 @@ import type { ScoreConfig } from "@/lib/api";
 import { COMMENT_LIMIT } from "@/lib/score-format";
 import { cn } from "@/lib/utils";
 
-import { KeyChip } from "./key-chip";
+import { ActionRow } from "./key-chip";
 import { ScoreInput } from "./score-input";
 import { activeChoiceScore, draftStatus, missingScores, setCount } from "./score-draft";
 import type { useItemDraft } from "./use-item-draft";
@@ -23,6 +23,8 @@ export interface WorkControls {
   onSubmit: () => void;
   onSkip: () => void;
   onRelease: () => void;
+  /** The review actions shown between Skip and Release (replay, save as dataset item). */
+  moreActions: ReactNode;
 }
 
 interface ScoresPanelProps {
@@ -39,7 +41,7 @@ interface ScoresPanelProps {
  * reader users start the next item where they finished the last.
  */
 export function ScoresPanel({ configs, instructions, draft, work }: ScoresPanelProps) {
-  const { notice, busy, onSubmit, onSkip, onRelease } = work;
+  const { notice, busy, onSubmit, onSkip, onRelease, moreActions } = work;
   const headingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     if (draft.itemId !== null) {
@@ -134,6 +136,7 @@ export function ScoresPanel({ configs, instructions, draft, work }: ScoresPanelP
             Skip
           </Button>
         </ActionRow>
+        {moreActions}
         <ActionRow keyHint={null}>
           <Button
             className="flex-1"
@@ -154,19 +157,6 @@ export function ScoresPanel({ configs, instructions, draft, work }: ScoresPanelP
         {draftStatus(configs, draft.values)}
       </p>
     </Card>
-  );
-}
-
-function ActionRow({ keyHint, children }: { keyHint: string | null; children: ReactNode }) {
-  return (
-    <div className="flex items-center gap-2.5">
-      {children}
-      {keyHint === null ? (
-        <span aria-hidden className="hidden size-6 sm:block" />
-      ) : (
-        <KeyChip className="hidden sm:inline-flex">{keyHint}</KeyChip>
-      )}
-    </div>
   );
 }
 

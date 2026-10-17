@@ -17,8 +17,10 @@ export type Permission =
   | "export:create"
   | "gateway:write"
   | "credentials:manage"
+  | "billing_sources:manage"
   | "alerts:write"
   | "insights:manage"
+  | "insights:feedback"
   | "scores:write"
   | "annotations:write"
   | "prompts:write"
@@ -37,6 +39,7 @@ const MEMBER: Permission[] = [
   "prompts:write",
   "datasets:write",
   "experiments:run",
+  "insights:feedback",
 ];
 const ADMIN: Permission[] = [
   ...MEMBER,
@@ -50,6 +53,7 @@ const ADMIN: Permission[] = [
   "alerts:write",
   "insights:manage",
   "evaluators:write",
+  "billing_sources:manage",
 ];
 const OWNER: Permission[] = [...ADMIN, "org:delete", "org:security", "credentials:manage"];
 

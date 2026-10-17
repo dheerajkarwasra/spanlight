@@ -6,6 +6,7 @@ export const FALLBACK_LABELS: Record<FallbackCondition, string> = {
   rate_limited: "Rate limited (429)",
   timeout: "Timeouts",
   connection_error: "Connection errors",
+  auth_error: "Auth errors (401/403)",
 };
 
 const FIELD_LABELS: Record<string, string> = {

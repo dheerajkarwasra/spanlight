@@ -8,23 +8,36 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 
 import { CHIP_BASE } from "./facet-chips";
+import { isMetadataValueTooLong } from "./metadata-filter";
+import { MetadataFilterField, type MetadataDraft } from "./metadata-filter-field";
 import type { TraceFilters } from "./search";
 import type { FilterPatch } from "./use-trace-filters";
 
 interface AddFilterPopoverProps {
   search: TraceFilters;
+  /** The metadata keys to pick from: promoted first, then the ones seen in the last 7 days. */
+  metadataKeys: readonly string[];
   onApply: (patch: FilterPatch) => void;
 }
 
 /** Exact-match filters for identifiers that have too many values for a dropdown. */
-export function AddFilterPopover({ search, onApply }: AddFilterPopoverProps) {
+export function AddFilterPopover({ search, metadataKeys, onApply }: AddFilterPopoverProps) {
   const [open, setOpen] = useState(false);
   const [user, setUser] = useState("");
   const [session, setSession] = useState("");
+  const [metadata, setMetadata] = useState<MetadataDraft>({ key: undefined, value: "" });
 
   function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-    onApply({ user: user.trim(), session: session.trim() });
+    if (isMetadataValueTooLong(metadata.value)) {
+      return;
+    }
+    onApply({
+      user: user.trim(),
+      session: session.trim(),
+      metadata_key: metadata.key,
+      metadata_value: metadata.key !== undefined ? metadata.value : undefined,
+    });
     setOpen(false);
   }
 
@@ -36,6 +49,7 @@ export function AddFilterPopover({ search, onApply }: AddFilterPopoverProps) {
         if (next) {
           setUser(search.user ?? "");
           setSession(search.session ?? "");
+          setMetadata({ key: search.metadata_key, value: search.metadata_value ?? "" });
         }
       }}
     >
@@ -48,7 +62,7 @@ export function AddFilterPopover({ search, onApply }: AddFilterPopoverProps) {
           Add filter
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80">
+      <PopoverContent className="w-90 max-w-[calc(100vw-2rem)]">
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
             <ListFilter aria-hidden className="size-3.5" />
@@ -80,6 +94,8 @@ export function AddFilterPopover({ search, onApply }: AddFilterPopoverProps) {
               }}
             />
           </div>
+          <div aria-hidden className="h-px bg-border" />
+          <MetadataFilterField keys={metadataKeys} draft={metadata} onChange={setMetadata} />
           <div className="flex justify-end gap-2">
             <Button
               variant="ghost"

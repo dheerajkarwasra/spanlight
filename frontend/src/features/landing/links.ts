@@ -1,3 +1,5 @@
+import { docsLink } from "@/lib/docs-links";
+
 /**
  * Every outbound and in-page link on the landing page, in one place.
  *
@@ -34,14 +36,6 @@ export const EXTERNAL_LINKS = {
 
 /** The Python SDK on PyPI. */
 export const PYPI_URL = "https://pypi.org/project/spanlight/";
-
-/** The documentation site, which the web image serves under /docs/ on this same origin. */
-const DOCS_BASE = "/docs/";
-
-/** A page of the documentation site, e.g. "gateway/quickstart/" (Starlight paths end in "/"). */
-export function docsLink(path = ""): string {
-  return `${DOCS_BASE}${path.replace(/^\/+/, "")}`;
-}
 
 export const DOCS_LINKS = {
   home: docsLink(),

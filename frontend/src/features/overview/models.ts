@@ -1,5 +1,6 @@
 import type { ModelMetrics } from "@/lib/api";
 import { parseMoney } from "@/lib/format";
+import { providerLabel } from "@/lib/provider-label";
 
 /** How many models the Models card lists before "All models" expands it. */
 export const MODEL_PREVIEW_LIMIT = 5;
@@ -24,36 +25,12 @@ export function modelRowKey(model: Pick<ModelMetrics, "provider" | "model">): st
   return `${model.provider ?? "∅"}/${model.model ?? "∅"}`;
 }
 
-const PROVIDER_NAMES: Record<string, string> = {
-  anthropic: "Anthropic",
-  openai: "OpenAI",
-  azure: "Azure",
-  azure_openai: "Azure OpenAI",
-  google: "Google",
-  gemini: "Google",
-  vertex_ai: "Vertex AI",
-  bedrock: "Bedrock",
-  aws_bedrock: "Bedrock",
-  meta: "Meta",
-  mistral: "Mistral",
-  cohere: "Cohere",
-  groq: "Groq",
-  ollama: "Ollama",
-  together: "Together",
-  deepseek: "DeepSeek",
-  xai: "xAI",
-};
-
-/** The display name for a provider id ("openai" → "OpenAI"); unknown ids are capitalised. */
+/** The display name for a provider id ("openai" → "OpenAI"); null when the call named none. */
 export function formatProvider(provider: string | null): string | null {
   if (provider === null || provider.trim() === "") {
     return null;
   }
-  const known = PROVIDER_NAMES[provider.toLowerCase()];
-  if (known) {
-    return known;
-  }
-  return `${provider.charAt(0).toUpperCase()}${provider.slice(1)}`;
+  return providerLabel(provider);
 }
 
 /** True when the model has no price, so its calls are missing from spend. */

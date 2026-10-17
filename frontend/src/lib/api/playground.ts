@@ -29,7 +29,8 @@ export interface PlaygroundConfig {
 
 export interface PlaygroundUsage {
   input_tokens: number;
-  output_tokens: number;
+  /** null when the provider never reported its final output count; the cost is then null too. */
+  output_tokens: number | null;
   cached_tokens: number | null;
   /** Prompt tokens written to the provider's cache; null when not reported. */
   cache_write_tokens: number | null;

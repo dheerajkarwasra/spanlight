@@ -102,6 +102,21 @@
   --chart-grid: #eeece7;
   /* The non-peak bars on an ink card (Figma chart/bar-muted-on-ink): white at 11%. */
   --chart-bar-muted-on-ink: rgb(255 255 255 / 0.11);
+  /* Provider incident bands behind a chart: a 12% fill under a 45° hatch (Figma chart/band-*). */
+  --chart-band-warning: #f59e0b;
+  --chart-band-warning-a12: color-mix(in srgb, var(--chart-band-warning) 12%, transparent);
+  --chart-band-hatch: var(--warning);
+  /* One series colour per error class, in the Provider health legend's order. */
+  --chart-class-rate-limit: #2a78d6;
+  --chart-class-provider-5xx: #eb6834;
+  --chart-class-timeout: #1baf7a;
+  --chart-class-network: #eda100;
+  --chart-class-auth: #e87ba4;
+  --chart-class-context-length: #008300;
+  --chart-class-content-filter: #6250d6;
+  --chart-class-client: #e34948;
+  --chart-class-gateway: #57534e;
+  --chart-class-unknown: #a8a6a0;
 
   /* Hero mesh gradient */
   --mesh-1: #e9d5ff;
@@ -190,6 +205,20 @@
   --chart-4: #fbbf24;
   --chart-grid: #26252f;
   --chart-bar-muted-on-ink: rgb(255 255 255 / 0.11);
+  --chart-band-warning: #fbbf24;
+  /* Restated so the mix picks up the dark band colour wherever `.dark` is applied. */
+  --chart-band-warning-a12: color-mix(in srgb, var(--chart-band-warning) 12%, transparent);
+  --chart-band-hatch: var(--chart-band-warning);
+  --chart-class-rate-limit: #3987e5;
+  --chart-class-provider-5xx: #d95926;
+  --chart-class-timeout: #199e70;
+  --chart-class-network: #c98500;
+  --chart-class-auth: #d55181;
+  --chart-class-context-length: #008300;
+  --chart-class-content-filter: #9085e9;
+  --chart-class-client: #e66767;
+  --chart-class-gateway: #b9b7b1;
+  --chart-class-unknown: #6f6d68;
 
   --mesh-1: #4c1d95;
   --mesh-2: #713f12;
@@ -265,6 +294,19 @@
   --color-chart-4: var(--chart-4);
   --color-chart-grid: var(--chart-grid);
   --color-chart-bar-muted-on-ink: var(--chart-bar-muted-on-ink);
+  --color-chart-band-warning: var(--chart-band-warning);
+  --color-chart-band-warning-a12: var(--chart-band-warning-a12);
+  --color-chart-band-hatch: var(--chart-band-hatch);
+  --color-chart-class-rate-limit: var(--chart-class-rate-limit);
+  --color-chart-class-provider-5xx: var(--chart-class-provider-5xx);
+  --color-chart-class-timeout: var(--chart-class-timeout);
+  --color-chart-class-network: var(--chart-class-network);
+  --color-chart-class-auth: var(--chart-class-auth);
+  --color-chart-class-context-length: var(--chart-class-context-length);
+  --color-chart-class-content-filter: var(--chart-class-content-filter);
+  --color-chart-class-client: var(--chart-class-client);
+  --color-chart-class-gateway: var(--chart-class-gateway);
+  --color-chart-class-unknown: var(--chart-class-unknown);
   --color-mesh-1: var(--mesh-1);
   --color-mesh-2: var(--mesh-2);
   --color-mesh-3: var(--mesh-3);

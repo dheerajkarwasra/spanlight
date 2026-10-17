@@ -20,6 +20,8 @@ export interface TraceFacets {
   tag?: string | undefined;
   user?: string | undefined;
   session?: string | undefined;
+  metadata_key?: string | undefined;
+  metadata_value?: string | undefined;
   q?: string | undefined;
 }
 
@@ -36,7 +38,9 @@ function present(value: string | undefined): string | undefined {
 /**
  * The export `filters` for the trace list as it is on screen: the same window, environment and
  * facets the list query sends, under the API's names (`user` is `user_id`, `session` is
- * `session_id`). Filters that are not set are left out rather than sent empty.
+ * `session_id`). Filters that are not set are left out rather than sent empty. The metadata value
+ * is sent as typed, like the list sends it, and only with its key: the key alone is the
+ * missing-key filter.
  */
 export function toExportFilters(
   window: ExportWindow,
@@ -73,6 +77,12 @@ export function toExportFilters(
   const tag = present(facets.tag);
   if (tag) {
     filters.tag = tag;
+  }
+  if (facets.metadata_key) {
+    filters.metadata_key = facets.metadata_key;
+    if (facets.metadata_value) {
+      filters.metadata_value = facets.metadata_value;
+    }
   }
   const q = present(facets.q);
   if (q) {
@@ -115,6 +125,8 @@ export function exportFilterEntries(filters: ExportFilters): FilterEntry[] {
     ["user_id", filters.user_id],
     ["session_id", filters.session_id],
     ["tag", filters.tag],
+    ["metadata_key", filters.metadata_key],
+    ["metadata_value", filters.metadata_value],
     ["q", filters.q],
   ];
   const entries: FilterEntry[] = [];

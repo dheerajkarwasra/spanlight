@@ -10,3 +10,5 @@ export {
   useGatewayKeysQuery,
   useGatewayRoutesQuery,
 } from "./gateway-queries";
+/** The write-only secret field of the credential dialogs, reused by the billing source dialogs. */
+export { ApiKeyInput } from "./credentials/api-key-input";

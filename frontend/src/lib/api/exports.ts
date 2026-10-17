@@ -1,11 +1,34 @@
+import type { AttributionGroupBy } from "./attribution-types";
 import { api } from "./client";
 import { projectPath } from "./paths";
-import type { ExportFilters, ExportFormat, Page, TraceExport } from "./types";
+import type {
+  AttributionExportFilters,
+  ExportFilters,
+  ExportFormat,
+  Page,
+  TraceExport,
+} from "./types";
 
-export interface CreateExportInput {
+/** One row per trace matching `filters`; `kind` may be left out, as before attribution exports. */
+export interface TraceExportInput {
+  kind?: "traces";
   format: ExportFormat;
   filters: ExportFilters;
 }
+
+/**
+ * The attribution table of the window as CSV. `key` is required with `group_by: metadata` and
+ * refused otherwise; a window over 24 hours needs a promoted key (`422 KEY_NOT_PROMOTED`).
+ */
+export interface AttributionExportInput {
+  kind: "attribution";
+  format: "csv";
+  group_by: AttributionGroupBy;
+  key?: string;
+  filters: AttributionExportFilters;
+}
+
+export type CreateExportInput = TraceExportInput | AttributionExportInput;
 
 export interface ExportListQuery {
   limit?: number;

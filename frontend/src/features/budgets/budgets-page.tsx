@@ -11,6 +11,7 @@ import { AlertsReadOnlyLine } from "@/features/alerts";
 import { usePermission, useProjectQuery } from "@/features/shell";
 
 import { BudgetDialog } from "./budget-dialog";
+import { softLimitNote } from "./budget-enforcement";
 import { BudgetList } from "./budget-list";
 import { useBudgetsQuery, useGatewayKeysQuery } from "./budgets-queries";
 
@@ -68,8 +69,7 @@ export function BudgetsPage() {
         />
         <p className="flex items-center gap-2 px-1 pt-2 text-xs font-medium text-muted-foreground">
           <Info aria-hidden className="size-3.5 shrink-0" />
-          Blocking budgets refuse gateway calls once an evaluation (every minute) finds them spent.
-          Traces sent with the SDK are never blocked.
+          {softLimitNote()}
         </p>
       </SectionCard>
     </div>
@@ -108,7 +108,7 @@ function BudgetsContent({ query, canWrite, readOnlyId, createButton }: BudgetsCo
       <EmptyState
         icon={Wallet}
         title="No budgets"
-        description="Set spend limits per project, gateway key, end user or model. Blocking budgets refuse gateway calls once an evaluation (every minute) finds them spent."
+        description={`Set spend limits per project, gateway key, end user, model, metadata or trace name. ${softLimitNote()}`}
         action={canWrite ? createButton : undefined}
         className="rounded-tile bg-surface-muted"
       />

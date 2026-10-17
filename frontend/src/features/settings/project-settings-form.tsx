@@ -6,7 +6,7 @@ import { FormField } from "@/components/form-field";
 import { SectionCard } from "@/components/section-card";
 import { Input } from "@/components/ui/input";
 import { errorMessage, isApiError, type Project } from "@/lib/api";
-import { applyServerFieldErrors } from "@/lib/form-errors";
+import { applyMappedFieldErrors } from "@/lib/form-errors";
 
 import {
   changedProjectFields,
@@ -24,6 +24,7 @@ import {
   ProjectIdentifiers,
   WeeklyDigestField,
 } from "./project-settings-parts";
+import { PromotedKeysField } from "./promoted-keys-field";
 import { ReadOnlySlugField } from "./read-only-slug-field";
 import { SettingsSaveBar } from "./settings-save-bar";
 import { useUpdateProject } from "./use-update-project";
@@ -33,6 +34,13 @@ interface ProjectSettingsFormProps {
   canEdit: boolean;
 }
 
+// `promoted_metadata_keys.2` (one refused key) lands on the whole list.
+const SERVER_FIELDS = {
+  name: "name",
+  retention_days: "retention_days",
+  promoted_metadata_keys: "promoted_metadata_keys",
+} as const;
+
 function valuesFrom(project: Project): ProjectSettingsValues {
   return {
     name: project.name,
@@ -40,12 +48,13 @@ function valuesFrom(project: Project): ProjectSettingsValues {
     capture_payloads: project.capture_payloads,
     weekly_digest_enabled: project.weekly_digest_enabled ?? true,
     insight_channel_ids: project.insight_channel_ids,
+    promoted_metadata_keys: project.promoted_metadata_keys,
   };
 }
 
 /**
- * The General and Data cards and their save bar. One form, so one "Save changes" sends only
- * the fields that differ from the saved project.
+ * The project cards (General, Data, Email, Insight notifications, Attribution) and their save
+ * bar. One form, so one "Save changes" sends only the fields that differ from the saved project.
  */
 export function ProjectSettingsForm({ project, canEdit }: ProjectSettingsFormProps) {
   const updateProject = useUpdateProject();
@@ -72,7 +81,7 @@ export function ProjectSettingsForm({ project, canEdit }: ProjectSettingsFormPro
             type: "server",
             message: "A selected channel no longer exists. Remove it and save again.",
           });
-        } else if (!applyServerFieldErrors(error, form.setError, ["name", "retention_days"])) {
+        } else if (!applyMappedFieldErrors(error, form.setError, SERVER_FIELDS)) {
           toast.error(errorMessage(error));
         }
       },
@@ -150,6 +159,14 @@ export function ProjectSettingsForm({ project, canEdit }: ProjectSettingsFormPro
         description="Where the Doctor sends critical findings for this project."
       >
         <InsightChannelsField control={form.control} canEdit={canEdit} />
+      </SectionCard>
+
+      <SectionCard
+        title="Attribution"
+        description="Keys you can group by over windows longer than 24 hours, on Attribution and in exports."
+        className="gap-4"
+      >
+        <PromotedKeysField control={form.control} canEdit={canEdit} />
       </SectionCard>
 
       {canEdit ? (

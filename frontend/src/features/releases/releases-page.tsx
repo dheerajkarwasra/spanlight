@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { isApiError, type ReleaseStats } from "@/lib/api";
 
 import { ErrorClassDiff } from "./error-class-diff";
+import { FailureCategoriesCard } from "./failure-categories-card";
 import { KpiDeltaTable } from "./kpi-delta-table";
 import { ModelMix } from "./model-mix";
 import { NewErrors } from "./new-errors";
@@ -38,7 +39,10 @@ function unknownRelease(
   return pair.find((release) => !known.some((stats) => stats.release === release)) ?? pair[1];
 }
 
-/** Figma "Releases — Compare": pick a baseline and a candidate, then see what changed. */
+/**
+ * Figma "Releases — Compare": pick a baseline and a candidate, then see what changed; below, the
+ * failure categories' rates across the window's releases.
+ */
 export function ReleasesPage() {
   const { a, b } = releasesRoute.useSearch();
   const navigate = releasesRoute.useNavigate();
@@ -70,7 +74,12 @@ export function ReleasesPage() {
         unavailable={tooLarge}
         onCompare={commit}
       />
-      {tooLarge ? null : <Body list={list} compare={compare} a={a} b={b} />}
+      {tooLarge ? null : (
+        <>
+          <Body list={list} compare={compare} a={a} b={b} />
+          <FailureCategoriesCard />
+        </>
+      )}
     </div>
   );
 }

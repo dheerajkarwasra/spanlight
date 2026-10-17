@@ -4,7 +4,7 @@
  * `null`). Re-exported through `types.ts`.
  */
 
-import type { User } from "./types";
+import type { ErrorClass, RateLimitKind, User } from "./types";
 
 /* ---------- Channels ---------- */
 
@@ -68,8 +68,12 @@ export type AlertRuleKind = "threshold" | "anomaly";
 
 export type AlertEventRuleKind = AlertRuleKind | "budget";
 
-/** The metrics a rule can measure. Budgets measure `spend` on their own. */
-export type Metric = "error_rate" | "p95_ms" | "ttft_p95_ms" | "cost_usd" | "llm_calls" | "tokens";
+/**
+ * The metrics a rule can measure. Budgets measure `spend` on their own. `error_calls` is the
+ * number of failed LLM calls in the window (0 when none).
+ */
+export type Metric =
+  "error_rate" | "p95_ms" | "ttft_p95_ms" | "cost_usd" | "llm_calls" | "tokens" | "error_calls";
 
 export type Comparator = "gt" | "gte" | "lt" | "lte";
 
@@ -77,6 +81,14 @@ export interface AlertRuleFilters {
   environment?: string;
   provider?: string;
   model?: string;
+  /**
+   * Narrows the failed calls counted, on `error_rate` and `error_calls` only; on another metric
+   * the server answers `422 VALIDATION_ERROR` (`filters.error_class: applies to error_rate and
+   * error_calls`).
+   */
+  error_class?: ErrorClass;
+  /** As `error_class`: `error_rate` and `error_calls` only. */
+  rate_limit_kind?: RateLimitKind;
 }
 
 export interface AlertRuleState {
@@ -218,7 +230,8 @@ export interface DeliveryQuery {
 
 /* ---------- Budgets ---------- */
 
-export type BudgetScope = "project" | "gateway_key" | "user" | "model";
+/** A `metadata` budget's `scope_id` is `key=value`; a `trace_name` one's is the name. */
+export type BudgetScope = "project" | "gateway_key" | "user" | "model" | "metadata" | "trace_name";
 
 export type BudgetPeriod = "daily" | "monthly";
 

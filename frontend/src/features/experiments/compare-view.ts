@@ -2,8 +2,8 @@
  * Pure logic of the run comparison: score kinds and formats, the change of each item, the sort
  * by the largest change, and the trade-off sentence. Every score is higher-is-better.
  */
-import type { ItemDelta, ItemScore, ScoreConfig } from "@/lib/api";
-import { parseMoney } from "@/lib/format";
+import type { ItemDelta, ItemScore, PairedTest, ScoreConfig, ScoreDelta } from "@/lib/api";
+import { formatInteger, parseMoney } from "@/lib/format";
 import { formatScoreNumber, type ScoreValueParts } from "@/lib/score-format";
 
 export type ScoreKind = "numeric" | "boolean" | "categorical";
@@ -292,4 +292,76 @@ export function formatTradeOff({
   const latency = formatMsDelta(latencyP95Delta);
   parts.push(latency === null ? "p95 latency unknown" : `p95 latency ${latency}`);
   return `B ${parts.join(", ")}.`;
+}
+
+/** Below this many scored items an interval is still shown, flagged "few items". */
+export const FEW_ITEMS = 10;
+
+/**
+ * A pass rate's 95% interval: "95% CI 64–88%, n = 50"; null without one. The low bound rounds
+ * down and the high bound up, so the printed range always contains the interval.
+ */
+export function formatInterval(low: string | null, high: string | null, n: number): string | null {
+  if (low === null || high === null) {
+    return null;
+  }
+  // The bounds are 4-place decimals: whole basis points keep floor and ceil exact.
+  const lowBp = Math.round(Number(low) * 10_000);
+  const highBp = Math.round(Number(high) * 10_000);
+  if (!Number.isFinite(lowBp) || !Number.isFinite(highBp)) {
+    return null;
+  }
+  const range = `${Math.floor(lowBp / 100)}\u2013${Math.ceil(highBp / 100)}%`;
+  return `95% CI ${range}, n = ${formatInteger(n) ?? n}`;
+}
+
+function verdict(test: PairedTest): string {
+  const name = test.kind === "mcnemar" ? "exact McNemar" : "sign test";
+  return test.significant
+    ? `Significant (${name}, p = ${test.p_value}).`
+    : `Not significant (${name}, p = ${test.p_value}): the runs may not differ.`;
+}
+
+function movement(test: PairedTest): string {
+  const up = formatInteger(test.improved);
+  const down = formatInteger(test.regressed);
+  return test.kind === "mcnemar"
+    ? `${formatInteger(test.n)} flipped: ${up} up, ${down} down`
+    : `${up} up, ${down} down, ${formatInteger(test.unchanged)} unchanged`;
+}
+
+/**
+ * The paired test under a score's delta on Compare (spec 7.2, 7.3). Null for a categorical score,
+ * or with no test and nothing more to say. The tone is always neutral: a significant change is
+ * not a verdict on which run is better, and "not significant" is not a failure.
+ */
+export function testSentence(
+  delta: ScoreDelta,
+  kind: ScoreKind,
+  scoredBoth: number,
+): { text: string; tone: Tone } | null {
+  if (kind === "categorical") {
+    return null;
+  }
+  const test = delta.test;
+  if (test === null) {
+    if (scoredBoth === 0) {
+      return { text: "Nothing to compare: no item is scored in both runs.", tone: "neutral" };
+    }
+    return scoredBoth < 2
+      ? {
+          text: "No significance test: fewer than 2 items carry this score in both runs.",
+          tone: "neutral",
+        }
+      : null;
+  }
+  if (test.n === 0) {
+    return { text: "No items changed.", tone: "neutral" };
+  }
+  const shown = test.kind === "mcnemar" ? "boolean" : "numeric";
+  const mean = (value: number | null) => formatMean(value, shown) ?? "unknown";
+  const label = test.kind === "mcnemar" ? "Pass rate" : "Mean";
+  const items = formatInteger(test.n + test.unchanged);
+  const text = `${label} ${mean(delta.mean_a)} \u2192 ${mean(delta.mean_b)} on ${items} items (${movement(test)}). ${verdict(test)}`;
+  return { text, tone: "neutral" };
 }

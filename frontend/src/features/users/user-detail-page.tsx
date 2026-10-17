@@ -12,6 +12,7 @@ import { useProjectParams } from "@/features/shell/project-context";
 import { fromPathUserId, isApiError, type UserDetail } from "@/lib/api";
 import { formatInteger } from "@/lib/format";
 
+import { ComputedAtChip } from "./computed-at-chip";
 import { UserDailyChart, UserDailyChartSkeleton } from "./user-daily-chart";
 import {
   formatUtcDay,
@@ -110,7 +111,10 @@ function BackToUsersLink() {
   );
 }
 
-/** Figma "Users — Detail" header: the ID, the window line and the ink totals band. */
+/**
+ * Figma "Users — Detail" header: the ID, the window line with the computed-at chip, and the ink
+ * totals band.
+ */
 function UserHeader({ detail, userId }: { detail: UserDetail; userId: string }) {
   const { user } = detail;
   return (
@@ -121,10 +125,13 @@ function UserHeader({ detail, userId }: { detail: UserDetail; userId: string }) 
         </h1>
         <CopyButton value={userId} label="Copy user ID" className="size-7 shrink-0" />
       </div>
-      <p className="text-sm text-muted-foreground">
-        First seen in window: {formatUtcDay(user.first_seen_day)} · last seen{" "}
-        {lastSeenPhrase(user.last_seen_day)} · window {windowLabel(detail.window)} (UTC days)
-      </p>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <p className="text-sm text-muted-foreground">
+          First seen in window: {formatUtcDay(user.first_seen_day)} · last seen{" "}
+          {lastSeenPhrase(user.last_seen_day)} · window {windowLabel(detail.window)} (UTC days)
+        </p>
+        <ComputedAtChip value={detail.computed_at} />
+      </div>
       <dl className="grid grid-cols-2 gap-2 rounded-card bg-hero-card p-3 text-hero-card-foreground sm:grid-cols-3 lg:grid-cols-6 dark:border dark:border-border">
         <Stat label="Traces">{formatInteger(user.traces)}</Stat>
         <Stat label="LLM calls">{formatInteger(user.llm_calls)}</Stat>

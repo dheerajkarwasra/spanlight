@@ -64,7 +64,7 @@ export function ExportFailureLine({ errorCode, stacked = false }: ExportFailureL
 
 interface DownloadActionProps {
   exportId: string;
-  /** Names the export for assistive technology: "JSONL export, Oct 1 – Oct 8, 2026". */
+  /** Names the export for assistive technology: `describeExport(...).downloadLabel`. */
   label: string;
   className?: string;
 }

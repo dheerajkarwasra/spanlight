@@ -31,7 +31,7 @@ export function BudgetDialog({ budget, trigger }: BudgetDialogProps) {
       {open ? (
         <DialogContent
           hideClose
-          className="max-h-[calc(100dvh-2rem)] max-w-[520px] gap-0 overflow-y-auto rounded-card p-6 sm:p-7"
+          className="max-h-[calc(100dvh-2rem)] max-w-[640px] gap-0 overflow-y-auto rounded-card p-6 sm:p-7"
         >
           <BudgetForm
             budget={budget}

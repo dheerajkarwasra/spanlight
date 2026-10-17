@@ -2,6 +2,7 @@ import {
   ArrowDown,
   ArrowUp,
   Bot,
+  Info,
   ListChecks,
   Minus,
   Shuffle,
@@ -30,6 +31,16 @@ export function KindChip({ kind }: { kind: EvaluatorKind }) {
     <span className={cn(OUTLINE, "text-muted-foreground")}>
       <Icon aria-hidden className="size-3.5" />
       {label}
+    </span>
+  );
+}
+
+/** Figma "Few items" chip: an interval over fewer than ten items is wide; it says so in words. */
+export function FewItemsChip() {
+  return (
+    <span className={cn(OUTLINE, "text-muted-foreground")}>
+      <Info aria-hidden className="size-3.5" />
+      few items
     </span>
   );
 }

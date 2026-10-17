@@ -3,9 +3,13 @@ import { useEffect, useRef } from "react";
 
 import { useProjectFilters, useProjectParams } from "@/features/shell/project-context";
 import {
+  completenessApi,
   insightsApi,
   projectsApi,
+  providersApi,
   queryKeys,
+  type CompletenessQuery,
+  type IncidentListQuery,
   type MetricsQuery,
   type TraceListQuery,
 } from "@/lib/api";
@@ -13,6 +17,9 @@ import { bucketFor, resolveRange } from "@/lib/time-range";
 
 export const RECENT_ERRORS_LIMIT = 3;
 export const LATEST_TRACES_LIMIT = 5;
+
+/** The most incidents the calls/errors overlay asks for (the API's maximum). */
+export const INCIDENT_OVERLAY_LIMIT = 100;
 
 /** How often the "Live" latest-traces list refreshes. */
 export const LIVE_REFRESH_MS = 15_000;
@@ -55,6 +62,27 @@ export function useOverviewQueries() {
   const health = useQuery({
     queryKey: keys.health(metricsWindow),
     queryFn: () => insightsApi.health(projectId, metricsWindow),
+    placeholderData: keepPreviousData,
+  });
+
+  // Losses are counted per project, not per environment, so the window alone scopes them.
+  const completenessQuery: CompletenessQuery = { from: range.from, to: range.to };
+  const completeness = useQuery({
+    queryKey: keys.completeness(completenessQuery),
+    queryFn: () => completenessApi.get(projectId, completenessQuery),
+    placeholderData: keepPreviousData,
+  });
+
+  // Status page incidents are global; the API's default keeps the API-affected ones, and the
+  // overlay keeps those of the providers the models list shows.
+  const incidentsQuery: Omit<IncidentListQuery, "cursor"> = {
+    from: range.from,
+    to: range.to,
+    limit: INCIDENT_OVERLAY_LIMIT,
+  };
+  const incidents = useQuery({
+    queryKey: keys.providerIncidents(incidentsQuery),
+    queryFn: () => providersApi.incidents(projectId, incidentsQuery),
     placeholderData: keepPreviousData,
   });
 
@@ -124,6 +152,8 @@ export function useOverviewQueries() {
     timeseries,
     models,
     health,
+    completeness,
+    incidents,
     recentErrors,
     latestTraces,
     onboarding,

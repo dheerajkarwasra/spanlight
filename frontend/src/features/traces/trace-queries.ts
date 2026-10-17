@@ -34,6 +34,12 @@ export function toTraceListQuery(
     score_value: named ? search.score_value : undefined,
     has_scores: search.has_scores,
     prompt_version_id: search.prompt_version,
+    has_retries: search.has_retries,
+    metadata_key: search.metadata_key,
+    // A value alone is a 422; the URL can carry one, the list never sends it.
+    metadata_value: search.metadata_key !== undefined ? search.metadata_value : undefined,
+    name: search.name,
+    sort: search.sort,
     limit: TRACE_PAGE_SIZE,
   };
 }
