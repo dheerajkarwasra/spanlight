@@ -1,0 +1,20 @@
+[
+  {"provider": "anthropic", "raw": "standard", "expected": "standard"},
+  {"provider": "anthropic", "raw": "batch", "expected": "batch"},
+  {"provider": "anthropic", "raw": "priority", "expected": "priority"},
+  {"provider": "anthropic", "raw": "priority_on_demand", "expected": "priority"},
+  {"provider": "anthropic", "raw": "flex", "expected": "flex"},
+  {"provider": "anthropic", "raw": "flex_discount", "expected": "flex"},
+  {"provider": "openai", "raw": "default", "expected": "standard"},
+  {"provider": "openai", "raw": "auto", "expected": "standard"},
+  {"provider": "openai", "raw": "scale", "expected": "standard"},
+  {"provider": "openai", "raw": "flex", "expected": "flex"},
+  {"provider": "openai", "raw": "priority", "expected": "priority"},
+  {"provider": "openai", "raw": "fast", "expected": "priority"},
+  {"provider": "openai", "raw": "batch", "expected": "batch"},
+  {"provider": "google", "raw": "batch", "expected": "batch"},
+  {"provider": "anthropic", "raw": "  Batch ", "expected": "batch"},
+  {"provider": "anthropic", "raw": "FLEX_DISCOUNT", "expected": "flex"},
+  {"provider": "openai", "raw": "turbo", "expected": null},
+  {"provider": "openai", "raw": "", "expected": null}
+]

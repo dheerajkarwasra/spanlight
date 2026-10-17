@@ -14,11 +14,13 @@ import re
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Mapping
 from typing import Any, Literal, get_args
 
-from ._ids import new_span_id, new_trace_id
+from ._ids import new_span_id
 from ._serialize import JsonValue, to_jsonable
+from ._trace_state import TraceState
+from ._usage import SpanUsage
 
 logger = logging.getLogger("spanlight")
 
@@ -46,67 +48,7 @@ def _isoformat_ns(epoch_ns: int) -> str:
     return moment.isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
-class TraceState:
-    """Mutable trace-level fields shared by every span of one trace.
-
-    Instances are shared by reference between parent and child spans
-    (including children running in other asyncio tasks), so an
-    :func:`~spanlight.update_trace` call anywhere in the trace is
-    visible to every span exported afterwards.
-    """
-
-    def __init__(
-        self,
-        *,
-        trace_id: str | None = None,
-        name: str | None = None,
-        environment: str | None = None,
-        release: str | None = None,
-    ) -> None:
-        self.trace_id = trace_id or new_trace_id()
-        self.name = name
-        self.environment = environment
-        self.release = release
-        self.user_id: str | None = None
-        self.session_id: str | None = None
-        self.tags: list[str] = []
-        self._lock = threading.Lock()
-
-    def update(
-        self,
-        *,
-        name: str | None = None,
-        user_id: str | None = None,
-        session_id: str | None = None,
-        tags: Iterable[str] | None = None,
-    ) -> None:
-        """Set trace-level fields. ``None`` leaves a field unchanged; tags accumulate."""
-        with self._lock:
-            if name is not None:
-                self.name = name
-            if user_id is not None:
-                self.user_id = user_id
-            if session_id is not None:
-                self.session_id = session_id
-            if tags is not None:
-                for tag in tags:
-                    if tag not in self.tags:
-                        self.tags.append(str(tag))
-
-    def to_payload(self) -> dict[str, JsonValue]:
-        """Return the ``trace`` object of the ingestion payload."""
-        with self._lock:
-            return {
-                "name": self.name,
-                "environment": self.environment,
-                "release": self.release,
-                "user_id": self.user_id,
-                "session_id": self.session_id,
-                "tags": list(self.tags),
-            }
-
-
-class Span:
+class Span(SpanUsage):
     """A single timed operation within a trace.
 
     Spans are created by :meth:`Spanlight.span <spanlight.Spanlight.span>`,
@@ -128,11 +70,13 @@ class Span:
         parent_span_id: str | None,
         on_end: Callable[[Span], None] | None,
         recording: bool = True,
+        span_id: str | None = None,
     ) -> None:
         self.name = name
         self.kind = kind
         self.trace = trace
-        self.span_id = new_span_id()
+        # A fixed id (batch results) makes re-recording the same work idempotent.
+        self.span_id = span_id or new_span_id()
         self.parent_span_id = parent_span_id
         self.recording = recording
 
@@ -140,11 +84,7 @@ class Span:
         self.status_message: str | None = None
         self.provider: str | None = None
         self.model: str | None = None
-        self.input_tokens: int | None = None
-        self.output_tokens: int | None = None
-        self.cached_tokens: int | None = None
-        self.cache_write_tokens: int | None = None
-        self.cache_write_1h_tokens: int | None = None
+        self._init_usage()
         self.time_to_first_token_ms: float | None = None
         self.request_hash: str | None = None
         self.finish_reason: str | None = None
@@ -201,37 +141,6 @@ class Span:
             self.model = str(model)
         if provider:
             self.provider = str(provider)
-
-    def set_usage(
-        self,
-        *,
-        input_tokens: int | None = None,
-        output_tokens: int | None = None,
-        cached_tokens: int | None = None,
-        cache_write_tokens: int | None = None,
-        cache_write_1h_tokens: int | None = None,
-    ) -> None:
-        """Record token usage. ``None`` leaves the existing value unchanged.
-
-        ``input_tokens`` is the *total* prompt size: uncached tokens plus
-        prompt-cache reads plus prompt-cache writes. ``cached_tokens`` is the
-        part served from the cache (reads); ``cache_write_tokens`` is the part
-        written to it, and ``cache_write_1h_tokens`` the subset of those writes
-        made with a 1-hour TTL (the rest are 5-minute writes). Leave the write
-        fields unset when the provider reports none.
-        """
-        if not self._mutable:
-            return
-        if input_tokens is not None:
-            self.input_tokens = int(input_tokens)
-        if output_tokens is not None:
-            self.output_tokens = int(output_tokens)
-        if cached_tokens is not None:
-            self.cached_tokens = int(cached_tokens)
-        if cache_write_tokens is not None:
-            self.cache_write_tokens = int(cache_write_tokens)
-        if cache_write_1h_tokens is not None:
-            self.cache_write_1h_tokens = int(cache_write_1h_tokens)
 
     def set_request_hash(self, value: str | None) -> None:
         """Record the request hash used to group identical calls.
@@ -308,18 +217,6 @@ class Span:
     def to_payload(self) -> dict[str, JsonValue]:
         """Serialize the span into the ``POST /v1/traces`` span schema."""
         end_ns = self._end_epoch_ns if self._end_epoch_ns is not None else time.time_ns()
-        usage: dict[str, int] | None = None
-        token_counts = {
-            "input_tokens": self.input_tokens,
-            "output_tokens": self.output_tokens,
-            "cached_tokens": self.cached_tokens,
-            # Sent only when set, so payloads for servers that predate cache-write
-            # pricing stay unchanged.
-            "cache_write_tokens": self.cache_write_tokens,
-            "cache_write_1h_tokens": self.cache_write_1h_tokens,
-        }
-        if any(count is not None for count in token_counts.values()):
-            usage = {key: count for key, count in token_counts.items() if count is not None}
         payload: dict[str, JsonValue] = {
             "trace_id": self.trace_id,
             "span_id": self.span_id,
@@ -332,7 +229,7 @@ class Span:
             "end_time": _isoformat_ns(end_ns),
             "provider": self.provider,
             "model": self.model,
-            "usage": usage,
+            "usage": self._usage_payload(),
             "time_to_first_token_ms": self.time_to_first_token_ms,
             "request_hash": self.request_hash,
             "finish_reason": self.finish_reason,

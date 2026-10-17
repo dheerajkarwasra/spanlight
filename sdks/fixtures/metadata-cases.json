@@ -1,0 +1,1602 @@
+{
+  "clean": [
+    {
+      "name": "valid",
+      "raw": {
+        "customer_id": "acme",
+        "feature": "search"
+      },
+      "strict_error": null,
+      "lenient": {
+        "customer_id": "acme",
+        "feature": "search"
+      },
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "empty_object",
+      "raw": {},
+      "strict_error": null,
+      "lenient": {},
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "raw_null_is_empty",
+      "raw": null,
+      "strict_error": null,
+      "lenient": {},
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "raw_array_is_not_an_object",
+      "raw": [
+        "customer_id",
+        "acme"
+      ],
+      "strict_error": "trace.metadata: must be an object",
+      "lenient": {},
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 1,
+        "count": 0
+      }
+    },
+    {
+      "name": "raw_string_is_not_an_object",
+      "raw": "customer_id=acme",
+      "strict_error": "trace.metadata: must be an object",
+      "lenient": {},
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 1,
+        "count": 0
+      }
+    },
+    {
+      "name": "keys_33_strict_rejects_lenient_keeps_first_32_in_lexical_order",
+      "raw": {
+        "k32": "v32",
+        "k31": "v31",
+        "k30": "v30",
+        "k29": "v29",
+        "k28": "v28",
+        "k27": "v27",
+        "k26": "v26",
+        "k25": "v25",
+        "k24": "v24",
+        "k23": "v23",
+        "k22": "v22",
+        "k21": "v21",
+        "k20": "v20",
+        "k19": "v19",
+        "k18": "v18",
+        "k17": "v17",
+        "k16": "v16",
+        "k15": "v15",
+        "k14": "v14",
+        "k13": "v13",
+        "k12": "v12",
+        "k11": "v11",
+        "k10": "v10",
+        "k09": "v9",
+        "k08": "v8",
+        "k07": "v7",
+        "k06": "v6",
+        "k05": "v5",
+        "k04": "v4",
+        "k03": "v3",
+        "k02": "v2",
+        "k01": "v1",
+        "k00": "v0"
+      },
+      "strict_error": "trace.metadata: at most 32 keys",
+      "lenient": {
+        "k00": "v0",
+        "k01": "v1",
+        "k02": "v2",
+        "k03": "v3",
+        "k04": "v4",
+        "k05": "v5",
+        "k06": "v6",
+        "k07": "v7",
+        "k08": "v8",
+        "k09": "v9",
+        "k10": "v10",
+        "k11": "v11",
+        "k12": "v12",
+        "k13": "v13",
+        "k14": "v14",
+        "k15": "v15",
+        "k16": "v16",
+        "k17": "v17",
+        "k18": "v18",
+        "k19": "v19",
+        "k20": "v20",
+        "k21": "v21",
+        "k22": "v22",
+        "k23": "v23",
+        "k24": "v24",
+        "k25": "v25",
+        "k26": "v26",
+        "k27": "v27",
+        "k28": "v28",
+        "k29": "v29",
+        "k30": "v30",
+        "k31": "v31"
+      },
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 0,
+        "count": 1
+      }
+    },
+    {
+      "name": "keys_32_ok",
+      "raw": {
+        "k00": "v0",
+        "k01": "v1",
+        "k02": "v2",
+        "k03": "v3",
+        "k04": "v4",
+        "k05": "v5",
+        "k06": "v6",
+        "k07": "v7",
+        "k08": "v8",
+        "k09": "v9",
+        "k10": "v10",
+        "k11": "v11",
+        "k12": "v12",
+        "k13": "v13",
+        "k14": "v14",
+        "k15": "v15",
+        "k16": "v16",
+        "k17": "v17",
+        "k18": "v18",
+        "k19": "v19",
+        "k20": "v20",
+        "k21": "v21",
+        "k22": "v22",
+        "k23": "v23",
+        "k24": "v24",
+        "k25": "v25",
+        "k26": "v26",
+        "k27": "v27",
+        "k28": "v28",
+        "k29": "v29",
+        "k30": "v30",
+        "k31": "v31"
+      },
+      "strict_error": null,
+      "lenient": {
+        "k00": "v0",
+        "k01": "v1",
+        "k02": "v2",
+        "k03": "v3",
+        "k04": "v4",
+        "k05": "v5",
+        "k06": "v6",
+        "k07": "v7",
+        "k08": "v8",
+        "k09": "v9",
+        "k10": "v10",
+        "k11": "v11",
+        "k12": "v12",
+        "k13": "v13",
+        "k14": "v14",
+        "k15": "v15",
+        "k16": "v16",
+        "k17": "v17",
+        "k18": "v18",
+        "k19": "v19",
+        "k20": "v20",
+        "k21": "v21",
+        "k22": "v22",
+        "k23": "v23",
+        "k24": "v24",
+        "k25": "v25",
+        "k26": "v26",
+        "k27": "v27",
+        "k28": "v28",
+        "k29": "v29",
+        "k30": "v30",
+        "k31": "v31"
+      },
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "keys_33_lenient_cap_uses_code_point_order_not_a_locale_collation",
+      "raw": {
+        "k00": "v0",
+        "k01": "v1",
+        "k02": "v2",
+        "k03": "v3",
+        "k04": "v4",
+        "k05": "v5",
+        "k06": "v6",
+        "k07": "v7",
+        "k08": "v8",
+        "k09": "v9",
+        "k10": "v10",
+        "k11": "v11",
+        "k12": "v12",
+        "k13": "v13",
+        "k14": "v14",
+        "k15": "v15",
+        "k16": "v16",
+        "k17": "v17",
+        "k18": "v18",
+        "k19": "v19",
+        "k20": "v20",
+        "k21": "v21",
+        "k22": "v22",
+        "k23": "v23",
+        "k24": "v24",
+        "k25": "v25",
+        "k26": "v26",
+        "k27": "v27",
+        "k28": "v28",
+        "k29": "v29",
+        "zb": "1",
+        "z_c": "2",
+        "z-d": "3"
+      },
+      "strict_error": "trace.metadata: at most 32 keys",
+      "lenient": {
+        "k00": "v0",
+        "k01": "v1",
+        "k02": "v2",
+        "k03": "v3",
+        "k04": "v4",
+        "k05": "v5",
+        "k06": "v6",
+        "k07": "v7",
+        "k08": "v8",
+        "k09": "v9",
+        "k10": "v10",
+        "k11": "v11",
+        "k12": "v12",
+        "k13": "v13",
+        "k14": "v14",
+        "k15": "v15",
+        "k16": "v16",
+        "k17": "v17",
+        "k18": "v18",
+        "k19": "v19",
+        "k20": "v20",
+        "k21": "v21",
+        "k22": "v22",
+        "k23": "v23",
+        "k24": "v24",
+        "k25": "v25",
+        "k26": "v26",
+        "k27": "v27",
+        "k28": "v28",
+        "k29": "v29",
+        "z-d": "3",
+        "z_c": "2"
+      },
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 0,
+        "count": 1
+      }
+    },
+    {
+      "name": "keys_33_with_one_null_counts_after_the_null_drop",
+      "raw": {
+        "k00": "v0",
+        "k01": "v1",
+        "k02": "v2",
+        "k03": "v3",
+        "k04": "v4",
+        "k05": "v5",
+        "k06": "v6",
+        "k07": "v7",
+        "k08": "v8",
+        "k09": "v9",
+        "k10": "v10",
+        "k11": "v11",
+        "k12": "v12",
+        "k13": "v13",
+        "k14": "v14",
+        "k15": "v15",
+        "k16": "v16",
+        "k17": "v17",
+        "k18": "v18",
+        "k19": "v19",
+        "k20": "v20",
+        "k21": "v21",
+        "k22": "v22",
+        "k23": "v23",
+        "k24": "v24",
+        "k25": "v25",
+        "k26": "v26",
+        "k27": "v27",
+        "k28": "v28",
+        "k29": "v29",
+        "k30": "v30",
+        "k31": "v31",
+        "k32": null
+      },
+      "strict_error": null,
+      "lenient": {
+        "k00": "v0",
+        "k01": "v1",
+        "k02": "v2",
+        "k03": "v3",
+        "k04": "v4",
+        "k05": "v5",
+        "k06": "v6",
+        "k07": "v7",
+        "k08": "v8",
+        "k09": "v9",
+        "k10": "v10",
+        "k11": "v11",
+        "k12": "v12",
+        "k13": "v13",
+        "k14": "v14",
+        "k15": "v15",
+        "k16": "v16",
+        "k17": "v17",
+        "k18": "v18",
+        "k19": "v19",
+        "k20": "v20",
+        "k21": "v21",
+        "k22": "v22",
+        "k23": "v23",
+        "k24": "v24",
+        "k25": "v25",
+        "k26": "v26",
+        "k27": "v27",
+        "k28": "v28",
+        "k29": "v29",
+        "k30": "v30",
+        "k31": "v31"
+      },
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "keys_33_with_one_invalid_key_lenient_keeps_the_32_valid",
+      "raw": {
+        "k00": "v0",
+        "k01": "v1",
+        "k02": "v2",
+        "k03": "v3",
+        "k04": "v4",
+        "k05": "v5",
+        "k06": "v6",
+        "k07": "v7",
+        "k08": "v8",
+        "k09": "v9",
+        "k10": "v10",
+        "k11": "v11",
+        "k12": "v12",
+        "k13": "v13",
+        "k14": "v14",
+        "k15": "v15",
+        "k16": "v16",
+        "k17": "v17",
+        "k18": "v18",
+        "k19": "v19",
+        "k20": "v20",
+        "k21": "v21",
+        "k22": "v22",
+        "k23": "v23",
+        "k24": "v24",
+        "k25": "v25",
+        "k26": "v26",
+        "k27": "v27",
+        "k28": "v28",
+        "k29": "v29",
+        "k30": "v30",
+        "k31": "v31",
+        "K_BAD": "x"
+      },
+      "strict_error": "trace.metadata: at most 32 keys",
+      "lenient": {
+        "k00": "v0",
+        "k01": "v1",
+        "k02": "v2",
+        "k03": "v3",
+        "k04": "v4",
+        "k05": "v5",
+        "k06": "v6",
+        "k07": "v7",
+        "k08": "v8",
+        "k09": "v9",
+        "k10": "v10",
+        "k11": "v11",
+        "k12": "v12",
+        "k13": "v13",
+        "k14": "v14",
+        "k15": "v15",
+        "k16": "v16",
+        "k17": "v17",
+        "k18": "v18",
+        "k19": "v19",
+        "k20": "v20",
+        "k21": "v21",
+        "k22": "v22",
+        "k23": "v23",
+        "k24": "v24",
+        "k25": "v25",
+        "k26": "v26",
+        "k27": "v27",
+        "k28": "v28",
+        "k29": "v29",
+        "k30": "v30",
+        "k31": "v31"
+      },
+      "drops": {
+        "key": 1,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "keys_34_with_two_invalid_values_lenient_keeps_the_32_valid",
+      "raw": {
+        "k00": "v0",
+        "k01": "v1",
+        "k02": "v2",
+        "k03": "v3",
+        "k04": "v4",
+        "k05": "v5",
+        "k06": "v6",
+        "k07": "v7",
+        "k08": "v8",
+        "k09": "v9",
+        "k10": "v10",
+        "k11": "v11",
+        "k12": "v12",
+        "k13": "v13",
+        "k14": "v14",
+        "k15": "v15",
+        "k16": "v16",
+        "k17": "v17",
+        "k18": "v18",
+        "k19": "v19",
+        "k20": "v20",
+        "k21": "v21",
+        "k22": "v22",
+        "k23": "v23",
+        "k24": "v24",
+        "k25": "v25",
+        "k26": "v26",
+        "k27": "v27",
+        "k28": "v28",
+        "k29": "v29",
+        "k30": "v30",
+        "k31": "v31",
+        "k32": "",
+        "k33": {
+          "a": 1
+        }
+      },
+      "strict_error": "trace.metadata: at most 32 keys",
+      "lenient": {
+        "k00": "v0",
+        "k01": "v1",
+        "k02": "v2",
+        "k03": "v3",
+        "k04": "v4",
+        "k05": "v5",
+        "k06": "v6",
+        "k07": "v7",
+        "k08": "v8",
+        "k09": "v9",
+        "k10": "v10",
+        "k11": "v11",
+        "k12": "v12",
+        "k13": "v13",
+        "k14": "v14",
+        "k15": "v15",
+        "k16": "v16",
+        "k17": "v17",
+        "k18": "v18",
+        "k19": "v19",
+        "k20": "v20",
+        "k21": "v21",
+        "k22": "v22",
+        "k23": "v23",
+        "k24": "v24",
+        "k25": "v25",
+        "k26": "v26",
+        "k27": "v27",
+        "k28": "v28",
+        "k29": "v29",
+        "k30": "v30",
+        "k31": "v31"
+      },
+      "drops": {
+        "key": 0,
+        "value": 1,
+        "type": 1,
+        "count": 0
+      }
+    },
+    {
+      "name": "key_with_upper_case_invalid",
+      "raw": {
+        "Customer_ID": "acme",
+        "team": "ml"
+      },
+      "strict_error": "trace.metadata.Customer_ID: key must match ^[a-z0-9_.-]{1,64}$",
+      "lenient": {
+        "team": "ml"
+      },
+      "drops": {
+        "key": 1,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "key_64_chars_ok",
+      "raw": {
+        "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk": "x"
+      },
+      "strict_error": null,
+      "lenient": {
+        "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk": "x"
+      },
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "key_65_chars_invalid",
+      "raw": {
+        "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk": "x"
+      },
+      "strict_error": "trace.metadata.kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk: key must match ^[a-z0-9_.-]{1,64}$",
+      "lenient": {},
+      "drops": {
+        "key": 1,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "key_empty_invalid",
+      "raw": {
+        "": "x"
+      },
+      "strict_error": "trace.metadata.: key must match ^[a-z0-9_.-]{1,64}$",
+      "lenient": {},
+      "drops": {
+        "key": 1,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "key_with_space_invalid",
+      "raw": {
+        "customer id": "acme"
+      },
+      "strict_error": "trace.metadata.customer id: key must match ^[a-z0-9_.-]{1,64}$",
+      "lenient": {},
+      "drops": {
+        "key": 1,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "key_with_unicode_invalid",
+      "raw": {
+        "cl\u00e9": "acme"
+      },
+      "strict_error": "trace.metadata.cl\u00e9: key must match ^[a-z0-9_.-]{1,64}$",
+      "lenient": {},
+      "drops": {
+        "key": 1,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "key_with_trailing_newline_invalid",
+      "raw": {
+        "team\n": "ml"
+      },
+      "strict_error": "trace.metadata.team\n: key must match ^[a-z0-9_.-]{1,64}$",
+      "lenient": {},
+      "drops": {
+        "key": 1,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "key_with_dot_and_dash_ok",
+      "raw": {
+        "a.b-c": "x",
+        "app.tier_1": "gold"
+      },
+      "strict_error": null,
+      "lenient": {
+        "a.b-c": "x",
+        "app.tier_1": "gold"
+      },
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "strict_reports_the_first_invalid_key_in_lexical_order",
+      "raw": {
+        "b_key": {
+          "nested": true
+        },
+        "A_key": "x"
+      },
+      "strict_error": "trace.metadata.A_key: key must match ^[a-z0-9_.-]{1,64}$",
+      "lenient": {},
+      "drops": {
+        "key": 1,
+        "value": 0,
+        "type": 1,
+        "count": 0
+      }
+    },
+    {
+      "name": "value_empty_invalid",
+      "raw": {
+        "customer_id": ""
+      },
+      "strict_error": "trace.metadata.customer_id: value must be 1 to 256 characters",
+      "lenient": {},
+      "drops": {
+        "key": 0,
+        "value": 1,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "value_256_ok",
+      "raw": {
+        "customer_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "strict_error": null,
+      "lenient": {
+        "customer_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "value_257_invalid",
+      "raw": {
+        "customer_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "strict_error": "trace.metadata.customer_id: value must be 1 to 256 characters",
+      "lenient": {},
+      "drops": {
+        "key": 0,
+        "value": 1,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "value_256_multibyte_ok",
+      "raw": {
+        "customer_id": "\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac"
+      },
+      "strict_error": null,
+      "lenient": {
+        "customer_id": "\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac"
+      },
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "value_257_multibyte_invalid",
+      "raw": {
+        "customer_id": "\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac"
+      },
+      "strict_error": "trace.metadata.customer_id: value must be 1 to 256 characters",
+      "lenient": {},
+      "drops": {
+        "key": 0,
+        "value": 1,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "value_padded_is_stored_as_sent",
+      "raw": {
+        "customer_id": "  acme  "
+      },
+      "strict_error": null,
+      "lenient": {
+        "customer_id": "  acme  "
+      },
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "value_integer_coerced",
+      "raw": {
+        "seats": 42
+      },
+      "strict_error": null,
+      "lenient": {
+        "seats": "42"
+      },
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "value_negative_integer_coerced",
+      "raw": {
+        "delta": -7
+      },
+      "strict_error": null,
+      "lenient": {
+        "delta": "-7"
+      },
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "value_float_coerced",
+      "raw": {
+        "ratio": 1.5
+      },
+      "strict_error": null,
+      "lenient": {
+        "ratio": "1.5"
+      },
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "value_exponent_float_coerced_to_its_python_json_text",
+      "raw": {
+        "limit": 1e3
+      },
+      "strict_error": null,
+      "lenient": {
+        "limit": "1000.0"
+      },
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "value_true_coerced",
+      "raw": {
+        "beta": true
+      },
+      "strict_error": null,
+      "lenient": {
+        "beta": "true"
+      },
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "value_false_coerced",
+      "raw": {
+        "beta": false
+      },
+      "strict_error": null,
+      "lenient": {
+        "beta": "false"
+      },
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "value_null_dropped_silently",
+      "raw": {
+        "customer_id": null,
+        "team": "ml"
+      },
+      "strict_error": null,
+      "lenient": {
+        "team": "ml"
+      },
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 0,
+        "count": 0
+      }
+    },
+    {
+      "name": "value_object_invalid",
+      "raw": {
+        "customer": {
+          "id": "acme"
+        }
+      },
+      "strict_error": "trace.metadata.customer: value must be a string, number or boolean",
+      "lenient": {},
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 1,
+        "count": 0
+      }
+    },
+    {
+      "name": "value_array_invalid",
+      "raw": {
+        "tags": [
+          "a",
+          "b"
+        ]
+      },
+      "strict_error": "trace.metadata.tags: value must be a string, number or boolean",
+      "lenient": {},
+      "drops": {
+        "key": 0,
+        "value": 0,
+        "type": 1,
+        "count": 0
+      }
+    }
+  ],
+  "merge": [
+    {
+      "name": "incoming_value_replaces_the_stored_value",
+      "current": {
+        "customer_id": "acme"
+      },
+      "incoming": {
+        "customer_id": "globex"
+      },
+      "expected": {
+        "customer_id": "globex"
+      }
+    },
+    {
+      "name": "new_key_is_added",
+      "current": {
+        "customer_id": "acme"
+      },
+      "incoming": {
+        "team": "ml"
+      },
+      "expected": {
+        "customer_id": "acme",
+        "team": "ml"
+      }
+    },
+    {
+      "name": "empty_incoming_changes_nothing",
+      "current": {
+        "customer_id": "acme"
+      },
+      "incoming": {},
+      "expected": {
+        "customer_id": "acme"
+      }
+    },
+    {
+      "name": "empty_current_takes_the_incoming",
+      "current": {},
+      "incoming": {
+        "team": "ml"
+      },
+      "expected": {
+        "team": "ml"
+      }
+    },
+    {
+      "name": "both_empty",
+      "current": {},
+      "incoming": {},
+      "expected": {}
+    },
+    {
+      "name": "keys_absent_from_incoming_are_kept",
+      "current": {
+        "a": "1",
+        "b": "2"
+      },
+      "incoming": {
+        "b": "3"
+      },
+      "expected": {
+        "a": "1",
+        "b": "3"
+      }
+    },
+    {
+      "name": "existing_key_updates_at_32_and_the_new_key_is_dropped",
+      "current": {
+        "k00": "old",
+        "k01": "old",
+        "k02": "old",
+        "k03": "old",
+        "k04": "old",
+        "k05": "old",
+        "k06": "old",
+        "k07": "old",
+        "k08": "old",
+        "k09": "old",
+        "k10": "old",
+        "k11": "old",
+        "k12": "old",
+        "k13": "old",
+        "k14": "old",
+        "k15": "old",
+        "k16": "old",
+        "k17": "old",
+        "k18": "old",
+        "k19": "old",
+        "k20": "old",
+        "k21": "old",
+        "k22": "old",
+        "k23": "old",
+        "k24": "old",
+        "k25": "old",
+        "k26": "old",
+        "k27": "old",
+        "k28": "old",
+        "k29": "old",
+        "k30": "old",
+        "k31": "old"
+      },
+      "incoming": {
+        "k05": "new",
+        "zz": "dropped"
+      },
+      "expected": {
+        "k00": "old",
+        "k01": "old",
+        "k02": "old",
+        "k03": "old",
+        "k04": "old",
+        "k05": "new",
+        "k06": "old",
+        "k07": "old",
+        "k08": "old",
+        "k09": "old",
+        "k10": "old",
+        "k11": "old",
+        "k12": "old",
+        "k13": "old",
+        "k14": "old",
+        "k15": "old",
+        "k16": "old",
+        "k17": "old",
+        "k18": "old",
+        "k19": "old",
+        "k20": "old",
+        "k21": "old",
+        "k22": "old",
+        "k23": "old",
+        "k24": "old",
+        "k25": "old",
+        "k26": "old",
+        "k27": "old",
+        "k28": "old",
+        "k29": "old",
+        "k30": "old",
+        "k31": "old"
+      }
+    },
+    {
+      "name": "two_new_keys_compete_for_the_last_slot_in_lexical_order",
+      "current": {
+        "k00": "old",
+        "k01": "old",
+        "k02": "old",
+        "k03": "old",
+        "k04": "old",
+        "k05": "old",
+        "k06": "old",
+        "k07": "old",
+        "k08": "old",
+        "k09": "old",
+        "k10": "old",
+        "k11": "old",
+        "k12": "old",
+        "k13": "old",
+        "k14": "old",
+        "k15": "old",
+        "k16": "old",
+        "k17": "old",
+        "k18": "old",
+        "k19": "old",
+        "k20": "old",
+        "k21": "old",
+        "k22": "old",
+        "k23": "old",
+        "k24": "old",
+        "k25": "old",
+        "k26": "old",
+        "k27": "old",
+        "k28": "old",
+        "k29": "old",
+        "k30": "old"
+      },
+      "incoming": {
+        "b_key": "b",
+        "a_key": "a"
+      },
+      "expected": {
+        "k00": "old",
+        "k01": "old",
+        "k02": "old",
+        "k03": "old",
+        "k04": "old",
+        "k05": "old",
+        "k06": "old",
+        "k07": "old",
+        "k08": "old",
+        "k09": "old",
+        "k10": "old",
+        "k11": "old",
+        "k12": "old",
+        "k13": "old",
+        "k14": "old",
+        "k15": "old",
+        "k16": "old",
+        "k17": "old",
+        "k18": "old",
+        "k19": "old",
+        "k20": "old",
+        "k21": "old",
+        "k22": "old",
+        "k23": "old",
+        "k24": "old",
+        "k25": "old",
+        "k26": "old",
+        "k27": "old",
+        "k28": "old",
+        "k29": "old",
+        "k30": "old",
+        "a_key": "a"
+      }
+    },
+    {
+      "name": "lexical_order_is_code_point_order_not_the_database_collation",
+      "current": {
+        "k00": "old",
+        "k01": "old",
+        "k02": "old",
+        "k03": "old",
+        "k04": "old",
+        "k05": "old",
+        "k06": "old",
+        "k07": "old",
+        "k08": "old",
+        "k09": "old",
+        "k10": "old",
+        "k11": "old",
+        "k12": "old",
+        "k13": "old",
+        "k14": "old",
+        "k15": "old",
+        "k16": "old",
+        "k17": "old",
+        "k18": "old",
+        "k19": "old",
+        "k20": "old",
+        "k21": "old",
+        "k22": "old",
+        "k23": "old",
+        "k24": "old",
+        "k25": "old",
+        "k26": "old",
+        "k27": "old",
+        "k28": "old",
+        "k29": "old",
+        "k30": "old"
+      },
+      "incoming": {
+        "ab": "1",
+        "a-c": "2",
+        "a_b": "3"
+      },
+      "expected": {
+        "k00": "old",
+        "k01": "old",
+        "k02": "old",
+        "k03": "old",
+        "k04": "old",
+        "k05": "old",
+        "k06": "old",
+        "k07": "old",
+        "k08": "old",
+        "k09": "old",
+        "k10": "old",
+        "k11": "old",
+        "k12": "old",
+        "k13": "old",
+        "k14": "old",
+        "k15": "old",
+        "k16": "old",
+        "k17": "old",
+        "k18": "old",
+        "k19": "old",
+        "k20": "old",
+        "k21": "old",
+        "k22": "old",
+        "k23": "old",
+        "k24": "old",
+        "k25": "old",
+        "k26": "old",
+        "k27": "old",
+        "k28": "old",
+        "k29": "old",
+        "k30": "old",
+        "a-c": "2"
+      }
+    },
+    {
+      "name": "underscore_sorts_before_a_letter_at_the_cap",
+      "current": {
+        "k00": "old",
+        "k01": "old",
+        "k02": "old",
+        "k03": "old",
+        "k04": "old",
+        "k05": "old",
+        "k06": "old",
+        "k07": "old",
+        "k08": "old",
+        "k09": "old",
+        "k10": "old",
+        "k11": "old",
+        "k12": "old",
+        "k13": "old",
+        "k14": "old",
+        "k15": "old",
+        "k16": "old",
+        "k17": "old",
+        "k18": "old",
+        "k19": "old",
+        "k20": "old",
+        "k21": "old",
+        "k22": "old",
+        "k23": "old",
+        "k24": "old",
+        "k25": "old",
+        "k26": "old",
+        "k27": "old",
+        "k28": "old",
+        "k29": "old",
+        "k30": "old"
+      },
+      "incoming": {
+        "ab": "x",
+        "a_c": "y"
+      },
+      "expected": {
+        "k00": "old",
+        "k01": "old",
+        "k02": "old",
+        "k03": "old",
+        "k04": "old",
+        "k05": "old",
+        "k06": "old",
+        "k07": "old",
+        "k08": "old",
+        "k09": "old",
+        "k10": "old",
+        "k11": "old",
+        "k12": "old",
+        "k13": "old",
+        "k14": "old",
+        "k15": "old",
+        "k16": "old",
+        "k17": "old",
+        "k18": "old",
+        "k19": "old",
+        "k20": "old",
+        "k21": "old",
+        "k22": "old",
+        "k23": "old",
+        "k24": "old",
+        "k25": "old",
+        "k26": "old",
+        "k27": "old",
+        "k28": "old",
+        "k29": "old",
+        "k30": "old",
+        "a_c": "y"
+      }
+    },
+    {
+      "name": "dash_sorts_before_a_digit_at_the_cap",
+      "current": {
+        "k00": "old",
+        "k01": "old",
+        "k02": "old",
+        "k03": "old",
+        "k04": "old",
+        "k05": "old",
+        "k06": "old",
+        "k07": "old",
+        "k08": "old",
+        "k09": "old",
+        "k10": "old",
+        "k11": "old",
+        "k12": "old",
+        "k13": "old",
+        "k14": "old",
+        "k15": "old",
+        "k16": "old",
+        "k17": "old",
+        "k18": "old",
+        "k19": "old",
+        "k20": "old",
+        "k21": "old",
+        "k22": "old",
+        "k23": "old",
+        "k24": "old",
+        "k25": "old",
+        "k26": "old",
+        "k27": "old",
+        "k28": "old",
+        "k29": "old",
+        "k30": "old"
+      },
+      "incoming": {
+        "a1": "x",
+        "a-b": "y"
+      },
+      "expected": {
+        "k00": "old",
+        "k01": "old",
+        "k02": "old",
+        "k03": "old",
+        "k04": "old",
+        "k05": "old",
+        "k06": "old",
+        "k07": "old",
+        "k08": "old",
+        "k09": "old",
+        "k10": "old",
+        "k11": "old",
+        "k12": "old",
+        "k13": "old",
+        "k14": "old",
+        "k15": "old",
+        "k16": "old",
+        "k17": "old",
+        "k18": "old",
+        "k19": "old",
+        "k20": "old",
+        "k21": "old",
+        "k22": "old",
+        "k23": "old",
+        "k24": "old",
+        "k25": "old",
+        "k26": "old",
+        "k27": "old",
+        "k28": "old",
+        "k29": "old",
+        "k30": "old",
+        "a-b": "y"
+      }
+    },
+    {
+      "name": "new_keys_beyond_the_room_left_are_dropped_in_lexical_order",
+      "current": {
+        "k00": "old",
+        "k01": "old",
+        "k02": "old",
+        "k03": "old",
+        "k04": "old",
+        "k05": "old",
+        "k06": "old",
+        "k07": "old",
+        "k08": "old",
+        "k09": "old",
+        "k10": "old",
+        "k11": "old",
+        "k12": "old",
+        "k13": "old",
+        "k14": "old",
+        "k15": "old",
+        "k16": "old",
+        "k17": "old",
+        "k18": "old",
+        "k19": "old",
+        "k20": "old",
+        "k21": "old",
+        "k22": "old",
+        "k23": "old",
+        "k24": "old",
+        "k25": "old",
+        "k26": "old",
+        "k27": "old",
+        "k28": "old",
+        "k29": "old"
+      },
+      "incoming": {
+        "e": "5",
+        "d": "4",
+        "c": "3",
+        "b": "2",
+        "a": "1"
+      },
+      "expected": {
+        "k00": "old",
+        "k01": "old",
+        "k02": "old",
+        "k03": "old",
+        "k04": "old",
+        "k05": "old",
+        "k06": "old",
+        "k07": "old",
+        "k08": "old",
+        "k09": "old",
+        "k10": "old",
+        "k11": "old",
+        "k12": "old",
+        "k13": "old",
+        "k14": "old",
+        "k15": "old",
+        "k16": "old",
+        "k17": "old",
+        "k18": "old",
+        "k19": "old",
+        "k20": "old",
+        "k21": "old",
+        "k22": "old",
+        "k23": "old",
+        "k24": "old",
+        "k25": "old",
+        "k26": "old",
+        "k27": "old",
+        "k28": "old",
+        "k29": "old",
+        "a": "1",
+        "b": "2"
+      }
+    },
+    {
+      "name": "a_trace_over_32_keys_adds_nothing_but_still_updates",
+      "current": {
+        "k00": "old",
+        "k01": "old",
+        "k02": "old",
+        "k03": "old",
+        "k04": "old",
+        "k05": "old",
+        "k06": "old",
+        "k07": "old",
+        "k08": "old",
+        "k09": "old",
+        "k10": "old",
+        "k11": "old",
+        "k12": "old",
+        "k13": "old",
+        "k14": "old",
+        "k15": "old",
+        "k16": "old",
+        "k17": "old",
+        "k18": "old",
+        "k19": "old",
+        "k20": "old",
+        "k21": "old",
+        "k22": "old",
+        "k23": "old",
+        "k24": "old",
+        "k25": "old",
+        "k26": "old",
+        "k27": "old",
+        "k28": "old",
+        "k29": "old",
+        "k30": "old",
+        "k31": "old",
+        "k32": "old"
+      },
+      "incoming": {
+        "k00": "new",
+        "zz": "dropped"
+      },
+      "expected": {
+        "k00": "new",
+        "k01": "old",
+        "k02": "old",
+        "k03": "old",
+        "k04": "old",
+        "k05": "old",
+        "k06": "old",
+        "k07": "old",
+        "k08": "old",
+        "k09": "old",
+        "k10": "old",
+        "k11": "old",
+        "k12": "old",
+        "k13": "old",
+        "k14": "old",
+        "k15": "old",
+        "k16": "old",
+        "k17": "old",
+        "k18": "old",
+        "k19": "old",
+        "k20": "old",
+        "k21": "old",
+        "k22": "old",
+        "k23": "old",
+        "k24": "old",
+        "k25": "old",
+        "k26": "old",
+        "k27": "old",
+        "k28": "old",
+        "k29": "old",
+        "k30": "old",
+        "k31": "old",
+        "k32": "old"
+      }
+    },
+    {
+      "name": "replay_of_the_same_values_changes_nothing",
+      "current": {
+        "a": "1",
+        "b": "2"
+      },
+      "incoming": {
+        "a": "1"
+      },
+      "expected": {
+        "a": "1",
+        "b": "2"
+      }
+    },
+    {
+      "name": "incoming_of_33_new_keys_on_an_empty_trace_keeps_the_first_32",
+      "current": {},
+      "incoming": {
+        "n32": "v",
+        "n31": "v",
+        "n30": "v",
+        "n29": "v",
+        "n28": "v",
+        "n27": "v",
+        "n26": "v",
+        "n25": "v",
+        "n24": "v",
+        "n23": "v",
+        "n22": "v",
+        "n21": "v",
+        "n20": "v",
+        "n19": "v",
+        "n18": "v",
+        "n17": "v",
+        "n16": "v",
+        "n15": "v",
+        "n14": "v",
+        "n13": "v",
+        "n12": "v",
+        "n11": "v",
+        "n10": "v",
+        "n09": "v",
+        "n08": "v",
+        "n07": "v",
+        "n06": "v",
+        "n05": "v",
+        "n04": "v",
+        "n03": "v",
+        "n02": "v",
+        "n01": "v",
+        "n00": "v"
+      },
+      "expected": {
+        "n00": "v",
+        "n01": "v",
+        "n02": "v",
+        "n03": "v",
+        "n04": "v",
+        "n05": "v",
+        "n06": "v",
+        "n07": "v",
+        "n08": "v",
+        "n09": "v",
+        "n10": "v",
+        "n11": "v",
+        "n12": "v",
+        "n13": "v",
+        "n14": "v",
+        "n15": "v",
+        "n16": "v",
+        "n17": "v",
+        "n18": "v",
+        "n19": "v",
+        "n20": "v",
+        "n21": "v",
+        "n22": "v",
+        "n23": "v",
+        "n24": "v",
+        "n25": "v",
+        "n26": "v",
+        "n27": "v",
+        "n28": "v",
+        "n29": "v",
+        "n30": "v",
+        "n31": "v"
+      }
+    }
+  ]
+}

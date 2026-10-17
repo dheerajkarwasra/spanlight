@@ -1,0 +1,2137 @@
+{
+  "library": "openinference-langchain",
+  "version": "0.1.79",
+  "recorded_at": "2026-10-17T20:37:03Z",
+  "recorder": {
+    "runtime": "python 3.13.9",
+    "otel_sdk": "1.45.1",
+    "harness": "sdks/fixtures/otlp/record@e0893b3"
+  },
+  "scenarios": [
+    {
+      "name": "chain_llm",
+      "export": {
+        "content_type": "application/x-protobuf",
+        "body_base64": "CsMrCtIBCiIKFnRlbGVtZXRyeS5zZGsubGFuZ3VhZ2USCAoGcHl0aG9uCiUKEnRlbGVtZXRyeS5zZGsubmFtZRIPCg1vcGVudGVsZW1ldHJ5CiEKFXRlbGVtZXRyeS5zZGsudmVyc2lvbhIICgYxLjQ1LjEKPQoTc2VydmljZS5pbnN0YW5jZS5pZBImCiRkY2NiNjhjZS1iMTgyLTQ5YjAtOThkZS0zNGRjOTUyMTlmZTIKIwoMc2VydmljZS5uYW1lEhMKEXNwYW5saWdodC1maXh0dXJlEuspCjEKJ29wZW5pbmZlcmVuY2UuaW5zdHJ1bWVudGF0aW9uLmxhbmdjaGFpbhIGMC4xLjc5EtwDChCqqYnRC7/oTtUtjE9sr3LIEgjRQn/gUVB8ICIIo3bNuHSfCC4qEkNoYXRQcm9tcHRUZW1wbGF0ZTABOQBde42Ka98YQQCWfo2Ka98YShUKC2lucHV0LnZhbHVlEgYKBGZpdmVKqAEKDG91dHB1dC52YWx1ZRKXAQqUAXsibWVzc2FnZXMiOiBbeyJjb250ZW50IjogIlNheSBoZWxsbyBpbiBmaXZlIHdvcmRzLiIsICJhZGRpdGlvbmFsX2t3YXJncyI6IHt9LCAicmVzcG9uc2VfbWV0YWRhdGEiOiB7fSwgInR5cGUiOiAiaHVtYW4iLCAibmFtZSI6IG51bGwsICJpZCI6IG51bGx9XX1KJgoQb3V0cHV0Lm1pbWVfdHlwZRISChBhcHBsaWNhdGlvbi9qc29uSj0KHGxsbS5wcm9tcHRfdGVtcGxhdGUudGVtcGxhdGUSHQobU2F5IGhlbGxvIGluIHtjb3VudH0gd29yZHMuSjQKHWxsbS5wcm9tcHRfdGVtcGxhdGUudmFyaWFibGVzEhMKEXsiY291bnQiOiAiZml2ZSJ9SiMKF29wZW5pbmZlcmVuY2Uuc3Bhbi5raW5kEggKBlBST01QVHoCGAGFAQABAAASjxoKEKqpidELv+hO1S2MT2yvcsgSCF55abPRAP1AIgijds24dJ8ILioKQ2hhdE9wZW5BSTABOQBYhY2Ka98YQQBVdY6Ka98YSsQBCgtpbnB1dC52YWx1ZRK0AQqxAXsibWVzc2FnZXMiOiBbW3sibGMiOiAxLCAidHlwZSI6ICJjb25zdHJ1Y3RvciIsICJpZCI6IFsibGFuZ2NoYWluIiwgInNjaGVtYSIsICJtZXNzYWdlcyIsICJIdW1hbk1lc3NhZ2UiXSwgImt3YXJncyI6IHsiY29udGVudCI6ICJTYXkgaGVsbG8gaW4gZml2ZSB3b3Jkcy4iLCAidHlwZSI6ICJodW1hbiJ9fV1dfUolCg9pbnB1dC5taW1lX3R5cGUSEgoQYXBwbGljYXRpb24vanNvbkr3DgoMb3V0cHV0LnZhbHVlEuYOCuMOeyJnZW5lcmF0aW9ucyI6IFtbeyJ0ZXh0IjogIkhlbGxvISBIb3cgY2FuIEkgaGVscCB5b3UgdG9kYXk/IiwgImdlbmVyYXRpb25faW5mbyI6IHsiZmluaXNoX3JlYXNvbiI6ICJzdG9wIiwgImxvZ3Byb2JzIjogbnVsbH0sICJ0eXBlIjogIkNoYXRHZW5lcmF0aW9uIiwgIm1lc3NhZ2UiOiB7ImxjIjogMSwgInR5cGUiOiAiY29uc3RydWN0b3IiLCAiaWQiOiBbImxhbmdjaGFpbiIsICJzY2hlbWEiLCAibWVzc2FnZXMiLCAiQUlNZXNzYWdlIl0sICJrd2FyZ3MiOiB7ImNvbnRlbnQiOiAiSGVsbG8hIEhvdyBjYW4gSSBoZWxwIHlvdSB0b2RheT8iLCAiYWRkaXRpb25hbF9rd2FyZ3MiOiB7InJlZnVzYWwiOiBudWxsfSwgInJlc3BvbnNlX21ldGFkYXRhIjogeyJ0b2tlbl91c2FnZSI6IHsiY29tcGxldGlvbl90b2tlbnMiOiA5LCAicHJvbXB0X3Rva2VucyI6IDE5LCAidG90YWxfdG9rZW5zIjogMjgsICJjb21wbGV0aW9uX3Rva2Vuc19kZXRhaWxzIjogeyJhY2NlcHRlZF9wcmVkaWN0aW9uX3Rva2VucyI6IDAsICJhdWRpb190b2tlbnMiOiAwLCAicmVhc29uaW5nX3Rva2VucyI6IDAsICJyZWplY3RlZF9wcmVkaWN0aW9uX3Rva2VucyI6IDAsICJ0ZXh0X3Rva2VucyI6IG51bGx9LCAicHJvbXB0X3Rva2Vuc19kZXRhaWxzIjogeyJhdWRpb190b2tlbnMiOiAwLCAiY2FjaGVfd3JpdGVfdG9rZW5zIjogbnVsbCwgImNhY2hlZF90b2tlbnMiOiA4LCAiaW1hZ2VfdG9rZW5zIjogbnVsbCwgInRleHRfdG9rZW5zIjogbnVsbH19LCAibW9kZWxfcHJvdmlkZXIiOiAib3BlbmFpIiwgIm1vZGVsX25hbWUiOiAiZ3B0LTQuMS1taW5pLTIwMjUtMDQtMTQiLCAic3lzdGVtX2ZpbmdlcnByaW50IjogImZwX3Rlc3QwMDAwMDEiLCAiaWQiOiAiY2hhdGNtcGwtdGVzdDAwMDAwMDAwMDAwMDAwMDAwMDAwMDEiLCAic2VydmljZV90aWVyIjogImRlZmF1bHQiLCAiZmluaXNoX3JlYXNvbiI6ICJzdG9wIiwgImxvZ3Byb2JzIjogbnVsbH0sICJ0eXBlIjogImFpIiwgImlkIjogImxjX3J1bi0tMDFhMTRiOTUtMDQxNC03NTQwLTliZDItNTRmOTIwMmJhMTJhLTAiLCAidXNhZ2VfbWV0YWRhdGEiOiB7ImlucHV0X3Rva2VucyI6IDE5LCAib3V0cHV0X3Rva2VucyI6IDksICJ0b3RhbF90b2tlbnMiOiAyOCwgImlucHV0X3Rva2VuX2RldGFpbHMiOiB7ImF1ZGlvIjogMCwgImNhY2hlX3JlYWQiOiA4fSwgIm91dHB1dF90b2tlbl9kZXRhaWxzIjogeyJhdWRpbyI6IDAsICJyZWFzb25pbmciOiAwfX0sICJ0b29sX2NhbGxzIjogW10sICJpbnZhbGlkX3Rvb2xfY2FsbHMiOiBbXX19fV1dLCAibGxtX291dHB1dCI6IHsidG9rZW5fdXNhZ2UiOiB7ImNvbXBsZXRpb25fdG9rZW5zIjogOSwgInByb21wdF90b2tlbnMiOiAxOSwgInRvdGFsX3Rva2VucyI6IDI4LCAiY29tcGxldGlvbl90b2tlbnNfZGV0YWlscyI6IHsiYWNjZXB0ZWRfcHJlZGljdGlvbl90b2tlbnMiOiAwLCAiYXVkaW9fdG9rZW5zIjogMCwgInJlYXNvbmluZ190b2tlbnMiOiAwLCAicmVqZWN0ZWRfcHJlZGljdGlvbl90b2tlbnMiOiAwLCAidGV4dF90b2tlbnMiOiBudWxsfSwgInByb21wdF90b2tlbnNfZGV0YWlscyI6IHsiYXVkaW9fdG9rZW5zIjogMCwgImNhY2hlX3dyaXRlX3Rva2VucyI6IG51bGwsICJjYWNoZWRfdG9rZW5zIjogOCwgImltYWdlX3Rva2VucyI6IG51bGwsICJ0ZXh0X3Rva2VucyI6IG51bGx9fSwgIm1vZGVsX3Byb3ZpZGVyIjogIm9wZW5haSIsICJtb2RlbF9uYW1lIjogImdwdC00LjEtbWluaS0yMDI1LTA0LTE0IiwgInN5c3RlbV9maW5nZXJwcmludCI6ICJmcF90ZXN0MDAwMDAxIiwgImlkIjogImNoYXRjbXBsLXRlc3QwMDAwMDAwMDAwMDAwMDAwMDAwMDAxIiwgInNlcnZpY2VfdGllciI6ICJkZWZhdWx0In0sICJydW4iOiBudWxsLCAidHlwZSI6ICJMTE1SZXN1bHQifUomChBvdXRwdXQubWltZV90eXBlEhIKEGFwcGxpY2F0aW9uL2pzb25KKwohbGxtLmlucHV0X21lc3NhZ2VzLjAubWVzc2FnZS5yb2xlEgYKBHVzZXJKQgokbGxtLmlucHV0X21lc3NhZ2VzLjAubWVzc2FnZS5jb250ZW50EhoKGFNheSBoZWxsbyBpbiBmaXZlIHdvcmRzLkoxCiJsbG0ub3V0cHV0X21lc3NhZ2VzLjAubWVzc2FnZS5yb2xlEgsKCWFzc2lzdGFudEpLCiVsbG0ub3V0cHV0X21lc3NhZ2VzLjAubWVzc2FnZS5jb250ZW50EiIKIEhlbGxvISBIb3cgY2FuIEkgaGVscCB5b3UgdG9kYXk/So0BChlsbG0uaW52b2NhdGlvbl9wYXJhbWV0ZXJzEnAKbnsibW9kZWwiOiAiZ3B0LTQuMS1taW5pIiwgIm1vZGVsX25hbWUiOiAiZ3B0LTQuMS1taW5pIiwgInN0cmVhbSI6IGZhbHNlLCAiX3R5cGUiOiAib3BlbmFpLWNoYXQiLCAic3RvcCI6IG51bGx9ShgKDGxsbS5wcm92aWRlchIICgZvcGVuYWlKFgoKbGxtLnN5c3RlbRIICgZvcGVuYWlKKwoObGxtLm1vZGVsX25hbWUSGQoXZ3B0LTQuMS1taW5pLTIwMjUtMDQtMTRKHAoWbGxtLnRva2VuX2NvdW50LnByb21wdBICGBNKIAoabGxtLnRva2VuX2NvdW50LmNvbXBsZXRpb24SAhgJShsKFWxsbS50b2tlbl9jb3VudC50b3RhbBICGBxKLgoobGxtLnRva2VuX2NvdW50LmNvbXBsZXRpb25fZGV0YWlscy5hdWRpbxICGABKMgosbGxtLnRva2VuX2NvdW50LmNvbXBsZXRpb25fZGV0YWlscy5yZWFzb25pbmcSAhgASioKJGxsbS50b2tlbl9jb3VudC5wcm9tcHRfZGV0YWlscy5hdWRpbxICGABKLwopbGxtLnRva2VuX2NvdW50LnByb21wdF9kZXRhaWxzLmNhY2hlX3JlYWQSAhgIShsKEWxsbS5maW5pc2hfcmVhc29uEgYKBHN0b3BK7wEKCG1ldGFkYXRhEuIBCt8BeyJsc19wcm92aWRlciI6ICJvcGVuYWkiLCAibHNfbW9kZWxfbmFtZSI6ICJncHQtNC4xLW1pbmkiLCAibHNfbW9kZWxfdHlwZSI6ICJjaGF0IiwgImxzX3RlbXBlcmF0dXJlIjogbnVsbCwgImxzX2ludGVncmF0aW9uIjogImxhbmdjaGFpbl9jaGF0X21vZGVsIiwgImxjX3ZlcnNpb25zIjogeyJsYW5nY2hhaW4tY29yZSI6ICIxLjYuMTIiLCAibGFuZ2NoYWluLW9wZW5haSI6ICIxLjcuMiJ9fUogChdvcGVuaW5mZXJlbmNlLnNwYW4ua2luZBIFCgNMTE16AhgBhQEAAQAAEoYKChCqqYnRC7/oTtUtjE9sr3LIEgh4G7nhNfDtkyIIo3bNuHSfCC4qD1N0ck91dHB1dFBhcnNlcjABOQDkfI6Ka98YQQAzgI6Ka98YSq8ICgtpbnB1dC52YWx1ZRKfCAqcCHsidHlwZSI6ICJhaSIsICJkYXRhIjogeyJjb250ZW50IjogIkhlbGxvISBIb3cgY2FuIEkgaGVscCB5b3UgdG9kYXk/IiwgImFkZGl0aW9uYWxfa3dhcmdzIjogeyJyZWZ1c2FsIjogbnVsbH0sICJyZXNwb25zZV9tZXRhZGF0YSI6IHsidG9rZW5fdXNhZ2UiOiB7ImNvbXBsZXRpb25fdG9rZW5zIjogOSwgInByb21wdF90b2tlbnMiOiAxOSwgInRvdGFsX3Rva2VucyI6IDI4LCAiY29tcGxldGlvbl90b2tlbnNfZGV0YWlscyI6IHsiYWNjZXB0ZWRfcHJlZGljdGlvbl90b2tlbnMiOiAwLCAiYXVkaW9fdG9rZW5zIjogMCwgInJlYXNvbmluZ190b2tlbnMiOiAwLCAicmVqZWN0ZWRfcHJlZGljdGlvbl90b2tlbnMiOiAwLCAidGV4dF90b2tlbnMiOiBudWxsfSwgInByb21wdF90b2tlbnNfZGV0YWlscyI6IHsiYXVkaW9fdG9rZW5zIjogMCwgImNhY2hlX3dyaXRlX3Rva2VucyI6IG51bGwsICJjYWNoZWRfdG9rZW5zIjogOCwgImltYWdlX3Rva2VucyI6IG51bGwsICJ0ZXh0X3Rva2VucyI6IG51bGx9fSwgIm1vZGVsX3Byb3ZpZGVyIjogIm9wZW5haSIsICJtb2RlbF9uYW1lIjogImdwdC00LjEtbWluaS0yMDI1LTA0LTE0IiwgInN5c3RlbV9maW5nZXJwcmludCI6ICJmcF90ZXN0MDAwMDAxIiwgImlkIjogImNoYXRjbXBsLXRlc3QwMDAwMDAwMDAwMDAwMDAwMDAwMDAxIiwgInNlcnZpY2VfdGllciI6ICJkZWZhdWx0IiwgImZpbmlzaF9yZWFzb24iOiAic3RvcCIsICJsb2dwcm9icyI6IG51bGx9LCAidHlwZSI6ICJhaSIsICJuYW1lIjogbnVsbCwgImlkIjogImxjX3J1bi0tMDFhMTRiOTUtMDQxNC03NTQwLTliZDItNTRmOTIwMmJhMTJhLTAiLCAidG9vbF9jYWxscyI6IFtdLCAiaW52YWxpZF90b29sX2NhbGxzIjogW10sICJ1c2FnZV9tZXRhZGF0YSI6IHsiaW5wdXRfdG9rZW5zIjogMTksICJvdXRwdXRfdG9rZW5zIjogOSwgInRvdGFsX3Rva2VucyI6IDI4LCAiaW5wdXRfdG9rZW5fZGV0YWlscyI6IHsiYXVkaW8iOiAwLCAiY2FjaGVfcmVhZCI6IDh9LCAib3V0cHV0X3Rva2VuX2RldGFpbHMiOiB7ImF1ZGlvIjogMCwgInJlYXNvbmluZyI6IDB9fX19SiUKD2lucHV0Lm1pbWVfdHlwZRISChBhcHBsaWNhdGlvbi9qc29uSjIKDG91dHB1dC52YWx1ZRIiCiBIZWxsbyEgSG93IGNhbiBJIGhlbHAgeW91IHRvZGF5P0oiChdvcGVuaW5mZXJlbmNlLnNwYW4ua2luZBIHCgVDSEFJTnoCGAGFAQABAAASuwEKEKqpidELv+hO1S2MT2yvcsgSCKN2zbh0nwguKhBSdW5uYWJsZVNlcXVlbmNlMAE5APRvjYpr3xhBAJ6Djopr3xhKFQoLaW5wdXQudmFsdWUSBgoEZml2ZUoyCgxvdXRwdXQudmFsdWUSIgogSGVsbG8hIEhvdyBjYW4gSSBoZWxwIHlvdSB0b2RheT9KIgoXb3BlbmluZmVyZW5jZS5zcGFuLmtpbmQSBwoFQ0hBSU56AhgBhQEAAQAA"
+      },
+      "preview": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "telemetry.sdk.language",
+                  "value": {
+                    "stringValue": "python"
+                  }
+                },
+                {
+                  "key": "telemetry.sdk.name",
+                  "value": {
+                    "stringValue": "opentelemetry"
+                  }
+                },
+                {
+                  "key": "telemetry.sdk.version",
+                  "value": {
+                    "stringValue": "1.45.1"
+                  }
+                },
+                {
+                  "key": "service.instance.id",
+                  "value": {
+                    "stringValue": "dccb68ce-b182-49b0-98de-34dc95219fe2"
+                  }
+                },
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "spanlight-fixture"
+                  }
+                }
+              ]
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "openinference.instrumentation.langchain",
+                  "version": "0.1.79"
+                },
+                "spans": [
+                  {
+                    "traceId": "qqmJ0Qu/6E7VLYxPbK9yyA==",
+                    "spanId": "0UJ/4FFQfCA=",
+                    "parentSpanId": "o3bNuHSfCC4=",
+                    "name": "ChatPromptTemplate",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269419540077824",
+                    "endTimeUnixNano": "1792269419540289024",
+                    "attributes": [
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "five"
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "{\"messages\": [{\"content\": \"Say hello in five words.\", \"additional_kwargs\": {}, \"response_metadata\": {}, \"type\": \"human\", \"name\": null, \"id\": null}]}"
+                        }
+                      },
+                      {
+                        "key": "output.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "llm.prompt_template.template",
+                        "value": {
+                          "stringValue": "Say hello in {count} words."
+                        }
+                      },
+                      {
+                        "key": "llm.prompt_template.variables",
+                        "value": {
+                          "stringValue": "{\"count\": \"five\"}"
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "PROMPT"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "qqmJ0Qu/6E7VLYxPbK9yyA==",
+                    "spanId": "Xnlps9EA/UA=",
+                    "parentSpanId": "o3bNuHSfCC4=",
+                    "name": "ChatOpenAI",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269419540731904",
+                    "endTimeUnixNano": "1792269419556459776",
+                    "attributes": [
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "{\"messages\": [[{\"lc\": 1, \"type\": \"constructor\", \"id\": [\"langchain\", \"schema\", \"messages\", \"HumanMessage\"], \"kwargs\": {\"content\": \"Say hello in five words.\", \"type\": \"human\"}}]]}"
+                        }
+                      },
+                      {
+                        "key": "input.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "{\"generations\": [[{\"text\": \"Hello! How can I help you today?\", \"generation_info\": {\"finish_reason\": \"stop\", \"logprobs\": null}, \"type\": \"ChatGeneration\", \"message\": {\"lc\": 1, \"type\": \"constructor\", \"id\": [\"langchain\", \"schema\", \"messages\", \"AIMessage\"], \"kwargs\": {\"content\": \"Hello! How can I help you today?\", \"additional_kwargs\": {\"refusal\": null}, \"response_metadata\": {\"token_usage\": {\"completion_tokens\": 9, \"prompt_tokens\": 19, \"total_tokens\": 28, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"audio_tokens\": 0, \"reasoning_tokens\": 0, \"rejected_prediction_tokens\": 0, \"text_tokens\": null}, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cache_write_tokens\": null, \"cached_tokens\": 8, \"image_tokens\": null, \"text_tokens\": null}}, \"model_provider\": \"openai\", \"model_name\": \"gpt-4.1-mini-2025-04-14\", \"system_fingerprint\": \"fp_test000001\", \"id\": \"chatcmpl-test0000000000000000000001\", \"service_tier\": \"default\", \"finish_reason\": \"stop\", \"logprobs\": null}, \"type\": \"ai\", \"id\": \"lc_run--01a14b95-0414-7540-9bd2-54f9202ba12a-0\", \"usage_metadata\": {\"input_tokens\": 19, \"output_tokens\": 9, \"total_tokens\": 28, \"input_token_details\": {\"audio\": 0, \"cache_read\": 8}, \"output_token_details\": {\"audio\": 0, \"reasoning\": 0}}, \"tool_calls\": [], \"invalid_tool_calls\": []}}}]], \"llm_output\": {\"token_usage\": {\"completion_tokens\": 9, \"prompt_tokens\": 19, \"total_tokens\": 28, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"audio_tokens\": 0, \"reasoning_tokens\": 0, \"rejected_prediction_tokens\": 0, \"text_tokens\": null}, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cache_write_tokens\": null, \"cached_tokens\": 8, \"image_tokens\": null, \"text_tokens\": null}}, \"model_provider\": \"openai\", \"model_name\": \"gpt-4.1-mini-2025-04-14\", \"system_fingerprint\": \"fp_test000001\", \"id\": \"chatcmpl-test0000000000000000000001\", \"service_tier\": \"default\"}, \"run\": null, \"type\": \"LLMResult\"}"
+                        }
+                      },
+                      {
+                        "key": "output.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.0.message.role",
+                        "value": {
+                          "stringValue": "user"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.0.message.content",
+                        "value": {
+                          "stringValue": "Say hello in five words."
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.role",
+                        "value": {
+                          "stringValue": "assistant"
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.content",
+                        "value": {
+                          "stringValue": "Hello! How can I help you today?"
+                        }
+                      },
+                      {
+                        "key": "llm.invocation_parameters",
+                        "value": {
+                          "stringValue": "{\"model\": \"gpt-4.1-mini\", \"model_name\": \"gpt-4.1-mini\", \"stream\": false, \"_type\": \"openai-chat\", \"stop\": null}"
+                        }
+                      },
+                      {
+                        "key": "llm.provider",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "llm.system",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "llm.model_name",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.prompt",
+                        "value": {
+                          "intValue": "19"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.completion",
+                        "value": {
+                          "intValue": "9"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.total",
+                        "value": {
+                          "intValue": "28"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.completion_details.audio",
+                        "value": {
+                          "intValue": "0"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.completion_details.reasoning",
+                        "value": {
+                          "intValue": "0"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.prompt_details.audio",
+                        "value": {
+                          "intValue": "0"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.prompt_details.cache_read",
+                        "value": {
+                          "intValue": "8"
+                        }
+                      },
+                      {
+                        "key": "llm.finish_reason",
+                        "value": {
+                          "stringValue": "stop"
+                        }
+                      },
+                      {
+                        "key": "metadata",
+                        "value": {
+                          "stringValue": "{\"ls_provider\": \"openai\", \"ls_model_name\": \"gpt-4.1-mini\", \"ls_model_type\": \"chat\", \"ls_temperature\": null, \"ls_integration\": \"langchain_chat_model\", \"lc_versions\": {\"langchain-core\": \"1.6.12\", \"langchain-openai\": \"1.7.2\"}}"
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "LLM"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "qqmJ0Qu/6E7VLYxPbK9yyA==",
+                    "spanId": "eBu54TXw7ZM=",
+                    "parentSpanId": "o3bNuHSfCC4=",
+                    "name": "StrOutputParser",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269419556955136",
+                    "endTimeUnixNano": "1792269419557171968",
+                    "attributes": [
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "{\"type\": \"ai\", \"data\": {\"content\": \"Hello! How can I help you today?\", \"additional_kwargs\": {\"refusal\": null}, \"response_metadata\": {\"token_usage\": {\"completion_tokens\": 9, \"prompt_tokens\": 19, \"total_tokens\": 28, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"audio_tokens\": 0, \"reasoning_tokens\": 0, \"rejected_prediction_tokens\": 0, \"text_tokens\": null}, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cache_write_tokens\": null, \"cached_tokens\": 8, \"image_tokens\": null, \"text_tokens\": null}}, \"model_provider\": \"openai\", \"model_name\": \"gpt-4.1-mini-2025-04-14\", \"system_fingerprint\": \"fp_test000001\", \"id\": \"chatcmpl-test0000000000000000000001\", \"service_tier\": \"default\", \"finish_reason\": \"stop\", \"logprobs\": null}, \"type\": \"ai\", \"name\": null, \"id\": \"lc_run--01a14b95-0414-7540-9bd2-54f9202ba12a-0\", \"tool_calls\": [], \"invalid_tool_calls\": [], \"usage_metadata\": {\"input_tokens\": 19, \"output_tokens\": 9, \"total_tokens\": 28, \"input_token_details\": {\"audio\": 0, \"cache_read\": 8}, \"output_token_details\": {\"audio\": 0, \"reasoning\": 0}}}}"
+                        }
+                      },
+                      {
+                        "key": "input.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "Hello! How can I help you today?"
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "CHAIN"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "qqmJ0Qu/6E7VLYxPbK9yyA==",
+                    "spanId": "o3bNuHSfCC4=",
+                    "name": "RunnableSequence",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269419539330048",
+                    "endTimeUnixNano": "1792269419557395968",
+                    "attributes": [
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "five"
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "Hello! How can I help you today?"
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "CHAIN"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accepted": 4,
+        "rejected": [],
+        "spans": [
+          {
+            "span_id": "d1427fe051507c20",
+            "parent_span_id": "a376cdb8749f082e",
+            "convention": "openinference",
+            "kind": "other",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "prompt",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "5e7969b3d100fd40",
+            "parent_span_id": "a376cdb8749f082e",
+            "convention": "openinference",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini-2025-04-14",
+            "usage": {
+              "input_tokens": 19,
+              "output_tokens": 9,
+              "cached_tokens": 8,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "priced",
+            "finish_reason": "stop",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "llm",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {
+                "ls_integration": "langchain_chat_model",
+                "ls_model_name": "gpt-4.1-mini",
+                "ls_model_type": "chat",
+                "ls_provider": "openai"
+              }
+            }
+          },
+          {
+            "span_id": "781bb9e135f0ed93",
+            "parent_span_id": "a376cdb8749f082e",
+            "convention": "openinference",
+            "kind": "chain",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "chain",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "a376cdb8749f082e",
+            "parent_span_id": null,
+            "convention": "openinference",
+            "kind": "chain",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "chain",
+            "trace": {
+              "name": "RunnableSequence",
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          }
+        ],
+        "trace": {
+          "span_count": 4,
+          "input_tokens": 19,
+          "output_tokens": 9,
+          "has_unpriced": false
+        },
+        "loses": [
+          "time_to_first_token_ms"
+        ]
+      }
+    },
+    {
+      "name": "agent_tool_llm",
+      "export": {
+        "content_type": "application/x-protobuf",
+        "body_base64": "CohsCtIBCiIKFnRlbGVtZXRyeS5zZGsubGFuZ3VhZ2USCAoGcHl0aG9uCiUKEnRlbGVtZXRyeS5zZGsubmFtZRIPCg1vcGVudGVsZW1ldHJ5CiEKFXRlbGVtZXRyeS5zZGsudmVyc2lvbhIICgYxLjQ1LjEKPQoTc2VydmljZS5pbnN0YW5jZS5pZBImCiQ4MDI2YWIwNC1lYzRmLTRmZDItOTc1NC01ODE5ZjU0MWVlZDcKIwoMc2VydmljZS5uYW1lEhMKEXNwYW5saWdodC1maXh0dXJlErBqCjEKJ29wZW5pbmZlcmVuY2UuaW5zdHJ1bWVudGF0aW9uLmxhbmdjaGFpbhIGMC4xLjc5EtkkChCFuSXPq66ZOO74H5MpP4eYEgiXDryqcJdtayIIYAk74SpjcsQqCkNoYXRPcGVuQUkwATkAFVTtimvfGEEAMXPuimvfGErhAQoLaW5wdXQudmFsdWUS0QEKzgF7Im1lc3NhZ2VzIjogW1t7ImxjIjogMSwgInR5cGUiOiAiY29uc3RydWN0b3IiLCAiaWQiOiBbImxhbmdjaGFpbiIsICJzY2hlbWEiLCAibWVzc2FnZXMiLCAiSHVtYW5NZXNzYWdlIl0sICJrd2FyZ3MiOiB7ImNvbnRlbnQiOiAiV2hhdCBpcyB0aGUgd2VhdGhlciBpbiBQYXJpcyBhbmQgVG9reW8/IFVzZSB0aGUgdG9vbC4iLCAidHlwZSI6ICJodW1hbiJ9fV1dfUolCg9pbnB1dC5taW1lX3R5cGUSEgoQYXBwbGljYXRpb24vanNvbkrJEAoMb3V0cHV0LnZhbHVlErgQCrUQeyJnZW5lcmF0aW9ucyI6IFtbeyJ0ZXh0IjogIiIsICJnZW5lcmF0aW9uX2luZm8iOiB7ImZpbmlzaF9yZWFzb24iOiAidG9vbF9jYWxscyIsICJsb2dwcm9icyI6IG51bGx9LCAidHlwZSI6ICJDaGF0R2VuZXJhdGlvbiIsICJtZXNzYWdlIjogeyJsYyI6IDEsICJ0eXBlIjogImNvbnN0cnVjdG9yIiwgImlkIjogWyJsYW5nY2hhaW4iLCAic2NoZW1hIiwgIm1lc3NhZ2VzIiwgIkFJTWVzc2FnZSJdLCAia3dhcmdzIjogeyJjb250ZW50IjogIiIsICJhZGRpdGlvbmFsX2t3YXJncyI6IHsicmVmdXNhbCI6IG51bGx9LCAicmVzcG9uc2VfbWV0YWRhdGEiOiB7InRva2VuX3VzYWdlIjogeyJjb21wbGV0aW9uX3Rva2VucyI6IDQ2LCAicHJvbXB0X3Rva2VucyI6IDgyLCAidG90YWxfdG9rZW5zIjogMTI4LCAiY29tcGxldGlvbl90b2tlbnNfZGV0YWlscyI6IHsiYWNjZXB0ZWRfcHJlZGljdGlvbl90b2tlbnMiOiAwLCAiYXVkaW9fdG9rZW5zIjogMCwgInJlYXNvbmluZ190b2tlbnMiOiAwLCAicmVqZWN0ZWRfcHJlZGljdGlvbl90b2tlbnMiOiAwLCAidGV4dF90b2tlbnMiOiBudWxsfSwgInByb21wdF90b2tlbnNfZGV0YWlscyI6IHsiYXVkaW9fdG9rZW5zIjogMCwgImNhY2hlX3dyaXRlX3Rva2VucyI6IG51bGwsICJjYWNoZWRfdG9rZW5zIjogMCwgImltYWdlX3Rva2VucyI6IG51bGwsICJ0ZXh0X3Rva2VucyI6IG51bGx9fSwgIm1vZGVsX3Byb3ZpZGVyIjogIm9wZW5haSIsICJtb2RlbF9uYW1lIjogImdwdC00LjEtbWluaS0yMDI1LTA0LTE0IiwgInN5c3RlbV9maW5nZXJwcmludCI6ICJmcF90ZXN0MDAwMDAyIiwgImlkIjogImNoYXRjbXBsLXRlc3QwMDAwMDAwMDAwMDAwMDAwMDAwMDAyIiwgInNlcnZpY2VfdGllciI6ICJkZWZhdWx0IiwgImZpbmlzaF9yZWFzb24iOiAidG9vbF9jYWxscyIsICJsb2dwcm9icyI6IG51bGx9LCAidHlwZSI6ICJhaSIsICJpZCI6ICJsY19ydW4tLTAxYTE0Yjk1LTBhNWMtN2U0MC1iYjExLWZiYzZjNjZiNTQ3NS0wIiwgInRvb2xfY2FsbHMiOiBbeyJuYW1lIjogImdldF93ZWF0aGVyIiwgImFyZ3MiOiB7ImNpdHkiOiAiUGFyaXMiLCAidW5pdCI6ICJjZWxzaXVzIn0sICJpZCI6ICJjYWxsX3Rlc3QwMDAwMDAwMDAwMDAwMDAwYTEiLCAidHlwZSI6ICJ0b29sX2NhbGwifSwgeyJuYW1lIjogImdldF93ZWF0aGVyIiwgImFyZ3MiOiB7ImNpdHkiOiAiVG9reW8iLCAidW5pdCI6ICJjZWxzaXVzIn0sICJpZCI6ICJjYWxsX3Rlc3QwMDAwMDAwMDAwMDAwMDAwYjIiLCAidHlwZSI6ICJ0b29sX2NhbGwifV0sICJ1c2FnZV9tZXRhZGF0YSI6IHsiaW5wdXRfdG9rZW5zIjogODIsICJvdXRwdXRfdG9rZW5zIjogNDYsICJ0b3RhbF90b2tlbnMiOiAxMjgsICJpbnB1dF90b2tlbl9kZXRhaWxzIjogeyJhdWRpbyI6IDAsICJjYWNoZV9yZWFkIjogMH0sICJvdXRwdXRfdG9rZW5fZGV0YWlscyI6IHsiYXVkaW8iOiAwLCAicmVhc29uaW5nIjogMH19LCAiaW52YWxpZF90b29sX2NhbGxzIjogW119fX1dXSwgImxsbV9vdXRwdXQiOiB7InRva2VuX3VzYWdlIjogeyJjb21wbGV0aW9uX3Rva2VucyI6IDQ2LCAicHJvbXB0X3Rva2VucyI6IDgyLCAidG90YWxfdG9rZW5zIjogMTI4LCAiY29tcGxldGlvbl90b2tlbnNfZGV0YWlscyI6IHsiYWNjZXB0ZWRfcHJlZGljdGlvbl90b2tlbnMiOiAwLCAiYXVkaW9fdG9rZW5zIjogMCwgInJlYXNvbmluZ190b2tlbnMiOiAwLCAicmVqZWN0ZWRfcHJlZGljdGlvbl90b2tlbnMiOiAwLCAidGV4dF90b2tlbnMiOiBudWxsfSwgInByb21wdF90b2tlbnNfZGV0YWlscyI6IHsiYXVkaW9fdG9rZW5zIjogMCwgImNhY2hlX3dyaXRlX3Rva2VucyI6IG51bGwsICJjYWNoZWRfdG9rZW5zIjogMCwgImltYWdlX3Rva2VucyI6IG51bGwsICJ0ZXh0X3Rva2VucyI6IG51bGx9fSwgIm1vZGVsX3Byb3ZpZGVyIjogIm9wZW5haSIsICJtb2RlbF9uYW1lIjogImdwdC00LjEtbWluaS0yMDI1LTA0LTE0IiwgInN5c3RlbV9maW5nZXJwcmludCI6ICJmcF90ZXN0MDAwMDAyIiwgImlkIjogImNoYXRjbXBsLXRlc3QwMDAwMDAwMDAwMDAwMDAwMDAwMDAyIiwgInNlcnZpY2VfdGllciI6ICJkZWZhdWx0In0sICJydW4iOiBudWxsLCAidHlwZSI6ICJMTE1SZXN1bHQifUomChBvdXRwdXQubWltZV90eXBlEhIKEGFwcGxpY2F0aW9uL2pzb25KKwohbGxtLmlucHV0X21lc3NhZ2VzLjAubWVzc2FnZS5yb2xlEgYKBHVzZXJKXwokbGxtLmlucHV0X21lc3NhZ2VzLjAubWVzc2FnZS5jb250ZW50EjcKNVdoYXQgaXMgdGhlIHdlYXRoZXIgaW4gUGFyaXMgYW5kIFRva3lvPyBVc2UgdGhlIHRvb2wuSjEKImxsbS5vdXRwdXRfbWVzc2FnZXMuMC5tZXNzYWdlLnJvbGUSCwoJYXNzaXN0YW50SlgKN2xsbS5vdXRwdXRfbWVzc2FnZXMuMC5tZXNzYWdlLnRvb2xfY2FsbHMuMC50b29sX2NhbGwuaWQSHQobY2FsbF90ZXN0MDAwMDAwMDAwMDAwMDAwMGExSlMKQmxsbS5vdXRwdXRfbWVzc2FnZXMuMC5tZXNzYWdlLnRvb2xfY2FsbHMuMC50b29sX2NhbGwuZnVuY3Rpb24ubmFtZRINCgtnZXRfd2VhdGhlckpxCkdsbG0ub3V0cHV0X21lc3NhZ2VzLjAubWVzc2FnZS50b29sX2NhbGxzLjAudG9vbF9jYWxsLmZ1bmN0aW9uLmFyZ3VtZW50cxImCiR7ImNpdHkiOiAiUGFyaXMiLCAidW5pdCI6ICJjZWxzaXVzIn1KWAo3bGxtLm91dHB1dF9tZXNzYWdlcy4wLm1lc3NhZ2UudG9vbF9jYWxscy4xLnRvb2xfY2FsbC5pZBIdChtjYWxsX3Rlc3QwMDAwMDAwMDAwMDAwMDAwYjJKUwpCbGxtLm91dHB1dF9tZXNzYWdlcy4wLm1lc3NhZ2UudG9vbF9jYWxscy4xLnRvb2xfY2FsbC5mdW5jdGlvbi5uYW1lEg0KC2dldF93ZWF0aGVySnEKR2xsbS5vdXRwdXRfbWVzc2FnZXMuMC5tZXNzYWdlLnRvb2xfY2FsbHMuMS50b29sX2NhbGwuZnVuY3Rpb24uYXJndW1lbnRzEiYKJHsiY2l0eSI6ICJUb2t5byIsICJ1bml0IjogImNlbHNpdXMifUqhAwoZbGxtLmludm9jYXRpb25fcGFyYW1ldGVycxKDAwqAA3sibW9kZWwiOiAiZ3B0LTQuMS1taW5pIiwgIm1vZGVsX25hbWUiOiAiZ3B0LTQuMS1taW5pIiwgInN0cmVhbSI6IGZhbHNlLCAiX3R5cGUiOiAib3BlbmFpLWNoYXQiLCAic3RvcCI6IG51bGwsICJ0b29scyI6IFt7InR5cGUiOiAiZnVuY3Rpb24iLCAiZnVuY3Rpb24iOiB7Im5hbWUiOiAiZ2V0X3dlYXRoZXIiLCAiZGVzY3JpcHRpb24iOiAiR2V0IHRoZSBjdXJyZW50IHdlYXRoZXIgZm9yIGEgY2l0eS4iLCAicGFyYW1ldGVycyI6IHsicHJvcGVydGllcyI6IHsiY2l0eSI6IHsidHlwZSI6ICJzdHJpbmcifSwgInVuaXQiOiB7ImRlZmF1bHQiOiAiY2Vsc2l1cyIsICJ0eXBlIjogInN0cmluZyJ9fSwgInJlcXVpcmVkIjogWyJjaXR5Il0sICJ0eXBlIjogIm9iamVjdCJ9fX1dfUqpAgocbGxtLnRvb2xzLjAudG9vbC5qc29uX3NjaGVtYRKIAgqFAnsidHlwZSI6ICJmdW5jdGlvbiIsICJmdW5jdGlvbiI6IHsibmFtZSI6ICJnZXRfd2VhdGhlciIsICJkZXNjcmlwdGlvbiI6ICJHZXQgdGhlIGN1cnJlbnQgd2VhdGhlciBmb3IgYSBjaXR5LiIsICJwYXJhbWV0ZXJzIjogeyJwcm9wZXJ0aWVzIjogeyJjaXR5IjogeyJ0eXBlIjogInN0cmluZyJ9LCAidW5pdCI6IHsiZGVmYXVsdCI6ICJjZWxzaXVzIiwgInR5cGUiOiAic3RyaW5nIn19LCAicmVxdWlyZWQiOiBbImNpdHkiXSwgInR5cGUiOiAib2JqZWN0In19fUoYCgxsbG0ucHJvdmlkZXISCAoGb3BlbmFpShYKCmxsbS5zeXN0ZW0SCAoGb3BlbmFpSisKDmxsbS5tb2RlbF9uYW1lEhkKF2dwdC00LjEtbWluaS0yMDI1LTA0LTE0ShwKFmxsbS50b2tlbl9jb3VudC5wcm9tcHQSAhhSSiAKGmxsbS50b2tlbl9jb3VudC5jb21wbGV0aW9uEgIYLkocChVsbG0udG9rZW5fY291bnQudG90YWwSAxiAAUouCihsbG0udG9rZW5fY291bnQuY29tcGxldGlvbl9kZXRhaWxzLmF1ZGlvEgIYAEoyCixsbG0udG9rZW5fY291bnQuY29tcGxldGlvbl9kZXRhaWxzLnJlYXNvbmluZxICGABKKgokbGxtLnRva2VuX2NvdW50LnByb21wdF9kZXRhaWxzLmF1ZGlvEgIYAEovCilsbG0udG9rZW5fY291bnQucHJvbXB0X2RldGFpbHMuY2FjaGVfcmVhZBICGABKIQoRbGxtLmZpbmlzaF9yZWFzb24SDAoKdG9vbF9jYWxsc0rvAQoIbWV0YWRhdGES4gEK3wF7ImxzX3Byb3ZpZGVyIjogIm9wZW5haSIsICJsc19tb2RlbF9uYW1lIjogImdwdC00LjEtbWluaSIsICJsc19tb2RlbF90eXBlIjogImNoYXQiLCAibHNfdGVtcGVyYXR1cmUiOiBudWxsLCAibHNfaW50ZWdyYXRpb24iOiAibGFuZ2NoYWluX2NoYXRfbW9kZWwiLCAibGNfdmVyc2lvbnMiOiB7ImxhbmdjaGFpbi1jb3JlIjogIjEuNi4xMiIsICJsYW5nY2hhaW4tb3BlbmFpIjogIjEuNy4yIn19SiAKF29wZW5pbmZlcmVuY2Uuc3Bhbi5raW5kEgUKA0xMTXoCGAGFAQABAAAS4AQKEIW5Jc+rrpk47vgfkyk/h5gSCFlAotxPJcCNIghgCTvhKmNyxCoLZ2V0X3dlYXRoZXIwATkAxnzuimvfGEEAZoLuimvfGEo1CgtpbnB1dC52YWx1ZRImCiR7ImNpdHkiOiAiUGFyaXMiLCAidW5pdCI6ICJjZWxzaXVzIn1KJQoPaW5wdXQubWltZV90eXBlEhIKEGFwcGxpY2F0aW9uL2pzb25KjAIKDG91dHB1dC52YWx1ZRL7AQr4AXsidHlwZSI6ICJ0b29sIiwgImRhdGEiOiB7ImNvbnRlbnQiOiAiMTggZGVncmVlcyBhbmQgc3VubnkiLCAiYWRkaXRpb25hbF9rd2FyZ3MiOiB7fSwgInJlc3BvbnNlX21ldGFkYXRhIjoge30sICJ0eXBlIjogInRvb2wiLCAibmFtZSI6ICJnZXRfd2VhdGhlciIsICJpZCI6IG51bGwsICJ0b29sX2NhbGxfaWQiOiAiY2FsbF90ZXN0MDAwMDAwMDAwMDAwMDAwMGExIiwgImFydGlmYWN0IjogbnVsbCwgInN0YXR1cyI6ICJzdWNjZXNzIn19SiYKEG91dHB1dC5taW1lX3R5cGUSEgoQYXBwbGljYXRpb24vanNvbkoaCgl0b29sLm5hbWUSDQoLZ2V0X3dlYXRoZXJKOQoQdG9vbC5kZXNjcmlwdGlvbhIlCiNHZXQgdGhlIGN1cnJlbnQgd2VhdGhlciBmb3IgYSBjaXR5LkohChdvcGVuaW5mZXJlbmNlLnNwYW4ua2luZBIGCgRUT09MegIYAYUBAAEAABLgBAoQhbklz6uumTju+B+TKT+HmBIIvcPklh1zVkQiCGAJO+EqY3LEKgtnZXRfd2VhdGhlcjABOQBqhO6Ka98YQQAah+6Ka98YSjUKC2lucHV0LnZhbHVlEiYKJHsiY2l0eSI6ICJUb2t5byIsICJ1bml0IjogImNlbHNpdXMifUolCg9pbnB1dC5taW1lX3R5cGUSEgoQYXBwbGljYXRpb24vanNvbkqMAgoMb3V0cHV0LnZhbHVlEvsBCvgBeyJ0eXBlIjogInRvb2wiLCAiZGF0YSI6IHsiY29udGVudCI6ICIxOCBkZWdyZWVzIGFuZCBzdW5ueSIsICJhZGRpdGlvbmFsX2t3YXJncyI6IHt9LCAicmVzcG9uc2VfbWV0YWRhdGEiOiB7fSwgInR5cGUiOiAidG9vbCIsICJuYW1lIjogImdldF93ZWF0aGVyIiwgImlkIjogbnVsbCwgInRvb2xfY2FsbF9pZCI6ICJjYWxsX3Rlc3QwMDAwMDAwMDAwMDAwMDAwYjIiLCAiYXJ0aWZhY3QiOiBudWxsLCAic3RhdHVzIjogInN1Y2Nlc3MifX1KJgoQb3V0cHV0Lm1pbWVfdHlwZRISChBhcHBsaWNhdGlvbi9qc29uShoKCXRvb2wubmFtZRINCgtnZXRfd2VhdGhlcko5ChB0b29sLmRlc2NyaXB0aW9uEiUKI0dldCB0aGUgY3VycmVudCB3ZWF0aGVyIGZvciBhIGNpdHkuSiEKF29wZW5pbmZlcmVuY2Uuc3Bhbi5raW5kEgYKBFRPT0x6AhgBhQEAAQAAEsUxChCFuSXPq66ZOO74H5MpP4eYEggXRuEeeMt4HyIIYAk74SpjcsQqCkNoYXRPcGVuQUkwATkA2YvuimvfGEEAYq/uimvfGEqTEAoLaW5wdXQudmFsdWUSgxAKgBB7Im1lc3NhZ2VzIjogW1t7ImxjIjogMSwgInR5cGUiOiAiY29uc3RydWN0b3IiLCAiaWQiOiBbImxhbmdjaGFpbiIsICJzY2hlbWEiLCAibWVzc2FnZXMiLCAiSHVtYW5NZXNzYWdlIl0sICJrd2FyZ3MiOiB7ImNvbnRlbnQiOiAiV2hhdCBpcyB0aGUgd2VhdGhlciBpbiBQYXJpcyBhbmQgVG9reW8/IFVzZSB0aGUgdG9vbC4iLCAidHlwZSI6ICJodW1hbiJ9fSwgeyJsYyI6IDEsICJ0eXBlIjogImNvbnN0cnVjdG9yIiwgImlkIjogWyJsYW5nY2hhaW4iLCAic2NoZW1hIiwgIm1lc3NhZ2VzIiwgIkFJTWVzc2FnZSJdLCAia3dhcmdzIjogeyJjb250ZW50IjogIiIsICJhZGRpdGlvbmFsX2t3YXJncyI6IHsicmVmdXNhbCI6IG51bGx9LCAicmVzcG9uc2VfbWV0YWRhdGEiOiB7InRva2VuX3VzYWdlIjogeyJjb21wbGV0aW9uX3Rva2VucyI6IDQ2LCAicHJvbXB0X3Rva2VucyI6IDgyLCAidG90YWxfdG9rZW5zIjogMTI4LCAiY29tcGxldGlvbl90b2tlbnNfZGV0YWlscyI6IHsiYWNjZXB0ZWRfcHJlZGljdGlvbl90b2tlbnMiOiAwLCAiYXVkaW9fdG9rZW5zIjogMCwgInJlYXNvbmluZ190b2tlbnMiOiAwLCAicmVqZWN0ZWRfcHJlZGljdGlvbl90b2tlbnMiOiAwLCAidGV4dF90b2tlbnMiOiBudWxsfSwgInByb21wdF90b2tlbnNfZGV0YWlscyI6IHsiYXVkaW9fdG9rZW5zIjogMCwgImNhY2hlX3dyaXRlX3Rva2VucyI6IG51bGwsICJjYWNoZWRfdG9rZW5zIjogMCwgImltYWdlX3Rva2VucyI6IG51bGwsICJ0ZXh0X3Rva2VucyI6IG51bGx9fSwgIm1vZGVsX3Byb3ZpZGVyIjogIm9wZW5haSIsICJtb2RlbF9uYW1lIjogImdwdC00LjEtbWluaS0yMDI1LTA0LTE0IiwgInN5c3RlbV9maW5nZXJwcmludCI6ICJmcF90ZXN0MDAwMDAyIiwgImlkIjogImNoYXRjbXBsLXRlc3QwMDAwMDAwMDAwMDAwMDAwMDAwMDAyIiwgInNlcnZpY2VfdGllciI6ICJkZWZhdWx0IiwgImZpbmlzaF9yZWFzb24iOiAidG9vbF9jYWxscyIsICJsb2dwcm9icyI6IG51bGx9LCAidHlwZSI6ICJhaSIsICJpZCI6ICJsY19ydW4tLTAxYTE0Yjk1LTBhNWMtN2U0MC1iYjExLWZiYzZjNjZiNTQ3NS0wIiwgInRvb2xfY2FsbHMiOiBbeyJuYW1lIjogImdldF93ZWF0aGVyIiwgImFyZ3MiOiB7ImNpdHkiOiAiUGFyaXMiLCAidW5pdCI6ICJjZWxzaXVzIn0sICJpZCI6ICJjYWxsX3Rlc3QwMDAwMDAwMDAwMDAwMDAwYTEiLCAidHlwZSI6ICJ0b29sX2NhbGwifSwgeyJuYW1lIjogImdldF93ZWF0aGVyIiwgImFyZ3MiOiB7ImNpdHkiOiAiVG9reW8iLCAidW5pdCI6ICJjZWxzaXVzIn0sICJpZCI6ICJjYWxsX3Rlc3QwMDAwMDAwMDAwMDAwMDAwYjIiLCAidHlwZSI6ICJ0b29sX2NhbGwifV0sICJ1c2FnZV9tZXRhZGF0YSI6IHsiaW5wdXRfdG9rZW5zIjogODIsICJvdXRwdXRfdG9rZW5zIjogNDYsICJ0b3RhbF90b2tlbnMiOiAxMjgsICJpbnB1dF90b2tlbl9kZXRhaWxzIjogeyJhdWRpbyI6IDAsICJjYWNoZV9yZWFkIjogMH0sICJvdXRwdXRfdG9rZW5fZGV0YWlscyI6IHsiYXVkaW8iOiAwLCAicmVhc29uaW5nIjogMH19LCAiaW52YWxpZF90b29sX2NhbGxzIjogW119fSwgeyJsYyI6IDEsICJ0eXBlIjogImNvbnN0cnVjdG9yIiwgImlkIjogWyJsYW5nY2hhaW4iLCAic2NoZW1hIiwgIm1lc3NhZ2VzIiwgIlRvb2xNZXNzYWdlIl0sICJrd2FyZ3MiOiB7ImNvbnRlbnQiOiAiMTggZGVncmVlcyBhbmQgc3VubnkiLCAidHlwZSI6ICJ0b29sIiwgIm5hbWUiOiAiZ2V0X3dlYXRoZXIiLCAidG9vbF9jYWxsX2lkIjogImNhbGxfdGVzdDAwMDAwMDAwMDAwMDAwMDBhMSIsICJzdGF0dXMiOiAic3VjY2VzcyJ9fSwgeyJsYyI6IDEsICJ0eXBlIjogImNvbnN0cnVjdG9yIiwgImlkIjogWyJsYW5nY2hhaW4iLCAic2NoZW1hIiwgIm1lc3NhZ2VzIiwgIlRvb2xNZXNzYWdlIl0sICJrd2FyZ3MiOiB7ImNvbnRlbnQiOiAiMTggZGVncmVlcyBhbmQgc3VubnkiLCAidHlwZSI6ICJ0b29sIiwgIm5hbWUiOiAiZ2V0X3dlYXRoZXIiLCAidG9vbF9jYWxsX2lkIjogImNhbGxfdGVzdDAwMDAwMDAwMDAwMDAwMDBiMiIsICJzdGF0dXMiOiAic3VjY2VzcyJ9fV1dfUolCg9pbnB1dC5taW1lX3R5cGUSEgoQYXBwbGljYXRpb24vanNvbkr3DgoMb3V0cHV0LnZhbHVlEuYOCuMOeyJnZW5lcmF0aW9ucyI6IFtbeyJ0ZXh0IjogIkhlbGxvISBIb3cgY2FuIEkgaGVscCB5b3UgdG9kYXk/IiwgImdlbmVyYXRpb25faW5mbyI6IHsiZmluaXNoX3JlYXNvbiI6ICJzdG9wIiwgImxvZ3Byb2JzIjogbnVsbH0sICJ0eXBlIjogIkNoYXRHZW5lcmF0aW9uIiwgIm1lc3NhZ2UiOiB7ImxjIjogMSwgInR5cGUiOiAiY29uc3RydWN0b3IiLCAiaWQiOiBbImxhbmdjaGFpbiIsICJzY2hlbWEiLCAibWVzc2FnZXMiLCAiQUlNZXNzYWdlIl0sICJrd2FyZ3MiOiB7ImNvbnRlbnQiOiAiSGVsbG8hIEhvdyBjYW4gSSBoZWxwIHlvdSB0b2RheT8iLCAiYWRkaXRpb25hbF9rd2FyZ3MiOiB7InJlZnVzYWwiOiBudWxsfSwgInJlc3BvbnNlX21ldGFkYXRhIjogeyJ0b2tlbl91c2FnZSI6IHsiY29tcGxldGlvbl90b2tlbnMiOiA5LCAicHJvbXB0X3Rva2VucyI6IDE5LCAidG90YWxfdG9rZW5zIjogMjgsICJjb21wbGV0aW9uX3Rva2Vuc19kZXRhaWxzIjogeyJhY2NlcHRlZF9wcmVkaWN0aW9uX3Rva2VucyI6IDAsICJhdWRpb190b2tlbnMiOiAwLCAicmVhc29uaW5nX3Rva2VucyI6IDAsICJyZWplY3RlZF9wcmVkaWN0aW9uX3Rva2VucyI6IDAsICJ0ZXh0X3Rva2VucyI6IG51bGx9LCAicHJvbXB0X3Rva2Vuc19kZXRhaWxzIjogeyJhdWRpb190b2tlbnMiOiAwLCAiY2FjaGVfd3JpdGVfdG9rZW5zIjogbnVsbCwgImNhY2hlZF90b2tlbnMiOiA4LCAiaW1hZ2VfdG9rZW5zIjogbnVsbCwgInRleHRfdG9rZW5zIjogbnVsbH19LCAibW9kZWxfcHJvdmlkZXIiOiAib3BlbmFpIiwgIm1vZGVsX25hbWUiOiAiZ3B0LTQuMS1taW5pLTIwMjUtMDQtMTQiLCAic3lzdGVtX2ZpbmdlcnByaW50IjogImZwX3Rlc3QwMDAwMDEiLCAiaWQiOiAiY2hhdGNtcGwtdGVzdDAwMDAwMDAwMDAwMDAwMDAwMDAwMDEiLCAic2VydmljZV90aWVyIjogImRlZmF1bHQiLCAiZmluaXNoX3JlYXNvbiI6ICJzdG9wIiwgImxvZ3Byb2JzIjogbnVsbH0sICJ0eXBlIjogImFpIiwgImlkIjogImxjX3J1bi0tMDFhMTRiOTUtMGE3MC03OGEyLTg4ZTQtN2Q4NDJlYzUxYTE0LTAiLCAidXNhZ2VfbWV0YWRhdGEiOiB7ImlucHV0X3Rva2VucyI6IDE5LCAib3V0cHV0X3Rva2VucyI6IDksICJ0b3RhbF90b2tlbnMiOiAyOCwgImlucHV0X3Rva2VuX2RldGFpbHMiOiB7ImF1ZGlvIjogMCwgImNhY2hlX3JlYWQiOiA4fSwgIm91dHB1dF90b2tlbl9kZXRhaWxzIjogeyJhdWRpbyI6IDAsICJyZWFzb25pbmciOiAwfX0sICJ0b29sX2NhbGxzIjogW10sICJpbnZhbGlkX3Rvb2xfY2FsbHMiOiBbXX19fV1dLCAibGxtX291dHB1dCI6IHsidG9rZW5fdXNhZ2UiOiB7ImNvbXBsZXRpb25fdG9rZW5zIjogOSwgInByb21wdF90b2tlbnMiOiAxOSwgInRvdGFsX3Rva2VucyI6IDI4LCAiY29tcGxldGlvbl90b2tlbnNfZGV0YWlscyI6IHsiYWNjZXB0ZWRfcHJlZGljdGlvbl90b2tlbnMiOiAwLCAiYXVkaW9fdG9rZW5zIjogMCwgInJlYXNvbmluZ190b2tlbnMiOiAwLCAicmVqZWN0ZWRfcHJlZGljdGlvbl90b2tlbnMiOiAwLCAidGV4dF90b2tlbnMiOiBudWxsfSwgInByb21wdF90b2tlbnNfZGV0YWlscyI6IHsiYXVkaW9fdG9rZW5zIjogMCwgImNhY2hlX3dyaXRlX3Rva2VucyI6IG51bGwsICJjYWNoZWRfdG9rZW5zIjogOCwgImltYWdlX3Rva2VucyI6IG51bGwsICJ0ZXh0X3Rva2VucyI6IG51bGx9fSwgIm1vZGVsX3Byb3ZpZGVyIjogIm9wZW5haSIsICJtb2RlbF9uYW1lIjogImdwdC00LjEtbWluaS0yMDI1LTA0LTE0IiwgInN5c3RlbV9maW5nZXJwcmludCI6ICJmcF90ZXN0MDAwMDAxIiwgImlkIjogImNoYXRjbXBsLXRlc3QwMDAwMDAwMDAwMDAwMDAwMDAwMDAxIiwgInNlcnZpY2VfdGllciI6ICJkZWZhdWx0In0sICJydW4iOiBudWxsLCAidHlwZSI6ICJMTE1SZXN1bHQifUomChBvdXRwdXQubWltZV90eXBlEhIKEGFwcGxpY2F0aW9uL2pzb25KKwohbGxtLmlucHV0X21lc3NhZ2VzLjAubWVzc2FnZS5yb2xlEgYKBHVzZXJKXwokbGxtLmlucHV0X21lc3NhZ2VzLjAubWVzc2FnZS5jb250ZW50EjcKNVdoYXQgaXMgdGhlIHdlYXRoZXIgaW4gUGFyaXMgYW5kIFRva3lvPyBVc2UgdGhlIHRvb2wuSjAKIWxsbS5pbnB1dF9tZXNzYWdlcy4xLm1lc3NhZ2Uucm9sZRILCglhc3Npc3RhbnRKVwo2bGxtLmlucHV0X21lc3NhZ2VzLjEubWVzc2FnZS50b29sX2NhbGxzLjAudG9vbF9jYWxsLmlkEh0KG2NhbGxfdGVzdDAwMDAwMDAwMDAwMDAwMDBhMUpSCkFsbG0uaW5wdXRfbWVzc2FnZXMuMS5tZXNzYWdlLnRvb2xfY2FsbHMuMC50b29sX2NhbGwuZnVuY3Rpb24ubmFtZRINCgtnZXRfd2VhdGhlckpwCkZsbG0uaW5wdXRfbWVzc2FnZXMuMS5tZXNzYWdlLnRvb2xfY2FsbHMuMC50b29sX2NhbGwuZnVuY3Rpb24uYXJndW1lbnRzEiYKJHsiY2l0eSI6ICJQYXJpcyIsICJ1bml0IjogImNlbHNpdXMifUpXCjZsbG0uaW5wdXRfbWVzc2FnZXMuMS5tZXNzYWdlLnRvb2xfY2FsbHMuMS50b29sX2NhbGwuaWQSHQobY2FsbF90ZXN0MDAwMDAwMDAwMDAwMDAwMGIySlIKQWxsbS5pbnB1dF9tZXNzYWdlcy4xLm1lc3NhZ2UudG9vbF9jYWxscy4xLnRvb2xfY2FsbC5mdW5jdGlvbi5uYW1lEg0KC2dldF93ZWF0aGVySnAKRmxsbS5pbnB1dF9tZXNzYWdlcy4xLm1lc3NhZ2UudG9vbF9jYWxscy4xLnRvb2xfY2FsbC5mdW5jdGlvbi5hcmd1bWVudHMSJgokeyJjaXR5IjogIlRva3lvIiwgInVuaXQiOiAiY2Vsc2l1cyJ9SisKIWxsbS5pbnB1dF9tZXNzYWdlcy4yLm1lc3NhZ2Uucm9sZRIGCgR0b29sSj4KJGxsbS5pbnB1dF9tZXNzYWdlcy4yLm1lc3NhZ2UuY29udGVudBIWChQxOCBkZWdyZWVzIGFuZCBzdW5ueUpKCilsbG0uaW5wdXRfbWVzc2FnZXMuMi5tZXNzYWdlLnRvb2xfY2FsbF9pZBIdChtjYWxsX3Rlc3QwMDAwMDAwMDAwMDAwMDAwYTFKMgohbGxtLmlucHV0X21lc3NhZ2VzLjIubWVzc2FnZS5uYW1lEg0KC2dldF93ZWF0aGVySisKIWxsbS5pbnB1dF9tZXNzYWdlcy4zLm1lc3NhZ2Uucm9sZRIGCgR0b29sSj4KJGxsbS5pbnB1dF9tZXNzYWdlcy4zLm1lc3NhZ2UuY29udGVudBIWChQxOCBkZWdyZWVzIGFuZCBzdW5ueUpKCilsbG0uaW5wdXRfbWVzc2FnZXMuMy5tZXNzYWdlLnRvb2xfY2FsbF9pZBIdChtjYWxsX3Rlc3QwMDAwMDAwMDAwMDAwMDAwYjJKMgohbGxtLmlucHV0X21lc3NhZ2VzLjMubWVzc2FnZS5uYW1lEg0KC2dldF93ZWF0aGVySjEKImxsbS5vdXRwdXRfbWVzc2FnZXMuMC5tZXNzYWdlLnJvbGUSCwoJYXNzaXN0YW50SksKJWxsbS5vdXRwdXRfbWVzc2FnZXMuMC5tZXNzYWdlLmNvbnRlbnQSIgogSGVsbG8hIEhvdyBjYW4gSSBoZWxwIHlvdSB0b2RheT9KjQEKGWxsbS5pbnZvY2F0aW9uX3BhcmFtZXRlcnMScApueyJtb2RlbCI6ICJncHQtNC4xLW1pbmkiLCAibW9kZWxfbmFtZSI6ICJncHQtNC4xLW1pbmkiLCAic3RyZWFtIjogZmFsc2UsICJfdHlwZSI6ICJvcGVuYWktY2hhdCIsICJzdG9wIjogbnVsbH1KGAoMbGxtLnByb3ZpZGVyEggKBm9wZW5haUoWCgpsbG0uc3lzdGVtEggKBm9wZW5haUorCg5sbG0ubW9kZWxfbmFtZRIZChdncHQtNC4xLW1pbmktMjAyNS0wNC0xNEocChZsbG0udG9rZW5fY291bnQucHJvbXB0EgIYE0ogChpsbG0udG9rZW5fY291bnQuY29tcGxldGlvbhICGAlKGwoVbGxtLnRva2VuX2NvdW50LnRvdGFsEgIYHEouCihsbG0udG9rZW5fY291bnQuY29tcGxldGlvbl9kZXRhaWxzLmF1ZGlvEgIYAEoyCixsbG0udG9rZW5fY291bnQuY29tcGxldGlvbl9kZXRhaWxzLnJlYXNvbmluZxICGABKKgokbGxtLnRva2VuX2NvdW50LnByb21wdF9kZXRhaWxzLmF1ZGlvEgIYAEovCilsbG0udG9rZW5fY291bnQucHJvbXB0X2RldGFpbHMuY2FjaGVfcmVhZBICGAhKGwoRbGxtLmZpbmlzaF9yZWFzb24SBgoEc3RvcErvAQoIbWV0YWRhdGES4gEK3wF7ImxzX3Byb3ZpZGVyIjogIm9wZW5haSIsICJsc19tb2RlbF9uYW1lIjogImdwdC00LjEtbWluaSIsICJsc19tb2RlbF90eXBlIjogImNoYXQiLCAibHNfdGVtcGVyYXR1cmUiOiBudWxsLCAibHNfaW50ZWdyYXRpb24iOiAibGFuZ2NoYWluX2NoYXRfbW9kZWwiLCAibGNfdmVyc2lvbnMiOiB7ImxhbmdjaGFpbi1jb3JlIjogIjEuNi4xMiIsICJsYW5nY2hhaW4tb3BlbmFpIjogIjEuNy4yIn19SiAKF29wZW5pbmZlcmVuY2Uuc3Bhbi5raW5kEgUKA0xMTXoCGAGFAQABAAASkAoKEIW5Jc+rrpk47vgfkyk/h5gSCGAJO+EqY3LEKg13ZWF0aGVyX2FnZW50MAE5AGtB7Ypr3xhBALuz7opr3xhKRgoLaW5wdXQudmFsdWUSNwo1V2hhdCBpcyB0aGUgd2VhdGhlciBpbiBQYXJpcyBhbmQgVG9reW8/IFVzZSB0aGUgdG9vbC5KsAgKDG91dHB1dC52YWx1ZRKfCAqcCHsidHlwZSI6ICJhaSIsICJkYXRhIjogeyJjb250ZW50IjogIkhlbGxvISBIb3cgY2FuIEkgaGVscCB5b3UgdG9kYXk/IiwgImFkZGl0aW9uYWxfa3dhcmdzIjogeyJyZWZ1c2FsIjogbnVsbH0sICJyZXNwb25zZV9tZXRhZGF0YSI6IHsidG9rZW5fdXNhZ2UiOiB7ImNvbXBsZXRpb25fdG9rZW5zIjogOSwgInByb21wdF90b2tlbnMiOiAxOSwgInRvdGFsX3Rva2VucyI6IDI4LCAiY29tcGxldGlvbl90b2tlbnNfZGV0YWlscyI6IHsiYWNjZXB0ZWRfcHJlZGljdGlvbl90b2tlbnMiOiAwLCAiYXVkaW9fdG9rZW5zIjogMCwgInJlYXNvbmluZ190b2tlbnMiOiAwLCAicmVqZWN0ZWRfcHJlZGljdGlvbl90b2tlbnMiOiAwLCAidGV4dF90b2tlbnMiOiBudWxsfSwgInByb21wdF90b2tlbnNfZGV0YWlscyI6IHsiYXVkaW9fdG9rZW5zIjogMCwgImNhY2hlX3dyaXRlX3Rva2VucyI6IG51bGwsICJjYWNoZWRfdG9rZW5zIjogOCwgImltYWdlX3Rva2VucyI6IG51bGwsICJ0ZXh0X3Rva2VucyI6IG51bGx9fSwgIm1vZGVsX3Byb3ZpZGVyIjogIm9wZW5haSIsICJtb2RlbF9uYW1lIjogImdwdC00LjEtbWluaS0yMDI1LTA0LTE0IiwgInN5c3RlbV9maW5nZXJwcmludCI6ICJmcF90ZXN0MDAwMDAxIiwgImlkIjogImNoYXRjbXBsLXRlc3QwMDAwMDAwMDAwMDAwMDAwMDAwMDAxIiwgInNlcnZpY2VfdGllciI6ICJkZWZhdWx0IiwgImZpbmlzaF9yZWFzb24iOiAic3RvcCIsICJsb2dwcm9icyI6IG51bGx9LCAidHlwZSI6ICJhaSIsICJuYW1lIjogbnVsbCwgImlkIjogImxjX3J1bi0tMDFhMTRiOTUtMGE3MC03OGEyLTg4ZTQtN2Q4NDJlYzUxYTE0LTAiLCAidG9vbF9jYWxscyI6IFtdLCAiaW52YWxpZF90b29sX2NhbGxzIjogW10sICJ1c2FnZV9tZXRhZGF0YSI6IHsiaW5wdXRfdG9rZW5zIjogMTksICJvdXRwdXRfdG9rZW5zIjogOSwgInRvdGFsX3Rva2VucyI6IDI4LCAiaW5wdXRfdG9rZW5fZGV0YWlscyI6IHsiYXVkaW8iOiAwLCAiY2FjaGVfcmVhZCI6IDh9LCAib3V0cHV0X3Rva2VuX2RldGFpbHMiOiB7ImF1ZGlvIjogMCwgInJlYXNvbmluZyI6IDB9fX19SiYKEG91dHB1dC5taW1lX3R5cGUSEgoQYXBwbGljYXRpb24vanNvbkoiChdvcGVuaW5mZXJlbmNlLnNwYW4ua2luZBIHCgVBR0VOVHoCGAGFAQABAAA="
+      },
+      "preview": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "telemetry.sdk.language",
+                  "value": {
+                    "stringValue": "python"
+                  }
+                },
+                {
+                  "key": "telemetry.sdk.name",
+                  "value": {
+                    "stringValue": "opentelemetry"
+                  }
+                },
+                {
+                  "key": "telemetry.sdk.version",
+                  "value": {
+                    "stringValue": "1.45.1"
+                  }
+                },
+                {
+                  "key": "service.instance.id",
+                  "value": {
+                    "stringValue": "8026ab04-ec4f-4fd2-9754-5819f541eed7"
+                  }
+                },
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "spanlight-fixture"
+                  }
+                }
+              ]
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "openinference.instrumentation.langchain",
+                  "version": "0.1.79"
+                },
+                "spans": [
+                  {
+                    "traceId": "hbklz6uumTju+B+TKT+HmA==",
+                    "spanId": "lw68qnCXbWs=",
+                    "parentSpanId": "YAk74SpjcsQ=",
+                    "name": "ChatOpenAI",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269421148116224",
+                    "endTimeUnixNano": "1792269421166932224",
+                    "attributes": [
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "{\"messages\": [[{\"lc\": 1, \"type\": \"constructor\", \"id\": [\"langchain\", \"schema\", \"messages\", \"HumanMessage\"], \"kwargs\": {\"content\": \"What is the weather in Paris and Tokyo? Use the tool.\", \"type\": \"human\"}}]]}"
+                        }
+                      },
+                      {
+                        "key": "input.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "{\"generations\": [[{\"text\": \"\", \"generation_info\": {\"finish_reason\": \"tool_calls\", \"logprobs\": null}, \"type\": \"ChatGeneration\", \"message\": {\"lc\": 1, \"type\": \"constructor\", \"id\": [\"langchain\", \"schema\", \"messages\", \"AIMessage\"], \"kwargs\": {\"content\": \"\", \"additional_kwargs\": {\"refusal\": null}, \"response_metadata\": {\"token_usage\": {\"completion_tokens\": 46, \"prompt_tokens\": 82, \"total_tokens\": 128, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"audio_tokens\": 0, \"reasoning_tokens\": 0, \"rejected_prediction_tokens\": 0, \"text_tokens\": null}, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cache_write_tokens\": null, \"cached_tokens\": 0, \"image_tokens\": null, \"text_tokens\": null}}, \"model_provider\": \"openai\", \"model_name\": \"gpt-4.1-mini-2025-04-14\", \"system_fingerprint\": \"fp_test000002\", \"id\": \"chatcmpl-test0000000000000000000002\", \"service_tier\": \"default\", \"finish_reason\": \"tool_calls\", \"logprobs\": null}, \"type\": \"ai\", \"id\": \"lc_run--01a14b95-0a5c-7e40-bb11-fbc6c66b5475-0\", \"tool_calls\": [{\"name\": \"get_weather\", \"args\": {\"city\": \"Paris\", \"unit\": \"celsius\"}, \"id\": \"call_test0000000000000000a1\", \"type\": \"tool_call\"}, {\"name\": \"get_weather\", \"args\": {\"city\": \"Tokyo\", \"unit\": \"celsius\"}, \"id\": \"call_test0000000000000000b2\", \"type\": \"tool_call\"}], \"usage_metadata\": {\"input_tokens\": 82, \"output_tokens\": 46, \"total_tokens\": 128, \"input_token_details\": {\"audio\": 0, \"cache_read\": 0}, \"output_token_details\": {\"audio\": 0, \"reasoning\": 0}}, \"invalid_tool_calls\": []}}}]], \"llm_output\": {\"token_usage\": {\"completion_tokens\": 46, \"prompt_tokens\": 82, \"total_tokens\": 128, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"audio_tokens\": 0, \"reasoning_tokens\": 0, \"rejected_prediction_tokens\": 0, \"text_tokens\": null}, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cache_write_tokens\": null, \"cached_tokens\": 0, \"image_tokens\": null, \"text_tokens\": null}}, \"model_provider\": \"openai\", \"model_name\": \"gpt-4.1-mini-2025-04-14\", \"system_fingerprint\": \"fp_test000002\", \"id\": \"chatcmpl-test0000000000000000000002\", \"service_tier\": \"default\"}, \"run\": null, \"type\": \"LLMResult\"}"
+                        }
+                      },
+                      {
+                        "key": "output.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.0.message.role",
+                        "value": {
+                          "stringValue": "user"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.0.message.content",
+                        "value": {
+                          "stringValue": "What is the weather in Paris and Tokyo? Use the tool."
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.role",
+                        "value": {
+                          "stringValue": "assistant"
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.tool_calls.0.tool_call.id",
+                        "value": {
+                          "stringValue": "call_test0000000000000000a1"
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.tool_calls.0.tool_call.function.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.tool_calls.0.tool_call.function.arguments",
+                        "value": {
+                          "stringValue": "{\"city\": \"Paris\", \"unit\": \"celsius\"}"
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.tool_calls.1.tool_call.id",
+                        "value": {
+                          "stringValue": "call_test0000000000000000b2"
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.tool_calls.1.tool_call.function.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.tool_calls.1.tool_call.function.arguments",
+                        "value": {
+                          "stringValue": "{\"city\": \"Tokyo\", \"unit\": \"celsius\"}"
+                        }
+                      },
+                      {
+                        "key": "llm.invocation_parameters",
+                        "value": {
+                          "stringValue": "{\"model\": \"gpt-4.1-mini\", \"model_name\": \"gpt-4.1-mini\", \"stream\": false, \"_type\": \"openai-chat\", \"stop\": null, \"tools\": [{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"properties\": {\"city\": {\"type\": \"string\"}, \"unit\": {\"default\": \"celsius\", \"type\": \"string\"}}, \"required\": [\"city\"], \"type\": \"object\"}}}]}"
+                        }
+                      },
+                      {
+                        "key": "llm.tools.0.tool.json_schema",
+                        "value": {
+                          "stringValue": "{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"properties\": {\"city\": {\"type\": \"string\"}, \"unit\": {\"default\": \"celsius\", \"type\": \"string\"}}, \"required\": [\"city\"], \"type\": \"object\"}}}"
+                        }
+                      },
+                      {
+                        "key": "llm.provider",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "llm.system",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "llm.model_name",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.prompt",
+                        "value": {
+                          "intValue": "82"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.completion",
+                        "value": {
+                          "intValue": "46"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.total",
+                        "value": {
+                          "intValue": "128"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.completion_details.audio",
+                        "value": {
+                          "intValue": "0"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.completion_details.reasoning",
+                        "value": {
+                          "intValue": "0"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.prompt_details.audio",
+                        "value": {
+                          "intValue": "0"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.prompt_details.cache_read",
+                        "value": {
+                          "intValue": "0"
+                        }
+                      },
+                      {
+                        "key": "llm.finish_reason",
+                        "value": {
+                          "stringValue": "tool_calls"
+                        }
+                      },
+                      {
+                        "key": "metadata",
+                        "value": {
+                          "stringValue": "{\"ls_provider\": \"openai\", \"ls_model_name\": \"gpt-4.1-mini\", \"ls_model_type\": \"chat\", \"ls_temperature\": null, \"ls_integration\": \"langchain_chat_model\", \"lc_versions\": {\"langchain-core\": \"1.6.12\", \"langchain-openai\": \"1.7.2\"}}"
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "LLM"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "hbklz6uumTju+B+TKT+HmA==",
+                    "spanId": "WUCi3E8lwI0=",
+                    "parentSpanId": "YAk74SpjcsQ=",
+                    "name": "get_weather",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269421167560192",
+                    "endTimeUnixNano": "1792269421167928832",
+                    "attributes": [
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "{\"city\": \"Paris\", \"unit\": \"celsius\"}"
+                        }
+                      },
+                      {
+                        "key": "input.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "{\"type\": \"tool\", \"data\": {\"content\": \"18 degrees and sunny\", \"additional_kwargs\": {}, \"response_metadata\": {}, \"type\": \"tool\", \"name\": \"get_weather\", \"id\": null, \"tool_call_id\": \"call_test0000000000000000a1\", \"artifact\": null, \"status\": \"success\"}}"
+                        }
+                      },
+                      {
+                        "key": "output.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "tool.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "tool.description",
+                        "value": {
+                          "stringValue": "Get the current weather for a city."
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "TOOL"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "hbklz6uumTju+B+TKT+HmA==",
+                    "spanId": "vcPklh1zVkQ=",
+                    "parentSpanId": "YAk74SpjcsQ=",
+                    "name": "get_weather",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269421168060928",
+                    "endTimeUnixNano": "1792269421168237056",
+                    "attributes": [
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "{\"city\": \"Tokyo\", \"unit\": \"celsius\"}"
+                        }
+                      },
+                      {
+                        "key": "input.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "{\"type\": \"tool\", \"data\": {\"content\": \"18 degrees and sunny\", \"additional_kwargs\": {}, \"response_metadata\": {}, \"type\": \"tool\", \"name\": \"get_weather\", \"id\": null, \"tool_call_id\": \"call_test0000000000000000b2\", \"artifact\": null, \"status\": \"success\"}}"
+                        }
+                      },
+                      {
+                        "key": "output.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "tool.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "tool.description",
+                        "value": {
+                          "stringValue": "Get the current weather for a city."
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "TOOL"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "hbklz6uumTju+B+TKT+HmA==",
+                    "spanId": "F0bhHnjLeB8=",
+                    "parentSpanId": "YAk74SpjcsQ=",
+                    "name": "ChatOpenAI",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269421168548096",
+                    "endTimeUnixNano": "1792269421170876928",
+                    "attributes": [
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "{\"messages\": [[{\"lc\": 1, \"type\": \"constructor\", \"id\": [\"langchain\", \"schema\", \"messages\", \"HumanMessage\"], \"kwargs\": {\"content\": \"What is the weather in Paris and Tokyo? Use the tool.\", \"type\": \"human\"}}, {\"lc\": 1, \"type\": \"constructor\", \"id\": [\"langchain\", \"schema\", \"messages\", \"AIMessage\"], \"kwargs\": {\"content\": \"\", \"additional_kwargs\": {\"refusal\": null}, \"response_metadata\": {\"token_usage\": {\"completion_tokens\": 46, \"prompt_tokens\": 82, \"total_tokens\": 128, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"audio_tokens\": 0, \"reasoning_tokens\": 0, \"rejected_prediction_tokens\": 0, \"text_tokens\": null}, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cache_write_tokens\": null, \"cached_tokens\": 0, \"image_tokens\": null, \"text_tokens\": null}}, \"model_provider\": \"openai\", \"model_name\": \"gpt-4.1-mini-2025-04-14\", \"system_fingerprint\": \"fp_test000002\", \"id\": \"chatcmpl-test0000000000000000000002\", \"service_tier\": \"default\", \"finish_reason\": \"tool_calls\", \"logprobs\": null}, \"type\": \"ai\", \"id\": \"lc_run--01a14b95-0a5c-7e40-bb11-fbc6c66b5475-0\", \"tool_calls\": [{\"name\": \"get_weather\", \"args\": {\"city\": \"Paris\", \"unit\": \"celsius\"}, \"id\": \"call_test0000000000000000a1\", \"type\": \"tool_call\"}, {\"name\": \"get_weather\", \"args\": {\"city\": \"Tokyo\", \"unit\": \"celsius\"}, \"id\": \"call_test0000000000000000b2\", \"type\": \"tool_call\"}], \"usage_metadata\": {\"input_tokens\": 82, \"output_tokens\": 46, \"total_tokens\": 128, \"input_token_details\": {\"audio\": 0, \"cache_read\": 0}, \"output_token_details\": {\"audio\": 0, \"reasoning\": 0}}, \"invalid_tool_calls\": []}}, {\"lc\": 1, \"type\": \"constructor\", \"id\": [\"langchain\", \"schema\", \"messages\", \"ToolMessage\"], \"kwargs\": {\"content\": \"18 degrees and sunny\", \"type\": \"tool\", \"name\": \"get_weather\", \"tool_call_id\": \"call_test0000000000000000a1\", \"status\": \"success\"}}, {\"lc\": 1, \"type\": \"constructor\", \"id\": [\"langchain\", \"schema\", \"messages\", \"ToolMessage\"], \"kwargs\": {\"content\": \"18 degrees and sunny\", \"type\": \"tool\", \"name\": \"get_weather\", \"tool_call_id\": \"call_test0000000000000000b2\", \"status\": \"success\"}}]]}"
+                        }
+                      },
+                      {
+                        "key": "input.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "{\"generations\": [[{\"text\": \"Hello! How can I help you today?\", \"generation_info\": {\"finish_reason\": \"stop\", \"logprobs\": null}, \"type\": \"ChatGeneration\", \"message\": {\"lc\": 1, \"type\": \"constructor\", \"id\": [\"langchain\", \"schema\", \"messages\", \"AIMessage\"], \"kwargs\": {\"content\": \"Hello! How can I help you today?\", \"additional_kwargs\": {\"refusal\": null}, \"response_metadata\": {\"token_usage\": {\"completion_tokens\": 9, \"prompt_tokens\": 19, \"total_tokens\": 28, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"audio_tokens\": 0, \"reasoning_tokens\": 0, \"rejected_prediction_tokens\": 0, \"text_tokens\": null}, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cache_write_tokens\": null, \"cached_tokens\": 8, \"image_tokens\": null, \"text_tokens\": null}}, \"model_provider\": \"openai\", \"model_name\": \"gpt-4.1-mini-2025-04-14\", \"system_fingerprint\": \"fp_test000001\", \"id\": \"chatcmpl-test0000000000000000000001\", \"service_tier\": \"default\", \"finish_reason\": \"stop\", \"logprobs\": null}, \"type\": \"ai\", \"id\": \"lc_run--01a14b95-0a70-78a2-88e4-7d842ec51a14-0\", \"usage_metadata\": {\"input_tokens\": 19, \"output_tokens\": 9, \"total_tokens\": 28, \"input_token_details\": {\"audio\": 0, \"cache_read\": 8}, \"output_token_details\": {\"audio\": 0, \"reasoning\": 0}}, \"tool_calls\": [], \"invalid_tool_calls\": []}}}]], \"llm_output\": {\"token_usage\": {\"completion_tokens\": 9, \"prompt_tokens\": 19, \"total_tokens\": 28, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"audio_tokens\": 0, \"reasoning_tokens\": 0, \"rejected_prediction_tokens\": 0, \"text_tokens\": null}, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cache_write_tokens\": null, \"cached_tokens\": 8, \"image_tokens\": null, \"text_tokens\": null}}, \"model_provider\": \"openai\", \"model_name\": \"gpt-4.1-mini-2025-04-14\", \"system_fingerprint\": \"fp_test000001\", \"id\": \"chatcmpl-test0000000000000000000001\", \"service_tier\": \"default\"}, \"run\": null, \"type\": \"LLMResult\"}"
+                        }
+                      },
+                      {
+                        "key": "output.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.0.message.role",
+                        "value": {
+                          "stringValue": "user"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.0.message.content",
+                        "value": {
+                          "stringValue": "What is the weather in Paris and Tokyo? Use the tool."
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.1.message.role",
+                        "value": {
+                          "stringValue": "assistant"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.1.message.tool_calls.0.tool_call.id",
+                        "value": {
+                          "stringValue": "call_test0000000000000000a1"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.1.message.tool_calls.0.tool_call.function.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.1.message.tool_calls.0.tool_call.function.arguments",
+                        "value": {
+                          "stringValue": "{\"city\": \"Paris\", \"unit\": \"celsius\"}"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.1.message.tool_calls.1.tool_call.id",
+                        "value": {
+                          "stringValue": "call_test0000000000000000b2"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.1.message.tool_calls.1.tool_call.function.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.1.message.tool_calls.1.tool_call.function.arguments",
+                        "value": {
+                          "stringValue": "{\"city\": \"Tokyo\", \"unit\": \"celsius\"}"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.2.message.role",
+                        "value": {
+                          "stringValue": "tool"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.2.message.content",
+                        "value": {
+                          "stringValue": "18 degrees and sunny"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.2.message.tool_call_id",
+                        "value": {
+                          "stringValue": "call_test0000000000000000a1"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.2.message.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.3.message.role",
+                        "value": {
+                          "stringValue": "tool"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.3.message.content",
+                        "value": {
+                          "stringValue": "18 degrees and sunny"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.3.message.tool_call_id",
+                        "value": {
+                          "stringValue": "call_test0000000000000000b2"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.3.message.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.role",
+                        "value": {
+                          "stringValue": "assistant"
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.content",
+                        "value": {
+                          "stringValue": "Hello! How can I help you today?"
+                        }
+                      },
+                      {
+                        "key": "llm.invocation_parameters",
+                        "value": {
+                          "stringValue": "{\"model\": \"gpt-4.1-mini\", \"model_name\": \"gpt-4.1-mini\", \"stream\": false, \"_type\": \"openai-chat\", \"stop\": null}"
+                        }
+                      },
+                      {
+                        "key": "llm.provider",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "llm.system",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "llm.model_name",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.prompt",
+                        "value": {
+                          "intValue": "19"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.completion",
+                        "value": {
+                          "intValue": "9"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.total",
+                        "value": {
+                          "intValue": "28"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.completion_details.audio",
+                        "value": {
+                          "intValue": "0"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.completion_details.reasoning",
+                        "value": {
+                          "intValue": "0"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.prompt_details.audio",
+                        "value": {
+                          "intValue": "0"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.prompt_details.cache_read",
+                        "value": {
+                          "intValue": "8"
+                        }
+                      },
+                      {
+                        "key": "llm.finish_reason",
+                        "value": {
+                          "stringValue": "stop"
+                        }
+                      },
+                      {
+                        "key": "metadata",
+                        "value": {
+                          "stringValue": "{\"ls_provider\": \"openai\", \"ls_model_name\": \"gpt-4.1-mini\", \"ls_model_type\": \"chat\", \"ls_temperature\": null, \"ls_integration\": \"langchain_chat_model\", \"lc_versions\": {\"langchain-core\": \"1.6.12\", \"langchain-openai\": \"1.7.2\"}}"
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "LLM"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "hbklz6uumTju+B+TKT+HmA==",
+                    "spanId": "YAk74SpjcsQ=",
+                    "name": "weather_agent",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269421146893056",
+                    "endTimeUnixNano": "1792269421171161856",
+                    "attributes": [
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "What is the weather in Paris and Tokyo? Use the tool."
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "{\"type\": \"ai\", \"data\": {\"content\": \"Hello! How can I help you today?\", \"additional_kwargs\": {\"refusal\": null}, \"response_metadata\": {\"token_usage\": {\"completion_tokens\": 9, \"prompt_tokens\": 19, \"total_tokens\": 28, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"audio_tokens\": 0, \"reasoning_tokens\": 0, \"rejected_prediction_tokens\": 0, \"text_tokens\": null}, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cache_write_tokens\": null, \"cached_tokens\": 8, \"image_tokens\": null, \"text_tokens\": null}}, \"model_provider\": \"openai\", \"model_name\": \"gpt-4.1-mini-2025-04-14\", \"system_fingerprint\": \"fp_test000001\", \"id\": \"chatcmpl-test0000000000000000000001\", \"service_tier\": \"default\", \"finish_reason\": \"stop\", \"logprobs\": null}, \"type\": \"ai\", \"name\": null, \"id\": \"lc_run--01a14b95-0a70-78a2-88e4-7d842ec51a14-0\", \"tool_calls\": [], \"invalid_tool_calls\": [], \"usage_metadata\": {\"input_tokens\": 19, \"output_tokens\": 9, \"total_tokens\": 28, \"input_token_details\": {\"audio\": 0, \"cache_read\": 8}, \"output_token_details\": {\"audio\": 0, \"reasoning\": 0}}}}"
+                        }
+                      },
+                      {
+                        "key": "output.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "AGENT"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accepted": 5,
+        "rejected": [],
+        "spans": [
+          {
+            "span_id": "970ebcaa70976d6b",
+            "parent_span_id": "60093be12a6372c4",
+            "convention": "openinference",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini-2025-04-14",
+            "usage": {
+              "input_tokens": 82,
+              "output_tokens": 46,
+              "cached_tokens": 0,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "priced",
+            "finish_reason": "tool_calls",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "llm",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {
+                "ls_integration": "langchain_chat_model",
+                "ls_model_name": "gpt-4.1-mini",
+                "ls_model_type": "chat",
+                "ls_provider": "openai"
+              }
+            }
+          },
+          {
+            "span_id": "5940a2dc4f25c08d",
+            "parent_span_id": "60093be12a6372c4",
+            "convention": "openinference",
+            "kind": "tool",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "tool",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "bdc3e4961d735644",
+            "parent_span_id": "60093be12a6372c4",
+            "convention": "openinference",
+            "kind": "tool",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "tool",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "1746e11e78cb781f",
+            "parent_span_id": "60093be12a6372c4",
+            "convention": "openinference",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini-2025-04-14",
+            "usage": {
+              "input_tokens": 19,
+              "output_tokens": 9,
+              "cached_tokens": 8,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "priced",
+            "finish_reason": "stop",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "llm",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {
+                "ls_integration": "langchain_chat_model",
+                "ls_model_name": "gpt-4.1-mini",
+                "ls_model_type": "chat",
+                "ls_provider": "openai"
+              }
+            }
+          },
+          {
+            "span_id": "60093be12a6372c4",
+            "parent_span_id": null,
+            "convention": "openinference",
+            "kind": "chain",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "agent",
+            "trace": {
+              "name": "weather_agent",
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          }
+        ],
+        "trace": {
+          "span_count": 5,
+          "input_tokens": 101,
+          "output_tokens": 55,
+          "has_unpriced": false
+        },
+        "loses": [
+          "time_to_first_token_ms"
+        ]
+      }
+    },
+    {
+      "name": "retriever",
+      "export": {
+        "content_type": "application/x-protobuf",
+        "body_base64": "CqRCCtIBCiIKFnRlbGVtZXRyeS5zZGsubGFuZ3VhZ2USCAoGcHl0aG9uCiUKEnRlbGVtZXRyeS5zZGsubmFtZRIPCg1vcGVudGVsZW1ldHJ5CiEKFXRlbGVtZXRyeS5zZGsudmVyc2lvbhIICgYxLjQ1LjEKPQoTc2VydmljZS5pbnN0YW5jZS5pZBImCiQwZTkzNzk3Yy0wZmQyLTRjYWYtOTVlZS05MDQ4ZDM1ZmU5MTgKIwoMc2VydmljZS5uYW1lEhMKEXNwYW5saWdodC1maXh0dXJlEsxACjEKJ29wZW5pbmZlcmVuY2UuaW5zdHJ1bWVudGF0aW9uLmxhbmdjaGFpbhIGMC4xLjc5EpYFChCefvxP427dT5sWJP2zu0aOEggBTH+eKe85lCII4rzwaAX5e2YqDkZhY3RzUmV0cmlldmVyMAE5AIniUotr3xhBAHTjUotr3xhKLgoLaW5wdXQudmFsdWUSHwodSG93IHRhbGwgaXMgdGhlIEVpZmZlbCBUb3dlcj9K8gEKDG91dHB1dC52YWx1ZRLhAQreAXsiZG9jdW1lbnRzIjogW3siaWQiOiBudWxsLCAibWV0YWRhdGEiOiB7fSwgInBhZ2VfY29udGVudCI6ICJQYXJpcyBpcyB0aGUgY2FwaXRhbCBvZiBGcmFuY2UuIiwgInR5cGUiOiAiRG9jdW1lbnQifSwgeyJpZCI6IG51bGwsICJtZXRhZGF0YSI6IHt9LCAicGFnZV9jb250ZW50IjogIlRoZSBFaWZmZWwgVG93ZXIgaXMgMzMwIG1ldHJlcyB0YWxsLiIsICJ0eXBlIjogIkRvY3VtZW50In1dfUomChBvdXRwdXQubWltZV90eXBlEhIKEGFwcGxpY2F0aW9uL2pzb25KSwomcmV0cmlldmFsLmRvY3VtZW50cy4wLmRvY3VtZW50LmNvbnRlbnQSIQofUGFyaXMgaXMgdGhlIGNhcGl0YWwgb2YgRnJhbmNlLkpQCiZyZXRyaWV2YWwuZG9jdW1lbnRzLjEuZG9jdW1lbnQuY29udGVudBImCiRUaGUgRWlmZmVsIFRvd2VyIGlzIDMzMCBtZXRyZXMgdGFsbC5KLAoIbWV0YWRhdGESIAoeeyJsc19yZXRyaWV2ZXJfbmFtZSI6ICJmYWN0cyJ9SiYKF29wZW5pbmZlcmVuY2Uuc3Bhbi5raW5kEgsKCVJFVFJJRVZFUnoCGAGFAQABAAAS0gMKEJ5+/E/jbt1PmxYk/bO7Ro4SCBxbS8LLt2eaIgjivPBoBfl7ZioEam9pbjABOQB361KLa98YQQB37VKLa98YSuIBCgtpbnB1dC52YWx1ZRLSAQrPAVt7ImlkIjogbnVsbCwgIm1ldGFkYXRhIjoge30sICJwYWdlX2NvbnRlbnQiOiAiUGFyaXMgaXMgdGhlIGNhcGl0YWwgb2YgRnJhbmNlLiIsICJ0eXBlIjogIkRvY3VtZW50In0sIHsiaWQiOiBudWxsLCAibWV0YWRhdGEiOiB7fSwgInBhZ2VfY29udGVudCI6ICJUaGUgRWlmZmVsIFRvd2VyIGlzIDMzMCBtZXRyZXMgdGFsbC4iLCAidHlwZSI6ICJEb2N1bWVudCJ9XUolCg9pbnB1dC5taW1lX3R5cGUSEgoQYXBwbGljYXRpb24vanNvbkpWCgxvdXRwdXQudmFsdWUSRgpEUGFyaXMgaXMgdGhlIGNhcGl0YWwgb2YgRnJhbmNlLgpUaGUgRWlmZmVsIFRvd2VyIGlzIDMzMCBtZXRyZXMgdGFsbC5KIgoXb3BlbmluZmVyZW5jZS5zcGFuLmtpbmQSBwoFQ0hBSU56AhgBhQEAAQAAEoICChCefvxP427dT5sWJP2zu0aOEgjivPBoBfl7ZiIIIM9Z4XGULPQqEFJ1bm5hYmxlU2VxdWVuY2UwATkAGuFSi2vfGEEAeO5Si2vfGEouCgtpbnB1dC52YWx1ZRIfCh1Ib3cgdGFsbCBpcyB0aGUgRWlmZmVsIFRvd2VyP0pWCgxvdXRwdXQudmFsdWUSRgpEUGFyaXMgaXMgdGhlIGNhcGl0YWwgb2YgRnJhbmNlLgpUaGUgRWlmZmVsIFRvd2VyIGlzIDMzMCBtZXRyZXMgdGFsbC5KIgoXb3BlbmluZmVyZW5jZS5zcGFuLmtpbmQSBwoFQ0hBSU56AhgBhQEAAQAAEt4BChCefvxP427dT5sWJP2zu0aOEghRWnNSsl5IOiIIIM9Z4XGULPQqE1J1bm5hYmxlUGFzc3Rocm91Z2gwATkABvBSi2vfGEEA0/FSi2vfGEouCgtpbnB1dC52YWx1ZRIfCh1Ib3cgdGFsbCBpcyB0aGUgRWlmZmVsIFRvd2VyP0ovCgxvdXRwdXQudmFsdWUSHwodSG93IHRhbGwgaXMgdGhlIEVpZmZlbCBUb3dlcj9KIgoXb3BlbmluZmVyZW5jZS5zcGFuLmtpbmQSBwoFQ0hBSU56AhgBhQEAAQAAEvwCChCefvxP427dT5sWJP2zu0aOEgggz1nhcZQs9CIIrvND220mgZAqIlJ1bm5hYmxlUGFyYWxsZWw8Y29udGV4dCxxdWVzdGlvbj4wATkAid1Si2vfGEEAHPVSi2vfGEouCgtpbnB1dC52YWx1ZRIfCh1Ib3cgdGFsbCBpcyB0aGUgRWlmZmVsIFRvd2VyP0qVAQoMb3V0cHV0LnZhbHVlEoQBCoEBeyJjb250ZXh0IjogIlBhcmlzIGlzIHRoZSBjYXBpdGFsIG9mIEZyYW5jZS5cblRoZSBFaWZmZWwgVG93ZXIgaXMgMzMwIG1ldHJlcyB0YWxsLiIsICJxdWVzdGlvbiI6ICJIb3cgdGFsbCBpcyB0aGUgRWlmZmVsIFRvd2VyPyJ9SiYKEG91dHB1dC5taW1lX3R5cGUSEgoQYXBwbGljYXRpb24vanNvbkoiChdvcGVuaW5mZXJlbmNlLnNwYW4ua2luZBIHCgVDSEFJTnoCGAGFAQABAAASogcKEJ5+/E/jbt1PmxYk/bO7Ro4SCA2EIt7PoszHIgiu80PbbSaBkCoSQ2hhdFByb21wdFRlbXBsYXRlMAE5AHr8Uotr3xhBAA//Uotr3xhKlAEKC2lucHV0LnZhbHVlEoQBCoEBeyJjb250ZXh0IjogIlBhcmlzIGlzIHRoZSBjYXBpdGFsIG9mIEZyYW5jZS5cblRoZSBFaWZmZWwgVG93ZXIgaXMgMzMwIG1ldHJlcyB0YWxsLiIsICJxdWVzdGlvbiI6ICJIb3cgdGFsbCBpcyB0aGUgRWlmZmVsIFRvd2VyPyJ9SiUKD2lucHV0Lm1pbWVfdHlwZRISChBhcHBsaWNhdGlvbi9qc29uSvwCCgxvdXRwdXQudmFsdWUS6wIK6AJ7Im1lc3NhZ2VzIjogW3siY29udGVudCI6ICJBbnN3ZXIgZnJvbSB0aGlzIGNvbnRleHQ6XG5QYXJpcyBpcyB0aGUgY2FwaXRhbCBvZiBGcmFuY2UuXG5UaGUgRWlmZmVsIFRvd2VyIGlzIDMzMCBtZXRyZXMgdGFsbC4iLCAiYWRkaXRpb25hbF9rd2FyZ3MiOiB7fSwgInJlc3BvbnNlX21ldGFkYXRhIjoge30sICJ0eXBlIjogInN5c3RlbSIsICJuYW1lIjogbnVsbCwgImlkIjogbnVsbH0sIHsiY29udGVudCI6ICJIb3cgdGFsbCBpcyB0aGUgRWlmZmVsIFRvd2VyPyIsICJhZGRpdGlvbmFsX2t3YXJncyI6IHt9LCAicmVzcG9uc2VfbWV0YWRhdGEiOiB7fSwgInR5cGUiOiAiaHVtYW4iLCAibmFtZSI6IG51bGwsICJpZCI6IG51bGx9XX1KJgoQb3V0cHV0Lm1pbWVfdHlwZRISChBhcHBsaWNhdGlvbi9qc29uSkUKHGxsbS5wcm9tcHRfdGVtcGxhdGUudGVtcGxhdGUSJQojQW5zd2VyIGZyb20gdGhpcyBjb250ZXh0Ogp7Y29udGV4dH1KdwodbGxtLnByb21wdF90ZW1wbGF0ZS52YXJpYWJsZXMSVgpUeyJjb250ZXh0IjogIlBhcmlzIGlzIHRoZSBjYXBpdGFsIG9mIEZyYW5jZS5cblRoZSBFaWZmZWwgVG93ZXIgaXMgMzMwIG1ldHJlcyB0YWxsLiJ9SiMKF29wZW5pbmZlcmVuY2Uuc3Bhbi5raW5kEggKBlBST01QVHoCGAGFAQABAAASvh0KEJ5+/E/jbt1PmxYk/bO7Ro4SCHbkYLn+OabOIgiu80PbbSaBkCoKQ2hhdE9wZW5BSTABOQA7BFOLa98YQQCwFlSLa98YSrQDCgtpbnB1dC52YWx1ZRKkAwqhA3sibWVzc2FnZXMiOiBbW3sibGMiOiAxLCAidHlwZSI6ICJjb25zdHJ1Y3RvciIsICJpZCI6IFsibGFuZ2NoYWluIiwgInNjaGVtYSIsICJtZXNzYWdlcyIsICJTeXN0ZW1NZXNzYWdlIl0sICJrd2FyZ3MiOiB7ImNvbnRlbnQiOiAiQW5zd2VyIGZyb20gdGhpcyBjb250ZXh0OlxuUGFyaXMgaXMgdGhlIGNhcGl0YWwgb2YgRnJhbmNlLlxuVGhlIEVpZmZlbCBUb3dlciBpcyAzMzAgbWV0cmVzIHRhbGwuIiwgInR5cGUiOiAic3lzdGVtIn19LCB7ImxjIjogMSwgInR5cGUiOiAiY29uc3RydWN0b3IiLCAiaWQiOiBbImxhbmdjaGFpbiIsICJzY2hlbWEiLCAibWVzc2FnZXMiLCAiSHVtYW5NZXNzYWdlIl0sICJrd2FyZ3MiOiB7ImNvbnRlbnQiOiAiSG93IHRhbGwgaXMgdGhlIEVpZmZlbCBUb3dlcj8iLCAidHlwZSI6ICJodW1hbiJ9fV1dfUolCg9pbnB1dC5taW1lX3R5cGUSEgoQYXBwbGljYXRpb24vanNvbkr3DgoMb3V0cHV0LnZhbHVlEuYOCuMOeyJnZW5lcmF0aW9ucyI6IFtbeyJ0ZXh0IjogIkhlbGxvISBIb3cgY2FuIEkgaGVscCB5b3UgdG9kYXk/IiwgImdlbmVyYXRpb25faW5mbyI6IHsiZmluaXNoX3JlYXNvbiI6ICJzdG9wIiwgImxvZ3Byb2JzIjogbnVsbH0sICJ0eXBlIjogIkNoYXRHZW5lcmF0aW9uIiwgIm1lc3NhZ2UiOiB7ImxjIjogMSwgInR5cGUiOiAiY29uc3RydWN0b3IiLCAiaWQiOiBbImxhbmdjaGFpbiIsICJzY2hlbWEiLCAibWVzc2FnZXMiLCAiQUlNZXNzYWdlIl0sICJrd2FyZ3MiOiB7ImNvbnRlbnQiOiAiSGVsbG8hIEhvdyBjYW4gSSBoZWxwIHlvdSB0b2RheT8iLCAiYWRkaXRpb25hbF9rd2FyZ3MiOiB7InJlZnVzYWwiOiBudWxsfSwgInJlc3BvbnNlX21ldGFkYXRhIjogeyJ0b2tlbl91c2FnZSI6IHsiY29tcGxldGlvbl90b2tlbnMiOiA5LCAicHJvbXB0X3Rva2VucyI6IDE5LCAidG90YWxfdG9rZW5zIjogMjgsICJjb21wbGV0aW9uX3Rva2Vuc19kZXRhaWxzIjogeyJhY2NlcHRlZF9wcmVkaWN0aW9uX3Rva2VucyI6IDAsICJhdWRpb190b2tlbnMiOiAwLCAicmVhc29uaW5nX3Rva2VucyI6IDAsICJyZWplY3RlZF9wcmVkaWN0aW9uX3Rva2VucyI6IDAsICJ0ZXh0X3Rva2VucyI6IG51bGx9LCAicHJvbXB0X3Rva2Vuc19kZXRhaWxzIjogeyJhdWRpb190b2tlbnMiOiAwLCAiY2FjaGVfd3JpdGVfdG9rZW5zIjogbnVsbCwgImNhY2hlZF90b2tlbnMiOiA4LCAiaW1hZ2VfdG9rZW5zIjogbnVsbCwgInRleHRfdG9rZW5zIjogbnVsbH19LCAibW9kZWxfcHJvdmlkZXIiOiAib3BlbmFpIiwgIm1vZGVsX25hbWUiOiAiZ3B0LTQuMS1taW5pLTIwMjUtMDQtMTQiLCAic3lzdGVtX2ZpbmdlcnByaW50IjogImZwX3Rlc3QwMDAwMDEiLCAiaWQiOiAiY2hhdGNtcGwtdGVzdDAwMDAwMDAwMDAwMDAwMDAwMDAwMDEiLCAic2VydmljZV90aWVyIjogImRlZmF1bHQiLCAiZmluaXNoX3JlYXNvbiI6ICJzdG9wIiwgImxvZ3Byb2JzIjogbnVsbH0sICJ0eXBlIjogImFpIiwgImlkIjogImxjX3J1bi0tMDFhMTRiOTUtMTEwNi03ZTEzLThjZTYtYzE4MTdhMDYwMjdlLTAiLCAidXNhZ2VfbWV0YWRhdGEiOiB7ImlucHV0X3Rva2VucyI6IDE5LCAib3V0cHV0X3Rva2VucyI6IDksICJ0b3RhbF90b2tlbnMiOiAyOCwgImlucHV0X3Rva2VuX2RldGFpbHMiOiB7ImF1ZGlvIjogMCwgImNhY2hlX3JlYWQiOiA4fSwgIm91dHB1dF90b2tlbl9kZXRhaWxzIjogeyJhdWRpbyI6IDAsICJyZWFzb25pbmciOiAwfX0sICJ0b29sX2NhbGxzIjogW10sICJpbnZhbGlkX3Rvb2xfY2FsbHMiOiBbXX19fV1dLCAibGxtX291dHB1dCI6IHsidG9rZW5fdXNhZ2UiOiB7ImNvbXBsZXRpb25fdG9rZW5zIjogOSwgInByb21wdF90b2tlbnMiOiAxOSwgInRvdGFsX3Rva2VucyI6IDI4LCAiY29tcGxldGlvbl90b2tlbnNfZGV0YWlscyI6IHsiYWNjZXB0ZWRfcHJlZGljdGlvbl90b2tlbnMiOiAwLCAiYXVkaW9fdG9rZW5zIjogMCwgInJlYXNvbmluZ190b2tlbnMiOiAwLCAicmVqZWN0ZWRfcHJlZGljdGlvbl90b2tlbnMiOiAwLCAidGV4dF90b2tlbnMiOiBudWxsfSwgInByb21wdF90b2tlbnNfZGV0YWlscyI6IHsiYXVkaW9fdG9rZW5zIjogMCwgImNhY2hlX3dyaXRlX3Rva2VucyI6IG51bGwsICJjYWNoZWRfdG9rZW5zIjogOCwgImltYWdlX3Rva2VucyI6IG51bGwsICJ0ZXh0X3Rva2VucyI6IG51bGx9fSwgIm1vZGVsX3Byb3ZpZGVyIjogIm9wZW5haSIsICJtb2RlbF9uYW1lIjogImdwdC00LjEtbWluaS0yMDI1LTA0LTE0IiwgInN5c3RlbV9maW5nZXJwcmludCI6ICJmcF90ZXN0MDAwMDAxIiwgImlkIjogImNoYXRjbXBsLXRlc3QwMDAwMDAwMDAwMDAwMDAwMDAwMDAxIiwgInNlcnZpY2VfdGllciI6ICJkZWZhdWx0In0sICJydW4iOiBudWxsLCAidHlwZSI6ICJMTE1SZXN1bHQifUomChBvdXRwdXQubWltZV90eXBlEhIKEGFwcGxpY2F0aW9uL2pzb25KLQohbGxtLmlucHV0X21lc3NhZ2VzLjAubWVzc2FnZS5yb2xlEggKBnN5c3RlbUqIAQokbGxtLmlucHV0X21lc3NhZ2VzLjAubWVzc2FnZS5jb250ZW50EmAKXkFuc3dlciBmcm9tIHRoaXMgY29udGV4dDoKUGFyaXMgaXMgdGhlIGNhcGl0YWwgb2YgRnJhbmNlLgpUaGUgRWlmZmVsIFRvd2VyIGlzIDMzMCBtZXRyZXMgdGFsbC5KKwohbGxtLmlucHV0X21lc3NhZ2VzLjEubWVzc2FnZS5yb2xlEgYKBHVzZXJKRwokbGxtLmlucHV0X21lc3NhZ2VzLjEubWVzc2FnZS5jb250ZW50Eh8KHUhvdyB0YWxsIGlzIHRoZSBFaWZmZWwgVG93ZXI/SjEKImxsbS5vdXRwdXRfbWVzc2FnZXMuMC5tZXNzYWdlLnJvbGUSCwoJYXNzaXN0YW50SksKJWxsbS5vdXRwdXRfbWVzc2FnZXMuMC5tZXNzYWdlLmNvbnRlbnQSIgogSGVsbG8hIEhvdyBjYW4gSSBoZWxwIHlvdSB0b2RheT9KjQEKGWxsbS5pbnZvY2F0aW9uX3BhcmFtZXRlcnMScApueyJtb2RlbCI6ICJncHQtNC4xLW1pbmkiLCAibW9kZWxfbmFtZSI6ICJncHQtNC4xLW1pbmkiLCAic3RyZWFtIjogZmFsc2UsICJfdHlwZSI6ICJvcGVuYWktY2hhdCIsICJzdG9wIjogbnVsbH1KGAoMbGxtLnByb3ZpZGVyEggKBm9wZW5haUoWCgpsbG0uc3lzdGVtEggKBm9wZW5haUorCg5sbG0ubW9kZWxfbmFtZRIZChdncHQtNC4xLW1pbmktMjAyNS0wNC0xNEocChZsbG0udG9rZW5fY291bnQucHJvbXB0EgIYE0ogChpsbG0udG9rZW5fY291bnQuY29tcGxldGlvbhICGAlKGwoVbGxtLnRva2VuX2NvdW50LnRvdGFsEgIYHEouCihsbG0udG9rZW5fY291bnQuY29tcGxldGlvbl9kZXRhaWxzLmF1ZGlvEgIYAEoyCixsbG0udG9rZW5fY291bnQuY29tcGxldGlvbl9kZXRhaWxzLnJlYXNvbmluZxICGABKKgokbGxtLnRva2VuX2NvdW50LnByb21wdF9kZXRhaWxzLmF1ZGlvEgIYAEovCilsbG0udG9rZW5fY291bnQucHJvbXB0X2RldGFpbHMuY2FjaGVfcmVhZBICGAhKGwoRbGxtLmZpbmlzaF9yZWFzb24SBgoEc3RvcErvAQoIbWV0YWRhdGES4gEK3wF7ImxzX3Byb3ZpZGVyIjogIm9wZW5haSIsICJsc19tb2RlbF9uYW1lIjogImdwdC00LjEtbWluaSIsICJsc19tb2RlbF90eXBlIjogImNoYXQiLCAibHNfdGVtcGVyYXR1cmUiOiBudWxsLCAibHNfaW50ZWdyYXRpb24iOiAibGFuZ2NoYWluX2NoYXRfbW9kZWwiLCAibGNfdmVyc2lvbnMiOiB7ImxhbmdjaGFpbi1jb3JlIjogIjEuNi4xMiIsICJsYW5nY2hhaW4tb3BlbmFpIjogIjEuNy4yIn19SiAKF29wZW5pbmZlcmVuY2Uuc3Bhbi5raW5kEgUKA0xMTXoCGAGFAQABAAAShgoKEJ5+/E/jbt1PmxYk/bO7Ro4SCJUYWswyhuh8Igiu80PbbSaBkCoPU3RyT3V0cHV0UGFyc2VyMAE5ABUhVItr3xhBAFYlVItr3xhKrwgKC2lucHV0LnZhbHVlEp8ICpwIeyJ0eXBlIjogImFpIiwgImRhdGEiOiB7ImNvbnRlbnQiOiAiSGVsbG8hIEhvdyBjYW4gSSBoZWxwIHlvdSB0b2RheT8iLCAiYWRkaXRpb25hbF9rd2FyZ3MiOiB7InJlZnVzYWwiOiBudWxsfSwgInJlc3BvbnNlX21ldGFkYXRhIjogeyJ0b2tlbl91c2FnZSI6IHsiY29tcGxldGlvbl90b2tlbnMiOiA5LCAicHJvbXB0X3Rva2VucyI6IDE5LCAidG90YWxfdG9rZW5zIjogMjgsICJjb21wbGV0aW9uX3Rva2Vuc19kZXRhaWxzIjogeyJhY2NlcHRlZF9wcmVkaWN0aW9uX3Rva2VucyI6IDAsICJhdWRpb190b2tlbnMiOiAwLCAicmVhc29uaW5nX3Rva2VucyI6IDAsICJyZWplY3RlZF9wcmVkaWN0aW9uX3Rva2VucyI6IDAsICJ0ZXh0X3Rva2VucyI6IG51bGx9LCAicHJvbXB0X3Rva2Vuc19kZXRhaWxzIjogeyJhdWRpb190b2tlbnMiOiAwLCAiY2FjaGVfd3JpdGVfdG9rZW5zIjogbnVsbCwgImNhY2hlZF90b2tlbnMiOiA4LCAiaW1hZ2VfdG9rZW5zIjogbnVsbCwgInRleHRfdG9rZW5zIjogbnVsbH19LCAibW9kZWxfcHJvdmlkZXIiOiAib3BlbmFpIiwgIm1vZGVsX25hbWUiOiAiZ3B0LTQuMS1taW5pLTIwMjUtMDQtMTQiLCAic3lzdGVtX2ZpbmdlcnByaW50IjogImZwX3Rlc3QwMDAwMDEiLCAiaWQiOiAiY2hhdGNtcGwtdGVzdDAwMDAwMDAwMDAwMDAwMDAwMDAwMDEiLCAic2VydmljZV90aWVyIjogImRlZmF1bHQiLCAiZmluaXNoX3JlYXNvbiI6ICJzdG9wIiwgImxvZ3Byb2JzIjogbnVsbH0sICJ0eXBlIjogImFpIiwgIm5hbWUiOiBudWxsLCAiaWQiOiAibGNfcnVuLS0wMWExNGI5NS0xMTA2LTdlMTMtOGNlNi1jMTgxN2EwNjAyN2UtMCIsICJ0b29sX2NhbGxzIjogW10sICJpbnZhbGlkX3Rvb2xfY2FsbHMiOiBbXSwgInVzYWdlX21ldGFkYXRhIjogeyJpbnB1dF90b2tlbnMiOiAxOSwgIm91dHB1dF90b2tlbnMiOiA5LCAidG90YWxfdG9rZW5zIjogMjgsICJpbnB1dF90b2tlbl9kZXRhaWxzIjogeyJhdWRpbyI6IDAsICJjYWNoZV9yZWFkIjogOH0sICJvdXRwdXRfdG9rZW5fZGV0YWlscyI6IHsiYXVkaW8iOiAwLCAicmVhc29uaW5nIjogMH19fX1KJQoPaW5wdXQubWltZV90eXBlEhIKEGFwcGxpY2F0aW9uL2pzb25KMgoMb3V0cHV0LnZhbHVlEiIKIEhlbGxvISBIb3cgY2FuIEkgaGVscCB5b3UgdG9kYXk/SiIKF29wZW5pbmZlcmVuY2Uuc3Bhbi5raW5kEgcKBUNIQUlOegIYAYUBAAEAABLUAQoQnn78T+Nu3U+bFiT9s7tGjhIIrvND220mgZAqEFJ1bm5hYmxlU2VxdWVuY2UwATkAQ9dSi2vfGEEA4S9Ui2vfGEouCgtpbnB1dC52YWx1ZRIfCh1Ib3cgdGFsbCBpcyB0aGUgRWlmZmVsIFRvd2VyP0oyCgxvdXRwdXQudmFsdWUSIgogSGVsbG8hIEhvdyBjYW4gSSBoZWxwIHlvdSB0b2RheT9KIgoXb3BlbmluZmVyZW5jZS5zcGFuLmtpbmQSBwoFQ0hBSU56AhgBhQEAAQAA"
+      },
+      "preview": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "telemetry.sdk.language",
+                  "value": {
+                    "stringValue": "python"
+                  }
+                },
+                {
+                  "key": "telemetry.sdk.name",
+                  "value": {
+                    "stringValue": "opentelemetry"
+                  }
+                },
+                {
+                  "key": "telemetry.sdk.version",
+                  "value": {
+                    "stringValue": "1.45.1"
+                  }
+                },
+                {
+                  "key": "service.instance.id",
+                  "value": {
+                    "stringValue": "0e93797c-0fd2-4caf-95ee-9048d35fe918"
+                  }
+                },
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "spanlight-fixture"
+                  }
+                }
+              ]
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "openinference.instrumentation.langchain",
+                  "version": "0.1.79"
+                },
+                "spans": [
+                  {
+                    "traceId": "nn78T+Nu3U+bFiT9s7tGjg==",
+                    "spanId": "AUx/ninvOZQ=",
+                    "parentSpanId": "4rzwaAX5e2Y=",
+                    "name": "FactsRetriever",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269422851950848",
+                    "endTimeUnixNano": "1792269422852011008",
+                    "attributes": [
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "How tall is the Eiffel Tower?"
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "{\"documents\": [{\"id\": null, \"metadata\": {}, \"page_content\": \"Paris is the capital of France.\", \"type\": \"Document\"}, {\"id\": null, \"metadata\": {}, \"page_content\": \"The Eiffel Tower is 330 metres tall.\", \"type\": \"Document\"}]}"
+                        }
+                      },
+                      {
+                        "key": "output.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "retrieval.documents.0.document.content",
+                        "value": {
+                          "stringValue": "Paris is the capital of France."
+                        }
+                      },
+                      {
+                        "key": "retrieval.documents.1.document.content",
+                        "value": {
+                          "stringValue": "The Eiffel Tower is 330 metres tall."
+                        }
+                      },
+                      {
+                        "key": "metadata",
+                        "value": {
+                          "stringValue": "{\"ls_retriever_name\": \"facts\"}"
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "RETRIEVER"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "nn78T+Nu3U+bFiT9s7tGjg==",
+                    "spanId": "HFtLwsu3Z5o=",
+                    "parentSpanId": "4rzwaAX5e2Y=",
+                    "name": "join",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269422852536064",
+                    "endTimeUnixNano": "1792269422852667136",
+                    "attributes": [
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "[{\"id\": null, \"metadata\": {}, \"page_content\": \"Paris is the capital of France.\", \"type\": \"Document\"}, {\"id\": null, \"metadata\": {}, \"page_content\": \"The Eiffel Tower is 330 metres tall.\", \"type\": \"Document\"}]"
+                        }
+                      },
+                      {
+                        "key": "input.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "Paris is the capital of France.\nThe Eiffel Tower is 330 metres tall."
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "CHAIN"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "nn78T+Nu3U+bFiT9s7tGjg==",
+                    "spanId": "4rzwaAX5e2Y=",
+                    "parentSpanId": "IM9Z4XGULPQ=",
+                    "name": "RunnableSequence",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269422851856896",
+                    "endTimeUnixNano": "1792269422852732928",
+                    "attributes": [
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "How tall is the Eiffel Tower?"
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "Paris is the capital of France.\nThe Eiffel Tower is 330 metres tall."
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "CHAIN"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "nn78T+Nu3U+bFiT9s7tGjg==",
+                    "spanId": "UVpzUrJeSDo=",
+                    "parentSpanId": "IM9Z4XGULPQ=",
+                    "name": "RunnablePassthrough",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269422852834816",
+                    "endTimeUnixNano": "1792269422852952832",
+                    "attributes": [
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "How tall is the Eiffel Tower?"
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "How tall is the Eiffel Tower?"
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "CHAIN"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "nn78T+Nu3U+bFiT9s7tGjg==",
+                    "spanId": "IM9Z4XGULPQ=",
+                    "parentSpanId": "rvND220mgZA=",
+                    "name": "RunnableParallel<context,question>",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269422851623168",
+                    "endTimeUnixNano": "1792269422853168128",
+                    "attributes": [
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "How tall is the Eiffel Tower?"
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "{\"context\": \"Paris is the capital of France.\\nThe Eiffel Tower is 330 metres tall.\", \"question\": \"How tall is the Eiffel Tower?\"}"
+                        }
+                      },
+                      {
+                        "key": "output.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "CHAIN"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "nn78T+Nu3U+bFiT9s7tGjg==",
+                    "spanId": "DYQi3s+izMc=",
+                    "parentSpanId": "rvND220mgZA=",
+                    "name": "ChatPromptTemplate",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269422853650944",
+                    "endTimeUnixNano": "1792269422853820160",
+                    "attributes": [
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "{\"context\": \"Paris is the capital of France.\\nThe Eiffel Tower is 330 metres tall.\", \"question\": \"How tall is the Eiffel Tower?\"}"
+                        }
+                      },
+                      {
+                        "key": "input.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "{\"messages\": [{\"content\": \"Answer from this context:\\nParis is the capital of France.\\nThe Eiffel Tower is 330 metres tall.\", \"additional_kwargs\": {}, \"response_metadata\": {}, \"type\": \"system\", \"name\": null, \"id\": null}, {\"content\": \"How tall is the Eiffel Tower?\", \"additional_kwargs\": {}, \"response_metadata\": {}, \"type\": \"human\", \"name\": null, \"id\": null}]}"
+                        }
+                      },
+                      {
+                        "key": "output.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "llm.prompt_template.template",
+                        "value": {
+                          "stringValue": "Answer from this context:\n{context}"
+                        }
+                      },
+                      {
+                        "key": "llm.prompt_template.variables",
+                        "value": {
+                          "stringValue": "{\"context\": \"Paris is the capital of France.\\nThe Eiffel Tower is 330 metres tall.\"}"
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "PROMPT"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "nn78T+Nu3U+bFiT9s7tGjg==",
+                    "spanId": "duRguf45ps4=",
+                    "parentSpanId": "rvND220mgZA=",
+                    "name": "ChatOpenAI",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269422854159104",
+                    "endTimeUnixNano": "1792269422872145920",
+                    "attributes": [
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "{\"messages\": [[{\"lc\": 1, \"type\": \"constructor\", \"id\": [\"langchain\", \"schema\", \"messages\", \"SystemMessage\"], \"kwargs\": {\"content\": \"Answer from this context:\\nParis is the capital of France.\\nThe Eiffel Tower is 330 metres tall.\", \"type\": \"system\"}}, {\"lc\": 1, \"type\": \"constructor\", \"id\": [\"langchain\", \"schema\", \"messages\", \"HumanMessage\"], \"kwargs\": {\"content\": \"How tall is the Eiffel Tower?\", \"type\": \"human\"}}]]}"
+                        }
+                      },
+                      {
+                        "key": "input.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "{\"generations\": [[{\"text\": \"Hello! How can I help you today?\", \"generation_info\": {\"finish_reason\": \"stop\", \"logprobs\": null}, \"type\": \"ChatGeneration\", \"message\": {\"lc\": 1, \"type\": \"constructor\", \"id\": [\"langchain\", \"schema\", \"messages\", \"AIMessage\"], \"kwargs\": {\"content\": \"Hello! How can I help you today?\", \"additional_kwargs\": {\"refusal\": null}, \"response_metadata\": {\"token_usage\": {\"completion_tokens\": 9, \"prompt_tokens\": 19, \"total_tokens\": 28, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"audio_tokens\": 0, \"reasoning_tokens\": 0, \"rejected_prediction_tokens\": 0, \"text_tokens\": null}, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cache_write_tokens\": null, \"cached_tokens\": 8, \"image_tokens\": null, \"text_tokens\": null}}, \"model_provider\": \"openai\", \"model_name\": \"gpt-4.1-mini-2025-04-14\", \"system_fingerprint\": \"fp_test000001\", \"id\": \"chatcmpl-test0000000000000000000001\", \"service_tier\": \"default\", \"finish_reason\": \"stop\", \"logprobs\": null}, \"type\": \"ai\", \"id\": \"lc_run--01a14b95-1106-7e13-8ce6-c1817a06027e-0\", \"usage_metadata\": {\"input_tokens\": 19, \"output_tokens\": 9, \"total_tokens\": 28, \"input_token_details\": {\"audio\": 0, \"cache_read\": 8}, \"output_token_details\": {\"audio\": 0, \"reasoning\": 0}}, \"tool_calls\": [], \"invalid_tool_calls\": []}}}]], \"llm_output\": {\"token_usage\": {\"completion_tokens\": 9, \"prompt_tokens\": 19, \"total_tokens\": 28, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"audio_tokens\": 0, \"reasoning_tokens\": 0, \"rejected_prediction_tokens\": 0, \"text_tokens\": null}, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cache_write_tokens\": null, \"cached_tokens\": 8, \"image_tokens\": null, \"text_tokens\": null}}, \"model_provider\": \"openai\", \"model_name\": \"gpt-4.1-mini-2025-04-14\", \"system_fingerprint\": \"fp_test000001\", \"id\": \"chatcmpl-test0000000000000000000001\", \"service_tier\": \"default\"}, \"run\": null, \"type\": \"LLMResult\"}"
+                        }
+                      },
+                      {
+                        "key": "output.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.0.message.role",
+                        "value": {
+                          "stringValue": "system"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.0.message.content",
+                        "value": {
+                          "stringValue": "Answer from this context:\nParis is the capital of France.\nThe Eiffel Tower is 330 metres tall."
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.1.message.role",
+                        "value": {
+                          "stringValue": "user"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.1.message.content",
+                        "value": {
+                          "stringValue": "How tall is the Eiffel Tower?"
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.role",
+                        "value": {
+                          "stringValue": "assistant"
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.content",
+                        "value": {
+                          "stringValue": "Hello! How can I help you today?"
+                        }
+                      },
+                      {
+                        "key": "llm.invocation_parameters",
+                        "value": {
+                          "stringValue": "{\"model\": \"gpt-4.1-mini\", \"model_name\": \"gpt-4.1-mini\", \"stream\": false, \"_type\": \"openai-chat\", \"stop\": null}"
+                        }
+                      },
+                      {
+                        "key": "llm.provider",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "llm.system",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "llm.model_name",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.prompt",
+                        "value": {
+                          "intValue": "19"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.completion",
+                        "value": {
+                          "intValue": "9"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.total",
+                        "value": {
+                          "intValue": "28"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.completion_details.audio",
+                        "value": {
+                          "intValue": "0"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.completion_details.reasoning",
+                        "value": {
+                          "intValue": "0"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.prompt_details.audio",
+                        "value": {
+                          "intValue": "0"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.prompt_details.cache_read",
+                        "value": {
+                          "intValue": "8"
+                        }
+                      },
+                      {
+                        "key": "llm.finish_reason",
+                        "value": {
+                          "stringValue": "stop"
+                        }
+                      },
+                      {
+                        "key": "metadata",
+                        "value": {
+                          "stringValue": "{\"ls_provider\": \"openai\", \"ls_model_name\": \"gpt-4.1-mini\", \"ls_model_type\": \"chat\", \"ls_temperature\": null, \"ls_integration\": \"langchain_chat_model\", \"lc_versions\": {\"langchain-core\": \"1.6.12\", \"langchain-openai\": \"1.7.2\"}}"
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "LLM"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "nn78T+Nu3U+bFiT9s7tGjg==",
+                    "spanId": "lRhazDKG6Hw=",
+                    "parentSpanId": "rvND220mgZA=",
+                    "name": "StrOutputParser",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269422872827136",
+                    "endTimeUnixNano": "1792269422873105920",
+                    "attributes": [
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "{\"type\": \"ai\", \"data\": {\"content\": \"Hello! How can I help you today?\", \"additional_kwargs\": {\"refusal\": null}, \"response_metadata\": {\"token_usage\": {\"completion_tokens\": 9, \"prompt_tokens\": 19, \"total_tokens\": 28, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"audio_tokens\": 0, \"reasoning_tokens\": 0, \"rejected_prediction_tokens\": 0, \"text_tokens\": null}, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cache_write_tokens\": null, \"cached_tokens\": 8, \"image_tokens\": null, \"text_tokens\": null}}, \"model_provider\": \"openai\", \"model_name\": \"gpt-4.1-mini-2025-04-14\", \"system_fingerprint\": \"fp_test000001\", \"id\": \"chatcmpl-test0000000000000000000001\", \"service_tier\": \"default\", \"finish_reason\": \"stop\", \"logprobs\": null}, \"type\": \"ai\", \"name\": null, \"id\": \"lc_run--01a14b95-1106-7e13-8ce6-c1817a06027e-0\", \"tool_calls\": [], \"invalid_tool_calls\": [], \"usage_metadata\": {\"input_tokens\": 19, \"output_tokens\": 9, \"total_tokens\": 28, \"input_token_details\": {\"audio\": 0, \"cache_read\": 8}, \"output_token_details\": {\"audio\": 0, \"reasoning\": 0}}}}"
+                        }
+                      },
+                      {
+                        "key": "input.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "Hello! How can I help you today?"
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "CHAIN"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "nn78T+Nu3U+bFiT9s7tGjg==",
+                    "spanId": "rvND220mgZA=",
+                    "name": "RunnableSequence",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269422851212032",
+                    "endTimeUnixNano": "1792269422873796864",
+                    "attributes": [
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "How tall is the Eiffel Tower?"
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "Hello! How can I help you today?"
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "CHAIN"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accepted": 9,
+        "rejected": [],
+        "spans": [
+          {
+            "span_id": "014c7f9e29ef3994",
+            "parent_span_id": "e2bcf06805f97b66",
+            "convention": "openinference",
+            "kind": "retrieval",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "retriever",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {
+                "ls_retriever_name": "facts"
+              }
+            }
+          },
+          {
+            "span_id": "1c5b4bc2cbb7679a",
+            "parent_span_id": "e2bcf06805f97b66",
+            "convention": "openinference",
+            "kind": "chain",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "chain",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "e2bcf06805f97b66",
+            "parent_span_id": "20cf59e171942cf4",
+            "convention": "openinference",
+            "kind": "chain",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "chain",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "515a7352b25e483a",
+            "parent_span_id": "20cf59e171942cf4",
+            "convention": "openinference",
+            "kind": "chain",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "chain",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "20cf59e171942cf4",
+            "parent_span_id": "aef343db6d268190",
+            "convention": "openinference",
+            "kind": "chain",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "chain",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "0d8422decfa2ccc7",
+            "parent_span_id": "aef343db6d268190",
+            "convention": "openinference",
+            "kind": "other",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "prompt",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "76e460b9fe39a6ce",
+            "parent_span_id": "aef343db6d268190",
+            "convention": "openinference",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini-2025-04-14",
+            "usage": {
+              "input_tokens": 19,
+              "output_tokens": 9,
+              "cached_tokens": 8,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "priced",
+            "finish_reason": "stop",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "llm",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {
+                "ls_integration": "langchain_chat_model",
+                "ls_model_name": "gpt-4.1-mini",
+                "ls_model_type": "chat",
+                "ls_provider": "openai"
+              }
+            }
+          },
+          {
+            "span_id": "95185acc3286e87c",
+            "parent_span_id": "aef343db6d268190",
+            "convention": "openinference",
+            "kind": "chain",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "chain",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "aef343db6d268190",
+            "parent_span_id": null,
+            "convention": "openinference",
+            "kind": "chain",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "chain",
+            "trace": {
+              "name": "RunnableSequence",
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          }
+        ],
+        "trace": {
+          "span_count": 9,
+          "input_tokens": 19,
+          "output_tokens": 9,
+          "has_unpriced": false
+        },
+        "loses": [
+          "time_to_first_token_ms"
+        ]
+      }
+    }
+  ]
+}

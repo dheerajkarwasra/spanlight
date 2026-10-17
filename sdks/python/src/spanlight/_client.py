@@ -21,7 +21,8 @@ from ._context import (
 from ._exporter import BatchExporter
 from ._prompt_client import PromptClient
 from ._scores import ScoreValue, build_score
-from ._span import Span, SpanKind, TraceState, normalize_kind
+from ._span import Span, SpanKind, normalize_kind
+from ._trace_state import TraceState
 
 logger = logging.getLogger("spanlight")
 
@@ -275,9 +276,12 @@ class Spanlight:
         user_id: str | None = None,
         session_id: str | None = None,
         tags: Iterable[str] | None = None,
+        metadata: Mapping[str, object] | None = None,
     ) -> None:
         """Set fields on the current trace. See :func:`spanlight.update_trace`."""
-        update_trace(name=name, user_id=user_id, session_id=session_id, tags=tags)
+        update_trace(
+            name=name, user_id=user_id, session_id=session_id, tags=tags, metadata=metadata
+        )
 
     # ------------------------------------------------------------------ #
     # Scores
@@ -426,6 +430,7 @@ def update_trace(
     user_id: str | None = None,
     session_id: str | None = None,
     tags: Iterable[str] | None = None,
+    metadata: Mapping[str, object] | None = None,
 ) -> None:
     """Attach trace-level fields to the trace of the current span.
 
@@ -437,13 +442,17 @@ def update_trace(
         user_id: Your application's user identifier.
         session_id: Groups traces into a conversation/session.
         tags: Free-form labels for filtering.
+        metadata: Key-value pairs such as ``{"customer_id": "acme"}``; a later value
+            replaces a key's earlier one. Invalid entries are dropped with a debug log.
     """
     span = get_current_span()
     if span is None:
         logger.debug("update_trace() called outside of a span; ignoring")
         return
     try:
-        span.trace.update(name=name, user_id=user_id, session_id=session_id, tags=tags)
+        span.trace.update(
+            name=name, user_id=user_id, session_id=session_id, tags=tags, metadata=metadata
+        )
     except Exception:
         logger.debug("update_trace() failed", exc_info=True)
 

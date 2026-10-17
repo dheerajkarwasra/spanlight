@@ -1,0 +1,878 @@
+{
+  "library": "traceloop-openai",
+  "version": "0.62.4",
+  "recorded_at": "2026-10-17T20:39:23Z",
+  "recorder": {
+    "runtime": "python 3.13.9",
+    "otel_sdk": "1.45.1",
+    "harness": "sdks/fixtures/otlp/record@e0893b3"
+  },
+  "scenarios": [
+    {
+      "name": "workflow_task_chat",
+      "export": {
+        "content_type": "application/x-protobuf",
+        "body_base64": "CvMPCtIBCiIKFnRlbGVtZXRyeS5zZGsubGFuZ3VhZ2USCAoGcHl0aG9uCiUKEnRlbGVtZXRyeS5zZGsubmFtZRIPCg1vcGVudGVsZW1ldHJ5CiEKFXRlbGVtZXRyeS5zZGsudmVyc2lvbhIICgYxLjQ1LjEKPQoTc2VydmljZS5pbnN0YW5jZS5pZBImCiRjNzM4YTQ2YS1kNDg5LTRkYmQtOGFiYS1hZGVkYTc0OTQyZmEKIwoMc2VydmljZS5uYW1lEhMKEXNwYW5saWdodC1maXh0dXJlEtsICjEKJ29wZW50ZWxlbWV0cnkuaW5zdHJ1bWVudGF0aW9uLm9wZW5haS52MRIGMC42Mi40EqUIChA0uQ0IpzcYx9cyXKGHsd/5EghYYKqMYf5oRiII6kuQSZbGxBMqC29wZW5haS5jaGF0MAM5+DM8eatr3xhB2JBYeqtr3xhKHwoVZ2VuX2FpLm9wZXJhdGlvbi5uYW1lEgYKBGNoYXRKJQoXdHJhY2Vsb29wLndvcmtmbG93Lm5hbWUSCgoIZ3JlZXRpbmdKJAoVdHJhY2Vsb29wLmVudGl0eS5wYXRoEgsKCWFza19tb2RlbEogChRnZW5fYWkucHJvdmlkZXIubmFtZRIICgZvcGVuYWlKJgoUZ2VuX2FpLnJlcXVlc3QubW9kZWwSDgoMZ3B0LTQuMS1taW5pShkKE2dlbl9haS5pc19zdHJlYW1pbmcSAhAASjYKFmdlbl9haS5vcGVuYWkuYXBpX2Jhc2USHAoaaHR0cDovLzEyNy4wLjAuMTo2MDg1OS92MS9KcQoVZ2VuX2FpLmlucHV0Lm1lc3NhZ2VzElgKVlt7InJvbGUiOiAidXNlciIsICJwYXJ0cyI6IFt7ImNvbnRlbnQiOiAiU2F5IGhlbGxvIGluIGZpdmUgd29yZHMuIiwgInR5cGUiOiAidGV4dCJ9XX1dSjIKFWdlbl9haS5yZXNwb25zZS5tb2RlbBIZChdncHQtNC4xLW1pbmktMjAyNS0wNC0xNEo7ChJnZW5fYWkucmVzcG9uc2UuaWQSJQojY2hhdGNtcGwtdGVzdDAwMDAwMDAwMDAwMDAwMDAwMDAwMDFKLAoeZ2VuX2FpLnJlc3BvbnNlLmZpbmlzaF9yZWFzb25zEgoqCAoGCgRzdG9wSjwKKWdlbl9haS5vcGVuYWkucmVzcG9uc2Uuc3lzdGVtX2ZpbmdlcnByaW50Eg8KDWZwX3Rlc3QwMDAwMDFKKQocb3BlbmFpLnJlc3BvbnNlLnNlcnZpY2VfdGllchIJCgdkZWZhdWx0Sh8KGWdlbl9haS51c2FnZS50b3RhbF90b2tlbnMSAhgcSiAKGmdlbl9haS51c2FnZS5vdXRwdXRfdG9rZW5zEgIYCUofChlnZW5fYWkudXNhZ2UuaW5wdXRfdG9rZW5zEgIYE0oqCiRnZW5fYWkudXNhZ2UuY2FjaGVfcmVhZC5pbnB1dF90b2tlbnMSAhgISiMKHWdlbl9haS51c2FnZS5yZWFzb25pbmdfdG9rZW5zEgIYAEqYAQoWZ2VuX2FpLm91dHB1dC5tZXNzYWdlcxJ+CnxbeyJyb2xlIjogImFzc2lzdGFudCIsICJwYXJ0cyI6IFt7ImNvbnRlbnQiOiAiSGVsbG8hIEhvdyBjYW4gSSBoZWxwIHlvdSB0b2RheT8iLCAidHlwZSI6ICJ0ZXh0In1dLCAiZmluaXNoX3JlYXNvbiI6ICJzdG9wIn1degCFAQABAAASvQUKEgoQdHJhY2Vsb29wLnRyYWNlchLwAgoQNLkNCKc3GMfXMlyhh7Hf+RII6kuQSZbGxBMiCDauLHV6dJgcKg5hc2tfbW9kZWwudGFzazABOUAuO3mra98YQRiqWXqra98YSiUKF3RyYWNlbG9vcC53b3JrZmxvdy5uYW1lEgoKCGdyZWV0aW5nSh0KE3RyYWNlbG9vcC5zcGFuLmtpbmQSBgoEdGFza0okChV0cmFjZWxvb3AuZW50aXR5Lm5hbWUSCwoJYXNrX21vZGVsSm8KFnRyYWNlbG9vcC5lbnRpdHkuaW5wdXQSVQpTeyJhcmdzIjogW1t7InJvbGUiOiAidXNlciIsICJjb250ZW50IjogIlNheSBoZWxsbyBpbiBmaXZlIHdvcmRzLiJ9XV0sICJrd2FyZ3MiOiB7fX1KPwoXdHJhY2Vsb29wLmVudGl0eS5vdXRwdXQSJAoiIkhlbGxvISBIb3cgY2FuIEkgaGVscCB5b3UgdG9kYXk/InoAhQEAAQAAErMCChA0uQ0IpzcYx9cyXKGHsd/5Egg2rix1enSYHCoRZ3JlZXRpbmcud29ya2Zsb3cwATnA9Tl5q2vfGEHg3Fl6q2vfGEolChd0cmFjZWxvb3Aud29ya2Zsb3cubmFtZRIKCghncmVldGluZ0ohChN0cmFjZWxvb3Auc3Bhbi5raW5kEgoKCHdvcmtmbG93SiMKFXRyYWNlbG9vcC5lbnRpdHkubmFtZRIKCghncmVldGluZ0o2ChZ0cmFjZWxvb3AuZW50aXR5LmlucHV0EhwKGnsiYXJncyI6IFtdLCAia3dhcmdzIjoge319Sj8KF3RyYWNlbG9vcC5lbnRpdHkub3V0cHV0EiQKIiJIZWxsbyEgSG93IGNhbiBJIGhlbHAgeW91IHRvZGF5PyJ6AIUBAAEAAA=="
+      },
+      "preview": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "telemetry.sdk.language",
+                  "value": {
+                    "stringValue": "python"
+                  }
+                },
+                {
+                  "key": "telemetry.sdk.name",
+                  "value": {
+                    "stringValue": "opentelemetry"
+                  }
+                },
+                {
+                  "key": "telemetry.sdk.version",
+                  "value": {
+                    "stringValue": "1.45.1"
+                  }
+                },
+                {
+                  "key": "service.instance.id",
+                  "value": {
+                    "stringValue": "c738a46a-d489-4dbd-8aba-adeda74942fa"
+                  }
+                },
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "spanlight-fixture"
+                  }
+                }
+              ]
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "opentelemetry.instrumentation.openai.v1",
+                  "version": "0.62.4"
+                },
+                "spans": [
+                  {
+                    "traceId": "NLkNCKc3GMfXMlyhh7Hf+Q==",
+                    "spanId": "WGCqjGH+aEY=",
+                    "parentSpanId": "6kuQSZbGxBM=",
+                    "name": "openai.chat",
+                    "kind": "SPAN_KIND_CLIENT",
+                    "startTimeUnixNano": "1792269560934315000",
+                    "endTimeUnixNano": "1792269560952951000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "chat"
+                        }
+                      },
+                      {
+                        "key": "traceloop.workflow.name",
+                        "value": {
+                          "stringValue": "greeting"
+                        }
+                      },
+                      {
+                        "key": "traceloop.entity.path",
+                        "value": {
+                          "stringValue": "ask_model"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.provider.name",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.is_streaming",
+                        "value": {
+                          "boolValue": false
+                        }
+                      },
+                      {
+                        "key": "gen_ai.openai.api_base",
+                        "value": {
+                          "stringValue": "http://127.0.0.1:60859/v1/"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.input.messages",
+                        "value": {
+                          "stringValue": "[{\"role\": \"user\", \"parts\": [{\"content\": \"Say hello in five words.\", \"type\": \"text\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.id",
+                        "value": {
+                          "stringValue": "chatcmpl-test0000000000000000000001"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.finish_reasons",
+                        "value": {
+                          "arrayValue": {
+                            "values": [
+                              {
+                                "stringValue": "stop"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "key": "gen_ai.openai.response.system_fingerprint",
+                        "value": {
+                          "stringValue": "fp_test000001"
+                        }
+                      },
+                      {
+                        "key": "openai.response.service_tier",
+                        "value": {
+                          "stringValue": "default"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.total_tokens",
+                        "value": {
+                          "intValue": "28"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.output_tokens",
+                        "value": {
+                          "intValue": "9"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.input_tokens",
+                        "value": {
+                          "intValue": "19"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.cache_read.input_tokens",
+                        "value": {
+                          "intValue": "8"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.reasoning_tokens",
+                        "value": {
+                          "intValue": "0"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.output.messages",
+                        "value": {
+                          "stringValue": "[{\"role\": \"assistant\", \"parts\": [{\"content\": \"Hello! How can I help you today?\", \"type\": \"text\"}], \"finish_reason\": \"stop\"}]"
+                        }
+                      }
+                    ],
+                    "status": {},
+                    "flags": 256
+                  }
+                ]
+              },
+              {
+                "scope": {
+                  "name": "traceloop.tracer"
+                },
+                "spans": [
+                  {
+                    "traceId": "NLkNCKc3GMfXMlyhh7Hf+Q==",
+                    "spanId": "6kuQSZbGxBM=",
+                    "parentSpanId": "Nq4sdXp0mBw=",
+                    "name": "ask_model.task",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269560934248000",
+                    "endTimeUnixNano": "1792269560953023000",
+                    "attributes": [
+                      {
+                        "key": "traceloop.workflow.name",
+                        "value": {
+                          "stringValue": "greeting"
+                        }
+                      },
+                      {
+                        "key": "traceloop.span.kind",
+                        "value": {
+                          "stringValue": "task"
+                        }
+                      },
+                      {
+                        "key": "traceloop.entity.name",
+                        "value": {
+                          "stringValue": "ask_model"
+                        }
+                      },
+                      {
+                        "key": "traceloop.entity.input",
+                        "value": {
+                          "stringValue": "{\"args\": [[{\"role\": \"user\", \"content\": \"Say hello in five words.\"}]], \"kwargs\": {}}"
+                        }
+                      },
+                      {
+                        "key": "traceloop.entity.output",
+                        "value": {
+                          "stringValue": "\"Hello! How can I help you today?\""
+                        }
+                      }
+                    ],
+                    "status": {},
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "NLkNCKc3GMfXMlyhh7Hf+Q==",
+                    "spanId": "Nq4sdXp0mBw=",
+                    "name": "greeting.workflow",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269560934168000",
+                    "endTimeUnixNano": "1792269560953036000",
+                    "attributes": [
+                      {
+                        "key": "traceloop.workflow.name",
+                        "value": {
+                          "stringValue": "greeting"
+                        }
+                      },
+                      {
+                        "key": "traceloop.span.kind",
+                        "value": {
+                          "stringValue": "workflow"
+                        }
+                      },
+                      {
+                        "key": "traceloop.entity.name",
+                        "value": {
+                          "stringValue": "greeting"
+                        }
+                      },
+                      {
+                        "key": "traceloop.entity.input",
+                        "value": {
+                          "stringValue": "{\"args\": [], \"kwargs\": {}}"
+                        }
+                      },
+                      {
+                        "key": "traceloop.entity.output",
+                        "value": {
+                          "stringValue": "\"Hello! How can I help you today?\""
+                        }
+                      }
+                    ],
+                    "status": {},
+                    "flags": 256
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accepted": 3,
+        "rejected": [],
+        "spans": [
+          {
+            "span_id": "5860aa8c61fe6846",
+            "parent_span_id": "ea4b904996c6c413",
+            "convention": "gen_ai",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini-2025-04-14",
+            "usage": {
+              "input_tokens": 19,
+              "output_tokens": 9,
+              "cached_tokens": 8,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "priced",
+            "finish_reason": "stop",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "chat",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "ea4b904996c6c413",
+            "parent_span_id": "36ae2c757a74981c",
+            "convention": "traceloop",
+            "kind": "chain",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "task",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "36ae2c757a74981c",
+            "parent_span_id": null,
+            "convention": "traceloop",
+            "kind": "chain",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "workflow",
+            "trace": {
+              "name": "greeting",
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          }
+        ],
+        "trace": {
+          "span_count": 3,
+          "input_tokens": 19,
+          "output_tokens": 9,
+          "has_unpriced": false
+        },
+        "loses": [
+          "time_to_first_token_ms"
+        ]
+      }
+    },
+    {
+      "name": "agent_tool",
+      "export": {
+        "content_type": "application/x-protobuf",
+        "body_base64": "Ct8WCtIBCiIKFnRlbGVtZXRyeS5zZGsubGFuZ3VhZ2USCAoGcHl0aG9uCiUKEnRlbGVtZXRyeS5zZGsubmFtZRIPCg1vcGVudGVsZW1ldHJ5CiEKFXRlbGVtZXRyeS5zZGsudmVyc2lvbhIICgYxLjQ1LjEKPQoTc2VydmljZS5pbnN0YW5jZS5pZBImCiRjMDY3ZTUyOC1mZDhiLTQ5ZDQtOGYxZC00MTQ2N2EzMTRlOGIKIwoMc2VydmljZS5uYW1lEhMKEXNwYW5saWdodC1maXh0dXJlEokMCjEKJ29wZW50ZWxlbWV0cnkuaW5zdHJ1bWVudGF0aW9uLm9wZW5haS52MRIGMC42Mi40EtMLChDYwV6fap2nQOrabKI/fxAEEgg5/epB4wJn8SIIB6DizdgIRGsqC29wZW5haS5jaGF0MAM5+Evg2qtr3xhBOCwj3Ktr3xhKHwoVZ2VuX2FpLm9wZXJhdGlvbi5uYW1lEgYKBGNoYXRKJAoRZ2VuX2FpLmFnZW50Lm5hbWUSDwoNd2VhdGhlcl9hZ2VudEogChRnZW5fYWkucHJvdmlkZXIubmFtZRIICgZvcGVuYWlKJgoUZ2VuX2FpLnJlcXVlc3QubW9kZWwSDgoMZ3B0LTQuMS1taW5pShkKE2dlbl9haS5pc19zdHJlYW1pbmcSAhAASjYKFmdlbl9haS5vcGVuYWkuYXBpX2Jhc2USHAoaaHR0cDovLzEyNy4wLjAuMTo2MDg1OS92MS9KhAEKFWdlbl9haS5pbnB1dC5tZXNzYWdlcxJrCmlbeyJyb2xlIjogInVzZXIiLCAicGFydHMiOiBbeyJjb250ZW50IjogIldoYXQgaXMgdGhlIHdlYXRoZXIgaW4gUGFyaXM/IFVzZSB0aGUgdG9vbC4iLCAidHlwZSI6ICJ0ZXh0In1dfV1K5gEKF2dlbl9haS50b29sLmRlZmluaXRpb25zEsoBCscBW3sidHlwZSI6ICJmdW5jdGlvbiIsICJuYW1lIjogImdldF93ZWF0aGVyIiwgImRlc2NyaXB0aW9uIjogIkdldCB0aGUgY3VycmVudCB3ZWF0aGVyIGZvciBhIGNpdHkuIiwgInBhcmFtZXRlcnMiOiB7InR5cGUiOiAib2JqZWN0IiwgInByb3BlcnRpZXMiOiB7ImNpdHkiOiB7InR5cGUiOiAic3RyaW5nIn19LCAicmVxdWlyZWQiOiBbImNpdHkiXX19XUoyChVnZW5fYWkucmVzcG9uc2UubW9kZWwSGQoXZ3B0LTQuMS1taW5pLTIwMjUtMDQtMTRKOwoSZ2VuX2FpLnJlc3BvbnNlLmlkEiUKI2NoYXRjbXBsLXRlc3QwMDAwMDAwMDAwMDAwMDAwMDAwMDAySjEKHmdlbl9haS5yZXNwb25zZS5maW5pc2hfcmVhc29ucxIPKg0KCwoJdG9vbF9jYWxsSjwKKWdlbl9haS5vcGVuYWkucmVzcG9uc2Uuc3lzdGVtX2ZpbmdlcnByaW50Eg8KDWZwX3Rlc3QwMDAwMDJKKQocb3BlbmFpLnJlc3BvbnNlLnNlcnZpY2VfdGllchIJCgdkZWZhdWx0SiAKGWdlbl9haS51c2FnZS50b3RhbF90b2tlbnMSAxiAAUogChpnZW5fYWkudXNhZ2Uub3V0cHV0X3Rva2VucxICGC5KHwoZZ2VuX2FpLnVzYWdlLmlucHV0X3Rva2VucxICGFJKKgokZ2VuX2FpLnVzYWdlLmNhY2hlX3JlYWQuaW5wdXRfdG9rZW5zEgIYAEojCh1nZW5fYWkudXNhZ2UucmVhc29uaW5nX3Rva2VucxICGABK6gIKFmdlbl9haS5vdXRwdXQubWVzc2FnZXMSzwIKzAJbeyJyb2xlIjogImFzc2lzdGFudCIsICJwYXJ0cyI6IFt7InR5cGUiOiAidG9vbF9jYWxsIiwgIm5hbWUiOiAiZ2V0X3dlYXRoZXIiLCAiaWQiOiAiY2FsbF90ZXN0MDAwMDAwMDAwMDAwMDAwMGExIiwgImFyZ3VtZW50cyI6IHsiY2l0eSI6ICJQYXJpcyIsICJ1bml0IjogImNlbHNpdXMifX0sIHsidHlwZSI6ICJ0b29sX2NhbGwiLCAibmFtZSI6ICJnZXRfd2VhdGhlciIsICJpZCI6ICJjYWxsX3Rlc3QwMDAwMDAwMDAwMDAwMDAwYjIiLCAiYXJndW1lbnRzIjogeyJjaXR5IjogIlRva3lvIiwgInVuaXQiOiAiY2Vsc2l1cyJ9fV0sICJmaW5pc2hfcmVhc29uIjogInRvb2xfY2FsbCJ9XXoAhQEAAQAAEvsIChIKEHRyYWNlbG9vcC50cmFjZXISgQMKENjBXp9qnadA6tpsoj9/EAQSCP94rQxl3XhrIggHoOLN2AhEayoQZ2V0X3dlYXRoZXIudG9vbDABORjMJdyra98YQaBcJtyra98YSiQKEWdlbl9haS5hZ2VudC5uYW1lEg8KDXdlYXRoZXJfYWdlbnRKHQoTdHJhY2Vsb29wLnNwYW4ua2luZBIGCgR0b29sSiYKFXRyYWNlbG9vcC5lbnRpdHkubmFtZRINCgtnZXRfd2VhdGhlckohChBnZW5fYWkudG9vbC5uYW1lEg0KC2dldF93ZWF0aGVySlgKFnRyYWNlbG9vcC5lbnRpdHkuaW5wdXQSPgo8eyJhcmdzIjogW10sICJrd2FyZ3MiOiB7ImNpdHkiOiAiUGFyaXMiLCAidW5pdCI6ICJjZWxzaXVzIn19SkEKF3RyYWNlbG9vcC5lbnRpdHkub3V0cHV0EiYKJCJTdW5ueSwgMjEgZGVncmVlcyBjZWxzaXVzIGluIFBhcmlzInoAhQEAAQAAEoEDChDYwV6fap2nQOrabKI/fxAEEghfQrdf77KS4CIIB6DizdgIRGsqEGdldF93ZWF0aGVyLnRvb2wwATnQ0Sbcq2vfGEEgGCfcq2vfGEokChFnZW5fYWkuYWdlbnQubmFtZRIPCg13ZWF0aGVyX2FnZW50Sh0KE3RyYWNlbG9vcC5zcGFuLmtpbmQSBgoEdG9vbEomChV0cmFjZWxvb3AuZW50aXR5Lm5hbWUSDQoLZ2V0X3dlYXRoZXJKIQoQZ2VuX2FpLnRvb2wubmFtZRINCgtnZXRfd2VhdGhlckpYChZ0cmFjZWxvb3AuZW50aXR5LmlucHV0Ej4KPHsiYXJncyI6IFtdLCAia3dhcmdzIjogeyJjaXR5IjogIlRva3lvIiwgInVuaXQiOiAiY2Vsc2l1cyJ9fUpBChd0cmFjZWxvb3AuZW50aXR5Lm91dHB1dBImCiQiU3VubnksIDIxIGRlZ3JlZXMgY2Vsc2l1cyBpbiBUb2t5byJ6AIUBAAEAABLcAgoQ2MFen2qdp0Dq2myiP38QBBIIB6DizdgIRGsqE3dlYXRoZXJfYWdlbnQuYWdlbnQwATnI3N7aq2vfGEFIOyfcq2vfGEokChFnZW5fYWkuYWdlbnQubmFtZRIPCg13ZWF0aGVyX2FnZW50Sh4KE3RyYWNlbG9vcC5zcGFuLmtpbmQSBwoFYWdlbnRKKAoVdHJhY2Vsb29wLmVudGl0eS5uYW1lEg8KDXdlYXRoZXJfYWdlbnRKNgoWdHJhY2Vsb29wLmVudGl0eS5pbnB1dBIcChp7ImFyZ3MiOiBbXSwgImt3YXJncyI6IHt9fUplChd0cmFjZWxvb3AuZW50aXR5Lm91dHB1dBJKCkgiU3VubnksIDIxIGRlZ3JlZXMgY2Vsc2l1cyBpbiBQYXJpczsgU3VubnksIDIxIGRlZ3JlZXMgY2Vsc2l1cyBpbiBUb2t5byJ6AIUBAAEAAA=="
+      },
+      "preview": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "telemetry.sdk.language",
+                  "value": {
+                    "stringValue": "python"
+                  }
+                },
+                {
+                  "key": "telemetry.sdk.name",
+                  "value": {
+                    "stringValue": "opentelemetry"
+                  }
+                },
+                {
+                  "key": "telemetry.sdk.version",
+                  "value": {
+                    "stringValue": "1.45.1"
+                  }
+                },
+                {
+                  "key": "service.instance.id",
+                  "value": {
+                    "stringValue": "c067e528-fd8b-49d4-8f1d-41467a314e8b"
+                  }
+                },
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "spanlight-fixture"
+                  }
+                }
+              ]
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "opentelemetry.instrumentation.openai.v1",
+                  "version": "0.62.4"
+                },
+                "spans": [
+                  {
+                    "traceId": "2MFen2qdp0Dq2myiP38QBA==",
+                    "spanId": "Of3qQeMCZ/E=",
+                    "parentSpanId": "B6DizdgIRGs=",
+                    "name": "openai.chat",
+                    "kind": "SPAN_KIND_CLIENT",
+                    "startTimeUnixNano": "1792269562572459000",
+                    "endTimeUnixNano": "1792269562593619000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "chat"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.agent.name",
+                        "value": {
+                          "stringValue": "weather_agent"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.provider.name",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.is_streaming",
+                        "value": {
+                          "boolValue": false
+                        }
+                      },
+                      {
+                        "key": "gen_ai.openai.api_base",
+                        "value": {
+                          "stringValue": "http://127.0.0.1:60859/v1/"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.input.messages",
+                        "value": {
+                          "stringValue": "[{\"role\": \"user\", \"parts\": [{\"content\": \"What is the weather in Paris? Use the tool.\", \"type\": \"text\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.tool.definitions",
+                        "value": {
+                          "stringValue": "[{\"type\": \"function\", \"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"]}}]"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.id",
+                        "value": {
+                          "stringValue": "chatcmpl-test0000000000000000000002"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.finish_reasons",
+                        "value": {
+                          "arrayValue": {
+                            "values": [
+                              {
+                                "stringValue": "tool_call"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "key": "gen_ai.openai.response.system_fingerprint",
+                        "value": {
+                          "stringValue": "fp_test000002"
+                        }
+                      },
+                      {
+                        "key": "openai.response.service_tier",
+                        "value": {
+                          "stringValue": "default"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.total_tokens",
+                        "value": {
+                          "intValue": "128"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.output_tokens",
+                        "value": {
+                          "intValue": "46"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.input_tokens",
+                        "value": {
+                          "intValue": "82"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.cache_read.input_tokens",
+                        "value": {
+                          "intValue": "0"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.reasoning_tokens",
+                        "value": {
+                          "intValue": "0"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.output.messages",
+                        "value": {
+                          "stringValue": "[{\"role\": \"assistant\", \"parts\": [{\"type\": \"tool_call\", \"name\": \"get_weather\", \"id\": \"call_test0000000000000000a1\", \"arguments\": {\"city\": \"Paris\", \"unit\": \"celsius\"}}, {\"type\": \"tool_call\", \"name\": \"get_weather\", \"id\": \"call_test0000000000000000b2\", \"arguments\": {\"city\": \"Tokyo\", \"unit\": \"celsius\"}}], \"finish_reason\": \"tool_call\"}]"
+                        }
+                      }
+                    ],
+                    "status": {},
+                    "flags": 256
+                  }
+                ]
+              },
+              {
+                "scope": {
+                  "name": "traceloop.tracer"
+                },
+                "spans": [
+                  {
+                    "traceId": "2MFen2qdp0Dq2myiP38QBA==",
+                    "spanId": "/3itDGXdeGs=",
+                    "parentSpanId": "B6DizdgIRGs=",
+                    "name": "get_weather.tool",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269562593791000",
+                    "endTimeUnixNano": "1792269562593828000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.agent.name",
+                        "value": {
+                          "stringValue": "weather_agent"
+                        }
+                      },
+                      {
+                        "key": "traceloop.span.kind",
+                        "value": {
+                          "stringValue": "tool"
+                        }
+                      },
+                      {
+                        "key": "traceloop.entity.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.tool.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "traceloop.entity.input",
+                        "value": {
+                          "stringValue": "{\"args\": [], \"kwargs\": {\"city\": \"Paris\", \"unit\": \"celsius\"}}"
+                        }
+                      },
+                      {
+                        "key": "traceloop.entity.output",
+                        "value": {
+                          "stringValue": "\"Sunny, 21 degrees celsius in Paris\""
+                        }
+                      }
+                    ],
+                    "status": {},
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "2MFen2qdp0Dq2myiP38QBA==",
+                    "spanId": "X0K3X++ykuA=",
+                    "parentSpanId": "B6DizdgIRGs=",
+                    "name": "get_weather.tool",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269562593858000",
+                    "endTimeUnixNano": "1792269562593876000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.agent.name",
+                        "value": {
+                          "stringValue": "weather_agent"
+                        }
+                      },
+                      {
+                        "key": "traceloop.span.kind",
+                        "value": {
+                          "stringValue": "tool"
+                        }
+                      },
+                      {
+                        "key": "traceloop.entity.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.tool.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "traceloop.entity.input",
+                        "value": {
+                          "stringValue": "{\"args\": [], \"kwargs\": {\"city\": \"Tokyo\", \"unit\": \"celsius\"}}"
+                        }
+                      },
+                      {
+                        "key": "traceloop.entity.output",
+                        "value": {
+                          "stringValue": "\"Sunny, 21 degrees celsius in Tokyo\""
+                        }
+                      }
+                    ],
+                    "status": {},
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "2MFen2qdp0Dq2myiP38QBA==",
+                    "spanId": "B6DizdgIRGs=",
+                    "name": "weather_agent.agent",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792269562572365000",
+                    "endTimeUnixNano": "1792269562593885000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.agent.name",
+                        "value": {
+                          "stringValue": "weather_agent"
+                        }
+                      },
+                      {
+                        "key": "traceloop.span.kind",
+                        "value": {
+                          "stringValue": "agent"
+                        }
+                      },
+                      {
+                        "key": "traceloop.entity.name",
+                        "value": {
+                          "stringValue": "weather_agent"
+                        }
+                      },
+                      {
+                        "key": "traceloop.entity.input",
+                        "value": {
+                          "stringValue": "{\"args\": [], \"kwargs\": {}}"
+                        }
+                      },
+                      {
+                        "key": "traceloop.entity.output",
+                        "value": {
+                          "stringValue": "\"Sunny, 21 degrees celsius in Paris; Sunny, 21 degrees celsius in Tokyo\""
+                        }
+                      }
+                    ],
+                    "status": {},
+                    "flags": 256
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accepted": 4,
+        "rejected": [],
+        "spans": [
+          {
+            "span_id": "39fdea41e30267f1",
+            "parent_span_id": "07a0e2cdd808446b",
+            "convention": "gen_ai",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini-2025-04-14",
+            "usage": {
+              "input_tokens": 82,
+              "output_tokens": 46,
+              "cached_tokens": 0,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "priced",
+            "finish_reason": "tool_calls",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "chat",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "ff78ad0c65dd786b",
+            "parent_span_id": "07a0e2cdd808446b",
+            "convention": "traceloop",
+            "kind": "tool",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "tool",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "5f42b75fefb292e0",
+            "parent_span_id": "07a0e2cdd808446b",
+            "convention": "traceloop",
+            "kind": "tool",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "tool",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "07a0e2cdd808446b",
+            "parent_span_id": null,
+            "convention": "traceloop",
+            "kind": "chain",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "agent",
+            "trace": {
+              "name": "weather_agent",
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          }
+        ],
+        "trace": {
+          "span_count": 4,
+          "input_tokens": 82,
+          "output_tokens": 46,
+          "has_unpriced": false
+        },
+        "loses": [
+          "time_to_first_token_ms"
+        ]
+      }
+    }
+  ]
+}

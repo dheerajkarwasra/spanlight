@@ -6,6 +6,7 @@ import email.utils
 import gzip
 import json
 import logging
+import re
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -15,6 +16,7 @@ import pytest
 from support import FakeIngestApi, decode_body
 
 from spanlight._exporter import BatchExporter, parse_retry_after
+from spanlight._version import __version__
 
 
 def make_span(index: int) -> dict[str, object]:
@@ -128,7 +130,18 @@ def test_request_carries_bearer_key_and_json_body(make_exporter, ingest):
     assert request.headers["Authorization"] == "Bearer spl_live_abc_def"
     assert request.headers["Content-Type"] == "application/json"
     assert request.headers["User-Agent"].startswith("spanlight-python/")
-    assert json.loads(request.content) == {"spans": [make_span(1)]}
+    body = json.loads(request.content)
+    assert body == {
+        "spans": [make_span(1)],
+        "client": {
+            "sdk": "spanlight-python",
+            "version": __version__,
+            "exporter_id": body["client"]["exporter_id"],
+            "dropped_total": 0,
+            "failed_total": 0,
+        },
+    }
+    assert re.fullmatch(r"[0-9a-f]{32}", body["client"]["exporter_id"])
 
 
 def test_gzip_compresses_the_body(make_exporter, ingest):
@@ -138,7 +151,7 @@ def test_gzip_compresses_the_body(make_exporter, ingest):
 
     request = ingest.requests[0]
     assert request.headers["Content-Encoding"] == "gzip"
-    assert json.loads(gzip.decompress(request.content)) == {"spans": [make_span(1)]}
+    assert json.loads(gzip.decompress(request.content))["spans"] == [make_span(1)]
 
 
 # ---------------------------------------------------------------------- #

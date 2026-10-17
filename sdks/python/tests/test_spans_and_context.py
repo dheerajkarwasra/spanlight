@@ -68,6 +68,112 @@ def test_set_usage_omits_unset_write_fields(tracer, ingest):
     }
 
 
+def test_set_usage_tier_and_search_in_payload(tracer, ingest):
+    with tracer.span("searched", kind="llm") as span:
+        span.set_model("claude-sonnet-4-5", provider="anthropic")
+        span.set_usage(
+            input_tokens=120,
+            output_tokens=30,
+            service_tier="priority_on_demand",
+            web_search_requests=3,
+        )
+        assert span.service_tier == "priority"
+        assert span.web_search_requests == 3
+
+    exported = flushed_spans(tracer, ingest)[0]
+    assert exported["usage"] == {
+        "input_tokens": 120,
+        "output_tokens": 30,
+        "service_tier": "priority",
+        "server_tool_use": {"web_search_requests": 3},
+    }
+    assert exported["attributes"] == {}
+
+
+def test_unknown_tier_goes_to_raw_attribute(tracer, ingest):
+    with tracer.span("odd-tier", kind="llm") as span:
+        span.set_model("gpt-4.1", provider="openai")
+        span.set_usage(input_tokens=10, output_tokens=5, service_tier="turbo")
+        assert span.service_tier is None
+
+    exported = flushed_spans(tracer, ingest)[0]
+    assert exported["usage"] == {"input_tokens": 10, "output_tokens": 5}
+    assert exported["attributes"] == {"usage.service_tier_raw": "turbo"}
+
+
+def test_unknown_tier_spelling_is_cut_to_64_characters(tracer, ingest):
+    """The server keeps 64 characters of an unknown spelling; the SDK sends no more."""
+    with tracer.span("long-tier", kind="llm") as span:
+        span.set_model("gpt-4.1", provider="openai")
+        span.set_usage(input_tokens=10, output_tokens=5, service_tier="t" * 200)
+
+    exported = flushed_spans(tracer, ingest)[0]
+    assert exported["attributes"] == {"usage.service_tier_raw": "t" * 64}
+
+
+def test_a_batch_item_tier_spelling_is_cut_to_64_characters(tracer, ingest):
+    from spanlight.integrations._batch import _record_usage
+
+    with tracer.span("batch-item", kind="llm") as span:
+        _record_usage(span, {"input_tokens": 10, "output_tokens": 5, "service_tier": "s" * 100})
+
+    exported = flushed_spans(tracer, ingest)[0]
+    assert exported["usage"]["service_tier"] == "batch"
+    assert exported["attributes"] == {"usage.service_tier_raw": "s" * 64}
+
+
+def test_known_tier_after_unknown_tier_drops_raw_attribute(tracer, ingest):
+    with tracer.span("tier-corrected", kind="llm") as span:
+        span.set_model("gpt-4.1", provider="openai")
+        span.set_usage(input_tokens=10, output_tokens=5, service_tier="turbo")
+        span.set_usage(service_tier="priority")
+        assert span.service_tier == "priority"
+
+    exported = flushed_spans(tracer, ingest)[0]
+    assert exported["usage"]["service_tier"] == "priority"
+    assert "usage.service_tier_raw" not in exported["attributes"]
+
+
+def test_blank_tier_is_ignored(tracer, ingest):
+    with tracer.span("blank-tier", kind="llm") as span:
+        span.set_usage(input_tokens=10, output_tokens=5, service_tier="  ")
+        assert span.service_tier is None
+
+    exported = flushed_spans(tracer, ingest)[0]
+    assert exported["usage"] == {"input_tokens": 10, "output_tokens": 5}
+    assert exported["attributes"] == {}
+
+
+def test_clear_output_tokens_after_set(tracer, ingest):
+    with tracer.span("cut-stream", kind="llm") as span:
+        span.set_usage(input_tokens=80, output_tokens=12, cached_tokens=40)
+        span.clear_output_tokens()
+        assert span.output_tokens is None
+
+    exported = flushed_spans(tracer, ingest)[0]
+    assert exported["usage"] == {"input_tokens": 80, "cached_tokens": 40}
+
+
+def test_clear_output_tokens_after_end_is_ignored(tracer, ingest):
+    with tracer.span("done", kind="llm") as span:
+        span.set_usage(input_tokens=80, output_tokens=12)
+    span.clear_output_tokens()
+
+    assert flushed_spans(tracer, ingest)[0]["usage"] == {"input_tokens": 80, "output_tokens": 12}
+
+
+def test_payload_without_new_fields_unchanged(tracer, ingest):
+    with tracer.span("plain", kind="llm") as span:
+        span.set_usage(input_tokens=120, output_tokens=30)
+    with tracer.span("no-usage", kind="llm"):
+        pass
+
+    by_name = {item["name"]: item for item in flushed_spans(tracer, ingest)}
+    assert by_name["plain"]["usage"] == {"input_tokens": 120, "output_tokens": 30}
+    assert by_name["plain"]["attributes"] == {}
+    assert by_name["no-usage"]["usage"] is None
+
+
 def test_span_records_error_and_reraises(tracer, ingest):
     with pytest.raises(ZeroDivisionError), tracer.span("divide"):
         _ = 1 / 0

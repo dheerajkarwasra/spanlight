@@ -10,7 +10,7 @@ Recent provider SDKs ship their own fork of httpx (``httpx2``); older ones use
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterable
+from collections.abc import AsyncIterator, Callable, Iterable, Iterator
 from typing import Any
 
 try:
@@ -53,21 +53,55 @@ def json_response(body: dict[str, Any], status: int = 200) -> Callable[[Any], An
 
 def sse_response(events: Iterable[tuple[str | None, dict[str, Any] | str]]) -> Callable[[Any], Any]:
     """Build a ``text/event-stream`` response from ``(event_name, data)`` pairs."""
-    chunks: list[str] = []
-    for event_name, data in events:
-        frame = ""
-        if event_name is not None:
-            frame += f"event: {event_name}\n"
-        payload = data if isinstance(data, str) else json.dumps(data)
-        frame += f"data: {payload}\n\n"
-        chunks.append(frame)
-    body = "".join(chunks).encode()
+    body = "".join(_sse_frame(name, data) for name, data in events).encode()
 
     def respond(request: Any) -> Any:
         return provider_httpx.Response(
             200,
             content=body,
             headers={"content-type": "text/event-stream", "request-id": "req_stream_1"},
+        )
+
+    return respond
+
+
+def _sse_frame(event_name: str | None, data: dict[str, Any] | str) -> str:
+    frame = f"event: {event_name}\n" if event_name is not None else ""
+    payload = data if isinstance(data, str) else json.dumps(data)
+    return f"{frame}data: {payload}\n\n"
+
+
+class _FailingByteStream(provider_httpx.SyncByteStream, provider_httpx.AsyncByteStream):
+    """Serves ``body`` in one chunk, then fails like a dropped connection."""
+
+    def __init__(self, body: bytes, error: Exception) -> None:
+        self._body = body
+        self._error = error
+
+    def __iter__(self) -> Iterator[bytes]:
+        yield self._body
+        raise self._error
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        yield self._body
+        raise self._error
+
+
+def sse_response_cut_by_transport_error(
+    events: Iterable[tuple[str | None, dict[str, Any] | str]],
+) -> Callable[[Any], Any]:
+    """Like :func:`sse_response`, but the connection drops after ``events``.
+
+    The SDK raises the provider httpx ``ReadError`` from the event iterator,
+    exactly as a network fault mid-stream does in production.
+    """
+    body = "".join(_sse_frame(name, data) for name, data in events).encode()
+
+    def respond(request: Any) -> Any:
+        return provider_httpx.Response(
+            200,
+            stream=_FailingByteStream(body, provider_httpx.ReadError("connection reset")),
+            headers={"content-type": "text/event-stream", "request-id": "req_stream_cut"},
         )
 
     return respond
@@ -182,7 +216,9 @@ OPENAI_TOOL_CALL_STREAM: list[tuple[str | None, dict[str, Any] | str]] = [
 ]
 
 
-def openai_response_object(status: str = "completed") -> dict[str, Any]:
+def openai_response_object(
+    status: str = "completed", *, service_tier: str = "default"
+) -> dict[str, Any]:
     return {
         "id": "resp_67ccd2bed1ec8190b14f964abc054267",
         "object": "response",
@@ -223,7 +259,40 @@ def openai_response_object(status: str = "completed") -> dict[str, Any]:
         },
         "user": None,
         "metadata": {},
+        "service_tier": service_tier,
     }
+
+
+def _web_search_call(call_id: str, status: str, query: str) -> dict[str, Any]:
+    return {
+        "type": "web_search_call",
+        "id": call_id,
+        "status": status,
+        "action": {"type": "search", "query": query},
+    }
+
+
+def openai_web_search_response(*, service_tier: str = "priority") -> dict[str, Any]:
+    """A Responses object whose output holds two completed searches and one still running.
+
+    Only completed ``web_search_call`` items are billed, so the call made two searches.
+    """
+    response = openai_response_object(service_tier=service_tier)
+    searches = [
+        _web_search_call("ws_67ccf18f64008190a39b619f4c8455ef", "completed", "order 42 status"),
+        _web_search_call("ws_67ccf18f64008190a39b619f4c8455f0", "completed", "carrier tracking"),
+        _web_search_call("ws_67ccf18f64008190a39b619f4c8455f1", "in_progress", "delivery date"),
+    ]
+    return {**response, "output": [*searches, *response["output"]]}
+
+
+def openai_web_search_stream() -> list[tuple[str | None, dict[str, Any] | str]]:
+    """``openai_responses_stream`` whose terminal event carries the web-search response."""
+    events = openai_responses_stream()
+    name, completed = events[-1]
+    assert isinstance(completed, dict)
+    events[-1] = (name, {**completed, "response": openai_web_search_response()})
+    return events
 
 
 def openai_responses_stream() -> list[tuple[str | None, dict[str, Any] | str]]:
@@ -310,6 +379,53 @@ ANTHROPIC_CACHE_WRITE_USAGE = {
 }
 
 ANTHROPIC_CACHE_WRITE_MESSAGE = {**ANTHROPIC_MESSAGE, "usage": ANTHROPIC_CACHE_WRITE_USAGE}
+
+
+# A batch-tier call that ran two server-side web searches.
+ANTHROPIC_WEB_SEARCH_USAGE = {
+    "input_tokens": 40,
+    "output_tokens": 30,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0,
+    "service_tier": "batch",
+    "server_tool_use": {"web_search_requests": 2},
+}
+
+ANTHROPIC_WEB_SEARCH_MESSAGE = {**ANTHROPIC_MESSAGE, "usage": ANTHROPIC_WEB_SEARCH_USAGE}
+
+
+def anthropic_web_search_stream() -> list[tuple[str | None, dict[str, Any] | str]]:
+    """Text stream of a batch-tier call whose ``message_delta`` reports three web searches.
+
+    ``service_tier`` arrives only in ``message_start``; the cumulative
+    ``server_tool_use`` count arrives only in ``message_delta``, as the API does.
+    """
+    events = anthropic_text_stream()
+    name, start = events[0]
+    assert isinstance(start, dict)
+    message = {**start["message"], "usage": {**start["message"]["usage"], "service_tier": "batch"}}
+    events[0] = (name, {**start, "message": message})
+    name, delta = events[-2]
+    assert isinstance(delta, dict)
+    events[-2] = (
+        name,
+        {
+            **delta,
+            "usage": {
+                "input_tokens": 25,
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 0,
+                "output_tokens": 15,
+                "server_tool_use": {"web_search_requests": 3},
+            },
+        },
+    )
+    return events
+
+
+def anthropic_stream_cut_after_delta() -> list[tuple[str | None, dict[str, Any] | str]]:
+    """A stream the server ends right after the first text delta: no final usage event."""
+    return anthropic_text_stream()[:4]
 
 
 def anthropic_cache_write_stream() -> list[tuple[str | None, dict[str, Any] | str]]:

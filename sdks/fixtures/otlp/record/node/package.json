@@ -1,0 +1,25 @@
+{
+  "name": "spanlight-otlp-recorder-node",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Records the Vercel AI SDK OTLP fixtures under sdks/fixtures/otlp. Not published.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@ai-sdk/openai": "4.0.96",
+    "@ai-sdk/otel": "1.0.142",
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "0.223.0",
+    "@opentelemetry/resources": "2.12.0",
+    "@opentelemetry/sdk-trace-node": "2.12.0",
+    "@types/node": "24.19.2",
+    "ai": "7.0.142",
+    "typescript": "5.9.3",
+    "zod": "4.1.13"
+  }
+}

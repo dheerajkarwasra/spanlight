@@ -1,0 +1,8 @@
+{
+  "error": {
+    "message": "Rate limit reached for gpt-4.1-mini in organization org-test on requests per min (RPM): Limit 3, Used 3, Requested 1. Please try again in 20s.",
+    "type": "requests",
+    "param": null,
+    "code": "rate_limit_exceeded"
+  }
+}

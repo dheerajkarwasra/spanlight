@@ -25,6 +25,7 @@ from ._prompts import CompiledPrompt, Prompt, PromptUnavailableError, no_prompt
 from ._span import Span, SpanKind, SpanStatus
 from ._templates import InvalidTemplateError, MissingVariablesError, TemplateTooLargeError
 from ._version import __version__
+from .integrations._openai_batch import record_openai_batch_output
 from .integrations.anthropic import wrap_anthropic
 from .integrations.openai import wrap_openai
 
@@ -50,6 +51,7 @@ __all__ = [
     "no_prompt",
     "observe",
     "prompts",
+    "record_openai_batch_output",
     "score",
     "shutdown",
     "span",

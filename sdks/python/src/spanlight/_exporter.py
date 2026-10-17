@@ -23,14 +23,17 @@ from __future__ import annotations
 import logging
 import os
 import random
+import secrets
 import threading
 import time
 from collections import deque
 from collections.abc import Callable
+from typing import Any
 
 import httpx
 
 from ._exporter_delivery import SCORES, SPANS, Delivery, SpanPayload, parse_retry_after
+from ._version import __version__
 
 __all__ = ["BatchExporter", "SpanPayload", "parse_retry_after"]
 
@@ -105,6 +108,8 @@ class BatchExporter:
         self._closed = False
         self._worker: threading.Thread | None = None
         self._pid = os.getpid()
+        # Names this exporter in the counters it reports; a forked child gets its own.
+        self._exporter_id = secrets.token_hex(16)
 
         self._dropped = 0
 
@@ -121,6 +126,21 @@ class BatchExporter:
     def failed_count(self) -> int:
         """Spans and scores lost because their batch could not be delivered."""
         return self._delivery.failed
+
+    @property
+    def client_counters(self) -> dict[str, Any]:
+        """The ``client`` object sent with every spans batch.
+
+        Totals are cumulative, not deltas: a batch can be delivered twice, and
+        the server derives the delta from the last total of this ``exporter_id``.
+        """
+        return {
+            "sdk": "spanlight-python",
+            "version": __version__,
+            "exporter_id": self._exporter_id,
+            "dropped_total": self._dropped,
+            "failed_total": self._delivery.failed,
+        }
 
     @property
     def sent_count(self) -> int:
@@ -220,6 +240,10 @@ class BatchExporter:
         self._in_flight = 0
         self._worker = None
         self._delivery.forget_client()
+        # A new exporter: the parent keeps reporting its totals, so start from zero.
+        self._exporter_id = secrets.token_hex(16)
+        self._dropped = 0
+        self._delivery.reset_counters()
 
     def _ensure_worker(self) -> None:
         with self._condition:
@@ -243,7 +267,8 @@ class BatchExporter:
                 for kind in (SPANS, SCORES):
                     payloads = [payload for item_kind, payload in batch if item_kind == kind]
                     if payloads:
-                        self._delivery.send(kind, payloads)
+                        client = self.client_counters if kind == SPANS else None
+                        self._delivery.send(kind, payloads, client)
             finally:
                 with self._condition:
                     self._in_flight -= len(batch)

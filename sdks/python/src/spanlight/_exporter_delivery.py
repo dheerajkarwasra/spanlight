@@ -15,7 +15,7 @@ import logging
 import math
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -93,11 +93,16 @@ class Delivery:
         """Whether an endpoint is configured for ``kind`` (``SPANS`` or ``SCORES``)."""
         return kind in self._targets
 
-    def send(self, kind: str, batch: list[SpanPayload]) -> None:
-        """Send one kind's part of a cycle; a crash here never stops the next part."""
+    def send(
+        self, kind: str, batch: list[SpanPayload], client: Mapping[str, Any] | None = None
+    ) -> None:
+        """Send one kind's part of a cycle; a crash here never stops the next part.
+
+        ``client`` is the exporter's counters object, sent beside the spans only.
+        """
         target = self._targets[kind]
         try:
-            self._send_batch(target, batch)
+            self._send_batch(target, batch, client)
         except Exception:
             self.failed += len(batch)
             logger.warning(
@@ -107,6 +112,11 @@ class Delivery:
     def abort_retries(self) -> None:
         """Stop waiting between retries: the batch in progress gets no further attempt."""
         self._abort_retries.set()
+
+    def reset_counters(self) -> None:
+        """Start the delivery counters from zero (in a forked child)."""
+        self.failed = 0
+        self.sent = 0
 
     def forget_client(self) -> None:
         """Drop the HTTP client without closing it (it belongs to a parent process)."""
@@ -122,10 +132,15 @@ class Delivery:
             self._client = httpx.Client(transport=self._transport, timeout=self._timeout)
         return self._client
 
-    def _send_batch(self, target: _Target, batch: list[SpanPayload]) -> None:
+    def _send_batch(
+        self, target: _Target, batch: list[SpanPayload], client: Mapping[str, Any] | None
+    ) -> None:
         if not batch:
             return
-        body = json.dumps({target.body_key: batch}, separators=(",", ":"), default=str).encode()
+        envelope: dict[str, Any] = {target.body_key: batch}
+        if client is not None and target.body_key == SPANS:
+            envelope["client"] = dict(client)
+        body = json.dumps(envelope, separators=(",", ":"), default=str).encode()
         if self._gzip:
             body = gzip.compress(body)
 
@@ -141,7 +156,7 @@ class Delivery:
                     self._handle_success(target, response, batch)
                     return
                 if status == 413 and len(batch) > 1:
-                    self._split_and_send(target, batch)
+                    self._split_and_send(target, batch, client)
                     return
                 if not _is_retryable(status):
                     self.failed += len(batch)
@@ -164,11 +179,13 @@ class Delivery:
             logger.debug("Export failed (%s); retrying in %.2fs", failure, delay)
             self._sleep(delay)
 
-    def _split_and_send(self, target: _Target, batch: list[SpanPayload]) -> None:
+    def _split_and_send(
+        self, target: _Target, batch: list[SpanPayload], client: Mapping[str, Any] | None
+    ) -> None:
         """Retry an oversized (HTTP 413) batch as two smaller ones."""
         middle = len(batch) // 2
-        self._send_batch(target, batch[:middle])
-        self._send_batch(target, batch[middle:])
+        self._send_batch(target, batch[:middle], client)
+        self._send_batch(target, batch[middle:], client)
 
     def _log_rejected_batch(self, target: _Target, response: httpx.Response, size: int) -> None:
         if target.body_key == SCORES and response.status_code == 404:

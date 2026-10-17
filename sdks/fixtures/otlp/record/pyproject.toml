@@ -1,0 +1,41 @@
+[project]
+name = "spanlight-otlp-record"
+version = "0.0.0"
+description = "OTLP fixture recorder harness for Spanlight (never packaged or published)."
+requires-python = ">=3.13"
+dependencies = [
+    "opentelemetry-proto>=1.45.1",
+    "httpx>=0.28",
+]
+
+[dependency-groups]
+dev = ["pytest>=9"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = ["error"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+# Tests import the harness modules and each other by name.
+src = [".", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "S", "ASYNC", "SIM", "RUF", "PL", "PT", "BLE"]
+ignore = [
+    "PLR2004",  # magic values are fine in comparisons against HTTP codes
+    "PLR0911",  # value-dispatch functions read best as one return per case
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S603", "S607", "PLR0915"]
+# The recorder runs `uv`, `git` and the throwaway venv's python on arguments it builds itself.
+"record.py" = ["S603", "S607"]
+"_document.py" = ["S603", "S607"]
+# Recipes import the pinned libraries inside `run()`: the harness venv does not have them.
+"python/recipes/**" = ["PLC0415"]

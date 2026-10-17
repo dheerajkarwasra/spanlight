@@ -97,7 +97,8 @@ def answer(question: str) -> str:
 
 `wrap_openai` instruments `chat.completions.create` and `responses.create` on
 the client it is given. It works with `OpenAI`, `AsyncOpenAI` and the Azure
-variants. The SDK's own `.stream()` helpers are traced as well, because they
+variants; an Azure client is recorded with the provider `azure_openai`, which the
+server does not price at OpenAI's rates (add a price override for it). The SDK's own `.stream()` helpers are traced as well, because they
 call `create` internally.
 
 Streaming works without any changes to your code. Usage is recorded when
@@ -117,6 +118,56 @@ for chunk in stream:
 The span ends when the stream is exhausted or closed, and records
 time-to-first-token. If you point the OpenAI SDK at a compatible API, set the
 provider name explicitly: `wrap_openai(client, provider="openrouter")`.
+
+When a stream carries no usage, the span's output token count is left unknown
+(never guessed) and the `usage.unreported_reason` attribute says why:
+`include_usage_not_set` when a Chat Completions stream ended without a usage
+chunk, `no_final_usage` when a Responses stream ended without its terminal
+event, `client_disconnected` when your code closed it early, and
+`stream_error` when it failed. Such a call's cost shows as unknown.
+
+### Service tier and web search
+
+- The `service_tier` OpenAI answers with (on the response, or on the last
+  stream chunk or terminal event) is recorded as `standard`, `flex`, `priority`
+  or `batch`; `default`, `auto` and `scale` are `standard`. A value the SDK does
+  not know is kept in the `usage.service_tier_raw` attribute and the call is
+  priced at the standard rate.
+- For the Responses API, every completed `web_search_call` output item counts
+  as one billed web search; searches still in progress or failed are not
+  counted.
+- Chat Completions with `web_search_options` report sources as message
+  annotations, which are not a count of searches. No count is recorded and the
+  span gets `usage.fee_unknown = "openai_chat_web_search"`, so the search fee
+  shows as unknown rather than zero.
+- Requests that set `inference_geo` (other than `global`) or `speed: "fast"`
+  are priced at the standard rate and tagged with
+  `usage.pricing_modifier_unknown`, because those modifiers are not modelled.
+
+### Batch output
+
+OpenAI Batch results are a file you download, so record them explicitly once
+the batch has completed:
+
+```python
+batch = client.batches.retrieve("batch_67ccd2bed1ec8190b14f964abc054267")
+content = client.files.content(batch.output_file_id)
+recorded = spanlight.record_openai_batch_output(content.iter_lines(), batch_id=batch.id)
+```
+
+Pass the error file (`batch.error_file_id`) the same way to record failed
+requests. Each line becomes one `llm` span with the shape described under
+[Anthropic batch results](#batch-results): `service_tier` is `batch` (the tier
+the body reported is kept in `usage.service_tier_raw`), cached tokens come from
+the usage details, and a line whose `status_code` is not 200 or that carries an
+`error` becomes an error span without usage. A Responses body with
+`status: "failed"` becomes an error span that keeps the usage OpenAI reports
+(it is billed), and `status: "incomplete"` a normal span whose finish reason is
+`incomplete_details.reason`. Chat Completions and Responses
+bodies are both read. The function accepts any iterable of `str` or `bytes`
+lines (or the whole file as one string), returns the number of spans recorded,
+and never raises: unreadable lines are skipped. Use `provider=` for a
+compatible API and `spanlight=` for a client other than the global one.
 
 ## Anthropic
 
@@ -145,6 +196,33 @@ with client.messages.stream(
 
 `wrap_anthropic` instruments `messages.create` (including `stream=True`) and
 `messages.stream` on both `Anthropic` and `AsyncAnthropic`.
+
+### Batch results
+
+Results read through `messages.batches.results` are recorded as you iterate
+them, on both `Anthropic` and `AsyncAnthropic`:
+
+```python
+for item in client.messages.batches.results("msgbatch_01HkcTjaV5uDC8jWR4ZsDV8d"):
+    handle(item)  # each item is yielded unchanged
+```
+
+Each result becomes one `llm` span named `batch <model>`, in a trace named
+`batch <batch_id>` and tagged `spanlight:batch`:
+
+- A `succeeded` result carries the model, token usage, finish reason and the
+  response content, with `service_tier` set to `batch` (the Batches API bills
+  every request at the batch rate). The tier the response reported is kept in
+  the `usage.service_tier_raw` attribute.
+- `errored`, `canceled` and `expired` results are error spans without usage,
+  because they are not billed.
+- The request is not part of a result, so the span has no input
+  (`batch.request_available` is `false`). Its start and end are both the
+  moment the result was read (`timing.synthetic` is `true`).
+- The attributes `batch.id`, `batch.custom_id` and `batch.result_type` link
+  the span back to the batch.
+- Trace and span ids are derived from the batch id and `custom_id`, so reading
+  the same batch again updates the same spans instead of adding new ones.
 
 ## Prompts
 
@@ -263,6 +341,16 @@ host must be `https://` unless it is localhost. Each
 run makes real provider calls. In a GitHub workflow use the
 `.github/actions/eval-gate` Action instead of calling the module yourself.
 
+The run prints a Markdown report (also appended to the GitHub step summary): the
+run's items, errors, cost and latency, then one row per score with its mean, the
+95% confidence interval on the pass rate of a boolean score (for example
+`64–88%`; `—` for numeric and categorical scores, and from servers that predate
+intervals), the number of items, the threshold and the result. When a threshold
+lies inside a boolean score's interval, the report adds "Interval includes the
+threshold; the result is not conclusive at this sample size." The gate itself
+still compares the mean with the threshold, so the exit codes do not depend on
+the interval.
+
 ## What gets recorded
 
 For every LLM call:
@@ -280,6 +368,22 @@ For every LLM call:
 | `input`                       | Request parameters such as `messages`, `system` and `temperature`. API keys, headers, `extra_*` and `timeout` are never recorded.                                         |
 | `output`                      | The assistant message, including tool calls                                                                                                                               |
 | `status` / `status_message`   | `error` plus the provider's message when the call fails                                                                                                                   |
+
+When a provider call fails with an HTTP error, the span also carries the
+provider's error type and code (`provider.error.type`, `provider.error.code`),
+the wait it asked for in seconds (`provider.retry_after_s`, from `retry-after-ms`
+or a numeric `retry-after`), and `provider.ratelimit`: the response's rate-limit
+headers, filtered through a fixed allowlist of 29 names. Only `retry-after`,
+`retry-after-ms`, OpenAI's `x-ratelimit-*` headers and Anthropic's
+`anthropic-ratelimit-*` and `anthropic-priority-*` headers are kept, each value
+at most 64 printable ASCII characters. Every other response header, including
+`authorization`, `x-api-key`, `cookie`, `set-cookie` and Anthropic's
+organization and workspace ids, is dropped before the span leaves your process.
+Connection errors and timeouts add none of these fields.
+When the Spanlight gateway refused the call itself (its `X-Spanlight-Code`
+header names one of its own codes, such as `RATE_LIMITED` for your gateway key's
+limit), the span carries that code as `spanlight.gateway.error_code` instead, and
+none of the `provider.*` fields above.
 
 The Spanlight server also redacts common secret patterns from
 payloads on ingestion. Set `capture_payloads = false` on a project to drop
@@ -343,10 +447,14 @@ cached_tokens=, cache_write_tokens=, cache_write_1h_tokens=)`,
 exception that escapes the block marks the span as failed and is re-raised
 unchanged.
 
-### `update_trace(name=None, user_id=None, session_id=None, tags=None)`
+### `update_trace(name=None, user_id=None, session_id=None, tags=None, metadata=None)`
 
 Sets trace-level fields on the trace of the current span. You can call it
-anywhere inside the trace. Tags accumulate across calls.
+anywhere inside the trace. Tags accumulate across calls. Metadata keys
+accumulate too, and a later value replaces a key's earlier one:
+`spanlight.update_trace(metadata={"customer_id": "acme", "feature": "search"})`.
+Up to 32 keys matching `^[a-z0-9_.-]{1,64}$`, values of 1 to 256 characters
+(numbers and booleans become text); an invalid entry is dropped with a debug log.
 
 ### `flush(timeout=None) -> bool` and `shutdown(timeout=None)`
 
@@ -379,6 +487,14 @@ and `Retry-After` is honored. Other `4xx` responses are not retried. They are
 logged to the `spanlight` logger, as are any spans the server rejects. If the
 queue fills up, the oldest spans are dropped and counted
 (`spanlight.get_client().exporter.dropped_count`).
+
+Since 0.2.0, every batch of spans also carries a small `client` object with the
+SDK name and version, a random `exporter_id` (new in each process, including a
+forked child) and two running totals for that exporter: `dropped_total` (spans
+and scores dropped because the queue was full) and `failed_total` (spans and
+scores lost after retries or rejected by the server). The totals are cumulative,
+so a batch delivered twice does not count a loss twice. It holds no span
+content, and older Spanlight servers ignore it.
 
 To see what the SDK is doing:
 

@@ -27,3 +27,8 @@ def test_public_api():
     assert spanlight.__version__
     for name in ("init", "observe", "span", "update_trace", "wrap_openai", "wrap_anthropic"):
         assert callable(getattr(spanlight, name))
+
+
+def test_package_exports_batch_helper():
+    assert "record_openai_batch_output" in spanlight.__all__
+    assert callable(spanlight.record_openai_batch_output)

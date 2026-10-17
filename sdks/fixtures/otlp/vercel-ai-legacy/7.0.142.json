@@ -1,0 +1,2391 @@
+{
+  "library": "vercel-ai-legacy",
+  "version": "7.0.142",
+  "recorded_at": "2026-10-17T20:45:20Z",
+  "recorder": {
+    "runtime": "node 24.11.1",
+    "otel_sdk": "2.12.0",
+    "harness": "sdks/fixtures/otlp/record@e0893b3"
+  },
+  "scenarios": [
+    {
+      "name": "error",
+      "export": {
+        "content_type": "application/json",
+        "body_base64": "eyJyZXNvdXJjZVNwYW5zIjpbeyJyZXNvdXJjZSI6eyJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJzZXJ2aWNlLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6InNwYW5saWdodC1maXh0dXJlIn19XSwiZHJvcHBlZEF0dHJpYnV0ZXNDb3VudCI6MH0sInNjb3BlU3BhbnMiOlt7InNjb3BlIjp7Im5hbWUiOiJzcGFubGlnaHQifSwic3BhbnMiOlt7InRyYWNlSWQiOiI3ZjI4M2M4ZDczMjE4MDYwNGE1NWUyNjRlMDVkZmNkMyIsInNwYW5JZCI6ImZhZGNkM2I5NTRlYTE0YTgiLCJwYXJlbnRTcGFuSWQiOiI5NTc4ZGY0OWM2MzRkZDhmIiwibmFtZSI6ImFpLmdlbmVyYXRlVGV4dC5kb0dlbmVyYXRlIiwia2luZCI6MSwic3RhcnRUaW1lVW5peE5hbm8iOiIxNzkyMjY5OTIwNjMyMDAwMDAwIiwiZW5kVGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyMDYzOTAwMDAwMCIsImF0dHJpYnV0ZXMiOlt7ImtleSI6Im9wZXJhdGlvbi5uYW1lIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJhaS5nZW5lcmF0ZVRleHQuZG9HZW5lcmF0ZSJ9fSx7ImtleSI6ImFpLm9wZXJhdGlvbklkIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJhaS5nZW5lcmF0ZVRleHQuZG9HZW5lcmF0ZSJ9fSx7ImtleSI6ImFpLm1vZGVsLnByb3ZpZGVyIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJvcGVuYWkuY2hhdCJ9fSx7ImtleSI6ImFpLm1vZGVsLmlkIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJncHQtNC4xLW1pbmkifX0seyJrZXkiOiJhaS5zZXR0aW5ncy5tYXhSZXRyaWVzIiwidmFsdWUiOnsiaW50VmFsdWUiOjB9fSx7ImtleSI6ImFpLnJlcXVlc3QuaGVhZGVycy51c2VyLWFnZW50IiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJhaS83LjAuMTQyIn19LHsia2V5IjoiYWkucmVxdWVzdC5oZWFkZXJzLngtZml4dHVyZS1zY2VuYXJpbyIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiZXJyb3JfNDI5In19LHsia2V5IjoiYWkucHJvbXB0Lm1lc3NhZ2VzIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJbe1wicm9sZVwiOlwidXNlclwiLFwiY29udGVudFwiOlt7XCJ0eXBlXCI6XCJ0ZXh0XCIsXCJ0ZXh0XCI6XCJTYXkgaGVsbG8gaW4gZml2ZSB3b3Jkcy5cIn1dfV0ifX0seyJrZXkiOiJhaS5wcm9tcHQudG9vbENob2ljZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoie1widHlwZVwiOlwiYXV0b1wifSJ9fSx7ImtleSI6Imdlbl9haS5zeXN0ZW0iLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6Im9wZW5haS5jaGF0In19LHsia2V5IjoiZ2VuX2FpLnJlcXVlc3QubW9kZWwiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImdwdC00LjEtbWluaSJ9fV0sImRyb3BwZWRBdHRyaWJ1dGVzQ291bnQiOjAsImV2ZW50cyI6W3siYXR0cmlidXRlcyI6W3sia2V5IjoiZXhjZXB0aW9uLnR5cGUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6IkFJX0FQSUNhbGxFcnJvciJ9fSx7ImtleSI6ImV4Y2VwdGlvbi5tZXNzYWdlIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJSYXRlIGxpbWl0IHJlYWNoZWQgZm9yIGdwdC00LjEtbWluaSBpbiBvcmdhbml6YXRpb24gb3JnLXRlc3Qgb24gcmVxdWVzdHMgcGVyIG1pbiAoUlBNKTogTGltaXQgMywgVXNlZCAzLCBSZXF1ZXN0ZWQgMS4gUGxlYXNlIHRyeSBhZ2FpbiBpbiAyMHMuIn19LHsia2V5IjoiZXhjZXB0aW9uLnN0YWNrdHJhY2UiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6IkFJX0FQSUNhbGxFcnJvcjogUmF0ZSBsaW1pdCByZWFjaGVkIGZvciBncHQtNC4xLW1pbmkgaW4gb3JnYW5pemF0aW9uIG9yZy10ZXN0IG9uIHJlcXVlc3RzIHBlciBtaW4gKFJQTSk6IExpbWl0IDMsIFVzZWQgMywgUmVxdWVzdGVkIDEuIFBsZWFzZSB0cnkgYWdhaW4gaW4gMjBzLlxuICAgIGF0IGZpbGU6Ly8vcHJpdmF0ZS90bXAvc3BhbmxpZ2h0LXJlY29yZC1ub2RlLVVnOVRaWi9ub2RlX21vZHVsZXMvQGFpLXNkay9wcm92aWRlci11dGlscy9kaXN0L2luZGV4LmpzOjM4NDQ6MTFcbiAgICBhdCBwcm9jZXNzLnByb2Nlc3NUaWNrc0FuZFJlamVjdGlvbnMgKG5vZGU6aW50ZXJuYWwvcHJvY2Vzcy90YXNrX3F1ZXVlczoxMDM6NSlcbiAgICBhdCBhc3luYyBwb3N0VG9BcGkgKGZpbGU6Ly8vcHJpdmF0ZS90bXAvc3BhbmxpZ2h0LXJlY29yZC1ub2RlLVVnOVRaWi9ub2RlX21vZHVsZXMvQGFpLXNkay9wcm92aWRlci11dGlscy9kaXN0L2luZGV4LmpzOjM1NTI6MjQpXG4gICAgYXQgYXN5bmMgcG9zdEpzb25Ub0FwaSAoZmlsZTovLy9wcml2YXRlL3RtcC9zcGFubGlnaHQtcmVjb3JkLW5vZGUtVWc5VFpaL25vZGVfbW9kdWxlcy9AYWktc2RrL3Byb3ZpZGVyLXV0aWxzL2Rpc3QvaW5kZXguanM6MzUxMzoxMjcpXG4gICAgYXQgYXN5bmMgT3BlbkFJQ2hhdExhbmd1YWdlTW9kZWwuZG9HZW5lcmF0ZSAoZmlsZTovLy9wcml2YXRlL3RtcC9zcGFubGlnaHQtcmVjb3JkLW5vZGUtVWc5VFpaL25vZGVfbW9kdWxlcy9AYWktc2RrL29wZW5haS9kaXN0L2luZGV4LmpzOjEzNDY6NzEpXG4gICAgYXQgYXN5bmMgZXhlY3V0ZSAoZmlsZTovLy9wcml2YXRlL3RtcC9zcGFubGlnaHQtcmVjb3JkLW5vZGUtVWc5VFpaL25vZGVfbW9kdWxlcy9haS9kaXN0L2luZGV4LmpzOjU2NTA6MzEpXG4gICAgYXQgYXN5bmMgcnVuV2l0aFRyYWNpbmdDaGFubmVsU3BhbiAoZmlsZTovLy9wcml2YXRlL3RtcC9zcGFubGlnaHQtcmVjb3JkLW5vZGUtVWc5VFpaL25vZGVfbW9kdWxlcy9haS9kaXN0L2luZGV4LmpzOjQzOTQ6ODApXG4gICAgYXQgYXN5bmMgZXhlY3V0ZUxhbmd1YWdlTW9kZWxDYWxsIChmaWxlOi8vL3ByaXZhdGUvdG1wL3NwYW5saWdodC1yZWNvcmQtbm9kZS1VZzlUWlovbm9kZV9tb2R1bGVzL2FpL2Rpc3QvaW5kZXguanM6NDU5MzoxMSlcbiAgICBhdCBhc3luYyBmaWxlOi8vL3ByaXZhdGUvdG1wL3NwYW5saWdodC1yZWNvcmQtbm9kZS1VZzlUWlovbm9kZV9tb2R1bGVzL2FpL2Rpc3QvaW5kZXguanM6NTY0ODoyNFxuICAgIGF0IGFzeW5jIHJldHJ5V2l0aEV4cG9uZW50aWFsQmFja29mZkludGVybmFsIChmaWxlOi8vL3ByaXZhdGUvdG1wL3NwYW5saWdodC1yZWNvcmQtbm9kZS1VZzlUWlovbm9kZV9tb2R1bGVzL2FpL25vZGVfbW9kdWxlcy9AYWktc2RrL3Byb3ZpZGVyLXV0aWxzL2Rpc3QvaW5kZXguanM6MzcyODoxMCkifX1dLCJuYW1lIjoiZXhjZXB0aW9uIiwidGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyMDYzODAwMDAwMCIsImRyb3BwZWRBdHRyaWJ1dGVzQ291bnQiOjB9XSwiZHJvcHBlZEV2ZW50c0NvdW50IjowLCJzdGF0dXMiOnsiY29kZSI6MiwibWVzc2FnZSI6IlJhdGUgbGltaXQgcmVhY2hlZCBmb3IgZ3B0LTQuMS1taW5pIGluIG9yZ2FuaXphdGlvbiBvcmctdGVzdCBvbiByZXF1ZXN0cyBwZXIgbWluIChSUE0pOiBMaW1pdCAzLCBVc2VkIDMsIFJlcXVlc3RlZCAxLiBQbGVhc2UgdHJ5IGFnYWluIGluIDIwcy4ifSwibGlua3MiOltdLCJkcm9wcGVkTGlua3NDb3VudCI6MCwiZmxhZ3MiOjI1N30seyJ0cmFjZUlkIjoiN2YyODNjOGQ3MzIxODA2MDRhNTVlMjY0ZTA1ZGZjZDMiLCJzcGFuSWQiOiI5NTc4ZGY0OWM2MzRkZDhmIiwibmFtZSI6ImFpLmdlbmVyYXRlVGV4dCIsImtpbmQiOjEsInN0YXJ0VGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyMDYzMTAwMDAwMCIsImVuZFRpbWVVbml4TmFubyI6IjE3OTIyNjk5MjA2NDIwMDAwMDAiLCJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJvcGVyYXRpb24ubmFtZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiYWkuZ2VuZXJhdGVUZXh0In19LHsia2V5IjoiYWkub3BlcmF0aW9uSWQiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImFpLmdlbmVyYXRlVGV4dCJ9fSx7ImtleSI6ImFpLm1vZGVsLnByb3ZpZGVyIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJvcGVuYWkuY2hhdCJ9fSx7ImtleSI6ImFpLm1vZGVsLmlkIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJncHQtNC4xLW1pbmkifX0seyJrZXkiOiJhaS5zZXR0aW5ncy5tYXhSZXRyaWVzIiwidmFsdWUiOnsiaW50VmFsdWUiOjB9fSx7ImtleSI6ImFpLnJlcXVlc3QuaGVhZGVycy51c2VyLWFnZW50IiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJhaS83LjAuMTQyIn19LHsia2V5IjoiYWkucmVxdWVzdC5oZWFkZXJzLngtZml4dHVyZS1zY2VuYXJpbyIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiZXJyb3JfNDI5In19LHsia2V5IjoiYWkucHJvbXB0IiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJ7XCJtZXNzYWdlc1wiOlt7XCJyb2xlXCI6XCJ1c2VyXCIsXCJjb250ZW50XCI6XCJTYXkgaGVsbG8gaW4gZml2ZSB3b3Jkcy5cIn1dfSJ9fV0sImRyb3BwZWRBdHRyaWJ1dGVzQ291bnQiOjAsImV2ZW50cyI6W3siYXR0cmlidXRlcyI6W3sia2V5IjoiZXhjZXB0aW9uLnR5cGUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6IkFJX0FQSUNhbGxFcnJvciJ9fSx7ImtleSI6ImV4Y2VwdGlvbi5tZXNzYWdlIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJSYXRlIGxpbWl0IHJlYWNoZWQgZm9yIGdwdC00LjEtbWluaSBpbiBvcmdhbml6YXRpb24gb3JnLXRlc3Qgb24gcmVxdWVzdHMgcGVyIG1pbiAoUlBNKTogTGltaXQgMywgVXNlZCAzLCBSZXF1ZXN0ZWQgMS4gUGxlYXNlIHRyeSBhZ2FpbiBpbiAyMHMuIn19LHsia2V5IjoiZXhjZXB0aW9uLnN0YWNrdHJhY2UiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6IkFJX0FQSUNhbGxFcnJvcjogUmF0ZSBsaW1pdCByZWFjaGVkIGZvciBncHQtNC4xLW1pbmkgaW4gb3JnYW5pemF0aW9uIG9yZy10ZXN0IG9uIHJlcXVlc3RzIHBlciBtaW4gKFJQTSk6IExpbWl0IDMsIFVzZWQgMywgUmVxdWVzdGVkIDEuIFBsZWFzZSB0cnkgYWdhaW4gaW4gMjBzLlxuICAgIGF0IGZpbGU6Ly8vcHJpdmF0ZS90bXAvc3BhbmxpZ2h0LXJlY29yZC1ub2RlLVVnOVRaWi9ub2RlX21vZHVsZXMvQGFpLXNkay9wcm92aWRlci11dGlscy9kaXN0L2luZGV4LmpzOjM4NDQ6MTFcbiAgICBhdCBwcm9jZXNzLnByb2Nlc3NUaWNrc0FuZFJlamVjdGlvbnMgKG5vZGU6aW50ZXJuYWwvcHJvY2Vzcy90YXNrX3F1ZXVlczoxMDM6NSlcbiAgICBhdCBhc3luYyBwb3N0VG9BcGkgKGZpbGU6Ly8vcHJpdmF0ZS90bXAvc3BhbmxpZ2h0LXJlY29yZC1ub2RlLVVnOVRaWi9ub2RlX21vZHVsZXMvQGFpLXNkay9wcm92aWRlci11dGlscy9kaXN0L2luZGV4LmpzOjM1NTI6MjQpXG4gICAgYXQgYXN5bmMgcG9zdEpzb25Ub0FwaSAoZmlsZTovLy9wcml2YXRlL3RtcC9zcGFubGlnaHQtcmVjb3JkLW5vZGUtVWc5VFpaL25vZGVfbW9kdWxlcy9AYWktc2RrL3Byb3ZpZGVyLXV0aWxzL2Rpc3QvaW5kZXguanM6MzUxMzoxMjcpXG4gICAgYXQgYXN5bmMgT3BlbkFJQ2hhdExhbmd1YWdlTW9kZWwuZG9HZW5lcmF0ZSAoZmlsZTovLy9wcml2YXRlL3RtcC9zcGFubGlnaHQtcmVjb3JkLW5vZGUtVWc5VFpaL25vZGVfbW9kdWxlcy9AYWktc2RrL29wZW5haS9kaXN0L2luZGV4LmpzOjEzNDY6NzEpXG4gICAgYXQgYXN5bmMgZXhlY3V0ZSAoZmlsZTovLy9wcml2YXRlL3RtcC9zcGFubGlnaHQtcmVjb3JkLW5vZGUtVWc5VFpaL25vZGVfbW9kdWxlcy9haS9kaXN0L2luZGV4LmpzOjU2NTA6MzEpXG4gICAgYXQgYXN5bmMgcnVuV2l0aFRyYWNpbmdDaGFubmVsU3BhbiAoZmlsZTovLy9wcml2YXRlL3RtcC9zcGFubGlnaHQtcmVjb3JkLW5vZGUtVWc5VFpaL25vZGVfbW9kdWxlcy9haS9kaXN0L2luZGV4LmpzOjQzOTQ6ODApXG4gICAgYXQgYXN5bmMgZXhlY3V0ZUxhbmd1YWdlTW9kZWxDYWxsIChmaWxlOi8vL3ByaXZhdGUvdG1wL3NwYW5saWdodC1yZWNvcmQtbm9kZS1VZzlUWlovbm9kZV9tb2R1bGVzL2FpL2Rpc3QvaW5kZXguanM6NDU5MzoxMSlcbiAgICBhdCBhc3luYyBmaWxlOi8vL3ByaXZhdGUvdG1wL3NwYW5saWdodC1yZWNvcmQtbm9kZS1VZzlUWlovbm9kZV9tb2R1bGVzL2FpL2Rpc3QvaW5kZXguanM6NTY0ODoyNFxuICAgIGF0IGFzeW5jIHJldHJ5V2l0aEV4cG9uZW50aWFsQmFja29mZkludGVybmFsIChmaWxlOi8vL3ByaXZhdGUvdG1wL3NwYW5saWdodC1yZWNvcmQtbm9kZS1VZzlUWlovbm9kZV9tb2R1bGVzL2FpL25vZGVfbW9kdWxlcy9AYWktc2RrL3Byb3ZpZGVyLXV0aWxzL2Rpc3QvaW5kZXguanM6MzcyODoxMCkifX1dLCJuYW1lIjoiZXhjZXB0aW9uIiwidGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyMDY0MTAwMDAwMCIsImRyb3BwZWRBdHRyaWJ1dGVzQ291bnQiOjB9XSwiZHJvcHBlZEV2ZW50c0NvdW50IjowLCJzdGF0dXMiOnsiY29kZSI6MiwibWVzc2FnZSI6IlJhdGUgbGltaXQgcmVhY2hlZCBmb3IgZ3B0LTQuMS1taW5pIGluIG9yZ2FuaXphdGlvbiBvcmctdGVzdCBvbiByZXF1ZXN0cyBwZXIgbWluIChSUE0pOiBMaW1pdCAzLCBVc2VkIDMsIFJlcXVlc3RlZCAxLiBQbGVhc2UgdHJ5IGFnYWluIGluIDIwcy4ifSwibGlua3MiOltdLCJkcm9wcGVkTGlua3NDb3VudCI6MCwiZmxhZ3MiOjI1N31dfV19XX0="
+      },
+      "preview": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "spanlight-fixture"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "spanlight"
+                },
+                "spans": [
+                  {
+                    "traceId": "7f283c8d732180604a55e264e05dfcd3",
+                    "spanId": "fadcd3b954ea14a8",
+                    "parentSpanId": "9578df49c634dd8f",
+                    "name": "ai.generateText.doGenerate",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269920632000000",
+                    "endTimeUnixNano": "1792269920639000000",
+                    "attributes": [
+                      {
+                        "key": "operation.name",
+                        "value": {
+                          "stringValue": "ai.generateText.doGenerate"
+                        }
+                      },
+                      {
+                        "key": "ai.operationId",
+                        "value": {
+                          "stringValue": "ai.generateText.doGenerate"
+                        }
+                      },
+                      {
+                        "key": "ai.model.provider",
+                        "value": {
+                          "stringValue": "openai.chat"
+                        }
+                      },
+                      {
+                        "key": "ai.model.id",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "ai.settings.maxRetries",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.request.headers.user-agent",
+                        "value": {
+                          "stringValue": "ai/7.0.142"
+                        }
+                      },
+                      {
+                        "key": "ai.request.headers.x-fixture-scenario",
+                        "value": {
+                          "stringValue": "error_429"
+                        }
+                      },
+                      {
+                        "key": "ai.prompt.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Say hello in five words.\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "ai.prompt.toolChoice",
+                        "value": {
+                          "stringValue": "{\"type\":\"auto\"}"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.system",
+                        "value": {
+                          "stringValue": "openai.chat"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [
+                      {
+                        "attributes": [
+                          {
+                            "key": "exception.type",
+                            "value": {
+                              "stringValue": "AI_APICallError"
+                            }
+                          },
+                          {
+                            "key": "exception.message",
+                            "value": {
+                              "stringValue": "Rate limit reached for gpt-4.1-mini in organization org-test on requests per min (RPM): Limit 3, Used 3, Requested 1. Please try again in 20s."
+                            }
+                          },
+                          {
+                            "key": "exception.stacktrace",
+                            "value": {
+                              "stringValue": "AI_APICallError: Rate limit reached for gpt-4.1-mini in organization org-test on requests per min (RPM): Limit 3, Used 3, Requested 1. Please try again in 20s.\n    at file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/@ai-sdk/provider-utils/dist/index.js:3844:11\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async postToApi (file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/@ai-sdk/provider-utils/dist/index.js:3552:24)\n    at async postJsonToApi (file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/@ai-sdk/provider-utils/dist/index.js:3513:127)\n    at async OpenAIChatLanguageModel.doGenerate (file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/@ai-sdk/openai/dist/index.js:1346:71)\n    at async execute (file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/ai/dist/index.js:5650:31)\n    at async runWithTracingChannelSpan (file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/ai/dist/index.js:4394:80)\n    at async executeLanguageModelCall (file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/ai/dist/index.js:4593:11)\n    at async file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/ai/dist/index.js:5648:24\n    at async retryWithExponentialBackoffInternal (file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/ai/node_modules/@ai-sdk/provider-utils/dist/index.js:3728:10)"
+                            }
+                          }
+                        ],
+                        "name": "exception",
+                        "timeUnixNano": "1792269920638000000",
+                        "droppedAttributesCount": 0
+                      }
+                    ],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 2,
+                      "message": "Rate limit reached for gpt-4.1-mini in organization org-test on requests per min (RPM): Limit 3, Used 3, Requested 1. Please try again in 20s."
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  },
+                  {
+                    "traceId": "7f283c8d732180604a55e264e05dfcd3",
+                    "spanId": "9578df49c634dd8f",
+                    "name": "ai.generateText",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269920631000000",
+                    "endTimeUnixNano": "1792269920642000000",
+                    "attributes": [
+                      {
+                        "key": "operation.name",
+                        "value": {
+                          "stringValue": "ai.generateText"
+                        }
+                      },
+                      {
+                        "key": "ai.operationId",
+                        "value": {
+                          "stringValue": "ai.generateText"
+                        }
+                      },
+                      {
+                        "key": "ai.model.provider",
+                        "value": {
+                          "stringValue": "openai.chat"
+                        }
+                      },
+                      {
+                        "key": "ai.model.id",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "ai.settings.maxRetries",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.request.headers.user-agent",
+                        "value": {
+                          "stringValue": "ai/7.0.142"
+                        }
+                      },
+                      {
+                        "key": "ai.request.headers.x-fixture-scenario",
+                        "value": {
+                          "stringValue": "error_429"
+                        }
+                      },
+                      {
+                        "key": "ai.prompt",
+                        "value": {
+                          "stringValue": "{\"messages\":[{\"role\":\"user\",\"content\":\"Say hello in five words.\"}]}"
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [
+                      {
+                        "attributes": [
+                          {
+                            "key": "exception.type",
+                            "value": {
+                              "stringValue": "AI_APICallError"
+                            }
+                          },
+                          {
+                            "key": "exception.message",
+                            "value": {
+                              "stringValue": "Rate limit reached for gpt-4.1-mini in organization org-test on requests per min (RPM): Limit 3, Used 3, Requested 1. Please try again in 20s."
+                            }
+                          },
+                          {
+                            "key": "exception.stacktrace",
+                            "value": {
+                              "stringValue": "AI_APICallError: Rate limit reached for gpt-4.1-mini in organization org-test on requests per min (RPM): Limit 3, Used 3, Requested 1. Please try again in 20s.\n    at file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/@ai-sdk/provider-utils/dist/index.js:3844:11\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async postToApi (file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/@ai-sdk/provider-utils/dist/index.js:3552:24)\n    at async postJsonToApi (file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/@ai-sdk/provider-utils/dist/index.js:3513:127)\n    at async OpenAIChatLanguageModel.doGenerate (file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/@ai-sdk/openai/dist/index.js:1346:71)\n    at async execute (file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/ai/dist/index.js:5650:31)\n    at async runWithTracingChannelSpan (file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/ai/dist/index.js:4394:80)\n    at async executeLanguageModelCall (file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/ai/dist/index.js:4593:11)\n    at async file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/ai/dist/index.js:5648:24\n    at async retryWithExponentialBackoffInternal (file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/ai/node_modules/@ai-sdk/provider-utils/dist/index.js:3728:10)"
+                            }
+                          }
+                        ],
+                        "name": "exception",
+                        "timeUnixNano": "1792269920641000000",
+                        "droppedAttributesCount": 0
+                      }
+                    ],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 2,
+                      "message": "Rate limit reached for gpt-4.1-mini in organization org-test on requests per min (RPM): Limit 3, Used 3, Requested 1. Please try again in 20s."
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accepted": 2,
+        "rejected": [],
+        "spans": [
+          {
+            "span_id": "fadcd3b954ea14a8",
+            "parent_span_id": "9578df49c634dd8f",
+            "convention": "vercel_ai",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "usage_not_reported",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": false,
+            "time_to_first_token_ms": null,
+            "status": "error",
+            "error_class": "rate_limit",
+            "operation": "ai.generateText.doGenerate",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "9578df49c634dd8f",
+            "parent_span_id": null,
+            "convention": "vercel_ai",
+            "kind": "chain",
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": false,
+            "time_to_first_token_ms": null,
+            "status": "error",
+            "error_class": "rate_limit",
+            "operation": "ai.generateText",
+            "trace": {
+              "name": "ai.generateText",
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          }
+        ],
+        "trace": {
+          "span_count": 2,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "has_unpriced": true
+        },
+        "loses": [
+          "output",
+          "usage"
+        ]
+      }
+    },
+    {
+      "name": "generate_object",
+      "export": {
+        "content_type": "application/json",
+        "body_base64": "eyJyZXNvdXJjZVNwYW5zIjpbeyJyZXNvdXJjZSI6eyJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJzZXJ2aWNlLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6InNwYW5saWdodC1maXh0dXJlIn19XSwiZHJvcHBlZEF0dHJpYnV0ZXNDb3VudCI6MH0sInNjb3BlU3BhbnMiOlt7InNjb3BlIjp7Im5hbWUiOiJzcGFubGlnaHQifSwic3BhbnMiOlt7InRyYWNlSWQiOiIyZDJhZDc1ODAzYzY1MTQ3MmM4OGExMjk5MmQ4NDdlYSIsInNwYW5JZCI6IjUzZjNmMzdjMWRjMWFmM2YiLCJwYXJlbnRTcGFuSWQiOiI5YTlkYTE2MjQ2ZGM3NGE2IiwibmFtZSI6ImFpLmdlbmVyYXRlT2JqZWN0LmRvR2VuZXJhdGUiLCJraW5kIjoxLCJzdGFydFRpbWVVbml4TmFubyI6IjE3OTIyNjk5MjA0NzIwMDAwMDAiLCJlbmRUaW1lVW5peE5hbm8iOiIxNzkyMjY5OTIwNDc3MDAwMDAwIiwiYXR0cmlidXRlcyI6W3sia2V5Ijoib3BlcmF0aW9uLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImFpLmdlbmVyYXRlT2JqZWN0LmRvR2VuZXJhdGUifX0seyJrZXkiOiJhaS5vcGVyYXRpb25JZCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiYWkuZ2VuZXJhdGVPYmplY3QuZG9HZW5lcmF0ZSJ9fSx7ImtleSI6ImFpLm1vZGVsLnByb3ZpZGVyIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJvcGVuYWkuY2hhdCJ9fSx7ImtleSI6ImFpLm1vZGVsLmlkIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJncHQtNC4xLW1pbmkifX0seyJrZXkiOiJhaS5zZXR0aW5ncy5tYXhSZXRyaWVzIiwidmFsdWUiOnsiaW50VmFsdWUiOjB9fSx7ImtleSI6ImFpLnJlcXVlc3QuaGVhZGVycy51c2VyLWFnZW50IiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJhaS83LjAuMTQyIn19LHsia2V5IjoiYWkucmVxdWVzdC5oZWFkZXJzLngtZml4dHVyZS1zY2VuYXJpbyIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiY2hhdCJ9fSx7ImtleSI6ImFpLnByb21wdC5tZXNzYWdlcyIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiW3tcInJvbGVcIjpcInVzZXJcIixcImNvbnRlbnRcIjpbe1widHlwZVwiOlwidGV4dFwiLFwidGV4dFwiOlwiU2F5IGhlbGxvIGluIGZpdmUgd29yZHMuXCJ9XX1dIn19LHsia2V5IjoiZ2VuX2FpLnN5c3RlbSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoib3BlbmFpLmNoYXQifX0seyJrZXkiOiJnZW5fYWkucmVxdWVzdC5tb2RlbCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiZ3B0LTQuMS1taW5pIn19LHsia2V5IjoiYWkucmVzcG9uc2UuZmluaXNoUmVhc29uIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJzdG9wIn19LHsia2V5IjoiYWkucmVzcG9uc2Uub2JqZWN0IiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJIZWxsbyEgSG93IGNhbiBJIGhlbHAgeW91IHRvZGF5PyJ9fSx7ImtleSI6ImFpLnJlc3BvbnNlLmlkIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJjaGF0Y21wbC10ZXN0MDAwMDAwMDAwMDAwMDAwMDAwMDAwMSJ9fSx7ImtleSI6ImFpLnJlc3BvbnNlLm1vZGVsIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJncHQtNC4xLW1pbmktMjAyNS0wNC0xNCJ9fSx7ImtleSI6ImFpLnJlc3BvbnNlLnRpbWVzdGFtcCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiMjAyNS0xMC0wOVQwODo1MzoyMC4wMDBaIn19LHsia2V5IjoiYWkucmVzcG9uc2UucHJvdmlkZXJNZXRhZGF0YSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoie1wib3BlbmFpXCI6e1wiYWNjZXB0ZWRQcmVkaWN0aW9uVG9rZW5zXCI6MCxcInJlamVjdGVkUHJlZGljdGlvblRva2Vuc1wiOjB9fSJ9fSx7ImtleSI6ImFpLnVzYWdlLmlucHV0VG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjE5fX0seyJrZXkiOiJhaS51c2FnZS5vdXRwdXRUb2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6OX19LHsia2V5IjoiYWkudXNhZ2UudG90YWxUb2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6Mjh9fSx7ImtleSI6ImFpLnVzYWdlLnJlYXNvbmluZ1Rva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjowfX0seyJrZXkiOiJhaS51c2FnZS5jYWNoZWRJbnB1dFRva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjo4fX0seyJrZXkiOiJnZW5fYWkucmVzcG9uc2UuZmluaXNoX3JlYXNvbnMiLCJ2YWx1ZSI6eyJhcnJheVZhbHVlIjp7InZhbHVlcyI6W3sic3RyaW5nVmFsdWUiOiJzdG9wIn1dfX19LHsia2V5IjoiZ2VuX2FpLnJlc3BvbnNlLmlkIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJjaGF0Y21wbC10ZXN0MDAwMDAwMDAwMDAwMDAwMDAwMDAwMSJ9fSx7ImtleSI6Imdlbl9haS5yZXNwb25zZS5tb2RlbCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiZ3B0LTQuMS1taW5pLTIwMjUtMDQtMTQifX0seyJrZXkiOiJnZW5fYWkudXNhZ2UuaW5wdXRfdG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjE5fX0seyJrZXkiOiJnZW5fYWkudXNhZ2Uub3V0cHV0X3Rva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjo5fX1dLCJkcm9wcGVkQXR0cmlidXRlc0NvdW50IjowLCJldmVudHMiOltdLCJkcm9wcGVkRXZlbnRzQ291bnQiOjAsInN0YXR1cyI6eyJjb2RlIjowfSwibGlua3MiOltdLCJkcm9wcGVkTGlua3NDb3VudCI6MCwiZmxhZ3MiOjI1N30seyJ0cmFjZUlkIjoiMmQyYWQ3NTgwM2M2NTE0NzJjODhhMTI5OTJkODQ3ZWEiLCJzcGFuSWQiOiI5YTlkYTE2MjQ2ZGM3NGE2IiwibmFtZSI6ImFpLmdlbmVyYXRlT2JqZWN0Iiwia2luZCI6MSwic3RhcnRUaW1lVW5peE5hbm8iOiIxNzkyMjY5OTIwNDcxMDAwMDAwIiwiZW5kVGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyMDQ4MDAwMDAwMCIsImF0dHJpYnV0ZXMiOlt7ImtleSI6Im9wZXJhdGlvbi5uYW1lIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJhaS5nZW5lcmF0ZU9iamVjdCJ9fSx7ImtleSI6ImFpLm9wZXJhdGlvbklkIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJhaS5nZW5lcmF0ZU9iamVjdCJ9fSx7ImtleSI6ImFpLm1vZGVsLnByb3ZpZGVyIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJvcGVuYWkuY2hhdCJ9fSx7ImtleSI6ImFpLm1vZGVsLmlkIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJncHQtNC4xLW1pbmkifX0seyJrZXkiOiJhaS5zZXR0aW5ncy5tYXhSZXRyaWVzIiwidmFsdWUiOnsiaW50VmFsdWUiOjB9fSx7ImtleSI6ImFpLnJlcXVlc3QuaGVhZGVycy51c2VyLWFnZW50IiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJhaS83LjAuMTQyIn19LHsia2V5IjoiYWkucmVxdWVzdC5oZWFkZXJzLngtZml4dHVyZS1zY2VuYXJpbyIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiY2hhdCJ9fSx7ImtleSI6ImFpLnByb21wdCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoie1wicHJvbXB0XCI6XCJTYXkgaGVsbG8gaW4gZml2ZSB3b3Jkcy5cIn0ifX0seyJrZXkiOiJhaS5zY2hlbWEiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6IntcIiRzY2hlbWFcIjpcImh0dHA6Ly9qc29uLXNjaGVtYS5vcmcvZHJhZnQtMDcvc2NoZW1hI1wiLFwidHlwZVwiOlwib2JqZWN0XCIsXCJwcm9wZXJ0aWVzXCI6e1wiZ3JlZXRpbmdcIjp7XCJ0eXBlXCI6XCJzdHJpbmdcIn19LFwicmVxdWlyZWRcIjpbXCJncmVldGluZ1wiXSxcImFkZGl0aW9uYWxQcm9wZXJ0aWVzXCI6ZmFsc2V9In19LHsia2V5IjoiYWkuc2V0dGluZ3Mub3V0cHV0IiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJvYmplY3QifX1dLCJkcm9wcGVkQXR0cmlidXRlc0NvdW50IjowLCJldmVudHMiOlt7ImF0dHJpYnV0ZXMiOlt7ImtleSI6ImV4Y2VwdGlvbi50eXBlIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJBSV9Ob09iamVjdEdlbmVyYXRlZEVycm9yIn19LHsia2V5IjoiZXhjZXB0aW9uLm1lc3NhZ2UiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6Ik5vIG9iamVjdCBnZW5lcmF0ZWQ6IGNvdWxkIG5vdCBwYXJzZSB0aGUgcmVzcG9uc2UuIn19LHsia2V5IjoiZXhjZXB0aW9uLnN0YWNrdHJhY2UiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6IkFJX05vT2JqZWN0R2VuZXJhdGVkRXJyb3I6IE5vIG9iamVjdCBnZW5lcmF0ZWQ6IGNvdWxkIG5vdCBwYXJzZSB0aGUgcmVzcG9uc2UuXG4gICAgYXQgcGFyc2VBbmRWYWxpZGF0ZU9iamVjdFJlc3VsdCAoZmlsZTovLy9wcml2YXRlL3RtcC9zcGFubGlnaHQtcmVjb3JkLW5vZGUtVWc5VFpaL25vZGVfbW9kdWxlcy9haS9kaXN0L2luZGV4LmpzOjEzMzkwOjM0KVxuICAgIGF0IHByb2Nlc3MucHJvY2Vzc1RpY2tzQW5kUmVqZWN0aW9ucyAobm9kZTppbnRlcm5hbC9wcm9jZXNzL3Rhc2tfcXVldWVzOjEwMzo1KVxuICAgIGF0IGFzeW5jIHBhcnNlQW5kVmFsaWRhdGVPYmplY3RSZXN1bHRXaXRoUmVwYWlyIChmaWxlOi8vL3ByaXZhdGUvdG1wL3NwYW5saWdodC1yZWNvcmQtbm9kZS1VZzlUWlovbm9kZV9tb2R1bGVzL2FpL2Rpc3QvaW5kZXguanM6MTM0MjY6MTApXG4gICAgYXQgYXN5bmMgZ2VuZXJhdGVPYmplY3QgKGZpbGU6Ly8vcHJpdmF0ZS90bXAvc3BhbmxpZ2h0LXJlY29yZC1ub2RlLVVnOVRaWi9ub2RlX21vZHVsZXMvYWkvZGlzdC9pbmRleC5qczoxMzc0NToxOClcbiAgICBhdCBhc3luYyBleHBlY3RGYWlsdXJlIChmaWxlOi8vL3ByaXZhdGUvdG1wL3NwYW5saWdodC1yZWNvcmQtbm9kZS1VZzlUWlovcmVjaXBlcy9fc2NlbmFyaW9zLnRzOjkyOjUpXG4gICAgYXQgYXN5bmMgcnVuU2NlbmFyaW8gKGZpbGU6Ly8vcHJpdmF0ZS90bXAvc3BhbmxpZ2h0LXJlY29yZC1ub2RlLVVnOVRaWi9yZWNpcGVzL19zY2VuYXJpb3MudHM6NzM6NylcbiAgICBhdCBhc3luYyBmaWxlOi8vL3ByaXZhdGUvdG1wL3NwYW5saWdodC1yZWNvcmQtbm9kZS1VZzlUWlovcmVjaXBlcy92Ny1sZWdhY3kudHM6MTI6MSJ9fV0sIm5hbWUiOiJleGNlcHRpb24iLCJ0aW1lVW5peE5hbm8iOiIxNzkyMjY5OTIwNDc5MDAwMDAwIiwiZHJvcHBlZEF0dHJpYnV0ZXNDb3VudCI6MH1dLCJkcm9wcGVkRXZlbnRzQ291bnQiOjAsInN0YXR1cyI6eyJjb2RlIjoyLCJtZXNzYWdlIjoiTm8gb2JqZWN0IGdlbmVyYXRlZDogY291bGQgbm90IHBhcnNlIHRoZSByZXNwb25zZS4ifSwibGlua3MiOltdLCJkcm9wcGVkTGlua3NDb3VudCI6MCwiZmxhZ3MiOjI1N31dfV19XX0="
+      },
+      "preview": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "spanlight-fixture"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "spanlight"
+                },
+                "spans": [
+                  {
+                    "traceId": "2d2ad75803c651472c88a12992d847ea",
+                    "spanId": "53f3f37c1dc1af3f",
+                    "parentSpanId": "9a9da16246dc74a6",
+                    "name": "ai.generateObject.doGenerate",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269920472000000",
+                    "endTimeUnixNano": "1792269920477000000",
+                    "attributes": [
+                      {
+                        "key": "operation.name",
+                        "value": {
+                          "stringValue": "ai.generateObject.doGenerate"
+                        }
+                      },
+                      {
+                        "key": "ai.operationId",
+                        "value": {
+                          "stringValue": "ai.generateObject.doGenerate"
+                        }
+                      },
+                      {
+                        "key": "ai.model.provider",
+                        "value": {
+                          "stringValue": "openai.chat"
+                        }
+                      },
+                      {
+                        "key": "ai.model.id",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "ai.settings.maxRetries",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.request.headers.user-agent",
+                        "value": {
+                          "stringValue": "ai/7.0.142"
+                        }
+                      },
+                      {
+                        "key": "ai.request.headers.x-fixture-scenario",
+                        "value": {
+                          "stringValue": "chat"
+                        }
+                      },
+                      {
+                        "key": "ai.prompt.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Say hello in five words.\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.system",
+                        "value": {
+                          "stringValue": "openai.chat"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "ai.response.finishReason",
+                        "value": {
+                          "stringValue": "stop"
+                        }
+                      },
+                      {
+                        "key": "ai.response.object",
+                        "value": {
+                          "stringValue": "Hello! How can I help you today?"
+                        }
+                      },
+                      {
+                        "key": "ai.response.id",
+                        "value": {
+                          "stringValue": "chatcmpl-test0000000000000000000001"
+                        }
+                      },
+                      {
+                        "key": "ai.response.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "ai.response.timestamp",
+                        "value": {
+                          "stringValue": "2025-10-09T08:53:20.000Z"
+                        }
+                      },
+                      {
+                        "key": "ai.response.providerMetadata",
+                        "value": {
+                          "stringValue": "{\"openai\":{\"acceptedPredictionTokens\":0,\"rejectedPredictionTokens\":0}}"
+                        }
+                      },
+                      {
+                        "key": "ai.usage.inputTokens",
+                        "value": {
+                          "intValue": 19
+                        }
+                      },
+                      {
+                        "key": "ai.usage.outputTokens",
+                        "value": {
+                          "intValue": 9
+                        }
+                      },
+                      {
+                        "key": "ai.usage.totalTokens",
+                        "value": {
+                          "intValue": 28
+                        }
+                      },
+                      {
+                        "key": "ai.usage.reasoningTokens",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.usage.cachedInputTokens",
+                        "value": {
+                          "intValue": 8
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.finish_reasons",
+                        "value": {
+                          "arrayValue": {
+                            "values": [
+                              {
+                                "stringValue": "stop"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.id",
+                        "value": {
+                          "stringValue": "chatcmpl-test0000000000000000000001"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.input_tokens",
+                        "value": {
+                          "intValue": 19
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.output_tokens",
+                        "value": {
+                          "intValue": 9
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  },
+                  {
+                    "traceId": "2d2ad75803c651472c88a12992d847ea",
+                    "spanId": "9a9da16246dc74a6",
+                    "name": "ai.generateObject",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269920471000000",
+                    "endTimeUnixNano": "1792269920480000000",
+                    "attributes": [
+                      {
+                        "key": "operation.name",
+                        "value": {
+                          "stringValue": "ai.generateObject"
+                        }
+                      },
+                      {
+                        "key": "ai.operationId",
+                        "value": {
+                          "stringValue": "ai.generateObject"
+                        }
+                      },
+                      {
+                        "key": "ai.model.provider",
+                        "value": {
+                          "stringValue": "openai.chat"
+                        }
+                      },
+                      {
+                        "key": "ai.model.id",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "ai.settings.maxRetries",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.request.headers.user-agent",
+                        "value": {
+                          "stringValue": "ai/7.0.142"
+                        }
+                      },
+                      {
+                        "key": "ai.request.headers.x-fixture-scenario",
+                        "value": {
+                          "stringValue": "chat"
+                        }
+                      },
+                      {
+                        "key": "ai.prompt",
+                        "value": {
+                          "stringValue": "{\"prompt\":\"Say hello in five words.\"}"
+                        }
+                      },
+                      {
+                        "key": "ai.schema",
+                        "value": {
+                          "stringValue": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\",\"properties\":{\"greeting\":{\"type\":\"string\"}},\"required\":[\"greeting\"],\"additionalProperties\":false}"
+                        }
+                      },
+                      {
+                        "key": "ai.settings.output",
+                        "value": {
+                          "stringValue": "object"
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [
+                      {
+                        "attributes": [
+                          {
+                            "key": "exception.type",
+                            "value": {
+                              "stringValue": "AI_NoObjectGeneratedError"
+                            }
+                          },
+                          {
+                            "key": "exception.message",
+                            "value": {
+                              "stringValue": "No object generated: could not parse the response."
+                            }
+                          },
+                          {
+                            "key": "exception.stacktrace",
+                            "value": {
+                              "stringValue": "AI_NoObjectGeneratedError: No object generated: could not parse the response.\n    at parseAndValidateObjectResult (file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/ai/dist/index.js:13390:34)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async parseAndValidateObjectResultWithRepair (file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/ai/dist/index.js:13426:10)\n    at async generateObject (file:///private/tmp/spanlight-record-node-Ug9TZZ/node_modules/ai/dist/index.js:13745:18)\n    at async expectFailure (file:///private/tmp/spanlight-record-node-Ug9TZZ/recipes/_scenarios.ts:92:5)\n    at async runScenario (file:///private/tmp/spanlight-record-node-Ug9TZZ/recipes/_scenarios.ts:73:7)\n    at async file:///private/tmp/spanlight-record-node-Ug9TZZ/recipes/v7-legacy.ts:12:1"
+                            }
+                          }
+                        ],
+                        "name": "exception",
+                        "timeUnixNano": "1792269920479000000",
+                        "droppedAttributesCount": 0
+                      }
+                    ],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 2,
+                      "message": "No object generated: could not parse the response."
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accepted": 2,
+        "rejected": [],
+        "spans": [
+          {
+            "span_id": "53f3f37c1dc1af3f",
+            "parent_span_id": "9a9da16246dc74a6",
+            "convention": "vercel_ai",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini-2025-04-14",
+            "usage": {
+              "input_tokens": 19,
+              "output_tokens": 9,
+              "cached_tokens": 8,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "priced",
+            "finish_reason": "stop",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "ai.generateObject.doGenerate",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "9a9da16246dc74a6",
+            "parent_span_id": null,
+            "convention": "vercel_ai",
+            "kind": "chain",
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": false,
+            "time_to_first_token_ms": null,
+            "status": "error",
+            "error_class": "unknown",
+            "operation": "ai.generateObject",
+            "trace": {
+              "name": "ai.generateObject",
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          }
+        ],
+        "trace": {
+          "span_count": 2,
+          "input_tokens": 19,
+          "output_tokens": 9,
+          "has_unpriced": true
+        },
+        "loses": [
+          "cache_write_1h_tokens",
+          "time_to_first_token_ms"
+        ]
+      }
+    },
+    {
+      "name": "generate_text_with_metadata",
+      "export": {
+        "content_type": "application/json",
+        "body_base64": "eyJyZXNvdXJjZVNwYW5zIjpbeyJyZXNvdXJjZSI6eyJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJzZXJ2aWNlLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6InNwYW5saWdodC1maXh0dXJlIn19XSwiZHJvcHBlZEF0dHJpYnV0ZXNDb3VudCI6MH0sInNjb3BlU3BhbnMiOlt7InNjb3BlIjp7Im5hbWUiOiJzcGFubGlnaHQifSwic3BhbnMiOlt7InRyYWNlSWQiOiI0Zjg0OGY2ZTRlNGNlMGFiZDBlYzBlODg1MWEzNWRhMCIsInNwYW5JZCI6IjBiNWU1NTQ4YTVlZGM2YzciLCJwYXJlbnRTcGFuSWQiOiI5OTQ5NDczMDRlNDNiMzIxIiwibmFtZSI6ImFpLmdlbmVyYXRlVGV4dC5kb0dlbmVyYXRlIiwia2luZCI6MSwic3RhcnRUaW1lVW5peE5hbm8iOiIxNzkyMjY5OTE5OTg4MDAwMDAwIiwiZW5kVGltZVVuaXhOYW5vIjoiMTc5MjI2OTkxOTk5NjAwMDAwMCIsImF0dHJpYnV0ZXMiOlt7ImtleSI6Im9wZXJhdGlvbi5uYW1lIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJhaS5nZW5lcmF0ZVRleHQuZG9HZW5lcmF0ZSBhbnN3ZXIifX0seyJrZXkiOiJyZXNvdXJjZS5uYW1lIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJhbnN3ZXIifX0seyJrZXkiOiJhaS5vcGVyYXRpb25JZCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiYWkuZ2VuZXJhdGVUZXh0LmRvR2VuZXJhdGUifX0seyJrZXkiOiJhaS50ZWxlbWV0cnkuZnVuY3Rpb25JZCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiYW5zd2VyIn19LHsia2V5IjoiYWkubW9kZWwucHJvdmlkZXIiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6Im9wZW5haS5jaGF0In19LHsia2V5IjoiYWkubW9kZWwuaWQiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImdwdC00LjEtbWluaSJ9fSx7ImtleSI6ImFpLnNldHRpbmdzLm1heFJldHJpZXMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6MH19LHsia2V5IjoiYWkuc2V0dGluZ3MuY29udGV4dC50ZW5hbnQiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImFjbWUifX0seyJrZXkiOiJhaS5yZXF1ZXN0LmhlYWRlcnMudXNlci1hZ2VudCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiYWkvNy4wLjE0MiJ9fSx7ImtleSI6ImFpLnJlcXVlc3QuaGVhZGVycy54LWZpeHR1cmUtc2NlbmFyaW8iLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImNoYXQifX0seyJrZXkiOiJhaS5wcm9tcHQubWVzc2FnZXMiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6Ilt7XCJyb2xlXCI6XCJ1c2VyXCIsXCJjb250ZW50XCI6W3tcInR5cGVcIjpcInRleHRcIixcInRleHRcIjpcIlNheSBoZWxsbyBpbiBmaXZlIHdvcmRzLlwifV19XSJ9fSx7ImtleSI6ImFpLnByb21wdC50b29sQ2hvaWNlIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJ7XCJ0eXBlXCI6XCJhdXRvXCJ9In19LHsia2V5IjoiZ2VuX2FpLnN5c3RlbSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoib3BlbmFpLmNoYXQifX0seyJrZXkiOiJnZW5fYWkucmVxdWVzdC5tb2RlbCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiZ3B0LTQuMS1taW5pIn19LHsia2V5IjoiYWkucmVzcG9uc2UuZmluaXNoUmVhc29uIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJzdG9wIn19LHsia2V5IjoiYWkucmVzcG9uc2UudGV4dCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiSGVsbG8hIEhvdyBjYW4gSSBoZWxwIHlvdSB0b2RheT8ifX0seyJrZXkiOiJhaS5yZXNwb25zZS5pZCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiY2hhdGNtcGwtdGVzdDAwMDAwMDAwMDAwMDAwMDAwMDAwMDEifX0seyJrZXkiOiJhaS5yZXNwb25zZS5tb2RlbCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiZ3B0LTQuMS1taW5pLTIwMjUtMDQtMTQifX0seyJrZXkiOiJhaS5yZXNwb25zZS50aW1lc3RhbXAiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6IjIwMjUtMTAtMDlUMDg6NTM6MjAuMDAwWiJ9fSx7ImtleSI6ImFpLnJlc3BvbnNlLnByb3ZpZGVyTWV0YWRhdGEiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6IntcIm9wZW5haVwiOntcImFjY2VwdGVkUHJlZGljdGlvblRva2Vuc1wiOjAsXCJyZWplY3RlZFByZWRpY3Rpb25Ub2tlbnNcIjowfX0ifX0seyJrZXkiOiJhaS51c2FnZS5pbnB1dFRva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjoxOX19LHsia2V5IjoiYWkudXNhZ2Uub3V0cHV0VG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjl9fSx7ImtleSI6ImFpLnVzYWdlLnRvdGFsVG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjI4fX0seyJrZXkiOiJhaS51c2FnZS5yZWFzb25pbmdUb2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6MH19LHsia2V5IjoiYWkudXNhZ2UuY2FjaGVkSW5wdXRUb2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6OH19LHsia2V5IjoiYWkudXNhZ2UuaW5wdXRUb2tlbkRldGFpbHMubm9DYWNoZVRva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjoxMX19LHsia2V5IjoiYWkudXNhZ2UuaW5wdXRUb2tlbkRldGFpbHMuY2FjaGVSZWFkVG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjh9fSx7ImtleSI6ImFpLnVzYWdlLm91dHB1dFRva2VuRGV0YWlscy50ZXh0VG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjl9fSx7ImtleSI6ImFpLnVzYWdlLm91dHB1dFRva2VuRGV0YWlscy5yZWFzb25pbmdUb2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6MH19LHsia2V5IjoiZ2VuX2FpLnJlc3BvbnNlLmZpbmlzaF9yZWFzb25zIiwidmFsdWUiOnsiYXJyYXlWYWx1ZSI6eyJ2YWx1ZXMiOlt7InN0cmluZ1ZhbHVlIjoic3RvcCJ9XX19fSx7ImtleSI6Imdlbl9haS5yZXNwb25zZS5pZCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiY2hhdGNtcGwtdGVzdDAwMDAwMDAwMDAwMDAwMDAwMDAwMDEifX0seyJrZXkiOiJnZW5fYWkucmVzcG9uc2UubW9kZWwiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImdwdC00LjEtbWluaS0yMDI1LTA0LTE0In19LHsia2V5IjoiZ2VuX2FpLnVzYWdlLmlucHV0X3Rva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjoxOX19LHsia2V5IjoiZ2VuX2FpLnVzYWdlLm91dHB1dF90b2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6OX19XSwiZHJvcHBlZEF0dHJpYnV0ZXNDb3VudCI6MCwiZXZlbnRzIjpbXSwiZHJvcHBlZEV2ZW50c0NvdW50IjowLCJzdGF0dXMiOnsiY29kZSI6MH0sImxpbmtzIjpbXSwiZHJvcHBlZExpbmtzQ291bnQiOjAsImZsYWdzIjoyNTd9LHsidHJhY2VJZCI6IjRmODQ4ZjZlNGU0Y2UwYWJkMGVjMGU4ODUxYTM1ZGEwIiwic3BhbklkIjoiOTk0OTQ3MzA0ZTQzYjMyMSIsIm5hbWUiOiJhaS5nZW5lcmF0ZVRleHQiLCJraW5kIjoxLCJzdGFydFRpbWVVbml4TmFubyI6IjE3OTIyNjk5MTk5ODcwMDAwMDAiLCJlbmRUaW1lVW5peE5hbm8iOiIxNzkyMjY5OTE5OTk4MDAwMDAwIiwiYXR0cmlidXRlcyI6W3sia2V5Ijoib3BlcmF0aW9uLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImFpLmdlbmVyYXRlVGV4dCBhbnN3ZXIifX0seyJrZXkiOiJyZXNvdXJjZS5uYW1lIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJhbnN3ZXIifX0seyJrZXkiOiJhaS5vcGVyYXRpb25JZCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiYWkuZ2VuZXJhdGVUZXh0In19LHsia2V5IjoiYWkudGVsZW1ldHJ5LmZ1bmN0aW9uSWQiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImFuc3dlciJ9fSx7ImtleSI6ImFpLm1vZGVsLnByb3ZpZGVyIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJvcGVuYWkuY2hhdCJ9fSx7ImtleSI6ImFpLm1vZGVsLmlkIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJncHQtNC4xLW1pbmkifX0seyJrZXkiOiJhaS5zZXR0aW5ncy5tYXhSZXRyaWVzIiwidmFsdWUiOnsiaW50VmFsdWUiOjB9fSx7ImtleSI6ImFpLnNldHRpbmdzLmNvbnRleHQudGVuYW50IiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJhY21lIn19LHsia2V5IjoiYWkucmVxdWVzdC5oZWFkZXJzLnVzZXItYWdlbnQiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImFpLzcuMC4xNDIifX0seyJrZXkiOiJhaS5yZXF1ZXN0LmhlYWRlcnMueC1maXh0dXJlLXNjZW5hcmlvIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJjaGF0In19LHsia2V5IjoiYWkucHJvbXB0IiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJ7XCJtZXNzYWdlc1wiOlt7XCJyb2xlXCI6XCJ1c2VyXCIsXCJjb250ZW50XCI6XCJTYXkgaGVsbG8gaW4gZml2ZSB3b3Jkcy5cIn1dfSJ9fSx7ImtleSI6ImFpLnJlc3BvbnNlLmZpbmlzaFJlYXNvbiIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoic3RvcCJ9fSx7ImtleSI6ImFpLnJlc3BvbnNlLnRleHQiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6IkhlbGxvISBIb3cgY2FuIEkgaGVscCB5b3UgdG9kYXk/In19LHsia2V5IjoiYWkucmVzcG9uc2UucHJvdmlkZXJNZXRhZGF0YSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoie1wib3BlbmFpXCI6e1wiYWNjZXB0ZWRQcmVkaWN0aW9uVG9rZW5zXCI6MCxcInJlamVjdGVkUHJlZGljdGlvblRva2Vuc1wiOjB9fSJ9fSx7ImtleSI6ImFpLnVzYWdlLmlucHV0VG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjE5fX0seyJrZXkiOiJhaS51c2FnZS5vdXRwdXRUb2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6OX19LHsia2V5IjoiYWkudXNhZ2UudG90YWxUb2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6Mjh9fSx7ImtleSI6ImFpLnVzYWdlLnJlYXNvbmluZ1Rva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjowfX0seyJrZXkiOiJhaS51c2FnZS5jYWNoZWRJbnB1dFRva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjo4fX0seyJrZXkiOiJhaS51c2FnZS5pbnB1dFRva2VuRGV0YWlscy5ub0NhY2hlVG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjExfX0seyJrZXkiOiJhaS51c2FnZS5pbnB1dFRva2VuRGV0YWlscy5jYWNoZVJlYWRUb2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6OH19LHsia2V5IjoiYWkudXNhZ2Uub3V0cHV0VG9rZW5EZXRhaWxzLnRleHRUb2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6OX19LHsia2V5IjoiYWkudXNhZ2Uub3V0cHV0VG9rZW5EZXRhaWxzLnJlYXNvbmluZ1Rva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjowfX1dLCJkcm9wcGVkQXR0cmlidXRlc0NvdW50IjowLCJldmVudHMiOltdLCJkcm9wcGVkRXZlbnRzQ291bnQiOjAsInN0YXR1cyI6eyJjb2RlIjowfSwibGlua3MiOltdLCJkcm9wcGVkTGlua3NDb3VudCI6MCwiZmxhZ3MiOjI1N31dfV19XX0="
+      },
+      "preview": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "spanlight-fixture"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "spanlight"
+                },
+                "spans": [
+                  {
+                    "traceId": "4f848f6e4e4ce0abd0ec0e8851a35da0",
+                    "spanId": "0b5e5548a5edc6c7",
+                    "parentSpanId": "994947304e43b321",
+                    "name": "ai.generateText.doGenerate",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269919988000000",
+                    "endTimeUnixNano": "1792269919996000000",
+                    "attributes": [
+                      {
+                        "key": "operation.name",
+                        "value": {
+                          "stringValue": "ai.generateText.doGenerate answer"
+                        }
+                      },
+                      {
+                        "key": "resource.name",
+                        "value": {
+                          "stringValue": "answer"
+                        }
+                      },
+                      {
+                        "key": "ai.operationId",
+                        "value": {
+                          "stringValue": "ai.generateText.doGenerate"
+                        }
+                      },
+                      {
+                        "key": "ai.telemetry.functionId",
+                        "value": {
+                          "stringValue": "answer"
+                        }
+                      },
+                      {
+                        "key": "ai.model.provider",
+                        "value": {
+                          "stringValue": "openai.chat"
+                        }
+                      },
+                      {
+                        "key": "ai.model.id",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "ai.settings.maxRetries",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.settings.context.tenant",
+                        "value": {
+                          "stringValue": "acme"
+                        }
+                      },
+                      {
+                        "key": "ai.request.headers.user-agent",
+                        "value": {
+                          "stringValue": "ai/7.0.142"
+                        }
+                      },
+                      {
+                        "key": "ai.request.headers.x-fixture-scenario",
+                        "value": {
+                          "stringValue": "chat"
+                        }
+                      },
+                      {
+                        "key": "ai.prompt.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Say hello in five words.\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "ai.prompt.toolChoice",
+                        "value": {
+                          "stringValue": "{\"type\":\"auto\"}"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.system",
+                        "value": {
+                          "stringValue": "openai.chat"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "ai.response.finishReason",
+                        "value": {
+                          "stringValue": "stop"
+                        }
+                      },
+                      {
+                        "key": "ai.response.text",
+                        "value": {
+                          "stringValue": "Hello! How can I help you today?"
+                        }
+                      },
+                      {
+                        "key": "ai.response.id",
+                        "value": {
+                          "stringValue": "chatcmpl-test0000000000000000000001"
+                        }
+                      },
+                      {
+                        "key": "ai.response.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "ai.response.timestamp",
+                        "value": {
+                          "stringValue": "2025-10-09T08:53:20.000Z"
+                        }
+                      },
+                      {
+                        "key": "ai.response.providerMetadata",
+                        "value": {
+                          "stringValue": "{\"openai\":{\"acceptedPredictionTokens\":0,\"rejectedPredictionTokens\":0}}"
+                        }
+                      },
+                      {
+                        "key": "ai.usage.inputTokens",
+                        "value": {
+                          "intValue": 19
+                        }
+                      },
+                      {
+                        "key": "ai.usage.outputTokens",
+                        "value": {
+                          "intValue": 9
+                        }
+                      },
+                      {
+                        "key": "ai.usage.totalTokens",
+                        "value": {
+                          "intValue": 28
+                        }
+                      },
+                      {
+                        "key": "ai.usage.reasoningTokens",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.usage.cachedInputTokens",
+                        "value": {
+                          "intValue": 8
+                        }
+                      },
+                      {
+                        "key": "ai.usage.inputTokenDetails.noCacheTokens",
+                        "value": {
+                          "intValue": 11
+                        }
+                      },
+                      {
+                        "key": "ai.usage.inputTokenDetails.cacheReadTokens",
+                        "value": {
+                          "intValue": 8
+                        }
+                      },
+                      {
+                        "key": "ai.usage.outputTokenDetails.textTokens",
+                        "value": {
+                          "intValue": 9
+                        }
+                      },
+                      {
+                        "key": "ai.usage.outputTokenDetails.reasoningTokens",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.finish_reasons",
+                        "value": {
+                          "arrayValue": {
+                            "values": [
+                              {
+                                "stringValue": "stop"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.id",
+                        "value": {
+                          "stringValue": "chatcmpl-test0000000000000000000001"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.input_tokens",
+                        "value": {
+                          "intValue": 19
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.output_tokens",
+                        "value": {
+                          "intValue": 9
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  },
+                  {
+                    "traceId": "4f848f6e4e4ce0abd0ec0e8851a35da0",
+                    "spanId": "994947304e43b321",
+                    "name": "ai.generateText",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269919987000000",
+                    "endTimeUnixNano": "1792269919998000000",
+                    "attributes": [
+                      {
+                        "key": "operation.name",
+                        "value": {
+                          "stringValue": "ai.generateText answer"
+                        }
+                      },
+                      {
+                        "key": "resource.name",
+                        "value": {
+                          "stringValue": "answer"
+                        }
+                      },
+                      {
+                        "key": "ai.operationId",
+                        "value": {
+                          "stringValue": "ai.generateText"
+                        }
+                      },
+                      {
+                        "key": "ai.telemetry.functionId",
+                        "value": {
+                          "stringValue": "answer"
+                        }
+                      },
+                      {
+                        "key": "ai.model.provider",
+                        "value": {
+                          "stringValue": "openai.chat"
+                        }
+                      },
+                      {
+                        "key": "ai.model.id",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "ai.settings.maxRetries",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.settings.context.tenant",
+                        "value": {
+                          "stringValue": "acme"
+                        }
+                      },
+                      {
+                        "key": "ai.request.headers.user-agent",
+                        "value": {
+                          "stringValue": "ai/7.0.142"
+                        }
+                      },
+                      {
+                        "key": "ai.request.headers.x-fixture-scenario",
+                        "value": {
+                          "stringValue": "chat"
+                        }
+                      },
+                      {
+                        "key": "ai.prompt",
+                        "value": {
+                          "stringValue": "{\"messages\":[{\"role\":\"user\",\"content\":\"Say hello in five words.\"}]}"
+                        }
+                      },
+                      {
+                        "key": "ai.response.finishReason",
+                        "value": {
+                          "stringValue": "stop"
+                        }
+                      },
+                      {
+                        "key": "ai.response.text",
+                        "value": {
+                          "stringValue": "Hello! How can I help you today?"
+                        }
+                      },
+                      {
+                        "key": "ai.response.providerMetadata",
+                        "value": {
+                          "stringValue": "{\"openai\":{\"acceptedPredictionTokens\":0,\"rejectedPredictionTokens\":0}}"
+                        }
+                      },
+                      {
+                        "key": "ai.usage.inputTokens",
+                        "value": {
+                          "intValue": 19
+                        }
+                      },
+                      {
+                        "key": "ai.usage.outputTokens",
+                        "value": {
+                          "intValue": 9
+                        }
+                      },
+                      {
+                        "key": "ai.usage.totalTokens",
+                        "value": {
+                          "intValue": 28
+                        }
+                      },
+                      {
+                        "key": "ai.usage.reasoningTokens",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.usage.cachedInputTokens",
+                        "value": {
+                          "intValue": 8
+                        }
+                      },
+                      {
+                        "key": "ai.usage.inputTokenDetails.noCacheTokens",
+                        "value": {
+                          "intValue": 11
+                        }
+                      },
+                      {
+                        "key": "ai.usage.inputTokenDetails.cacheReadTokens",
+                        "value": {
+                          "intValue": 8
+                        }
+                      },
+                      {
+                        "key": "ai.usage.outputTokenDetails.textTokens",
+                        "value": {
+                          "intValue": 9
+                        }
+                      },
+                      {
+                        "key": "ai.usage.outputTokenDetails.reasoningTokens",
+                        "value": {
+                          "intValue": 0
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accepted": 2,
+        "rejected": [],
+        "spans": [
+          {
+            "span_id": "0b5e5548a5edc6c7",
+            "parent_span_id": "994947304e43b321",
+            "convention": "vercel_ai",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini-2025-04-14",
+            "usage": {
+              "input_tokens": 19,
+              "output_tokens": 9,
+              "cached_tokens": 8,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "priced",
+            "finish_reason": "stop",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "ai.generateText.doGenerate",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {
+                "tenant": "acme"
+              }
+            }
+          },
+          {
+            "span_id": "994947304e43b321",
+            "parent_span_id": null,
+            "convention": "vercel_ai",
+            "kind": "chain",
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "usage": {
+              "input_tokens": 19,
+              "output_tokens": 9,
+              "cached_tokens": 8,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": true,
+            "usage_state": "rollup",
+            "finish_reason": "stop",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "ai.generateText",
+            "trace": {
+              "name": "answer",
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {
+                "tenant": "acme"
+              }
+            }
+          }
+        ],
+        "trace": {
+          "span_count": 2,
+          "input_tokens": 19,
+          "output_tokens": 9,
+          "has_unpriced": false
+        },
+        "loses": [
+          "cache_write_1h_tokens",
+          "time_to_first_token_ms"
+        ]
+      }
+    },
+    {
+      "name": "stream_text",
+      "export": {
+        "content_type": "application/json",
+        "body_base64": "eyJyZXNvdXJjZVNwYW5zIjpbeyJyZXNvdXJjZSI6eyJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJzZXJ2aWNlLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6InNwYW5saWdodC1maXh0dXJlIn19XSwiZHJvcHBlZEF0dHJpYnV0ZXNDb3VudCI6MH0sInNjb3BlU3BhbnMiOlt7InNjb3BlIjp7Im5hbWUiOiJzcGFubGlnaHQifSwic3BhbnMiOlt7InRyYWNlSWQiOiIyMmQyZDQ3NzkxYjg4MjBhZGZmZWQ5MGZjMTc2OTVlYyIsInNwYW5JZCI6IjU3OGMxMGUyNzc2NWFkYTciLCJwYXJlbnRTcGFuSWQiOiI5MjVhZTFiNTkzNTRmMjhjIiwibmFtZSI6ImFpLnN0cmVhbVRleHQuZG9TdHJlYW0iLCJraW5kIjoxLCJzdGFydFRpbWVVbml4TmFubyI6IjE3OTIyNjk5MjAxMzkwMDAwMDAiLCJlbmRUaW1lVW5peE5hbm8iOiIxNzkyMjY5OTIwMTU5MDAwMDAwIiwiYXR0cmlidXRlcyI6W3sia2V5Ijoib3BlcmF0aW9uLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImFpLnN0cmVhbVRleHQuZG9TdHJlYW0ifX0seyJrZXkiOiJhaS5vcGVyYXRpb25JZCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiYWkuc3RyZWFtVGV4dC5kb1N0cmVhbSJ9fSx7ImtleSI6ImFpLm1vZGVsLnByb3ZpZGVyIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJvcGVuYWkuY2hhdCJ9fSx7ImtleSI6ImFpLm1vZGVsLmlkIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJncHQtNC4xLW1pbmkifX0seyJrZXkiOiJhaS5zZXR0aW5ncy5tYXhSZXRyaWVzIiwidmFsdWUiOnsiaW50VmFsdWUiOjB9fSx7ImtleSI6ImFpLnJlcXVlc3QuaGVhZGVycy54LWZpeHR1cmUtc2NlbmFyaW8iLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImNoYXRfc3RyZWFtIn19LHsia2V5IjoiYWkucHJvbXB0Lm1lc3NhZ2VzIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJbe1wicm9sZVwiOlwidXNlclwiLFwiY29udGVudFwiOlt7XCJ0eXBlXCI6XCJ0ZXh0XCIsXCJ0ZXh0XCI6XCJTYXkgaGVsbG8gaW4gZml2ZSB3b3Jkcy5cIn1dfV0ifX0seyJrZXkiOiJhaS5wcm9tcHQudG9vbENob2ljZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoie1widHlwZVwiOlwiYXV0b1wifSJ9fSx7ImtleSI6Imdlbl9haS5zeXN0ZW0iLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6Im9wZW5haS5jaGF0In19LHsia2V5IjoiZ2VuX2FpLnJlcXVlc3QubW9kZWwiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImdwdC00LjEtbWluaSJ9fSx7ImtleSI6ImFpLnJlc3BvbnNlLmZpbmlzaFJlYXNvbiIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoic3RvcCJ9fSx7ImtleSI6ImFpLnJlc3BvbnNlLnRleHQiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6IkhlbGxvISBIb3cgY2FuIEkgaGVscCB5b3UgdG9kYXk/In19LHsia2V5IjoiYWkucmVzcG9uc2UuaWQiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImNoYXRjbXBsLXRlc3QwMDAwMDAwMDAwMDAwMDAwMDAwMTAxIn19LHsia2V5IjoiYWkucmVzcG9uc2UubW9kZWwiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImdwdC00LjEtbWluaS0yMDI1LTA0LTE0In19LHsia2V5IjoiYWkucmVzcG9uc2UudGltZXN0YW1wIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiIyMDI1LTEwLTA5VDA4OjU1OjAwLjAwMFoifX0seyJrZXkiOiJhaS5yZXNwb25zZS5wcm92aWRlck1ldGFkYXRhIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJ7XCJvcGVuYWlcIjp7XCJhY2NlcHRlZFByZWRpY3Rpb25Ub2tlbnNcIjowLFwicmVqZWN0ZWRQcmVkaWN0aW9uVG9rZW5zXCI6MH19In19LHsia2V5IjoiYWkucmVzcG9uc2UubXNUb0ZpcnN0Q2h1bmsiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6NH19LHsia2V5IjoiYWkucmVzcG9uc2UubXNUb0ZpbmlzaCIsInZhbHVlIjp7ImludFZhbHVlIjoxNH19LHsia2V5IjoiYWkucmVzcG9uc2UuYXZnT3V0cHV0VG9rZW5zUGVyU2Vjb25kIiwidmFsdWUiOnsiZG91YmxlVmFsdWUiOjY0Mi44NTcxNDI4NTcxNDI5fX0seyJrZXkiOiJhaS51c2FnZS5pbnB1dFRva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjoxOX19LHsia2V5IjoiYWkudXNhZ2Uub3V0cHV0VG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjl9fSx7ImtleSI6ImFpLnVzYWdlLnRvdGFsVG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjI4fX0seyJrZXkiOiJhaS51c2FnZS5yZWFzb25pbmdUb2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6MH19LHsia2V5IjoiYWkudXNhZ2UuY2FjaGVkSW5wdXRUb2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6OH19LHsia2V5IjoiYWkudXNhZ2UuaW5wdXRUb2tlbkRldGFpbHMubm9DYWNoZVRva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjoxMX19LHsia2V5IjoiYWkudXNhZ2UuaW5wdXRUb2tlbkRldGFpbHMuY2FjaGVSZWFkVG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjh9fSx7ImtleSI6ImFpLnVzYWdlLm91dHB1dFRva2VuRGV0YWlscy50ZXh0VG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjl9fSx7ImtleSI6ImFpLnVzYWdlLm91dHB1dFRva2VuRGV0YWlscy5yZWFzb25pbmdUb2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6MH19LHsia2V5IjoiZ2VuX2FpLnJlc3BvbnNlLmZpbmlzaF9yZWFzb25zIiwidmFsdWUiOnsiYXJyYXlWYWx1ZSI6eyJ2YWx1ZXMiOlt7InN0cmluZ1ZhbHVlIjoic3RvcCJ9XX19fSx7ImtleSI6Imdlbl9haS5yZXNwb25zZS5pZCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiY2hhdGNtcGwtdGVzdDAwMDAwMDAwMDAwMDAwMDAwMDAxMDEifX0seyJrZXkiOiJnZW5fYWkucmVzcG9uc2UubW9kZWwiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImdwdC00LjEtbWluaS0yMDI1LTA0LTE0In19LHsia2V5IjoiZ2VuX2FpLnVzYWdlLmlucHV0X3Rva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjoxOX19LHsia2V5IjoiZ2VuX2FpLnVzYWdlLm91dHB1dF90b2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6OX19XSwiZHJvcHBlZEF0dHJpYnV0ZXNDb3VudCI6MCwiZXZlbnRzIjpbeyJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJhaS5yZXNwb25zZS5tc1RvRmlyc3RDaHVuayIsInZhbHVlIjp7ImludFZhbHVlIjo0fX1dLCJuYW1lIjoiYWkuc3RyZWFtLmZpcnN0Q2h1bmsiLCJ0aW1lVW5peE5hbm8iOiIxNzkyMjY5OTIwMTU3MDAwMDAwIiwiZHJvcHBlZEF0dHJpYnV0ZXNDb3VudCI6MH0seyJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJhaS5yZXNwb25zZS5tc1RvRmluaXNoIiwidmFsdWUiOnsiaW50VmFsdWUiOjE0fX0seyJrZXkiOiJhaS5yZXNwb25zZS5hdmdPdXRwdXRUb2tlbnNQZXJTZWNvbmQiLCJ2YWx1ZSI6eyJkb3VibGVWYWx1ZSI6NjQyLjg1NzE0Mjg1NzE0Mjl9fV0sIm5hbWUiOiJhaS5zdHJlYW0uZmluaXNoIiwidGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyMDE1ODAwMDAwMCIsImRyb3BwZWRBdHRyaWJ1dGVzQ291bnQiOjB9XSwiZHJvcHBlZEV2ZW50c0NvdW50IjowLCJzdGF0dXMiOnsiY29kZSI6MH0sImxpbmtzIjpbXSwiZHJvcHBlZExpbmtzQ291bnQiOjAsImZsYWdzIjoyNTd9LHsidHJhY2VJZCI6IjIyZDJkNDc3OTFiODgyMGFkZmZlZDkwZmMxNzY5NWVjIiwic3BhbklkIjoiOTI1YWUxYjU5MzU0ZjI4YyIsIm5hbWUiOiJhaS5zdHJlYW1UZXh0Iiwia2luZCI6MSwic3RhcnRUaW1lVW5peE5hbm8iOiIxNzkyMjY5OTIwMTM3MDAwMDAwIiwiZW5kVGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyMDE2MTAwMDAwMCIsImF0dHJpYnV0ZXMiOlt7ImtleSI6Im9wZXJhdGlvbi5uYW1lIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJhaS5zdHJlYW1UZXh0In19LHsia2V5IjoiYWkub3BlcmF0aW9uSWQiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImFpLnN0cmVhbVRleHQifX0seyJrZXkiOiJhaS5tb2RlbC5wcm92aWRlciIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoib3BlbmFpLmNoYXQifX0seyJrZXkiOiJhaS5tb2RlbC5pZCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiZ3B0LTQuMS1taW5pIn19LHsia2V5IjoiYWkuc2V0dGluZ3MubWF4UmV0cmllcyIsInZhbHVlIjp7ImludFZhbHVlIjowfX0seyJrZXkiOiJhaS5yZXF1ZXN0LmhlYWRlcnMueC1maXh0dXJlLXNjZW5hcmlvIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJjaGF0X3N0cmVhbSJ9fSx7ImtleSI6ImFpLnByb21wdCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoie1wibWVzc2FnZXNcIjpbe1wicm9sZVwiOlwidXNlclwiLFwiY29udGVudFwiOlwiU2F5IGhlbGxvIGluIGZpdmUgd29yZHMuXCJ9XX0ifX0seyJrZXkiOiJhaS5yZXNwb25zZS5maW5pc2hSZWFzb24iLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6InN0b3AifX0seyJrZXkiOiJhaS5yZXNwb25zZS50ZXh0IiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJIZWxsbyEgSG93IGNhbiBJIGhlbHAgeW91IHRvZGF5PyJ9fSx7ImtleSI6ImFpLnJlc3BvbnNlLnByb3ZpZGVyTWV0YWRhdGEiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6IntcIm9wZW5haVwiOntcImFjY2VwdGVkUHJlZGljdGlvblRva2Vuc1wiOjAsXCJyZWplY3RlZFByZWRpY3Rpb25Ub2tlbnNcIjowfX0ifX0seyJrZXkiOiJhaS51c2FnZS5pbnB1dFRva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjoxOX19LHsia2V5IjoiYWkudXNhZ2Uub3V0cHV0VG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjl9fSx7ImtleSI6ImFpLnVzYWdlLnRvdGFsVG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjI4fX0seyJrZXkiOiJhaS51c2FnZS5yZWFzb25pbmdUb2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6MH19LHsia2V5IjoiYWkudXNhZ2UuY2FjaGVkSW5wdXRUb2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6OH19LHsia2V5IjoiYWkudXNhZ2UuaW5wdXRUb2tlbkRldGFpbHMubm9DYWNoZVRva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjoxMX19LHsia2V5IjoiYWkudXNhZ2UuaW5wdXRUb2tlbkRldGFpbHMuY2FjaGVSZWFkVG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjh9fSx7ImtleSI6ImFpLnVzYWdlLm91dHB1dFRva2VuRGV0YWlscy50ZXh0VG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjl9fSx7ImtleSI6ImFpLnVzYWdlLm91dHB1dFRva2VuRGV0YWlscy5yZWFzb25pbmdUb2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6MH19XSwiZHJvcHBlZEF0dHJpYnV0ZXNDb3VudCI6MCwiZXZlbnRzIjpbXSwiZHJvcHBlZEV2ZW50c0NvdW50IjowLCJzdGF0dXMiOnsiY29kZSI6MH0sImxpbmtzIjpbXSwiZHJvcHBlZExpbmtzQ291bnQiOjAsImZsYWdzIjoyNTd9XX1dfV19"
+      },
+      "preview": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "spanlight-fixture"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "spanlight"
+                },
+                "spans": [
+                  {
+                    "traceId": "22d2d47791b8820adffed90fc17695ec",
+                    "spanId": "578c10e27765ada7",
+                    "parentSpanId": "925ae1b59354f28c",
+                    "name": "ai.streamText.doStream",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269920139000000",
+                    "endTimeUnixNano": "1792269920159000000",
+                    "attributes": [
+                      {
+                        "key": "operation.name",
+                        "value": {
+                          "stringValue": "ai.streamText.doStream"
+                        }
+                      },
+                      {
+                        "key": "ai.operationId",
+                        "value": {
+                          "stringValue": "ai.streamText.doStream"
+                        }
+                      },
+                      {
+                        "key": "ai.model.provider",
+                        "value": {
+                          "stringValue": "openai.chat"
+                        }
+                      },
+                      {
+                        "key": "ai.model.id",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "ai.settings.maxRetries",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.request.headers.x-fixture-scenario",
+                        "value": {
+                          "stringValue": "chat_stream"
+                        }
+                      },
+                      {
+                        "key": "ai.prompt.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Say hello in five words.\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "ai.prompt.toolChoice",
+                        "value": {
+                          "stringValue": "{\"type\":\"auto\"}"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.system",
+                        "value": {
+                          "stringValue": "openai.chat"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "ai.response.finishReason",
+                        "value": {
+                          "stringValue": "stop"
+                        }
+                      },
+                      {
+                        "key": "ai.response.text",
+                        "value": {
+                          "stringValue": "Hello! How can I help you today?"
+                        }
+                      },
+                      {
+                        "key": "ai.response.id",
+                        "value": {
+                          "stringValue": "chatcmpl-test0000000000000000000101"
+                        }
+                      },
+                      {
+                        "key": "ai.response.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "ai.response.timestamp",
+                        "value": {
+                          "stringValue": "2025-10-09T08:55:00.000Z"
+                        }
+                      },
+                      {
+                        "key": "ai.response.providerMetadata",
+                        "value": {
+                          "stringValue": "{\"openai\":{\"acceptedPredictionTokens\":0,\"rejectedPredictionTokens\":0}}"
+                        }
+                      },
+                      {
+                        "key": "ai.response.msToFirstChunk",
+                        "value": {
+                          "intValue": 4
+                        }
+                      },
+                      {
+                        "key": "ai.response.msToFinish",
+                        "value": {
+                          "intValue": 14
+                        }
+                      },
+                      {
+                        "key": "ai.response.avgOutputTokensPerSecond",
+                        "value": {
+                          "doubleValue": 642.8571428571429
+                        }
+                      },
+                      {
+                        "key": "ai.usage.inputTokens",
+                        "value": {
+                          "intValue": 19
+                        }
+                      },
+                      {
+                        "key": "ai.usage.outputTokens",
+                        "value": {
+                          "intValue": 9
+                        }
+                      },
+                      {
+                        "key": "ai.usage.totalTokens",
+                        "value": {
+                          "intValue": 28
+                        }
+                      },
+                      {
+                        "key": "ai.usage.reasoningTokens",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.usage.cachedInputTokens",
+                        "value": {
+                          "intValue": 8
+                        }
+                      },
+                      {
+                        "key": "ai.usage.inputTokenDetails.noCacheTokens",
+                        "value": {
+                          "intValue": 11
+                        }
+                      },
+                      {
+                        "key": "ai.usage.inputTokenDetails.cacheReadTokens",
+                        "value": {
+                          "intValue": 8
+                        }
+                      },
+                      {
+                        "key": "ai.usage.outputTokenDetails.textTokens",
+                        "value": {
+                          "intValue": 9
+                        }
+                      },
+                      {
+                        "key": "ai.usage.outputTokenDetails.reasoningTokens",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.finish_reasons",
+                        "value": {
+                          "arrayValue": {
+                            "values": [
+                              {
+                                "stringValue": "stop"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.id",
+                        "value": {
+                          "stringValue": "chatcmpl-test0000000000000000000101"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.input_tokens",
+                        "value": {
+                          "intValue": 19
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.output_tokens",
+                        "value": {
+                          "intValue": 9
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [
+                      {
+                        "attributes": [
+                          {
+                            "key": "ai.response.msToFirstChunk",
+                            "value": {
+                              "intValue": 4
+                            }
+                          }
+                        ],
+                        "name": "ai.stream.firstChunk",
+                        "timeUnixNano": "1792269920157000000",
+                        "droppedAttributesCount": 0
+                      },
+                      {
+                        "attributes": [
+                          {
+                            "key": "ai.response.msToFinish",
+                            "value": {
+                              "intValue": 14
+                            }
+                          },
+                          {
+                            "key": "ai.response.avgOutputTokensPerSecond",
+                            "value": {
+                              "doubleValue": 642.8571428571429
+                            }
+                          }
+                        ],
+                        "name": "ai.stream.finish",
+                        "timeUnixNano": "1792269920158000000",
+                        "droppedAttributesCount": 0
+                      }
+                    ],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  },
+                  {
+                    "traceId": "22d2d47791b8820adffed90fc17695ec",
+                    "spanId": "925ae1b59354f28c",
+                    "name": "ai.streamText",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269920137000000",
+                    "endTimeUnixNano": "1792269920161000000",
+                    "attributes": [
+                      {
+                        "key": "operation.name",
+                        "value": {
+                          "stringValue": "ai.streamText"
+                        }
+                      },
+                      {
+                        "key": "ai.operationId",
+                        "value": {
+                          "stringValue": "ai.streamText"
+                        }
+                      },
+                      {
+                        "key": "ai.model.provider",
+                        "value": {
+                          "stringValue": "openai.chat"
+                        }
+                      },
+                      {
+                        "key": "ai.model.id",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "ai.settings.maxRetries",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.request.headers.x-fixture-scenario",
+                        "value": {
+                          "stringValue": "chat_stream"
+                        }
+                      },
+                      {
+                        "key": "ai.prompt",
+                        "value": {
+                          "stringValue": "{\"messages\":[{\"role\":\"user\",\"content\":\"Say hello in five words.\"}]}"
+                        }
+                      },
+                      {
+                        "key": "ai.response.finishReason",
+                        "value": {
+                          "stringValue": "stop"
+                        }
+                      },
+                      {
+                        "key": "ai.response.text",
+                        "value": {
+                          "stringValue": "Hello! How can I help you today?"
+                        }
+                      },
+                      {
+                        "key": "ai.response.providerMetadata",
+                        "value": {
+                          "stringValue": "{\"openai\":{\"acceptedPredictionTokens\":0,\"rejectedPredictionTokens\":0}}"
+                        }
+                      },
+                      {
+                        "key": "ai.usage.inputTokens",
+                        "value": {
+                          "intValue": 19
+                        }
+                      },
+                      {
+                        "key": "ai.usage.outputTokens",
+                        "value": {
+                          "intValue": 9
+                        }
+                      },
+                      {
+                        "key": "ai.usage.totalTokens",
+                        "value": {
+                          "intValue": 28
+                        }
+                      },
+                      {
+                        "key": "ai.usage.reasoningTokens",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.usage.cachedInputTokens",
+                        "value": {
+                          "intValue": 8
+                        }
+                      },
+                      {
+                        "key": "ai.usage.inputTokenDetails.noCacheTokens",
+                        "value": {
+                          "intValue": 11
+                        }
+                      },
+                      {
+                        "key": "ai.usage.inputTokenDetails.cacheReadTokens",
+                        "value": {
+                          "intValue": 8
+                        }
+                      },
+                      {
+                        "key": "ai.usage.outputTokenDetails.textTokens",
+                        "value": {
+                          "intValue": 9
+                        }
+                      },
+                      {
+                        "key": "ai.usage.outputTokenDetails.reasoningTokens",
+                        "value": {
+                          "intValue": 0
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accepted": 2,
+        "rejected": [],
+        "spans": [
+          {
+            "span_id": "578c10e27765ada7",
+            "parent_span_id": "925ae1b59354f28c",
+            "convention": "vercel_ai",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini-2025-04-14",
+            "usage": {
+              "input_tokens": 19,
+              "output_tokens": 9,
+              "cached_tokens": 8,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "priced",
+            "finish_reason": "stop",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": 4.0,
+            "status": "unset",
+            "error_class": null,
+            "operation": "ai.streamText.doStream",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "925ae1b59354f28c",
+            "parent_span_id": null,
+            "convention": "vercel_ai",
+            "kind": "chain",
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "usage": {
+              "input_tokens": 19,
+              "output_tokens": 9,
+              "cached_tokens": 8,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": true,
+            "usage_state": "rollup",
+            "finish_reason": "stop",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "ai.streamText",
+            "trace": {
+              "name": "ai.streamText",
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          }
+        ],
+        "trace": {
+          "span_count": 2,
+          "input_tokens": 19,
+          "output_tokens": 9,
+          "has_unpriced": false
+        },
+        "loses": [
+          "cache_write_1h_tokens"
+        ]
+      }
+    },
+    {
+      "name": "tool_call",
+      "export": {
+        "content_type": "application/json",
+        "body_base64": "eyJyZXNvdXJjZVNwYW5zIjpbeyJyZXNvdXJjZSI6eyJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJzZXJ2aWNlLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6InNwYW5saWdodC1maXh0dXJlIn19XSwiZHJvcHBlZEF0dHJpYnV0ZXNDb3VudCI6MH0sInNjb3BlU3BhbnMiOlt7InNjb3BlIjp7Im5hbWUiOiJzcGFubGlnaHQifSwic3BhbnMiOlt7InRyYWNlSWQiOiIxYjMxOTBlZTUwZWQ2NGI0OWEyMmJjMTVlYWFlODhhNCIsInNwYW5JZCI6IjQ3OTE2MGQ3MWEwYTNmMmEiLCJwYXJlbnRTcGFuSWQiOiIyZWM5Yjk3NWVmMTBmYmQ5IiwibmFtZSI6ImFpLnRvb2xDYWxsIiwia2luZCI6MSwic3RhcnRUaW1lVW5peE5hbm8iOiIxNzkyMjY5OTIwMzE1MDAwMDAwIiwiZW5kVGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyMDMyMzAwMDAwMCIsImF0dHJpYnV0ZXMiOlt7ImtleSI6Im9wZXJhdGlvbi5uYW1lIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJhaS50b29sQ2FsbCJ9fSx7ImtleSI6ImFpLm9wZXJhdGlvbklkIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJhaS50b29sQ2FsbCJ9fSx7ImtleSI6ImFpLnRvb2xDYWxsLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImdldF93ZWF0aGVyIn19LHsia2V5IjoiYWkudG9vbENhbGwuaWQiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImNhbGxfdGVzdDAwMDAwMDAwMDAwMDAwMDBhMSJ9fSx7ImtleSI6ImFpLnRvb2xDYWxsLmFyZ3MiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6IntcImNpdHlcIjpcIlBhcmlzXCIsXCJ1bml0XCI6XCJjZWxzaXVzXCJ9In19LHsia2V5IjoiYWkudG9vbENhbGwucmVzdWx0IiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJ7XCJjaXR5XCI6XCJQYXJpc1wiLFwidW5pdFwiOlwiY2Vsc2l1c1wiLFwiZm9yZWNhc3RcIjpcIm5vdCBhdmFpbGFibGUgaW4gZml4dHVyZXNcIn0ifX1dLCJkcm9wcGVkQXR0cmlidXRlc0NvdW50IjowLCJldmVudHMiOltdLCJkcm9wcGVkRXZlbnRzQ291bnQiOjAsInN0YXR1cyI6eyJjb2RlIjowfSwibGlua3MiOltdLCJkcm9wcGVkTGlua3NDb3VudCI6MCwiZmxhZ3MiOjI1N30seyJ0cmFjZUlkIjoiMWIzMTkwZWU1MGVkNjRiNDlhMjJiYzE1ZWFhZTg4YTQiLCJzcGFuSWQiOiIwMTA2NDY4MzYzOWM4MGEwIiwicGFyZW50U3BhbklkIjoiMmVjOWI5NzVlZjEwZmJkOSIsIm5hbWUiOiJhaS50b29sQ2FsbCIsImtpbmQiOjEsInN0YXJ0VGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyMDMxNTAwMDAwMCIsImVuZFRpbWVVbml4TmFubyI6IjE3OTIyNjk5MjAzMjIwMDAwMDAiLCJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJvcGVyYXRpb24ubmFtZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiYWkudG9vbENhbGwifX0seyJrZXkiOiJhaS5vcGVyYXRpb25JZCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiYWkudG9vbENhbGwifX0seyJrZXkiOiJhaS50b29sQ2FsbC5uYW1lIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJnZXRfd2VhdGhlciJ9fSx7ImtleSI6ImFpLnRvb2xDYWxsLmlkIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJjYWxsX3Rlc3QwMDAwMDAwMDAwMDAwMDAwYjIifX0seyJrZXkiOiJhaS50b29sQ2FsbC5hcmdzIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJ7XCJjaXR5XCI6XCJUb2t5b1wiLFwidW5pdFwiOlwiY2Vsc2l1c1wifSJ9fSx7ImtleSI6ImFpLnRvb2xDYWxsLnJlc3VsdCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoie1wiY2l0eVwiOlwiVG9reW9cIixcInVuaXRcIjpcImNlbHNpdXNcIixcImZvcmVjYXN0XCI6XCJub3QgYXZhaWxhYmxlIGluIGZpeHR1cmVzXCJ9In19XSwiZHJvcHBlZEF0dHJpYnV0ZXNDb3VudCI6MCwiZXZlbnRzIjpbXSwiZHJvcHBlZEV2ZW50c0NvdW50IjowLCJzdGF0dXMiOnsiY29kZSI6MH0sImxpbmtzIjpbXSwiZHJvcHBlZExpbmtzQ291bnQiOjAsImZsYWdzIjoyNTd9LHsidHJhY2VJZCI6IjFiMzE5MGVlNTBlZDY0YjQ5YTIyYmMxNWVhYWU4OGE0Iiwic3BhbklkIjoiMmVjOWI5NzVlZjEwZmJkOSIsInBhcmVudFNwYW5JZCI6ImYxNTQ3NWFhMDYyNDM1ZWMiLCJuYW1lIjoiYWkuZ2VuZXJhdGVUZXh0LmRvR2VuZXJhdGUiLCJraW5kIjoxLCJzdGFydFRpbWVVbml4TmFubyI6IjE3OTIyNjk5MjAzMDQwMDAwMDAiLCJlbmRUaW1lVW5peE5hbm8iOiIxNzkyMjY5OTIwMzIyMDAwMDAwIiwiYXR0cmlidXRlcyI6W3sia2V5Ijoib3BlcmF0aW9uLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImFpLmdlbmVyYXRlVGV4dC5kb0dlbmVyYXRlIn19LHsia2V5IjoiYWkub3BlcmF0aW9uSWQiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImFpLmdlbmVyYXRlVGV4dC5kb0dlbmVyYXRlIn19LHsia2V5IjoiYWkubW9kZWwucHJvdmlkZXIiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6Im9wZW5haS5jaGF0In19LHsia2V5IjoiYWkubW9kZWwuaWQiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImdwdC00LjEtbWluaSJ9fSx7ImtleSI6ImFpLnNldHRpbmdzLm1heFJldHJpZXMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6MH19LHsia2V5IjoiYWkucmVxdWVzdC5oZWFkZXJzLnVzZXItYWdlbnQiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImFpLzcuMC4xNDIifX0seyJrZXkiOiJhaS5yZXF1ZXN0LmhlYWRlcnMueC1maXh0dXJlLXNjZW5hcmlvIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJjaGF0X3Rvb2xzIn19LHsia2V5IjoiYWkucHJvbXB0Lm1lc3NhZ2VzIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJbe1wicm9sZVwiOlwidXNlclwiLFwiY29udGVudFwiOlt7XCJ0eXBlXCI6XCJ0ZXh0XCIsXCJ0ZXh0XCI6XCJXaGF0IGlzIHRoZSB3ZWF0aGVyIGluIFBhcmlzIGFuZCBUb2t5bz8gVXNlIHRoZSB0b29sLlwifV19XSJ9fSx7ImtleSI6ImFpLnByb21wdC50b29scyIsInZhbHVlIjp7ImFycmF5VmFsdWUiOnsidmFsdWVzIjpbeyJzdHJpbmdWYWx1ZSI6IntcInR5cGVcIjpcImZ1bmN0aW9uXCIsXCJuYW1lXCI6XCJnZXRfd2VhdGhlclwiLFwiaW5wdXRTY2hlbWFcIjp7XCIkc2NoZW1hXCI6XCJodHRwOi8vanNvbi1zY2hlbWEub3JnL2RyYWZ0LTA3L3NjaGVtYSNcIixcInR5cGVcIjpcIm9iamVjdFwiLFwicHJvcGVydGllc1wiOntcImNpdHlcIjp7XCJ0eXBlXCI6XCJzdHJpbmdcIn0sXCJ1bml0XCI6e1widHlwZVwiOlwic3RyaW5nXCJ9fSxcInJlcXVpcmVkXCI6W1wiY2l0eVwiLFwidW5pdFwiXSxcImFkZGl0aW9uYWxQcm9wZXJ0aWVzXCI6ZmFsc2V9LFwiZGVzY3JpcHRpb25cIjpcIkdldCB0aGUgY3VycmVudCB3ZWF0aGVyIGZvciBhIGNpdHkuXCJ9In1dfX19LHsia2V5IjoiYWkucHJvbXB0LnRvb2xDaG9pY2UiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6IntcInR5cGVcIjpcImF1dG9cIn0ifX0seyJrZXkiOiJnZW5fYWkuc3lzdGVtIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJvcGVuYWkuY2hhdCJ9fSx7ImtleSI6Imdlbl9haS5yZXF1ZXN0Lm1vZGVsIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJncHQtNC4xLW1pbmkifX0seyJrZXkiOiJhaS5yZXNwb25zZS5maW5pc2hSZWFzb24iLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6InRvb2wtY2FsbHMifX0seyJrZXkiOiJhaS5yZXNwb25zZS50ZXh0IiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiIifX0seyJrZXkiOiJhaS5yZXNwb25zZS50b29sQ2FsbHMiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6Ilt7XCJ0b29sQ2FsbElkXCI6XCJjYWxsX3Rlc3QwMDAwMDAwMDAwMDAwMDAwYTFcIixcInRvb2xOYW1lXCI6XCJnZXRfd2VhdGhlclwiLFwiaW5wdXRcIjp7XCJjaXR5XCI6XCJQYXJpc1wiLFwidW5pdFwiOlwiY2Vsc2l1c1wifX0se1widG9vbENhbGxJZFwiOlwiY2FsbF90ZXN0MDAwMDAwMDAwMDAwMDAwMGIyXCIsXCJ0b29sTmFtZVwiOlwiZ2V0X3dlYXRoZXJcIixcImlucHV0XCI6e1wiY2l0eVwiOlwiVG9reW9cIixcInVuaXRcIjpcImNlbHNpdXNcIn19XSJ9fSx7ImtleSI6ImFpLnJlc3BvbnNlLmlkIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJjaGF0Y21wbC10ZXN0MDAwMDAwMDAwMDAwMDAwMDAwMDAwMiJ9fSx7ImtleSI6ImFpLnJlc3BvbnNlLm1vZGVsIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJncHQtNC4xLW1pbmktMjAyNS0wNC0xNCJ9fSx7ImtleSI6ImFpLnJlc3BvbnNlLnRpbWVzdGFtcCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiMjAyNS0xMC0wOVQwODo1MzoyMS4wMDBaIn19LHsia2V5IjoiYWkucmVzcG9uc2UucHJvdmlkZXJNZXRhZGF0YSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoie1wib3BlbmFpXCI6e1wiYWNjZXB0ZWRQcmVkaWN0aW9uVG9rZW5zXCI6MCxcInJlamVjdGVkUHJlZGljdGlvblRva2Vuc1wiOjB9fSJ9fSx7ImtleSI6ImFpLnVzYWdlLmlucHV0VG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjgyfX0seyJrZXkiOiJhaS51c2FnZS5vdXRwdXRUb2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6NDZ9fSx7ImtleSI6ImFpLnVzYWdlLnRvdGFsVG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjEyOH19LHsia2V5IjoiYWkudXNhZ2UucmVhc29uaW5nVG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjB9fSx7ImtleSI6ImFpLnVzYWdlLmNhY2hlZElucHV0VG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjB9fSx7ImtleSI6ImFpLnVzYWdlLmlucHV0VG9rZW5EZXRhaWxzLm5vQ2FjaGVUb2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6ODJ9fSx7ImtleSI6ImFpLnVzYWdlLmlucHV0VG9rZW5EZXRhaWxzLmNhY2hlUmVhZFRva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjowfX0seyJrZXkiOiJhaS51c2FnZS5vdXRwdXRUb2tlbkRldGFpbHMudGV4dFRva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjo0Nn19LHsia2V5IjoiYWkudXNhZ2Uub3V0cHV0VG9rZW5EZXRhaWxzLnJlYXNvbmluZ1Rva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjowfX0seyJrZXkiOiJnZW5fYWkucmVzcG9uc2UuZmluaXNoX3JlYXNvbnMiLCJ2YWx1ZSI6eyJhcnJheVZhbHVlIjp7InZhbHVlcyI6W3sic3RyaW5nVmFsdWUiOiJ0b29sLWNhbGxzIn1dfX19LHsia2V5IjoiZ2VuX2FpLnJlc3BvbnNlLmlkIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJjaGF0Y21wbC10ZXN0MDAwMDAwMDAwMDAwMDAwMDAwMDAwMiJ9fSx7ImtleSI6Imdlbl9haS5yZXNwb25zZS5tb2RlbCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiZ3B0LTQuMS1taW5pLTIwMjUtMDQtMTQifX0seyJrZXkiOiJnZW5fYWkudXNhZ2UuaW5wdXRfdG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjgyfX0seyJrZXkiOiJnZW5fYWkudXNhZ2Uub3V0cHV0X3Rva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjo0Nn19XSwiZHJvcHBlZEF0dHJpYnV0ZXNDb3VudCI6MCwiZXZlbnRzIjpbXSwiZHJvcHBlZEV2ZW50c0NvdW50IjowLCJzdGF0dXMiOnsiY29kZSI6MH0sImxpbmtzIjpbXSwiZHJvcHBlZExpbmtzQ291bnQiOjAsImZsYWdzIjoyNTd9LHsidHJhY2VJZCI6IjFiMzE5MGVlNTBlZDY0YjQ5YTIyYmMxNWVhYWU4OGE0Iiwic3BhbklkIjoiZjE1NDc1YWEwNjI0MzVlYyIsIm5hbWUiOiJhaS5nZW5lcmF0ZVRleHQiLCJraW5kIjoxLCJzdGFydFRpbWVVbml4TmFubyI6IjE3OTIyNjk5MjAzMDIwMDAwMDAiLCJlbmRUaW1lVW5peE5hbm8iOiIxNzkyMjY5OTIwMzIzMDAwMDAwIiwiYXR0cmlidXRlcyI6W3sia2V5Ijoib3BlcmF0aW9uLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImFpLmdlbmVyYXRlVGV4dCJ9fSx7ImtleSI6ImFpLm9wZXJhdGlvbklkIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJhaS5nZW5lcmF0ZVRleHQifX0seyJrZXkiOiJhaS5tb2RlbC5wcm92aWRlciIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoib3BlbmFpLmNoYXQifX0seyJrZXkiOiJhaS5tb2RlbC5pZCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiZ3B0LTQuMS1taW5pIn19LHsia2V5IjoiYWkuc2V0dGluZ3MubWF4UmV0cmllcyIsInZhbHVlIjp7ImludFZhbHVlIjowfX0seyJrZXkiOiJhaS5yZXF1ZXN0LmhlYWRlcnMudXNlci1hZ2VudCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiYWkvNy4wLjE0MiJ9fSx7ImtleSI6ImFpLnJlcXVlc3QuaGVhZGVycy54LWZpeHR1cmUtc2NlbmFyaW8iLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImNoYXRfdG9vbHMifX0seyJrZXkiOiJhaS5wcm9tcHQiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6IntcIm1lc3NhZ2VzXCI6W3tcInJvbGVcIjpcInVzZXJcIixcImNvbnRlbnRcIjpcIldoYXQgaXMgdGhlIHdlYXRoZXIgaW4gUGFyaXMgYW5kIFRva3lvPyBVc2UgdGhlIHRvb2wuXCJ9XX0ifX0seyJrZXkiOiJhaS5yZXNwb25zZS5maW5pc2hSZWFzb24iLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6InRvb2wtY2FsbHMifX0seyJrZXkiOiJhaS5yZXNwb25zZS50ZXh0IiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiIifX0seyJrZXkiOiJhaS5yZXNwb25zZS50b29sQ2FsbHMiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6Ilt7XCJ0b29sQ2FsbElkXCI6XCJjYWxsX3Rlc3QwMDAwMDAwMDAwMDAwMDAwYTFcIixcInRvb2xOYW1lXCI6XCJnZXRfd2VhdGhlclwiLFwiaW5wdXRcIjp7XCJjaXR5XCI6XCJQYXJpc1wiLFwidW5pdFwiOlwiY2Vsc2l1c1wifX0se1widG9vbENhbGxJZFwiOlwiY2FsbF90ZXN0MDAwMDAwMDAwMDAwMDAwMGIyXCIsXCJ0b29sTmFtZVwiOlwiZ2V0X3dlYXRoZXJcIixcImlucHV0XCI6e1wiY2l0eVwiOlwiVG9reW9cIixcInVuaXRcIjpcImNlbHNpdXNcIn19XSJ9fSx7ImtleSI6ImFpLnJlc3BvbnNlLnByb3ZpZGVyTWV0YWRhdGEiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6IntcIm9wZW5haVwiOntcImFjY2VwdGVkUHJlZGljdGlvblRva2Vuc1wiOjAsXCJyZWplY3RlZFByZWRpY3Rpb25Ub2tlbnNcIjowfX0ifX0seyJrZXkiOiJhaS51c2FnZS5pbnB1dFRva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjo4Mn19LHsia2V5IjoiYWkudXNhZ2Uub3V0cHV0VG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjQ2fX0seyJrZXkiOiJhaS51c2FnZS50b3RhbFRva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjoxMjh9fSx7ImtleSI6ImFpLnVzYWdlLnJlYXNvbmluZ1Rva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjowfX0seyJrZXkiOiJhaS51c2FnZS5jYWNoZWRJbnB1dFRva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjowfX0seyJrZXkiOiJhaS51c2FnZS5pbnB1dFRva2VuRGV0YWlscy5ub0NhY2hlVG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjgyfX0seyJrZXkiOiJhaS51c2FnZS5pbnB1dFRva2VuRGV0YWlscy5jYWNoZVJlYWRUb2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6MH19LHsia2V5IjoiYWkudXNhZ2Uub3V0cHV0VG9rZW5EZXRhaWxzLnRleHRUb2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6NDZ9fSx7ImtleSI6ImFpLnVzYWdlLm91dHB1dFRva2VuRGV0YWlscy5yZWFzb25pbmdUb2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6MH19XSwiZHJvcHBlZEF0dHJpYnV0ZXNDb3VudCI6MCwiZXZlbnRzIjpbXSwiZHJvcHBlZEV2ZW50c0NvdW50IjowLCJzdGF0dXMiOnsiY29kZSI6MH0sImxpbmtzIjpbXSwiZHJvcHBlZExpbmtzQ291bnQiOjAsImZsYWdzIjoyNTd9XX1dfV19"
+      },
+      "preview": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "spanlight-fixture"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "spanlight"
+                },
+                "spans": [
+                  {
+                    "traceId": "1b3190ee50ed64b49a22bc15eaae88a4",
+                    "spanId": "479160d71a0a3f2a",
+                    "parentSpanId": "2ec9b975ef10fbd9",
+                    "name": "ai.toolCall",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269920315000000",
+                    "endTimeUnixNano": "1792269920323000000",
+                    "attributes": [
+                      {
+                        "key": "operation.name",
+                        "value": {
+                          "stringValue": "ai.toolCall"
+                        }
+                      },
+                      {
+                        "key": "ai.operationId",
+                        "value": {
+                          "stringValue": "ai.toolCall"
+                        }
+                      },
+                      {
+                        "key": "ai.toolCall.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "ai.toolCall.id",
+                        "value": {
+                          "stringValue": "call_test0000000000000000a1"
+                        }
+                      },
+                      {
+                        "key": "ai.toolCall.args",
+                        "value": {
+                          "stringValue": "{\"city\":\"Paris\",\"unit\":\"celsius\"}"
+                        }
+                      },
+                      {
+                        "key": "ai.toolCall.result",
+                        "value": {
+                          "stringValue": "{\"city\":\"Paris\",\"unit\":\"celsius\",\"forecast\":\"not available in fixtures\"}"
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  },
+                  {
+                    "traceId": "1b3190ee50ed64b49a22bc15eaae88a4",
+                    "spanId": "01064683639c80a0",
+                    "parentSpanId": "2ec9b975ef10fbd9",
+                    "name": "ai.toolCall",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269920315000000",
+                    "endTimeUnixNano": "1792269920322000000",
+                    "attributes": [
+                      {
+                        "key": "operation.name",
+                        "value": {
+                          "stringValue": "ai.toolCall"
+                        }
+                      },
+                      {
+                        "key": "ai.operationId",
+                        "value": {
+                          "stringValue": "ai.toolCall"
+                        }
+                      },
+                      {
+                        "key": "ai.toolCall.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "ai.toolCall.id",
+                        "value": {
+                          "stringValue": "call_test0000000000000000b2"
+                        }
+                      },
+                      {
+                        "key": "ai.toolCall.args",
+                        "value": {
+                          "stringValue": "{\"city\":\"Tokyo\",\"unit\":\"celsius\"}"
+                        }
+                      },
+                      {
+                        "key": "ai.toolCall.result",
+                        "value": {
+                          "stringValue": "{\"city\":\"Tokyo\",\"unit\":\"celsius\",\"forecast\":\"not available in fixtures\"}"
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  },
+                  {
+                    "traceId": "1b3190ee50ed64b49a22bc15eaae88a4",
+                    "spanId": "2ec9b975ef10fbd9",
+                    "parentSpanId": "f15475aa062435ec",
+                    "name": "ai.generateText.doGenerate",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269920304000000",
+                    "endTimeUnixNano": "1792269920322000000",
+                    "attributes": [
+                      {
+                        "key": "operation.name",
+                        "value": {
+                          "stringValue": "ai.generateText.doGenerate"
+                        }
+                      },
+                      {
+                        "key": "ai.operationId",
+                        "value": {
+                          "stringValue": "ai.generateText.doGenerate"
+                        }
+                      },
+                      {
+                        "key": "ai.model.provider",
+                        "value": {
+                          "stringValue": "openai.chat"
+                        }
+                      },
+                      {
+                        "key": "ai.model.id",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "ai.settings.maxRetries",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.request.headers.user-agent",
+                        "value": {
+                          "stringValue": "ai/7.0.142"
+                        }
+                      },
+                      {
+                        "key": "ai.request.headers.x-fixture-scenario",
+                        "value": {
+                          "stringValue": "chat_tools"
+                        }
+                      },
+                      {
+                        "key": "ai.prompt.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"What is the weather in Paris and Tokyo? Use the tool.\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "ai.prompt.tools",
+                        "value": {
+                          "arrayValue": {
+                            "values": [
+                              {
+                                "stringValue": "{\"type\":\"function\",\"name\":\"get_weather\",\"inputSchema\":{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"},\"unit\":{\"type\":\"string\"}},\"required\":[\"city\",\"unit\"],\"additionalProperties\":false},\"description\":\"Get the current weather for a city.\"}"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "key": "ai.prompt.toolChoice",
+                        "value": {
+                          "stringValue": "{\"type\":\"auto\"}"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.system",
+                        "value": {
+                          "stringValue": "openai.chat"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "ai.response.finishReason",
+                        "value": {
+                          "stringValue": "tool-calls"
+                        }
+                      },
+                      {
+                        "key": "ai.response.text",
+                        "value": {
+                          "stringValue": ""
+                        }
+                      },
+                      {
+                        "key": "ai.response.toolCalls",
+                        "value": {
+                          "stringValue": "[{\"toolCallId\":\"call_test0000000000000000a1\",\"toolName\":\"get_weather\",\"input\":{\"city\":\"Paris\",\"unit\":\"celsius\"}},{\"toolCallId\":\"call_test0000000000000000b2\",\"toolName\":\"get_weather\",\"input\":{\"city\":\"Tokyo\",\"unit\":\"celsius\"}}]"
+                        }
+                      },
+                      {
+                        "key": "ai.response.id",
+                        "value": {
+                          "stringValue": "chatcmpl-test0000000000000000000002"
+                        }
+                      },
+                      {
+                        "key": "ai.response.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "ai.response.timestamp",
+                        "value": {
+                          "stringValue": "2025-10-09T08:53:21.000Z"
+                        }
+                      },
+                      {
+                        "key": "ai.response.providerMetadata",
+                        "value": {
+                          "stringValue": "{\"openai\":{\"acceptedPredictionTokens\":0,\"rejectedPredictionTokens\":0}}"
+                        }
+                      },
+                      {
+                        "key": "ai.usage.inputTokens",
+                        "value": {
+                          "intValue": 82
+                        }
+                      },
+                      {
+                        "key": "ai.usage.outputTokens",
+                        "value": {
+                          "intValue": 46
+                        }
+                      },
+                      {
+                        "key": "ai.usage.totalTokens",
+                        "value": {
+                          "intValue": 128
+                        }
+                      },
+                      {
+                        "key": "ai.usage.reasoningTokens",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.usage.cachedInputTokens",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.usage.inputTokenDetails.noCacheTokens",
+                        "value": {
+                          "intValue": 82
+                        }
+                      },
+                      {
+                        "key": "ai.usage.inputTokenDetails.cacheReadTokens",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.usage.outputTokenDetails.textTokens",
+                        "value": {
+                          "intValue": 46
+                        }
+                      },
+                      {
+                        "key": "ai.usage.outputTokenDetails.reasoningTokens",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.finish_reasons",
+                        "value": {
+                          "arrayValue": {
+                            "values": [
+                              {
+                                "stringValue": "tool-calls"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.id",
+                        "value": {
+                          "stringValue": "chatcmpl-test0000000000000000000002"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.input_tokens",
+                        "value": {
+                          "intValue": 82
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.output_tokens",
+                        "value": {
+                          "intValue": 46
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  },
+                  {
+                    "traceId": "1b3190ee50ed64b49a22bc15eaae88a4",
+                    "spanId": "f15475aa062435ec",
+                    "name": "ai.generateText",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269920302000000",
+                    "endTimeUnixNano": "1792269920323000000",
+                    "attributes": [
+                      {
+                        "key": "operation.name",
+                        "value": {
+                          "stringValue": "ai.generateText"
+                        }
+                      },
+                      {
+                        "key": "ai.operationId",
+                        "value": {
+                          "stringValue": "ai.generateText"
+                        }
+                      },
+                      {
+                        "key": "ai.model.provider",
+                        "value": {
+                          "stringValue": "openai.chat"
+                        }
+                      },
+                      {
+                        "key": "ai.model.id",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "ai.settings.maxRetries",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.request.headers.user-agent",
+                        "value": {
+                          "stringValue": "ai/7.0.142"
+                        }
+                      },
+                      {
+                        "key": "ai.request.headers.x-fixture-scenario",
+                        "value": {
+                          "stringValue": "chat_tools"
+                        }
+                      },
+                      {
+                        "key": "ai.prompt",
+                        "value": {
+                          "stringValue": "{\"messages\":[{\"role\":\"user\",\"content\":\"What is the weather in Paris and Tokyo? Use the tool.\"}]}"
+                        }
+                      },
+                      {
+                        "key": "ai.response.finishReason",
+                        "value": {
+                          "stringValue": "tool-calls"
+                        }
+                      },
+                      {
+                        "key": "ai.response.text",
+                        "value": {
+                          "stringValue": ""
+                        }
+                      },
+                      {
+                        "key": "ai.response.toolCalls",
+                        "value": {
+                          "stringValue": "[{\"toolCallId\":\"call_test0000000000000000a1\",\"toolName\":\"get_weather\",\"input\":{\"city\":\"Paris\",\"unit\":\"celsius\"}},{\"toolCallId\":\"call_test0000000000000000b2\",\"toolName\":\"get_weather\",\"input\":{\"city\":\"Tokyo\",\"unit\":\"celsius\"}}]"
+                        }
+                      },
+                      {
+                        "key": "ai.response.providerMetadata",
+                        "value": {
+                          "stringValue": "{\"openai\":{\"acceptedPredictionTokens\":0,\"rejectedPredictionTokens\":0}}"
+                        }
+                      },
+                      {
+                        "key": "ai.usage.inputTokens",
+                        "value": {
+                          "intValue": 82
+                        }
+                      },
+                      {
+                        "key": "ai.usage.outputTokens",
+                        "value": {
+                          "intValue": 46
+                        }
+                      },
+                      {
+                        "key": "ai.usage.totalTokens",
+                        "value": {
+                          "intValue": 128
+                        }
+                      },
+                      {
+                        "key": "ai.usage.reasoningTokens",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.usage.cachedInputTokens",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.usage.inputTokenDetails.noCacheTokens",
+                        "value": {
+                          "intValue": 82
+                        }
+                      },
+                      {
+                        "key": "ai.usage.inputTokenDetails.cacheReadTokens",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "ai.usage.outputTokenDetails.textTokens",
+                        "value": {
+                          "intValue": 46
+                        }
+                      },
+                      {
+                        "key": "ai.usage.outputTokenDetails.reasoningTokens",
+                        "value": {
+                          "intValue": 0
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accepted": 4,
+        "rejected": [],
+        "spans": [
+          {
+            "span_id": "479160d71a0a3f2a",
+            "parent_span_id": "2ec9b975ef10fbd9",
+            "convention": "vercel_ai",
+            "kind": "tool",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "ai.toolCall",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "01064683639c80a0",
+            "parent_span_id": "2ec9b975ef10fbd9",
+            "convention": "vercel_ai",
+            "kind": "tool",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "ai.toolCall",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "2ec9b975ef10fbd9",
+            "parent_span_id": "f15475aa062435ec",
+            "convention": "vercel_ai",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini-2025-04-14",
+            "usage": {
+              "input_tokens": 82,
+              "output_tokens": 46,
+              "cached_tokens": 0,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "priced",
+            "finish_reason": "tool_calls",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "ai.generateText.doGenerate",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "f15475aa062435ec",
+            "parent_span_id": null,
+            "convention": "vercel_ai",
+            "kind": "chain",
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "usage": {
+              "input_tokens": 82,
+              "output_tokens": 46,
+              "cached_tokens": 0,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": true,
+            "usage_state": "rollup",
+            "finish_reason": "tool_calls",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "ai.generateText",
+            "trace": {
+              "name": "ai.generateText",
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          }
+        ],
+        "trace": {
+          "span_count": 4,
+          "input_tokens": 82,
+          "output_tokens": 46,
+          "has_unpriced": false
+        },
+        "loses": [
+          "cache_write_1h_tokens",
+          "time_to_first_token_ms"
+        ]
+      }
+    }
+  ]
+}

@@ -64,7 +64,12 @@ def test_chat_completion_span_fields(tracer, ingest):
     assert span["parent_span_id"] == parent.span_id
     assert span["provider"] == "openai"
     assert span["model"] == "gpt-4o-mini-2024-07-18"  # response model wins
-    assert span["usage"] == {"input_tokens": 1243, "output_tokens": 11, "cached_tokens": 1024}
+    assert span["usage"] == {
+        "input_tokens": 1243,
+        "output_tokens": 11,
+        "cached_tokens": 1024,
+        "service_tier": "standard",  # OpenAI answered "default"
+    }
     assert span["time_to_first_token_ms"] is None
     assert span["input"] == {"model": "gpt-4o-mini", "messages": MESSAGES, "temperature": 0.2}
     assert span["output"] == {
@@ -121,7 +126,12 @@ def test_streaming_with_include_usage(tracer, ingest):
     span = flushed_spans(tracer, ingest)[0]
     assert span["status"] == "ok"
     assert span["model"] == "gpt-4o-mini-2024-07-18"
-    assert span["usage"] == {"input_tokens": 20, "output_tokens": 3, "cached_tokens": 0}
+    assert span["usage"] == {
+        "input_tokens": 20,
+        "output_tokens": 3,
+        "cached_tokens": 0,
+        "service_tier": "standard",
+    }
     assert span["time_to_first_token_ms"] is not None
     assert span["time_to_first_token_ms"] >= 0
     assert span["output"] == {"role": "assistant", "content": "Hello there!"}
@@ -140,8 +150,9 @@ def test_streaming_without_usage_records_why(tracer, ingest):
             pass
 
     span = flushed_spans(tracer, ingest)[0]
-    assert span["usage"] is None
-    assert span["attributes"]["usage.missing_reason"] == "stream_options.include_usage not set"
+    # The chunks carry the tier but no token counts.
+    assert span["usage"] == {"service_tier": "standard"}
+    assert span["attributes"]["usage.unreported_reason"] == "include_usage_not_set"
     assert span["output"]["content"] == "Hello there!"
 
 
@@ -274,7 +285,12 @@ def test_responses_create(tracer, ingest):
     flushed_spans(tracer, ingest)
     span = ingest.span_named("responses gpt-4.1")
     assert span["model"] == "gpt-4.1-2025-04-14"
-    assert span["usage"] == {"input_tokens": 36, "output_tokens": 6, "cached_tokens": 8}
+    assert span["usage"] == {
+        "input_tokens": 36,
+        "output_tokens": 6,
+        "cached_tokens": 8,
+        "service_tier": "standard",
+    }
     assert span["input"]["input"] == "Where is my order?"
     assert span["output"] == {"role": "assistant", "content": "Your order has shipped."}
     assert span["attributes"]["response.status"] == "completed"
@@ -302,3 +318,52 @@ async def test_async_responses_create(tracer, ingest):
 
     assert response.id.startswith("resp_")
     assert flushed_spans(tracer, ingest)[0]["usage"]["output_tokens"] == 6
+
+
+# ---------------------------------------------------------------------- #
+# Azure clients
+# ---------------------------------------------------------------------- #
+
+
+class AzureOpenAI(openai.OpenAI):
+    """Stands in for ``openai.AzureOpenAI``: the wrapper recognises the client by class name."""
+
+
+class AsyncAzureOpenAI(openai.AsyncOpenAI):
+    """Stands in for ``openai.AsyncAzureOpenAI``."""
+
+
+class MyAzureClient(AzureOpenAI):
+    """A user subclass of an Azure client is still an Azure client."""
+
+
+@pytest.mark.parametrize("client_type", [AzureOpenAI, MyAzureClient])
+def test_azure_client_defaults_provider_to_azure_openai(tracer, ingest, client_type):
+    # Azure bills its own rates, so its spans must not be recorded as `openai`.
+    provider = MockProvider(json_response(OPENAI_CHAT_COMPLETION))
+    client = client_type(api_key=API_KEY, http_client=provider.sync_client(), max_retries=0)
+    spanlight.wrap_openai(client, spanlight=tracer)
+
+    client.chat.completions.create(model="gpt-4o-mini", messages=MESSAGES)
+
+    assert flushed_spans(tracer, ingest)[0]["provider"] == "azure_openai"
+
+
+async def test_async_azure_client_defaults_provider_to_azure_openai(tracer, ingest):
+    provider = MockProvider(json_response(OPENAI_CHAT_COMPLETION))
+    client = AsyncAzureOpenAI(api_key=API_KEY, http_client=provider.async_client(), max_retries=0)
+    spanlight.wrap_openai(client, spanlight=tracer)
+
+    await client.chat.completions.create(model="gpt-4o-mini", messages=MESSAGES)
+
+    assert flushed_spans(tracer, ingest)[0]["provider"] == "azure_openai"
+
+
+def test_explicit_provider_wins_over_azure_detection(tracer, ingest):
+    provider = MockProvider(json_response(OPENAI_CHAT_COMPLETION))
+    client = AzureOpenAI(api_key=API_KEY, http_client=provider.sync_client(), max_retries=0)
+    spanlight.wrap_openai(client, spanlight=tracer, provider="openai")
+
+    client.chat.completions.create(model="gpt-4o-mini", messages=MESSAGES)
+
+    assert flushed_spans(tracer, ingest)[0]["provider"] == "openai"

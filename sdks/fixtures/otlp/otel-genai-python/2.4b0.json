@@ -1,0 +1,778 @@
+{
+  "library": "otel-genai-python",
+  "version": "2.4b0",
+  "recorded_at": "2026-10-17T20:35:37Z",
+  "recorder": {
+    "runtime": "python 3.13.9",
+    "otel_sdk": "1.45.1",
+    "harness": "sdks/fixtures/otlp/record@e0893b3"
+  },
+  "scenarios": [
+    {
+      "name": "chat",
+      "export": {
+        "content_type": "application/x-protobuf",
+        "body_base64": "Ct0ICtIBCiIKFnRlbGVtZXRyeS5zZGsubGFuZ3VhZ2USCAoGcHl0aG9uCiUKEnRlbGVtZXRyeS5zZGsubmFtZRIPCg1vcGVudGVsZW1ldHJ5CiEKFXRlbGVtZXRyeS5zZGsudmVyc2lvbhIICgYxLjQ1LjEKPQoTc2VydmljZS5pbnN0YW5jZS5pZBImCiQ4OTZiZDEwYi0xY2U4LTRlZDMtYjAxZC05YTM3ZGU5MjcwMTAKIwoMc2VydmljZS5uYW1lEhMKEXNwYW5saWdodC1maXh0dXJlEoUHCikKIG9wZW50ZWxlbWV0cnkudXRpbC5nZW5haS5oYW5kbGVyEgUxLjFiMBKuBgoQ1p9+3HRPVjvHPTxq4s4n5BIINtYbkEdLMlAqEWNoYXQgZ3B0LTQuMS1taW5pMAM5UDvjf3Zr3xhBOHXUgHZr3xhKHwoVZ2VuX2FpLm9wZXJhdGlvbi5uYW1lEgYKBGNoYXRKJgoUZ2VuX2FpLnJlcXVlc3QubW9kZWwSDgoMZ3B0LTQuMS1taW5pSiAKFGdlbl9haS5wcm92aWRlci5uYW1lEggKBm9wZW5haUodCg5zZXJ2ZXIuYWRkcmVzcxILCgkxMjcuMC4wLjFKEwoLc2VydmVyLnBvcnQSBBit2QNKLAoeZ2VuX2FpLnJlc3BvbnNlLmZpbmlzaF9yZWFzb25zEgoqCAoGCgRzdG9wSjIKFWdlbl9haS5yZXNwb25zZS5tb2RlbBIZChdncHQtNC4xLW1pbmktMjAyNS0wNC0xNEo7ChJnZW5fYWkucmVzcG9uc2UuaWQSJQojY2hhdGNtcGwtdGVzdDAwMDAwMDAwMDAwMDAwMDAwMDAwMDFKHwoZZ2VuX2FpLnVzYWdlLmlucHV0X3Rva2VucxICGBNKIAoaZ2VuX2FpLnVzYWdlLm91dHB1dF90b2tlbnMSAhgJSmsKFWdlbl9haS5pbnB1dC5tZXNzYWdlcxJSClBbeyJyb2xlIjoidXNlciIsInBhcnRzIjpbeyJjb250ZW50IjoiU2F5IGhlbGxvIGluIGZpdmUgd29yZHMuIiwidHlwZSI6InRleHQifV19XUqQAQoWZ2VuX2FpLm91dHB1dC5tZXNzYWdlcxJ2CnRbeyJyb2xlIjoiYXNzaXN0YW50IiwicGFydHMiOlt7ImNvbnRlbnQiOiJIZWxsbyEgSG93IGNhbiBJIGhlbHAgeW91IHRvZGF5PyIsInR5cGUiOiJ0ZXh0In1dLCJmaW5pc2hfcmVhc29uIjoic3RvcCJ9XUopChxvcGVuYWkucmVzcG9uc2Uuc2VydmljZV90aWVyEgkKB2RlZmF1bHRKNQoib3BlbmFpLnJlc3BvbnNlLnN5c3RlbV9maW5nZXJwcmludBIPCg1mcF90ZXN0MDAwMDAxegCFAQABAAAaJ2h0dHBzOi8vb3BlbnRlbGVtZXRyeS5pby9zY2hlbWFzLzEuMzcuMA=="
+      },
+      "preview": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "telemetry.sdk.language",
+                  "value": {
+                    "stringValue": "python"
+                  }
+                },
+                {
+                  "key": "telemetry.sdk.name",
+                  "value": {
+                    "stringValue": "opentelemetry"
+                  }
+                },
+                {
+                  "key": "telemetry.sdk.version",
+                  "value": {
+                    "stringValue": "1.45.1"
+                  }
+                },
+                {
+                  "key": "service.instance.id",
+                  "value": {
+                    "stringValue": "896bd10b-1ce8-4ed3-b01d-9a37de927010"
+                  }
+                },
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "spanlight-fixture"
+                  }
+                }
+              ]
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "opentelemetry.util.genai.handler",
+                  "version": "1.1b0"
+                },
+                "spans": [
+                  {
+                    "traceId": "1p9+3HRPVjvHPTxq4s4n5A==",
+                    "spanId": "NtYbkEdLMlA=",
+                    "name": "chat gpt-4.1-mini",
+                    "kind": "SPAN_KIND_CLIENT",
+                    "startTimeUnixNano": "1792269333412658000",
+                    "endTimeUnixNano": "1792269333428467000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "chat"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.provider.name",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "server.address",
+                        "value": {
+                          "stringValue": "127.0.0.1"
+                        }
+                      },
+                      {
+                        "key": "server.port",
+                        "value": {
+                          "intValue": "60589"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.finish_reasons",
+                        "value": {
+                          "arrayValue": {
+                            "values": [
+                              {
+                                "stringValue": "stop"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.id",
+                        "value": {
+                          "stringValue": "chatcmpl-test0000000000000000000001"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.input_tokens",
+                        "value": {
+                          "intValue": "19"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.output_tokens",
+                        "value": {
+                          "intValue": "9"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.input.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"user\",\"parts\":[{\"content\":\"Say hello in five words.\",\"type\":\"text\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.output.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"assistant\",\"parts\":[{\"content\":\"Hello! How can I help you today?\",\"type\":\"text\"}],\"finish_reason\":\"stop\"}]"
+                        }
+                      },
+                      {
+                        "key": "openai.response.service_tier",
+                        "value": {
+                          "stringValue": "default"
+                        }
+                      },
+                      {
+                        "key": "openai.response.system_fingerprint",
+                        "value": {
+                          "stringValue": "fp_test000001"
+                        }
+                      }
+                    ],
+                    "status": {},
+                    "flags": 256
+                  }
+                ],
+                "schemaUrl": "https://opentelemetry.io/schemas/1.37.0"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accepted": 1,
+        "rejected": [],
+        "spans": [
+          {
+            "span_id": "36d61b90474b3250",
+            "parent_span_id": null,
+            "convention": "gen_ai",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini-2025-04-14",
+            "usage": {
+              "input_tokens": 19,
+              "output_tokens": 9,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "priced",
+            "finish_reason": "stop",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "chat",
+            "trace": {
+              "name": "chat gpt-4.1-mini",
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          }
+        ],
+        "trace": {
+          "span_count": 1,
+          "input_tokens": 19,
+          "output_tokens": 9,
+          "has_unpriced": false
+        },
+        "loses": [
+          "cached_tokens",
+          "time_to_first_token_ms"
+        ]
+      }
+    },
+    {
+      "name": "chat_tool_call",
+      "export": {
+        "content_type": "application/x-protobuf",
+        "body_base64": "CrcKCtIBCiIKFnRlbGVtZXRyeS5zZGsubGFuZ3VhZ2USCAoGcHl0aG9uCiUKEnRlbGVtZXRyeS5zZGsubmFtZRIPCg1vcGVudGVsZW1ldHJ5CiEKFXRlbGVtZXRyeS5zZGsudmVyc2lvbhIICgYxLjQ1LjEKPQoTc2VydmljZS5pbnN0YW5jZS5pZBImCiRjMzA4NzViYS0zNGYzLTQzM2YtYjAzYy03NjgwMDFiZDQxYzQKIwoMc2VydmljZS5uYW1lEhMKEXNwYW5saWdodC1maXh0dXJlEt8ICikKIG9wZW50ZWxlbWV0cnkudXRpbC5nZW5haS5oYW5kbGVyEgUxLjFiMBKICAoQ1AQ0sQGCg3EhjjgUX039mhIIDdB0yUp9z0IqEWNoYXQgZ3B0LTQuMS1taW5pMAM5AEOLynZr3xhBeHd5y3Zr3xhKHwoVZ2VuX2FpLm9wZXJhdGlvbi5uYW1lEgYKBGNoYXRKJgoUZ2VuX2FpLnJlcXVlc3QubW9kZWwSDgoMZ3B0LTQuMS1taW5pSiAKFGdlbl9haS5wcm92aWRlci5uYW1lEggKBm9wZW5haUodCg5zZXJ2ZXIuYWRkcmVzcxILCgkxMjcuMC4wLjFKEwoLc2VydmVyLnBvcnQSBBit2QNKMgoeZ2VuX2FpLnJlc3BvbnNlLmZpbmlzaF9yZWFzb25zEhAqDgoMCgp0b29sX2NhbGxzSjIKFWdlbl9haS5yZXNwb25zZS5tb2RlbBIZChdncHQtNC4xLW1pbmktMjAyNS0wNC0xNEo7ChJnZW5fYWkucmVzcG9uc2UuaWQSJQojY2hhdGNtcGwtdGVzdDAwMDAwMDAwMDAwMDAwMDAwMDAwMDJKHwoZZ2VuX2FpLnVzYWdlLmlucHV0X3Rva2VucxICGFJKIAoaZ2VuX2FpLnVzYWdlLm91dHB1dF90b2tlbnMSAhguSn4KFWdlbl9haS5pbnB1dC5tZXNzYWdlcxJlCmNbeyJyb2xlIjoidXNlciIsInBhcnRzIjpbeyJjb250ZW50IjoiV2hhdCBpcyB0aGUgd2VhdGhlciBpbiBQYXJpcz8gVXNlIHRoZSB0b29sLiIsInR5cGUiOiJ0ZXh0In1dfV1K0QIKFmdlbl9haS5vdXRwdXQubWVzc2FnZXMStgIKswJbeyJyb2xlIjoiYXNzaXN0YW50IiwicGFydHMiOlt7ImFyZ3VtZW50cyI6eyJjaXR5IjoiUGFyaXMiLCJ1bml0IjoiY2Vsc2l1cyJ9LCJuYW1lIjoiZ2V0X3dlYXRoZXIiLCJpZCI6ImNhbGxfdGVzdDAwMDAwMDAwMDAwMDAwMDBhMSIsInR5cGUiOiJ0b29sX2NhbGwifSx7ImFyZ3VtZW50cyI6eyJjaXR5IjoiVG9reW8iLCJ1bml0IjoiY2Vsc2l1cyJ9LCJuYW1lIjoiZ2V0X3dlYXRoZXIiLCJpZCI6ImNhbGxfdGVzdDAwMDAwMDAwMDAwMDAwMDBiMiIsInR5cGUiOiJ0b29sX2NhbGwifV0sImZpbmlzaF9yZWFzb24iOiJ0b29sX2NhbGxzIn1dSikKHG9wZW5haS5yZXNwb25zZS5zZXJ2aWNlX3RpZXISCQoHZGVmYXVsdEo1CiJvcGVuYWkucmVzcG9uc2Uuc3lzdGVtX2ZpbmdlcnByaW50Eg8KDWZwX3Rlc3QwMDAwMDJ6AIUBAAEAABonaHR0cHM6Ly9vcGVudGVsZW1ldHJ5LmlvL3NjaGVtYXMvMS4zNy4w"
+      },
+      "preview": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "telemetry.sdk.language",
+                  "value": {
+                    "stringValue": "python"
+                  }
+                },
+                {
+                  "key": "telemetry.sdk.name",
+                  "value": {
+                    "stringValue": "opentelemetry"
+                  }
+                },
+                {
+                  "key": "telemetry.sdk.version",
+                  "value": {
+                    "stringValue": "1.45.1"
+                  }
+                },
+                {
+                  "key": "service.instance.id",
+                  "value": {
+                    "stringValue": "c30875ba-34f3-433f-b03c-768001bd41c4"
+                  }
+                },
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "spanlight-fixture"
+                  }
+                }
+              ]
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "opentelemetry.util.genai.handler",
+                  "version": "1.1b0"
+                },
+                "spans": [
+                  {
+                    "traceId": "1AQ0sQGCg3EhjjgUX039mg==",
+                    "spanId": "DdB0yUp9z0I=",
+                    "name": "chat gpt-4.1-mini",
+                    "kind": "SPAN_KIND_CLIENT",
+                    "startTimeUnixNano": "1792269334665184000",
+                    "endTimeUnixNano": "1792269334680795000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "chat"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.provider.name",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "server.address",
+                        "value": {
+                          "stringValue": "127.0.0.1"
+                        }
+                      },
+                      {
+                        "key": "server.port",
+                        "value": {
+                          "intValue": "60589"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.finish_reasons",
+                        "value": {
+                          "arrayValue": {
+                            "values": [
+                              {
+                                "stringValue": "tool_calls"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.id",
+                        "value": {
+                          "stringValue": "chatcmpl-test0000000000000000000002"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.input_tokens",
+                        "value": {
+                          "intValue": "82"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.output_tokens",
+                        "value": {
+                          "intValue": "46"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.input.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"user\",\"parts\":[{\"content\":\"What is the weather in Paris? Use the tool.\",\"type\":\"text\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.output.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"assistant\",\"parts\":[{\"arguments\":{\"city\":\"Paris\",\"unit\":\"celsius\"},\"name\":\"get_weather\",\"id\":\"call_test0000000000000000a1\",\"type\":\"tool_call\"},{\"arguments\":{\"city\":\"Tokyo\",\"unit\":\"celsius\"},\"name\":\"get_weather\",\"id\":\"call_test0000000000000000b2\",\"type\":\"tool_call\"}],\"finish_reason\":\"tool_calls\"}]"
+                        }
+                      },
+                      {
+                        "key": "openai.response.service_tier",
+                        "value": {
+                          "stringValue": "default"
+                        }
+                      },
+                      {
+                        "key": "openai.response.system_fingerprint",
+                        "value": {
+                          "stringValue": "fp_test000002"
+                        }
+                      }
+                    ],
+                    "status": {},
+                    "flags": 256
+                  }
+                ],
+                "schemaUrl": "https://opentelemetry.io/schemas/1.37.0"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accepted": 1,
+        "rejected": [],
+        "spans": [
+          {
+            "span_id": "0dd074c94a7dcf42",
+            "parent_span_id": null,
+            "convention": "gen_ai",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini-2025-04-14",
+            "usage": {
+              "input_tokens": 82,
+              "output_tokens": 46,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "priced",
+            "finish_reason": "tool_calls",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "chat",
+            "trace": {
+              "name": "chat gpt-4.1-mini",
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          }
+        ],
+        "trace": {
+          "span_count": 1,
+          "input_tokens": 82,
+          "output_tokens": 46,
+          "has_unpriced": false
+        },
+        "loses": [
+          "cached_tokens",
+          "time_to_first_token_ms"
+        ]
+      }
+    },
+    {
+      "name": "streaming",
+      "export": {
+        "content_type": "application/x-protobuf",
+        "body_base64": "CvgHCtIBCiIKFnRlbGVtZXRyeS5zZGsubGFuZ3VhZ2USCAoGcHl0aG9uCiUKEnRlbGVtZXRyeS5zZGsubmFtZRIPCg1vcGVudGVsZW1ldHJ5CiEKFXRlbGVtZXRyeS5zZGsudmVyc2lvbhIICgYxLjQ1LjEKPQoTc2VydmljZS5pbnN0YW5jZS5pZBImCiRkOGY0ZjI4MC05ZDFjLTQzZTQtYmQ5OC00ZDk0YWJiZTcwOTkKIwoMc2VydmljZS5uYW1lEhMKEXNwYW5saWdodC1maXh0dXJlEqAGCikKIG9wZW50ZWxlbWV0cnkudXRpbC5nZW5haS5oYW5kbGVyEgUxLjFiMBLJBQoQexcCvn00PAagICM5o9VrKhII8L/FvzDv2yQqEWNoYXQgZ3B0LTQuMS1taW5pMAM5sDknFHdr3xhBeH4eFXdr3xhKHwoVZ2VuX2FpLm9wZXJhdGlvbi5uYW1lEgYKBGNoYXRKJgoUZ2VuX2FpLnJlcXVlc3QubW9kZWwSDgoMZ3B0LTQuMS1taW5pSiAKFGdlbl9haS5wcm92aWRlci5uYW1lEggKBm9wZW5haUodCg5zZXJ2ZXIuYWRkcmVzcxILCgkxMjcuMC4wLjFKEwoLc2VydmVyLnBvcnQSBBit2QNKMgoVZ2VuX2FpLnJlc3BvbnNlLm1vZGVsEhkKF2dwdC00LjEtbWluaS0yMDI1LTA0LTE0SjsKEmdlbl9haS5yZXNwb25zZS5pZBIlCiNjaGF0Y21wbC10ZXN0MDAwMDAwMDAwMDAwMDAwMDAwMDEwMUofChlnZW5fYWkudXNhZ2UuaW5wdXRfdG9rZW5zEgIYE0ogChpnZW5fYWkudXNhZ2Uub3V0cHV0X3Rva2VucxICGAlKawoVZ2VuX2FpLmlucHV0Lm1lc3NhZ2VzElIKUFt7InJvbGUiOiJ1c2VyIiwicGFydHMiOlt7ImNvbnRlbnQiOiJTYXkgaGVsbG8gaW4gZml2ZSB3b3Jkcy4iLCJ0eXBlIjoidGV4dCJ9XX1dSpABChZnZW5fYWkub3V0cHV0Lm1lc3NhZ2VzEnYKdFt7InJvbGUiOiJhc3Npc3RhbnQiLCJwYXJ0cyI6W3siY29udGVudCI6IkhlbGxvISBIb3cgY2FuIEkgaGVscCB5b3UgdG9kYXk/IiwidHlwZSI6InRleHQifV0sImZpbmlzaF9yZWFzb24iOiJzdG9wIn1dSikKHG9wZW5haS5yZXNwb25zZS5zZXJ2aWNlX3RpZXISCQoHZGVmYXVsdHoAhQEAAQAAGidodHRwczovL29wZW50ZWxlbWV0cnkuaW8vc2NoZW1hcy8xLjM3LjA="
+      },
+      "preview": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "telemetry.sdk.language",
+                  "value": {
+                    "stringValue": "python"
+                  }
+                },
+                {
+                  "key": "telemetry.sdk.name",
+                  "value": {
+                    "stringValue": "opentelemetry"
+                  }
+                },
+                {
+                  "key": "telemetry.sdk.version",
+                  "value": {
+                    "stringValue": "1.45.1"
+                  }
+                },
+                {
+                  "key": "service.instance.id",
+                  "value": {
+                    "stringValue": "d8f4f280-9d1c-43e4-bd98-4d94abbe7099"
+                  }
+                },
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "spanlight-fixture"
+                  }
+                }
+              ]
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "opentelemetry.util.genai.handler",
+                  "version": "1.1b0"
+                },
+                "spans": [
+                  {
+                    "traceId": "excCvn00PAagICM5o9VrKg==",
+                    "spanId": "8L/FvzDv2yQ=",
+                    "name": "chat gpt-4.1-mini",
+                    "kind": "SPAN_KIND_CLIENT",
+                    "startTimeUnixNano": "1792269335900142000",
+                    "endTimeUnixNano": "1792269335916347000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "chat"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.provider.name",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "server.address",
+                        "value": {
+                          "stringValue": "127.0.0.1"
+                        }
+                      },
+                      {
+                        "key": "server.port",
+                        "value": {
+                          "intValue": "60589"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.id",
+                        "value": {
+                          "stringValue": "chatcmpl-test0000000000000000000101"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.input_tokens",
+                        "value": {
+                          "intValue": "19"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.output_tokens",
+                        "value": {
+                          "intValue": "9"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.input.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"user\",\"parts\":[{\"content\":\"Say hello in five words.\",\"type\":\"text\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.output.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"assistant\",\"parts\":[{\"content\":\"Hello! How can I help you today?\",\"type\":\"text\"}],\"finish_reason\":\"stop\"}]"
+                        }
+                      },
+                      {
+                        "key": "openai.response.service_tier",
+                        "value": {
+                          "stringValue": "default"
+                        }
+                      }
+                    ],
+                    "status": {},
+                    "flags": 256
+                  }
+                ],
+                "schemaUrl": "https://opentelemetry.io/schemas/1.37.0"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accepted": 1,
+        "rejected": [],
+        "spans": [
+          {
+            "span_id": "f0bfc5bf30efdb24",
+            "parent_span_id": null,
+            "convention": "gen_ai",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini-2025-04-14",
+            "usage": {
+              "input_tokens": 19,
+              "output_tokens": 9,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "priced",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "chat",
+            "trace": {
+              "name": "chat gpt-4.1-mini",
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          }
+        ],
+        "trace": {
+          "span_count": 1,
+          "input_tokens": 19,
+          "output_tokens": 9,
+          "has_unpriced": false
+        },
+        "loses": [
+          "cached_tokens",
+          "time_to_first_token_ms",
+          "finish_reason"
+        ]
+      }
+    },
+    {
+      "name": "error_429",
+      "export": {
+        "content_type": "application/x-protobuf",
+        "body_base64": "CrkHCtIBCiIKFnRlbGVtZXRyeS5zZGsubGFuZ3VhZ2USCAoGcHl0aG9uCiUKEnRlbGVtZXRyeS5zZGsubmFtZRIPCg1vcGVudGVsZW1ldHJ5CiEKFXRlbGVtZXRyeS5zZGsudmVyc2lvbhIICgYxLjQ1LjEKPQoTc2VydmljZS5pbnN0YW5jZS5pZBImCiQzZDFlOWQzMC1mYTc2LTRiZjgtOTZiNC05N2RhZGNiN2YxYzIKIwoMc2VydmljZS5uYW1lEhMKEXNwYW5saWdodC1maXh0dXJlEuEFCikKIG9wZW50ZWxlbWV0cnkudXRpbC5nZW5haS5oYW5kbGVyEgUxLjFiMBKKBQoQzWxCXhdeNRYPtC5c4Aho4BII4sJJKWPJ6sgqEWNoYXQgZ3B0LTQuMS1taW5pMAM5mM13Vndr3xhB2FlLV3dr3xhKHwoVZ2VuX2FpLm9wZXJhdGlvbi5uYW1lEgYKBGNoYXRKJgoUZ2VuX2FpLnJlcXVlc3QubW9kZWwSDgoMZ3B0LTQuMS1taW5pSiAKFGdlbl9haS5wcm92aWRlci5uYW1lEggKBm9wZW5haUodCg5zZXJ2ZXIuYWRkcmVzcxILCgkxMjcuMC4wLjFKEwoLc2VydmVyLnBvcnQSBBit2QNKawoVZ2VuX2FpLmlucHV0Lm1lc3NhZ2VzElIKUFt7InJvbGUiOiJ1c2VyIiwicGFydHMiOlt7ImNvbnRlbnQiOiJTYXkgaGVsbG8gaW4gZml2ZSB3b3Jkcy4iLCJ0eXBlIjoidGV4dCJ9XX1dSi8KCmVycm9yLnR5cGUSIQofPGNsYXNzICdvcGVuYWkuUmF0ZUxpbWl0RXJyb3InPnqBAhL8AUVycm9yIGNvZGU6IDQyOSAtIHsnZXJyb3InOiB7J21lc3NhZ2UnOiAnUmF0ZSBsaW1pdCByZWFjaGVkIGZvciBncHQtNC4xLW1pbmkgaW4gb3JnYW5pemF0aW9uIG9yZy10ZXN0IG9uIHJlcXVlc3RzIHBlciBtaW4gKFJQTSk6IExpbWl0IDMsIFVzZWQgMywgUmVxdWVzdGVkIDEuIFBsZWFzZSB0cnkgYWdhaW4gaW4gMjBzLicsICd0eXBlJzogJ3JlcXVlc3RzJywgJ3BhcmFtJzogTm9uZSwgJ2NvZGUnOiAncmF0ZV9saW1pdF9leGNlZWRlZCd9fRgChQEAAQAAGidodHRwczovL29wZW50ZWxlbWV0cnkuaW8vc2NoZW1hcy8xLjM3LjA="
+      },
+      "preview": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "telemetry.sdk.language",
+                  "value": {
+                    "stringValue": "python"
+                  }
+                },
+                {
+                  "key": "telemetry.sdk.name",
+                  "value": {
+                    "stringValue": "opentelemetry"
+                  }
+                },
+                {
+                  "key": "telemetry.sdk.version",
+                  "value": {
+                    "stringValue": "1.45.1"
+                  }
+                },
+                {
+                  "key": "service.instance.id",
+                  "value": {
+                    "stringValue": "3d1e9d30-fa76-4bf8-96b4-97dadcb7f1c2"
+                  }
+                },
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "spanlight-fixture"
+                  }
+                }
+              ]
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "opentelemetry.util.genai.handler",
+                  "version": "1.1b0"
+                },
+                "spans": [
+                  {
+                    "traceId": "zWxCXhdeNRYPtC5c4Aho4A==",
+                    "spanId": "4sJJKWPJ6sg=",
+                    "name": "chat gpt-4.1-mini",
+                    "kind": "SPAN_KIND_CLIENT",
+                    "startTimeUnixNano": "1792269337012719000",
+                    "endTimeUnixNano": "1792269337026583000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "chat"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.provider.name",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "server.address",
+                        "value": {
+                          "stringValue": "127.0.0.1"
+                        }
+                      },
+                      {
+                        "key": "server.port",
+                        "value": {
+                          "intValue": "60589"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.input.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"user\",\"parts\":[{\"content\":\"Say hello in five words.\",\"type\":\"text\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "error.type",
+                        "value": {
+                          "stringValue": "<class 'openai.RateLimitError'>"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "message": "Error code: 429 - {'error': {'message': 'Rate limit reached for gpt-4.1-mini in organization org-test on requests per min (RPM): Limit 3, Used 3, Requested 1. Please try again in 20s.', 'type': 'requests', 'param': None, 'code': 'rate_limit_exceeded'}}",
+                      "code": "STATUS_CODE_ERROR"
+                    },
+                    "flags": 256
+                  }
+                ],
+                "schemaUrl": "https://opentelemetry.io/schemas/1.37.0"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accepted": 1,
+        "rejected": [],
+        "spans": [
+          {
+            "span_id": "e2c2492963c9eac8",
+            "parent_span_id": null,
+            "convention": "gen_ai",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "usage_not_reported",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": false,
+            "time_to_first_token_ms": null,
+            "status": "error",
+            "error_class": "rate_limit",
+            "operation": "chat",
+            "trace": {
+              "name": "chat gpt-4.1-mini",
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          }
+        ],
+        "trace": {
+          "span_count": 1,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "has_unpriced": true
+        },
+        "loses": [
+          "output",
+          "usage"
+        ]
+      }
+    }
+  ]
+}

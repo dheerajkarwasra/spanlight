@@ -10,11 +10,13 @@ from provider_mocks import (
     ANTHROPIC_CACHE_WRITE_MESSAGE,
     ANTHROPIC_INVALID_REQUEST,
     ANTHROPIC_MESSAGE,
+    ANTHROPIC_WEB_SEARCH_MESSAGE,
     MockProvider,
     anthropic_cache_write_stream,
     anthropic_stream_with_overload_error,
     anthropic_text_stream,
     anthropic_tool_use_stream,
+    anthropic_web_search_stream,
     json_response,
     sse_response,
 )
@@ -69,6 +71,7 @@ def test_messages_create_span_fields(tracer, ingest):
         "output_tokens": 9,
         "cached_tokens": 1500,
         "cache_write_tokens": 3,
+        "service_tier": "standard",
     }
     assert "usage.cache_creation_input_tokens" not in span["attributes"]
     assert span["attributes"]["response.stop_reason"] == "end_turn"
@@ -119,6 +122,121 @@ def test_stream_cache_write_fields(tracer, ingest):
     span = flushed_spans(tracer, ingest)[0]
     assert span["usage"] == CACHE_WRITE_USAGE
     assert "usage.cache_creation_input_tokens" not in span["attributes"]
+
+
+def test_create_records_tier_and_web_search(tracer, ingest):
+    provider = MockProvider(json_response(ANTHROPIC_WEB_SEARCH_MESSAGE))
+    client = make_client(provider, tracer)
+
+    message = client.messages.create(model=MODEL, max_tokens=256, messages=MESSAGES)
+
+    assert message.usage.service_tier == "batch"
+    span = flushed_spans(tracer, ingest)[0]
+    assert span["usage"] == {
+        "input_tokens": 40,
+        "output_tokens": 30,
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "service_tier": "batch",
+        "server_tool_use": {"web_search_requests": 2},
+    }
+    assert "usage.service_tier_raw" not in span["attributes"]
+
+
+def test_create_without_tier_or_search_sends_neither(tracer, ingest):
+    provider = MockProvider(json_response(ANTHROPIC_CACHE_WRITE_MESSAGE))
+    client = make_client(provider, tracer)
+
+    client.messages.create(model=MODEL, max_tokens=256, messages=MESSAGES)
+
+    span = flushed_spans(tracer, ingest)[0]
+    assert "service_tier" not in span["usage"]
+    assert "server_tool_use" not in span["usage"]
+
+
+def test_stream_merges_web_search_from_message_delta(tracer, ingest):
+    provider = MockProvider(sse_response(anthropic_web_search_stream()))
+    client = make_client(provider, tracer)
+
+    for _ in client.messages.create(model=MODEL, max_tokens=256, messages=MESSAGES, stream=True):
+        pass
+
+    span = flushed_spans(tracer, ingest)[0]
+    assert span["usage"] == {
+        "input_tokens": 25,
+        "output_tokens": 15,
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "service_tier": "batch",
+        "server_tool_use": {"web_search_requests": 3},
+    }
+    assert "usage.unreported_reason" not in span["attributes"]
+
+
+async def test_async_stream_merges_web_search_from_message_delta(tracer, ingest):
+    provider = MockProvider(sse_response(anthropic_web_search_stream()))
+    client = make_async_client(provider, tracer)
+
+    async with client.messages.stream(model=MODEL, max_tokens=256, messages=MESSAGES) as stream:
+        await stream.get_final_message()
+
+    span = flushed_spans(tracer, ingest)[0]
+    assert span["usage"]["service_tier"] == "batch"
+    assert span["usage"]["server_tool_use"] == {"web_search_requests": 3}
+
+
+def test_inference_geo_and_fast_speed_set_pricing_modifier_unknown(tracer, ingest):
+    provider = MockProvider(json_response(ANTHROPIC_MESSAGE))
+    client = make_client(provider, tracer)
+
+    with tracer.span("geo"):
+        client.messages.create(model=MODEL, max_tokens=256, messages=MESSAGES, inference_geo="us")
+    with tracer.span("fast"):
+        # The installed SDK has no ``speed`` keyword yet; callers send it in the body.
+        client.messages.create(
+            model=MODEL, max_tokens=256, messages=MESSAGES, extra_body={"speed": "fast"}
+        )
+    with tracer.span("plain"):
+        client.messages.create(model=MODEL, max_tokens=256, messages=MESSAGES)
+
+    flushed_spans(tracer, ingest)
+    by_parent = {span["parent_span_id"]: span for span in ingest.spans if span["kind"] == "llm"}
+    geo, fast, plain = (ingest.span_named(name)["span_id"] for name in ("geo", "fast", "plain"))
+    assert by_parent[geo]["attributes"]["usage.pricing_modifier_unknown"] == "inference_geo_us"
+    assert by_parent[geo]["input"]["inference_geo"] == "us"
+    assert by_parent[fast]["attributes"]["usage.pricing_modifier_unknown"] == "fast_mode"
+    assert "usage.pricing_modifier_unknown" not in by_parent[plain]["attributes"]
+
+
+@pytest.mark.parametrize(
+    ("request_kwargs", "expected"),
+    [
+        ({"inference_geo": "US"}, "inference_geo_us"),
+        ({"inference_geo": "global"}, None),
+        ({"speed": "fast"}, "fast_mode"),
+        ({"speed": "standard"}, None),
+        ({"extra_body": {"inference_geo": "us"}}, "inference_geo_us"),
+        ({"inference_geo": "us", "speed": "fast"}, "inference_geo_us"),
+        ({"inference_geo": None, "speed": None}, None),
+        ({}, None),
+        # The value is bounded the way the gateway bounds it, so a span never
+        # carries an unbounded or free-form attribute value.
+        ({"inference_geo": " Global "}, None),
+        ({"inference_geo": "us-east_1"}, "inference_geo_us-east_1"),
+        ({"inference_geo": "a" * 32}, "inference_geo_" + "a" * 32),
+        ({"inference_geo": "a" * 33}, "inference_geo_other"),
+        ({"inference_geo": "us east"}, "inference_geo_other"),
+        ({"inference_geo": "us/1"}, "inference_geo_other"),
+        ({"inference_geo": "\u00fcs"}, "inference_geo_other"),
+        ({"inference_geo": "us\n"}, "inference_geo_us"),
+        ({"inference_geo": "us.1", "speed": "fast"}, "inference_geo_other"),
+        ({"extra_body": {"inference_geo": "x" * 100}}, "inference_geo_other"),
+    ],
+)
+def test_pricing_modifier_unknown_rules(request_kwargs, expected):
+    from spanlight.integrations._modifiers import pricing_modifier_unknown
+
+    assert pricing_modifier_unknown({"model": MODEL, **request_kwargs}) == expected
 
 
 async def test_async_messages_create(tracer, ingest):
@@ -225,6 +343,9 @@ def test_stream_helper_exited_early_still_ends_span(tracer, ingest):
     span = flushed_spans(tracer, ingest)[0]
     assert span["status"] == "ok"
     assert span["output"]["content"][0]["text"] == "Hi"
+    # No final usage event was read: the output count is unknown, not the placeholder 1.
+    assert "output_tokens" not in span["usage"]
+    assert span["attributes"]["usage.unreported_reason"] == "client_disconnected"
 
 
 def test_streamed_tool_use_input_is_parsed(tracer, ingest):
@@ -261,6 +382,49 @@ def test_api_error_is_recorded_and_reraised_unchanged(tracer, ingest):
     assert span["attributes"]["http.status_code"] == 400
 
 
+def test_a_failed_call_without_usage_carries_no_pricing_modifier(tracer, ingest):
+    """A call that failed before any usage came back was never priced, at the standard rate or
+    any other, so it is not one of the calls "priced at the standard rate with a modifier"."""
+    provider = MockProvider(json_response(ANTHROPIC_INVALID_REQUEST, status=400))
+    client = make_client(provider, tracer)
+
+    with pytest.raises(anthropic.BadRequestError):
+        client.messages.create(model=MODEL, max_tokens=256, messages=MESSAGES, inference_geo="us")
+
+    span = flushed_spans(tracer, ingest)[0]
+    assert span["status"] == "error"
+    assert "usage.pricing_modifier_unknown" not in span["attributes"]
+
+
+async def test_a_failed_async_call_without_usage_carries_no_pricing_modifier(tracer, ingest):
+    provider = MockProvider(json_response(ANTHROPIC_INVALID_REQUEST, status=400))
+    client = make_async_client(provider, tracer)
+
+    with pytest.raises(anthropic.BadRequestError):
+        await client.messages.create(
+            model=MODEL, max_tokens=256, messages=MESSAGES, extra_body={"speed": "fast"}
+        )
+
+    span = flushed_spans(tracer, ingest)[0]
+    assert span["status"] == "error"
+    assert "usage.pricing_modifier_unknown" not in span["attributes"]
+
+
+def test_a_stream_that_fails_after_its_usage_keeps_the_pricing_modifier(tracer, ingest):
+    provider = MockProvider(sse_response(anthropic_stream_with_overload_error()))
+    client = make_client(provider, tracer)
+
+    with pytest.raises(anthropic.APIStatusError):
+        for _ in client.messages.create(
+            model=MODEL, max_tokens=256, messages=MESSAGES, stream=True, inference_geo="us"
+        ):
+            pass
+
+    span = flushed_spans(tracer, ingest)[0]
+    assert span["usage"]["input_tokens"] > 0
+    assert span["attributes"]["usage.pricing_modifier_unknown"] == "inference_geo_us"
+
+
 def test_error_event_mid_stream_marks_span_failed(tracer, ingest):
     provider = MockProvider(sse_response(anthropic_stream_with_overload_error()))
     client = make_client(provider, tracer)
@@ -277,6 +441,8 @@ def test_error_event_mid_stream_marks_span_failed(tracer, ingest):
     assert span["status"] == "error"
     assert "Overloaded" in span["status_message"]
     assert span["output"]["content"][0]["text"] == "Hi"  # partial output is kept
+    assert "output_tokens" not in span["usage"]
+    assert span["attributes"]["usage.unreported_reason"] == "stream_error"
 
 
 def test_stream_helper_request_failure(tracer, ingest):

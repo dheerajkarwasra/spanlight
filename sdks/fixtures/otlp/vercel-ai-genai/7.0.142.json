@@ -1,0 +1,1956 @@
+{
+  "library": "vercel-ai-genai",
+  "version": "7.0.142",
+  "recorded_at": "2026-10-17T20:45:24Z",
+  "recorder": {
+    "runtime": "node 24.11.1",
+    "otel_sdk": "2.12.0",
+    "harness": "sdks/fixtures/otlp/record@e0893b3"
+  },
+  "scenarios": [
+    {
+      "name": "error",
+      "export": {
+        "content_type": "application/json",
+        "body_base64": "eyJyZXNvdXJjZVNwYW5zIjpbeyJyZXNvdXJjZSI6eyJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJzZXJ2aWNlLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6InN1cHBvcnQtYm90In19LHsia2V5Ijoic2VydmljZS52ZXJzaW9uIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiIxLjAuMCJ9fSx7ImtleSI6ImRlcGxveW1lbnQuZW52aXJvbm1lbnQubmFtZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoicHJvZHVjdGlvbiJ9fV0sImRyb3BwZWRBdHRyaWJ1dGVzQ291bnQiOjB9LCJzY29wZVNwYW5zIjpbeyJzY29wZSI6eyJuYW1lIjoic3BhbmxpZ2h0In0sInNwYW5zIjpbeyJ0cmFjZUlkIjoiN2YyODNjOGQ3MzIxODA2MDRhNTVlMjY0ZTA1ZGZjZDMiLCJzcGFuSWQiOiIxYjE4OWZkNWU3YzUwMDhlIiwicGFyZW50U3BhbklkIjoiZmFkY2QzYjk1NGVhMTRhOCIsIm5hbWUiOiJjaGF0IGdwdC00LjEtbWluaSIsImtpbmQiOjMsInN0YXJ0VGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyNDc0MDAwMDAwMCIsImVuZFRpbWVVbml4TmFubyI6IjE3OTIyNjk5MjQ3NDYwMDAwMDAiLCJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJnZW5fYWkub3BlcmF0aW9uLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImNoYXQifX0seyJrZXkiOiJnZW5fYWkucHJvdmlkZXIubmFtZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoib3BlbmFpIn19LHsia2V5IjoiZ2VuX2FpLnJlcXVlc3QubW9kZWwiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImdwdC00LjEtbWluaSJ9fSx7ImtleSI6Imdlbl9haS5pbnB1dC5tZXNzYWdlcyIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiW3tcInJvbGVcIjpcInVzZXJcIixcInBhcnRzXCI6W3tcInR5cGVcIjpcInRleHRcIixcImNvbnRlbnRcIjpcIlNheSBoZWxsbyBpbiBmaXZlIHdvcmRzLlwifV19XSJ9fSx7ImtleSI6Imh0dHAucmVzcG9uc2Uuc3RhdHVzX2NvZGUiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6NDI5fX1dLCJkcm9wcGVkQXR0cmlidXRlc0NvdW50IjowLCJldmVudHMiOlt7ImF0dHJpYnV0ZXMiOlt7ImtleSI6ImV4Y2VwdGlvbi50eXBlIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJBSV9BUElDYWxsRXJyb3IifX0seyJrZXkiOiJleGNlcHRpb24ubWVzc2FnZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiUmF0ZSBsaW1pdCByZWFjaGVkIGZvciBncHQtNC4xLW1pbmkgaW4gb3JnYW5pemF0aW9uIG9yZy10ZXN0IG9uIHJlcXVlc3RzIHBlciBtaW4gKFJQTSk6IExpbWl0IDMsIFVzZWQgMywgUmVxdWVzdGVkIDEuIFBsZWFzZSB0cnkgYWdhaW4gaW4gMjBzLiJ9fSx7ImtleSI6ImV4Y2VwdGlvbi5zdGFja3RyYWNlIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJBSV9BUElDYWxsRXJyb3I6IFJhdGUgbGltaXQgcmVhY2hlZCBmb3IgZ3B0LTQuMS1taW5pIGluIG9yZ2FuaXphdGlvbiBvcmctdGVzdCBvbiByZXF1ZXN0cyBwZXIgbWluIChSUE0pOiBMaW1pdCAzLCBVc2VkIDMsIFJlcXVlc3RlZCAxLiBQbGVhc2UgdHJ5IGFnYWluIGluIDIwcy5cbiAgICBhdCBmaWxlOi8vL3ByaXZhdGUvdG1wL3NwYW5saWdodC1yZWNvcmQtbm9kZS1IM2FKdDcvbm9kZV9tb2R1bGVzL0BhaS1zZGsvcHJvdmlkZXItdXRpbHMvZGlzdC9pbmRleC5qczozODQ0OjExXG4gICAgYXQgcHJvY2Vzcy5wcm9jZXNzVGlja3NBbmRSZWplY3Rpb25zIChub2RlOmludGVybmFsL3Byb2Nlc3MvdGFza19xdWV1ZXM6MTAzOjUpXG4gICAgYXQgYXN5bmMgcG9zdFRvQXBpIChmaWxlOi8vL3ByaXZhdGUvdG1wL3NwYW5saWdodC1yZWNvcmQtbm9kZS1IM2FKdDcvbm9kZV9tb2R1bGVzL0BhaS1zZGsvcHJvdmlkZXItdXRpbHMvZGlzdC9pbmRleC5qczozNTUyOjI0KVxuICAgIGF0IGFzeW5jIHBvc3RKc29uVG9BcGkgKGZpbGU6Ly8vcHJpdmF0ZS90bXAvc3BhbmxpZ2h0LXJlY29yZC1ub2RlLUgzYUp0Ny9ub2RlX21vZHVsZXMvQGFpLXNkay9wcm92aWRlci11dGlscy9kaXN0L2luZGV4LmpzOjM1MTM6MTI3KVxuICAgIGF0IGFzeW5jIE9wZW5BSUNoYXRMYW5ndWFnZU1vZGVsLmRvR2VuZXJhdGUgKGZpbGU6Ly8vcHJpdmF0ZS90bXAvc3BhbmxpZ2h0LXJlY29yZC1ub2RlLUgzYUp0Ny9ub2RlX21vZHVsZXMvQGFpLXNkay9vcGVuYWkvZGlzdC9pbmRleC5qczoxMzQ2OjcxKVxuICAgIGF0IGFzeW5jIGV4ZWN1dGUgKGZpbGU6Ly8vcHJpdmF0ZS90bXAvc3BhbmxpZ2h0LXJlY29yZC1ub2RlLUgzYUp0Ny9ub2RlX21vZHVsZXMvYWkvZGlzdC9pbmRleC5qczo1NjUwOjMxKVxuICAgIGF0IGFzeW5jIHJ1bldpdGhUcmFjaW5nQ2hhbm5lbFNwYW4gKGZpbGU6Ly8vcHJpdmF0ZS90bXAvc3BhbmxpZ2h0LXJlY29yZC1ub2RlLUgzYUp0Ny9ub2RlX21vZHVsZXMvYWkvZGlzdC9pbmRleC5qczo0Mzk0OjgwKVxuICAgIGF0IGFzeW5jIGV4ZWN1dGVMYW5ndWFnZU1vZGVsQ2FsbCAoZmlsZTovLy9wcml2YXRlL3RtcC9zcGFubGlnaHQtcmVjb3JkLW5vZGUtSDNhSnQ3L25vZGVfbW9kdWxlcy9haS9kaXN0L2luZGV4LmpzOjQ1OTM6MTEpXG4gICAgYXQgYXN5bmMgZmlsZTovLy9wcml2YXRlL3RtcC9zcGFubGlnaHQtcmVjb3JkLW5vZGUtSDNhSnQ3L25vZGVfbW9kdWxlcy9haS9kaXN0L2luZGV4LmpzOjU2NDg6MjRcbiAgICBhdCBhc3luYyByZXRyeVdpdGhFeHBvbmVudGlhbEJhY2tvZmZJbnRlcm5hbCAoZmlsZTovLy9wcml2YXRlL3RtcC9zcGFubGlnaHQtcmVjb3JkLW5vZGUtSDNhSnQ3L25vZGVfbW9kdWxlcy9haS9ub2RlX21vZHVsZXMvQGFpLXNkay9wcm92aWRlci11dGlscy9kaXN0L2luZGV4LmpzOjM3Mjg6MTApIn19XSwibmFtZSI6ImV4Y2VwdGlvbiIsInRpbWVVbml4TmFubyI6IjE3OTIyNjk5MjQ3NDUwMDAwMDAiLCJkcm9wcGVkQXR0cmlidXRlc0NvdW50IjowfV0sImRyb3BwZWRFdmVudHNDb3VudCI6MCwic3RhdHVzIjp7ImNvZGUiOjIsIm1lc3NhZ2UiOiJSYXRlIGxpbWl0IHJlYWNoZWQgZm9yIGdwdC00LjEtbWluaSBpbiBvcmdhbml6YXRpb24gb3JnLXRlc3Qgb24gcmVxdWVzdHMgcGVyIG1pbiAoUlBNKTogTGltaXQgMywgVXNlZCAzLCBSZXF1ZXN0ZWQgMS4gUGxlYXNlIHRyeSBhZ2FpbiBpbiAyMHMuIn0sImxpbmtzIjpbXSwiZHJvcHBlZExpbmtzQ291bnQiOjAsImZsYWdzIjoyNTd9LHsidHJhY2VJZCI6IjdmMjgzYzhkNzMyMTgwNjA0YTU1ZTI2NGUwNWRmY2QzIiwic3BhbklkIjoiZmFkY2QzYjk1NGVhMTRhOCIsInBhcmVudFNwYW5JZCI6Ijk1NzhkZjQ5YzYzNGRkOGYiLCJuYW1lIjoic3RlcCAxIiwia2luZCI6MSwic3RhcnRUaW1lVW5peE5hbm8iOiIxNzkyMjY5OTI0NzQwMDAwMDAwIiwiZW5kVGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyNDc1MTAwMDAwMCIsImF0dHJpYnV0ZXMiOlt7ImtleSI6Imdlbl9haS5vcGVyYXRpb24ubmFtZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiYWdlbnRfc3RlcCJ9fSx7ImtleSI6Imh0dHAucmVzcG9uc2Uuc3RhdHVzX2NvZGUiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6NDI5fX1dLCJkcm9wcGVkQXR0cmlidXRlc0NvdW50IjowLCJldmVudHMiOlt7ImF0dHJpYnV0ZXMiOlt7ImtleSI6ImV4Y2VwdGlvbi50eXBlIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJBSV9BUElDYWxsRXJyb3IifX0seyJrZXkiOiJleGNlcHRpb24ubWVzc2FnZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiUmF0ZSBsaW1pdCByZWFjaGVkIGZvciBncHQtNC4xLW1pbmkgaW4gb3JnYW5pemF0aW9uIG9yZy10ZXN0IG9uIHJlcXVlc3RzIHBlciBtaW4gKFJQTSk6IExpbWl0IDMsIFVzZWQgMywgUmVxdWVzdGVkIDEuIFBsZWFzZSB0cnkgYWdhaW4gaW4gMjBzLiJ9fSx7ImtleSI6ImV4Y2VwdGlvbi5zdGFja3RyYWNlIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJBSV9BUElDYWxsRXJyb3I6IFJhdGUgbGltaXQgcmVhY2hlZCBmb3IgZ3B0LTQuMS1taW5pIGluIG9yZ2FuaXphdGlvbiBvcmctdGVzdCBvbiByZXF1ZXN0cyBwZXIgbWluIChSUE0pOiBMaW1pdCAzLCBVc2VkIDMsIFJlcXVlc3RlZCAxLiBQbGVhc2UgdHJ5IGFnYWluIGluIDIwcy5cbiAgICBhdCBmaWxlOi8vL3ByaXZhdGUvdG1wL3NwYW5saWdodC1yZWNvcmQtbm9kZS1IM2FKdDcvbm9kZV9tb2R1bGVzL0BhaS1zZGsvcHJvdmlkZXItdXRpbHMvZGlzdC9pbmRleC5qczozODQ0OjExXG4gICAgYXQgcHJvY2Vzcy5wcm9jZXNzVGlja3NBbmRSZWplY3Rpb25zIChub2RlOmludGVybmFsL3Byb2Nlc3MvdGFza19xdWV1ZXM6MTAzOjUpXG4gICAgYXQgYXN5bmMgcG9zdFRvQXBpIChmaWxlOi8vL3ByaXZhdGUvdG1wL3NwYW5saWdodC1yZWNvcmQtbm9kZS1IM2FKdDcvbm9kZV9tb2R1bGVzL0BhaS1zZGsvcHJvdmlkZXItdXRpbHMvZGlzdC9pbmRleC5qczozNTUyOjI0KVxuICAgIGF0IGFzeW5jIHBvc3RKc29uVG9BcGkgKGZpbGU6Ly8vcHJpdmF0ZS90bXAvc3BhbmxpZ2h0LXJlY29yZC1ub2RlLUgzYUp0Ny9ub2RlX21vZHVsZXMvQGFpLXNkay9wcm92aWRlci11dGlscy9kaXN0L2luZGV4LmpzOjM1MTM6MTI3KVxuICAgIGF0IGFzeW5jIE9wZW5BSUNoYXRMYW5ndWFnZU1vZGVsLmRvR2VuZXJhdGUgKGZpbGU6Ly8vcHJpdmF0ZS90bXAvc3BhbmxpZ2h0LXJlY29yZC1ub2RlLUgzYUp0Ny9ub2RlX21vZHVsZXMvQGFpLXNkay9vcGVuYWkvZGlzdC9pbmRleC5qczoxMzQ2OjcxKVxuICAgIGF0IGFzeW5jIGV4ZWN1dGUgKGZpbGU6Ly8vcHJpdmF0ZS90bXAvc3BhbmxpZ2h0LXJlY29yZC1ub2RlLUgzYUp0Ny9ub2RlX21vZHVsZXMvYWkvZGlzdC9pbmRleC5qczo1NjUwOjMxKVxuICAgIGF0IGFzeW5jIHJ1bldpdGhUcmFjaW5nQ2hhbm5lbFNwYW4gKGZpbGU6Ly8vcHJpdmF0ZS90bXAvc3BhbmxpZ2h0LXJlY29yZC1ub2RlLUgzYUp0Ny9ub2RlX21vZHVsZXMvYWkvZGlzdC9pbmRleC5qczo0Mzk0OjgwKVxuICAgIGF0IGFzeW5jIGV4ZWN1dGVMYW5ndWFnZU1vZGVsQ2FsbCAoZmlsZTovLy9wcml2YXRlL3RtcC9zcGFubGlnaHQtcmVjb3JkLW5vZGUtSDNhSnQ3L25vZGVfbW9kdWxlcy9haS9kaXN0L2luZGV4LmpzOjQ1OTM6MTEpXG4gICAgYXQgYXN5bmMgZmlsZTovLy9wcml2YXRlL3RtcC9zcGFubGlnaHQtcmVjb3JkLW5vZGUtSDNhSnQ3L25vZGVfbW9kdWxlcy9haS9kaXN0L2luZGV4LmpzOjU2NDg6MjRcbiAgICBhdCBhc3luYyByZXRyeVdpdGhFeHBvbmVudGlhbEJhY2tvZmZJbnRlcm5hbCAoZmlsZTovLy9wcml2YXRlL3RtcC9zcGFubGlnaHQtcmVjb3JkLW5vZGUtSDNhSnQ3L25vZGVfbW9kdWxlcy9haS9ub2RlX21vZHVsZXMvQGFpLXNkay9wcm92aWRlci11dGlscy9kaXN0L2luZGV4LmpzOjM3Mjg6MTApIn19XSwibmFtZSI6ImV4Y2VwdGlvbiIsInRpbWVVbml4TmFubyI6IjE3OTIyNjk5MjQ3NTAwMDAwMDAiLCJkcm9wcGVkQXR0cmlidXRlc0NvdW50IjowfV0sImRyb3BwZWRFdmVudHNDb3VudCI6MCwic3RhdHVzIjp7ImNvZGUiOjIsIm1lc3NhZ2UiOiJSYXRlIGxpbWl0IHJlYWNoZWQgZm9yIGdwdC00LjEtbWluaSBpbiBvcmdhbml6YXRpb24gb3JnLXRlc3Qgb24gcmVxdWVzdHMgcGVyIG1pbiAoUlBNKTogTGltaXQgMywgVXNlZCAzLCBSZXF1ZXN0ZWQgMS4gUGxlYXNlIHRyeSBhZ2FpbiBpbiAyMHMuIn0sImxpbmtzIjpbXSwiZHJvcHBlZExpbmtzQ291bnQiOjAsImZsYWdzIjoyNTd9LHsidHJhY2VJZCI6IjdmMjgzYzhkNzMyMTgwNjA0YTU1ZTI2NGUwNWRmY2QzIiwic3BhbklkIjoiOTU3OGRmNDljNjM0ZGQ4ZiIsIm5hbWUiOiJpbnZva2VfYWdlbnQgZ3B0LTQuMS1taW5pIiwia2luZCI6MSwic3RhcnRUaW1lVW5peE5hbm8iOiIxNzkyMjY5OTI0NzM5MDAwMDAwIiwiZW5kVGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyNDc1NDAwMDAwMCIsImF0dHJpYnV0ZXMiOlt7ImtleSI6Imdlbl9haS5vcGVyYXRpb24ubmFtZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiaW52b2tlX2FnZW50In19LHsia2V5IjoiZ2VuX2FpLnByb3ZpZGVyLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6Im9wZW5haSJ9fSx7ImtleSI6Imdlbl9haS5yZXF1ZXN0Lm1vZGVsIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJncHQtNC4xLW1pbmkifX0seyJrZXkiOiJnZW5fYWkuaW5wdXQubWVzc2FnZXMiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6Ilt7XCJyb2xlXCI6XCJ1c2VyXCIsXCJwYXJ0c1wiOlt7XCJ0eXBlXCI6XCJ0ZXh0XCIsXCJjb250ZW50XCI6XCJTYXkgaGVsbG8gaW4gZml2ZSB3b3Jkcy5cIn1dfV0ifX0seyJrZXkiOiJodHRwLnJlc3BvbnNlLnN0YXR1c19jb2RlIiwidmFsdWUiOnsiaW50VmFsdWUiOjQyOX19XSwiZHJvcHBlZEF0dHJpYnV0ZXNDb3VudCI6MCwiZXZlbnRzIjpbeyJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJleGNlcHRpb24udHlwZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiQUlfQVBJQ2FsbEVycm9yIn19LHsia2V5IjoiZXhjZXB0aW9uLm1lc3NhZ2UiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6IlJhdGUgbGltaXQgcmVhY2hlZCBmb3IgZ3B0LTQuMS1taW5pIGluIG9yZ2FuaXphdGlvbiBvcmctdGVzdCBvbiByZXF1ZXN0cyBwZXIgbWluIChSUE0pOiBMaW1pdCAzLCBVc2VkIDMsIFJlcXVlc3RlZCAxLiBQbGVhc2UgdHJ5IGFnYWluIGluIDIwcy4ifX0seyJrZXkiOiJleGNlcHRpb24uc3RhY2t0cmFjZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiQUlfQVBJQ2FsbEVycm9yOiBSYXRlIGxpbWl0IHJlYWNoZWQgZm9yIGdwdC00LjEtbWluaSBpbiBvcmdhbml6YXRpb24gb3JnLXRlc3Qgb24gcmVxdWVzdHMgcGVyIG1pbiAoUlBNKTogTGltaXQgMywgVXNlZCAzLCBSZXF1ZXN0ZWQgMS4gUGxlYXNlIHRyeSBhZ2FpbiBpbiAyMHMuXG4gICAgYXQgZmlsZTovLy9wcml2YXRlL3RtcC9zcGFubGlnaHQtcmVjb3JkLW5vZGUtSDNhSnQ3L25vZGVfbW9kdWxlcy9AYWktc2RrL3Byb3ZpZGVyLXV0aWxzL2Rpc3QvaW5kZXguanM6Mzg0NDoxMVxuICAgIGF0IHByb2Nlc3MucHJvY2Vzc1RpY2tzQW5kUmVqZWN0aW9ucyAobm9kZTppbnRlcm5hbC9wcm9jZXNzL3Rhc2tfcXVldWVzOjEwMzo1KVxuICAgIGF0IGFzeW5jIHBvc3RUb0FwaSAoZmlsZTovLy9wcml2YXRlL3RtcC9zcGFubGlnaHQtcmVjb3JkLW5vZGUtSDNhSnQ3L25vZGVfbW9kdWxlcy9AYWktc2RrL3Byb3ZpZGVyLXV0aWxzL2Rpc3QvaW5kZXguanM6MzU1MjoyNClcbiAgICBhdCBhc3luYyBwb3N0SnNvblRvQXBpIChmaWxlOi8vL3ByaXZhdGUvdG1wL3NwYW5saWdodC1yZWNvcmQtbm9kZS1IM2FKdDcvbm9kZV9tb2R1bGVzL0BhaS1zZGsvcHJvdmlkZXItdXRpbHMvZGlzdC9pbmRleC5qczozNTEzOjEyNylcbiAgICBhdCBhc3luYyBPcGVuQUlDaGF0TGFuZ3VhZ2VNb2RlbC5kb0dlbmVyYXRlIChmaWxlOi8vL3ByaXZhdGUvdG1wL3NwYW5saWdodC1yZWNvcmQtbm9kZS1IM2FKdDcvbm9kZV9tb2R1bGVzL0BhaS1zZGsvb3BlbmFpL2Rpc3QvaW5kZXguanM6MTM0Njo3MSlcbiAgICBhdCBhc3luYyBleGVjdXRlIChmaWxlOi8vL3ByaXZhdGUvdG1wL3NwYW5saWdodC1yZWNvcmQtbm9kZS1IM2FKdDcvbm9kZV9tb2R1bGVzL2FpL2Rpc3QvaW5kZXguanM6NTY1MDozMSlcbiAgICBhdCBhc3luYyBydW5XaXRoVHJhY2luZ0NoYW5uZWxTcGFuIChmaWxlOi8vL3ByaXZhdGUvdG1wL3NwYW5saWdodC1yZWNvcmQtbm9kZS1IM2FKdDcvbm9kZV9tb2R1bGVzL2FpL2Rpc3QvaW5kZXguanM6NDM5NDo4MClcbiAgICBhdCBhc3luYyBleGVjdXRlTGFuZ3VhZ2VNb2RlbENhbGwgKGZpbGU6Ly8vcHJpdmF0ZS90bXAvc3BhbmxpZ2h0LXJlY29yZC1ub2RlLUgzYUp0Ny9ub2RlX21vZHVsZXMvYWkvZGlzdC9pbmRleC5qczo0NTkzOjExKVxuICAgIGF0IGFzeW5jIGZpbGU6Ly8vcHJpdmF0ZS90bXAvc3BhbmxpZ2h0LXJlY29yZC1ub2RlLUgzYUp0Ny9ub2RlX21vZHVsZXMvYWkvZGlzdC9pbmRleC5qczo1NjQ4OjI0XG4gICAgYXQgYXN5bmMgcmV0cnlXaXRoRXhwb25lbnRpYWxCYWNrb2ZmSW50ZXJuYWwgKGZpbGU6Ly8vcHJpdmF0ZS90bXAvc3BhbmxpZ2h0LXJlY29yZC1ub2RlLUgzYUp0Ny9ub2RlX21vZHVsZXMvYWkvbm9kZV9tb2R1bGVzL0BhaS1zZGsvcHJvdmlkZXItdXRpbHMvZGlzdC9pbmRleC5qczozNzI4OjEwKSJ9fV0sIm5hbWUiOiJleGNlcHRpb24iLCJ0aW1lVW5peE5hbm8iOiIxNzkyMjY5OTI0NzUzMDAwMDAwIiwiZHJvcHBlZEF0dHJpYnV0ZXNDb3VudCI6MH1dLCJkcm9wcGVkRXZlbnRzQ291bnQiOjAsInN0YXR1cyI6eyJjb2RlIjoyLCJtZXNzYWdlIjoiUmF0ZSBsaW1pdCByZWFjaGVkIGZvciBncHQtNC4xLW1pbmkgaW4gb3JnYW5pemF0aW9uIG9yZy10ZXN0IG9uIHJlcXVlc3RzIHBlciBtaW4gKFJQTSk6IExpbWl0IDMsIFVzZWQgMywgUmVxdWVzdGVkIDEuIFBsZWFzZSB0cnkgYWdhaW4gaW4gMjBzLiJ9LCJsaW5rcyI6W10sImRyb3BwZWRMaW5rc0NvdW50IjowLCJmbGFncyI6MjU3fV19XX1dfQ=="
+      },
+      "preview": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "support-bot"
+                  }
+                },
+                {
+                  "key": "service.version",
+                  "value": {
+                    "stringValue": "1.0.0"
+                  }
+                },
+                {
+                  "key": "deployment.environment.name",
+                  "value": {
+                    "stringValue": "production"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "spanlight"
+                },
+                "spans": [
+                  {
+                    "traceId": "7f283c8d732180604a55e264e05dfcd3",
+                    "spanId": "1b189fd5e7c5008e",
+                    "parentSpanId": "fadcd3b954ea14a8",
+                    "name": "chat gpt-4.1-mini",
+                    "kind": 3,
+                    "startTimeUnixNano": "1792269924740000000",
+                    "endTimeUnixNano": "1792269924746000000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "chat"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.provider.name",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.input.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Say hello in five words.\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "http.response.status_code",
+                        "value": {
+                          "intValue": 429
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [
+                      {
+                        "attributes": [
+                          {
+                            "key": "exception.type",
+                            "value": {
+                              "stringValue": "AI_APICallError"
+                            }
+                          },
+                          {
+                            "key": "exception.message",
+                            "value": {
+                              "stringValue": "Rate limit reached for gpt-4.1-mini in organization org-test on requests per min (RPM): Limit 3, Used 3, Requested 1. Please try again in 20s."
+                            }
+                          },
+                          {
+                            "key": "exception.stacktrace",
+                            "value": {
+                              "stringValue": "AI_APICallError: Rate limit reached for gpt-4.1-mini in organization org-test on requests per min (RPM): Limit 3, Used 3, Requested 1. Please try again in 20s.\n    at file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/@ai-sdk/provider-utils/dist/index.js:3844:11\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async postToApi (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/@ai-sdk/provider-utils/dist/index.js:3552:24)\n    at async postJsonToApi (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/@ai-sdk/provider-utils/dist/index.js:3513:127)\n    at async OpenAIChatLanguageModel.doGenerate (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/@ai-sdk/openai/dist/index.js:1346:71)\n    at async execute (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/ai/dist/index.js:5650:31)\n    at async runWithTracingChannelSpan (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/ai/dist/index.js:4394:80)\n    at async executeLanguageModelCall (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/ai/dist/index.js:4593:11)\n    at async file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/ai/dist/index.js:5648:24\n    at async retryWithExponentialBackoffInternal (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/ai/node_modules/@ai-sdk/provider-utils/dist/index.js:3728:10)"
+                            }
+                          }
+                        ],
+                        "name": "exception",
+                        "timeUnixNano": "1792269924745000000",
+                        "droppedAttributesCount": 0
+                      }
+                    ],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 2,
+                      "message": "Rate limit reached for gpt-4.1-mini in organization org-test on requests per min (RPM): Limit 3, Used 3, Requested 1. Please try again in 20s."
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  },
+                  {
+                    "traceId": "7f283c8d732180604a55e264e05dfcd3",
+                    "spanId": "fadcd3b954ea14a8",
+                    "parentSpanId": "9578df49c634dd8f",
+                    "name": "step 1",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269924740000000",
+                    "endTimeUnixNano": "1792269924751000000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "agent_step"
+                        }
+                      },
+                      {
+                        "key": "http.response.status_code",
+                        "value": {
+                          "intValue": 429
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [
+                      {
+                        "attributes": [
+                          {
+                            "key": "exception.type",
+                            "value": {
+                              "stringValue": "AI_APICallError"
+                            }
+                          },
+                          {
+                            "key": "exception.message",
+                            "value": {
+                              "stringValue": "Rate limit reached for gpt-4.1-mini in organization org-test on requests per min (RPM): Limit 3, Used 3, Requested 1. Please try again in 20s."
+                            }
+                          },
+                          {
+                            "key": "exception.stacktrace",
+                            "value": {
+                              "stringValue": "AI_APICallError: Rate limit reached for gpt-4.1-mini in organization org-test on requests per min (RPM): Limit 3, Used 3, Requested 1. Please try again in 20s.\n    at file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/@ai-sdk/provider-utils/dist/index.js:3844:11\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async postToApi (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/@ai-sdk/provider-utils/dist/index.js:3552:24)\n    at async postJsonToApi (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/@ai-sdk/provider-utils/dist/index.js:3513:127)\n    at async OpenAIChatLanguageModel.doGenerate (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/@ai-sdk/openai/dist/index.js:1346:71)\n    at async execute (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/ai/dist/index.js:5650:31)\n    at async runWithTracingChannelSpan (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/ai/dist/index.js:4394:80)\n    at async executeLanguageModelCall (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/ai/dist/index.js:4593:11)\n    at async file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/ai/dist/index.js:5648:24\n    at async retryWithExponentialBackoffInternal (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/ai/node_modules/@ai-sdk/provider-utils/dist/index.js:3728:10)"
+                            }
+                          }
+                        ],
+                        "name": "exception",
+                        "timeUnixNano": "1792269924750000000",
+                        "droppedAttributesCount": 0
+                      }
+                    ],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 2,
+                      "message": "Rate limit reached for gpt-4.1-mini in organization org-test on requests per min (RPM): Limit 3, Used 3, Requested 1. Please try again in 20s."
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  },
+                  {
+                    "traceId": "7f283c8d732180604a55e264e05dfcd3",
+                    "spanId": "9578df49c634dd8f",
+                    "name": "invoke_agent gpt-4.1-mini",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269924739000000",
+                    "endTimeUnixNano": "1792269924754000000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "invoke_agent"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.provider.name",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.input.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Say hello in five words.\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "http.response.status_code",
+                        "value": {
+                          "intValue": 429
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [
+                      {
+                        "attributes": [
+                          {
+                            "key": "exception.type",
+                            "value": {
+                              "stringValue": "AI_APICallError"
+                            }
+                          },
+                          {
+                            "key": "exception.message",
+                            "value": {
+                              "stringValue": "Rate limit reached for gpt-4.1-mini in organization org-test on requests per min (RPM): Limit 3, Used 3, Requested 1. Please try again in 20s."
+                            }
+                          },
+                          {
+                            "key": "exception.stacktrace",
+                            "value": {
+                              "stringValue": "AI_APICallError: Rate limit reached for gpt-4.1-mini in organization org-test on requests per min (RPM): Limit 3, Used 3, Requested 1. Please try again in 20s.\n    at file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/@ai-sdk/provider-utils/dist/index.js:3844:11\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async postToApi (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/@ai-sdk/provider-utils/dist/index.js:3552:24)\n    at async postJsonToApi (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/@ai-sdk/provider-utils/dist/index.js:3513:127)\n    at async OpenAIChatLanguageModel.doGenerate (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/@ai-sdk/openai/dist/index.js:1346:71)\n    at async execute (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/ai/dist/index.js:5650:31)\n    at async runWithTracingChannelSpan (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/ai/dist/index.js:4394:80)\n    at async executeLanguageModelCall (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/ai/dist/index.js:4593:11)\n    at async file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/ai/dist/index.js:5648:24\n    at async retryWithExponentialBackoffInternal (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/ai/node_modules/@ai-sdk/provider-utils/dist/index.js:3728:10)"
+                            }
+                          }
+                        ],
+                        "name": "exception",
+                        "timeUnixNano": "1792269924753000000",
+                        "droppedAttributesCount": 0
+                      }
+                    ],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 2,
+                      "message": "Rate limit reached for gpt-4.1-mini in organization org-test on requests per min (RPM): Limit 3, Used 3, Requested 1. Please try again in 20s."
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accepted": 3,
+        "rejected": [],
+        "spans": [
+          {
+            "span_id": "1b189fd5e7c5008e",
+            "parent_span_id": "fadcd3b954ea14a8",
+            "convention": "gen_ai",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "usage_not_reported",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": false,
+            "time_to_first_token_ms": null,
+            "status": "error",
+            "error_class": "rate_limit",
+            "operation": "chat",
+            "trace": {
+              "name": null,
+              "environment": "production",
+              "release": "1.0.0",
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "fadcd3b954ea14a8",
+            "parent_span_id": "9578df49c634dd8f",
+            "convention": "gen_ai",
+            "kind": "other",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": false,
+            "output_present": false,
+            "time_to_first_token_ms": null,
+            "status": "error",
+            "error_class": "rate_limit",
+            "operation": "agent_step",
+            "trace": {
+              "name": null,
+              "environment": "production",
+              "release": "1.0.0",
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "9578df49c634dd8f",
+            "parent_span_id": null,
+            "convention": "gen_ai",
+            "kind": "chain",
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": false,
+            "time_to_first_token_ms": null,
+            "status": "error",
+            "error_class": "rate_limit",
+            "operation": "invoke_agent",
+            "trace": {
+              "name": "invoke_agent gpt-4.1-mini",
+              "environment": "production",
+              "release": "1.0.0",
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          }
+        ],
+        "trace": {
+          "span_count": 3,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "has_unpriced": true
+        },
+        "loses": [
+          "output",
+          "usage"
+        ]
+      }
+    },
+    {
+      "name": "generate_object",
+      "export": {
+        "content_type": "application/json",
+        "body_base64": "eyJyZXNvdXJjZVNwYW5zIjpbeyJyZXNvdXJjZSI6eyJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJzZXJ2aWNlLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6InN1cHBvcnQtYm90In19LHsia2V5Ijoic2VydmljZS52ZXJzaW9uIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiIxLjAuMCJ9fSx7ImtleSI6ImRlcGxveW1lbnQuZW52aXJvbm1lbnQubmFtZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoicHJvZHVjdGlvbiJ9fV0sImRyb3BwZWRBdHRyaWJ1dGVzQ291bnQiOjB9LCJzY29wZVNwYW5zIjpbeyJzY29wZSI6eyJuYW1lIjoic3BhbmxpZ2h0In0sInNwYW5zIjpbeyJ0cmFjZUlkIjoiMmQyYWQ3NTgwM2M2NTE0NzJjODhhMTI5OTJkODQ3ZWEiLCJzcGFuSWQiOiI1M2YzZjM3YzFkYzFhZjNmIiwicGFyZW50U3BhbklkIjoiOWE5ZGExNjI0NmRjNzRhNiIsIm5hbWUiOiJjaGF0IGdwdC00LjEtbWluaSIsImtpbmQiOjMsInN0YXJ0VGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyNDU4NzAwMDAwMCIsImVuZFRpbWVVbml4TmFubyI6IjE3OTIyNjk5MjQ1OTIwMDAwMDAiLCJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJnZW5fYWkub3BlcmF0aW9uLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImNoYXQifX0seyJrZXkiOiJnZW5fYWkucHJvdmlkZXIubmFtZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoib3BlbmFpIn19LHsia2V5IjoiZ2VuX2FpLnJlcXVlc3QubW9kZWwiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImdwdC00LjEtbWluaSJ9fSx7ImtleSI6Imdlbl9haS5vdXRwdXQudHlwZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoianNvbiJ9fSx7ImtleSI6Imdlbl9haS5pbnB1dC5tZXNzYWdlcyIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiW3tcInJvbGVcIjpcInVzZXJcIixcInBhcnRzXCI6W3tcInR5cGVcIjpcInRleHRcIixcImNvbnRlbnRcIjpcIlNheSBoZWxsbyBpbiBmaXZlIHdvcmRzLlwifV19XSJ9fSx7ImtleSI6Imdlbl9haS5yZXNwb25zZS5maW5pc2hfcmVhc29ucyIsInZhbHVlIjp7ImFycmF5VmFsdWUiOnsidmFsdWVzIjpbeyJzdHJpbmdWYWx1ZSI6InN0b3AifV19fX0seyJrZXkiOiJnZW5fYWkucmVzcG9uc2UuaWQiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImNoYXRjbXBsLXRlc3QwMDAwMDAwMDAwMDAwMDAwMDAwMDAxIn19LHsia2V5IjoiZ2VuX2FpLnJlc3BvbnNlLm1vZGVsIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJncHQtNC4xLW1pbmktMjAyNS0wNC0xNCJ9fSx7ImtleSI6Imdlbl9haS51c2FnZS5pbnB1dF90b2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6MTl9fSx7ImtleSI6Imdlbl9haS51c2FnZS5vdXRwdXRfdG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjl9fSx7ImtleSI6Imdlbl9haS51c2FnZS5jYWNoZV9yZWFkLmlucHV0X3Rva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjo4fX0seyJrZXkiOiJnZW5fYWkub3V0cHV0Lm1lc3NhZ2VzIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJbe1wicm9sZVwiOlwiYXNzaXN0YW50XCIsXCJwYXJ0c1wiOlt7XCJ0eXBlXCI6XCJ0ZXh0XCIsXCJjb250ZW50XCI6XCJIZWxsbyEgSG93IGNhbiBJIGhlbHAgeW91IHRvZGF5P1wifV0sXCJmaW5pc2hfcmVhc29uXCI6XCJzdG9wXCJ9XSJ9fV0sImRyb3BwZWRBdHRyaWJ1dGVzQ291bnQiOjAsImV2ZW50cyI6W10sImRyb3BwZWRFdmVudHNDb3VudCI6MCwic3RhdHVzIjp7ImNvZGUiOjB9LCJsaW5rcyI6W10sImRyb3BwZWRMaW5rc0NvdW50IjowLCJmbGFncyI6MjU3fSx7InRyYWNlSWQiOiIyZDJhZDc1ODAzYzY1MTQ3MmM4OGExMjk5MmQ4NDdlYSIsInNwYW5JZCI6IjlhOWRhMTYyNDZkYzc0YTYiLCJuYW1lIjoiaW52b2tlX2FnZW50IGdwdC00LjEtbWluaSIsImtpbmQiOjEsInN0YXJ0VGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyNDU4NjAwMDAwMCIsImVuZFRpbWVVbml4TmFubyI6IjE3OTIyNjk5MjQ1OTUwMDAwMDAiLCJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJnZW5fYWkub3BlcmF0aW9uLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6Imludm9rZV9hZ2VudCJ9fSx7ImtleSI6Imdlbl9haS5wcm92aWRlci5uYW1lIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJvcGVuYWkifX0seyJrZXkiOiJnZW5fYWkucmVxdWVzdC5tb2RlbCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiZ3B0LTQuMS1taW5pIn19LHsia2V5IjoiZ2VuX2FpLm91dHB1dC50eXBlIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJqc29uIn19LHsia2V5IjoiZ2VuX2FpLmlucHV0Lm1lc3NhZ2VzIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJbe1wicm9sZVwiOlwidXNlclwiLFwicGFydHNcIjpbe1widHlwZVwiOlwidGV4dFwiLFwiY29udGVudFwiOlwiU2F5IGhlbGxvIGluIGZpdmUgd29yZHMuXCJ9XX1dIn19XSwiZHJvcHBlZEF0dHJpYnV0ZXNDb3VudCI6MCwiZXZlbnRzIjpbeyJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJleGNlcHRpb24udHlwZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiQUlfTm9PYmplY3RHZW5lcmF0ZWRFcnJvciJ9fSx7ImtleSI6ImV4Y2VwdGlvbi5tZXNzYWdlIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJObyBvYmplY3QgZ2VuZXJhdGVkOiBjb3VsZCBub3QgcGFyc2UgdGhlIHJlc3BvbnNlLiJ9fSx7ImtleSI6ImV4Y2VwdGlvbi5zdGFja3RyYWNlIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJBSV9Ob09iamVjdEdlbmVyYXRlZEVycm9yOiBObyBvYmplY3QgZ2VuZXJhdGVkOiBjb3VsZCBub3QgcGFyc2UgdGhlIHJlc3BvbnNlLlxuICAgIGF0IHBhcnNlQW5kVmFsaWRhdGVPYmplY3RSZXN1bHQgKGZpbGU6Ly8vcHJpdmF0ZS90bXAvc3BhbmxpZ2h0LXJlY29yZC1ub2RlLUgzYUp0Ny9ub2RlX21vZHVsZXMvYWkvZGlzdC9pbmRleC5qczoxMzM5MDozNClcbiAgICBhdCBwcm9jZXNzLnByb2Nlc3NUaWNrc0FuZFJlamVjdGlvbnMgKG5vZGU6aW50ZXJuYWwvcHJvY2Vzcy90YXNrX3F1ZXVlczoxMDM6NSlcbiAgICBhdCBhc3luYyBwYXJzZUFuZFZhbGlkYXRlT2JqZWN0UmVzdWx0V2l0aFJlcGFpciAoZmlsZTovLy9wcml2YXRlL3RtcC9zcGFubGlnaHQtcmVjb3JkLW5vZGUtSDNhSnQ3L25vZGVfbW9kdWxlcy9haS9kaXN0L2luZGV4LmpzOjEzNDI2OjEwKVxuICAgIGF0IGFzeW5jIGdlbmVyYXRlT2JqZWN0IChmaWxlOi8vL3ByaXZhdGUvdG1wL3NwYW5saWdodC1yZWNvcmQtbm9kZS1IM2FKdDcvbm9kZV9tb2R1bGVzL2FpL2Rpc3QvaW5kZXguanM6MTM3NDU6MTgpXG4gICAgYXQgYXN5bmMgZXhwZWN0RmFpbHVyZSAoZmlsZTovLy9wcml2YXRlL3RtcC9zcGFubGlnaHQtcmVjb3JkLW5vZGUtSDNhSnQ3L3JlY2lwZXMvX3NjZW5hcmlvcy50czo5Mjo1KVxuICAgIGF0IGFzeW5jIHJ1blNjZW5hcmlvIChmaWxlOi8vL3ByaXZhdGUvdG1wL3NwYW5saWdodC1yZWNvcmQtbm9kZS1IM2FKdDcvcmVjaXBlcy9fc2NlbmFyaW9zLnRzOjczOjcpXG4gICAgYXQgYXN5bmMgZmlsZTovLy9wcml2YXRlL3RtcC9zcGFubGlnaHQtcmVjb3JkLW5vZGUtSDNhSnQ3L3JlY2lwZXMvdjctZ2VuYWkudHM6MTE6MSJ9fV0sIm5hbWUiOiJleGNlcHRpb24iLCJ0aW1lVW5peE5hbm8iOiIxNzkyMjY5OTI0NTk0MDAwMDAwIiwiZHJvcHBlZEF0dHJpYnV0ZXNDb3VudCI6MH1dLCJkcm9wcGVkRXZlbnRzQ291bnQiOjAsInN0YXR1cyI6eyJjb2RlIjoyLCJtZXNzYWdlIjoiTm8gb2JqZWN0IGdlbmVyYXRlZDogY291bGQgbm90IHBhcnNlIHRoZSByZXNwb25zZS4ifSwibGlua3MiOltdLCJkcm9wcGVkTGlua3NDb3VudCI6MCwiZmxhZ3MiOjI1N31dfV19XX0="
+      },
+      "preview": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "support-bot"
+                  }
+                },
+                {
+                  "key": "service.version",
+                  "value": {
+                    "stringValue": "1.0.0"
+                  }
+                },
+                {
+                  "key": "deployment.environment.name",
+                  "value": {
+                    "stringValue": "production"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "spanlight"
+                },
+                "spans": [
+                  {
+                    "traceId": "2d2ad75803c651472c88a12992d847ea",
+                    "spanId": "53f3f37c1dc1af3f",
+                    "parentSpanId": "9a9da16246dc74a6",
+                    "name": "chat gpt-4.1-mini",
+                    "kind": 3,
+                    "startTimeUnixNano": "1792269924587000000",
+                    "endTimeUnixNano": "1792269924592000000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "chat"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.provider.name",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.output.type",
+                        "value": {
+                          "stringValue": "json"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.input.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Say hello in five words.\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.finish_reasons",
+                        "value": {
+                          "arrayValue": {
+                            "values": [
+                              {
+                                "stringValue": "stop"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.id",
+                        "value": {
+                          "stringValue": "chatcmpl-test0000000000000000000001"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.input_tokens",
+                        "value": {
+                          "intValue": 19
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.output_tokens",
+                        "value": {
+                          "intValue": 9
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.cache_read.input_tokens",
+                        "value": {
+                          "intValue": 8
+                        }
+                      },
+                      {
+                        "key": "gen_ai.output.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"text\",\"content\":\"Hello! How can I help you today?\"}],\"finish_reason\":\"stop\"}]"
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  },
+                  {
+                    "traceId": "2d2ad75803c651472c88a12992d847ea",
+                    "spanId": "9a9da16246dc74a6",
+                    "name": "invoke_agent gpt-4.1-mini",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269924586000000",
+                    "endTimeUnixNano": "1792269924595000000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "invoke_agent"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.provider.name",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.output.type",
+                        "value": {
+                          "stringValue": "json"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.input.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Say hello in five words.\"}]}]"
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [
+                      {
+                        "attributes": [
+                          {
+                            "key": "exception.type",
+                            "value": {
+                              "stringValue": "AI_NoObjectGeneratedError"
+                            }
+                          },
+                          {
+                            "key": "exception.message",
+                            "value": {
+                              "stringValue": "No object generated: could not parse the response."
+                            }
+                          },
+                          {
+                            "key": "exception.stacktrace",
+                            "value": {
+                              "stringValue": "AI_NoObjectGeneratedError: No object generated: could not parse the response.\n    at parseAndValidateObjectResult (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/ai/dist/index.js:13390:34)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async parseAndValidateObjectResultWithRepair (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/ai/dist/index.js:13426:10)\n    at async generateObject (file:///private/tmp/spanlight-record-node-H3aJt7/node_modules/ai/dist/index.js:13745:18)\n    at async expectFailure (file:///private/tmp/spanlight-record-node-H3aJt7/recipes/_scenarios.ts:92:5)\n    at async runScenario (file:///private/tmp/spanlight-record-node-H3aJt7/recipes/_scenarios.ts:73:7)\n    at async file:///private/tmp/spanlight-record-node-H3aJt7/recipes/v7-genai.ts:11:1"
+                            }
+                          }
+                        ],
+                        "name": "exception",
+                        "timeUnixNano": "1792269924594000000",
+                        "droppedAttributesCount": 0
+                      }
+                    ],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 2,
+                      "message": "No object generated: could not parse the response."
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accepted": 2,
+        "rejected": [],
+        "spans": [
+          {
+            "span_id": "53f3f37c1dc1af3f",
+            "parent_span_id": "9a9da16246dc74a6",
+            "convention": "gen_ai",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini-2025-04-14",
+            "usage": {
+              "input_tokens": 19,
+              "output_tokens": 9,
+              "cached_tokens": 8,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "priced",
+            "finish_reason": "stop",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "chat",
+            "trace": {
+              "name": null,
+              "environment": "production",
+              "release": "1.0.0",
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "9a9da16246dc74a6",
+            "parent_span_id": null,
+            "convention": "gen_ai",
+            "kind": "chain",
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": false,
+            "time_to_first_token_ms": null,
+            "status": "error",
+            "error_class": "unknown",
+            "operation": "invoke_agent",
+            "trace": {
+              "name": "invoke_agent gpt-4.1-mini",
+              "environment": "production",
+              "release": "1.0.0",
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          }
+        ],
+        "trace": {
+          "span_count": 2,
+          "input_tokens": 19,
+          "output_tokens": 9,
+          "has_unpriced": true
+        },
+        "loses": [
+          "cache_write_1h_tokens",
+          "time_to_first_token_ms"
+        ]
+      }
+    },
+    {
+      "name": "generate_text_with_metadata",
+      "export": {
+        "content_type": "application/json",
+        "body_base64": "eyJyZXNvdXJjZVNwYW5zIjpbeyJyZXNvdXJjZSI6eyJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJzZXJ2aWNlLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6InN1cHBvcnQtYm90In19LHsia2V5Ijoic2VydmljZS52ZXJzaW9uIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiIxLjAuMCJ9fSx7ImtleSI6ImRlcGxveW1lbnQuZW52aXJvbm1lbnQubmFtZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoicHJvZHVjdGlvbiJ9fV0sImRyb3BwZWRBdHRyaWJ1dGVzQ291bnQiOjB9LCJzY29wZVNwYW5zIjpbeyJzY29wZSI6eyJuYW1lIjoic3BhbmxpZ2h0In0sInNwYW5zIjpbeyJ0cmFjZUlkIjoiNGY4NDhmNmU0ZTRjZTBhYmQwZWMwZTg4NTFhMzVkYTAiLCJzcGFuSWQiOiJiYjMyMDM3ZjA5NGY3ZTE4IiwicGFyZW50U3BhbklkIjoiMGI1ZTU1NDhhNWVkYzZjNyIsIm5hbWUiOiJjaGF0IGdwdC00LjEtbWluaSIsImtpbmQiOjMsInN0YXJ0VGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyNDExNDAwMDAwMCIsImVuZFRpbWVVbml4TmFubyI6IjE3OTIyNjk5MjQxMjAwMDAwMDAiLCJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJnZW5fYWkub3BlcmF0aW9uLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImNoYXQifX0seyJrZXkiOiJnZW5fYWkucHJvdmlkZXIubmFtZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoib3BlbmFpIn19LHsia2V5IjoiZ2VuX2FpLnJlcXVlc3QubW9kZWwiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImdwdC00LjEtbWluaSJ9fSx7ImtleSI6Imdlbl9haS5pbnB1dC5tZXNzYWdlcyIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiW3tcInJvbGVcIjpcInVzZXJcIixcInBhcnRzXCI6W3tcInR5cGVcIjpcInRleHRcIixcImNvbnRlbnRcIjpcIlNheSBoZWxsbyBpbiBmaXZlIHdvcmRzLlwifV19XSJ9fSx7ImtleSI6Imdlbl9haS5jbGllbnQub3BlcmF0aW9uLmR1cmF0aW9uIiwidmFsdWUiOnsiZG91YmxlVmFsdWUiOjAuMDA2fX0seyJrZXkiOiJnZW5fYWkucmVzcG9uc2UuZmluaXNoX3JlYXNvbnMiLCJ2YWx1ZSI6eyJhcnJheVZhbHVlIjp7InZhbHVlcyI6W3sic3RyaW5nVmFsdWUiOiJzdG9wIn1dfX19LHsia2V5IjoiZ2VuX2FpLnJlc3BvbnNlLmlkIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJjaGF0Y21wbC10ZXN0MDAwMDAwMDAwMDAwMDAwMDAwMDAwMSJ9fSx7ImtleSI6Imdlbl9haS5yZXNwb25zZS5tb2RlbCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiZ3B0LTQuMS1taW5pLTIwMjUtMDQtMTQifX0seyJrZXkiOiJnZW5fYWkudXNhZ2UuaW5wdXRfdG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjE5fX0seyJrZXkiOiJnZW5fYWkudXNhZ2Uub3V0cHV0X3Rva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjo5fX0seyJrZXkiOiJnZW5fYWkudXNhZ2UuY2FjaGVfcmVhZC5pbnB1dF90b2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6OH19LHsia2V5IjoiZ2VuX2FpLm91dHB1dC5tZXNzYWdlcyIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiW3tcInJvbGVcIjpcImFzc2lzdGFudFwiLFwicGFydHNcIjpbe1widHlwZVwiOlwidGV4dFwiLFwiY29udGVudFwiOlwiSGVsbG8hIEhvdyBjYW4gSSBoZWxwIHlvdSB0b2RheT9cIn1dLFwiZmluaXNoX3JlYXNvblwiOlwic3RvcFwifV0ifX1dLCJkcm9wcGVkQXR0cmlidXRlc0NvdW50IjowLCJldmVudHMiOltdLCJkcm9wcGVkRXZlbnRzQ291bnQiOjAsInN0YXR1cyI6eyJjb2RlIjowfSwibGlua3MiOltdLCJkcm9wcGVkTGlua3NDb3VudCI6MCwiZmxhZ3MiOjI1N30seyJ0cmFjZUlkIjoiNGY4NDhmNmU0ZTRjZTBhYmQwZWMwZTg4NTFhMzVkYTAiLCJzcGFuSWQiOiIwYjVlNTU0OGE1ZWRjNmM3IiwicGFyZW50U3BhbklkIjoiOTk0OTQ3MzA0ZTQzYjMyMSIsIm5hbWUiOiJzdGVwIDEiLCJraW5kIjoxLCJzdGFydFRpbWVVbml4TmFubyI6IjE3OTIyNjk5MjQxMTQwMDAwMDAiLCJlbmRUaW1lVW5peE5hbm8iOiIxNzkyMjY5OTI0MTI1MDAwMDAwIiwiYXR0cmlidXRlcyI6W3sia2V5IjoiZ2VuX2FpLm9wZXJhdGlvbi5uYW1lIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJhZ2VudF9zdGVwIn19XSwiZHJvcHBlZEF0dHJpYnV0ZXNDb3VudCI6MCwiZXZlbnRzIjpbXSwiZHJvcHBlZEV2ZW50c0NvdW50IjowLCJzdGF0dXMiOnsiY29kZSI6MH0sImxpbmtzIjpbXSwiZHJvcHBlZExpbmtzQ291bnQiOjAsImZsYWdzIjoyNTd9LHsidHJhY2VJZCI6IjRmODQ4ZjZlNGU0Y2UwYWJkMGVjMGU4ODUxYTM1ZGEwIiwic3BhbklkIjoiOTk0OTQ3MzA0ZTQzYjMyMSIsIm5hbWUiOiJpbnZva2VfYWdlbnQgZ3B0LTQuMS1taW5pIiwia2luZCI6MSwic3RhcnRUaW1lVW5peE5hbm8iOiIxNzkyMjY5OTI0MTEzMDAwMDAwIiwiZW5kVGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyNDEyNzAwMDAwMCIsImF0dHJpYnV0ZXMiOlt7ImtleSI6Imdlbl9haS5vcGVyYXRpb24ubmFtZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiaW52b2tlX2FnZW50In19LHsia2V5IjoiZ2VuX2FpLnByb3ZpZGVyLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6Im9wZW5haSJ9fSx7ImtleSI6Imdlbl9haS5yZXF1ZXN0Lm1vZGVsIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJncHQtNC4xLW1pbmkifX0seyJrZXkiOiJnZW5fYWkuYWdlbnQubmFtZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiYW5zd2VyIn19LHsia2V5IjoiZ2VuX2FpLmlucHV0Lm1lc3NhZ2VzIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJbe1wicm9sZVwiOlwidXNlclwiLFwicGFydHNcIjpbe1widHlwZVwiOlwidGV4dFwiLFwiY29udGVudFwiOlwiU2F5IGhlbGxvIGluIGZpdmUgd29yZHMuXCJ9XX1dIn19LHsia2V5IjoiZ2VuX2FpLnJlc3BvbnNlLmZpbmlzaF9yZWFzb25zIiwidmFsdWUiOnsiYXJyYXlWYWx1ZSI6eyJ2YWx1ZXMiOlt7InN0cmluZ1ZhbHVlIjoic3RvcCJ9XX19fSx7ImtleSI6Imdlbl9haS51c2FnZS5pbnB1dF90b2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6MTl9fSx7ImtleSI6Imdlbl9haS51c2FnZS5vdXRwdXRfdG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjl9fSx7ImtleSI6Imdlbl9haS51c2FnZS5jYWNoZV9yZWFkLmlucHV0X3Rva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjo4fX0seyJrZXkiOiJnZW5fYWkub3V0cHV0Lm1lc3NhZ2VzIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJbe1wicm9sZVwiOlwiYXNzaXN0YW50XCIsXCJwYXJ0c1wiOlt7XCJ0eXBlXCI6XCJ0ZXh0XCIsXCJjb250ZW50XCI6XCJIZWxsbyEgSG93IGNhbiBJIGhlbHAgeW91IHRvZGF5P1wifV0sXCJmaW5pc2hfcmVhc29uXCI6XCJzdG9wXCJ9XSJ9fV0sImRyb3BwZWRBdHRyaWJ1dGVzQ291bnQiOjAsImV2ZW50cyI6W10sImRyb3BwZWRFdmVudHNDb3VudCI6MCwic3RhdHVzIjp7ImNvZGUiOjB9LCJsaW5rcyI6W10sImRyb3BwZWRMaW5rc0NvdW50IjowLCJmbGFncyI6MjU3fV19XX1dfQ=="
+      },
+      "preview": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "support-bot"
+                  }
+                },
+                {
+                  "key": "service.version",
+                  "value": {
+                    "stringValue": "1.0.0"
+                  }
+                },
+                {
+                  "key": "deployment.environment.name",
+                  "value": {
+                    "stringValue": "production"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "spanlight"
+                },
+                "spans": [
+                  {
+                    "traceId": "4f848f6e4e4ce0abd0ec0e8851a35da0",
+                    "spanId": "bb32037f094f7e18",
+                    "parentSpanId": "0b5e5548a5edc6c7",
+                    "name": "chat gpt-4.1-mini",
+                    "kind": 3,
+                    "startTimeUnixNano": "1792269924114000000",
+                    "endTimeUnixNano": "1792269924120000000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "chat"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.provider.name",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.input.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Say hello in five words.\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.client.operation.duration",
+                        "value": {
+                          "doubleValue": 0.006
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.finish_reasons",
+                        "value": {
+                          "arrayValue": {
+                            "values": [
+                              {
+                                "stringValue": "stop"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.id",
+                        "value": {
+                          "stringValue": "chatcmpl-test0000000000000000000001"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.input_tokens",
+                        "value": {
+                          "intValue": 19
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.output_tokens",
+                        "value": {
+                          "intValue": 9
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.cache_read.input_tokens",
+                        "value": {
+                          "intValue": 8
+                        }
+                      },
+                      {
+                        "key": "gen_ai.output.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"text\",\"content\":\"Hello! How can I help you today?\"}],\"finish_reason\":\"stop\"}]"
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  },
+                  {
+                    "traceId": "4f848f6e4e4ce0abd0ec0e8851a35da0",
+                    "spanId": "0b5e5548a5edc6c7",
+                    "parentSpanId": "994947304e43b321",
+                    "name": "step 1",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269924114000000",
+                    "endTimeUnixNano": "1792269924125000000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "agent_step"
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  },
+                  {
+                    "traceId": "4f848f6e4e4ce0abd0ec0e8851a35da0",
+                    "spanId": "994947304e43b321",
+                    "name": "invoke_agent gpt-4.1-mini",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269924113000000",
+                    "endTimeUnixNano": "1792269924127000000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "invoke_agent"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.provider.name",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.agent.name",
+                        "value": {
+                          "stringValue": "answer"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.input.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Say hello in five words.\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.finish_reasons",
+                        "value": {
+                          "arrayValue": {
+                            "values": [
+                              {
+                                "stringValue": "stop"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.input_tokens",
+                        "value": {
+                          "intValue": 19
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.output_tokens",
+                        "value": {
+                          "intValue": 9
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.cache_read.input_tokens",
+                        "value": {
+                          "intValue": 8
+                        }
+                      },
+                      {
+                        "key": "gen_ai.output.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"text\",\"content\":\"Hello! How can I help you today?\"}],\"finish_reason\":\"stop\"}]"
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accepted": 3,
+        "rejected": [],
+        "spans": [
+          {
+            "span_id": "bb32037f094f7e18",
+            "parent_span_id": "0b5e5548a5edc6c7",
+            "convention": "gen_ai",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini-2025-04-14",
+            "usage": {
+              "input_tokens": 19,
+              "output_tokens": 9,
+              "cached_tokens": 8,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "priced",
+            "finish_reason": "stop",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "chat",
+            "trace": {
+              "name": null,
+              "environment": "production",
+              "release": "1.0.0",
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "0b5e5548a5edc6c7",
+            "parent_span_id": "994947304e43b321",
+            "convention": "gen_ai",
+            "kind": "other",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": false,
+            "output_present": false,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "agent_step",
+            "trace": {
+              "name": null,
+              "environment": "production",
+              "release": "1.0.0",
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "994947304e43b321",
+            "parent_span_id": null,
+            "convention": "gen_ai",
+            "kind": "chain",
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "usage": {
+              "input_tokens": 19,
+              "output_tokens": 9,
+              "cached_tokens": 8,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": true,
+            "usage_state": "rollup",
+            "finish_reason": "stop",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "invoke_agent",
+            "trace": {
+              "name": "invoke_agent gpt-4.1-mini",
+              "environment": "production",
+              "release": "1.0.0",
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          }
+        ],
+        "trace": {
+          "span_count": 3,
+          "input_tokens": 19,
+          "output_tokens": 9,
+          "has_unpriced": false
+        },
+        "loses": [
+          "cache_write_1h_tokens",
+          "time_to_first_token_ms",
+          "metadata"
+        ]
+      }
+    },
+    {
+      "name": "stream_text",
+      "export": {
+        "content_type": "application/json",
+        "body_base64": "eyJyZXNvdXJjZVNwYW5zIjpbeyJyZXNvdXJjZSI6eyJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJzZXJ2aWNlLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6InN1cHBvcnQtYm90In19LHsia2V5Ijoic2VydmljZS52ZXJzaW9uIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiIxLjAuMCJ9fSx7ImtleSI6ImRlcGxveW1lbnQuZW52aXJvbm1lbnQubmFtZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoicHJvZHVjdGlvbiJ9fV0sImRyb3BwZWRBdHRyaWJ1dGVzQ291bnQiOjB9LCJzY29wZVNwYW5zIjpbeyJzY29wZSI6eyJuYW1lIjoic3BhbmxpZ2h0In0sInNwYW5zIjpbeyJ0cmFjZUlkIjoiMjJkMmQ0Nzc5MWI4ODIwYWRmZmVkOTBmYzE3Njk1ZWMiLCJzcGFuSWQiOiI5NDg0Y2U2OWVmMWZlNWM1IiwicGFyZW50U3BhbklkIjoiNTc4YzEwZTI3NzY1YWRhNyIsIm5hbWUiOiJjaGF0IGdwdC00LjEtbWluaSIsImtpbmQiOjMsInN0YXJ0VGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyNDI2NDAwMDAwMCIsImVuZFRpbWVVbml4TmFubyI6IjE3OTIyNjk5MjQyODEwMDAwMDAiLCJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJnZW5fYWkub3BlcmF0aW9uLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImNoYXQifX0seyJrZXkiOiJnZW5fYWkucHJvdmlkZXIubmFtZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoib3BlbmFpIn19LHsia2V5IjoiZ2VuX2FpLnJlcXVlc3QubW9kZWwiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImdwdC00LjEtbWluaSJ9fSx7ImtleSI6Imdlbl9haS5pbnB1dC5tZXNzYWdlcyIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiW3tcInJvbGVcIjpcInVzZXJcIixcInBhcnRzXCI6W3tcInR5cGVcIjpcInRleHRcIixcImNvbnRlbnRcIjpcIlNheSBoZWxsbyBpbiBmaXZlIHdvcmRzLlwifV19XSJ9fSx7ImtleSI6Imdlbl9haS5jbGllbnQub3BlcmF0aW9uLmR1cmF0aW9uIiwidmFsdWUiOnsiZG91YmxlVmFsdWUiOjAuMDE0fX0seyJrZXkiOiJnZW5fYWkuY2xpZW50Lm9wZXJhdGlvbi50aW1lX3RvX2ZpcnN0X2NodW5rIiwidmFsdWUiOnsiZG91YmxlVmFsdWUiOjAuMDA0fX0seyJrZXkiOiJnZW5fYWkuY2xpZW50Lm9wZXJhdGlvbi50aW1lX3Blcl9vdXRwdXRfY2h1bmsiLCJ2YWx1ZSI6eyJkb3VibGVWYWx1ZSI6MC4wMDF9fSx7ImtleSI6Imdlbl9haS5yZXNwb25zZS5maW5pc2hfcmVhc29ucyIsInZhbHVlIjp7ImFycmF5VmFsdWUiOnsidmFsdWVzIjpbeyJzdHJpbmdWYWx1ZSI6InN0b3AifV19fX0seyJrZXkiOiJnZW5fYWkucmVzcG9uc2UuaWQiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImNoYXRjbXBsLXRlc3QwMDAwMDAwMDAwMDAwMDAwMDAwMTAxIn19LHsia2V5IjoiZ2VuX2FpLnJlc3BvbnNlLm1vZGVsIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJncHQtNC4xLW1pbmktMjAyNS0wNC0xNCJ9fSx7ImtleSI6Imdlbl9haS51c2FnZS5pbnB1dF90b2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6MTl9fSx7ImtleSI6Imdlbl9haS51c2FnZS5vdXRwdXRfdG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjl9fSx7ImtleSI6Imdlbl9haS51c2FnZS5jYWNoZV9yZWFkLmlucHV0X3Rva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjo4fX0seyJrZXkiOiJnZW5fYWkub3V0cHV0Lm1lc3NhZ2VzIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJbe1wicm9sZVwiOlwiYXNzaXN0YW50XCIsXCJwYXJ0c1wiOlt7XCJ0eXBlXCI6XCJ0ZXh0XCIsXCJjb250ZW50XCI6XCJIZWxsbyEgSG93IGNhbiBJIGhlbHAgeW91IHRvZGF5P1wifV0sXCJmaW5pc2hfcmVhc29uXCI6XCJzdG9wXCJ9XSJ9fV0sImRyb3BwZWRBdHRyaWJ1dGVzQ291bnQiOjAsImV2ZW50cyI6W10sImRyb3BwZWRFdmVudHNDb3VudCI6MCwic3RhdHVzIjp7ImNvZGUiOjB9LCJsaW5rcyI6W10sImRyb3BwZWRMaW5rc0NvdW50IjowLCJmbGFncyI6MjU3fSx7InRyYWNlSWQiOiIyMmQyZDQ3NzkxYjg4MjBhZGZmZWQ5MGZjMTc2OTVlYyIsInNwYW5JZCI6IjU3OGMxMGUyNzc2NWFkYTciLCJwYXJlbnRTcGFuSWQiOiI5MjVhZTFiNTkzNTRmMjhjIiwibmFtZSI6InN0ZXAgMSIsImtpbmQiOjEsInN0YXJ0VGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyNDI2NDAwMDAwMCIsImVuZFRpbWVVbml4TmFubyI6IjE3OTIyNjk5MjQyODUwMDAwMDAiLCJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJnZW5fYWkub3BlcmF0aW9uLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImFnZW50X3N0ZXAifX1dLCJkcm9wcGVkQXR0cmlidXRlc0NvdW50IjowLCJldmVudHMiOltdLCJkcm9wcGVkRXZlbnRzQ291bnQiOjAsInN0YXR1cyI6eyJjb2RlIjowfSwibGlua3MiOltdLCJkcm9wcGVkTGlua3NDb3VudCI6MCwiZmxhZ3MiOjI1N30seyJ0cmFjZUlkIjoiMjJkMmQ0Nzc5MWI4ODIwYWRmZmVkOTBmYzE3Njk1ZWMiLCJzcGFuSWQiOiI5MjVhZTFiNTkzNTRmMjhjIiwibmFtZSI6Imludm9rZV9hZ2VudCBncHQtNC4xLW1pbmkiLCJraW5kIjoxLCJzdGFydFRpbWVVbml4TmFubyI6IjE3OTIyNjk5MjQyNjIwMDAwMDAiLCJlbmRUaW1lVW5peE5hbm8iOiIxNzkyMjY5OTI0Mjg3MDAwMDAwIiwiYXR0cmlidXRlcyI6W3sia2V5IjoiZ2VuX2FpLm9wZXJhdGlvbi5uYW1lIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJpbnZva2VfYWdlbnQifX0seyJrZXkiOiJnZW5fYWkucHJvdmlkZXIubmFtZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoib3BlbmFpIn19LHsia2V5IjoiZ2VuX2FpLnJlcXVlc3QubW9kZWwiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImdwdC00LjEtbWluaSJ9fSx7ImtleSI6Imdlbl9haS5pbnB1dC5tZXNzYWdlcyIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiW3tcInJvbGVcIjpcInVzZXJcIixcInBhcnRzXCI6W3tcInR5cGVcIjpcInRleHRcIixcImNvbnRlbnRcIjpcIlNheSBoZWxsbyBpbiBmaXZlIHdvcmRzLlwifV19XSJ9fSx7ImtleSI6Imdlbl9haS5yZXNwb25zZS5maW5pc2hfcmVhc29ucyIsInZhbHVlIjp7ImFycmF5VmFsdWUiOnsidmFsdWVzIjpbeyJzdHJpbmdWYWx1ZSI6InN0b3AifV19fX0seyJrZXkiOiJnZW5fYWkudXNhZ2UuaW5wdXRfdG9rZW5zIiwidmFsdWUiOnsiaW50VmFsdWUiOjE5fX0seyJrZXkiOiJnZW5fYWkudXNhZ2Uub3V0cHV0X3Rva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjo5fX0seyJrZXkiOiJnZW5fYWkudXNhZ2UuY2FjaGVfcmVhZC5pbnB1dF90b2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6OH19LHsia2V5IjoiZ2VuX2FpLm91dHB1dC5tZXNzYWdlcyIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiW3tcInJvbGVcIjpcImFzc2lzdGFudFwiLFwicGFydHNcIjpbe1widHlwZVwiOlwidGV4dFwiLFwiY29udGVudFwiOlwiSGVsbG8hIEhvdyBjYW4gSSBoZWxwIHlvdSB0b2RheT9cIn1dLFwiZmluaXNoX3JlYXNvblwiOlwic3RvcFwifV0ifX1dLCJkcm9wcGVkQXR0cmlidXRlc0NvdW50IjowLCJldmVudHMiOltdLCJkcm9wcGVkRXZlbnRzQ291bnQiOjAsInN0YXR1cyI6eyJjb2RlIjowfSwibGlua3MiOltdLCJkcm9wcGVkTGlua3NDb3VudCI6MCwiZmxhZ3MiOjI1N31dfV19XX0="
+      },
+      "preview": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "support-bot"
+                  }
+                },
+                {
+                  "key": "service.version",
+                  "value": {
+                    "stringValue": "1.0.0"
+                  }
+                },
+                {
+                  "key": "deployment.environment.name",
+                  "value": {
+                    "stringValue": "production"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "spanlight"
+                },
+                "spans": [
+                  {
+                    "traceId": "22d2d47791b8820adffed90fc17695ec",
+                    "spanId": "9484ce69ef1fe5c5",
+                    "parentSpanId": "578c10e27765ada7",
+                    "name": "chat gpt-4.1-mini",
+                    "kind": 3,
+                    "startTimeUnixNano": "1792269924264000000",
+                    "endTimeUnixNano": "1792269924281000000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "chat"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.provider.name",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.input.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Say hello in five words.\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.client.operation.duration",
+                        "value": {
+                          "doubleValue": 0.014
+                        }
+                      },
+                      {
+                        "key": "gen_ai.client.operation.time_to_first_chunk",
+                        "value": {
+                          "doubleValue": 0.004
+                        }
+                      },
+                      {
+                        "key": "gen_ai.client.operation.time_per_output_chunk",
+                        "value": {
+                          "doubleValue": 0.001
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.finish_reasons",
+                        "value": {
+                          "arrayValue": {
+                            "values": [
+                              {
+                                "stringValue": "stop"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.id",
+                        "value": {
+                          "stringValue": "chatcmpl-test0000000000000000000101"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.input_tokens",
+                        "value": {
+                          "intValue": 19
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.output_tokens",
+                        "value": {
+                          "intValue": 9
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.cache_read.input_tokens",
+                        "value": {
+                          "intValue": 8
+                        }
+                      },
+                      {
+                        "key": "gen_ai.output.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"text\",\"content\":\"Hello! How can I help you today?\"}],\"finish_reason\":\"stop\"}]"
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  },
+                  {
+                    "traceId": "22d2d47791b8820adffed90fc17695ec",
+                    "spanId": "578c10e27765ada7",
+                    "parentSpanId": "925ae1b59354f28c",
+                    "name": "step 1",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269924264000000",
+                    "endTimeUnixNano": "1792269924285000000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "agent_step"
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  },
+                  {
+                    "traceId": "22d2d47791b8820adffed90fc17695ec",
+                    "spanId": "925ae1b59354f28c",
+                    "name": "invoke_agent gpt-4.1-mini",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269924262000000",
+                    "endTimeUnixNano": "1792269924287000000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "invoke_agent"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.provider.name",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.input.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Say hello in five words.\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.finish_reasons",
+                        "value": {
+                          "arrayValue": {
+                            "values": [
+                              {
+                                "stringValue": "stop"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.input_tokens",
+                        "value": {
+                          "intValue": 19
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.output_tokens",
+                        "value": {
+                          "intValue": 9
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.cache_read.input_tokens",
+                        "value": {
+                          "intValue": 8
+                        }
+                      },
+                      {
+                        "key": "gen_ai.output.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"text\",\"content\":\"Hello! How can I help you today?\"}],\"finish_reason\":\"stop\"}]"
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accepted": 3,
+        "rejected": [],
+        "spans": [
+          {
+            "span_id": "9484ce69ef1fe5c5",
+            "parent_span_id": "578c10e27765ada7",
+            "convention": "gen_ai",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini-2025-04-14",
+            "usage": {
+              "input_tokens": 19,
+              "output_tokens": 9,
+              "cached_tokens": 8,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "priced",
+            "finish_reason": "stop",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": 4.0,
+            "status": "unset",
+            "error_class": null,
+            "operation": "chat",
+            "trace": {
+              "name": null,
+              "environment": "production",
+              "release": "1.0.0",
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "578c10e27765ada7",
+            "parent_span_id": "925ae1b59354f28c",
+            "convention": "gen_ai",
+            "kind": "other",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": false,
+            "output_present": false,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "agent_step",
+            "trace": {
+              "name": null,
+              "environment": "production",
+              "release": "1.0.0",
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "925ae1b59354f28c",
+            "parent_span_id": null,
+            "convention": "gen_ai",
+            "kind": "chain",
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "usage": {
+              "input_tokens": 19,
+              "output_tokens": 9,
+              "cached_tokens": 8,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": true,
+            "usage_state": "rollup",
+            "finish_reason": "stop",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "invoke_agent",
+            "trace": {
+              "name": "invoke_agent gpt-4.1-mini",
+              "environment": "production",
+              "release": "1.0.0",
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          }
+        ],
+        "trace": {
+          "span_count": 3,
+          "input_tokens": 19,
+          "output_tokens": 9,
+          "has_unpriced": false
+        },
+        "loses": [
+          "cache_write_1h_tokens"
+        ]
+      }
+    },
+    {
+      "name": "tool_call",
+      "export": {
+        "content_type": "application/json",
+        "body_base64": "eyJyZXNvdXJjZVNwYW5zIjpbeyJyZXNvdXJjZSI6eyJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJzZXJ2aWNlLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6InN1cHBvcnQtYm90In19LHsia2V5Ijoic2VydmljZS52ZXJzaW9uIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiIxLjAuMCJ9fSx7ImtleSI6ImRlcGxveW1lbnQuZW52aXJvbm1lbnQubmFtZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoicHJvZHVjdGlvbiJ9fV0sImRyb3BwZWRBdHRyaWJ1dGVzQ291bnQiOjB9LCJzY29wZVNwYW5zIjpbeyJzY29wZSI6eyJuYW1lIjoic3BhbmxpZ2h0In0sInNwYW5zIjpbeyJ0cmFjZUlkIjoiMWIzMTkwZWU1MGVkNjRiNDlhMjJiYzE1ZWFhZTg4YTQiLCJzcGFuSWQiOiI0NzkxNjBkNzFhMGEzZjJhIiwicGFyZW50U3BhbklkIjoiMmVjOWI5NzVlZjEwZmJkOSIsIm5hbWUiOiJjaGF0IGdwdC00LjEtbWluaSIsImtpbmQiOjMsInN0YXJ0VGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyNDQzNDAwMDAwMCIsImVuZFRpbWVVbml4TmFubyI6IjE3OTIyNjk5MjQ0NDAwMDAwMDAiLCJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJnZW5fYWkub3BlcmF0aW9uLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImNoYXQifX0seyJrZXkiOiJnZW5fYWkucHJvdmlkZXIubmFtZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoib3BlbmFpIn19LHsia2V5IjoiZ2VuX2FpLnJlcXVlc3QubW9kZWwiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImdwdC00LjEtbWluaSJ9fSx7ImtleSI6Imdlbl9haS5pbnB1dC5tZXNzYWdlcyIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiW3tcInJvbGVcIjpcInVzZXJcIixcInBhcnRzXCI6W3tcInR5cGVcIjpcInRleHRcIixcImNvbnRlbnRcIjpcIldoYXQgaXMgdGhlIHdlYXRoZXIgaW4gUGFyaXMgYW5kIFRva3lvPyBVc2UgdGhlIHRvb2wuXCJ9XX1dIn19LHsia2V5IjoiZ2VuX2FpLnRvb2wuZGVmaW5pdGlvbnMiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6Ilt7XCJ0eXBlXCI6XCJmdW5jdGlvblwiLFwibmFtZVwiOlwiZ2V0X3dlYXRoZXJcIixcImlucHV0U2NoZW1hXCI6e1wiJHNjaGVtYVwiOlwiaHR0cDovL2pzb24tc2NoZW1hLm9yZy9kcmFmdC0wNy9zY2hlbWEjXCIsXCJ0eXBlXCI6XCJvYmplY3RcIixcInByb3BlcnRpZXNcIjp7XCJjaXR5XCI6e1widHlwZVwiOlwic3RyaW5nXCJ9LFwidW5pdFwiOntcInR5cGVcIjpcInN0cmluZ1wifX0sXCJyZXF1aXJlZFwiOltcImNpdHlcIixcInVuaXRcIl0sXCJhZGRpdGlvbmFsUHJvcGVydGllc1wiOmZhbHNlfSxcImRlc2NyaXB0aW9uXCI6XCJHZXQgdGhlIGN1cnJlbnQgd2VhdGhlciBmb3IgYSBjaXR5LlwifV0ifX0seyJrZXkiOiJnZW5fYWkuY2xpZW50Lm9wZXJhdGlvbi5kdXJhdGlvbiIsInZhbHVlIjp7ImRvdWJsZVZhbHVlIjowLjAwNn19LHsia2V5IjoiZ2VuX2FpLnJlc3BvbnNlLmZpbmlzaF9yZWFzb25zIiwidmFsdWUiOnsiYXJyYXlWYWx1ZSI6eyJ2YWx1ZXMiOlt7InN0cmluZ1ZhbHVlIjoidG9vbC1jYWxscyJ9XX19fSx7ImtleSI6Imdlbl9haS5yZXNwb25zZS5pZCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiY2hhdGNtcGwtdGVzdDAwMDAwMDAwMDAwMDAwMDAwMDAwMDIifX0seyJrZXkiOiJnZW5fYWkucmVzcG9uc2UubW9kZWwiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImdwdC00LjEtbWluaS0yMDI1LTA0LTE0In19LHsia2V5IjoiZ2VuX2FpLnVzYWdlLmlucHV0X3Rva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjo4Mn19LHsia2V5IjoiZ2VuX2FpLnVzYWdlLm91dHB1dF90b2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6NDZ9fSx7ImtleSI6Imdlbl9haS51c2FnZS5jYWNoZV9yZWFkLmlucHV0X3Rva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjowfX0seyJrZXkiOiJnZW5fYWkub3V0cHV0Lm1lc3NhZ2VzIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJbe1wicm9sZVwiOlwiYXNzaXN0YW50XCIsXCJwYXJ0c1wiOlt7XCJ0eXBlXCI6XCJ0b29sX2NhbGxcIixcImlkXCI6XCJjYWxsX3Rlc3QwMDAwMDAwMDAwMDAwMDAwYTFcIixcIm5hbWVcIjpcImdldF93ZWF0aGVyXCIsXCJhcmd1bWVudHNcIjp7XCJjaXR5XCI6XCJQYXJpc1wiLFwidW5pdFwiOlwiY2Vsc2l1c1wifX0se1widHlwZVwiOlwidG9vbF9jYWxsXCIsXCJpZFwiOlwiY2FsbF90ZXN0MDAwMDAwMDAwMDAwMDAwMGIyXCIsXCJuYW1lXCI6XCJnZXRfd2VhdGhlclwiLFwiYXJndW1lbnRzXCI6e1wiY2l0eVwiOlwiVG9reW9cIixcInVuaXRcIjpcImNlbHNpdXNcIn19XSxcImZpbmlzaF9yZWFzb25cIjpcInRvb2xfY2FsbFwifV0ifX1dLCJkcm9wcGVkQXR0cmlidXRlc0NvdW50IjowLCJldmVudHMiOltdLCJkcm9wcGVkRXZlbnRzQ291bnQiOjAsInN0YXR1cyI6eyJjb2RlIjowfSwibGlua3MiOltdLCJkcm9wcGVkTGlua3NDb3VudCI6MCwiZmxhZ3MiOjI1N30seyJ0cmFjZUlkIjoiMWIzMTkwZWU1MGVkNjRiNDlhMjJiYzE1ZWFhZTg4YTQiLCJzcGFuSWQiOiIwMTA2NDY4MzYzOWM4MGEwIiwicGFyZW50U3BhbklkIjoiMmVjOWI5NzVlZjEwZmJkOSIsIm5hbWUiOiJleGVjdXRlX3Rvb2wgZ2V0X3dlYXRoZXIiLCJraW5kIjoxLCJzdGFydFRpbWVVbml4TmFubyI6IjE3OTIyNjk5MjQ0NDYwMDAwMDAiLCJlbmRUaW1lVW5peE5hbm8iOiIxNzkyMjY5OTI0NDU0MDAwMDAwIiwiYXR0cmlidXRlcyI6W3sia2V5IjoiZ2VuX2FpLm9wZXJhdGlvbi5uYW1lIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJleGVjdXRlX3Rvb2wifX0seyJrZXkiOiJnZW5fYWkudG9vbC5uYW1lIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJnZXRfd2VhdGhlciJ9fSx7ImtleSI6Imdlbl9haS50b29sLmNhbGwuaWQiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImNhbGxfdGVzdDAwMDAwMDAwMDAwMDAwMDBhMSJ9fSx7ImtleSI6Imdlbl9haS50b29sLnR5cGUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImZ1bmN0aW9uIn19LHsia2V5IjoiZ2VuX2FpLnRvb2wuY2FsbC5hcmd1bWVudHMiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6IntcImNpdHlcIjpcIlBhcmlzXCIsXCJ1bml0XCI6XCJjZWxzaXVzXCJ9In19LHsia2V5IjoiZ2VuX2FpLmV4ZWN1dGVfdG9vbC5kdXJhdGlvbiIsInZhbHVlIjp7ImRvdWJsZVZhbHVlIjowLjAwMn19LHsia2V5IjoiZ2VuX2FpLnRvb2wuY2FsbC5yZXN1bHQiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6IntcImNpdHlcIjpcIlBhcmlzXCIsXCJ1bml0XCI6XCJjZWxzaXVzXCIsXCJmb3JlY2FzdFwiOlwibm90IGF2YWlsYWJsZSBpbiBmaXh0dXJlc1wifSJ9fV0sImRyb3BwZWRBdHRyaWJ1dGVzQ291bnQiOjAsImV2ZW50cyI6W10sImRyb3BwZWRFdmVudHNDb3VudCI6MCwic3RhdHVzIjp7ImNvZGUiOjB9LCJsaW5rcyI6W10sImRyb3BwZWRMaW5rc0NvdW50IjowLCJmbGFncyI6MjU3fSx7InRyYWNlSWQiOiIxYjMxOTBlZTUwZWQ2NGI0OWEyMmJjMTVlYWFlODhhNCIsInNwYW5JZCI6ImExN2Q1YTZlMjVmNzY2ZTUiLCJwYXJlbnRTcGFuSWQiOiIyZWM5Yjk3NWVmMTBmYmQ5IiwibmFtZSI6ImV4ZWN1dGVfdG9vbCBnZXRfd2VhdGhlciIsImtpbmQiOjEsInN0YXJ0VGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyNDQ0NjAwMDAwMCIsImVuZFRpbWVVbml4TmFubyI6IjE3OTIyNjk5MjQ0NTMwMDAwMDAiLCJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJnZW5fYWkub3BlcmF0aW9uLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImV4ZWN1dGVfdG9vbCJ9fSx7ImtleSI6Imdlbl9haS50b29sLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6ImdldF93ZWF0aGVyIn19LHsia2V5IjoiZ2VuX2FpLnRvb2wuY2FsbC5pZCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiY2FsbF90ZXN0MDAwMDAwMDAwMDAwMDAwMGIyIn19LHsia2V5IjoiZ2VuX2FpLnRvb2wudHlwZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiZnVuY3Rpb24ifX0seyJrZXkiOiJnZW5fYWkudG9vbC5jYWxsLmFyZ3VtZW50cyIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoie1wiY2l0eVwiOlwiVG9reW9cIixcInVuaXRcIjpcImNlbHNpdXNcIn0ifX0seyJrZXkiOiJnZW5fYWkuZXhlY3V0ZV90b29sLmR1cmF0aW9uIiwidmFsdWUiOnsiZG91YmxlVmFsdWUiOjAuMDAyfX0seyJrZXkiOiJnZW5fYWkudG9vbC5jYWxsLnJlc3VsdCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoie1wiY2l0eVwiOlwiVG9reW9cIixcInVuaXRcIjpcImNlbHNpdXNcIixcImZvcmVjYXN0XCI6XCJub3QgYXZhaWxhYmxlIGluIGZpeHR1cmVzXCJ9In19XSwiZHJvcHBlZEF0dHJpYnV0ZXNDb3VudCI6MCwiZXZlbnRzIjpbXSwiZHJvcHBlZEV2ZW50c0NvdW50IjowLCJzdGF0dXMiOnsiY29kZSI6MH0sImxpbmtzIjpbXSwiZHJvcHBlZExpbmtzQ291bnQiOjAsImZsYWdzIjoyNTd9LHsidHJhY2VJZCI6IjFiMzE5MGVlNTBlZDY0YjQ5YTIyYmMxNWVhYWU4OGE0Iiwic3BhbklkIjoiMmVjOWI5NzVlZjEwZmJkOSIsInBhcmVudFNwYW5JZCI6ImYxNTQ3NWFhMDYyNDM1ZWMiLCJuYW1lIjoic3RlcCAxIiwia2luZCI6MSwic3RhcnRUaW1lVW5peE5hbm8iOiIxNzkyMjY5OTI0NDM0MDAwMDAwIiwiZW5kVGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyNDQ1NTAwMDAwMCIsImF0dHJpYnV0ZXMiOlt7ImtleSI6Imdlbl9haS5vcGVyYXRpb24ubmFtZSIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiYWdlbnRfc3RlcCJ9fV0sImRyb3BwZWRBdHRyaWJ1dGVzQ291bnQiOjAsImV2ZW50cyI6W10sImRyb3BwZWRFdmVudHNDb3VudCI6MCwic3RhdHVzIjp7ImNvZGUiOjB9LCJsaW5rcyI6W10sImRyb3BwZWRMaW5rc0NvdW50IjowLCJmbGFncyI6MjU3fSx7InRyYWNlSWQiOiIxYjMxOTBlZTUwZWQ2NGI0OWEyMmJjMTVlYWFlODhhNCIsInNwYW5JZCI6ImYxNTQ3NWFhMDYyNDM1ZWMiLCJuYW1lIjoiaW52b2tlX2FnZW50IGdwdC00LjEtbWluaSIsImtpbmQiOjEsInN0YXJ0VGltZVVuaXhOYW5vIjoiMTc5MjI2OTkyNDQzMjAwMDAwMCIsImVuZFRpbWVVbml4TmFubyI6IjE3OTIyNjk5MjQ0NTYwMDAwMDAiLCJhdHRyaWJ1dGVzIjpbeyJrZXkiOiJnZW5fYWkub3BlcmF0aW9uLm5hbWUiLCJ2YWx1ZSI6eyJzdHJpbmdWYWx1ZSI6Imludm9rZV9hZ2VudCJ9fSx7ImtleSI6Imdlbl9haS5wcm92aWRlci5uYW1lIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJvcGVuYWkifX0seyJrZXkiOiJnZW5fYWkucmVxdWVzdC5tb2RlbCIsInZhbHVlIjp7InN0cmluZ1ZhbHVlIjoiZ3B0LTQuMS1taW5pIn19LHsia2V5IjoiZ2VuX2FpLmlucHV0Lm1lc3NhZ2VzIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJbe1wicm9sZVwiOlwidXNlclwiLFwicGFydHNcIjpbe1widHlwZVwiOlwidGV4dFwiLFwiY29udGVudFwiOlwiV2hhdCBpcyB0aGUgd2VhdGhlciBpbiBQYXJpcyBhbmQgVG9reW8/IFVzZSB0aGUgdG9vbC5cIn1dfV0ifX0seyJrZXkiOiJnZW5fYWkucmVzcG9uc2UuZmluaXNoX3JlYXNvbnMiLCJ2YWx1ZSI6eyJhcnJheVZhbHVlIjp7InZhbHVlcyI6W3sic3RyaW5nVmFsdWUiOiJ0b29sLWNhbGxzIn1dfX19LHsia2V5IjoiZ2VuX2FpLnVzYWdlLmlucHV0X3Rva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjo4Mn19LHsia2V5IjoiZ2VuX2FpLnVzYWdlLm91dHB1dF90b2tlbnMiLCJ2YWx1ZSI6eyJpbnRWYWx1ZSI6NDZ9fSx7ImtleSI6Imdlbl9haS51c2FnZS5jYWNoZV9yZWFkLmlucHV0X3Rva2VucyIsInZhbHVlIjp7ImludFZhbHVlIjowfX0seyJrZXkiOiJnZW5fYWkub3V0cHV0Lm1lc3NhZ2VzIiwidmFsdWUiOnsic3RyaW5nVmFsdWUiOiJbe1wicm9sZVwiOlwiYXNzaXN0YW50XCIsXCJwYXJ0c1wiOlt7XCJ0eXBlXCI6XCJ0b29sX2NhbGxcIixcImlkXCI6XCJjYWxsX3Rlc3QwMDAwMDAwMDAwMDAwMDAwYTFcIixcIm5hbWVcIjpcImdldF93ZWF0aGVyXCIsXCJhcmd1bWVudHNcIjp7XCJjaXR5XCI6XCJQYXJpc1wiLFwidW5pdFwiOlwiY2Vsc2l1c1wifX0se1widHlwZVwiOlwidG9vbF9jYWxsXCIsXCJpZFwiOlwiY2FsbF90ZXN0MDAwMDAwMDAwMDAwMDAwMGIyXCIsXCJuYW1lXCI6XCJnZXRfd2VhdGhlclwiLFwiYXJndW1lbnRzXCI6e1wiY2l0eVwiOlwiVG9reW9cIixcInVuaXRcIjpcImNlbHNpdXNcIn19LHtcInR5cGVcIjpcInRvb2xfY2FsbF9yZXNwb25zZVwiLFwiaWRcIjpcImNhbGxfdGVzdDAwMDAwMDAwMDAwMDAwMDBhMVwiLFwicmVzcG9uc2VcIjp7XCJjaXR5XCI6XCJQYXJpc1wiLFwidW5pdFwiOlwiY2Vsc2l1c1wiLFwiZm9yZWNhc3RcIjpcIm5vdCBhdmFpbGFibGUgaW4gZml4dHVyZXNcIn19LHtcInR5cGVcIjpcInRvb2xfY2FsbF9yZXNwb25zZVwiLFwiaWRcIjpcImNhbGxfdGVzdDAwMDAwMDAwMDAwMDAwMDBiMlwiLFwicmVzcG9uc2VcIjp7XCJjaXR5XCI6XCJUb2t5b1wiLFwidW5pdFwiOlwiY2Vsc2l1c1wiLFwiZm9yZWNhc3RcIjpcIm5vdCBhdmFpbGFibGUgaW4gZml4dHVyZXNcIn19XSxcImZpbmlzaF9yZWFzb25cIjpcInRvb2xfY2FsbFwifV0ifX1dLCJkcm9wcGVkQXR0cmlidXRlc0NvdW50IjowLCJldmVudHMiOltdLCJkcm9wcGVkRXZlbnRzQ291bnQiOjAsInN0YXR1cyI6eyJjb2RlIjowfSwibGlua3MiOltdLCJkcm9wcGVkTGlua3NDb3VudCI6MCwiZmxhZ3MiOjI1N31dfV19XX0="
+      },
+      "preview": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "support-bot"
+                  }
+                },
+                {
+                  "key": "service.version",
+                  "value": {
+                    "stringValue": "1.0.0"
+                  }
+                },
+                {
+                  "key": "deployment.environment.name",
+                  "value": {
+                    "stringValue": "production"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "spanlight"
+                },
+                "spans": [
+                  {
+                    "traceId": "1b3190ee50ed64b49a22bc15eaae88a4",
+                    "spanId": "479160d71a0a3f2a",
+                    "parentSpanId": "2ec9b975ef10fbd9",
+                    "name": "chat gpt-4.1-mini",
+                    "kind": 3,
+                    "startTimeUnixNano": "1792269924434000000",
+                    "endTimeUnixNano": "1792269924440000000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "chat"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.provider.name",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.input.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"What is the weather in Paris and Tokyo? Use the tool.\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.tool.definitions",
+                        "value": {
+                          "stringValue": "[{\"type\":\"function\",\"name\":\"get_weather\",\"inputSchema\":{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"},\"unit\":{\"type\":\"string\"}},\"required\":[\"city\",\"unit\"],\"additionalProperties\":false},\"description\":\"Get the current weather for a city.\"}]"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.client.operation.duration",
+                        "value": {
+                          "doubleValue": 0.006
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.finish_reasons",
+                        "value": {
+                          "arrayValue": {
+                            "values": [
+                              {
+                                "stringValue": "tool-calls"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.id",
+                        "value": {
+                          "stringValue": "chatcmpl-test0000000000000000000002"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini-2025-04-14"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.input_tokens",
+                        "value": {
+                          "intValue": 82
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.output_tokens",
+                        "value": {
+                          "intValue": 46
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.cache_read.input_tokens",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "gen_ai.output.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"tool_call\",\"id\":\"call_test0000000000000000a1\",\"name\":\"get_weather\",\"arguments\":{\"city\":\"Paris\",\"unit\":\"celsius\"}},{\"type\":\"tool_call\",\"id\":\"call_test0000000000000000b2\",\"name\":\"get_weather\",\"arguments\":{\"city\":\"Tokyo\",\"unit\":\"celsius\"}}],\"finish_reason\":\"tool_call\"}]"
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  },
+                  {
+                    "traceId": "1b3190ee50ed64b49a22bc15eaae88a4",
+                    "spanId": "01064683639c80a0",
+                    "parentSpanId": "2ec9b975ef10fbd9",
+                    "name": "execute_tool get_weather",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269924446000000",
+                    "endTimeUnixNano": "1792269924454000000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "execute_tool"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.tool.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.tool.call.id",
+                        "value": {
+                          "stringValue": "call_test0000000000000000a1"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.tool.type",
+                        "value": {
+                          "stringValue": "function"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.tool.call.arguments",
+                        "value": {
+                          "stringValue": "{\"city\":\"Paris\",\"unit\":\"celsius\"}"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.execute_tool.duration",
+                        "value": {
+                          "doubleValue": 0.002
+                        }
+                      },
+                      {
+                        "key": "gen_ai.tool.call.result",
+                        "value": {
+                          "stringValue": "{\"city\":\"Paris\",\"unit\":\"celsius\",\"forecast\":\"not available in fixtures\"}"
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  },
+                  {
+                    "traceId": "1b3190ee50ed64b49a22bc15eaae88a4",
+                    "spanId": "a17d5a6e25f766e5",
+                    "parentSpanId": "2ec9b975ef10fbd9",
+                    "name": "execute_tool get_weather",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269924446000000",
+                    "endTimeUnixNano": "1792269924453000000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "execute_tool"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.tool.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.tool.call.id",
+                        "value": {
+                          "stringValue": "call_test0000000000000000b2"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.tool.type",
+                        "value": {
+                          "stringValue": "function"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.tool.call.arguments",
+                        "value": {
+                          "stringValue": "{\"city\":\"Tokyo\",\"unit\":\"celsius\"}"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.execute_tool.duration",
+                        "value": {
+                          "doubleValue": 0.002
+                        }
+                      },
+                      {
+                        "key": "gen_ai.tool.call.result",
+                        "value": {
+                          "stringValue": "{\"city\":\"Tokyo\",\"unit\":\"celsius\",\"forecast\":\"not available in fixtures\"}"
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  },
+                  {
+                    "traceId": "1b3190ee50ed64b49a22bc15eaae88a4",
+                    "spanId": "2ec9b975ef10fbd9",
+                    "parentSpanId": "f15475aa062435ec",
+                    "name": "step 1",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269924434000000",
+                    "endTimeUnixNano": "1792269924455000000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "agent_step"
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  },
+                  {
+                    "traceId": "1b3190ee50ed64b49a22bc15eaae88a4",
+                    "spanId": "f15475aa062435ec",
+                    "name": "invoke_agent gpt-4.1-mini",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792269924432000000",
+                    "endTimeUnixNano": "1792269924456000000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "invoke_agent"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.provider.name",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.input.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"What is the weather in Paris and Tokyo? Use the tool.\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.response.finish_reasons",
+                        "value": {
+                          "arrayValue": {
+                            "values": [
+                              {
+                                "stringValue": "tool-calls"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.input_tokens",
+                        "value": {
+                          "intValue": 82
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.output_tokens",
+                        "value": {
+                          "intValue": 46
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.cache_read.input_tokens",
+                        "value": {
+                          "intValue": 0
+                        }
+                      },
+                      {
+                        "key": "gen_ai.output.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"tool_call\",\"id\":\"call_test0000000000000000a1\",\"name\":\"get_weather\",\"arguments\":{\"city\":\"Paris\",\"unit\":\"celsius\"}},{\"type\":\"tool_call\",\"id\":\"call_test0000000000000000b2\",\"name\":\"get_weather\",\"arguments\":{\"city\":\"Tokyo\",\"unit\":\"celsius\"}},{\"type\":\"tool_call_response\",\"id\":\"call_test0000000000000000a1\",\"response\":{\"city\":\"Paris\",\"unit\":\"celsius\",\"forecast\":\"not available in fixtures\"}},{\"type\":\"tool_call_response\",\"id\":\"call_test0000000000000000b2\",\"response\":{\"city\":\"Tokyo\",\"unit\":\"celsius\",\"forecast\":\"not available in fixtures\"}}],\"finish_reason\":\"tool_call\"}]"
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "status": {
+                      "code": 0
+                    },
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "flags": 257
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accepted": 5,
+        "rejected": [],
+        "spans": [
+          {
+            "span_id": "479160d71a0a3f2a",
+            "parent_span_id": "2ec9b975ef10fbd9",
+            "convention": "gen_ai",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini-2025-04-14",
+            "usage": {
+              "input_tokens": 82,
+              "output_tokens": 46,
+              "cached_tokens": 0,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "priced",
+            "finish_reason": "tool_calls",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "chat",
+            "trace": {
+              "name": null,
+              "environment": "production",
+              "release": "1.0.0",
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "01064683639c80a0",
+            "parent_span_id": "2ec9b975ef10fbd9",
+            "convention": "gen_ai",
+            "kind": "tool",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": false,
+            "output_present": false,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "execute_tool",
+            "trace": {
+              "name": null,
+              "environment": "production",
+              "release": "1.0.0",
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "a17d5a6e25f766e5",
+            "parent_span_id": "2ec9b975ef10fbd9",
+            "convention": "gen_ai",
+            "kind": "tool",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": false,
+            "output_present": false,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "execute_tool",
+            "trace": {
+              "name": null,
+              "environment": "production",
+              "release": "1.0.0",
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "2ec9b975ef10fbd9",
+            "parent_span_id": "f15475aa062435ec",
+            "convention": "gen_ai",
+            "kind": "other",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": false,
+            "output_present": false,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "agent_step",
+            "trace": {
+              "name": null,
+              "environment": "production",
+              "release": "1.0.0",
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "f15475aa062435ec",
+            "parent_span_id": null,
+            "convention": "gen_ai",
+            "kind": "chain",
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "usage": {
+              "input_tokens": 82,
+              "output_tokens": 46,
+              "cached_tokens": 0,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": true,
+            "usage_state": "rollup",
+            "finish_reason": "tool_calls",
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "unset",
+            "error_class": null,
+            "operation": "invoke_agent",
+            "trace": {
+              "name": "invoke_agent gpt-4.1-mini",
+              "environment": "production",
+              "release": "1.0.0",
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          }
+        ],
+        "trace": {
+          "span_count": 5,
+          "input_tokens": 82,
+          "output_tokens": 46,
+          "has_unpriced": false
+        },
+        "loses": [
+          "cache_write_1h_tokens",
+          "time_to_first_token_ms"
+        ]
+      }
+    }
+  ]
+}
