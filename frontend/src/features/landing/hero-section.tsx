@@ -1,19 +1,20 @@
 import { Link } from "@tanstack/react-router";
-import { Activity, ArrowRight, Check } from "lucide-react";
+import { ArrowRight, Check } from "lucide-react";
 
+import { LogoMark } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 
 import { SECTION_IDS } from "./links";
-import { ProductPreview } from "./product-preview";
+import { TraceAnatomy } from "./trace-anatomy";
 
-const HIGHLIGHTS = ["Free and open source", "No credit card", "Self-host with Docker"] as const;
+const HIGHLIGHTS = ["MIT-licensed core", "No credit card", "Self-host with Docker"] as const;
 
 interface HeroSectionProps {
   onTryDemo: () => void;
   demoPending: boolean;
 }
 
-/** Headline, value proposition, the two primary actions and the product preview. */
+/** Headline, value proposition, the two primary actions and the trace-and-cost figure. */
 export function HeroSection({ onTryDemo, demoPending }: HeroSectionProps) {
   return (
     <section aria-labelledby="hero-title" className="relative px-5 pt-[52px] md:px-8 lg:pt-24">
@@ -24,9 +25,9 @@ export function HeroSection({ onTryDemo, demoPending }: HeroSectionProps) {
         >
           <span
             aria-hidden
-            className="flex size-[22px] items-center justify-center rounded-full bg-lime text-lime-foreground lg:size-[26px]"
+            className="flex size-[22px] items-center justify-center rounded-full bg-hero-card lg:size-[26px] dark:border dark:border-border"
           >
-            <Activity className="size-3 lg:size-3.5" strokeWidth={2.4} />
+            <LogoMark tone="on-dark" className="size-3 lg:size-4" />
           </span>
           Open-source LLM observability
           <ArrowRight aria-hidden className="hidden size-3.5 text-subtle-foreground lg:block" />
@@ -48,8 +49,8 @@ export function HeroSection({ onTryDemo, demoPending }: HeroSectionProps) {
         </h1>
 
         <p className="max-w-[340px] animate-fade-up text-lg text-muted-foreground [animation-delay:120ms] md:max-w-[760px] lg:text-[19px] lg:leading-[1.55]">
-          Trace every LLM call, let the Doctor find what’s wrong, version prompts, score answers,
-          fail CI when quality drops and cap spend at the gateway. Open source, on one Postgres.
+          Trace every LLM call, see what each one cost line by line, and let the Doctor tell you
+          what went wrong and how to fix it. Open source, on one Postgres.
         </p>
 
         <div className="flex w-full animate-fade-up flex-col items-center gap-[22px] pt-1.5 [animation-delay:180ms] lg:gap-5 lg:pt-3">
@@ -79,7 +80,7 @@ export function HeroSection({ onTryDemo, demoPending }: HeroSectionProps) {
         </div>
       </div>
 
-      <ProductPreview className="mt-11 animate-fade-up [animation-delay:240ms] lg:mt-[72px]" />
+      <TraceAnatomy className="mt-11 animate-fade-up [animation-delay:240ms] lg:mt-[72px]" />
     </section>
   );
 }

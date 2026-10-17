@@ -6,7 +6,7 @@
 
 - **Real traffic only.** Instrument your app with the Python SDK, point any OpenTelemetry GenAI exporter at the OTLP endpoint, or send calls through the gateway.
 - **A gateway for OpenAI and Anthropic.** It is built so the official SDKs work against it unchanged, streaming and tool calls included; a contract suite against recorded provider responses is planned for the 0.3 release. It adds encrypted provider credentials, weighted routes with retries and fallbacks, per-key rate limits, an exact-match response cache, and an Integration Lab that injects the failures real providers produce (429s, 5xx, timeouts, cut-off streams) on non-production keys.
-- **Cost you can check.** Prices are versioned per model. A model with no known price shows as _unknown_, never as $0. Cache-write premiums and long-context price tiers are not modelled yet.
+- **Cost you can check.** Prices are versioned per model and include cache writes, long-prompt tiers, service tiers (batch, flex, priority) and web search fees. Every call has a line-by-line cost breakdown, and traced spend can be reconciled with the provider’s bill. A cost that cannot be known shows as _unknown_ with the reason, never as $0.
 - **Built for teams.** Organizations, projects, roles, invites, scoped API keys, personal access tokens and an audit log.
 - **Private by design.** Postgres row-level security isolates every project's traces, spans and derived data; the rest is guarded by permission checks. Secrets are redacted from payloads before storage, and payload capture can be switched off per project.
 - **Self-hosted on one database.** Postgres is the only datastore, the job queue included. One `docker compose up`, or [deploy to Railway](docs/deploy/railway.md).

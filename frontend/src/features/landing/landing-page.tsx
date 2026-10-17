@@ -1,4 +1,5 @@
 import { BeyondTracingSection } from "./beyond-tracing-section";
+import { CostSection } from "./cost-section";
 import { FeaturesSection } from "./features-section";
 import { FinalCtaSection } from "./final-cta-section";
 import { HeroSection } from "./hero-section";
@@ -30,6 +31,7 @@ export function LandingPage() {
       <main>
         <HeroSection {...demoActions} />
         <WorksWithSection />
+        <CostSection />
         <FeaturesSection />
         <BeyondTracingSection />
         <HowItWorksSection />

@@ -47,18 +47,19 @@ export const DOCS_LINKS = {
   selfHosting: docsLink("self-hosting/"),
   gateway: docsLink("gateway/quickstart/"),
   doctor: docsLink("doctor/"),
-  prompts: docsLink("prompts/"),
   evaluators: docsLink("evaluators/"),
   experiments: docsLink("experiments/"),
-  alerts: docsLink("alerts/"),
+  cost: docsLink("concepts/cost/"),
+  attribution: docsLink("concepts/attribution/"),
   changelog: docsLink("changelog/"),
   securityPolicy: docsLink("security/policy/"),
 } as const;
 
 /** Ids of the landing sections that the nav and footer scroll to. */
 export const SECTION_IDS = {
+  cost: "cost",
   features: "features",
-  beyondTracing: "beyond-tracing",
+  diagnose: "diagnose",
   howItWorks: "how-it-works",
   openSource: "open-source",
 } as const;
@@ -70,8 +71,9 @@ export interface NavLink {
 
 /** Header navigation (desktop bar and mobile sheet). */
 export const NAV_LINKS: readonly NavLink[] = [
+  { label: "Cost", href: `#${SECTION_IDS.cost}` },
   { label: "Features", href: `#${SECTION_IDS.features}` },
-  { label: "Beyond tracing", href: `#${SECTION_IDS.beyondTracing}` },
+  { label: "Diagnose", href: `#${SECTION_IDS.diagnose}` },
   { label: "How it works", href: `#${SECTION_IDS.howItWorks}` },
   { label: "Open source", href: `#${SECTION_IDS.openSource}` },
   { label: "Docs", href: DOCS_LINKS.quickstart },

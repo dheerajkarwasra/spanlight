@@ -26,9 +26,9 @@ const COLUMNS: readonly FooterColumnData[] = [
   {
     heading: "Product",
     items: [
+      { label: "Cost", href: `#${SECTION_IDS.cost}` },
       { label: "Features", href: `#${SECTION_IDS.features}` },
-      { label: "Beyond tracing", href: `#${SECTION_IDS.beyondTracing}` },
-      { label: "How it works", href: `#${SECTION_IDS.howItWorks}` },
+      { label: "Diagnose", href: `#${SECTION_IDS.diagnose}` },
       { label: "Live demo", action: "demo" },
       { label: "Sign in", to: "/login" },
       { label: "Get started", to: "/signup" },
@@ -50,10 +50,10 @@ const COLUMNS: readonly FooterColumnData[] = [
     items: [
       { label: "Gateway", href: DOCS_LINKS.gateway },
       { label: "The Doctor", href: DOCS_LINKS.doctor },
-      { label: "Prompts", href: DOCS_LINKS.prompts },
+      { label: "Cost and pricing", href: DOCS_LINKS.cost },
+      { label: "Attribution", href: DOCS_LINKS.attribution },
       { label: "Evaluators", href: DOCS_LINKS.evaluators },
       { label: "Experiments", href: DOCS_LINKS.experiments },
-      { label: "Alerts and budgets", href: DOCS_LINKS.alerts },
     ],
   },
   {
@@ -85,8 +85,8 @@ export function LandingFooter({ onTryDemo, demoPending }: LandingFooterProps) {
           <div className="flex flex-col items-start gap-4 lg:w-[340px] lg:gap-[18px]">
             <Logo />
             <p className="text-sm text-muted-foreground">
-              Open-source LLM observability: traces, diagnoses, prompts, evals and a gateway on one
-              Postgres.
+              Open-source LLM observability: traces, auditable cost, diagnoses, evals and a gateway
+              on one Postgres.
             </p>
             <Button asChild>
               <a href={EXTERNAL_LINKS.github}>Star on GitHub</a>
@@ -115,7 +115,7 @@ export function LandingFooter({ onTryDemo, demoPending }: LandingFooterProps) {
         <div className="h-px bg-border" />
 
         <div className="flex flex-col gap-1.5 text-xs leading-[1.4] font-medium text-subtle-foreground md:flex-row md:justify-between md:text-label md:leading-[1.4]">
-          <p>© {year} Spanlight · MIT</p>
+          <p>© {year} Spanlight · MIT core</p>
           <p className="flex items-center gap-2">
             <a href={EXTERNAL_LINKS.issues} className={BOTTOM_LINK_CLASS}>
               Report an issue

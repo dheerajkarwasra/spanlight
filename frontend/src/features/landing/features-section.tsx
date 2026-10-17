@@ -1,5 +1,4 @@
 import { FeatureTile } from "./feature-tile";
-import { CostIllustration } from "./illustrations/cost-illustration";
 import { OtelIllustration } from "./illustrations/otel-illustration";
 import { PrivacyIllustration } from "./illustrations/privacy-illustration";
 import { SdkIllustration } from "./illustrations/sdk-illustration";
@@ -9,8 +8,8 @@ import { SECTION_IDS } from "./links";
 import { SectionHeading, TitleAccent } from "./section-heading";
 
 /**
- * Feature bento (Figma "Section/Features"): one column on phones, two on tablets and the
- * 12-column grid (7+5, 4+5+3, 12) from 1280px.
+ * Feature bento (Figma "Section/Features", v4): one column on phones, two on tablets and the
+ * 12-column grid (7+5, 6+6, 12) from 1280px. Cost has its own section now.
  */
 export function FeaturesSection() {
   return (
@@ -21,7 +20,7 @@ export function FeaturesSection() {
     >
       <SectionHeading
         id="features-title"
-        overline="Features"
+        overline="Observe"
         title={
           <>
             Everything you need to ship LLM features <TitleAccent>with confidence</TitleAccent>
@@ -45,23 +44,11 @@ export function FeaturesSection() {
           className="md:col-span-2 xl:col-span-7 xl:min-h-[507px]"
         />
         <FeatureTile
-          overline="Cost"
-          title="Cost you can check"
-          description={{
-            mobile:
-              "Per-call cost from a versioned price table. Unknown prices show as —, never $0.",
-            desktop:
-              "Per-call cost from a versioned price table, rolled up by trace, session and model. Unknown prices show as —, never $0.",
-          }}
-          illustration={<CostIllustration />}
-          className="xl:col-span-5 xl:min-h-[507px]"
-        />
-        <FeatureTile
           overline="Sessions"
           title="Sessions"
           description="Group multi-turn conversations and replay them as chat, with cost and latency for every turn."
           illustration={<SessionsIllustration />}
-          className="xl:col-span-4 xl:min-h-[510px]"
+          className="md:col-span-2 xl:col-span-5 xl:min-h-[507px]"
         />
         <FeatureTile
           overline="Python SDK"
@@ -73,14 +60,19 @@ export function FeaturesSection() {
               "pip install spanlight and wrap your OpenAI or Anthropic client. Fetch versioned prompts, send scores with spanlight.score(), and let spans batch in the background; SDK failures never reach your code.",
           }}
           illustration={<SdkIllustration />}
-          className="xl:col-span-5 xl:min-h-[510px]"
+          className="xl:col-span-6"
         />
         <FeatureTile
           overline="OpenTelemetry"
           title="OpenTelemetry native"
-          description="Send OTLP/HTTP from any language. gen_ai.* attributes become prompts, models, tokens and cost."
+          description={{
+            mobile:
+              "Send OTLP from any language. gen_ai.*, OpenInference, Vercel AI SDK and Traceloop spans become prompts, models, tokens and cost.",
+            desktop:
+              "Send OTLP/HTTP from any language. gen_ai.*, OpenInference, Vercel AI SDK and Traceloop spans become prompts, models, tokens and cost, and nested usage is counted once.",
+          }}
           illustration={<OtelIllustration />}
-          className="xl:col-span-3 xl:min-h-[510px]"
+          className="xl:col-span-6"
         />
         <FeatureTile
           layout="split"

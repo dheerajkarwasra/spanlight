@@ -17,7 +17,7 @@ const SERVICES = [
   { name: "web", status: "Started" },
 ] as const;
 
-const FACTS = ["MIT licensed", "Postgres 17", "5 services", "eval-gate Action"] as const;
+const FACTS = ["MIT core", "Postgres 17", "5 services", "eval-gate Action"] as const;
 
 /** The dark open-source band: self-hosting pitch, copyable command and a terminal mock-up. */
 export function OpenSourceSection() {
@@ -45,7 +45,7 @@ export function OpenSourceSection() {
         />
 
         <div className="relative flex flex-col items-start gap-[18px] md:gap-6 xl:w-[540px] xl:shrink-0">
-          <p className="text-overline text-lime uppercase">Open source · MIT license</p>
+          <p className="text-overline text-lime uppercase">Open source · MIT core</p>
           <h2
             id="open-source-title"
             className="text-[36px] leading-[1.04] font-extrabold tracking-[-0.04em] text-rail-foreground md:text-display"
@@ -59,9 +59,9 @@ export function OpenSourceSection() {
             <ResponsiveCopy
               copy={{
                 mobile:
-                  "MIT licensed. API, worker and dashboard run on one Postgres as one Docker Compose stack, and the eval-gate Action fails a pull request when quality drops.",
+                  "The core is MIT licensed. API, worker and dashboard run on one Postgres as one Docker Compose stack.",
                 desktop:
-                  "MIT licensed. The API, worker and dashboard run on one Postgres as a single Docker Compose stack, and the eval-gate GitHub Action fails a pull request when quality drops. Your prompts and traces stay on infrastructure you control.",
+                  "The core is MIT licensed. The API, worker and dashboard run on one Postgres as a single Docker Compose stack, so your prompts, traces and costs stay on infrastructure you control.",
               }}
             />
           </p>
