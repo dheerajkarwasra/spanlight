@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 from app.api.deps import Access, DbSession, SettingsDep, require
 from app.api.experiment_problems import EXPERIMENT_ERRORS, experiment_problem
 from app.api.schemas.experiment_compare import ComparisonOut
+from app.core.observability import feature_used
 from app.core.permissions import Permission
 from app.evals.experiment_compare import compare_experiment_runs
 
@@ -43,4 +44,6 @@ async def compare_runs(
         )
     except EXPERIMENT_ERRORS as error:
         raise experiment_problem(error) from None
+    if any(s.ci_a or s.ci_b or s.test for s in comparison.aggregate.values()):
+        feature_used("experiment_interval")
     return ComparisonOut.of(comparison)

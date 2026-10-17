@@ -120,7 +120,7 @@ async def _prepare(
         cached_tokens=None,
     )
     # A zero price (an organization's override, say) would make every call free to the budget.
-    if worst is None or worst.cost_usd <= 0:
+    if worst is None or worst.cost_usd is None or worst.cost_usd <= 0:
         raise ProblemError(
             409,
             "EXPLAIN_MODEL_UNPRICED",

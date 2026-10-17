@@ -5,16 +5,13 @@ and also filter on `project_id` explicitly, which keeps index usage obvious.
 """
 
 import uuid
-from datetime import timedelta
 from decimal import Decimal
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import and_, func, or_, select, tuple_
-from sqlalchemy.orm import InstrumentedAttribute
-from sqlalchemy.sql.elements import ColumnElement
+from sqlalchemy import func, select, tuple_
 
-from app.api.deps import DbSession, ReadAccess, require, utcnow
+from app.api.deps import DbSession, ReadAccess, require
 from app.api.schemas import (
     FiltersOut,
     Page,
@@ -28,10 +25,16 @@ from app.api.window import Window
 from app.core.errors import not_found
 from app.core.pagination import DEFAULT_PAGE_SIZE, PageLimit, decode_cursor, encode_cursor
 from app.core.permissions import Permission
-from app.db.models import Score, Span, Trace
-from app.explorer.score_filters import check_score_filters, score_conditions
-from app.explorer.trace_queries import escape_like, has_span, summary_select, trace_spans
+from app.db.models import Trace
+from app.explorer import trace_sort
+from app.explorer.filter_values import filter_values
+from app.explorer.metadata_filters import check_metadata_filter
+from app.explorer.score_filters import check_score_filters
+from app.explorer.trace_filters import apply_filters
+from app.explorer.trace_queries import page_select, summary_select, trace_spans
+from app.explorer.trace_sort import TraceSort
 from app.ingest.error_class import ErrorClass
+from app.ingest.metadata import MetadataKey
 from app.scores.queries import ScoreSummary, latest_scores_by_name
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["traces"])
@@ -40,8 +43,6 @@ router = APIRouter(prefix="/projects/{project_id}", tags=["traces"])
 ProjectReader = Annotated[ReadAccess, Depends(require(Permission.PROJECT_READ, allow_api_key=True))]
 OptionalText = Annotated[str | None, Query(max_length=256)]
 
-FILTER_LOOKBACK = timedelta(days=30)
-MAX_FILTER_VALUES = 100
 MAX_ERROR_MESSAGE_LENGTH = 500
 
 
@@ -60,6 +61,7 @@ def _summary(
         external_user_id=trace.external_user_id,
         session_id=trace.session_id,
         tags=list(trace.tags),
+        metadata=dict(trace.metadata_),
         started_at=trace.started_at,
         ended_at=trace.ended_at,
         duration_ms=(trace.ended_at - trace.started_at).total_seconds() * 1000,
@@ -73,22 +75,10 @@ def _summary(
         error_message=error_message[:MAX_ERROR_MESSAGE_LENGTH] if error_message else None,
         error_class=ErrorClass(error_class) if error_class else None,
         has_scores=trace.has_scores,
+        retry_calls=trace.retry_calls,
+        retry_cost_usd=trace.retry_cost_usd,
         scores=[ScoreSummaryOut(**score._asdict()) for score in scores],
     )
-
-
-def _span_conditions(
-    model: str | None, error_class: ErrorClass | None, prompt_version_id: uuid.UUID | None
-) -> list[ColumnElement[bool]]:
-    """The filters a trace passes when at least one of its spans matches."""
-    conditions: list[ColumnElement[bool]] = []
-    if model is not None:
-        conditions.append(Span.model == model)
-    if error_class is not None:
-        conditions.append(Span.error_class == error_class.value)
-    if prompt_version_id is not None:
-        conditions.append(Span.prompt_version_id == prompt_version_id)
-    return conditions
 
 
 @router.get("/traces", response_model=Page[TraceSummaryOut])
@@ -97,6 +87,7 @@ async def list_traces(
     access: ProjectReader,
     db: DbSession,
     window: Window,
+    name: OptionalText = None,
     environment: OptionalText = None,
     release: OptionalText = None,
     model: OptionalText = None,
@@ -108,66 +99,58 @@ async def list_traces(
     score_max: Decimal | None = None,
     score_value: OptionalText = None,
     has_scores: bool | None = None,
+    has_retries: bool | None = None,
     user_id: OptionalText = None,
     session_id: OptionalText = None,
     tag: OptionalText = None,
+    metadata_key: Annotated[MetadataKey | None, Query()] = None,
+    metadata_value: OptionalText = None,
     q: OptionalText = None,
+    sort: TraceSort = "started_at",
     limit: PageLimit = DEFAULT_PAGE_SIZE,
     cursor: Annotated[str | None, Query()] = None,
 ) -> Page[TraceSummaryOut]:
     project = access.require_project()
     check_score_filters(score_name, score_min, score_max, score_value)
-    query = (
-        summary_select()
-        .where(
-            Trace.project_id == project.id,
-            Trace.started_at >= window.start,
-            Trace.started_at < window.end,
-        )
-        .order_by(Trace.started_at.desc(), Trace.trace_id.desc())
-        .limit(limit + 1)
+    check_metadata_filter(metadata_key, metadata_value)
+    # The page is picked from the bare table first; the per-trace summary lookups then run for
+    # that page only (`page_select`).
+    page_query = select(Trace).where(
+        Trace.project_id == project.id,
+        Trace.started_at >= window.start,
+        Trace.started_at < window.end,
     )
-
-    if environment is not None:
-        query = query.where(Trace.environment == environment)
-    if release is not None:
-        query = query.where(Trace.release == release)
-    if user_id is not None:
-        query = query.where(Trace.external_user_id == user_id)
-    if session_id is not None:
-        query = query.where(Trace.session_id == session_id)
-    if tag is not None:
-        query = query.where(Trace.tags.contains([tag]))
-    if status == "error":
-        query = query.where(Trace.error_count > 0)
-    elif status == "ok":
-        query = query.where(Trace.error_count == 0)
-    for condition in _span_conditions(model, error_class, prompt_version_id):
-        query = query.where(has_span(condition))
-    for condition in score_conditions(score_name, score_min, score_max, score_value, has_scores):
-        query = query.where(condition)
-    if q:
-        query = query.where(
-            or_(
-                Trace.name.ilike(f"%{escape_like(q)}%", escape="\\"),
-                Trace.trace_id == q.lower(),
-            )
-        )
-    if cursor:
-        started_at, trace_id = decode_cursor(cursor)
-        query = query.where(
-            or_(
-                Trace.started_at < started_at,
-                and_(Trace.started_at == started_at, Trace.trace_id < trace_id),
-            )
-        )
+    page_query = apply_filters(
+        page_query,
+        name=name,
+        environment=environment,
+        release=release,
+        user_id=user_id,
+        session_id=session_id,
+        tag=tag,
+        metadata_key=metadata_key,
+        metadata_value=metadata_value,
+        status=status,
+        model=model,
+        error_class=error_class,
+        prompt_version_id=prompt_version_id,
+        score_name=score_name,
+        score_min=score_min,
+        score_max=score_max,
+        score_value=score_value,
+        has_scores=has_scores,
+        has_retries=has_retries,
+        q=q,
+    )
+    page_query = trace_sort.apply(page_query, sort=sort, cursor=cursor).limit(limit + 1)
+    paged, query = page_select(page_query)
+    query = query.order_by(*trace_sort.ordering(sort, paged))
 
     rows = (await db.execute(query)).all()
     page = rows[:limit]
     next_cursor = None
     if len(rows) > limit:
-        last = page[-1][0]
-        next_cursor = encode_cursor(last.started_at, last.trace_id)
+        next_cursor = trace_sort.next_cursor(page[-1][0], sort)
     scores = await latest_scores_by_name(db, project.id, [row[0].trace_id for row in page])
     return Page[TraceSummaryOut](
         items=[_summary(*row, scores.get(row[0].trace_id, [])) for row in page],
@@ -262,35 +245,4 @@ async def list_sessions(
 async def list_filter_values(
     project_id: uuid.UUID, access: ProjectReader, db: DbSession
 ) -> FiltersOut:
-    project = access.require_project()
-    since = utcnow() - FILTER_LOOKBACK
-    recent_traces = and_(Trace.project_id == project.id, Trace.started_at >= since)
-
-    async def distinct_values(
-        column: InstrumentedAttribute[str | None], *conditions: ColumnElement[bool]
-    ) -> list[str]:
-        result = await db.scalars(
-            select(column)
-            .where(*conditions, column.is_not(None))
-            .distinct()
-            .order_by(column)
-            .limit(MAX_FILTER_VALUES)
-        )
-        return [value for value in result.all() if value is not None]
-
-    recent_tags = select(func.unnest(Trace.tags).label("tag")).where(recent_traces).subquery()
-    tags = await db.scalars(
-        select(recent_tags.c.tag).distinct().order_by(recent_tags.c.tag).limit(MAX_FILTER_VALUES)
-    )
-
-    return FiltersOut(
-        environments=await distinct_values(Trace.environment, recent_traces),
-        releases=await distinct_values(Trace.release, recent_traces),
-        models=await distinct_values(
-            Span.model, Span.project_id == project.id, Span.started_at >= since
-        ),
-        tags=list(tags.all()),
-        score_names=await distinct_values(
-            Score.name, Score.project_id == project.id, Score.created_at >= since
-        ),
-    )
+    return await filter_values(db, access.require_project().id)

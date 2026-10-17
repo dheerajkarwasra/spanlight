@@ -1,17 +1,20 @@
 """The playground's response. The request body is owned by `app.playground.schemas`."""
 
+from datetime import datetime
 from decimal import Decimal
 
 from app.api.schemas.common import ApiModel, Money
 from app.gateway.sse import Usage
+from app.playground.replay_budget import ReplayBudget
 from app.playground.schemas import PlaygroundResult, PlaygroundRunIn
 
-__all__ = ["PlaygroundResultOut", "PlaygroundRunIn", "PlaygroundRunOut"]
+__all__ = ["PlaygroundResultOut", "PlaygroundRunIn", "PlaygroundRunOut", "ReplayBudgetOut"]
 
 
 class UsageOut(ApiModel):
     input_tokens: int
-    output_tokens: int
+    # None when the provider never reported its final output count; the cost is then None too.
+    output_tokens: int | None
     # None when the provider sent no cache detail.
     cached_tokens: int | None
     # Prompt tokens written to the provider's cache, and the part written with the 1-hour
@@ -62,3 +65,26 @@ class PlaygroundResultOut(ApiModel):
 
 class PlaygroundRunOut(ApiModel):
     results: list[PlaygroundResultOut]
+
+
+class ReplayBudgetOut(ApiModel):
+    """The project's replay budget for the current UTC month (spec §6.6)."""
+
+    monthly_budget_usd: Money
+    # What settled replays were charged this month.
+    spent_usd: Money
+    # What running replays hold until they settle.
+    reserved_usd: Money
+    # The budget minus both, never below zero.
+    remaining_usd: Money
+    month_start: datetime
+
+    @classmethod
+    def of(cls, budget: ReplayBudget) -> "ReplayBudgetOut":
+        return cls(
+            monthly_budget_usd=budget.monthly_budget_usd,
+            spent_usd=budget.spent_usd,
+            reserved_usd=budget.reserved_usd,
+            remaining_usd=budget.remaining_usd,
+            month_start=budget.month_start,
+        )

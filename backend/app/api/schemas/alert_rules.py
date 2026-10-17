@@ -4,6 +4,13 @@ The create and edit body, `RuleSpec`, and the preview body, `RuleDefinition`, ar
 alerts domain (`app.alerts.rule_spec`), which validates them; they are re-exported here so
 routers keep importing from `app.api.schemas`. Metric values and thresholds are decimal strings
 without an exponent; an unknown value is `null`, never `"0"`.
+
+`filters` holds exact matches on `environment`, `provider` and `model`, and on metrics
+`error_rate` and `error_calls` also `error_class` and `rate_limit_kind`, which narrow the failed
+calls counted: `error_calls` is the number of failed llm calls in the window (0 when none), and
+`error_rate` with either filter is the failed calls of that class and kind divided by all llm
+calls. Either filter on another metric is a `422 VALIDATION_ERROR`
+(`filters.error_class: applies to error_rate and error_calls`).
 """
 
 import uuid

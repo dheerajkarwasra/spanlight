@@ -1,0 +1,4 @@
+day,provider,line_kind,amount_usd,model,token_type,service_tier,quantity,description,provider_scope
+2026-10-01,anthropic,tokens,1.2345,claude-sonnet-4-5,uncached_input,standard,411500,,
+2026-10-01,anthropic,web_search,0.03,claude-sonnet-4-5,,,3,Web search,
+2026-10-02,anthropic,tokens,0.75,claude-sonnet-4-5,output,standard,50000,,

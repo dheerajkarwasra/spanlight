@@ -178,15 +178,21 @@ async def complete(db: AsyncSession, job: ClaimedJob, outcome: JobOutcome = JobO
     )
 
 
-async def fail(db: AsyncSession, job: ClaimedJob, error: str) -> JobStatus:
-    """Record a failure: retry later with backoff, or give up. Commits."""
+async def fail(
+    db: AsyncSession, job: ClaimedJob, error: str, *, backoff: timedelta | None = None
+) -> JobStatus:
+    """Record a failure: retry later, or give up. Commits.
+
+    The retry waits `backoff` when the task chose one (`RetryAfter`), else `retry_backoff`.
+    """
     exhausted = job.attempts >= job.max_attempts
     status = JobStatus.FAILED if exhausted else JobStatus.QUEUED
+    wait = backoff if backoff is not None else retry_backoff(job.attempts)
     params = {
         "id": job.id,
         "fence": job.fence,
         "status": status.value,
-        "backoff": _interval(retry_backoff(job.attempts)),
+        "backoff": _interval(wait),
         "error": error[:MAX_ERROR_LENGTH],
     }
     await _fenced_update(db, _FAIL, params)

@@ -1,0 +1,174 @@
+{
+  "data": [
+    {
+      "starting_at": "2026-10-01T00:00:00Z",
+      "ending_at": "2026-10-02T00:00:00Z",
+      "results": [
+        {
+          "currency": "USD",
+          "amount": "123.45",
+          "workspace_id": null,
+          "description": "Claude Sonnet 4.5 Usage - Input Tokens",
+          "cost_type": "tokens",
+          "context_window": "0-200k",
+          "model": "claude-sonnet-4-5-20250929",
+          "service_tier": "standard",
+          "token_type": "uncached_input_tokens",
+          "inference_geo": null
+        },
+        {
+          "currency": "USD",
+          "amount": "6.5",
+          "workspace_id": null,
+          "description": "Claude Sonnet 4.5 Usage - Cache Read Input Tokens",
+          "cost_type": "tokens",
+          "context_window": "0-200k",
+          "model": "claude-sonnet-4-5-20250929",
+          "service_tier": "standard",
+          "token_type": "cache_read_input_tokens",
+          "inference_geo": null
+        },
+        {
+          "currency": "USD",
+          "amount": "12.5",
+          "workspace_id": null,
+          "description": "Claude Sonnet 4.5 Usage - 5m Cache Write Input Tokens",
+          "cost_type": "tokens",
+          "context_window": "0-200k",
+          "model": "claude-sonnet-4-5-20250929",
+          "service_tier": "standard",
+          "token_type": "cache_creation.ephemeral_5m_input_tokens",
+          "inference_geo": null
+        },
+        {
+          "currency": "USD",
+          "amount": "4",
+          "workspace_id": null,
+          "description": "Claude Sonnet 4.5 Usage - 1h Cache Write Input Tokens",
+          "cost_type": "tokens",
+          "context_window": "0-200k",
+          "model": "claude-sonnet-4-5-20250929",
+          "service_tier": "standard",
+          "token_type": "cache_creation.ephemeral_1h_input_tokens",
+          "inference_geo": null
+        },
+        {
+          "currency": "USD",
+          "amount": "250.00",
+          "workspace_id": null,
+          "description": "Claude Sonnet 4.5 Usage - Output Tokens",
+          "cost_type": "tokens",
+          "context_window": "0-200k",
+          "model": "claude-sonnet-4-5-20250929",
+          "service_tier": "standard",
+          "token_type": "output_tokens",
+          "inference_geo": null
+        },
+        {
+          "currency": "USD",
+          "amount": "10",
+          "workspace_id": null,
+          "description": "Web Search Usage",
+          "cost_type": "web_search",
+          "context_window": null,
+          "model": null,
+          "service_tier": null,
+          "token_type": null,
+          "inference_geo": null
+        },
+        {
+          "currency": "USD",
+          "amount": "2.5",
+          "workspace_id": null,
+          "description": "Code Execution Usage",
+          "cost_type": "code_execution",
+          "context_window": null,
+          "model": null,
+          "service_tier": null,
+          "token_type": null,
+          "inference_geo": null
+        },
+        {
+          "currency": "USD",
+          "amount": "0.75",
+          "workspace_id": null,
+          "description": "Session Usage",
+          "cost_type": "session_usage",
+          "context_window": null,
+          "model": null,
+          "service_tier": null,
+          "token_type": null,
+          "inference_geo": null
+        },
+        {
+          "currency": "USD",
+          "amount": "-50",
+          "workspace_id": null,
+          "description": "Promotional credit",
+          "cost_type": null,
+          "context_window": null,
+          "model": null,
+          "service_tier": null,
+          "token_type": null,
+          "inference_geo": null
+        },
+        {
+          "currency": "USD",
+          "amount": "30",
+          "workspace_id": "wrkspc_01ABCDEFGHIJKLMNOPQRSTUV",
+          "description": "Claude Haiku 4.5 Usage - Input Tokens",
+          "cost_type": "tokens",
+          "context_window": "0-200k",
+          "model": "claude-haiku-4-5-20251001",
+          "service_tier": "batch",
+          "token_type": "uncached_input_tokens",
+          "inference_geo": null
+        }
+      ]
+    },
+    {
+      "starting_at": "2026-10-02T00:00:00Z",
+      "ending_at": "2026-10-03T00:00:00Z",
+      "results": [
+        {
+          "currency": "USD",
+          "amount": "100",
+          "workspace_id": null,
+          "description": "Claude Sonnet 4.5 Usage - Input Tokens",
+          "cost_type": "tokens",
+          "context_window": "0-200k",
+          "model": "claude-sonnet-4-5-20250929",
+          "service_tier": "standard",
+          "token_type": "uncached_input_tokens",
+          "inference_geo": null
+        },
+        {
+          "currency": "USD",
+          "amount": "200",
+          "workspace_id": null,
+          "description": "Claude Sonnet 4.5 Usage - Output Tokens",
+          "cost_type": "tokens",
+          "context_window": "0-200k",
+          "model": "claude-sonnet-4-5-20250929",
+          "service_tier": "standard",
+          "token_type": "output_tokens",
+          "inference_geo": null
+        },
+        {
+          "currency": "USD",
+          "amount": "40",
+          "workspace_id": null,
+          "description": "Claude Sonnet 4.5 Usage - Input Tokens (Batch)",
+          "cost_type": "tokens",
+          "context_window": "200k-1M",
+          "model": "claude-sonnet-4-5-20250929",
+          "service_tier": "batch",
+          "token_type": "uncached_input_tokens",
+          "inference_geo": null
+        }
+      ]
+    }
+  ],
+  "has_more": true,
+  "next_page": "page_MjAyNi0xMC0wM1QwMDowMDowMFo="
+}

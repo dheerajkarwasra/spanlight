@@ -5,7 +5,10 @@ The figures of a trace are those of its LLM spans, whatever day they started: `l
 `errors` count them (an error is a span with status `error`), `unpriced_calls` counts those
 without a cost, `tokens` adds input and output
 tokens (input already includes the cached ones) and `cost_usd` sums the priced ones, `NULL` when
-the user's day has no priced call.
+the user's day has no priced call. `unpriced_calls`, `tokens` and `cost_usd` leave usage rollups
+(`spans.usage_rollup`, a span repeating a descendant's usage) out; `llm_calls` and `errors` keep
+them. `computed_at` is the time of the recompute that last wrote the
+row (`now()`, the transaction's start), whether or not its figures changed.
 
 The recompute is idempotent. Rows of the range are upserted on their natural key, and rows of
 the range no trace backs any more (a trace retention removed, say) are deleted, so the table
@@ -34,10 +37,11 @@ _REFRESH = text(
                count(DISTINCT t.trace_id)                                    AS traces,
                count(s.span_id)                                              AS llm_calls,
                count(s.span_id) FILTER (WHERE s.status = 'error')            AS errors,
-               count(s.span_id) FILTER (WHERE s.cost_usd IS NULL)            AS unpriced_calls,
-               sum(s.cost_usd)                                               AS cost_usd,
-               coalesce(sum(coalesce(s.input_tokens, 0) + coalesce(s.output_tokens, 0)), 0)
-                                                                             AS tokens
+               count(s.span_id) FILTER (WHERE s.cost_usd IS NULL AND NOT s.usage_rollup)
+                                                                             AS unpriced_calls,
+               sum(s.cost_usd) FILTER (WHERE NOT s.usage_rollup)             AS cost_usd,
+               coalesce(sum(coalesce(s.input_tokens, 0) + coalesce(s.output_tokens, 0))
+                            FILTER (WHERE NOT s.usage_rollup), 0)            AS tokens
         FROM traces AS t
         LEFT JOIN spans AS s
                ON s.project_id = t.project_id
@@ -53,9 +57,10 @@ _REFRESH = text(
     upserted AS (
         INSERT INTO user_stats_daily
             (project_id, day, external_user_id, traces, llm_calls, errors, unpriced_calls,
-             cost_usd, tokens)
+             cost_usd, tokens, computed_at)
         SELECT CAST(:project_id AS uuid), fresh.day, fresh.external_user_id, fresh.traces,
-               fresh.llm_calls, fresh.errors, fresh.unpriced_calls, fresh.cost_usd, fresh.tokens
+               fresh.llm_calls, fresh.errors, fresh.unpriced_calls, fresh.cost_usd, fresh.tokens,
+               now()
         FROM fresh
         WHERE true
         ON CONFLICT (project_id, day, external_user_id) DO UPDATE
@@ -64,7 +69,8 @@ _REFRESH = text(
             errors = EXCLUDED.errors,
             unpriced_calls = EXCLUDED.unpriced_calls,
             cost_usd = EXCLUDED.cost_usd,
-            tokens = EXCLUDED.tokens
+            tokens = EXCLUDED.tokens,
+            computed_at = now()
         RETURNING 1
     ),
     removed AS (

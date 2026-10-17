@@ -6,7 +6,9 @@
   unpriced model or no reported usage), so `cost_usd` is a lower bound;
 * latency percentiles are over the items that answered, by nearest rank; None without any;
 * a numeric score (a number or a boolean, counted as 1 or 0) reports its mean and how many items
-  have it; a categorical score reports how many items fell in each category, and no mean.
+  have it; a categorical score reports how many items fell in each category, and no mean;
+* a boolean score (its config says so, or every value is a `bool`) also reports how many items
+  passed and the Wilson 95 % interval on that rate; numeric and categorical scores carry None.
 
 The run stores its totals when it ends; they can be recomputed from the items at any time.
 """
@@ -16,6 +18,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
+
+from app.evals.stats import wilson_interval
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +37,10 @@ class ScoreStat:
     mean: float | None
     count: int
     categories: dict[str, int] | None = None
+    # Boolean scores only: items that passed and the Wilson interval on the pass rate.
+    passed: int | None = None
+    ci_low: Decimal | None = None
+    ci_high: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +63,11 @@ def nearest_rank(values: Sequence[float], percentile: float) -> float | None:
     return ordered[rank - 1]
 
 
-def summarize_items(items: Sequence[ItemFacts]) -> Totals:
+def summarize_items(
+    items: Sequence[ItemFacts], *, boolean_scores: frozenset[str] = frozenset()
+) -> Totals:
+    """`boolean_scores` names the scores whose config is boolean; their 0 / 1 numbers (an old SDK
+    stores booleans that way) get the pass count and interval too."""
     latencies = [i.latency_ms for i in items if i.error is None and i.latency_ms is not None]
     costs = [i.cost_usd for i in items if i.cost_usd is not None]
     return Totals(
@@ -67,12 +79,30 @@ def summarize_items(items: Sequence[ItemFacts]) -> Totals:
         has_unpriced=any(i.latency_ms is not None and i.cost_usd is None for i in items),
         latency_p50_ms=nearest_rank(latencies, 50),
         latency_p95_ms=nearest_rank(latencies, 95),
-        scores=_score_stats(items),
+        scores=_score_stats(items, boolean_scores),
     )
 
 
-def _score_stats(items: Sequence[ItemFacts]) -> dict[str, ScoreStat]:
-    numbers: dict[str, list[float]] = {}
+def _numeric_stat(values: Sequence[Any], *, boolean: bool) -> ScoreStat:
+    numbers = [float(value) for value in values]
+    mean = sum(numbers) / len(numbers)
+    if not boolean:
+        return ScoreStat(mean=mean, count=len(numbers))
+    passed = sum(1 for number in numbers if number == 1)
+    interval = wilson_interval(passed, len(numbers))
+    return ScoreStat(
+        mean=mean,
+        count=len(numbers),
+        passed=passed,
+        ci_low=None if interval is None else interval.low,
+        ci_high=None if interval is None else interval.high,
+    )
+
+
+def _score_stats(
+    items: Sequence[ItemFacts], boolean_scores: frozenset[str]
+) -> dict[str, ScoreStat]:
+    numbers: dict[str, list[Any]] = {}
     categories: dict[str, dict[str, int]] = {}
     for item in items:
         for name, value in item.scores.items():
@@ -80,9 +110,12 @@ def _score_stats(items: Sequence[ItemFacts]) -> dict[str, ScoreStat]:
                 counts = categories.setdefault(name, {})
                 counts[value] = counts.get(value, 0) + 1
             elif isinstance(value, bool | int | float | Decimal):
-                numbers.setdefault(name, []).append(float(value))
+                numbers.setdefault(name, []).append(value)
     stats = {
-        name: ScoreStat(mean=sum(values) / len(values), count=len(values))
+        name: _numeric_stat(
+            values,
+            boolean=name in boolean_scores or all(isinstance(v, bool) for v in values),
+        )
         for name, values in numbers.items()
     }
     for name, counts in categories.items():
@@ -101,14 +134,26 @@ def totals_json(totals: Totals) -> dict[str, Any]:
         "latency_p50_ms": totals.latency_p50_ms,
         "latency_p95_ms": totals.latency_p95_ms,
         "scores": {
-            name: {"mean": stat.mean, "count": stat.count, "categories": stat.categories}
+            name: {
+                "mean": stat.mean,
+                "count": stat.count,
+                "categories": stat.categories,
+                "passed": stat.passed,
+                "ci_low": None if stat.ci_low is None else str(stat.ci_low),
+                "ci_high": None if stat.ci_high is None else str(stat.ci_high),
+            }
             for name, stat in totals.scores.items()
         },
     }
 
 
+def _rate(value: Any) -> Decimal | None:
+    return None if value is None else Decimal(str(value))
+
+
 def totals_from_json(stored: Mapping[str, Any]) -> Totals:
-    """The inverse of `totals_json`."""
+    """The inverse of `totals_json`. Totals stored before the pass count and interval existed
+    lack those keys and read as None."""
     cost = stored.get("cost_usd")
     return Totals(
         items=int(stored.get("items", 0)),
@@ -122,6 +167,9 @@ def totals_from_json(stored: Mapping[str, Any]) -> Totals:
                 mean=stat.get("mean"),
                 count=int(stat.get("count", 0)),
                 categories=stat.get("categories"),
+                passed=stat.get("passed"),
+                ci_low=_rate(stat.get("ci_low")),
+                ci_high=_rate(stat.get("ci_high")),
             )
             for name, stat in (stored.get("scores") or {}).items()
         },

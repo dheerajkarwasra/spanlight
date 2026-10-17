@@ -11,6 +11,9 @@ Every statement has two forms, picked by whether an environment filter was given
 Both forms return the same rows for the same data. The filter-free form reads only the columns
 that ``spans_project_started_cov_idx`` carries, so it is answered from the index without touching
 the table (see migration 0016). Keep the two in step: a new column read here belongs in the index.
+The one exception is ``usage_rollup`` (migration 0900), read to leave usage rollups out of the
+token and cost sums (the counts keep them): the index is widened only if the load test shows a
+heap fetch, as the Bet 4 spec decides.
 
 The queries run in the caller's session and rely on its project binding for row-level security;
 the explicit ``project_id`` filter is a second guard, not the only one.
@@ -74,10 +77,11 @@ _SPAN_KPIS = _span_statement(
                FILTER (WHERE s.kind = 'llm')                                   AS p50_ms,
            percentile_cont(0.95) WITHIN GROUP (ORDER BY s.duration_ms)
                FILTER (WHERE s.kind = 'llm')                                   AS p95_ms,
-           sum(s.cost_usd)                                                     AS cost_usd,
-           count(*) FILTER (WHERE s.kind = 'llm' AND s.cost_usd IS NULL)       AS unpriced_calls,
-           coalesce(sum(s.input_tokens), 0)                                    AS input_tokens,
-           coalesce(sum(s.output_tokens), 0)                                   AS output_tokens
+           sum(s.cost_usd) FILTER (WHERE NOT s.usage_rollup)                   AS cost_usd,
+           count(*) FILTER (WHERE s.kind = 'llm' AND s.cost_usd IS NULL AND NOT s.usage_rollup)
+                                                                               AS unpriced_calls,
+           coalesce(sum(s.input_tokens) FILTER (WHERE NOT s.usage_rollup), 0)  AS input_tokens,
+           coalesce(sum(s.output_tokens) FILTER (WHERE NOT s.usage_rollup), 0) AS output_tokens
     {spans}
     """
 )
@@ -119,8 +123,10 @@ _TIMESERIES = _span_statement(
                count(*) FILTER (WHERE s.kind = 'llm' AND s.status = 'error')   AS errors,
                percentile_cont(0.95) WITHIN GROUP (ORDER BY s.duration_ms)
                    FILTER (WHERE s.kind = 'llm')                               AS p95_ms,
-               sum(s.cost_usd)                                                 AS cost_usd,
-               coalesce(sum(s.input_tokens), 0) + coalesce(sum(s.output_tokens), 0) AS tokens
+               sum(s.cost_usd) FILTER (WHERE NOT s.usage_rollup)               AS cost_usd,
+               coalesce(sum(s.input_tokens) FILTER (WHERE NOT s.usage_rollup), 0)
+                   + coalesce(sum(s.output_tokens) FILTER (WHERE NOT s.usage_rollup), 0)
+                                                                               AS tokens
         {spans}
         GROUP BY 1
     )
@@ -145,9 +151,9 @@ _MODELS = _span_statement(
            count(*) FILTER (WHERE s.status = 'error')                  AS errors,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY s.duration_ms)  AS p50_ms,
            percentile_cont(0.95) WITHIN GROUP (ORDER BY s.duration_ms) AS p95_ms,
-           coalesce(sum(s.input_tokens), 0)                            AS input_tokens,
-           coalesce(sum(s.output_tokens), 0)                           AS output_tokens,
-           sum(s.cost_usd)                                             AS cost_usd
+           coalesce(sum(s.input_tokens) FILTER (WHERE NOT s.usage_rollup), 0)  AS input_tokens,
+           coalesce(sum(s.output_tokens) FILTER (WHERE NOT s.usage_rollup), 0) AS output_tokens,
+           sum(s.cost_usd) FILTER (WHERE NOT s.usage_rollup)                   AS cost_usd
     {spans}
       AND s.kind = 'llm'
     GROUP BY s.provider, s.model

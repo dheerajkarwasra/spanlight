@@ -3,6 +3,7 @@ security filters it; the `project_id` and `queue_id` conditions are the second l
 
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from sqlalchemy import bindparam, delete, exists, func, or_, select, text
@@ -10,7 +11,7 @@ from sqlalchemy.dialects.postgresql import ARRAY, TEXT, UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AnnotationQueue, AnnotationQueueItem, Trace
-from app.db.models.annotations import QueueItemStatus
+from app.db.models.annotations import QueueItemStatus, ReviewReason
 
 CLAIM_TIMEOUT = timedelta(minutes=30)
 
@@ -52,18 +53,43 @@ async def get_queue(
     )
 
 
+def _zeros() -> dict[str, int]:
+    return {status.value: 0 for status in QueueItemStatus}
+
+
+@dataclass(frozen=True)
+class QueueProgress:
+    """Item counts per status for a queue, overall and per reason; absent counts are zero."""
+
+    total: dict[str, int]
+    by_reason: dict[str, dict[str, int]]
+
+    @classmethod
+    def empty(cls) -> "QueueProgress":
+        return cls(total=_zeros(), by_reason={reason.value: _zeros() for reason in ReviewReason})
+
+
 async def progress_of(
     db: AsyncSession, queue_ids: Sequence[uuid.UUID]
-) -> dict[uuid.UUID, dict[str, int]]:
-    """Item counts per status for each queue, in one query; absent statuses are zero."""
-    result = {queue_id: {status.value: 0 for status in QueueItemStatus} for queue_id in queue_ids}
+) -> dict[uuid.UUID, QueueProgress]:
+    """Each queue's progress in one query, grouped on `annotation_queue_items_queue_reason_idx`."""
+    result = {queue_id: QueueProgress.empty() for queue_id in queue_ids}
     rows = await db.execute(
-        select(AnnotationQueueItem.queue_id, AnnotationQueueItem.status, func.count())
+        select(
+            AnnotationQueueItem.queue_id,
+            AnnotationQueueItem.reason,
+            AnnotationQueueItem.status,
+            func.count(),
+        )
         .where(AnnotationQueueItem.queue_id.in_(queue_ids))
-        .group_by(AnnotationQueueItem.queue_id, AnnotationQueueItem.status)
+        .group_by(
+            AnnotationQueueItem.queue_id, AnnotationQueueItem.reason, AnnotationQueueItem.status
+        )
     )
-    for queue_id, status, count in rows:
-        result[queue_id][status] = int(count)
+    for queue_id, reason, status, count in rows:
+        progress = result[queue_id]
+        progress.total[status] += int(count)
+        progress.by_reason[reason][status] = int(count)
     return result
 
 
@@ -114,6 +140,7 @@ async def list_items(
     queue_id: uuid.UUID,
     *,
     status: QueueItemStatus | None,
+    reason: ReviewReason | None,
     after: uuid.UUID | None,
     limit: int,
 ) -> list[AnnotationQueueItem]:
@@ -126,6 +153,8 @@ async def list_items(
     )
     if status is not None:
         query = query.where(AnnotationQueueItem.status == status.value)
+    if reason is not None:
+        query = query.where(AnnotationQueueItem.reason == reason.value)
     if after is not None:
         query = query.where(AnnotationQueueItem.id > after)
     return list((await db.scalars(query)).all())

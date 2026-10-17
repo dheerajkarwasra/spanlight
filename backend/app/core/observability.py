@@ -164,3 +164,100 @@ EXPERIMENT_ITEMS = Counter(
     "variable, a provider failure or a broken call).",
     ["outcome"],
 )
+FEATURE_USED = Counter(
+    "spanlight_feature_used_total",
+    "Uses of a feature, by feature name, counted once by the route or job that served it. The "
+    "names are fixed by the program design (§3.5); `feature` is the only label and never gets a "
+    "second one. The count stays on this instance.",
+    ["feature"],
+)
+BILLING_FETCH_RUNS = Counter(
+    "spanlight_billing_fetch_runs_total",
+    "Fetches of a provider's cost report, by provider and outcome (ok, auth_failed, "
+    "rate_limited, provider_error, invalid, skipped).",
+    ["provider", "outcome"],
+)
+BILLING_FETCH_DURATION = Histogram(
+    "spanlight_billing_fetch_duration_seconds",
+    "Time one fetch of a provider's cost report took, every page included, by provider.",
+    ["provider"],
+    buckets=(0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0),
+)
+BILLING_LINES_UPSERTED = Counter(
+    "spanlight_billing_lines_upserted_total",
+    "Provider cost lines written or updated by a fetch, by provider.",
+    ["provider"],
+)
+COST_EXPLANATION_MISMATCH = Counter(
+    "spanlight_cost_explanation_mismatch_total",
+    "Cost explanation views that could not reproduce the stored cost from the stored usage and "
+    "the price in force: a pricing bug signal. Counts each view, so one span read twice counts "
+    "twice.",
+)
+PROVIDER_STATUS_POLLS = Counter(
+    "spanlight_provider_status_polls_total",
+    "Requests to a provider's status feed, by provider and outcome (fetched, not_modified, "
+    "http_error, parse_error, too_large, timeout, blocked). A failed primary feed followed by "
+    "its fallback counts twice. parse_error that keeps firing means the feed changed format.",
+    ["provider", "outcome"],
+)
+
+
+def feature_used(feature: str) -> None:
+    """Count one use of `feature`, a value from the program design's fixed list."""
+    FEATURE_USED.labels(feature=feature).inc()
+
+
+# The `feature` values the review loop (Bet 5) counts, from the program design (§3.5).
+REVIEW_FEATURES = (
+    "review_selection",
+    "review_item_completed",
+    "failure_category",
+    "replay",
+    "dataset_item_from_review",
+    "experiment_interval",
+)
+
+
+OTLP_CONVENTION_SPANS = Counter(
+    "spanlight_otlp_convention_spans_total",
+    "OTLP spans accepted, by the exporter convention they were mapped from (gen_ai, "
+    "openinference, vercel_ai, traceloop, none). A rejected span is not counted.",
+    ["convention"],
+)
+METADATA_DROPPED = Counter(
+    "spanlight_trace_metadata_dropped_total",
+    "Trace metadata entries dropped by a lenient path, by path (otlp, gateway) and reason (key, "
+    "value, type, count, header). Counts only: a dropped key or value is never logged.",
+    ["path", "reason"],
+)
+ATTRIBUTION_REFRESH_DURATION = Histogram(
+    "spanlight_attribution_refresh_duration_seconds",
+    "Time one project's attribution refresh took (every kind and promoted key of the pass's "
+    "days). A project past the worker's per-project time bound is logged and skipped, not "
+    "observed.",
+    buckets=(0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0),
+)
+ATTRIBUTION_FOLDED_VALUES = Counter(
+    "spanlight_attribution_folded_values_total",
+    "Distinct values folded into an `other` row because a (day, environment, kind, key) had "
+    "more than the daily cap, counted on every refresh that folds them (a refresh of the same "
+    "day counts again). Counts only: no key or value is ever logged.",
+)
+REVIEW_SELECTED = Counter(
+    "spanlight_review_selected_total",
+    "Traces the review policy put into a review queue, by reason (doctor_finding, error, "
+    "cost_outlier, random). Manual additions are not counted.",
+    ["reason"],
+)
+REPLAY_RUNS = Counter(
+    "spanlight_replay_runs_total",
+    "Replays of a stored LLM request, by outcome: done, failed, budget_exceeded, "
+    "gateway_budget_blocked, abandoned (failed by the reaper, charged its reservation).",
+    ["outcome"],
+)
+REPLAY_COST = Counter(
+    "spanlight_replay_cost_usd_total",
+    "US dollars replays were charged when they settled or were reaped. Each project's monthly "
+    "replay budget is in the dashboard, not in a metric.",
+)

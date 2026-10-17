@@ -18,6 +18,9 @@ from tests.jobs.bypass_support import (
 
 _SPAN_COUNTS = "SELECT project_id, sum(span_count) AS spans FROM span_rollups_hourly GROUP BY 1"
 _TRACE_COUNTS = "SELECT project_id, sum(traces) AS traces FROM trace_rollups_hourly GROUP BY 1"
+_ERROR_COUNTS = "SELECT project_id, sum(errors) AS errors FROM error_rollups_hourly GROUP BY 1"
+# `seed_llm_spans` leaves the class unset; ingest gives every failed span one.
+_CLASSIFY_FAILURES = "UPDATE spans SET error_class = 'rate_limit' WHERE status = 'error'"
 
 
 async def test_rollups_land_under_the_project_that_owns_the_spans(
@@ -30,6 +33,7 @@ async def test_rollups_land_under_the_project_that_owns_the_spans(
         session_factory, b, 4, started_at=now - timedelta(hours=1), model="b-1", status="error"
     )
     await seed_llm_spans(session_factory, b, 1, started_at=now - timedelta(hours=2), model="b-2")
+    await execute(session_factory, _CLASSIFY_FAILURES)
     # A rollup row the quiet project already has; the job must leave it alone.
     quiet_row = await seed_row(session_factory, "span_rollups_hourly", quiet)
 
@@ -48,6 +52,10 @@ async def test_rollups_land_under_the_project_that_owns_the_spans(
         row["project_id"]: row["traces"] for row in await fetch(session_factory, _TRACE_COUNTS)
     }
     assert traces == {a: 3, b: 5}
+    errors = {
+        row["project_id"]: row["errors"] for row in await fetch(session_factory, _ERROR_COUNTS)
+    }
+    assert errors == {b: 4}
     by_model = await fetch(
         session_factory,
         "SELECT project_id, model, sum(span_count) AS spans, sum(errors) AS errors "
@@ -65,11 +73,13 @@ async def test_a_project_cannot_read_the_rollups_the_job_wrote_for_another(
 ) -> None:
     now = datetime.now(UTC)
     a, b = await new_projects(session_factory, 2)
-    await seed_llm_spans(session_factory, a, 2, started_at=now - timedelta(hours=1))
+    await seed_llm_spans(session_factory, a, 2, started_at=now - timedelta(hours=1), status="error")
     await seed_llm_spans(session_factory, b, 6, started_at=now - timedelta(hours=1))
+    await seed_llm_spans(session_factory, b, 1, started_at=now - timedelta(hours=1), status="error")
+    await execute(session_factory, _CLASSIFY_FAILURES)
     await roll_up_all(session_factory, now=now)
 
-    for table in ("span_rollups_hourly", "trace_rollups_hourly"):
+    for table in ("span_rollups_hourly", "trace_rollups_hourly", "error_rollups_hourly"):
         assert (
             await visible_to(
                 session_factory, a, f"SELECT 1 FROM {table} WHERE project_id = :p", {"p": b}
@@ -89,7 +99,11 @@ async def test_a_project_cannot_read_the_rollups_the_job_wrote_for_another(
     own = await visible_to(
         session_factory, b, "SELECT sum(span_count) AS spans FROM span_rollups_hourly"
     )
-    assert own[0]["spans"] == 6
+    assert own[0]["spans"] == 7
+    own = await visible_to(
+        session_factory, b, "SELECT sum(errors) AS errors FROM error_rollups_hourly"
+    )
+    assert own[0]["errors"] == 1
 
 
 async def test_backfill_fills_a_gap_for_the_project_that_has_it_only(

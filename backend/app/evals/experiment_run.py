@@ -48,6 +48,7 @@ from app.gateway.settle_helpers import shielded
 from app.jobs.context import TaskContext
 from app.jobs.outcome import JobOutcome
 from app.jobs.queue import LeaseLostError
+from app.scores.queries import boolean_score_names
 
 logger = structlog.get_logger(__name__)
 
@@ -257,7 +258,10 @@ async def _finish(deps: RunnerDeps, plan: RunPlan, error: str | None) -> None:
     status = ExperimentRunStatus.DONE if error is None else ExperimentRunStatus.FAILED
     async with deps.sessions() as db, db.begin():
         await bind_project(db, plan.project.id)
-        totals = summarize_items(await queries.item_facts(db, plan.run_id))
+        totals = summarize_items(
+            await queries.item_facts(db, plan.run_id),
+            boolean_scores=await boolean_score_names(db, plan.project.id),
+        )
         ended = await queries.finish_run(
             db,
             plan.run_id,

@@ -13,8 +13,10 @@ MIGRATION_BOOKKEEPING = {"alembic_version"}
 DOMAIN_MODULES = (
     "alerts",
     "annotations",
+    "attribution",
     "auth",
     "base",
+    "billing",
     "budgets",
     "datasets",
     "end_users",
@@ -29,9 +31,11 @@ DOMAIN_MODULES = (
     "pricing",
     "projects",
     "prompts",
+    "provider_status",
     "rollups",
     "scores",
     "telemetry",
+    "telemetry_losses",
 )
 
 

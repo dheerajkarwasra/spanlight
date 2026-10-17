@@ -14,6 +14,10 @@ class QueueNameTakenError(Exception):
     """Another queue of the project has this name."""
 
 
+class QueueInUseError(Exception):
+    """A review policy fills this queue; it cannot be deleted while one does."""
+
+
 class UnknownScoreConfigError(Exception):
     """A score config id is not one of the project's."""
 

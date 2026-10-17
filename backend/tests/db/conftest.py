@@ -1,10 +1,11 @@
-"""The schema tests rebuild the price table after each test.
+"""The schema tests rebuild the price tables after each test.
 
 Several tests here downgrade the schema and upgrade it again. A downgrade below 0508 drops the
 price tables' cache-write rate columns and deletes their tier rows; the upgrade puts the columns
 back empty, and `sync_seed_prices` keeps an existing row as it is, so the seed rows would stay
 hollow for the rest of the session and every later price book would price writes at the input
-rate. The table is small, so it is simply emptied and seeded again.
+rate. A downgrade below 0600 drops `server_tool_fees` altogether, and the upgrade recreates it
+empty. Both tables are small, so they are simply emptied and seeded again.
 """
 
 from collections.abc import AsyncIterator
@@ -23,5 +24,6 @@ async def rebuild_price_table(
     yield
     async with session_factory() as db:
         await db.execute(text("DELETE FROM model_prices"))
+        await db.execute(text("DELETE FROM server_tool_fees"))
         await sync_seed_prices(db)
         await db.commit()

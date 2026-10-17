@@ -1,4 +1,5 @@
-"""Budgets: a project's spend caps per project, gateway key, end user or model.
+"""Budgets: a project's spend caps per project, gateway key, end user, model, metadata pair or
+trace name.
 
 Members list and read budgets (`project:read`); owners and admins create, edit and delete them
 (`alerts:write`). Each budget owns a hidden alert rule that measures its spend; the two change
@@ -23,7 +24,9 @@ from app.budgets.errors import (
     BudgetNotFoundError,
     UnknownScopeError,
 )
+from app.budgets.types import BudgetScope
 from app.core.errors import FieldError, ProblemError, conflict, not_found
+from app.core.observability import feature_used
 from app.core.permissions import Permission
 
 logger = structlog.get_logger(__name__)
@@ -32,6 +35,12 @@ router = APIRouter(prefix="/projects/{project_id}/budgets", tags=["budgets"])
 
 BudgetReader = Annotated[Access, Depends(require(Permission.PROJECT_READ))]
 BudgetWriter = Annotated[Access, Depends(require(Permission.ALERTS_WRITE))]
+
+# The feature a create counts (program design §3.5), for the scopes Bet 3 added.
+SCOPE_FEATURES = {
+    BudgetScope.METADATA: "budget_metadata_scope",
+    BudgetScope.TRACE_NAME: "budget_trace_name_scope",
+}
 
 BUDGET_ERRORS = (
     BudgetNotFoundError,
@@ -64,8 +73,8 @@ def _budget_problem(error: Exception) -> ProblemError:
         return ProblemError(
             422,
             "UNKNOWN_SCOPE",
-            "A gateway key budget must name a gateway key of this project.",
-            errors=[FieldError(field="scope_id", message="Not a gateway key of this project")],
+            "The budget's scope_id does not name anything its scope can measure.",
+            errors=[FieldError(field="scope_id", message=error.message)],
         )
     raise error
 
@@ -102,7 +111,8 @@ async def create_budget(
     clock: ClockDep,
 ) -> BudgetOut:
     """Store a budget. `409 BUDGET_NAME_TAKEN`; `422 UNKNOWN_SCOPE` for a gateway key outside
-    the project; `422 UNKNOWN_CHANNEL`; `422 LIMIT_EXCEEDED` past 50 budgets."""
+    the project, a `metadata` scope that is not `key=value` with a valid key, or a blank trace
+    name; `422 UNKNOWN_CHANNEL`; `422 LIMIT_EXCEEDED` past 50 budgets."""
     locked_project_id = await lock_project_of(access, db)
     now = clock()
     try:
@@ -120,6 +130,9 @@ async def create_budget(
     created = BudgetOut.of(budget, None, now)
     await db.commit()
     _log("budget_created", access, budget.id, scope=budget.scope.value, action=budget.action.value)
+    feature = SCOPE_FEATURES.get(budget.scope)
+    if feature is not None:
+        feature_used(feature)
     return created
 
 

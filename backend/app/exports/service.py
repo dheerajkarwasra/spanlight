@@ -6,11 +6,20 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.window import TimeWindow
+from app.attribution.service import check_request
 from app.config import Settings
 from app.core.errors import not_configured
+from app.core.observability import feature_used
 from app.core.pagination import decode_uuid_cursor, encode_cursor
-from app.db.models import Export, ExportFormat, ExportStatus
-from app.exports.schemas import ExportCreateIn, ExportFilters, ExportOut
+from app.db.models import Export, ExportFormat, ExportKind, ExportStatus, Project
+from app.exports.schemas import (
+    AttributionExportFilters,
+    AttributionExportIn,
+    ExportCreateIn,
+    ExportFilters,
+    ExportOut,
+)
 from app.jobs.queue import enqueue
 from app.storage.object_store import ObjectStore, get_object_store
 
@@ -62,16 +71,24 @@ def require_object_store(settings: Settings) -> ObjectStore:
 
 
 async def create_export(
-    db: AsyncSession, *, project_id: uuid.UUID, user_id: uuid.UUID, body: ExportCreateIn
+    db: AsyncSession, *, project: Project, user_id: uuid.UUID, body: ExportCreateIn
 ) -> Export:
     """Insert a queued export and its job in one transaction. The caller commits.
 
-    The session must already be bound to the project (row-level security checks the insert).
+    An attribution request is checked as the attribution read would check it (422 before
+    anything is queued). The session must already be bound to the project (row-level security
+    checks the insert).
     """
+    project_id = project.id
+    if isinstance(body, AttributionExportIn):
+        window = TimeWindow(body.filters.from_, body.filters.to)
+        check_request(body.group_by, body.key, window, project.promoted_metadata_keys)
+        feature_used("attribution_export")
     export = Export(
         project_id=project_id,
+        kind=body.kind,
         format=body.format,
-        filters=body.filters.stored(),
+        filters=body.stored(),
         status=ExportStatus.QUEUED,
         created_by=user_id,
     )
@@ -133,10 +150,19 @@ def export_out(export: Export, store: ObjectStore | None) -> ExportOut:
         and store is not None
     ):
         download_url = store.presigned_get_url(export.storage_key, DOWNLOAD_URL_LIFETIME_SECONDS)
+    attribution = export.kind is ExportKind.ATTRIBUTION
+    filters: ExportFilters | AttributionExportFilters = (
+        AttributionExportFilters.model_validate(export.filters["filters"])
+        if attribution
+        else ExportFilters.model_validate(export.filters)
+    )
     return ExportOut(
         id=export.id,
+        kind=export.kind,
         format=export.format,
-        filters=ExportFilters.model_validate(export.filters),
+        filters=filters,
+        group_by=export.filters["group_by"] if attribution else None,
+        key=export.filters["key"] if attribution else None,
         status=export.status,
         row_count=export.row_count,
         size_bytes=export.size_bytes,

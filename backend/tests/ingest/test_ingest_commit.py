@@ -65,7 +65,9 @@ async def test_200_means_the_rows_are_visible_on_a_fresh_connection(
             )
         ).one()
     assert len(spans) == 3 and spans[0] == root_id
-    assert tuple(trace) == (3, 3000, 1500)  # span() carries 1000 input and 500 output tokens
+    # span() carries 1000 input and 500 output tokens; the root repeats its children's usage,
+    # so it is a usage rollup and only the children are summed.
+    assert tuple(trace) == (3, 2000, 1000)
 
 
 async def test_a_refused_ingest_consumes_no_tokens_and_stores_nothing(

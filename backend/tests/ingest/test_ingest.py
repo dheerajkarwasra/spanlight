@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.security import PAT_PREFIX, generate_key
 from app.db.models import Span, Trace
 from app.db.rls import bypass_rls
-from app.pricing.prices import EFFECTIVE_FROM, PRICING_VERSION, SNAPSHOT_2026_10_01
+from app.pricing.prices import ALL_SNAPSHOTS
 from tests.helpers import (
     Workspace,
     bearer,
@@ -412,10 +412,10 @@ async def test_cost_is_computed_from_seeded_prices(
     )
     stored = await _stored_span(session_factory)
     # 600k uncached * 0.15 + 400k cached * 0.075 + 1M output * 0.60 (per 1M tokens), the same
-    # in both seeded snapshots; the version is the snapshot in force when the span started.
+    # in every seeded snapshot; the version is the latest snapshot in force when the span started.
     assert str(stored.cost_usd) == "0.72000000"
-    expected_version = PRICING_VERSION if started >= EFFECTIVE_FROM else SNAPSHOT_2026_10_01.version
-    assert stored.pricing_version == expected_version
+    in_force = [s for s in ALL_SNAPSHOTS if s.effective_from <= started]
+    assert stored.pricing_version == max(in_force, key=lambda s: s.effective_from).version
 
 
 async def test_unknown_model_or_missing_usage_has_null_cost(

@@ -1,4 +1,4 @@
-"""The versioned model price table."""
+"""The versioned price tables: model rates, organization overrides and server-tool fees."""
 
 import uuid
 from datetime import datetime
@@ -54,3 +54,22 @@ class PriceOverride(Base):
         ForeignKey("users.id", ondelete="SET NULL")
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ServerToolFee(Base):
+    """The per-request fee of a provider's server-side tool (web search today), by snapshot.
+
+    Global and versioned like `model_prices`, with no tenant data: one row per provider, tool and
+    effective date, seeded from the pricing snapshot. `tool` is limited by a CHECK to the tools
+    priced today (migration 0600).
+    """
+
+    __tablename__ = "server_tool_fees"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, default=new_id)
+    provider: Mapped[str] = mapped_column(Text)
+    tool: Mapped[str] = mapped_column(Text)
+    # Dollars per 1,000 requests, the same scale as the sibling rates in `model_prices`.
+    usd_per_1k_requests: Mapped[Decimal] = mapped_column(Numeric(12, 6))
+    effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    version: Mapped[str] = mapped_column(Text)

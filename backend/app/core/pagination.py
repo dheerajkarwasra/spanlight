@@ -123,3 +123,51 @@ def decode_value_cursor(cursor: str) -> tuple[Decimal | None, str]:
     ) as exc:
         raise _invalid_cursor() from exc
     return value, tiebreaker
+
+
+def encode_sort_cursor(value: Decimal | None, started_at: datetime, tiebreaker: str) -> str:
+    """A cursor for a list sorted by a number, largest first and rows without one last, then by
+    a start time and a tiebreaker, both descending (the trace list sorted by retry cost)."""
+    payload = json.dumps(
+        {
+            "v": None if value is None else format(value, "f"),
+            "s": started_at.isoformat(),
+            "t": tiebreaker,
+        },
+        separators=(",", ":"),
+    )
+    return base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+
+
+def decode_sort_cursor(cursor: str) -> tuple[Decimal | None, datetime, str]:
+    """The sort value, start time and tiebreaker `encode_sort_cursor` wrote.
+
+    A cursor of another list (one without the start time) or anything it could not have written
+    is the usual invalid cursor error.
+    """
+    try:
+        if len(cursor) > _MAX_VALUE_CURSOR_LENGTH:
+            raise ValueError("cursor too long")
+        padded = cursor + "=" * (-len(cursor) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded))
+        raw, started_raw, tiebreaker = payload["v"], payload["s"], payload["t"]
+        if not (raw is None or isinstance(raw, str)) or not isinstance(started_raw, str):
+            raise ValueError("malformed cursor")
+        if not isinstance(tiebreaker, str) or len(tiebreaker) > _MAX_TIEBREAKER_LENGTH:
+            raise ValueError("malformed tiebreaker")
+        if not _is_bindable_text(tiebreaker):
+            raise ValueError("malformed tiebreaker")
+        started_at = datetime.fromisoformat(started_raw)
+        value = None if raw is None else Decimal(raw)
+        if started_at.tzinfo is None or (value is not None and not _is_plausible_value(value)):
+            raise ValueError("malformed cursor")
+    except (
+        binascii.Error,
+        ValueError,
+        KeyError,
+        TypeError,
+        RecursionError,
+        InvalidOperation,
+    ) as exc:
+        raise _invalid_cursor() from exc
+    return value, started_at, tiebreaker

@@ -5,6 +5,7 @@ A value that is too large is a validation error on the item, never silently trun
 """
 
 import json
+import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -169,3 +170,5 @@ class TraceItems:
 
     items: list[DatasetItemIn] = field(default_factory=list)
     rejected: list[TraceRejection] = field(default_factory=list)
+    # The stored items' ids, in the order of `items`; empty until they are stored.
+    item_ids: list[uuid.UUID] = field(default_factory=list)

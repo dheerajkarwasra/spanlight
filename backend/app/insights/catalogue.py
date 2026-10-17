@@ -254,7 +254,7 @@ KIND_INFO: dict[str, KindInfo] = {
             S.WARNING,
             "{provider} is failing across the organization",
             "{org_errors} 5xx responses ({org_share} of calls) from {provider} in the last 30 "
-            "minutes across {projects_affected}.",
+            "minutes across {projects_affected}. {incident_note}",
             "Check the provider's status page, add a fallback target on another provider to "
             "the gateway route, and keep retries bounded.",
             "The 5xx share for the provider falls under 20 %; the insight resolves after 24 "

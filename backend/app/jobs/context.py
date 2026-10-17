@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
-from app.jobs.outcome import JobOutcome
+from app.jobs.outcome import JobOutcome, RetryAfter
 from app.jobs.queue import ClaimedJob, extend_lease
 
 
@@ -33,5 +33,6 @@ class TaskContext:
             await extend_lease(db, self.job)
 
 
-# A handler returns the outcome it wants recorded; returning nothing means `JobOutcome.OK`.
-TaskHandler = Callable[[TaskContext, dict[str, Any]], Awaitable[JobOutcome | None]]
+# A handler returns the outcome it wants recorded; returning nothing means `JobOutcome.OK`, and
+# `RetryAfter` asks for another attempt after the delay it carries.
+TaskHandler = Callable[[TaskContext, dict[str, Any]], Awaitable[JobOutcome | RetryAfter | None]]

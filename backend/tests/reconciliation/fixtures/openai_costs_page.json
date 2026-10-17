@@ -1,0 +1,93 @@
+{
+  "object": "page",
+  "data": [
+    {
+      "object": "bucket",
+      "start_time": 1790812800,
+      "end_time": 1790899200,
+      "results": [
+        {
+          "object": "organization.costs.result",
+          "amount": { "value": 0.1, "currency": "usd" },
+          "line_item": "gpt-4o-2024-08-06, input",
+          "project_id": "proj_abc123"
+        },
+        {
+          "object": "organization.costs.result",
+          "amount": { "value": 0.25, "currency": "usd" },
+          "line_item": "gpt-4o-2024-08-06, output",
+          "project_id": "proj_abc123"
+        },
+        {
+          "object": "organization.costs.result",
+          "amount": { "value": 0.0125, "currency": "usd" },
+          "line_item": "gpt-4o-2024-08-06, cached input",
+          "project_id": "proj_abc123"
+        },
+        {
+          "object": "organization.costs.result",
+          "amount": { "value": 0.05, "currency": "usd" },
+          "line_item": "ft-gpt-4o-2024-08-06, output",
+          "project_id": "proj_abc123"
+        },
+        {
+          "object": "organization.costs.result",
+          "amount": { "value": 0.02, "currency": "usd" },
+          "line_item": "assistants api | file search",
+          "project_id": "proj_abc123"
+        },
+        {
+          "object": "organization.costs.result",
+          "amount": { "value": 0.003, "currency": "usd" },
+          "line_item": "evals | gpt-4o-mini-2024-07-18, input",
+          "project_id": "proj_abc123"
+        },
+        {
+          "object": "organization.costs.result",
+          "amount": { "value": 0.04, "currency": "usd" },
+          "line_item": "batch | gpt-4o, input",
+          "project_id": "proj_abc123"
+        },
+        {
+          "object": "organization.costs.result",
+          "amount": { "value": 0.1, "currency": "usd" },
+          "line_item": "web search",
+          "project_id": "proj_abc123"
+        },
+        {
+          "object": "organization.costs.result",
+          "amount": { "value": -0.5, "currency": "usd" },
+          "line_item": "gpt-4o-2024-08-06, input",
+          "project_id": "proj_abc123"
+        },
+        {
+          "object": "organization.costs.result",
+          "amount": { "value": 0.2, "currency": "USD" },
+          "line_item": "gpt-4o-2024-08-06, input",
+          "project_id": "proj_other999"
+        }
+      ]
+    },
+    {
+      "object": "bucket",
+      "start_time": 1790899200,
+      "end_time": 1790985600,
+      "results": [
+        {
+          "object": "organization.costs.result",
+          "amount": { "value": 0.3, "currency": "usd" },
+          "line_item": "gpt-4o-2024-08-06, input",
+          "project_id": "proj_abc123"
+        },
+        {
+          "object": "organization.costs.result",
+          "amount": { "value": 0.6, "currency": "usd" },
+          "line_item": "gpt-4o-2024-08-06, output",
+          "project_id": "proj_abc123"
+        }
+      ]
+    }
+  ],
+  "has_more": true,
+  "next_page": "page_AAAAAGdZ1BAAAAAAZ1nX8A=="
+}

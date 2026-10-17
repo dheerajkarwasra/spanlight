@@ -2,20 +2,24 @@
 
 `StateBudgetGuard` reads the evaluated state; it never sums spend per call. A budget's hidden
 alert rule measures the spend every evaluation interval, so a block lags the spend by up to that
-interval (60 seconds) and a small overrun is possible (ADR 0012). A budget blocks only while its
+interval (60 seconds) and an overrun is possible (ADR 0012): `block` is a soft limit, and the
+client-facing message says so. A budget blocks only while its
 firing state began in the current UTC period, so a period rollover unblocks at once. A `model`
 budget applies to a call when its name matches the requested model or any target's model, with
-the snapshot rule of `app.core.model_match`. The check is one indexed query in the gateway's
-short transaction, which already runs under the project binding, so row-level security on
-`budgets` and `alert_states` applies. Ingestion never calls the guard.
+the snapshot rule of `app.core.model_match`. A `metadata` budget applies when its `key=value`
+pair is one of the call's, and a `trace_name` budget when its name is the call's (spec §8.3);
+the gateway supplies both from the headers and the stored trace. The check is one indexed query
+in the gateway's short transaction, which already runs under the project binding, so row-level
+security on `budgets` and `alert_states` applies. Ingestion never calls the guard.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, and_, case, func, or_, select
+from sqlalchemy import ColumnElement, Text, and_, any_, case, func, literal, or_, select
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.alerts.formatting import format_money
@@ -29,6 +33,10 @@ from app.db.models.alerts import AlertState
 from app.db.models.budgets import Budget
 from app.gateway.budget import BudgetDecision, BudgetGuard
 
+# How often the budgets' alert rules measure spend; the block message quotes it. Re-measured
+# numbers belong here and in `frontend/src/features/budgets/budget-enforcement.ts`.
+EVALUATION_INTERVAL_S = 60
+_SOFT_LIMIT = f"(soft limit, measured every {EVALUATION_INTERVAL_S} s)"
 _PERIOD_WORDS = {BudgetPeriod.DAILY: "today", BudgetPeriod.MONTHLY: "this month"}
 
 
@@ -55,12 +63,17 @@ def _model_budget_matches(models: Sequence[str]) -> ColumnElement[bool]:
 
 
 def _scope_match(
-    key_id: UUID | None, models: Sequence[str], external_user_id: str | None
+    key_id: UUID | None,
+    models: Sequence[str],
+    external_user_id: str | None,
+    metadata: Mapping[str, str] | None,
+    trace_name: str | None,
 ) -> ColumnElement[bool]:
     """The condition selecting the budgets that apply to one call.
 
-    A scope whose value is unknown (no key, no end user) is left out: `scope_id = NULL` would
-    match nothing anyway, and leaving it out keeps the query plain.
+    A scope whose value is unknown (no key, no end user, no metadata, no name) is left out:
+    `scope_id = NULL` would match nothing anyway, and leaving it out keeps the query plain. A
+    metadata pair is compared as the `key=value` string the scope stores, in one array bind.
     """
     clauses = [
         Budget.scope == BudgetScope.PROJECT,
@@ -72,6 +85,11 @@ def _scope_match(
         )
     if external_user_id is not None:
         clauses.append(and_(Budget.scope == BudgetScope.USER, Budget.scope_id == external_user_id))
+    if metadata:
+        pairs = literal([f"{key}={value}" for key, value in metadata.items()], ARRAY(Text))
+        clauses.append(and_(Budget.scope == BudgetScope.METADATA, Budget.scope_id == any_(pairs)))
+    if trace_name is not None:
+        clauses.append(and_(Budget.scope == BudgetScope.TRACE_NAME, Budget.scope_id == trace_name))
     return or_(*clauses)
 
 
@@ -88,13 +106,17 @@ def _current_period_start(now: datetime) -> ColumnElement[datetime]:
 
 
 def blocked_reason(name: str, period: BudgetPeriod, spent: Decimal | None, amount: Decimal) -> str:
-    """The client-facing sentence for an exhausted budget, without a trailing period."""
+    """The client-facing sentence for an exhausted budget, without a trailing period.
+
+    It ends with the soft-limit suffix, added here once so the gateway's 402 and the demo job's
+    skip say the same thing.
+    """
     when = _PERIOD_WORDS[period]
     head = f'Budget "{name}" is exhausted'
     cap = format_money(amount, plain=True)
     if spent is None:
-        return f"{head}: the {cap} limit is reached {when}"
-    return f"{head}: {format_money(spent, plain=True)} of {cap} spent {when}"
+        return f"{head}: the {cap} limit is reached {when} {_SOFT_LIMIT}"
+    return f"{head}: {format_money(spent, plain=True)} of {cap} spent {when} {_SOFT_LIMIT}"
 
 
 class StateBudgetGuard:
@@ -109,6 +131,9 @@ class StateBudgetGuard:
         external_user_id: str | None,
         now: datetime,
         target_models: Sequence[str] = (),
+        *,
+        metadata: Mapping[str, str] | None = None,
+        trace_name: str | None = None,
     ) -> BudgetDecision:
         # The model asked for, then each target's name after its alias, without repeats.
         models = list(dict.fromkeys([model, *target_models]))
@@ -121,7 +146,7 @@ class StateBudgetGuard:
                 Budget.action == BudgetAction.BLOCK,
                 AlertState.state == RuleStateName.FIRING,
                 AlertState.since >= _current_period_start(now),
-                _scope_match(key_id, models, external_user_id),
+                _scope_match(key_id, models, external_user_id, metadata, trace_name),
             )
             .order_by(Budget.amount_usd, Budget.id)
             .limit(1)

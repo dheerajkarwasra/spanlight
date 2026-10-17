@@ -8,7 +8,7 @@ Every error response produced by the API has the shape::
 
 from collections.abc import Mapping, Sequence
 from http import HTTPStatus
-from typing import Any, TypedDict, cast
+from typing import Any, NotRequired, TypedDict, cast
 
 import structlog
 from fastapi import FastAPI, Request
@@ -27,10 +27,16 @@ logger = structlog.get_logger(__name__)
 
 
 class FieldError(TypedDict):
-    """A single field-level validation message."""
+    """A single field-level validation message.
+
+    An error about one row of an uploaded file also names the `row` (as a spreadsheet numbers
+    it; 0 is the file as a whole) and the `column` at fault, or None when no one column is.
+    """
 
     field: str
     message: str
+    row: NotRequired[int]
+    column: NotRequired[str | None]
 
 
 class ProblemError(Exception):
@@ -123,12 +129,36 @@ def idempotency_in_progress() -> ProblemError:
     )
 
 
+def key_not_promoted(key: str) -> ProblemError:
+    """422 for an attribution read over more than 24 hours on a metadata key the project has
+    not promoted: only promoted keys have daily rollup rows. `key` is a validated identifier."""
+    return ProblemError(
+        422,
+        "KEY_NOT_PROMOTED",
+        f"Promote `{key}` in project settings to group over more than 24 hours",
+    )
+
+
 def not_configured(detail: str) -> ProblemError:
     """409 for a request that needs an optional integration the operator has not set up.
 
     `detail` names the setting to change, so the operator knows what to do.
     """
     return ProblemError(409, "NOT_CONFIGURED", detail)
+
+
+def license_required(feature: str) -> ProblemError:
+    """403 for an enterprise feature the instance's license does not grant (or no longer does).
+
+    `feature` names it, so an operator can tell which license they need.
+    """
+    return ProblemError(
+        403,
+        "EE_LICENSE_REQUIRED",
+        "This feature is part of the Spanlight enterprise edition, and this instance's license "
+        "does not include it.",
+        extensions={"feature": feature},
+    )
 
 
 def too_many_requests(retry_after_seconds: int, detail: str) -> ProblemError:
@@ -211,8 +241,9 @@ _CODES_BY_STATUS = {
 
 
 def _validation_field(location: Sequence[int | str]) -> str:
-    # Drop the leading "body"/"query"/"path" segment; it is noise for clients.
-    parts = [str(part) for part in location]
+    # Drop the leading "body"/"query"/"path" segment; it is noise for clients. An empty segment
+    # is a union tag chosen to leave the path untouched (see `exports.schemas.ExportCreateIn`).
+    parts = [str(part) for part in location if part != ""]
     if parts and parts[0] in {"body", "query", "path", "header", "cookie"}:
         parts = parts[1:]
     return ".".join(parts) or "request"

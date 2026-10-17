@@ -131,6 +131,17 @@ DEMO_LIMITER = PostgresTokenBucket(rate=10 / 3600, burst=10)
 API_READ_LIMITER = PostgresTokenBucket(rate=20, burst=40)
 """Per access token or API key on bearer reads of `/api/v1`: 20 a second, bursts of 40."""
 
+BILLING_REFRESH_LIMITER = PostgresTokenBucket(rate=1 / 300, burst=2)
+"""Per billing source on its manual refresh: one every 5 minutes, bursts of 2."""
+
+BILLING_UPLOAD_LIMITER = PostgresTokenBucket(rate=6 / 3600, burst=6)
+"""Per billing source on its CSV upload: six an hour, so a loop of 5 MB files cannot keep the
+threadpool parsing and the rollups recomputing."""
+
+BILLING_KEY_CHECK_LIMITER = PostgresTokenBucket(rate=1 / 60, burst=5)
+"""Per organization on the admin key check of a billing source's create or rotate: one a minute,
+bursts of 5, so the check cannot be looped to test keys against a provider."""
+
 
 async def take_token(
     session_factory: async_sessionmaker[AsyncSession],
@@ -164,8 +175,9 @@ async def enforce_rate_limit(
 ) -> None:
     """Take a token from `limiter` for `key`, or raise 429 `RATE_LIMITED` with `Retry-After`.
 
-    `scope` labels the rejection metric (`ingest`, `demo` or `api`). The token is taken as
-    `take_token` describes, so a limiter that cannot run lets the request through.
+    `scope` labels the rejection metric (`ingest`, `demo`, `api`, `billing_refresh`,
+    `billing_upload` or `billing_key_check`). The token
+    is taken as `take_token` describes, so a limiter that cannot run lets the request through.
     """
     session_factory = request.app.state.rate_limit_session_factory
     retry_after = await take_token(session_factory, limiter, key, scope=scope)

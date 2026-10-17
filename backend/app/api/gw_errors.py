@@ -17,7 +17,6 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import cast
 
-import psycopg.errors
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -27,6 +26,7 @@ from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
+from app.core.db_errors import is_busy
 from app.core.errors import RETRY_AFTER_SECONDS, ProblemError
 from app.core.observability import GATEWAY_REQUESTS
 from app.core.request_context import current_request_id
@@ -96,10 +96,7 @@ def _validation_error(exc: RequestValidationError) -> GatewayError:
 
 def _database_error(request: Request, exc: Exception) -> GatewayError:
     """Pool exhaustion or a statement timeout is a 503 with `Retry-After`; anything else a 500."""
-    busy = isinstance(exc, PoolTimeoutError) or (
-        isinstance(exc, OperationalError) and isinstance(exc.orig, psycopg.errors.QueryCanceled)
-    )
-    if busy:
+    if is_busy(exc):
         event = "db_pool_timeout" if isinstance(exc, PoolTimeoutError) else "db_statement_timeout"
         logger.warning(event, method=request.method, path=request.url.path)
         return service_unavailable(RETRY_AFTER_SECONDS)

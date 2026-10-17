@@ -32,6 +32,7 @@ from app.api.schemas import (
     UploadRejectedOut,
 )
 from app.core.errors import ProblemError, not_found
+from app.core.observability import feature_used
 from app.core.pagination import PageLimit, decode_uuid_cursor, encode_cursor
 from app.datasets import queries, service
 from app.datasets.errors import UnsupportedFileError
@@ -79,8 +80,10 @@ async def add_items(
 ) -> ItemAddedOut:
     """Add up to 1 000 items. `422 DATASET_FULL` past 10 000 items; nothing is stored then."""
     try:
-        accepted = await service.add_items(
-            db, access.require_project().id, dataset_id, body.items, now=clock()
+        accepted = len(
+            await service.add_items(
+                db, access.require_project().id, dataset_id, body.items, now=clock()
+            )
         )
     except DATASET_ERRORS as error:
         raise dataset_problem(error) from None
@@ -123,6 +126,7 @@ async def add_items_from_traces(
     return TraceAddedOut(
         accepted=len(result.items),
         rejected=[TraceRejectedOut(trace_id=r.trace_id, reason=r.reason) for r in result.rejected],
+        item_ids=result.item_ids,
     )
 
 
@@ -140,8 +144,10 @@ async def upload_items(
     for another extension or encoding, `413 PAYLOAD_TOO_LARGE` past 5 MB."""
     try:
         parsed = await _parse_upload(file)
-        accepted = await service.add_items(
-            db, access.require_project().id, dataset_id, parsed.items, now=clock()
+        accepted = len(
+            await service.add_items(
+                db, access.require_project().id, dataset_id, parsed.items, now=clock()
+            )
         )
     except DATASET_ERRORS as error:
         raise dataset_problem(error) from None
@@ -182,6 +188,8 @@ async def update_item(
         raise dataset_problem(error) from None
     updated = ItemOut.of(item)
     await db.commit()
+    if body.metadata is not None and isinstance(body.metadata.get("review"), dict):
+        feature_used("dataset_item_from_review")
     return updated
 
 

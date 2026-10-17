@@ -1,12 +1,13 @@
 """End-user analytics use-cases: the users of a project and the detail of one.
 
-The figures are the per-user daily stats the `refresh_user_stats` job keeps (`refresh.py`), summed
+The figures are the per-user daily stats the `refresh_user_stats` jobs keep (`refresh.py`), summed
 over whole UTC days. A window is widened to whole days and the response says which; it spans at
-most 90 days (the shared window limit), so a day series is at most 91 entries.
+most 90 days (the shared window limit), so a day series is at most 91 entries. `computed_at` is
+the latest recompute of the rows summed, `None` when there are none.
 """
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -72,8 +73,16 @@ async def list_users(
         last = items[-1]
         next_cursor = encode_value_cursor(_sort_value(last, sort), last.external_user_id)
     return UserListOut(
-        items=items, next_cursor=next_cursor, window=_stats_window(first_day, end_day)
+        items=items,
+        next_cursor=next_cursor,
+        window=_stats_window(first_day, end_day),
+        computed_at=_computed_at(rows),
     )
+
+
+def _computed_at(rows: list[Row[Any]]) -> datetime | None:
+    """The latest recompute the queries report on every row, `None` without rows."""
+    return rows[0].computed_at if rows else None
 
 
 def _stored_day(row: Row[Any]) -> DayTotals:
@@ -143,10 +152,8 @@ async def user_detail(
     if not external_user_id:
         raise not_found("No end user with this id has activity in the window.")
     first_day, end_day = day_bounds(window)
-    stored = [
-        _stored_day(row)
-        for row in await queries.read_daily(db, project_id, external_user_id, first_day, end_day)
-    ]
+    rows = await queries.read_daily(db, project_id, external_user_id, first_day, end_day)
+    stored = [_stored_day(row) for row in rows]
     totals = total(stored)
     if totals is None:
         raise not_found("No end user with this id has activity in the window.")
@@ -156,4 +163,5 @@ async def user_detail(
         daily=[_day_stats(day) for day in fill_days(first_day, end_day, stored)],
         recent_sessions=[_session(row) for row in sessions],
         window=_stats_window(first_day, end_day),
+        computed_at=_computed_at(rows),
     )

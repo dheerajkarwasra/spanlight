@@ -23,7 +23,9 @@ from pydantic import (
     StringConstraints,
     ValidationInfo,
     field_validator,
+    model_validator,
 )
+from pydantic_core import PydanticCustomError
 
 MAX_TARGETS = 8
 MAX_MODEL_ALIASES = 32
@@ -41,6 +43,18 @@ class FallbackCondition(enum.StrEnum):
     RATE_LIMITED = "rate_limited"
     TIMEOUT = "timeout"
     CONNECTION_ERROR = "connection_error"
+    # A `401` or `403`. Opt-in only: another credential quietly answering for a rejected key
+    # would hide a revoked key and move its spend elsewhere.
+    AUTH_ERROR = "auth_error"
+
+
+DEFAULT_FALLBACK_CONDITIONS = (
+    FallbackCondition.STATUS_5XX,
+    FallbackCondition.RATE_LIMITED,
+    FallbackCondition.TIMEOUT,
+    FallbackCondition.CONNECTION_ERROR,
+)
+"""Every condition but `auth_error`, which a route has to list itself."""
 
 
 class _ConfigModel(BaseModel):
@@ -98,7 +112,7 @@ class RetryPolicy(_ConfigModel):
 class FallbackPolicy(_ConfigModel):
     """The failures after which the gateway tries the next target. Empty means never."""
 
-    on: list[FallbackCondition] = Field(default_factory=lambda: list(FallbackCondition))
+    on: list[FallbackCondition] = Field(default_factory=lambda: list(DEFAULT_FALLBACK_CONDITIONS))
 
     @field_validator("on")
     @classmethod
@@ -117,6 +131,16 @@ class RouteConfig(_ConfigModel):
     retry: RetryPolicy
     fallback: FallbackPolicy
     timeout_ms: Annotated[int, Field(strict=True, ge=1000, le=600_000)] = 60_000
+
+    @model_validator(mode="after")
+    def _auth_error_needs_another_credential(self) -> "RouteConfig":
+        # Falling back to the same key after it was refused would only be refused again.
+        if FallbackCondition.AUTH_ERROR in self.fallback.on and len(self.credential_ids()) < 2:
+            raise PydanticCustomError(
+                "auth_error_fallback",
+                "fallback.on: auth_error needs two targets on different credentials",
+            )
+        return self
 
     def credential_ids(self) -> list[uuid.UUID]:
         """The distinct credentials the targets use, in the order they first appear.

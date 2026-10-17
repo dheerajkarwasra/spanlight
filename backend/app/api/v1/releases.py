@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import DbSession, ReadAccess, require
 from app.api.params import NO_NUL
-from app.api.schemas import Comparison, ReleaseStats
+from app.api.schemas import Comparison, FailureCategoriesOut, ReleaseStats
 from app.api.window import Window
 from app.core.permissions import Permission
 from app.releases import service
@@ -34,6 +34,21 @@ async def list_releases(
 ) -> list[ReleaseStats]:
     project = access.require_project()
     return await service.list_releases(db, project.id, window, environment)
+
+
+# Declared before any `/{release}` path a later route may add, so the literal segment wins.
+@router.get("/failure-categories", response_model=FailureCategoriesOut)
+async def failure_category_rates(
+    project_id: uuid.UUID,
+    access: ProjectReader,
+    db: DbSession,
+    window: Window,
+    environment: EnvironmentFilter = None,
+) -> FailureCategoriesOut:
+    """The rate of each failure category per release, with Wilson 95 % bounds, over the traces a
+    person reviewed. `404 NOT_FOUND` until the project has a `failure_category` score config."""
+    project = access.require_project()
+    return await service.failure_category_rates(db, project.id, window, environment)
 
 
 @router.get("/compare", response_model=Comparison)

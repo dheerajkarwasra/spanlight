@@ -2,8 +2,10 @@
 
 `BudgetSpec` is a whole budget: the body of a create. `BudgetPatch` is a partial edit: only the
 fields sent change. `scope_id` goes with the scope: it is absent (or null) for a `project`
-budget and required for every other scope; a gateway key id is checked against the project by
-the service, not here. The bounds match migration 0304. Unknown fields are rejected.
+budget and required for every other scope; a gateway key id is checked against the project, and
+a `metadata` or `trace_name` scope parsed, by the service, not here. The bounds match migrations
+0304 and 0804 (`scope_id` up to 400 characters: a metadata key, `=` and a value is 321). Unknown
+fields are rejected.
 """
 
 from decimal import Decimal
@@ -23,7 +25,7 @@ from app.alerts.rule_spec import ChannelIds
 from app.budgets.types import BudgetAction, BudgetPeriod, BudgetScope
 
 BudgetName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
-ScopeId = Annotated[str, StringConstraints(min_length=1, max_length=200)]
+ScopeId = Annotated[str, StringConstraints(min_length=1, max_length=400)]
 AmountUsd = Annotated[Decimal, Field(gt=0, max_digits=14, decimal_places=4)]
 
 

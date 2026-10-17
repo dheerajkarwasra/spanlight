@@ -45,8 +45,19 @@ def nested_json(depth: int) -> str:
     return "[" * depth + "]" * depth
 
 
-def otlp_json_span(attributes: dict[str, str] | None = None, *, name: str = "ok") -> dict[str, Any]:
-    """One OTLP/JSON span with fresh ids that ended just now; `attributes` are string values."""
+def otlp_json_value(value: Any) -> dict[str, Any]:
+    """An OTLP/JSON `AnyValue`: bool, int (int64 as a string), double, else string."""
+    if isinstance(value, bool):
+        return {"boolValue": value}
+    if isinstance(value, int):
+        return {"intValue": str(value)}
+    if isinstance(value, float):
+        return {"doubleValue": value}
+    return {"stringValue": value}
+
+
+def otlp_json_span(attributes: dict[str, Any] | None = None, *, name: str = "ok") -> dict[str, Any]:
+    """One OTLP/JSON span with fresh ids that ended just now; attribute values are typed."""
     now = time.time_ns()
     span: dict[str, Any] = {
         "traceId": secrets.token_hex(16),
@@ -57,7 +68,7 @@ def otlp_json_span(attributes: dict[str, str] | None = None, *, name: str = "ok"
     }
     if attributes:
         span["attributes"] = [
-            {"key": key, "value": {"stringValue": value}} for key, value in attributes.items()
+            {"key": key, "value": otlp_json_value(value)} for key, value in attributes.items()
         ]
     return span
 

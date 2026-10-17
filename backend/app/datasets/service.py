@@ -130,17 +130,19 @@ async def add_items(
     items: list[DatasetItemIn],
     *,
     now: datetime,
-) -> int:
-    """Store the items and return how many. All or none: raises `DatasetNotFoundError` and
-    `DatasetFullError` (the whole batch is refused when it would pass the limit)."""
+) -> list[uuid.UUID]:
+    """Store the items and return their ids, in order. All or none: raises
+    `DatasetNotFoundError` and `DatasetFullError` (the whole batch is refused when it would pass
+    the limit)."""
     dataset = await _locked(db, project_id, dataset_id)
-    if items:
-        if await queries.count_items(db, dataset.id) + len(items) > MAX_ITEMS_PER_DATASET:
-            raise DatasetFullError(MAX_ITEMS_PER_DATASET)
-        await queries.insert_items(db, dataset.id, items)
-        dataset.updated_at = now
-        await db.flush()
-    return len(items)
+    if not items:
+        return []
+    if await queries.count_items(db, dataset.id) + len(items) > MAX_ITEMS_PER_DATASET:
+        raise DatasetFullError(MAX_ITEMS_PER_DATASET)
+    ids = await queries.insert_items(db, dataset.id, items)
+    dataset.updated_at = now
+    await db.flush()
+    return ids
 
 
 async def add_from_traces(
@@ -165,8 +167,8 @@ async def add_from_traces(
     missing = [
         TraceRejection(trace_id, "trace not found") for trace_id in unique if trace_id not in known
     ]
-    await add_items(db, project_id, dataset_id, found.items, now=now)
-    return TraceItems(items=found.items, rejected=[*missing, *found.rejected])
+    item_ids = await add_items(db, project_id, dataset_id, found.items, now=now)
+    return TraceItems(items=found.items, rejected=[*missing, *found.rejected], item_ids=item_ids)
 
 
 async def update_item(

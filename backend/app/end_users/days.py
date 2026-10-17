@@ -12,6 +12,9 @@ from decimal import Decimal
 from app.api.window import TimeWindow
 
 ONE_DAY = timedelta(days=1)
+# How many days, today included, the 15-minute refresh and the nightly one recompute.
+RECENT_DAYS = 3
+DEEP_DAYS = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,9 +59,18 @@ def midnight(day: date) -> datetime:
 
 
 def recent_days(now: datetime) -> list[date]:
-    """Yesterday and today (UTC): the days the refresh job recomputes."""
+    """The day before yesterday, yesterday and today (UTC): the days every refresh recomputes."""
+    return _last_days(now, RECENT_DAYS)
+
+
+def deep_days(now: datetime) -> list[date]:
+    """The last eight days (UTC), today included: the days the nightly refresh recomputes."""
+    return _last_days(now, DEEP_DAYS)
+
+
+def _last_days(now: datetime, count: int) -> list[date]:
     today = now.astimezone(UTC).date()
-    return [today - ONE_DAY, today]
+    return [today - offset * ONE_DAY for offset in range(count - 1, -1, -1)]
 
 
 def fill_days(first: date, end: date, rows: Iterable[DayTotals]) -> list[DayTotals]:

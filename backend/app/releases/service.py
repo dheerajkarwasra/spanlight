@@ -15,12 +15,22 @@ from typing import Any
 from sqlalchemy import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas.releases import Comparison, NewError, ReleaseStats
+from app.api.schemas.releases import (
+    CategoryRateOut,
+    Comparison,
+    FailureCategoriesOut,
+    NewError,
+    ReleaseRatesOut,
+    ReleaseStats,
+)
 from app.api.window import TimeWindow
-from app.core.errors import ProblemError
-from app.releases import queries
+from app.core.errors import ProblemError, not_found
+from app.releases import failure_category_queries, queries
 from app.releases.compare import compare
+from app.releases.failure_categories import ReleaseRates, category_rates
 from app.releases.schemas import ErrorClassCount, ModelCount
+from app.scores.failure_category import FAILURE_CATEGORY_SCORE, failure_category_config
+from app.scores.types import ScoreDataType
 
 MAX_WINDOW = timedelta(days=30)
 
@@ -95,4 +105,39 @@ async def compare_releases(
             NewError(message=row.message, count=int(row.n), example_trace_id=row.example_trace_id)
             for row in new_errors
         ],
+    )
+
+
+def _rates_out(entry: ReleaseRates) -> ReleaseRatesOut:
+    return ReleaseRatesOut(
+        release=entry.release,
+        reviewed=entry.reviewed,
+        rates={
+            label: CategoryRateOut(
+                count=rate.count, rate=rate.rate, ci_low=rate.ci_low, ci_high=rate.ci_high
+            )
+            for label, rate in entry.rates.items()
+        },
+    )
+
+
+async def failure_category_rates(
+    db: AsyncSession, project_id: uuid.UUID, window: TimeWindow, environment: str | None
+) -> FailureCategoriesOut:
+    """The rate of each failure category per release of the window, the same releases and order
+    as `list_releases` plus one `release: None` entry when traces without a release were seen.
+    404 when the project has no categorical `failure_category` config."""
+    _require_window(window)
+    config = await failure_category_config(db, project_id)
+    if config is None or config.data_type != ScoreDataType.CATEGORICAL:
+        raise not_found("The project has no failure_category score config.")
+    stats = await queries.read_release_stats(db, project_id, window, environment)
+    reviewed, counts = await failure_category_queries.read_latest_failure_labels(
+        db, project_id, window, environment
+    )
+    entries = category_rates(config.categories, [row.release for row in stats], reviewed, counts)
+    return FailureCategoriesOut(
+        score_name=FAILURE_CATEGORY_SCORE,
+        categories=list(config.categories),
+        releases=[_rates_out(entry) for entry in entries],
     )

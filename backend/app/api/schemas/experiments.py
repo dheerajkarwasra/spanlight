@@ -7,7 +7,10 @@ string; an unknown cost or latency is `null`, never zero.
 
 import uuid
 from datetime import datetime
-from typing import Any
+from decimal import Decimal
+from typing import Annotated, Any
+
+from pydantic import PlainSerializer
 
 from app.api.schemas.common import ApiModel, Money
 from app.db.models import Experiment, ExperimentItem, ExperimentRun
@@ -27,9 +30,18 @@ __all__ = [
     "ExperimentRunOut",
     "ExperimentSpec",
     "LastRunOut",
+    "Rate",
     "RunStart",
     "TotalsOut",
 ]
+
+
+def _format_rate(value: Decimal) -> str:
+    return format(value, "f")
+
+
+# A rate or p-value as a 4-place decimal string, such as "0.6476".
+Rate = Annotated[Decimal, PlainSerializer(_format_rate, return_type=str, when_used="json")]
 
 
 class ScoreStatOut(ApiModel):
@@ -38,6 +50,11 @@ class ScoreStatOut(ApiModel):
     count: int
     # Items per category of a categorical score; null for a numeric one.
     categories: dict[str, int] | None
+    # Boolean scores only: items that passed and the Wilson 95% interval on the pass rate. Null
+    # for numeric and categorical scores, and on totals stored before intervals existed.
+    passed: int | None = None
+    ci_low: Rate | None = None
+    ci_high: Rate | None = None
 
 
 class TotalsOut(ApiModel):
@@ -62,7 +79,14 @@ class TotalsOut(ApiModel):
             latency_p50_ms=totals.latency_p50_ms,
             latency_p95_ms=totals.latency_p95_ms,
             scores={
-                name: ScoreStatOut(mean=stat.mean, count=stat.count, categories=stat.categories)
+                name: ScoreStatOut(
+                    mean=stat.mean,
+                    count=stat.count,
+                    categories=stat.categories,
+                    passed=stat.passed,
+                    ci_low=stat.ci_low,
+                    ci_high=stat.ci_high,
+                )
                 for name, stat in totals.scores.items()
             },
         )

@@ -52,11 +52,19 @@ class StatsWindow(BaseModel):
 
 
 class UserListOut(Page[UserStats]):
+    """`computed_at` is when the figures of the window were last recomputed (the latest of the
+    days summed), `None` when no day of the window has been computed yet."""
+
     window: StatsWindow
+    computed_at: datetime | None
 
 
 class UserDetailOut(BaseModel):
+    """`computed_at` is when the user's figures were last recomputed (the latest of the days
+    summed)."""
+
     user: UserStats
     daily: list[DayStats]
     recent_sessions: list[SessionSummaryOut]
     window: StatsWindow
+    computed_at: datetime | None

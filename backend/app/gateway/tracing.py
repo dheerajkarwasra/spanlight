@@ -10,12 +10,15 @@ surrogate or a NaN, none of which Postgres stores. The span is made storable her
 recorder nor a `DirectSpans` caller loses it to a refused write.
 """
 
+import re
 import secrets
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
 from app.core.text import storable_json
 from app.db.models import FaultScenario, ProviderCredential
+from app.gateway import provider_attributes
 from app.gateway.context import (
     UPSTREAM_ERROR_CODE,
     GatewayContext,
@@ -23,7 +26,7 @@ from app.gateway.context import (
     GatewayResult,
 )
 from app.gateway.faults import BEFORE_SCENARIOS, fault_code, lab_tag
-from app.gateway.sse import Usage
+from app.gateway.span_usage import span_usage, usage_dict
 from app.gateway.trace_headers import MAX_TAGS
 from app.ingest.request_hash import request_hash
 
@@ -32,6 +35,8 @@ MAX_STATUS_MESSAGE = 4096
 # Match no error-class pattern, so with their 200 status these spans' class is `unknown`.
 MALFORMED_JSON_MESSAGE = "the Integration Lab cut the response body short on purpose"
 TRUNCATED_STREAM_MESSAGE = "the Integration Lab ended the stream before its final event on purpose"
+# An `inference_geo` value named as is in `usage.pricing_modifier_unknown`; any other is "other".
+_GEO_VALUE = re.compile(r"[a-z0-9_-]{1,32}")
 
 
 def new_trace_id() -> str:
@@ -61,7 +66,8 @@ def build_span(
     credential = _credential(result, context)
     message = status_message(result)
     failed = message is not None
-    name = f"{request.surface} {model}"[:MAX_NAME_LENGTH]
+    # A call refused before its body was read has no model: it is named by its surface alone.
+    name = (f"{request.surface} {model}" if model else request.surface)[:MAX_NAME_LENGTH]
     span = {
         "trace_id": result.trace_id,
         "span_id": result.span_id,
@@ -74,7 +80,7 @@ def build_span(
         "end_time": max(ended_at, started_at).isoformat(),
         "provider": credential.provider.value if credential is not None else None,
         "model": model[:MAX_NAME_LENGTH] if model else None,
-        "usage": _usage(result),
+        "usage": span_usage(result),
         "time_to_first_token_ms": result.ttft_ms if request.stream else None,
         "input": request.body,
         "output": result.output,
@@ -83,23 +89,42 @@ def build_span(
         # does not capture payloads, and the requested model keeps the hash stable across a
         # fallback to another target.
         "request_hash": request_hash(_requested_model(request), request.body),
-        "trace": _trace(request, result, context, name),
+        "trace": _trace(request, result, context, default_trace_name(request, name)),
     }
     storable: dict[str, Any] = storable_json(span)
     return storable
 
 
+def default_trace_name(request: GatewayRequest, span_name: str | None = None) -> str:
+    """The name of a trace a gateway call starts: `"<surface> <model>"` with the model the client
+    asked for, before any alias and before the provider's echo (a snapshot, say), so the name is
+    one the client knows and a `trace_name` budget on it matches in the guard, in the stored
+    trace and in the spend measurement alike (spec §12). The span's own name and `model` keep the
+    provider's answer. A call whose body named no model (one refused before its body was read)
+    is named like its span, as every gateway trace was before the requested model named them;
+    without a span yet, by its surface alone.
+    """
+    model = _requested_model(request)
+    if model is None and span_name is not None:
+        return span_name
+    return (f"{request.surface} {model}" if model else request.surface)[:MAX_NAME_LENGTH]
+
+
 def _trace(
-    request: GatewayRequest, result: GatewayResult, context: GatewayContext, span_name: str
+    request: GatewayRequest, result: GatewayResult, context: GatewayContext, default_name: str
 ) -> dict[str, Any]:
     """The trace fields the span carries.
 
-    A call that starts its own trace names it like its span; otherwise the trace list would show
-    it as unnamed. A call that joins a caller's trace sends no name, so the name the caller's
-    SDK gave the trace is not overwritten.
+    The `x-spanlight-trace-name` header names the trace, even one the call joins: sending it is
+    the caller asking for that name. Without it, a call that starts its own trace gets
+    `default_name` (otherwise the trace list would show it as unnamed), and a call that joins a
+    caller's trace sends no name, so the name the caller's SDK gave the trace is not overwritten.
+    The header metadata merges into the trace's by the ingest rule (spec §4.4).
     """
+    trace = request.trace
     return {
-        "name": span_name if request.trace.trace_id is None else None,
+        "name": trace.trace_name or (default_name if trace.trace_id is None else None),
+        "metadata": trace.metadata,
         "environment": context.environment or None,
         "release": request.trace.release,
         "user_id": request.trace.user_id,
@@ -186,8 +211,8 @@ def _attributes(
         "spanlight.cache": result.cache,
         "finish_reason": result.finish_reason,
     }
-    if result.cache == "hit" and result.original_usage is not None:
-        attributes["spanlight.cache.original_usage"] = _usage_dict(result.original_usage)
+    attributes.update(provider_attributes.build(result, context))
+    attributes.update(_usage_attributes(request, result))
     if result.fault is not None:
         attributes["spanlight.fault.scenario"] = result.fault.scenario.value
         attributes["spanlight.fault.profile_id"] = str(result.fault.profile_id)
@@ -196,6 +221,55 @@ def _attributes(
         budget_id = result.budget.budget_id
         attributes["spanlight.budget.id"] = str(budget_id) if budget_id is not None else None
     return attributes
+
+
+def _usage_attributes(request: GatewayRequest, result: GatewayResult) -> dict[str, Any]:
+    """What the span's usage leaves out: why it is unknown, a raw tier, an unmodelled option.
+
+    Each key is present only when it applies. A cache hit was not billed, so it names no
+    pricing modifier; its stored usage is kept as `spanlight.cache.original_usage` instead.
+    """
+    attributes: dict[str, Any] = {}
+    if result.cache == "hit":
+        if result.original_usage is not None:
+            attributes["spanlight.cache.original_usage"] = usage_dict(result.original_usage)
+        return attributes
+    if result.usage_unreported_reason is not None:
+        attributes["usage.unreported_reason"] = result.usage_unreported_reason
+    if result.usage is not None and result.usage.service_tier_raw is not None:
+        attributes["usage.service_tier_raw"] = result.usage.service_tier_raw
+    # Only a call that reported usage was billed; one that never reached the provider, or that
+    # it refused, must not count as priced at a modifier Spanlight does not model.
+    modifier = pricing_modifier_unknown(request.body) if result.usage is not None else None
+    if modifier is not None:
+        attributes["usage.pricing_modifier_unknown"] = modifier
+    return attributes
+
+
+def pricing_modifier_unknown(body: Mapping[str, Any]) -> str | None:
+    """The request option whose price Spanlight does not model, if any.
+
+    Data residency (`inference_geo`, a surcharge for `us`) and fast mode (`speed: "fast"`)
+    change the bill, but no price snapshot carries their multipliers yet. The span is priced at
+    the standard rate and named `inference_geo_<value>` or `fast_mode`, so the rollups count it
+    apart. Values are trimmed and lower-cased; `inference_geo: "global"` is the default routing
+    at the standard price and names nothing; when both are present the data residency wins.
+    A value that is not 1-32 of `a-z 0-9 _ -` is named `inference_geo_other`. The same rule as
+    the Python SDK's `pricing_modifier_unknown`.
+    """
+    geo = _request_option(body, "inference_geo")
+    if geo is not None and geo != "global":
+        return f"inference_geo_{geo if _GEO_VALUE.fullmatch(geo) else 'other'}"
+    if _request_option(body, "speed") == "fast":
+        return "fast_mode"
+    return None
+
+
+def _request_option(body: Mapping[str, Any], name: str) -> str | None:
+    value = body.get(name)
+    if isinstance(value, str) and value.strip():
+        return value.strip().lower()
+    return None
 
 
 def _upstream_status(result: GatewayResult) -> tuple[int | None, float | None]:
@@ -220,31 +294,6 @@ def _upstream_status(result: GatewayResult) -> tuple[int | None, float | None]:
     ):
         return error.status, error.retry_after
     return None, None
-
-
-def _usage(result: GatewayResult) -> dict[str, Any] | None:
-    if result.cache == "hit":
-        # Nothing was billed: the answer came from the cache.
-        return _usage_dict(
-            Usage(
-                input_tokens=0,
-                output_tokens=0,
-                cached_tokens=0,
-                cache_write_tokens=0,
-                cache_write_1h_tokens=0,
-            )
-        )
-    return _usage_dict(result.usage) if result.usage is not None else None
-
-
-def _usage_dict(usage: Usage) -> dict[str, Any]:
-    return {
-        "input_tokens": usage.input_tokens,
-        "output_tokens": usage.output_tokens,
-        "cached_tokens": usage.cached_tokens,
-        "cache_write_tokens": usage.cache_write_tokens,
-        "cache_write_1h_tokens": usage.cache_write_1h_tokens,
-    }
 
 
 def _credential(result: GatewayResult, context: GatewayContext) -> ProviderCredential | None:

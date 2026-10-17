@@ -15,6 +15,7 @@ from app.db.models.base import Base, _pg_enum
 
 class ExportKind(enum.StrEnum):
     TRACES = "traces"
+    ATTRIBUTION = "attribution"
 
 
 class ExportFormat(enum.StrEnum):

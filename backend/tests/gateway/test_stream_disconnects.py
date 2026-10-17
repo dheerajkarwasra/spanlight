@@ -31,7 +31,12 @@ class _Thinking(Stall):
         await super().wait()
 
 
-def _assert_disconnect_span(span: dict[str, Any]) -> None:
+def _assert_disconnect_span(span: dict[str, Any], *, reason: str | None) -> None:
+    """`reason`: the `usage.unreported_reason` expected, or None when the attribute is absent.
+
+    A stream the gateway had begun forwarding is a cut stream (`client_disconnected`); a call
+    cancelled before any answer existed got no stream, so it carries no reason.
+    """
     assert (span["kind"], span["status"]) == ("llm", "error")
     assert span["status_message"].startswith("client disconnected after ")
     assert span["attributes"]["spanlight.gateway.client_disconnected"] is True
@@ -41,6 +46,7 @@ def _assert_disconnect_span(span: dict[str, Any]) -> None:
         None,
     )
     assert span["cost_usd"] is None  # no usage reported: unknown, never 0
+    assert span["attributes"].get("usage.unreported_reason") == reason
 
 
 async def test_client_disconnect_mid_stream_records_one_error_span(
@@ -57,7 +63,7 @@ async def test_client_disconnect_mid_stream_records_one_error_span(
     assert call.received == call.scripted[:2]
     assert (fake_provider.streams_opened, fake_provider.streams_closed) == (1, 1)
     span = await read_gateway_span(session_factory, gateway_workspace.project_id)
-    _assert_disconnect_span(span)
+    _assert_disconnect_span(span, reason="client_disconnected")
     assert span["span_id"] == call.result.span_id
     assert span["output"] == {"role": "assistant", "content": "Hello"}
     assert span["attributes"]["spanlight.gateway.attempts"] == 1
@@ -80,7 +86,7 @@ async def test_closing_a_stream_nobody_read_closes_upstream_and_records_a_discon
 
     assert (fake_provider.streams_opened, fake_provider.streams_closed) == (1, 1)
     span = await read_gateway_span(session_factory, gateway_workspace.project_id)
-    _assert_disconnect_span(span)
+    _assert_disconnect_span(span, reason="client_disconnected")
     assert span["output"] is None
     assert span["attributes"]["spanlight.gateway.attempts"] == 1
     assert await key_minute_counts(session_factory, gateway_workspace.gateway_key_id) == (1, 0)
@@ -106,7 +112,7 @@ async def test_cancelling_execute_before_an_answer_records_a_499_disconnect(
     assert fake_provider.streams_opened == 0  # no response was ever handed out, none leaked
     assert cancelled.value == 1
     span = await read_gateway_span(session_factory, gateway_workspace.project_id)
-    _assert_disconnect_span(span)
+    _assert_disconnect_span(span, reason=None)
     assert span["output"] is None
     # The one request the provider received is on the span, with no status: it never answered.
     assert span["attributes"]["spanlight.gateway.attempts"] == 1

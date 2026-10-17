@@ -88,6 +88,8 @@ class TraceRejectedOut(ApiModel):
 class TraceAddedOut(ApiModel):
     accepted: int
     rejected: list[TraceRejectedOut]
+    # The new items' ids, so a caller can patch the copy (the annotate screen's `metadata.review`).
+    item_ids: list[uuid.UUID]
 
 
 class UploadRejectedOut(ApiModel):

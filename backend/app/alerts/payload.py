@@ -72,7 +72,7 @@ class RulePayload(_Model):
 class BudgetPayload(_Model):
     id: uuid.UUID
     name: str
-    scope: Literal["project", "gateway_key", "user", "model"]
+    scope: Literal["project", "gateway_key", "user", "model", "metadata", "trace_name"]
     scope_id: str | None
     period: Literal["daily", "monthly"]
     amount_usd: DecimalStr

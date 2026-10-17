@@ -4,6 +4,7 @@
 from app.annotations.errors import (
     ItemNotAssignedError,
     ItemNotPendingError,
+    QueueInUseError,
     QueueItemNotFoundError,
     QueueNameTakenError,
     QueueNotFoundError,
@@ -19,6 +20,7 @@ QUEUE_ERRORS = (
     QueueNotFoundError,
     QueueItemNotFoundError,
     QueueNameTakenError,
+    QueueInUseError,
     UnknownScoreConfigError,
     UnknownTraceError,
     ItemNotAssignedError,
@@ -40,6 +42,12 @@ def queue_problem(error: Exception) -> ProblemError:
         return not_found()
     if isinstance(error, QueueNameTakenError):
         return conflict("NAME_TAKEN", "An annotation queue with this name already exists here.")
+    if isinstance(error, QueueInUseError):
+        return conflict(
+            "QUEUE_IN_USE",
+            "A review policy fills this queue. Delete the policy or point it at another queue "
+            "first.",
+        )
     if isinstance(error, UnknownScoreConfigError):
         return ProblemError(
             422, "UNKNOWN_SCORE_CONFIG", "A score config of the queue is not in this project."

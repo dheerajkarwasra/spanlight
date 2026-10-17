@@ -5,9 +5,13 @@ canonical one: `stop`, `length`, `tool_calls`, `content_filter` or `other`.
 
 The raw value comes from the first of these that is present: the span's own `finish_reason`
 field, the gateway's `finish_reason` attribute, the SDK's `response.finish_reasons[0]` (OpenAI)
-or `response.stop_reason` (Anthropic), and the OpenTelemetry `gen_ai.response.finish_reasons[0]`.
+or `response.stop_reason` (Anthropic), the OpenTelemetry `gen_ai.response.finish_reasons[0]`,
+then the OTLP convention keys `ai.response.finishReason` (Vercel AI SDK),
+`llm.response.finish_reason` (Traceloop), `gen_ai.response.finish_reason`,
+`gen_ai.completion.0.finish_reason` (flattened completions) and `llm.finish_reason` (OpenInference).
 """
 
+import json
 from collections.abc import Mapping
 from typing import Any
 
@@ -27,6 +31,18 @@ _CANONICAL = {
     "tool_use": "tool_calls",
     "refusal": "content_filter",
     "pause_turn": "other",
+    # Vercel AI SDK
+    "content-filter": "content_filter",
+    "tool-calls": "tool_calls",
+    "error": "other",
+    "unknown": "other",
+    # Gemini
+    "safety": "content_filter",
+    "recitation": "content_filter",
+    "blocklist": "content_filter",
+    "malformed_function_call": "other",
+    # OpenTelemetry GenAI semantic conventions (singular)
+    "tool_call": "tool_calls",
 }
 
 # Where a span's attributes carry the raw value, in source order; True marks a list of reasons
@@ -36,6 +52,11 @@ _ATTRIBUTE_SOURCES = (
     ("response.finish_reasons", True),
     ("response.stop_reason", False),
     ("gen_ai.response.finish_reasons", True),
+    ("ai.response.finishReason", False),
+    ("llm.response.finish_reason", False),
+    ("gen_ai.response.finish_reason", False),
+    ("gen_ai.completion.0.finish_reason", False),
+    ("llm.finish_reason", False),
 )
 
 
@@ -53,7 +74,17 @@ def raw_finish_reason(declared: str | None, attributes: Mapping[str, Any]) -> st
     for key, is_list in _ATTRIBUTE_SOURCES:
         value = attributes.get(key)
         if is_list:
-            value = value[0] if isinstance(value, list) and value else None
+            value = _first(value)
         if isinstance(value, str) and value:
             return value
     return None
+
+
+def _first(value: Any) -> Any:
+    """The first reason of a list, or of a JSON-array string (LiteLLM sends `'["stop"]'`)."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (ValueError, RecursionError):  # untrusted text: deep nesting recurses
+            return None
+    return value[0] if isinstance(value, list) and value else None

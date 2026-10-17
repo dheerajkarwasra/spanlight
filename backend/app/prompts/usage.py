@@ -22,7 +22,8 @@ class VersionUsage:
     """Unknown values are None: no span with a cost gives no cost, no LLM call gives no p95.
 
     `cost_usd` sums the priced spans only; `has_unpriced` says an LLM call in the window had no
-    cost (unknown model or missing usage), so the sum is a lower bound.
+    cost (unknown model or missing usage), so the sum is a lower bound. Both leave usage rollups
+    (`spans.usage_rollup`) out; `llm_calls` and `traces` keep them.
     """
 
     traces: int
@@ -38,14 +39,15 @@ async def version_usage(
     """Traces, LLM calls, cost and p95 latency of the spans that used the version in the last
     seven days. Cost is the sum of the spans that have one and None when none does."""
     is_llm = Span.kind == SpanKind.LLM
+    billable = Span.usage_rollup.is_(False)
     row = (
         await db.execute(
             select(
                 func.count(distinct(Span.trace_id)),
                 func.count().filter(is_llm),
-                func.sum(Span.cost_usd),
+                func.sum(Span.cost_usd).filter(billable),
                 func.percentile_cont(0.95).within_group(Span.duration_ms).filter(is_llm),
-                func.bool_or(and_(is_llm, Span.cost_usd.is_(None))),
+                func.bool_or(and_(is_llm, billable, Span.cost_usd.is_(None))),
             ).where(
                 Span.project_id == project_id,
                 Span.prompt_version_id == version_id,

@@ -4,10 +4,24 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field
 
 from app.alerts.rule_spec import ChannelIds
 from app.api.schemas.common import ApiModel, Confirmation, Name
+from app.ingest.metadata import MetadataKey
+
+MAX_PROMOTED_KEYS = 5
+
+
+def _promoted(keys: list[str]) -> list[str]:
+    """Without repeats, in the order given; at most five remain."""
+    unique = list(dict.fromkeys(keys))
+    if len(unique) > MAX_PROMOTED_KEYS:
+        raise ValueError(f"at most {MAX_PROMOTED_KEYS} promoted keys")
+    return unique
+
+
+PromotedKeys = Annotated[list[MetadataKey], AfterValidator(_promoted)]
 
 
 class ProjectOut(ApiModel):
@@ -20,6 +34,8 @@ class ProjectOut(ApiModel):
     weekly_digest_enabled: bool
     # Alert channels of the organization that hear about critical insights.
     insight_channel_ids: list[uuid.UUID]
+    # Metadata keys the daily attribution rollup keeps, in the order they were set.
+    promoted_metadata_keys: list[str]
     created_at: datetime
 
 
@@ -35,6 +51,9 @@ class ProjectUpdateIn(BaseModel):
     # At most 10, repeats dropped; each must be an alert channel of the project's organization
     # (else 422 `UNKNOWN_CHANNEL`). `[]` turns insight notifications off.
     insight_channel_ids: ChannelIds | None = None
+    # At most 5 after repeats are dropped, order kept; each matches the metadata key pattern.
+    # `[]` promotes none. The attribution rollup backfills a new key over the last 7 UTC days.
+    promoted_metadata_keys: PromotedKeys | None = None
 
 
 class ProjectDeleteIn(BaseModel):

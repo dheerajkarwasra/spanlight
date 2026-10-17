@@ -26,6 +26,7 @@ from app.api.schemas.experiments import (
 )
 from app.core.errors import not_found
 from app.core.idempotency import idempotent
+from app.core.observability import feature_used
 from app.core.pagination import PageLimit, decode_uuid_cursor, encode_cursor
 from app.core.permissions import Permission
 from app.evals import experiment_queries as queries
@@ -196,7 +197,10 @@ async def get_run(
         _, run = await service.get_run(db, access.require_project().id, experiment_id, run_id)
     except EXPERIMENT_ERRORS as error:
         raise experiment_problem(error) from None
-    return ExperimentRunOut.of(run, await service.run_totals(db, run))
+    totals = await service.run_totals(db, access.require_project().id, run)
+    if any(stat.ci_low is not None for stat in totals.scores.values()):
+        feature_used("experiment_interval")
+    return ExperimentRunOut.of(run, totals)
 
 
 @router.get(

@@ -3,9 +3,10 @@
 import uuid
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Text, func, text
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.ids import new_id
@@ -16,6 +17,16 @@ class QueueItemStatus(StrEnum):
     PENDING = "pending"
     DONE = "done"
     SKIPPED = "skipped"
+
+
+class ReviewReason(StrEnum):
+    """Why an item was queued: by hand, or by the review policy's nightly selection."""
+
+    MANUAL = "manual"
+    DOCTOR_FINDING = "doctor_finding"
+    ERROR = "error"
+    COST_OUTLIER = "cost_outlier"
+    RANDOM = "random"
 
 
 class AnnotationQueue(Base):
@@ -40,7 +51,11 @@ class AnnotationQueue(Base):
 
 class AnnotationQueueItem(Base):
     """One trace (or span) in a queue. It has no `project_id`: row-level security goes through
-    the queue. `assigned_at` dates the claim, so an abandoned claim can be taken over."""
+    the queue. `assigned_at` dates the claim, so an abandoned claim can be taken over.
+
+    `reason` says why the item was queued (a `ReviewReason`); `reason_detail` is a JSON object
+    of numbers, ids and the trace name behind that reason, never payload text, and is NULL for a
+    manual add."""
 
     __tablename__ = "annotation_queue_items"
 
@@ -51,6 +66,8 @@ class AnnotationQueueItem(Base):
     trace_id: Mapped[str] = mapped_column(Text)
     span_id: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text, server_default=text("'pending'"))
+    reason: Mapped[str] = mapped_column(Text, server_default=text("'manual'"))
+    reason_detail: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     assigned_to: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )

@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import Span, Trace
 from app.db.rls import bypass_rls
+from app.ingest.otlp_fit import DroppedValues, fit_span
 from tests.gateway_support import logged
 from tests.helpers import Workspace, bearer
 from tests.ingest.support import otlp_json_span
@@ -149,3 +150,60 @@ async def test_a_token_count_that_is_not_a_whole_number_is_dropped_and_the_span_
     (warning,) = logged(caplog, "otlp_values_dropped")
     assert warning["token_counts"] == 1
     assert warning["environment"] == 0 and warning["release"] == 0
+
+
+def _fit(**native: Any) -> tuple[dict[str, Any], DroppedValues]:
+    """Fit one mapped span directly, as `to_native_span` does after mapping."""
+    dropped = DroppedValues()
+    fit_span(native, dropped)
+    return native, dropped
+
+
+def test_ttft_negative_is_dropped_and_counted() -> None:
+    native, dropped = _fit(time_to_first_token_ms=-1)
+    assert native["time_to_first_token_ms"] is None
+    assert dropped.ttft == 1 and dropped.total == 1
+
+
+def test_ttft_numeric_text_is_read() -> None:
+    native, dropped = _fit(time_to_first_token_ms="0.42")
+    assert native["time_to_first_token_ms"] == 0.42
+    assert dropped.total == 0
+
+
+def test_ttft_junk_text_is_dropped() -> None:
+    native, dropped = _fit(time_to_first_token_ms="soon")
+    assert native["time_to_first_token_ms"] is None
+    assert dropped.ttft == 1
+
+
+def test_ttft_nan_name_is_dropped() -> None:
+    native, dropped = _fit(time_to_first_token_ms="NaN")
+    assert native["time_to_first_token_ms"] is None
+    assert dropped.ttft == 1
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(True, id="bool"),
+        pytest.param(float("inf"), id="infinity"),
+        pytest.param(float("nan"), id="nan"),
+    ],
+)
+def test_ttft_that_is_not_a_finite_number_is_dropped(value: object) -> None:
+    native, dropped = _fit(time_to_first_token_ms=value)
+    assert native["time_to_first_token_ms"] is None
+    assert dropped.ttft == 1
+
+
+def test_ttft_that_fits_is_kept() -> None:
+    native, dropped = _fit(time_to_first_token_ms=420)
+    assert native["time_to_first_token_ms"] == 420
+    assert dropped.total == 0
+
+
+def test_dropped_messages_are_moved_into_the_count() -> None:
+    native, dropped = _fit(dropped_messages=3)
+    assert "dropped_messages" not in native
+    assert dropped.messages == 3 and dropped.total == 3

@@ -25,41 +25,17 @@ from app.pricing.prices import EFFECTIVE_FROM
 from tests.budget_fixtures import app_on_clock
 from tests.gateway.support import anthropic_frame
 from tests.gateway_fixtures import GatewayWorkspace
-from tests.gateway_support import FakeProvider, ManualClock, logged, read_gateway_spans
-
-# The pilot's usage, as Anthropic sent it.
-PILOT_USAGE: dict[str, Any] = {
-    "input_tokens": 19,
-    "output_tokens": 12,
-    "cache_read_input_tokens": 0,
-    "cache_creation_input_tokens": 6404,
-    "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 6404},
-}
-# The same usage in the native convention: `input_tokens` is the whole prompt.
-PILOT_NATIVE = Usage(
-    input_tokens=6423,
-    output_tokens=12,
-    cached_tokens=0,
-    cache_write_tokens=6404,
-    cache_write_1h_tokens=6404,
+from tests.gateway_support import (
+    MESSAGES_BODY,
+    PILOT_COST,
+    PILOT_MESSAGE,
+    PILOT_NATIVE,
+    PILOT_USAGE,
+    FakeProvider,
+    ManualClock,
+    logged,
+    read_gateway_spans,
 )
-# 19 uncached * 1.00 + 6404 written (1 h) * 2.00 + 12 output * 5.00, per million tokens.
-PILOT_COST = Decimal("0.01288700")
-PILOT_MESSAGE: dict[str, Any] = {
-    "id": "msg_test_cachewrite01",
-    "type": "message",
-    "role": "assistant",
-    "model": "claude-haiku-4-5-20251001",
-    "content": [{"type": "text", "text": "Hello!"}],
-    "stop_reason": "end_turn",
-    "stop_sequence": None,
-    "usage": PILOT_USAGE,
-}
-MESSAGES_BODY: dict[str, Any] = {
-    "model": "claude-haiku-4-5",
-    "max_tokens": 64,
-    "messages": [{"role": "user", "content": "Hello"}],
-}
 
 
 @pytest.fixture
@@ -198,3 +174,25 @@ async def test_cache_hit_keeps_write_fields_in_original_usage(
         "cache_write_tokens": 6404,
         "cache_write_1h_tokens": 6404,
     }
+
+
+async def test_answer_without_output_count_is_not_cached(
+    gateway_workspace: GatewayWorkspace,
+    fake_provider: FakeProvider,
+) -> None:
+    """A hit must report what the answer cost; an answer whose output count is unknown cannot."""
+    keys = f"/api/v1/projects/{gateway_workspace.project_id}/gateway/keys"
+    edited = await gateway_workspace.owner.patch(
+        f"{keys}/{gateway_workspace.gateway_key_id}", json={"cache_ttl_seconds": 600}
+    )
+    assert edited.status_code == 200, edited.text
+    no_output = {k: v for k, v in PILOT_USAGE.items() if k != "output_tokens"}
+    fake_provider.reply_json({**PILOT_MESSAGE, "usage": no_output})
+    fake_provider.reply_json({**PILOT_MESSAGE, "usage": no_output})
+
+    first = await gateway_workspace.gw.post("/gw/v1/messages", json=MESSAGES_BODY)
+    second = await gateway_workspace.gw.post("/gw/v1/messages", json=MESSAGES_BODY)
+
+    assert (first.status_code, first.headers["x-spanlight-cache"]) == (200, "miss")
+    assert (second.status_code, second.headers["x-spanlight-cache"]) == (200, "miss")
+    assert len(fake_provider.requests) == 2

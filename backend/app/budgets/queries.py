@@ -10,7 +10,7 @@ from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.alerts.types import AlertRuleKind
-from app.db.models import AlertRule, AlertState, Budget, GatewayKey
+from app.db.models import AlertRule, AlertState, Budget, GatewayKey, Trace
 
 BudgetRow = tuple[Budget, AlertState | None]
 
@@ -104,3 +104,20 @@ async def forget_state(db: AsyncSession, rule: AlertRule) -> None:
             AlertState.project_id == rule.project_id, AlertState.rule_id == rule.id
         )
     )
+
+
+async def trace_dimensions(
+    db: AsyncSession, project_id: uuid.UUID, trace_id: str
+) -> tuple[str | None, dict[str, str]] | None:
+    """The stored trace's name and metadata, for the guard of a call that joins it (spec §8.3).
+
+    One primary-key read; None when no span of the trace has been stored yet.
+    """
+    row = (
+        await db.execute(
+            select(Trace.name, Trace.metadata_).where(
+                Trace.project_id == project_id, Trace.trace_id == trace_id
+            )
+        )
+    ).first()
+    return None if row is None else (row[0], dict(row[1]))

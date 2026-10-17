@@ -1,8 +1,9 @@
 """What a database error means: the client's mistake, an overload, or worth another try. Pure.
 
-The API's error handlers (`app.core.errors`) and the gateway's span recorder read failures
-through here, so each kind of database error is classified once. Nothing here reads an error's
-message for logging: a message, and a Postgres `DETAIL`, may quote a refused value.
+The API's error handlers (`app.core.errors`), the gateway's error handlers and `execute`, and
+the gateway's span recorder read failures through here, so each kind of database error is
+classified once. Nothing here reads an error's message for logging: a message, and a Postgres
+`DETAIL`, may quote a refused value.
 """
 
 import psycopg
@@ -33,6 +34,15 @@ def is_nul_error(orig: object) -> bool:
 def is_statement_timeout(orig: object) -> bool:
     """Whether a statement outlived `statement_timeout` (Postgres cancels it: `QueryCanceled`)."""
     return isinstance(orig, psycopg.errors.QueryCanceled)
+
+
+def is_busy(failure: BaseException) -> bool:
+    """Whether the database was too busy to answer: no pooled connection came free in time, or
+    Postgres cancelled a statement at `statement_timeout`. Answered with a 503 and `Retry-After`.
+    """
+    if isinstance(failure, PoolTimeoutError):
+        return True
+    return isinstance(failure, OperationalError) and is_statement_timeout(failure.orig)
 
 
 def is_transient(failure: BaseException) -> bool:

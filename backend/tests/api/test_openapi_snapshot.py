@@ -35,3 +35,11 @@ def test_openapi_matches_snapshot() -> None:
         f"    {UPDATE_COMMAND}\n\n" + "\n".join(shown),
         pytrace=False,
     )
+
+
+def test_openapi_names_no_internal_spec_section() -> None:
+    """Schema docstrings become the public API reference: a pointer into an internal design
+    document (`spec §8.2`) means nothing to its readers."""
+    current = render_openapi(build_app())
+
+    assert "§" not in current

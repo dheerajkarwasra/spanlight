@@ -25,10 +25,14 @@ holds no slot), and at most `GATEWAY_RECORD_BACKLOG` spans wait or run. A queued
 and output are already redacted and cut as ingestion stores them (`prepare_span_payloads`, at
 most 32 KB each), so the backlog's memory is bounded however large the requests. A span past
 the backlog is dropped, counted as `reason="overflow"` and logged at most once a minute,
-without its contents. A span whose payloads cannot be prepared is counted as `reason="error"`.
+without its contents. A `low_priority` span (a call the key limiter refused) is dropped the same
+way once half the backlog is taken (at least one place), so a refusal flood leaves admitted calls
+the other half. A span whose payloads cannot be prepared is counted as `reason="error"`.
 
-Every span lost one of these ways also counts in `spans_lost()`, which `/health/ready` reports
-as `gateway_spans_lost`: the gateway spans this process could not store since it started.
+Every span lost one of these ways is counted by `app.gateway.span_losses.lose`: in the metric by
+reason, in `spans_lost()`, which `/health/ready` reports as `gateway_spans_lost` (the gateway
+spans this process could not store since it started), and by project and hour for the
+`telemetry_losses_hourly` flush.
 """
 
 import asyncio
@@ -42,7 +46,7 @@ from typing import Any
 import structlog
 
 from app.core.db_errors import is_transient, sqlstate
-from app.core.observability import GATEWAY_RECORD_FAILURES, INGESTED_SPANS, REJECTED_SPANS
+from app.core.observability import INGESTED_SPANS, REJECTED_SPANS
 from app.gateway.context import GatewayContext, GatewayResult
 from app.gateway.span_losses import lose, spans_lost
 from app.gateway.span_write import write_span
@@ -107,8 +111,7 @@ async def _record(
     INGESTED_SPANS.labels(METRIC_SOURCE).inc(outcome.accepted)
     if outcome.rejected:
         REJECTED_SPANS.labels(METRIC_SOURCE).inc(len(outcome.rejected))
-        GATEWAY_RECORD_FAILURES.labels("rejected").inc()
-        lose()
+        lose(context.project_id, "rejected")
         logger.warning(
             "gateway.span_rejected",
             span_id=span.get("span_id"),
@@ -138,7 +141,7 @@ async def _write_with_retries(
                 return await write_span(context, target, span, credential_ids, now, retry=tries > 0)
         except Exception as failure:  # noqa: BLE001 - counted and logged, the client was answered
             if retry_in_s is None or not is_transient(failure):
-                _write_lost(span, failure, tries=tries + 1)
+                _write_lost(context.project_id, span, failure, tries=tries + 1)
                 return None
             logger.warning(
                 "gateway.record_retry",
@@ -150,10 +153,11 @@ async def _write_with_retries(
     return None  # not reached: the last try returns from the loop
 
 
-def _write_lost(span: dict[str, Any], failure: BaseException, *, tries: int) -> None:
+def _write_lost(
+    project_id: uuid.UUID, span: dict[str, Any], failure: BaseException, *, tries: int
+) -> None:
     """Count and log a lost span by error type and SQLSTATE: the message may quote the payload."""
-    GATEWAY_RECORD_FAILURES.labels("error").inc()
-    lose()
+    lose(project_id, "error")
     logger.error(
         "gateway.record_failed",
         span_id=span.get("span_id"),
@@ -166,18 +170,22 @@ def _write_lost(span: dict[str, Any], failure: BaseException, *, tries: int) -> 
 
 
 def record_soon(
-    context: GatewayContext, span: dict[str, Any], credential_ids: Sequence[uuid.UUID] = ()
+    context: GatewayContext,
+    span: dict[str, Any],
+    credential_ids: Sequence[uuid.UUID] = (),
+    *,
+    low_priority: bool = False,
 ) -> None:
-    """Run `record` in the background, or drop the span when the backlog is full.
-
-    A context with a `span_sink` hands the span to it instead.
+    """Run `record` in the background, or drop the span when the backlog is full (half full for
+    a `low_priority` span). A context with a `span_sink` hands the span to it instead.
     """
     if context.span_sink is not None:
         context.span_sink.add(span, credential_ids)
         return
     writers = _writers_for(context)
-    if len(writers.pending) >= writers.backlog:
-        _overflow(writers)
+    limit = max(1, writers.backlog // 2) if low_priority else writers.backlog
+    if len(writers.pending) >= limit:
+        _overflow(writers, context.project_id)
         return
     # Held until written, so held as stored: redacted and at most 32 KB per payload.
     try:
@@ -185,8 +193,7 @@ def record_soon(
     except Exception as failure:  # noqa: BLE001 - counted and logged, the client was answered
         # Counted like a write that never succeeds. Only the type is logged: the message may
         # quote the payload.
-        GATEWAY_RECORD_FAILURES.labels("error").inc()
-        lose()
+        lose(context.project_id, "error")
         logger.error(
             "gateway.record_failed",
             span_id=span.get("span_id"),
@@ -267,9 +274,8 @@ def _writers_for(context: GatewayContext) -> _Writers:
     return _writers
 
 
-def _overflow(writers: _Writers) -> None:
-    GATEWAY_RECORD_FAILURES.labels("overflow").inc()
-    lose()
+def _overflow(writers: _Writers, project_id: uuid.UUID) -> None:
+    lose(project_id, "overflow")
     writers.dropped += 1
     now = time.monotonic()
     if writers.logged_at is None or now - writers.logged_at >= OVERFLOW_LOG_INTERVAL_S:

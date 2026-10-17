@@ -25,19 +25,30 @@ import asyncio
 from typing import Any
 
 import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.budgets.queries import trace_dimensions
+from app.core.db_errors import is_busy
+from app.core.errors import RETRY_AFTER_SECONDS
 from app.db.rls import bind_project
 from app.gateway.attempts import LoopResult, RoutePlan, run_attempts
 from app.gateway.budget import BudgetDecision, blocked_error
 from app.gateway.cache import CachedResponse
 from app.gateway.call import Call
 from app.gateway.context import GatewayContext, GatewayRequest, GatewayResult
-from app.gateway.errors import GatewayError, internal, invalid_request, model_not_allowed
+from app.gateway.errors import (
+    GatewayError,
+    internal,
+    invalid_request,
+    model_not_allowed,
+    service_unavailable,
+)
 from app.gateway.fault_apply import apply_before
 from app.gateway.faults import BEFORE_SCENARIOS, AppliedFault, decide_fault
 from app.gateway.response_summary import summarize_response
 from app.gateway.routing import compatible_targets, order_targets, resolve_model
 from app.gateway.sse import StreamSummary
+from app.gateway.tracing import default_trace_name
 from app.gateway.usage_chunk import injects_usage
 
 logger = structlog.get_logger(__name__)
@@ -46,7 +57,12 @@ MAX_ECHOED_MODEL = 256
 
 
 async def execute(request: GatewayRequest, context: GatewayContext) -> GatewayResult:
-    """Serve one call; never raises (an unexpected failure is a provider-shaped 500)."""
+    """Serve one call; never raises.
+
+    A database too busy to answer (a pool timeout or a statement timeout, `is_busy`) is a 503
+    `SERVICE_UNAVAILABLE` with `Retry-After`, logged as a warning: it is load, not a bug. Any other
+    unexpected failure is a provider-shaped 500, logged with its traceback.
+    """
     call = Call(request, context)
     try:
         return await _run(call)
@@ -55,7 +71,12 @@ async def execute(request: GatewayRequest, context: GatewayContext) -> GatewayRe
     except asyncio.CancelledError:
         call.abandon()  # the caller went away; the call still gets its span
         raise
-    except Exception:
+    except Exception as exc:
+        if is_busy(exc):
+            logger.warning(
+                "gateway.db_busy", request_id=request.request_id, error_type=type(exc).__name__
+            )
+            return call.fail(service_unavailable(RETRY_AFTER_SECONDS))
         logger.exception("gateway.execute_failed", request_id=request.request_id)
         return call.fail(internal(request.request_id))
 
@@ -135,6 +156,9 @@ async def _check_budget(call: Call, plan: RoutePlan) -> BudgetDecision:
     ]
     async with context.sessions() as db, db.begin():
         await bind_project(db, context.project_id)
+        metadata, trace_name = (
+            (None, None) if context.key is None else await _dimensions(call, plan, db)
+        )
         return await context.budget_guard.check(
             db,
             context.project_id,
@@ -143,7 +167,31 @@ async def _check_budget(call: Call, plan: RoutePlan) -> BudgetDecision:
             call.request.trace.user_id,
             call.now,
             target_models=target_models,
+            metadata=metadata,
+            trace_name=trace_name,
         )
+
+
+async def _dimensions(
+    call: Call, plan: RoutePlan, db: AsyncSession
+) -> tuple[dict[str, str], str | None]:
+    """The keyed call's trace metadata and name for the budget guard (spec §8.3).
+
+    The headers first. A call that joins a trace by id adds the stored trace's values when the
+    headers lack either: one primary-key read, the header winning per key. A trace not stored
+    yet gives nothing, so the first calls of a run may not match a `trace_name` budget. A call
+    that starts a new trace gets `tracing.default_trace_name`, the name the stored trace gets.
+    """
+    trace, context = call.request.trace, call.context
+    metadata, name = trace.metadata, trace.trace_name
+    if trace.trace_id is None:
+        return metadata, name or default_trace_name(call.request)
+    if metadata and name is not None:
+        return metadata, name
+    stored = await trace_dimensions(db, context.project_id, trace.trace_id)
+    if stored is None:
+        return metadata, name
+    return {**stored[1], **metadata}, name or stored[0]
 
 
 async def _lookup_cache(call: Call) -> CachedResponse | None:
@@ -184,8 +232,8 @@ async def _store_cache(
     context, ttl = call.context, call.context.cache_ttl_seconds
     if call.cache != "miss" or ttl is None or call.fault is not None or loop.body is None:
         return
-    if summary.usage is None or loop.status is None:
-        return  # a hit must report what the answer cost; without usage there is nothing to say
+    if not summary.usage_complete or summary.usage is None or loop.status is None:
+        return  # a hit must report what the answer cost; without full usage there is nothing to say
     try:
         async with context.sessions() as db, db.begin():
             await bind_project(db, context.project_id)

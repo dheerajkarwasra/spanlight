@@ -10,6 +10,8 @@ class BudgetScope(StrEnum):
     GATEWAY_KEY = "gateway_key"
     USER = "user"
     MODEL = "model"
+    METADATA = "metadata"
+    TRACE_NAME = "trace_name"
 
 
 class BudgetPeriod(StrEnum):

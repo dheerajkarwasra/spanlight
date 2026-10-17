@@ -10,6 +10,7 @@ from pydantic import Field, SecretStr, ValidationInfo, field_validator, model_va
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from app.core.crypto import parse_keyring
+from app.ee.license import parse_license
 
 DEV_SECRET_KEY = "dev-only-insecure-secret-key-change-me"  # noqa: S105 - documented dev default
 
@@ -33,6 +34,9 @@ class Settings(BaseSettings):
     # "<key_id>:<base64 of 32 bytes>[,<key_id>:<base64>...]"; the first entry encrypts new data.
     # Blank leaves application-level encryption off (see app/core/crypto.py).
     credentials_keys: SecretStr | None = None
+    # An enterprise license key (`spl_lic_...`, see app/ee/license.py). Blank runs the community
+    # edition; a key that does not verify stops startup, an expired one turns ee features off.
+    ee_license_key: SecretStr | None = None
 
     anthropic_api_key: SecretStr | None = None
     demo_monthly_budget_usd: Decimal = Decimal("1.00")
@@ -156,6 +160,9 @@ class Settings(BaseSettings):
     # Anthropic credential, at most `explain_monthly_budget_usd` per organization per UTC month
     # (0 turns explanations off). The model must have a price, or the budget cannot be enforced.
     detectors_enabled: bool = True
+    # Polls the providers' public status pages every 5 minutes (fixed URLs, never a setting).
+    # Off, nothing is fetched (an air-gapped instance) and the incident list says so.
+    provider_status_polling_enabled: bool = True
     explain_model: str = Field(default="claude-sonnet-5-5", min_length=1)
     explain_monthly_budget_usd: Decimal = Field(default=Decimal("1.00"), ge=0)
     user_stats_enabled: bool = True
@@ -167,6 +174,22 @@ class Settings(BaseSettings):
     evals_enabled: bool = True
     eval_sampler_max_runs_per_cycle: int = Field(default=50, ge=1, le=10_000)
     experiment_max_items: int = Field(default=1000, ge=1, le=100_000)
+
+    # Review loop. `review_selection_enabled` schedules the nightly selection of traces into each
+    # project's review queue; off, a policy can still be run by hand. `replay_monthly_budget_usd`
+    # caps replays per project per UTC month (0 turns replay off with 409 NOT_CONFIGURED).
+    review_selection_enabled: bool = True
+    replay_monthly_budget_usd: Decimal = Field(default=Decimal("5.00"), ge=0)
+
+    # Billing sources. `billing_sources_enabled` schedules the daily fetch of connected provider
+    # cost reports; off, no provider cost API is called anywhere (an air-gapped instance), the
+    # routes stay and a manual refresh answers 409 NOT_CONFIGURED.
+    billing_sources_enabled: bool = True
+
+    # Attribution. `attribution_enabled` schedules the attribution refresh (every 15 minutes),
+    # which rebuilds the daily rollups the attribution view reads over windows longer than a
+    # day; off, those windows go stale while windows of 24 hours or less stay live.
+    attribution_enabled: bool = True
 
     sentry_dsn: str | None = None
 
@@ -234,13 +257,18 @@ class Settings(BaseSettings):
         "alert_email_any_recipient",
         "pagerduty_events_url",
         "detectors_enabled",
+        "provider_status_polling_enabled",
         "explain_model",
         "explain_monthly_budget_usd",
         "user_stats_enabled",
         "evals_enabled",
         "eval_sampler_max_runs_per_cycle",
         "experiment_max_items",
+        "review_selection_enabled",
+        "replay_monthly_budget_usd",
+        "billing_sources_enabled",
         "otel_service_name",
+        "attribution_enabled",
         mode="before",
     )
     @classmethod
@@ -271,6 +299,26 @@ class Settings(BaseSettings):
         # Same rule as `_blank_is_unset`, plus: wrap the string in a SecretStr before the check
         # runs. pydantic records the input a validator received on its errors, and `errors()` and
         # `json()` print it in full, so the check must only ever see a masked value.
+        if value == "":
+            return None
+        return SecretStr(value) if isinstance(value, str) else value
+
+    @field_validator("ee_license_key")
+    @classmethod
+    def _ee_license_key_verifies(cls, value: SecretStr | None) -> SecretStr | None:
+        # Fail at startup instead of on the first gated request. parse_license's messages name
+        # the broken rule but never quote the key. Expiry is judged by each gate, not here.
+        if value is not None:
+            try:
+                parse_license(value.get_secret_value())
+            except ValueError as error:
+                raise ValueError(f"EE_LICENSE_KEY is invalid: {error}") from None
+        return value
+
+    @field_validator("ee_license_key", mode="before")
+    @classmethod
+    def _blank_ee_license_key_is_unset(cls, value: object) -> object:
+        # The same masking as `_blank_credentials_keys_is_unset`, for the same reason.
         if value == "":
             return None
         return SecretStr(value) if isinstance(value, str) else value
@@ -354,6 +402,11 @@ class Settings(BaseSettings):
     def is_crypto_configured(self) -> bool:
         """Whether `core.crypto` can seal secrets: true exactly when CREDENTIALS_KEYS is set."""
         return self.credentials_keys is not None
+
+    @property
+    def is_replay_configured(self) -> bool:
+        """Replays need a budget above zero and sealed credentials to call the provider with."""
+        return self.replay_monthly_budget_usd > 0 and self.is_crypto_configured
 
     @property
     def is_email_configured(self) -> bool:

@@ -12,26 +12,22 @@ from typing import Annotated
 
 import structlog
 from fastapi import APIRouter, Depends, Request, status
-from pydantic import ValidationError
 
 from app.annotations.service import queue_uses_config
 from app.api.deps import Access, ClockDep, DbSession, client_ip, require
 from app.api.locks import lock_project_of
 from app.api.schemas import ScoreConfigOut, ScoreConfigPatch, ScoreConfigSpec, ScoreCreate, ScoreOut
-from app.core.errors import FieldError, ProblemError, conflict, forbidden, not_found
+from app.api.schemas.scores import FailureCategoriesIn
+from app.api.score_problems import CONFIG_ERRORS, config_problem, score_rejection
+from app.core.errors import conflict, forbidden, not_found
 from app.core.ids import new_id
+from app.core.observability import feature_used
 from app.core.permissions import Permission
 from app.scores import configs, queries
-from app.scores.errors import (
-    ScoreConfigInUseError,
-    ScoreConfigLimitError,
-    ScoreConfigNameTakenError,
-    ScoreConfigNotFoundError,
-    ScoreDeleteForbiddenError,
-    ScoreNotFoundError,
-)
+from app.scores.errors import ScoreDeleteForbiddenError, ScoreNotFoundError
+from app.scores.failure_category import create_failure_category_config
 from app.scores.schemas import ScoreIn
-from app.scores.service import TOO_MANY_NAMES, ScoreActor, delete_score, write_scores
+from app.scores.service import ScoreActor, delete_score, write_scores
 from app.scores.types import ScoreSource
 
 logger = structlog.get_logger(__name__)
@@ -40,51 +36,6 @@ router = APIRouter(prefix="/projects/{project_id}", tags=["scores"])
 
 ScoreReader = Annotated[Access, Depends(require(Permission.PROJECT_READ))]
 ScoreWriter = Annotated[Access, Depends(require(Permission.SCORES_WRITE))]
-
-CONFIG_ERRORS = (
-    ScoreConfigLimitError,
-    ScoreConfigNotFoundError,
-    ScoreConfigNameTakenError,
-    ScoreConfigInUseError,
-    ValidationError,
-)
-
-
-def _config_problem(error: Exception) -> ProblemError:
-    """The problem response for an error the score config service raises."""
-    if isinstance(error, ScoreConfigNotFoundError):
-        return not_found()
-    if isinstance(error, ScoreConfigNameTakenError):
-        return conflict("NAME_TAKEN", "A score config with this name already exists here.")
-    if isinstance(error, ScoreConfigInUseError):
-        return conflict(
-            "SCORE_CONFIG_IN_USE",
-            "Scores use this name, so the config cannot be deleted or change type.",
-        )
-    if isinstance(error, ScoreConfigLimitError):
-        return _rejection(TOO_MANY_NAMES)
-    if isinstance(error, ValidationError):
-        fields = [
-            FieldError(
-                field=".".join(str(part) for part in item["loc"]) or "body", message=item["msg"]
-            )
-            for item in error.errors()
-        ]
-        return ProblemError(422, "VALIDATION_ERROR", "The request is invalid.", errors=fields)
-    raise error
-
-
-def _rejection(reason: str) -> ProblemError:
-    """A score the write path rejected, as a field error (`<field>: <message>`)."""
-    field, _, message = reason.partition(": ")
-    if not message:
-        field, message = "body", reason
-    return ProblemError(
-        422,
-        "VALIDATION_ERROR",
-        "The score does not fit its config.",
-        errors=[FieldError(field=field, message=message)],
-    )
 
 
 def _log(event: str, access: Access, **fields: object) -> None:
@@ -130,10 +81,47 @@ async def create_score_config(
             ip=client_ip(request),
         )
     except CONFIG_ERRORS as error:
-        raise _config_problem(error) from None
+        raise config_problem(error) from None
     created = ScoreConfigOut.model_validate(config)
     await db.commit()
     _log("score_config_created", access, config_id=str(config.id))
+    return created
+
+
+@router.post(
+    "/score-configs/failure-category",
+    status_code=status.HTTP_201_CREATED,
+    response_model=ScoreConfigOut,
+    summary="Add the failure-category config",
+)
+async def create_failure_category(
+    project_id: uuid.UUID,
+    body: FailureCategoriesIn,
+    request: Request,
+    access: ScoreWriter,
+    db: DbSession,
+    clock: ClockDep,
+) -> ScoreConfigOut:
+    """Create the categorical `failure_category` config with the categories sent, in that
+    order (2 to 30, distinct, `none` included). `409 NAME_TAKEN` when the project has one:
+    edit its list with `PATCH /score-configs/{config_id}`."""
+    locked_project_id = await lock_project_of(access, db)
+    try:
+        config = await create_failure_category_config(
+            db,
+            access.org.id,
+            locked_project_id,
+            access.user_id,
+            body,
+            now=clock(),
+            ip=client_ip(request),
+        )
+    except CONFIG_ERRORS as error:
+        raise config_problem(error) from None
+    created = ScoreConfigOut.model_validate(config)
+    await db.commit()
+    feature_used("failure_category")
+    _log("failure_category_config_created", access, config_id=str(config.id))
     return created
 
 
@@ -165,7 +153,7 @@ async def update_score_config(
             ip=client_ip(request),
         )
     except CONFIG_ERRORS as error:
-        raise _config_problem(error) from None
+        raise config_problem(error) from None
     updated = ScoreConfigOut.model_validate(config)
     await db.commit()
     _log("score_config_updated", access, config_id=str(config_id))
@@ -197,7 +185,7 @@ async def delete_score_config(
             db, access.org.id, locked_project_id, config_id, access.user_id, ip=client_ip(request)
         )
     except CONFIG_ERRORS as error:
-        raise _config_problem(error) from None
+        raise config_problem(error) from None
     await db.commit()
     _log("score_config_deleted", access, config_id=str(config_id))
 
@@ -246,7 +234,7 @@ async def create_trace_score(
         db, project.id, [score], source=ScoreSource.HUMAN, author_user_id=access.user_id
     )
     if outcome.rejected:
-        raise _rejection(outcome.rejected[0].reason)
+        raise score_rejection(outcome.rejected[0].reason)
     stored = await queries.get_score(db, project.id, score_id)
     if stored is None:
         raise not_found()

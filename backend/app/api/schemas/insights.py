@@ -7,6 +7,7 @@ from typing import Annotated
 from pydantic import AwareDatetime, BaseModel, ConfigDict, StringConstraints
 
 from app.api.schemas.common import ApiModel, Money
+from app.api.schemas.insight_feedback import FeedbackSummaryOut
 from app.db.models import DetectorRun, Insight, InsightExplanation
 from app.insights.catalogue import KIND_INFO
 from app.insights.health_service import ProjectHealth
@@ -86,9 +87,10 @@ class ExplanationOut(ApiModel):
 
 
 class InsightDetailOut(InsightOut):
-    """The insight and its completed explanations, newest first."""
+    """The insight, its completed explanations (newest first) and the "Was this right?" votes."""
 
     explanations: list[ExplanationOut]
+    feedback: FeedbackSummaryOut
 
 
 class InsightSummaryOut(BaseModel):

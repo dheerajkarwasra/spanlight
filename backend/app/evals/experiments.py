@@ -46,6 +46,7 @@ from app.gateway import service as gateway
 from app.jobs.queue import enqueue
 from app.pricing.cost import load_price_book
 from app.prompts import service as prompts
+from app.scores.queries import boolean_score_names
 from app.services.audit import record_audit
 
 NAME_CONSTRAINT = "experiments_project_name_key"
@@ -238,9 +239,12 @@ async def get_run(
     return experiment, run
 
 
-async def run_totals(db: AsyncSession, run: ExperimentRun) -> Totals:
+async def run_totals(db: AsyncSession, project_id: uuid.UUID, run: ExperimentRun) -> Totals:
     """The totals stored when the run ended; computed from its items while it runs (or when a
     run was reaped before it could store them)."""
     if run.totals is not None:
         return totals_from_json(run.totals)
-    return summarize_items(await queries.item_facts(db, run.id))
+    return summarize_items(
+        await queries.item_facts(db, run.id),
+        boolean_scores=await boolean_score_names(db, project_id),
+    )

@@ -14,10 +14,16 @@ a rollup and a raw read of the same hours agree:
 * ``unpriced_calls`` counts ``llm`` spans whose ``cost_usd`` is NULL. It is 0 for other kinds.
 * Token columns sum the span columns, treating unknown as 0. ``cost_usd`` sums the known costs
   and stays NULL when no span in the row has one, so an unpriced row is never reported as free.
+* Usage rollups (``spans.usage_rollup``: a span repeating the usage of a descendant) are left
+  out of the token and cost sums and of ``unpriced_calls``, so one call is never billed twice;
+  ``span_count`` and ``errors`` still count them, as a rollup is a span of its kind.
 * ``environment`` is the environment of the span's trace. Spans are bucketed by their
   ``started_at`` and traces by theirs.
 * ``errored_traces`` counts traces whose ``error_count`` is above 0, which is the rule the trace
   list uses for ``status=error``.
+
+The third table, ``error_rollups_hourly``, is rebuilt in the same transaction and range; its
+statements and definitions are in ``app.rollups.error_compute``.
 """
 
 import time
@@ -32,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.rls import bind_project
 from app.rollups.buckets import BOUNDS_MS, BUCKET_COUNT
+from app.rollups.error_compute import DELETE_ERROR_ROLLUPS, INSERT_ERROR_ROLLUPS
 
 HOUR = timedelta(hours=1)
 DAY = timedelta(days=1)
@@ -132,6 +139,7 @@ _INSERT_SPAN_ROLLUPS = text(
                s.output_tokens,
                s.cached_tokens,
                s.cost_usd,
+               s.usage_rollup,
                {BUCKET_INDEX_SQL.format(value="s.duration_ms")}                   AS latency_index,
                CASE WHEN s.time_to_first_token_ms IS NOT NULL
                     THEN {BUCKET_INDEX_SQL.format(value="s.time_to_first_token_ms")}
@@ -150,11 +158,12 @@ _INSERT_SPAN_ROLLUPS = text(
            kind,
            count(*)                                                    AS span_count,
            count(*) FILTER (WHERE status = 'error')                    AS errors,
-           coalesce(sum(input_tokens), 0)                              AS input_tokens,
-           coalesce(sum(output_tokens), 0)                             AS output_tokens,
-           coalesce(sum(cached_tokens), 0)                             AS cached_tokens,
-           sum(cost_usd)                                               AS cost_usd,
-           count(*) FILTER (WHERE kind = 'llm' AND cost_usd IS NULL)   AS unpriced_calls,
+           coalesce(sum(input_tokens) FILTER (WHERE NOT usage_rollup), 0)  AS input_tokens,
+           coalesce(sum(output_tokens) FILTER (WHERE NOT usage_rollup), 0) AS output_tokens,
+           coalesce(sum(cached_tokens) FILTER (WHERE NOT usage_rollup), 0) AS cached_tokens,
+           sum(cost_usd) FILTER (WHERE NOT usage_rollup)                   AS cost_usd,
+           count(*) FILTER (WHERE kind = 'llm' AND cost_usd IS NULL AND NOT usage_rollup)
+                                                                       AS unpriced_calls,
            {_histogram("latency_index")}                               AS latency_buckets,
            {_histogram("ttft_index")}                                  AS ttft_buckets
     FROM scoped
@@ -206,8 +215,8 @@ async def compute_rollups(
     row-level security policies confine every statement to that project. The caller does not need
     to bypass RLS to run this.
 
-    Returns the number of rows written to both tables. A range of one empty hour returns 0, and so
-    does a project that has been deleted (nothing is written for it).
+    Returns the number of rows written to the three tables. A range of one empty hour returns 0,
+    and so does a project that has been deleted (nothing is written for it).
     """
     aligned_start = floor_hour(start)
     aligned_end = ceil_hour(end)
@@ -221,11 +230,13 @@ async def compute_rollups(
     params: dict[str, Any] = {"project_id": project_id, "start": aligned_start, "end": aligned_end}
     await db.execute(_DELETE_SPAN_ROLLUPS, params)
     await db.execute(_DELETE_TRACE_ROLLUPS, params)
-    span_result = await db.execute(
-        _INSERT_SPAN_ROLLUPS, {**params, "neg_bounds": list(NEGATED_BOUNDS)}
-    )
-    trace_result = await db.execute(_INSERT_TRACE_ROLLUPS, params)
-    return int(getattr(span_result, "rowcount", 0)) + int(getattr(trace_result, "rowcount", 0))
+    await db.execute(DELETE_ERROR_ROLLUPS, params)
+    results = [
+        await db.execute(_INSERT_SPAN_ROLLUPS, {**params, "neg_bounds": list(NEGATED_BOUNDS)}),
+        await db.execute(_INSERT_TRACE_ROLLUPS, params),
+        await db.execute(INSERT_ERROR_ROLLUPS, params),
+    ]
+    return sum(int(getattr(result, "rowcount", 0)) for result in results)
 
 
 async def backfill_rollups(

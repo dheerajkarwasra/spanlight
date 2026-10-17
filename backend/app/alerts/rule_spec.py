@@ -9,11 +9,15 @@ The kind decides which fields apply. A `threshold` rule needs `threshold` and re
 `baseline_windows` and `sensitivity`; an `anomaly` rule needs `baseline_windows`, takes
 `sensitivity` (default 3.0) and refuses `threshold`. Errors name the field they are about. The
 bounds match migration 0303 and the phase's limits. Unknown fields are rejected.
+
+The `error_class` and `rate_limit_kind` filters narrow the failed calls a rule counts, so they
+apply to `error_rate` and `error_calls` only; each takes one value of its vocabulary
+(`app.ingest.error_class`, `app.ingest.rate_limit_kind`).
 """
 
 import uuid
 from decimal import Decimal
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import (
     AfterValidator,
@@ -23,18 +27,28 @@ from pydantic import (
     StringConstraints,
     ValidationInfo,
     field_validator,
+    model_validator,
 )
 
 from app.alerts.types import AlertRuleKind, Comparator, Metric
+from app.ingest.error_class import ErrorClass
+from app.ingest.rate_limit_kind import RateLimitKind
 
 MAX_CHANNELS_PER_RULE = 10
 DEFAULT_SENSITIVITY = Decimal("3.0")
 DEFAULT_COOLDOWN_MINUTES = 15
 
 RuleName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
-FilterKey = Literal["environment", "provider", "model"]
+FilterKey = Literal["environment", "provider", "model", "error_class", "rate_limit_kind"]
 FilterValue = Annotated[str, StringConstraints(min_length=1, max_length=200)]
 UserRuleKind = Literal["threshold", "anomaly"]
+
+# The filters that narrow failed calls, with the values each accepts, and the metrics they apply to.
+_ERROR_FILTER_VALUES: dict[FilterKey, tuple[str, ...]] = {
+    "error_class": tuple(ErrorClass),
+    "rate_limit_kind": tuple(RateLimitKind),
+}
+_ERROR_METRICS = (Metric.ERROR_RATE, Metric.ERROR_CALLS)
 
 
 def _unique(ids: list[uuid.UUID]) -> list[uuid.UUID]:
@@ -86,6 +100,22 @@ class RuleDefinition(BaseModel):
         if value is Metric.SPEND:
             raise ValueError("spend is measured by budgets; use cost_usd for a rule")
         return value
+
+    @field_validator("filters")
+    @classmethod
+    def _known_error_values(cls, value: dict[FilterKey, str]) -> dict[FilterKey, str]:
+        for key, allowed in _ERROR_FILTER_VALUES.items():
+            given = value.get(key)
+            if given is not None and given not in allowed:
+                raise ValueError(f"{key}: must be one of {', '.join(allowed)}")
+        return value
+
+    @model_validator(mode="after")
+    def _error_filters_for_metric(self) -> Self:
+        narrowing = [key for key in _ERROR_FILTER_VALUES if key in self.filters]
+        if narrowing and self.metric not in _ERROR_METRICS:
+            raise ValueError(f"filters.{narrowing[0]}: applies to error_rate and error_calls")
+        return self
 
     @field_validator("threshold")
     @classmethod

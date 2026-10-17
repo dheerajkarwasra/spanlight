@@ -67,6 +67,7 @@ def _fill(template: str, world: World, *, project_id: str, trace_id: str) -> str
         "project_id": project_id,
         "org_id": world.workspace.org_id,
         "trace_id": trace_id,
+        "span_id": world.span_ids.get(trace_id, str(uuid.uuid4())),
         "provider": "github",
         "external_user_id": END_USER,
     }
@@ -88,6 +89,8 @@ def _params(path: str) -> dict[str, str] | None:
         return {"token": "x"}
     if path.endswith("/releases/compare"):
         return dict(zip(("a", "b"), RELEASES, strict=True))
+    if path.endswith("/attribution"):
+        return {"group_by": "trace_name"}
     return None
 
 

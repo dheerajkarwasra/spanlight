@@ -9,7 +9,7 @@ from app.core.model_match import matches_model
 from app.pricing.cost import Price, PriceBook
 from app.pricing.prices import EFFECTIVE_FROM, PRICING_VERSION, SEED_PRICES
 
-AT = datetime(2026, 10, 15, 12, tzinfo=UTC)
+AT = datetime(2026, 10, 16, 12, tzinfo=UTC)
 
 
 @pytest.fixture

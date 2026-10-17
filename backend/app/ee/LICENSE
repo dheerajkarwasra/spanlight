@@ -1,0 +1,42 @@
+The Spanlight Enterprise License (the "Enterprise License")
+Copyright (c) 2026 Dheeraj Karwasra ("the Licensor")
+
+This license applies to all content in this directory and its subdirectories
+(the "Software"). Content outside directories named "ee" is licensed under the
+MIT license in the LICENSE file at the root of this repository.
+
+1. Production use. You may use the Software in production only while you hold
+   a valid Spanlight enterprise license key issued by the Licensor and agree to
+   the terms under which it was issued, and only for the features, the period
+   and the number of instances that key and those terms cover.
+
+2. Development and testing. Without a license key, you may copy, modify and
+   run the Software for development and testing, but not in production.
+
+3. Modifications. You may modify the Software within the limits of sections 1
+   and 2. The Licensor and its licensors keep all right, title and interest in
+   the Software and in modifications of it. You may not distribute the
+   Software, modified or not, except as part of an unmodified copy of this
+   repository.
+
+4. License keys. You may not remove, disable, alter or work around the
+   license key checks of the Software or the MIT-licensed code that calls them,
+   and you may not use the Software, or a modification of it, to provide its
+   features to others without a license key that covers that use.
+
+5. Third-party components. Third-party components are licensed under the
+   licenses of their owners, not under this license.
+
+6. No warranty. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+   KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
+   EVENT SHALL THE LICENSOR OR ANY CONTRIBUTOR BE LIABLE FOR ANY CLAIM, DAMAGES
+   OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+   ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+   DEALINGS IN THE SOFTWARE.
+
+7. Termination. Any use of the Software that breaks these terms ends your
+   rights under this license.
+
+For a license key, open an issue or contact the maintainer listed in the
+repository.

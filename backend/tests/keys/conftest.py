@@ -17,6 +17,7 @@ from tests.helpers import (
     create_api_key,
     create_project,
     create_workspace,
+    new_span_id,
     new_trace_id,
     span,
 )
@@ -45,6 +46,8 @@ class World:
     read_key: str
     trace_id: str
     other_trace_id: str
+    # The one span of each trace, by trace id, for routes that name a span.
+    span_ids: dict[str, str]
 
     def path(
         self, template: str, *, project_id: str | None = None, trace: str | None = None
@@ -63,14 +66,14 @@ async def world(browser_factory: Any, client: httpx.AsyncClient) -> World:
     read = await create_api_key(owner, workspace.project_id, scopes=["traces:read"])
 
     trace_id, other_trace_id = new_trace_id(), new_trace_id()
+    span_ids = {trace_id: new_span_id(), other_trace_id: new_span_id()}
     for api_key, trace in ((workspace.api_key, trace_id), (other_ingest["secret"], other_trace_id)):
-        response = await client.post(
-            "/v1/traces",
-            json={"spans": [span(trace_id=trace, trace=TRACE_FIELDS)]},
-            headers=bearer(api_key),
-        )
+        body = span(trace_id=trace, span_id=span_ids[trace], trace=TRACE_FIELDS)
+        response = await client.post("/v1/traces", json={"spans": [body]}, headers=bearer(api_key))
         assert response.status_code == 200, response.text
-    return World(owner, workspace, other_project_id, read["secret"], trace_id, other_trace_id)
+    return World(
+        owner, workspace, other_project_id, read["secret"], trace_id, other_trace_id, span_ids
+    )
 
 
 @pytest.fixture

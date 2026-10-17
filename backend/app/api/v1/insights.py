@@ -16,6 +16,7 @@ from app.api.deps import Access, ClockDep, DbSession, client_ip, require
 from app.api.locks import lock_project_of
 from app.api.params import NO_NUL
 from app.api.schemas import Page
+from app.api.schemas.insight_feedback import feedback_summary_out
 from app.api.schemas.insights import (
     DetectorRunOut,
     ExplanationOut,
@@ -34,7 +35,7 @@ from app.core.errors import not_found
 from app.core.pagination import DEFAULT_PAGE_SIZE, PageLimit, decode_uuid_cursor, encode_cursor
 from app.core.permissions import Permission
 from app.gateway.context import GatewayServices
-from app.insights import explain_queries, explain_service, queries, service
+from app.insights import explain_queries, explain_service, feedback_queries, queries, service
 from app.insights.health_service import project_health
 from app.insights.schemas import InsightStatus, Severity
 from app.insights.service import Actor
@@ -100,7 +101,8 @@ async def insights_summary(
 async def get_insight(
     project_id: uuid.UUID, insight_id: uuid.UUID, access: InsightReader, db: DbSession
 ) -> InsightDetailOut:
-    """The insight and its completed explanations, newest first (at most 20)."""
+    """The insight, its completed explanations, newest first (at most 20), and the feedback:
+    the caller's own vote (`mine`, `null` when they have not voted) and every member's counts."""
     project_id = access.require_project().id
     insight = await queries.get_insight(db, project_id, insight_id)
     if insight is None:
@@ -108,9 +110,11 @@ async def get_insight(
     explanations = await explain_queries.list_completed(
         db, project_id, insight_id, MAX_EXPLANATIONS
     )
+    feedback = await feedback_queries.feedback_summary(db, project_id, insight_id, access.user_id)
     return InsightDetailOut(
         **insight_out(insight).model_dump(),
         explanations=[explanation_out(row) for row in explanations],
+        feedback=feedback_summary_out(feedback),
     )
 
 

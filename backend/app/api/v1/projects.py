@@ -103,6 +103,7 @@ async def update_project(
     changes = body.model_dump(exclude_unset=True, exclude_none=True)
     if "insight_channel_ids" in changes:
         await check_insight_channels(db, access.org.id, changes["insight_channel_ids"])
+    audit = _update_audit(project, body)
     for field, value in changes.items():
         setattr(project, field, value)
     if changes:
@@ -114,13 +115,25 @@ async def update_project(
             target_type="project",
             target_id=project.id,
             ip=client_ip(request),
-            # JSON mode: channel ids are stored as strings.
-            metadata={
-                "changes": body.model_dump(mode="json", exclude_unset=True, exclude_none=True)
-            },
+            metadata=audit,
         )
     await db.commit()
     return project
+
+
+def _update_audit(project: Project, body: ProjectUpdateIn) -> dict[str, object]:
+    """The `project.update` metadata, read before the project changes.
+
+    `changes` is what was sent (JSON mode: channel ids are stored as strings). When the promoted
+    keys change, `previous` holds the list they replace: key names only, never metadata values.
+    """
+    audit: dict[str, object] = {
+        "changes": body.model_dump(mode="json", exclude_unset=True, exclude_none=True)
+    }
+    keys = body.promoted_metadata_keys
+    if keys is not None and keys != list(project.promoted_metadata_keys):
+        audit["previous"] = {"promoted_metadata_keys": list(project.promoted_metadata_keys)}
+    return audit
 
 
 @router.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)

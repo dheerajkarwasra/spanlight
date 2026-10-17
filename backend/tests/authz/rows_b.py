@@ -1,5 +1,5 @@
-"""The matrix rows for prompts, scores, datasets, annotation queues, evaluators, experiments and
-the playground.
+"""The matrix rows for prompts, scores, the span cost explanation, billing sources, datasets,
+annotation queues, evaluators, experiments and the playground.
 
 One row per route, with the permission that is meant to guard it. The rows for the gateway,
 alerts, insights and the rest are in `rows_a.py`.
@@ -9,6 +9,7 @@ from app.core.permissions import Permission as P  # noqa: N817 - short, because 
 from tests.authz.matrix import Row
 
 PRJ = "/api/v1/projects/{project_id}"
+ORG = "/api/v1/orgs/{org_id}"
 PROMPT = f"{PRJ}/prompts/{{name:path}}"
 
 PROMPT_ROWS = (
@@ -33,6 +34,31 @@ SCORE_ROWS = (
     Row("GET", f"{PRJ}/traces/{{trace_id}}/scores", P.PROJECT_READ),
     Row("POST", f"{PRJ}/traces/{{trace_id}}/scores", P.SCORES_WRITE),
     Row("DELETE", f"{PRJ}/scores/{{score_id}}", P.SCORES_WRITE),
+)
+
+# Bet 1: the lines behind one span's stored cost. API-key readable, like the trace detail.
+TRACE_ROWS = (
+    Row("GET", f"{PRJ}/traces/{{trace_id}}/spans/{{span_id}}/cost-explanation", P.PROJECT_READ),
+)
+
+# Bet 1: the provider accounts an organization reconciles against. Members read them; admins and
+# owners add, edit, rotate and delete them, as these routes hold a provider admin key, and
+# refresh them or upload their CSV, as both spend provider calls or replace the bill's lines.
+# Members read the reconciliation report and its CSV.
+SOURCE = f"{ORG}/billing-sources/{{source_id}}"
+
+BILLING_SOURCE_ROWS = (
+    Row("GET", f"{ORG}/billing-sources", P.ORG_READ),
+    Row("POST", f"{ORG}/billing-sources", P.BILLING_SOURCES_MANAGE),
+    Row("GET", SOURCE, P.ORG_READ),
+    Row("PATCH", SOURCE, P.BILLING_SOURCES_MANAGE),
+    Row("POST", f"{SOURCE}/rotate", P.BILLING_SOURCES_MANAGE),
+    Row("DELETE", SOURCE, P.BILLING_SOURCES_MANAGE),
+    Row("POST", f"{SOURCE}/refresh", P.BILLING_SOURCES_MANAGE),
+    Row("POST", f"{SOURCE}/upload", P.BILLING_SOURCES_MANAGE),
+    Row("GET", f"{SOURCE}/runs", P.ORG_READ),
+    Row("GET", f"{SOURCE}/reconciliation", P.ORG_READ),
+    Row("GET", f"{SOURCE}/reconciliation.csv", P.ORG_READ),
 )
 
 DATASET_ROWS = (
@@ -94,5 +120,12 @@ EXPERIMENT_ROWS = (
 )
 
 ROWS_B = (
-    PROMPT_ROWS + SCORE_ROWS + DATASET_ROWS + ANNOTATION_ROWS + EVALUATOR_ROWS + EXPERIMENT_ROWS
+    PROMPT_ROWS
+    + SCORE_ROWS
+    + TRACE_ROWS
+    + BILLING_SOURCE_ROWS
+    + DATASET_ROWS
+    + ANNOTATION_ROWS
+    + EVALUATOR_ROWS
+    + EXPERIMENT_ROWS
 )

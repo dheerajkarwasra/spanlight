@@ -61,7 +61,8 @@ class BudgetOut(ApiModel):
     project_id: uuid.UUID
     name: str
     scope: BudgetScope
-    # Null exactly when `scope` is `project`: otherwise the gateway key id, end user or model.
+    # Null exactly when `scope` is `project`: otherwise the gateway key id, end user, model,
+    # `key=value` metadata pair or trace name.
     scope_id: str | None
     period: BudgetPeriod
     amount_usd: DecimalStr

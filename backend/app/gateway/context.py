@@ -256,3 +256,6 @@ class GatewayResult:
     disconnected_after_ms: float | None = None
     stream_error: str | None = None  # why a stream ended before the provider finished it
     cut_by_fault: bool = False  # a `truncated_stream` fault withheld the end of the stream
+    # Why a successful answer's usage is unknown (`usage.unreported_reason`): a stream cut short,
+    # or a complete answer without its output count. None when the usage is complete.
+    usage_unreported_reason: str | None = None

@@ -9,6 +9,7 @@ dependencies = [
     "argon2-cffi>=25.1.0",
     "boto3>=1.43.110",
     "cryptography>=50.0.2",
+    "defusedxml>=0.7.1",
     "email-validator>=2.3.0",
     "fastapi>=0.142.3",
     "httpcore>=1.0.9,<2",
@@ -53,6 +54,7 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "ruff>=0.16.10",
+    "types-defusedxml>=0.7.0.20260504",
     "types-regex>=2026.9.29.20261005",
 ]
 
@@ -76,7 +78,7 @@ target-version = "py312"
 src = [".", "load"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "UP", "N", "S", "ASYNC", "SIM", "RUF", "PL", "PT", "BLE"]
+select = ["E", "F", "W", "I", "B", "UP", "N", "S", "ASYNC", "SIM", "RUF", "PL", "PT", "BLE", "TID251"]
 ignore = [
     "PLR0913",  # FastAPI handlers legitimately take many injected parameters
     "PLR2004",  # magic values are fine in comparisons against HTTP codes
@@ -85,16 +87,37 @@ ignore = [
     "PLR0911",  # value-dispatch functions read best as one return per case
 ]
 
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# Core is MIT and must run without the enterprise edition, so only the composition roots below
+# import it (see app/ee/__init__.py).
+"app.ee".msg = "core code must not import the enterprise edition; plug in through app.ee.hooks"
+
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S105", "S106", "PLR0915", "PT018"]
+"tests/**" = ["S101", "S105", "S106", "PLR0915", "PT018", "TID251"]
 "alembic/**" = ["S608"]
+"app/ee/**" = ["TID251"]
+"app/main.py" = ["TID251"]
+"app/config.py" = ["TID251"]
+"app/cli.py" = ["TID251"]
+"app/jobs/worker.py" = ["TID251"]
+"scripts/ee_license.py" = ["TID251"]
+# The accuracy harness shapes synthetic traffic with seeded `random` (reproducible, not secret).
+"accuracy/**" = ["S311"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
+# What a bare `uv run mypy` checks; CI names its targets explicitly.
+files = ["app", "load", "accuracy"]
 plugins = ["pydantic.mypy"]
 warn_unreachable = true
 
 [[tool.mypy.overrides]]
 module = ["opentelemetry.*", "google.protobuf.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# The accuracy harness imports the Python SDK only during live runs, which add it with
+# `uv run --with ../sdks/python`; the backend environment does not install it.
+module = ["spanlight", "spanlight.*"]
 ignore_missing_imports = true

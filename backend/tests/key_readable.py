@@ -13,6 +13,8 @@ KEY_READABLE: frozenset[Route] = frozenset(
     {
         ("GET", "/api/v1/projects/{project_id}/traces"),
         ("GET", "/api/v1/projects/{project_id}/traces/{trace_id}"),
+        # Bet 1: the lines behind one span's cost, as readable as the trace that holds it.
+        ("GET", "/api/v1/projects/{project_id}/traces/{trace_id}/spans/{span_id}/cost-explanation"),
         ("GET", "/api/v1/projects/{project_id}/sessions"),
         ("GET", "/api/v1/projects/{project_id}/filters"),
         ("GET", "/api/v1/projects/{project_id}/metrics/overview"),
@@ -26,5 +28,7 @@ KEY_READABLE: frozenset[Route] = frozenset(
         ("GET", "/api/v1/projects/{project_id}/releases/compare"),
         ("GET", "/api/v1/projects/{project_id}/users"),
         ("GET", "/api/v1/projects/{project_id}/users/{external_user_id:path}"),
+        # Bet 3: spend by metadata, trace name, user or release, for the same CI job.
+        ("GET", "/api/v1/projects/{project_id}/attribution"),
     }
 )

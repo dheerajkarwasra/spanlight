@@ -140,6 +140,8 @@ def _condition(outcome: AttemptOutcome) -> FallbackCondition | None:
         return FallbackCondition.CONNECTION_ERROR
     if outcome.status == 429:
         return FallbackCondition.RATE_LIMITED
+    if outcome.status in (401, 403):
+        return FallbackCondition.AUTH_ERROR
     if outcome.status is not None and 500 <= outcome.status <= 599:
         return FallbackCondition.STATUS_5XX
     return None

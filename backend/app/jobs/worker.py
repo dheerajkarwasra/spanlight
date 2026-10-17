@@ -26,15 +26,17 @@ from app.core.observability import JOBS_FINISHED
 from app.core.sentry import init_sentry
 from app.core.tracing import configure_worker_tracing, shutdown_tracing
 from app.db.session import create_engine, create_session_factory
+from app.ee import hooks as ee
 from app.jobs import queue
 from app.jobs.context import TaskContext, TaskHandler
 from app.jobs.metrics_server import serve_metrics
-from app.jobs.outcome import JobOutcome
+from app.jobs.outcome import JobOutcome, RetryAfter
 from app.jobs.scheduler import schedule_periodic
 from app.jobs.tasks import TASKS
 from app.jobs.worker_heartbeat import new_worker_id, run_heartbeat
 from app.notifications.defaults import register_default_deliverers
 from app.pricing.cost import sync_seed_prices
+from app.telemetry_losses import flush as loss_flush
 
 logger = structlog.get_logger(__name__)
 
@@ -135,6 +137,9 @@ class Worker:
             await self._record_failure(job, exc, log)
             return
 
+        if isinstance(outcome, RetryAfter):
+            await self._record_retry(job, outcome, log)
+            return
         try:
             async with self.session_factory() as db:
                 await queue.complete(db, job, outcome)
@@ -157,6 +162,22 @@ class Worker:
             return
         log.error("job_failed", error=error, final=status.value == "failed", exc_info=exc)
         JOBS_FINISHED.labels(job.kind, "failed" if status.value == "failed" else "retry").inc()
+
+    async def _record_retry(
+        self, job: queue.ClaimedJob, retry: RetryAfter, log: structlog.stdlib.BoundLogger
+    ) -> None:
+        """The task asked for another attempt after its own delay; the attempt counts."""
+        try:
+            async with self.session_factory() as db:
+                status = await queue.fail(db, job, retry.reason, backoff=retry.delay)
+        except queue.LeaseLostError:
+            log.warning("job_lease_lost_on_retry")
+            return
+        final = status.value == "failed"
+        log.warning(
+            "job_retry_after", reason=retry.reason, retry_after_s=retry.retry_after_s, final=final
+        )
+        JOBS_FINISHED.labels(job.kind, "failed" if final else "retry").inc()
 
     async def _stop_long_job(self) -> None:
         task = self._long_job
@@ -217,12 +238,15 @@ async def main() -> None:
     settings = get_settings()
     configure_logging(settings.log_level, json=settings.log_json)
     init_sentry(settings)
+    ee.load(settings, datetime.now(UTC))  # logs the edition; ee tasks check their own license
     # The worker delivers every queued notification (the api only delivers a channel's test-send).
     register_default_deliverers(settings)
     engine = create_engine(settings.database_url, pool_size=2)
     tracer_provider = configure_worker_tracing(settings, engine)
     session_factory = create_session_factory(engine)
     alert_http = register_channel_deliverers(session_factory, settings)
+    # Eval runs, judges and demo traffic call the gateway here too; their lost spans are flushed.
+    loss_flush.start(session_factory)
 
     async with session_factory() as db:
         await sync_seed_prices(db)
@@ -235,8 +259,10 @@ async def main() -> None:
 
     try:
         async with serve_metrics(settings.worker_metrics_port, settings.metrics_token):
-            await Worker(session_factory, settings).run_forever(stop)
+            worker = Worker(session_factory, settings, handlers={**TASKS, **ee.tasks()})
+            await worker.run_forever(stop)
     finally:
+        await loss_flush.stop(timeout_s=loss_flush.SHUTDOWN_BUDGET_S)
         await alert_http.aclose()
         await engine.dispose()
         await shutdown_tracing(tracer_provider)

@@ -61,7 +61,11 @@ class StreamingMemoryStore:
 
 
 async def _seed_traces(
-    session_factory: SessionFactory, project_id: uuid.UUID, tenant: str, trace_ids: list[str]
+    session_factory: SessionFactory,
+    project_id: uuid.UUID,
+    tenant: str,
+    trace_ids: list[str],
+    metadata: dict[str, str] | None = None,
 ) -> None:
     """Traces whose every filterable field is the same in both projects; only `tenant` differs."""
     started = datetime.now(UTC) - timedelta(hours=1)
@@ -70,10 +74,16 @@ async def _seed_traces(
         await execute(
             session_factory,
             "INSERT INTO traces (project_id, trace_id, name, environment, release, "
-            "external_user_id, session_id, tags, started_at, ended_at, span_count) "
+            "external_user_id, session_id, tags, metadata, started_at, ended_at, span_count) "
             "VALUES (:project, :trace, :name, 'prod', 'v1', 'user-1', 'session-1', "
-            "ARRAY['shared'], :at, :at + interval '1 second', 1)",
-            {"project": project_id, "trace": trace_id, "name": f"trace-{tenant}", "at": at},
+            "ARRAY['shared'], CAST(:metadata AS jsonb), :at, :at + interval '1 second', 1)",
+            {
+                "project": project_id,
+                "trace": trace_id,
+                "name": f"trace-{tenant}",
+                "metadata": json.dumps(metadata or {}),
+                "at": at,
+            },
         )
         await execute(
             session_factory,
@@ -93,7 +103,10 @@ async def _seed_traces(
 
 
 async def _queued_export(
-    session_factory: SessionFactory, project_id: uuid.UUID, export_format: ExportFormat
+    session_factory: SessionFactory,
+    project_id: uuid.UUID,
+    export_format: ExportFormat,
+    **extra_filters: str,
 ) -> uuid.UUID:
     now = datetime.now(UTC)
     row = await seed_row(session_factory, "exports", project_id)
@@ -105,6 +118,7 @@ async def _queued_export(
         "user_id": "user-1",
         "session_id": "session-1",
         "tag": "shared",
+        **extra_filters,
     }
     await execute(
         session_factory,
@@ -185,3 +199,38 @@ async def test_an_export_holds_only_its_own_projects_traces_when_ids_and_filters
             "cache_write_tokens": 6404,
             "cache_write_1h_tokens": 6404,
         }
+        # The rollup flag travels with the span: a seeded span is a leaf, so it is `false`.
+        assert spans[0]["usage_rollup"] is False
+
+
+async def test_trace_export_csv_has_a_metadata_column_and_filters_by_metadata(
+    session_factory: SessionFactory, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Both projects hold the same metadata pair; A's export holds A's tagged traces only."""
+    # A non-ASCII value is written as is; the cell starts with `{`, so it is never a formula.
+    pair = {"a.b-c": "x", "région": "Île-de-France"}
+    a, b = await new_projects(session_factory, 2)
+    await _seed_traces(session_factory, a, "A", SHARED_TRACE_IDS, pair)
+    await _seed_traces(session_factory, a, "A", ["a" * 32], {"a.b-c": "y"})
+    await _seed_traces(session_factory, b, "B", SHARED_TRACE_IDS, pair)
+    store = StreamingMemoryStore()
+    monkeypatch.setattr(export_jobs, "get_object_store", lambda _settings: store)
+    export_id = await _queued_export(
+        session_factory, a, ExportFormat.CSV, metadata_key="a.b-c", metadata_value="x"
+    )
+
+    await _run_export(session_factory, settings, a, export_id)
+
+    (row,) = await fetch(
+        session_factory,
+        "SELECT storage_key, row_count FROM exports WHERE id = :id",
+        {"id": export_id},
+    )
+    body = store.objects[row["storage_key"]]
+    header = body.decode().splitlines()[0].split(",")
+    assert header[-1] == "metadata"
+    traces = _exported_traces(body, ExportFormat.CSV)
+    assert row["row_count"] == len(SHARED_TRACE_IDS)
+    assert sorted(trace["trace_id"] for trace in traces) == SHARED_TRACE_IDS
+    assert {trace["name"] for trace in traces} == {"trace-A"}
+    assert {trace["metadata"] for trace in traces} == {'{"a.b-c": "x", "région": "Île-de-France"}'}

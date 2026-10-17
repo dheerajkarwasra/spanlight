@@ -6,10 +6,13 @@ spanlight reset-2fa --email ada@example.com
 spanlight sync-prices
 spanlight reseal-credentials
 spanlight migrate
+spanlight license-status
 spanlight ensure-app-role --role spanlight_app   # password from APP_DB_PASSWORD
 spanlight rollups backfill --project <uuid> --from 2026-09-01 --to 2026-10-01
+spanlight attribution backfill --project <uuid> --from 2026-09-01 --to 2026-09-30 [--key customer]
 spanlight alerts evaluate [--dry-run] [--json]
 spanlight demo seed-evals
+spanlight doctor precision [--org <uuid>]
 spanlight backup now
 spanlight backup list
 spanlight restore --key backups/2026/10/09/spanlight-20261009T030000Z.dump   # RESTORE_TARGET_URL
@@ -23,6 +26,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 import typer
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,7 +35,9 @@ from app.auth import totp_service
 from app.backups.retention import BACKUP_PREFIX
 from app.backups.service import BackupError, RestoreError, restore_backup, run_backup
 from app.cli_alerts import alerts_app
+from app.cli_attribution import attribution_app
 from app.cli_demo import demo_app
+from app.cli_doctor import doctor_app
 from app.config import get_settings
 from app.core.crypto import CryptoNotConfigured
 from app.core.security import MIN_PASSWORD_LENGTH, hash_password
@@ -39,11 +45,13 @@ from app.db.migrations import upgrade_to_head
 from app.db.models import AuditAction, Membership, MembershipRole, Organization, Project, User
 from app.db.roles import ensure_app_role
 from app.db.session import create_engine, create_session_factory
+from app.ee.license import LicenseError, parse_license
 from app.gateway.reseal import ResealResult, reseal_credentials
 from app.pricing.cost import sync_seed_prices
 from app.pricing.prices import PRICING_VERSION
 from app.rollups.compute import backfill_rollups
 from app.rollups.jobs import MAX_BACKFILL_DAYS
+from app.rollups.usage_rollup_cli import BatchSizeOption, SinceOption, recompute_usage_rollups
 from app.services.audit import record_audit
 from app.services.credentials import replace_password
 from app.storage.object_store import ObjectStore, get_object_store
@@ -53,6 +61,8 @@ rollups_app = typer.Typer(help="Hourly metric rollups.", no_args_is_help=True)
 app.add_typer(rollups_app, name="rollups")
 app.add_typer(alerts_app, name="alerts")
 app.add_typer(demo_app, name="demo")
+app.add_typer(doctor_app, name="doctor")
+app.add_typer(attribution_app, name="attribution")
 backup_app = typer.Typer(help="Database backups in object storage.", no_args_is_help=True)
 app.add_typer(backup_app, name="backup")
 
@@ -192,7 +202,8 @@ def reset_two_factor(email: EmailOption) -> None:
 
 @app.command("sync-prices")
 def sync_prices() -> None:
-    """Insert every bundled model price snapshot (existing rows are kept).
+    """Insert every bundled price snapshot: model prices and server-tool fees (existing rows are
+    kept).
 
     The current snapshot and each historical one are written, so a span dated before the current
     snapshot's effective date is priced by the snapshot in force when it started. A newer snapshot
@@ -205,16 +216,19 @@ def sync_prices() -> None:
         await db.commit()
         return inserted
 
-    typer.echo(f"Inserted {_run(operation)} price rows (snapshots up to {PRICING_VERSION}).")
+    typer.echo(
+        f"Inserted {_run(operation)} price and fee rows (snapshots up to {PRICING_VERSION})."
+    )
 
 
 @app.command("reseal-credentials")
 def reseal_credentials_command() -> None:
-    """Re-seal every provider credential under the first key of CREDENTIALS_KEYS.
+    """Re-seal every provider credential and billing source admin key under the first key of
+    CREDENTIALS_KEYS.
 
     Run it after putting a new key first. It recounts afterwards and exits non-zero while any
-    provider credential is still sealed under an older key; once it succeeds, none needs the
-    older keys any more. Prints counts only, never a key.
+    provider credential or billing source is still sealed under an older key; once it succeeds,
+    none needs the older keys any more. Prints counts only, never a key.
     """
     settings = get_settings()
 
@@ -225,17 +239,20 @@ def reseal_credentials_command() -> None:
         result = _run(operation)
     except CryptoNotConfigured:
         raise _fail("CREDENTIALS_KEYS is not set") from None
-    typer.echo(f"Re-sealed {result.resealed} provider credentials.")
+    typer.echo(
+        f"Re-sealed {result.resealed} provider credentials and "
+        f"{result.billing_sources_resealed} billing source keys."
+    )
     if result.failed:
         typer.echo(
-            f"{result.failed} provider credentials could not be opened with any key in "
-            "CREDENTIALS_KEYS and were left as they were; their ids are in the log.",
+            f"{result.failed} provider credentials or billing sources could not be opened with "
+            "any key in CREDENTIALS_KEYS and were left as they were; their ids are in the log.",
             err=True,
         )
     if result.remaining:
         raise _fail(
-            f"{result.remaining} provider credentials are still sealed under an older key; "
-            "keep every key in CREDENTIALS_KEYS and run the command again."
+            f"{result.remaining} provider credentials or billing sources are still sealed under "
+            "an older key; keep every key in CREDENTIALS_KEYS and run the command again."
         )
 
 
@@ -244,6 +261,45 @@ def migrate() -> None:
     """Apply database migrations (alembic upgrade head)."""
     upgrade_to_head(get_settings().database_url)
     typer.echo("Database is at the latest migration.")
+
+
+class _LicenseEnvironment(BaseSettings):
+    """EE_LICENSE_KEY alone, read the way `Settings` reads it but without verifying it."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore", hide_input_in_errors=True
+    )
+    ee_license_key: str = ""
+
+
+@app.command("license-status")
+def license_status() -> None:
+    """Show the edition and what EE_LICENSE_KEY grants. Never prints the key.
+
+    Reads the key without `get_settings()`, which refuses to load a key that does not verify, so
+    this still runs and says what is wrong with it.
+    """
+    key = _LicenseEnvironment().ee_license_key.strip()
+    if not key:
+        typer.echo("Edition: community (EE_LICENSE_KEY is not set)")
+        return
+    try:
+        ee_license = parse_license(key)
+    except LicenseError as error:
+        raise _fail(f"EE_LICENSE_KEY is invalid: {error}") from None
+    now = datetime.now(UTC)
+    if ee_license.is_expired(now):
+        expiry = f"{ee_license.expires_at.isoformat()} (expired: ee features are off)"
+    else:
+        expiry = (
+            f"{ee_license.expires_at.isoformat()} ({(ee_license.expires_at - now).days} days left)"
+        )
+    typer.echo("Edition: enterprise")
+    typer.echo(f"License: {ee_license.license_id}")
+    typer.echo(f"Licensee: {ee_license.licensee}")
+    typer.echo(f"Signing key: {ee_license.kid}")
+    typer.echo(f"Expires: {expiry}")
+    typer.echo(f"Features: {', '.join(sorted(ee_license.features)) or 'none'}")
 
 
 @app.command("ensure-app-role")
@@ -301,6 +357,12 @@ def backfill_rollups_command(
         return await backfill_rollups(db, project, start, end)
 
     typer.echo(f"Wrote {_run(operation)} rollup rows.")
+
+
+@app.command("recompute-usage-rollups")
+def recompute_usage_rollups_command(since: SinceOption, batch_size: BatchSizeOption = 500) -> None:
+    """Flag usage rollups and retotal the traces started within --since (`30d`, `12h`)."""
+    typer.echo(f"Recomputed {recompute_usage_rollups(since, batch_size)} traces.")
 
 
 def _fail(message: str) -> typer.Exit:

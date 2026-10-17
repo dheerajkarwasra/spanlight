@@ -58,6 +58,7 @@ WRITE_GUARDED: set[Route] = {
     # its permission. Some do not mutate (`alert-rules/preview`, `insights/{id}/explain`, an
     # evaluator test) but run work a read-only credential must not start.
     ("DELETE", "/api/v1/orgs/{org_id}/alert-channels/{channel_id}"),
+    ("DELETE", "/api/v1/orgs/{org_id}/billing-sources/{source_id}"),
     ("DELETE", "/api/v1/orgs/{org_id}/credentials/{credential_id}"),
     ("DELETE", "/api/v1/orgs/{org_id}/price-overrides/{override_id}"),
     ("DELETE", "/api/v1/projects/{project_id}/alert-rules/{rule_id}"),
@@ -69,11 +70,13 @@ WRITE_GUARDED: set[Route] = {
     ("DELETE", "/api/v1/projects/{project_id}/gateway/fault-profiles/{profile_id}"),
     ("DELETE", "/api/v1/projects/{project_id}/gateway/keys/{key_id}"),
     ("DELETE", "/api/v1/projects/{project_id}/gateway/routes/{route_id}"),
+    ("DELETE", "/api/v1/projects/{project_id}/insights/{insight_id}/feedback"),
     ("DELETE", "/api/v1/projects/{project_id}/prompts/{name:path}"),
     ("DELETE", "/api/v1/projects/{project_id}/prompts/{name:path}/labels/{label}"),
     ("DELETE", "/api/v1/projects/{project_id}/score-configs/{config_id}"),
     ("DELETE", "/api/v1/projects/{project_id}/scores/{score_id}"),
     ("PATCH", "/api/v1/orgs/{org_id}/alert-channels/{channel_id}"),
+    ("PATCH", "/api/v1/orgs/{org_id}/billing-sources/{source_id}"),
     ("PATCH", "/api/v1/projects/{project_id}/alert-rules/{rule_id}"),
     ("PATCH", "/api/v1/projects/{project_id}/budgets/{budget_id}"),
     ("PATCH", "/api/v1/projects/{project_id}/datasets/{dataset_id}"),
@@ -85,6 +88,10 @@ WRITE_GUARDED: set[Route] = {
     ("POST", "/api/v1/orgs/{org_id}/alert-channels"),
     ("POST", "/api/v1/orgs/{org_id}/alert-channels/{channel_id}/deliveries/{delivery_id}/retry"),
     ("POST", "/api/v1/orgs/{org_id}/alert-channels/{channel_id}/test"),
+    ("POST", "/api/v1/orgs/{org_id}/billing-sources"),
+    ("POST", "/api/v1/orgs/{org_id}/billing-sources/{source_id}/refresh"),
+    ("POST", "/api/v1/orgs/{org_id}/billing-sources/{source_id}/rotate"),
+    ("POST", "/api/v1/orgs/{org_id}/billing-sources/{source_id}/upload"),
     ("POST", "/api/v1/orgs/{org_id}/credentials"),
     ("POST", "/api/v1/orgs/{org_id}/credentials/{credential_id}/check"),
     ("POST", "/api/v1/orgs/{org_id}/credentials/{credential_id}/rotate"),
@@ -126,6 +133,7 @@ WRITE_GUARDED: set[Route] = {
     ("POST", "/api/v1/projects/{project_id}/score-configs"),
     ("POST", "/api/v1/projects/{project_id}/traces/{trace_id}/scores"),
     ("PUT", "/api/v1/projects/{project_id}/gateway/routes/{route_id}"),
+    ("PUT", "/api/v1/projects/{project_id}/insights/{insight_id}/feedback"),
     ("PUT", "/api/v1/projects/{project_id}/prompts/{name:path}/labels/{label}"),
 }
 

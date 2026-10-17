@@ -99,7 +99,7 @@ async def test_overrun_lasts_until_the_next_evaluation_pass(budget_world: Budget
     assert len(world.fake.requests) == CALLS_PER_INTERVAL
     assert refused[0].json()["error"]["message"] == (
         'Blocked by a Spanlight budget: Budget "Daily cap" is exhausted: '
-        "$0.01 of $0.0010 spent today."
+        "$0.01 of $0.0010 spent today (soft limit, measured every 60 s)."
     )
 
 

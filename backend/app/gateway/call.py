@@ -122,6 +122,8 @@ class Call:
         result.model = summary.model or resolve_model(target, plan.model)
         result.usage, result.finish_reason = summary.usage, summary.finish_reason
         result.output = summary.output or result.output
+        if _answer_without_final_usage(loop, result.model, summary):
+            result.usage_unreported_reason = "no_final_usage"
         if loop.first_byte_at is not None:
             result.ttft_ms = round((loop.first_byte_at - self.started) * 1000, 3)
         return self._finish(result, loop)
@@ -176,7 +178,7 @@ class Call:
             span = build_span(self.request, result, self.context, self.started_at, ended_at)
             record_soon(self.context, span, credentials_used(result))
         except Exception as failure:  # noqa: BLE001 - counted and logged, the client was answered
-            span_not_built(self.request.request_id, failure)
+            span_not_built(self.request.request_id, self.context.project_id, failure)
         return result
 
     def _bare_internal_error(self) -> GatewayResult:
@@ -226,3 +228,19 @@ def _json_or_none(body: bytes | None) -> dict[str, Any] | None:
     except (ValueError, RecursionError):
         return None
     return parsed if isinstance(parsed, dict) else None
+
+
+def _answer_without_final_usage(
+    loop: LoopResult, model: str | None, summary: StreamSummary
+) -> bool:
+    """A complete (non-streamed) success whose output count is unknown: its cost is unknown too.
+
+    A stream's usage is read later, as it is forwarded (`stream_forward._take_summary`); an
+    error answer reports no usage because nothing was generated, which is not a lost count.
+    """
+    return (
+        loop.succeeded
+        and loop.stream is None
+        and model is not None
+        and (summary.usage is None or not summary.usage_complete)
+    )

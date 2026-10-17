@@ -127,8 +127,9 @@ async def test_the_price_catalogue_lists_the_haiku_55_tier_row(workspace: Worksp
         (row["cache_write_5m_per_mtok"], row["cache_write_1h_per_mtok"], row["min_prompt_tokens"])
         for row in frozen
     ] == [(None, None, 0)]
-    current = [row for row in haiku if row["version"] == "2026-10-15"]
-    tiers = {row["min_prompt_tokens"]: row for row in current}
+    # The 2026-10-15 snapshot is the first with write rates and the long-prompt tier.
+    first_tiered = [row for row in haiku if row["version"] == "2026-10-15"]
+    tiers = {row["min_prompt_tokens"]: row for row in first_tiered}
     assert set(tiers) == {0, 100001}
     tier = tiers[100001]
     assert Decimal(tier["input_per_mtok"]) == Decimal("0.50")
@@ -143,4 +144,6 @@ async def test_the_price_catalogue_lists_the_haiku_55_tier_row(workspace: Worksp
         ("2026-10-01", 0),
         ("2026-10-15", 0),
         ("2026-10-15", 100001),
+        ("2026-10-16", 0),
+        ("2026-10-16", 100001),
     ]

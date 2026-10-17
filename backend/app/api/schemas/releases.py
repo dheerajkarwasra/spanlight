@@ -68,3 +68,30 @@ class Comparison(BaseModel):
     model_mix: list[ModelShare]
     error_classes: list[ErrorClassChange]
     new_errors: list[NewError]
+
+
+class CategoryRateOut(BaseModel):
+    """`count` of `reviewed` traces as a rate at 4 places, with its Wilson 95 % bounds."""
+
+    count: int
+    rate: Money
+    ci_low: Money
+    ci_high: Money
+
+
+class ReleaseRatesOut(BaseModel):
+    """One release's reviewed traces (`release: None` is the traces without a release) and the
+    rate of each failure category among them; `rates` is empty when nothing was reviewed."""
+
+    release: str | None
+    reviewed: int
+    rates: dict[str, CategoryRateOut]
+
+
+class FailureCategoriesOut(BaseModel):
+    """`categories` is the config's list in its order; a label outside it still appears in
+    `rates` after the configured ones."""
+
+    score_name: str
+    categories: list[str]
+    releases: list[ReleaseRatesOut]

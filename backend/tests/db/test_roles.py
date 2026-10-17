@@ -58,6 +58,17 @@ def test_grants_the_functions_revoked_from_public(admin_url: str) -> None:
     assert can_sum_spend == (True,)
 
 
+def test_any_role_may_call_merge_trace_metadata_without_ensure_app_role(admin_url: str) -> None:
+    # Every trace upsert calls it, so a deploy that runs `migrate` alone must still ingest.
+    with psycopg.connect(_plain_url(admin_url)) as connection:
+        public_can_merge = connection.execute(
+            "SELECT has_function_privilege('public', 'merge_trace_metadata(jsonb, jsonb)', "
+            "'EXECUTE')"
+        ).fetchone()
+
+    assert public_can_merge == (True,)
+
+
 def test_is_idempotent_and_rotates_the_password(admin_url: str) -> None:
     ensure_app_role(admin_url, PROBE_ROLE, "first-password-123")
     ensure_app_role(admin_url, PROBE_ROLE, "second-password-456")

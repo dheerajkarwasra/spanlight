@@ -24,9 +24,9 @@ _UNPRICED_MODELS = text(
     """
     SELECT s.provider,
            s.model,
-           count(*)                           AS llm_calls,
-           coalesce(sum(s.input_tokens), 0)   AS input_tokens,
-           coalesce(sum(s.output_tokens), 0)  AS output_tokens
+           count(*)                                                            AS llm_calls,
+           coalesce(sum(s.input_tokens) FILTER (WHERE NOT s.usage_rollup), 0)  AS input_tokens,
+           coalesce(sum(s.output_tokens) FILTER (WHERE NOT s.usage_rollup), 0) AS output_tokens
     FROM spans AS s
     WHERE s.project_id = :project_id
       AND s.started_at >= :start

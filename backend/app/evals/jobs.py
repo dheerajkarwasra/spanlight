@@ -1,8 +1,9 @@
 """The online evaluation jobs: `sample_for_evaluation` every minute and one `run_evaluator` per run.
 
 `sample_for_evaluation` (one attempt; the next cycle is the retry) first reaps judge runs whose
-worker died (`app.evals.reservation.reap_abandoned_runs`) and experiment runs that can no longer
-finish (`app.evals.experiment_queries.reap_abandoned_runs`). It is always scheduled, because test
+worker died (`app.evals.reservation.reap_abandoned_runs`), experiment runs that can no longer
+finish (`app.evals.experiment_queries.reap_abandoned_runs`) and replays whose heartbeat stopped
+(`app.playground.replay_queries.reap_abandoned_replays`). It is always scheduled, because test
 and experiment runs reserve budget too; only with `EVALS_ENABLED` does it go on, for every enabled
 evaluator with a positive sampling rate, to queue a run for each sampled, matching trace that
 ended between five minutes and thirty seconds ago (the lag lets a trace finish arriving). The
@@ -35,7 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.budgets.guard import get_budget_guard
 from app.core.ids import new_id
-from app.core.observability import EVALUATOR_COST, EVALUATOR_RUNS
+from app.core.observability import EVALUATOR_COST, EVALUATOR_RUNS, REPLAY_COST, REPLAY_RUNS
 from app.db.models import EvaluatorKind
 from app.db.rls import bind_project, bypass_rls
 from app.evals import experiment_queries, runner
@@ -61,6 +62,7 @@ from app.gateway.http import build_http_client
 from app.jobs.context import TaskContext
 from app.jobs.outcome import JobOutcome
 from app.jobs.queue import enqueue
+from app.playground.replay_queries import reap_abandoned_replays
 
 if TYPE_CHECKING:
     from app.config import Settings
@@ -85,6 +87,7 @@ def run_attempts(kind: str) -> int:
 class SamplerPass:
     reaped: int = 0
     experiment_runs_reaped: int = 0
+    replays_reaped: int = 0
     evaluators: int = 0
     evaluators_failed: int = 0
     evaluators_left: int = 0
@@ -103,6 +106,7 @@ async def run_sample_for_evaluation(context: TaskContext, _: dict[str, Any]) -> 
         "evaluations_sampled",
         reaped=run.reaped,
         experiment_runs_reaped=run.experiment_runs_reaped,
+        replays_reaped=run.replays_reaped,
         evaluators=run.evaluators,
         evaluators_failed=run.evaluators_failed,
         evaluators_left=run.evaluators_left,
@@ -127,6 +131,7 @@ async def sample_all(
         await bypass_rls(db)
         reaped = await reap_abandoned_runs(db, now)
         run.experiment_runs_reaped = await experiment_queries.reap_abandoned_runs(db, now)
+        replays_charged = await reap_abandoned_replays(db, now)
         listed = await sampling_evaluators(db) if settings.evals_enabled else []
         evaluators = await _with_budget_left(db, listed, now)
     run.evaluators_out_of_budget = len(listed) - len(evaluators)
@@ -135,6 +140,11 @@ async def sample_all(
         EVALUATOR_RUNS.labels(kind=charged.kind, outcome=ABANDONED).inc()
         if charged.cost_usd > 0:
             EVALUATOR_COST.labels(kind=charged.kind).inc(float(charged.cost_usd))
+    run.replays_reaped = len(replays_charged)
+    for cost in replays_charged:
+        REPLAY_RUNS.labels(outcome=ABANDONED).inc()
+        if cost > 0:
+            REPLAY_COST.inc(float(cost))
     cap = settings.eval_sampler_max_runs_per_cycle
     for index, evaluator in enumerate(evaluators):
         if heartbeat is not None:

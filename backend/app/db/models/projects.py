@@ -28,6 +28,11 @@ class Project(Base):
     insight_channel_ids: Mapped[list[uuid.UUID]] = mapped_column(
         ARRAY(UUID(as_uuid=True)), server_default=text("'{}'")
     )
+    # Metadata keys the daily attribution rollup keeps, at most 5, each matching the key pattern
+    # (the CHECKs of migration 0801). Keys are identifiers, never values.
+    promoted_metadata_keys: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

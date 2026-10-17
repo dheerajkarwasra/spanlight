@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ids import new_id
 from app.db.models import Score, ScoreConfig, Trace, User
+from app.scores.types import ScoreDataType
 
 # A trace's scores are listed whole; this bounds one response.
 MAX_TRACE_SCORES = 1000
@@ -183,6 +184,16 @@ async def list_configs(db: AsyncSession, project_id: uuid.UUID) -> list[ScoreCon
         .limit(MAX_CONFIGS)
     )
     return list(rows)
+
+
+async def boolean_score_names(db: AsyncSession, project_id: uuid.UUID) -> frozenset[str]:
+    """The names of the project's boolean score configs (their 0 / 1 numbers count as passes)."""
+    rows = await db.scalars(
+        select(ScoreConfig.name).where(
+            ScoreConfig.project_id == project_id, ScoreConfig.data_type == ScoreDataType.BOOLEAN
+        )
+    )
+    return frozenset(rows)
 
 
 async def lock_config(

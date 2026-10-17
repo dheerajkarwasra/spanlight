@@ -91,6 +91,17 @@ class AuditAction(enum.StrEnum):
     EVALUATOR_DELETE = "evaluator.delete"
     EXPERIMENT_CREATE = "experiment.create"
     EXPERIMENT_RUN = "experiment.run"
+    BILLING_SOURCE_CREATE = "billing_source.create"
+    BILLING_SOURCE_UPDATE = "billing_source.update"
+    BILLING_SOURCE_ROTATE = "billing_source.rotate"
+    BILLING_SOURCE_DELETE = "billing_source.delete"
+    BILLING_SOURCE_REFRESH = "billing_source.refresh"
+    BILLING_SOURCE_UPLOAD = "billing_source.upload"
+    REVIEW_POLICY_CREATE = "review_policy.create"
+    REVIEW_POLICY_UPDATE = "review_policy.update"
+    REVIEW_POLICY_DELETE = "review_policy.delete"
+    REVIEW_POLICY_RUN = "review_policy.run"
+    REPLAY_RUN = "replay.run"
 
 
 class User(Base):

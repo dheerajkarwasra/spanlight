@@ -31,7 +31,10 @@ _USERS = """
            {cost}            AS cost_usd,
            sum(tokens)       AS tokens,
            min(day)          AS first_seen_day,
-           max(day)          AS last_seen_day
+           max(day)          AS last_seen_day,
+           (SELECT max(computed_at) FROM user_stats_daily
+            WHERE project_id = :project_id AND day >= :first_day AND day < :end_day)
+                             AS computed_at
     FROM user_stats_daily
     WHERE project_id = :project_id AND day >= :first_day AND day < :end_day
     GROUP BY external_user_id
@@ -49,7 +52,8 @@ _AFTER_NULL = "HAVING {sort} IS NULL AND external_user_id > :cursor_user"
 
 _DAILY = text(
     """
-    SELECT day, traces, llm_calls, errors, unpriced_calls, cost_usd, tokens
+    SELECT day, traces, llm_calls, errors, unpriced_calls, cost_usd, tokens,
+           max(computed_at) OVER () AS computed_at
     FROM user_stats_daily
     WHERE project_id = :project_id AND external_user_id = :external_user_id
       AND day >= :first_day AND day < :end_day
@@ -87,7 +91,8 @@ async def read_users(
 ) -> list[Row[Any]]:
     """Users summed over `[first_day, end_day)`, `sort` descending with unknowns last.
 
-    Returns up to `limit` rows after the cursor `after = (sort value, user id)`, if any.
+    Returns up to `limit` rows after the cursor `after = (sort value, user id)`, if any. Every
+    row's `computed_at` is the latest recompute of any row of the window, whatever the page.
     """
     expression = _SORT_EXPRESSIONS[sort]
     params: dict[str, Any] = {
@@ -110,7 +115,8 @@ async def read_users(
 async def read_daily(
     db: AsyncSession, project_id: uuid.UUID, external_user_id: str, first_day: date, end_day: date
 ) -> list[Row[Any]]:
-    """One user's stored days in `[first_day, end_day)`, oldest first."""
+    """One user's stored days in `[first_day, end_day)`, oldest first. Every row's
+    `computed_at` is the latest recompute of those days."""
     result = await db.execute(
         _DAILY,
         {

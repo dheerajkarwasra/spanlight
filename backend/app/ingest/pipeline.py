@@ -24,7 +24,7 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.observability import SPAN_NORMALIZATION_FAILURES
+from app.core.observability import SPAN_NORMALIZATION_FAILURES, feature_used
 from app.core.text import clean_json
 from app.db.rls import bind_project
 from app.ingest.jsondepth import MAX_JSON_DEPTH, exceeds_depth
@@ -151,6 +151,8 @@ async def ingest_spans(
     spans = [span for _, span in sorted(accepted.values(), key=lambda item: item[0])]
     if spans:
         await write_spans(session, target.project_id, spans, target.source_key_id)
+        if any(span.trace.metadata for span in spans):
+            feature_used("metadata_set")
     outcome.accepted = len(spans)
     outcome.rejected.sort(key=lambda rejection: rejection.index)
     return outcome

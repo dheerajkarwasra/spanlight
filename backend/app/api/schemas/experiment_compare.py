@@ -6,7 +6,9 @@ from decimal import Decimal
 from typing import Any
 
 from app.api.schemas.common import ApiModel, Money
+from app.api.schemas.experiments import Rate
 from app.evals.compare import Comparison, ItemDelta, ItemRow, ScoreDelta
+from app.evals.stats import Interval, PairedTest
 
 
 def _number(value: Decimal | None) -> float | None:
@@ -52,6 +54,42 @@ class ItemDeltaOut(ApiModel):
         )
 
 
+class IntervalOut(ApiModel):
+    low: Rate
+    high: Rate
+
+    @classmethod
+    def of(cls, interval: Interval | None) -> "IntervalOut | None":
+        return None if interval is None else cls(low=interval.low, high=interval.high)
+
+
+class PairedTestOut(ApiModel):
+    # `mcnemar` for a boolean score, `sign` for a numeric one.
+    kind: str
+    # Matched items that changed (`improved + regressed`); `unchanged` carries no information.
+    n: int
+    improved: int
+    regressed: int
+    unchanged: int
+    # Exact two-sided p-value; `significant` is decided at alpha 0.05 on the exact value.
+    p_value: Rate
+    significant: bool
+
+    @classmethod
+    def of(cls, test: PairedTest | None) -> "PairedTestOut | None":
+        if test is None:
+            return None
+        return cls(
+            kind=test.kind,
+            n=test.n,
+            improved=test.improved,
+            regressed=test.regressed,
+            unchanged=test.unchanged,
+            p_value=test.p_value,
+            significant=test.significant,
+        )
+
+
 class ScoreDeltaOut(ApiModel):
     # Means over all of each run's scored items (booleans count 1 or 0); null for a categorical
     # score. Higher is better, so a positive delta is an improvement.
@@ -63,6 +101,12 @@ class ScoreDeltaOut(ApiModel):
     improved: int
     regressed: int
     unchanged: int
+    # Boolean scores only: each run's Wilson 95% interval on its pass rate.
+    ci_a: IntervalOut | None
+    ci_b: IntervalOut | None
+    # Exact McNemar (boolean) or the sign test (numeric); null for a categorical score or when
+    # fewer than two matched items carry the score.
+    test: PairedTestOut | None
 
     @classmethod
     def of(cls, score: ScoreDelta) -> "ScoreDeltaOut":
@@ -73,6 +117,9 @@ class ScoreDeltaOut(ApiModel):
             improved=score.improved,
             regressed=score.regressed,
             unchanged=score.unchanged,
+            ci_a=IntervalOut.of(score.ci_a),
+            ci_b=IntervalOut.of(score.ci_b),
+            test=PairedTestOut.of(score.test),
         )
 
 

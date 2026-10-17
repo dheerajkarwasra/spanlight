@@ -17,7 +17,9 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Score, Span, Trace
+from app.ingest.metadata import merge_metadata
 from app.ingest.normalize import NormalizedSpan
+from app.ingest.usage_rollup import recompute_usage_rollups
 
 
 @dataclass
@@ -31,9 +33,13 @@ class _TraceRow:
     external_user_id: str | None = None
     session_id: str | None = None
     tags: set[str] = field(default_factory=set)
+    metadata: dict[str, str] = field(default_factory=dict)
 
     def merge(self, span: NormalizedSpan) -> None:
-        """Trace-level fields: within a batch, the last non-null value wins."""
+        """Trace-level fields: within a batch, the last non-null value wins.
+
+        Metadata merges per key by the same rule as the upsert (`merge_metadata`, spec §4.4).
+        """
         self.started_at = min(self.started_at, span.started_at)
         self.ended_at = max(self.ended_at, span.ended_at)
         fields = span.trace
@@ -43,6 +49,7 @@ class _TraceRow:
         self.external_user_id = fields.external_user_id or self.external_user_id
         self.session_id = fields.session_id or self.session_id
         self.tags.update(fields.tags)
+        self.metadata = merge_metadata(self.metadata, fields.metadata)
 
 
 def _merge_traces(spans: Sequence[NormalizedSpan]) -> list[_TraceRow]:
@@ -86,6 +93,7 @@ async def _upsert_traces(
                 "external_user_id": trace.external_user_id,
                 "session_id": trace.session_id,
                 "tags": sorted(trace.tags),
+                "metadata": trace.metadata,
                 "started_at": trace.started_at,
                 "ended_at": trace.ended_at,
                 # A score may have arrived before its trace. On conflict the flag is OR-ed in,
@@ -110,6 +118,9 @@ async def _upsert_traces(
                 "ARRAY(SELECT DISTINCT tag FROM unnest(traces.tags || excluded.tags) AS tag "
                 "ORDER BY tag)"
             ),
+            # Keyed by the column name: the ORM attribute is `metadata_` (`Base.metadata` is
+            # reserved), but the insert's column key is `metadata`.
+            "metadata": text("merge_trace_metadata(traces.metadata, excluded.metadata)"),
             "started_at": func.least(Trace.started_at, excluded.started_at),
             "ended_at": func.greatest(Trace.ended_at, excluded.ended_at),
             "has_scores": Trace.has_scores | excluded.has_scores,
@@ -125,6 +136,9 @@ _SPAN_COLUMNS = (
     "status",
     "status_message",
     "error_class",
+    "provider_error_type",
+    "provider_error_code",
+    "rate_limit_kind",
     "started_at",
     "ended_at",
     "provider",
@@ -134,7 +148,10 @@ _SPAN_COLUMNS = (
     "cached_tokens",
     "cache_write_tokens",
     "cache_write_1h_tokens",
+    "service_tier",
+    "web_search_requests",
     "cost_usd",
+    "fee_usd",
     "pricing_version",
     "time_to_first_token_ms",
     "input",
@@ -184,29 +201,71 @@ async def _upsert_spans(
     await session.execute(statement)
 
 
+# Retry calls and retry cost: among a trace's llm spans with a request hash, cache
+# hits and fault-injected spans left out, every span of a hash but the last by
+# `(started_at, span_id)` is superseded. `retry_cost_usd` is unknown (NULL) when any superseded
+# span is unpriced, and, like `cost_usd`, when the sum is too large for numeric(14, 8). A trace
+# with no superseded span has a known zero of both.
 _RECOMPUTE_ROLLUPS = text(
     """
+    WITH ranked AS (
+        SELECT trace_id,
+               cost_usd,
+               row_number() OVER (
+                   PARTITION BY trace_id, request_hash ORDER BY started_at DESC, span_id DESC
+               ) AS position
+        FROM spans
+        WHERE project_id = :project_id AND trace_id = ANY(:trace_ids)
+          AND kind = 'llm'
+          AND request_hash IS NOT NULL
+          AND attributes->>'spanlight.cache' IS DISTINCT FROM 'hit'
+          AND NOT (attributes ? 'spanlight.fault.scenario')
+          -- An SDK span over the gateway's record of the same call is a usage rollup of it
+          -- (`app.ingest.usage_rollup`), not a retry.
+          AND NOT usage_rollup
+    ),
+    superseded AS (
+        SELECT trace_id,
+               count(*)                    AS retry_calls,
+               sum(cost_usd)               AS retry_cost_usd,
+               bool_or(cost_usd IS NULL)   AS has_unpriced
+        FROM ranked
+        WHERE position > 1
+        GROUP BY trace_id
+    )
     UPDATE traces AS t
-    SET span_count    = s.span_count,
-        error_count   = s.error_count,
-        input_tokens  = s.input_tokens,
-        output_tokens = s.output_tokens,
-        cost_usd      = s.cost_usd,
-        has_unpriced  = s.has_unpriced,
-        started_at    = s.started_at,
-        ended_at      = s.ended_at
+    SET span_count     = s.span_count,
+        error_count    = s.error_count,
+        input_tokens   = s.input_tokens,
+        output_tokens  = s.output_tokens,
+        cost_usd       = s.cost_usd,
+        has_unpriced   = s.has_unpriced,
+        started_at     = s.started_at,
+        ended_at       = s.ended_at,
+        retry_calls    = coalesce(r.retry_calls, 0),
+        retry_cost_usd = CASE
+            WHEN r.trace_id IS NULL THEN 0
+            WHEN NOT r.has_unpriced AND r.retry_cost_usd < 1000000 THEN r.retry_cost_usd
+        END
     FROM (
         SELECT trace_id,
                count(*)                                   AS span_count,
                count(*) FILTER (WHERE status = 'error')   AS error_count,
-               coalesce(sum(input_tokens), 0)             AS input_tokens,
-               coalesce(sum(output_tokens), 0)            AS output_tokens,
+               -- A usage rollup repeats a descendant's usage: counted as a span, never summed.
+               coalesce(sum(input_tokens) FILTER (WHERE NOT usage_rollup), 0)  AS input_tokens,
+               coalesce(sum(output_tokens) FILTER (WHERE NOT usage_rollup), 0) AS output_tokens,
                -- traces.cost_usd is numeric(14, 8), like each span's cost. A total of a
                -- million dollars or more cannot be stored and is unknown (NULL), rather
                -- than an overflow that would fail every batch touching the trace.
-               CASE WHEN sum(cost_usd) < 1000000 THEN sum(cost_usd) END AS cost_usd,
+               CASE WHEN sum(cost_usd) FILTER (WHERE NOT usage_rollup) < 1000000
+                    THEN sum(cost_usd) FILTER (WHERE NOT usage_rollup) END AS cost_usd,
+               -- A key-limit refusal (kind `gateway`) reached no provider: its cost is a
+               -- known zero, not an unknown price.
                coalesce(
-                   bool_or((kind = 'llm' OR model IS NOT NULL) AND cost_usd IS NULL),
+                   bool_or(
+                       (kind = 'llm' OR model IS NOT NULL) AND cost_usd IS NULL
+                       AND rate_limit_kind IS DISTINCT FROM 'gateway'
+                   ) FILTER (WHERE NOT usage_rollup),
                    false
                )                                          AS has_unpriced,
                min(started_at)                            AS started_at,
@@ -215,6 +274,7 @@ _RECOMPUTE_ROLLUPS = text(
         WHERE project_id = :project_id AND trace_id = ANY(:trace_ids)
         GROUP BY trace_id
     ) AS s
+    LEFT JOIN superseded AS r ON r.trace_id = s.trace_id
     WHERE t.project_id = :project_id AND t.trace_id = s.trace_id
     """
 )
@@ -223,6 +283,8 @@ _RECOMPUTE_ROLLUPS = text(
 async def _recompute_rollups(
     session: AsyncSession, project_id: uuid.UUID, trace_ids: Sequence[str]
 ) -> None:
+    """Flag the traces' usage rollups, then total each trace from its stored spans."""
+    await recompute_usage_rollups(session, project_id, trace_ids)
     await session.execute(
         _RECOMPUTE_ROLLUPS, {"project_id": project_id, "trace_ids": list(trace_ids)}
     )

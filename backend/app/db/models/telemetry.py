@@ -55,6 +55,11 @@ class Trace(Base):
     external_user_id: Mapped[str | None] = mapped_column(Text)
     session_id: Mapped[str | None] = mapped_column(Text)
     tags: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
+    # String keys to string values, `{}` when the client sent none (migration 0800). The
+    # attribute is `metadata_` because SQLAlchemy reserves `metadata` on declarative classes.
+    metadata_: Mapped[dict[str, str]] = mapped_column(
+        "metadata", JSONB, server_default=text("'{}'::jsonb")
+    )
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     span_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
@@ -65,6 +70,11 @@ class Trace(Base):
     has_unpriced: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     # Set by the score write path once the trace has a score (migration 0502); never cleared.
     has_scores: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    # The trace's superseded llm calls (same request hash, not the last) and their cost; both
+    # None until the trace is recomputed after migration 0700, and the cost None when any of
+    # those calls is unpriced.
+    retry_calls: Mapped[int | None] = mapped_column(Integer)
+    retry_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 8))
 
 
 class Span(Base):
@@ -152,6 +162,12 @@ class Span(Base):
     # `app.ingest.error_class.ErrorClass`; null exactly when the span did not fail. Migration 0400
     # holds the CHECK on its values.
     error_class: Mapped[str | None] = mapped_column(Text)
+    # What the provider's error envelope said (`provider.error.type`, `provider.error.code`), and
+    # which capacity a refusal ran into (migration 0700 holds the CHECK on its values). None when
+    # nothing was reported.
+    provider_error_type: Mapped[str | None] = mapped_column(Text)
+    provider_error_code: Mapped[str | None] = mapped_column(Text)
+    rate_limit_kind: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     duration_ms: Mapped[float] = mapped_column(
@@ -167,6 +183,13 @@ class Span(Base):
     # them written with the 1 hour lifetime (never more than the total; migration 0508).
     cache_write_tokens: Mapped[int | None] = mapped_column(Integer)
     cache_write_1h_tokens: Mapped[int | None] = mapped_column(Integer)
+    # The tier the provider reported (`standard`, `batch`, `priority` or `flex`; migration 0600
+    # holds the CHECK), None when unknown and priced as standard; the provider's count of server-
+    # side web searches in the call; and the non-token part of `cost_usd` (None when no fee was
+    # priced). `cost_usd` stays the whole cost of the span, token cost plus `fee_usd`.
+    service_tier: Mapped[str | None] = mapped_column(Text)
+    web_search_requests: Mapped[int | None] = mapped_column(Integer)
+    fee_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 8))
     cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 8))
     pricing_version: Mapped[str | None] = mapped_column(Text)
     time_to_first_token_ms: Mapped[float | None] = mapped_column(Double)
@@ -183,6 +206,11 @@ class Span(Base):
     # The prompt version the SDK fetched for this call; a plain uuid without a foreign key, since
     # the id may be one the server has not seen. Migration 0501 adds it and its partial index.
     prompt_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID)
+    # True when this span carries usage and so does a descendant in the same trace (migration
+    # 0900): an outer span repeating the usage of the call it wraps. Derived by the ingest
+    # recompute (`app.ingest.usage_rollup`), never written by a client; sums skip it, counts keep
+    # it, and the span keeps every column it was ingested with.
+    usage_rollup: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     # The gateway key the call came through; None for spans from native or OTLP ingestion.
     # A plain uuid without a foreign key (migration 0202 says why).
     source_key_id: Mapped[uuid.UUID | None] = mapped_column(UUID)

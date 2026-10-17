@@ -127,3 +127,32 @@ class InsightExplanation(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class InsightFeedback(Base):
+    """One member's verdict on one insight: `right` or `wrong`, with an optional note.
+
+    Row-level security applies. One row per user per insight (`insight_feedback_vote_key`); a
+    second vote replaces the first. The vote is deleted with its insight or its user. `note` is
+    at most 500 characters (migration 0704).
+    """
+
+    __tablename__ = "insight_feedback"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["insight_id", "project_id"],
+            ["insights.id", "insights.project_id"],
+            ondelete="CASCADE",
+            name="insight_feedback_insight_fkey",
+        ),
+        UniqueConstraint("project_id", "insight_id", "user_id", name="insight_feedback_vote_key"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, default=new_id)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    insight_id: Mapped[uuid.UUID] = mapped_column(UUID)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    verdict: Mapped[str] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

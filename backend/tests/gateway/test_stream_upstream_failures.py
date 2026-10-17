@@ -6,7 +6,6 @@ why. Usage is what the provider reported before it stopped, else unknown.
 """
 
 import json
-from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -24,11 +23,9 @@ from tests.gateway.support import (
 from tests.gateway_fixtures import GatewayContextFactory, GatewayWorkspace
 from tests.gateway_support import Fail, FakeProvider, logged, read_gateway_span
 
-# claude-haiku-4-5 at the seed rates (1.00 input, 5.00 output per million tokens): 100 input
-# tokens and 1 output token.
-CUT_ANTHROPIC_COST = Decimal("0.000105")
 OVERSIZED_FRAME_BYTES = 1_100_000  # past `sse.MAX_FRAME_BYTES` (1 MB)
-# `message_start` of a Messages stream: usage so far is 100 input tokens and 1 output token.
+# `message_start` of a Messages stream: 100 input tokens, and the provider's placeholder of 1
+# output token before any token is generated.
 CUT_MESSAGE: dict[str, Any] = {
     "id": "msg_test_cut0001",
     "type": "message",
@@ -87,7 +84,7 @@ async def test_upstream_idle_timeout_mid_stream(
     assert (span["input_tokens"], span["cost_usd"]) == (None, None)
 
 
-async def test_anthropic_stream_cut_after_message_start_prices_only_reported_usage(
+async def test_anthropic_stream_cut_after_message_start_keeps_input_and_unknown_output(
     gateway_context: GatewayContextFactory,
     gateway_workspace: GatewayWorkspace,
     fake_provider: FakeProvider,
@@ -112,10 +109,10 @@ async def test_anthropic_stream_cut_after_message_start_prices_only_reported_usa
     span = await read_gateway_span(session_factory, gateway_workspace.project_id)
     assert span["status"] == "error"
     assert "stream_error: the provider connection failed (ReadError)" in span["status_message"]
-    # Current behaviour, on purpose: `message_start` reports 1 output token, and the span is
-    # priced on what the provider reported before the cut (not null, not the full answer).
-    assert (span["input_tokens"], span["output_tokens"], span["cached_tokens"]) == (100, 1, 0)
-    assert span["cost_usd"] == CUT_ANTHROPIC_COST
+    # The input split came with `message_start`; the final output count never did, so it is
+    # unknown (not the placeholder of 1) and the span has no cost, never a cheap one.
+    assert (span["input_tokens"], span["output_tokens"], span["cached_tokens"]) == (100, None, 0)
+    assert span["cost_usd"] is None
     assert span["output"] == {"role": "assistant", "content": [{"type": "text", "text": "Hel"}]}
 
 

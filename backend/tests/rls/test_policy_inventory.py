@@ -14,6 +14,8 @@ Sessions = async_sessionmaker[AsyncSession]
 EXCEPTIONS = {
     # Looked up by prefix before the project is known (ADR 0003, "Exception: api_keys").
     "api_keys",
+    # org-scoped mapping read only through its source's org_id; holds no telemetry (Bet 1 §6.5)
+    "billing_source_projects",
 }
 
 # Tables without a `project_id` of their own, isolated through their parent's policy.
@@ -26,6 +28,11 @@ CHILD_TABLES = {
     "experiment_runs",
     "experiment_items",
 }
+
+# Tables that hold no tenant data at all: shared by every organization, so they carry no tenant
+# column and no row-level security (the providers' published status incidents).
+GLOBAL_TABLES = {"provider_incidents", "provider_status_sources"}
+TENANT_COLUMNS = ("project_id", "org_id", "user_id", "key_id")
 
 # Extra policies beyond the two every secured table has.
 EXTRA_POLICIES = {"gateway_keys": {"gateway_keys_prefix_lookup": "SELECT"}}
@@ -142,3 +149,28 @@ async def test_the_gateway_key_prefix_policy_only_reads(session_factory: Session
     assert row.cmd == "SELECT"
     assert row.with_check is None
     assert "'app.gateway_key_prefix'" in row.qual
+
+
+async def test_global_tables_carry_no_tenant_column(session_factory: Sessions) -> None:
+    async with session_factory() as db:
+        tenant_columns = (
+            await db.execute(
+                text(
+                    "SELECT table_name, column_name FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND table_name = ANY(:tables) "
+                    "AND column_name = ANY(:columns)"
+                ),
+                {"tables": sorted(GLOBAL_TABLES), "columns": list(TENANT_COLUMNS)},
+            )
+        ).all()
+        rows = (
+            await db.execute(
+                text(
+                    "SELECT relname, relrowsecurity FROM pg_class "
+                    "WHERE relnamespace = 'public'::regnamespace AND relname = ANY(:tables)"
+                ),
+                {"tables": sorted(GLOBAL_TABLES)},
+            )
+        ).all()
+    assert tenant_columns == []
+    assert {row.relname: row.relrowsecurity for row in rows} == dict.fromkeys(GLOBAL_TABLES, False)

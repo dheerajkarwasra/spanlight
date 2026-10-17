@@ -21,6 +21,7 @@ METRIC_LABELS: dict[Metric, str] = {
     Metric.LLM_CALLS: "LLM calls",
     Metric.TOKENS: "Tokens",
     Metric.SPEND: "Spend",
+    Metric.ERROR_CALLS: "Failed LLM calls",
 }
 
 COMPARATOR_WORDS: dict[Comparator, str] = {

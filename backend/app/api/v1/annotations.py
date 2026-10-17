@@ -26,9 +26,10 @@ from app.api.schemas.annotations import (
     QueueSpec,
 )
 from app.core.errors import not_found
+from app.core.observability import feature_used
 from app.core.pagination import PageLimit, decode_uuid_cursor, encode_cursor
 from app.core.permissions import Permission
-from app.db.models.annotations import QueueItemStatus
+from app.db.models.annotations import QueueItemStatus, ReviewReason
 
 logger = structlog.get_logger(__name__)
 
@@ -97,7 +98,7 @@ async def create_queue(
         )
     except QUEUE_ERRORS as error:
         raise queue_problem(error) from None
-    created = QueueOut.of(queue, {"pending": 0, "done": 0, "skipped": 0})
+    created = QueueOut.of(queue, queries.QueueProgress.empty())
     await db.commit()
     _log("annotation_queue_created", access, queue.id)
     return created
@@ -121,7 +122,8 @@ async def delete_queue(
     access: QueueWriter,
     db: DbSession,
 ) -> None:
-    """Delete the queue with its items; the scores already given stay."""
+    """Delete the queue with its items; the scores already given stay. `409 QUEUE_IN_USE`
+    while a review policy fills it."""
     locked_project_id = await lock_project_of(access, db)
     try:
         await service.delete_queue(
@@ -158,14 +160,17 @@ async def list_items(
     access: QueueReader,
     db: DbSession,
     item_status: Annotated[QueueItemStatus | None, Query(alias="status")] = None,
+    reason: ReviewReason | None = None,
     limit: PageLimit = DEFAULT_PAGE,
     cursor: Annotated[str | None, Query(max_length=512)] = None,
 ) -> Page[QueueItemOut]:
-    """By id, oldest first; `status` keeps one status."""
+    """By id, oldest first; `status` keeps one status, `reason` one reason."""
     if await queries.get_queue(db, access.require_project().id, queue_id) is None:
         raise not_found()
     after = decode_uuid_cursor(cursor)[1] if cursor else None
-    rows = await queries.list_items(db, queue_id, status=item_status, after=after, limit=limit)
+    rows = await queries.list_items(
+        db, queue_id, status=item_status, reason=reason, after=after, limit=limit
+    )
     shown = rows[:limit]
     last = shown[-1] if shown else None
     return Page(
@@ -234,6 +239,8 @@ async def complete_item(
         raise queue_problem(error) from None
     done = QueueItemOut.of(item)
     await db.commit()
+    if done.reason != ReviewReason.MANUAL:
+        feature_used("review_item_completed")
     _log("annotation_item_completed", access, queue_id, item_id=str(item_id))
     return done
 

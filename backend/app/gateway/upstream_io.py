@@ -28,6 +28,10 @@ STREAM_IDLE_TIMEOUT_S = 60.0
 MAX_RESPONSE_BYTES = MAX_BUFFERED_BYTES
 """The largest non-streaming answer the gateway reads (10 MB); a longer one fails the attempt."""
 
+UPSTREAM_ERROR_TYPE = "upstream_error"
+"""The status message's stand-in for a provider error whose body names no error type. It is
+Spanlight's word, not the provider's, so the span's `provider.error.type` is left unset."""
+
 _INSECURE_URL_MESSAGE = "The provider URL must use https:// on this server."
 _TOO_LARGE_MESSAGE = "The provider's answer exceeds the gateway's 10 MB limit."
 
@@ -41,12 +45,13 @@ class ResponseTooLarge(Exception):  # noqa: N818 - reads as the condition, like 
 def upstream_failure(status: int, body: bytes) -> GatewayError:
     """A provider's own error, described for the span (the client gets the provider's bytes).
 
-    Both envelope kinds carry the provider's error type, which the span's status message names.
+    Both envelope kinds carry the provider's error type, which the span's status message names,
+    and its code, which the span records. Neither is rendered: the client gets the provider's
+    bytes, so the code changes nothing the client sees.
     """
-    kind, message = upstream_error_detail(body)
-    kind = kind or "upstream_error"
-    message = message or f"The provider answered with HTTP {status}."
-    error_kind = ErrorKind(kind, message=message)
+    detail = upstream_error_detail(body)
+    message = detail.message or f"The provider answered with HTTP {status}."
+    error_kind = ErrorKind(detail.type or UPSTREAM_ERROR_TYPE, code=detail.code, message=message)
     return GatewayError(
         status, UPSTREAM_ERROR_CODE, message, openai=error_kind, anthropic=error_kind
     )

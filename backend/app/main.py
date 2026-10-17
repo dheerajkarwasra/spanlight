@@ -28,11 +28,13 @@ from app.core.middleware import (
 from app.core.sentry import init_sentry
 from app.core.tracing import configure_tracing, shutdown_tracing
 from app.db.session import create_engine, create_session_factory
+from app.ee import hooks as ee
 from app.gateway.http import build_http_client
 from app.gateway.runtime import GatewayRuntime, build_runtime, close_runtime
 from app.gateway.settle_helpers import drain_settling
 from app.notifications.defaults import register_default_deliverers
 from app.pricing.cost import sync_seed_prices
+from app.telemetry_losses import flush as loss_flush
 
 logger = structlog.get_logger(__name__)
 
@@ -94,7 +96,7 @@ def create_app(
         await drain_settling()
         # The server has stopped taking requests and let in-flight ones finish (each stream's
         # `aclose()` queues its span), so the spans are drained while the engine is still open.
-        await close_runtime(runtime)
+        await _stop_gateway(runtime)
         await alert_http.aclose()
         await engine.dispose()
         await idempotency_engine.dispose()
@@ -118,6 +120,7 @@ def create_app(
     # The DNS that alert webhook URLs are vetted against when saved; None is the system resolver.
     app.state.egress_resolver = gateway_resolver
     app.state.clock = clock or utcnow
+    app.state.ee_license = ee.load(settings, app.state.clock())
     app.state.rate_limit_engine = rate_limit_engine
     app.state.rate_limit_session_factory = rate_limit_session_factory
 
@@ -145,6 +148,7 @@ def create_app(
         scores_ingest.router,
         prompt_read_router,
         health.router,
+        *ee.routers(),
     ):
         app.include_router(router)
     # In `standalone` and `disabled` mode `/gw/*` stays unmounted and answers 404 problem+json.
@@ -187,7 +191,7 @@ def create_gateway_app(
             resolver=gateway_resolver,
         )
         yield
-        await close_runtime(runtime)  # spans first, while the engine is open
+        await _stop_gateway(runtime)  # spans first, while the engine is open
         await engine.dispose()
         await rate_limit_engine.dispose()
         await shutdown_tracing(getattr(application.state, "tracer_provider", None))
@@ -252,13 +256,26 @@ def _start_gateway(
     """Build the upstream client and the gateway runtime, and keep both on `application.state`.
 
     The one client for all traffic to LLM providers (see `app.gateway.http`). Built per
-    lifespan, so a second startup of the same app does not get the closed one.
+    lifespan, so a second startup of the same app does not get the closed one. Also starts the
+    flush of the gateway's span losses (`app.telemetry_losses.flush`), which `_stop_gateway` stops.
     """
     http = build_http_client(settings, transport=transport, resolver=resolver)
     runtime = build_runtime(settings, sessions, http=http, rate_limit_sessions=rate_limit_sessions)
     application.state.gateway_http = http
     application.state.gateway_runtime = runtime
+    loss_flush.start(sessions)
     return runtime
+
+
+async def _stop_gateway(runtime: GatewayRuntime) -> None:
+    """Write the spans still queued, then the loss counts, the drain's own losses included.
+
+    Both before the engines are disposed; the loss flush waits at most `SHUTDOWN_BUDGET_S`.
+    """
+    try:
+        await close_runtime(runtime)
+    finally:
+        await loss_flush.stop(timeout_s=loss_flush.SHUTDOWN_BUDGET_S)
 
 
 async def _sync_prices(session_factory: async_sessionmaker[AsyncSession]) -> None:

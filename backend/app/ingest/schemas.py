@@ -23,10 +23,12 @@ from pydantic import (
 
 from app.db.models import SpanKind, SpanStatus
 from app.ingest.request_hash import REQUEST_HASH
+from app.pricing.tiers import ServiceTier
 
 MAX_SPANS_PER_BATCH = 1000
 MAX_BODY_BYTES = 5 * 1024 * 1024
 MAX_TOKEN_COUNT = 2_000_000_000  # spans store token counts as int4
+MAX_WEB_SEARCH_REQUESTS = 100_000
 
 # Unix nanoseconds must fall between 1970 and roughly 2262 (int64 range).
 _MAX_UNIX_NANOS = 2**63 - 1
@@ -118,9 +120,33 @@ def _strip_model(value: object) -> object:
     return value.strip() or None
 
 
+def _strip_provider(value: object) -> object:
+    """The provider name without surrounding whitespace, or None when nothing else is left.
+
+    A blank provider is no provider: it gets no server-tool fee rather than matching a rate by
+    accident, and is stored as unknown.
+    """
+    if not isinstance(value, str):
+        return value
+    return value.strip() or None
+
+
 Text64 = Annotated[StrictStr, StringConstraints(min_length=1, max_length=64)]
 Text128 = Annotated[StrictStr, StringConstraints(min_length=1, max_length=128)]
 Text256 = Annotated[StrictStr, StringConstraints(min_length=1, max_length=256)]
+
+
+# Strict on this route: any other spelling rejects the span. The other paths normalize the
+# provider's own spelling (`app.pricing.tiers.normalize_tier`) before sending this shape.
+ServiceTierIn = ServiceTier
+
+
+class ServerToolUseIn(BaseModel):
+    """Server-side tool calls the provider billed apart from tokens. Unpriced tools are ignored."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    web_search_requests: Annotated[StrictInt, Field(ge=0, le=MAX_WEB_SEARCH_REQUESTS)] | None = None
 
 
 class UsageIn(BaseModel):
@@ -129,6 +155,9 @@ class UsageIn(BaseModel):
     `cached_tokens` is the part read from the provider's prompt cache and `cache_write_tokens` the
     part written to it; `cache_write_1h_tokens` is the subset of those writes made with the 1-hour
     TTL (absent: every write is 5-minute). The sums are checked in `normalize._usage`.
+
+    `service_tier` is the tier the provider billed at, one of four values; absent, the span is
+    priced as standard. `server_tool_use.web_search_requests` prices the provider's web search fee.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -138,6 +167,8 @@ class UsageIn(BaseModel):
     cached_tokens: TokenCount | None = None
     cache_write_tokens: TokenCount | None = None
     cache_write_1h_tokens: TokenCount | None = None
+    service_tier: ServiceTierIn | None = None
+    server_tool_use: ServerToolUseIn | None = None
 
 
 class TraceIn(BaseModel):
@@ -149,6 +180,10 @@ class TraceIn(BaseModel):
     user_id: Text256 | None = None
     session_id: Text256 | None = None
     tags: list[Text64] | None = Field(default=None, max_length=20)
+    # An object of at most 32 entries. Typed `Any` on purpose: every rule, the object check
+    # included, is applied in `trace_fields.trace_fields`, so a rejection names the field exactly
+    # as the metadata contract does (spec §4.2).
+    metadata: Any = None
 
 
 class SpanIn(BaseModel):
@@ -163,7 +198,7 @@ class SpanIn(BaseModel):
     status_message: Annotated[StrictStr, StringConstraints(max_length=4096)] | None = None
     start_time: Timestamp
     end_time: Timestamp
-    provider: Text128 | None = None
+    provider: Annotated[Text128 | None, BeforeValidator(_strip_provider)] = None
     model: Annotated[Text256 | None, BeforeValidator(_strip_model)] = None
     usage: UsageIn | None = None
     time_to_first_token_ms: Annotated[StrictFloat | StrictInt, Field(ge=0), _Double] | None = None
@@ -180,12 +215,38 @@ class SpanIn(BaseModel):
     prompt_version_id: UUID | None = None
 
 
+# A cumulative SDK counter: what a Postgres bigint holds, never negative.
+CounterTotal = Annotated[StrictInt, Field(ge=0, lt=2**63)]
+ExporterId = Annotated[StrictStr, StringConstraints(pattern=r"^[0-9a-f]{32}$")]
+
+
+class ClientCountersIn(BaseModel):
+    """The SDK exporter's lifetime loss counters, sent beside the spans (`client`).
+
+    The bounds match migration 0703's CHECKs, so a value the table would refuse is refused here
+    first and the batch's transaction never fails on it.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    sdk: Text64
+    version: Annotated[StrictStr, StringConstraints(min_length=1, max_length=32)]
+    exporter_id: ExporterId
+    dropped_total: CounterTotal
+    failed_total: CounterTotal
+
+
 class IngestBatchIn(BaseModel):
-    """The envelope only; spans are validated one by one afterwards."""
+    """The envelope only; spans are validated one by one afterwards.
+
+    `client` is validated on its own (`app.telemetry_losses.service.check_client`): a malformed
+    one is ignored, never a reason to refuse the batch.
+    """
 
     model_config = ConfigDict(extra="ignore")
 
     spans: list[Any]
+    client: Any = None
 
 
 class RejectedSpan(BaseModel):

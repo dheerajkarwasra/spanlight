@@ -94,7 +94,9 @@ async def test_statement_failure_mid_batch_commits_nothing_and_is_not_2xx(
     spans, (trace,) = await telemetry_rows(session_factory, workspace.project_id)
     assert len(spans) == 3
     totals = (trace["span_count"], trace["input_tokens"], trace["output_tokens"])
-    assert totals == (3, 3000, 1500)  # span() carries 1000 input and 500 output tokens
+    # span() carries 1000 input and 500 output tokens; the root repeats its children's usage,
+    # so it is a usage rollup and only the children are summed.
+    assert totals == (3, 2000, 1000)
 
 
 async def test_connection_killed_before_commit_leaves_no_partial_trace(

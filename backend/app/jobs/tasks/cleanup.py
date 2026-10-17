@@ -1,5 +1,5 @@
-"""Housekeeping for auth and throttle tables, idempotency keys, rate limit buckets, jobs, outbox
-and the explain budget's stale reservations."""
+"""Housekeeping for auth and throttle tables, idempotency keys, rate limit buckets, jobs, outbox,
+SDK exporter counters and the explain budget's stale reservations."""
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -17,9 +17,11 @@ from app.db.models import (
     NotificationOutbox,
     NotificationStatus,
     RateLimitBucket,
+    SdkExporterCounter,
     Session,
     ThrottleEvent,
 )
+from app.db.rls import bypass_rls
 from app.exports.expiry import expire_exports, reap_exports
 from app.insights.job_queries import complete_stale_reservations
 from app.jobs.context import TaskContext
@@ -33,6 +35,9 @@ EMAIL_TOKEN_RETENTION = timedelta(days=1)
 FINISHED_JOB_RETENTION = timedelta(days=7)
 FINISHED_OUTBOX_RETENTION = timedelta(days=7)
 RATE_LIMIT_BUCKET_RETENTION = timedelta(hours=1)  # a bucket idle this long is full again anyway
+# An exporter is one SDK process; one silent this long has exited, and its last counters have
+# been read into the telemetry losses already.
+EXPORTER_COUNTER_RETENTION = timedelta(days=7)
 # An explanation call is answered within the route's 60 s timeout, so a reservation this old
 # belongs to a request that died before it could complete or release it. It is completed at its
 # worst-case cost, never deleted: the provider may have billed it.
@@ -102,7 +107,7 @@ async def cleanup(
             )
         )
         await db.commit()
-    return {
+    counts = {
         "sessions_deleted": int(getattr(sessions, "rowcount", 0)),
         "login_attempts_deleted": int(getattr(attempts, "rowcount", 0)),
         "throttle_events_deleted": int(getattr(throttle_events, "rowcount", 0)),
@@ -112,3 +117,24 @@ async def cleanup(
         "jobs_deleted": int(getattr(jobs, "rowcount", 0)),
         "outbox_rows_deleted": int(getattr(outbox, "rowcount", 0)),
     }
+    counts["exporter_counters_deleted"] = await prune_exporter_counters(session_factory, now=now)
+    return counts
+
+
+async def prune_exporter_counters(
+    session_factory: async_sessionmaker[AsyncSession], *, now: datetime
+) -> int:
+    """Delete SDK exporter counters not seen for `EXPORTER_COUNTER_RETENTION`, in every project.
+
+    `sdk_exporter_counters` is row-level secured and the sweep spans projects, so it runs with
+    the worker bypass, in its own transaction.
+    """
+    async with session_factory() as db:
+        await bypass_rls(db)
+        result = await db.execute(
+            delete(SdkExporterCounter).where(
+                SdkExporterCounter.last_seen_at < now - EXPORTER_COUNTER_RETENTION
+            )
+        )
+        await db.commit()
+    return int(getattr(result, "rowcount", 0))

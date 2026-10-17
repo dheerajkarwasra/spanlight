@@ -105,6 +105,7 @@ PROJECT_DATA_ROWS = (
     Row("GET", f"{PRJ}/releases/compare", P.PROJECT_READ),
     Row("GET", f"{PRJ}/users", P.PROJECT_READ),
     Row("GET", f"{PRJ}/users/{{external_user_id:path}}", P.PROJECT_READ),
+    Row("GET", f"{PRJ}/attribution", P.PROJECT_READ),
     Row("GET", f"{PRJ}/unpriced-models", P.PROJECT_READ),
     Row("POST", f"{PRJ}/exports", P.EXPORT_CREATE),
     Row("GET", f"{PRJ}/exports", P.PROJECT_READ),

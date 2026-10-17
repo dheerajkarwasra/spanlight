@@ -1,10 +1,10 @@
 """End-user analytics: one row per project, UTC day and end user, refreshed from the raw rows."""
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Date, ForeignKey, Integer, Numeric, Text
+from sqlalchemy import BigInteger, Date, DateTime, ForeignKey, Integer, Numeric, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.models.base import Base
@@ -16,7 +16,7 @@ class UserStatsDaily(Base):
     The traces started that day, the LLM calls they made, how many failed, how many had no price,
     the tokens used (input plus output) and the cost of the priced calls. `cost_usd` is NULL when
     no call of the day was priced, never 0. The `refresh_user_stats` job (`app.end_users.jobs`) owns
-    the rows.
+    the rows; `computed_at` records when it wrote one.
     """
 
     __tablename__ = "user_stats_daily"
@@ -32,3 +32,6 @@ class UserStatsDaily(Base):
     unpriced_calls: Mapped[int] = mapped_column(Integer)
     cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 8))
     tokens: Mapped[int] = mapped_column(BigInteger)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

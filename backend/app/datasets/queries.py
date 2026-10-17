@@ -93,15 +93,17 @@ async def get_item(
 
 async def insert_items(
     db: AsyncSession, dataset_id: uuid.UUID, items: Sequence[DatasetItemIn]
-) -> None:
-    """Store the items in one statement. The caller holds the dataset's row lock."""
+) -> list[uuid.UUID]:
+    """Store the items in one statement and return their ids, in order. The caller holds the
+    dataset's row lock."""
     if not items:
-        return
+        return []
+    ids = [new_id() for _ in items]
     await db.execute(
         insert(DatasetItem),
         [
             {
-                "id": new_id(),
+                "id": item_id,
                 "dataset_id": dataset_id,
                 "input": item.input,
                 "expected_output": item.expected_output,
@@ -109,9 +111,10 @@ async def insert_items(
                 "source_trace_id": item.source_trace_id,
                 "source_span_id": item.source_span_id,
             }
-            for item in items
+            for item_id, item in zip(ids, items, strict=True)
         ],
     )
+    return ids
 
 
 async def delete_item(db: AsyncSession, dataset_id: uuid.UUID, item_id: uuid.UUID) -> bool:

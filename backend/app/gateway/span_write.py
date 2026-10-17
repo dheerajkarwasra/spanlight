@@ -2,8 +2,9 @@
 
 `write_span` writes the span through `ingest_spans` (with the key as `source_key_id`), counts the
 call and its tokens in the key's current minute (`record_minute`; a cache hit counts zero
-tokens), and moves the `last_used_at` of the key and of each provider credential the call used,
-each at most once a minute. A call without a key (an in-process caller) writes only the span and
+tokens; a call the key limiter refused was not served and is not counted), and moves the
+`last_used_at` of the key and of each provider credential the call used, each at most once a
+minute. A call without a key (an in-process caller) writes only the span and
 the credentials' `last_used_at`. It raises what the database raises; `app.gateway.recorder`
 decides about retries.
 """
@@ -21,6 +22,7 @@ from app.db.rls import bind_project
 from app.gateway.context import GatewayContext
 from app.gateway.key_limits import record_minute
 from app.ingest.pipeline import IngestOutcome, IngestTarget, ingest_spans
+from app.ingest.rate_limit_kind import GATEWAY_LIMITER_CODE
 
 LAST_USED_INTERVAL = timedelta(minutes=1)
 
@@ -45,9 +47,10 @@ async def write_span(
         # `ingest_spans` binds the project, which the key's rows below need as well.
         outcome = await ingest_spans(db, target, [span], now=now)
         if context.key is not None:
-            await record_minute(
-                db, context.key.key.id, context.project_id, _total_tokens(span), now
-            )
+            if not _refused_by_limiter(span):
+                await record_minute(
+                    db, context.key.key.id, context.project_id, _total_tokens(span), now
+                )
             await _touch_key(db, context.key.key, now)
         await _touch_credentials(db, context, credential_ids, now)
     return outcome
@@ -111,6 +114,15 @@ async def _touch_credentials(
             .values(last_used_at=now)
             .execution_options(synchronize_session=False)
         )
+
+
+def _refused_by_limiter(span: dict[str, Any]) -> bool:
+    """A refusal by the key's own limits (`app.gateway.refusal_span`): nothing was served.
+
+    Every write of a refusal would otherwise take the key's one minute row lock, for 0 tokens.
+    """
+    attributes = span.get("attributes") or {}
+    return attributes.get("spanlight.gateway.error_code") == GATEWAY_LIMITER_CODE
 
 
 def _total_tokens(span: dict[str, Any]) -> int:

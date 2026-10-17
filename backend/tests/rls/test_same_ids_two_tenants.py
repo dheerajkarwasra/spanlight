@@ -9,11 +9,18 @@ row (or a unique violation) rather than pass by luck.
 """
 
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.alerts.jobs import evaluate_all
+from app.budgets.guard import StateBudgetGuard
+from app.budgets.queries import trace_dimensions
+from app.config import Settings
+from app.db.rls import bind_project
 from tests.helpers import (
     Browser,
     Workspace,
@@ -28,6 +35,7 @@ TRACE_ID = new_trace_id()
 SCORE_ID = str(uuid.uuid4())
 PROMPT = "greeting"
 DATASET = "golden"
+METADATA = {"customer": "shared"}
 SIDES = ("alpha", "beta")
 
 
@@ -40,6 +48,7 @@ class Tenant:
         self.workspace = workspace
         self.project = f"/api/v1/projects/{workspace.project_id}"
         self.score_value = 1 if label == SIDES[0] else 3  # different, so a mix-up shows
+        self.input_tokens = 1000 if label == SIDES[0] else 3000
 
 
 @pytest.fixture
@@ -60,7 +69,8 @@ async def create_shared(tenant: Tenant, client: httpx.AsyncClient) -> None:
     trace = span(
         trace_id=TRACE_ID,
         input={"messages": [{"role": "user", "content": f"question from {label}"}]},
-        trace={"name": f"chat of {label}", "environment": "prod"},
+        usage={"input_tokens": tenant.input_tokens, "output_tokens": 500, "cached_tokens": 0},
+        trace={"name": f"chat of {label}", "environment": "prod", "metadata": METADATA},
     )
     ingested = await client.post(
         "/v1/traces", json={"spans": [trace]}, headers=bearer(tenant.workspace.api_key)
@@ -204,3 +214,55 @@ async def test_a_retried_score_id_is_idempotent_only_inside_its_own_project(
         assert [(score["id"], float(score["value"])) for score in tone] == [
             (fresh, float(tenant.score_value))
         ]
+
+
+async def test_attribution_of_each_tenant_shows_only_its_own_metadata(
+    tenants: tuple[Tenant, Tenant],
+) -> None:
+    """The same metadata key and value in two projects: each project's attribution adds up its
+    own trace only (the tenants differ in token counts, so a mix-up would show)."""
+    for tenant in tenants:
+        body = await get_json(tenant, "attribution?group_by=metadata&key=customer")
+        assert body["source"] == "raw"
+        assert [
+            (item["value"], item["traces"], item["input_tokens"]) for item in body["items"]
+        ] == [("shared", 1, tenant.input_tokens)]
+        assert body["totals"]["input_tokens"] == tenant.input_tokens
+        assert body["none"] is None
+
+
+async def test_a_metadata_budget_in_one_project_never_blocks_the_other_with_the_same_pair(
+    tenants: tuple[Tenant, Tenant],
+    session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+) -> None:
+    """A firing `metadata customer=shared` budget in the first project: the guard blocks a call
+    bound to that project and allows the same pair bound to the second, whether the pair comes
+    from the header or from the second project's own stored trace."""
+    first, _ = tenants
+    body = {
+        "name": "Shared cap",
+        "scope": "metadata",
+        "scope_id": "customer=shared",
+        "period": "monthly",
+        "amount_usd": "0.0001",
+        "action": "block",
+        "channel_ids": [],
+    }
+    created = await first.owner.post(f"{first.project}/budgets", json=body)
+    assert created.status_code == 201, created.text
+    run = await evaluate_all(session_factory, settings, now=datetime.now(UTC))
+    assert (run.errors, run.projects_failed) == (0, 0)
+
+    decisions = {}
+    for tenant in tenants:
+        project_id = uuid.UUID(tenant.workspace.project_id)
+        async with session_factory() as db, db.begin():
+            await bind_project(db, project_id)
+            stored = await trace_dimensions(db, project_id, TRACE_ID)
+            assert stored == (f"chat of {tenant.label}", METADATA)
+            decision = await StateBudgetGuard().check(
+                db, project_id, None, "gpt-4o-mini", None, datetime.now(UTC), metadata=stored[1]
+            )
+        decisions[tenant.label] = decision.allowed
+    assert decisions == {"alpha": False, "beta": True}

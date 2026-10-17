@@ -32,12 +32,14 @@ class Permission(enum.StrEnum):
     CREDENTIALS_MANAGE = "credentials:manage"
     ALERTS_WRITE = "alerts:write"
     INSIGHTS_MANAGE = "insights:manage"
+    INSIGHTS_FEEDBACK = "insights:feedback"
     SCORES_WRITE = "scores:write"
     ANNOTATIONS_WRITE = "annotations:write"
     PROMPTS_WRITE = "prompts:write"
     DATASETS_WRITE = "datasets:write"
     EXPERIMENTS_RUN = "experiments:run"
     EVALUATORS_WRITE = "evaluators:write"
+    BILLING_SOURCES_MANAGE = "billing_sources:manage"
 
 
 PermissionClass = Literal["read", "write"]
@@ -64,12 +66,14 @@ PERMISSION_CLASSES: dict[Permission, PermissionClass] = {
     Permission.CREDENTIALS_MANAGE: "write",
     Permission.ALERTS_WRITE: "write",
     Permission.INSIGHTS_MANAGE: "write",
+    Permission.INSIGHTS_FEEDBACK: "write",
     Permission.SCORES_WRITE: "write",
     Permission.ANNOTATIONS_WRITE: "write",
     Permission.PROMPTS_WRITE: "write",
     Permission.DATASETS_WRITE: "write",
     Permission.EXPERIMENTS_RUN: "write",
     Permission.EVALUATORS_WRITE: "write",
+    Permission.BILLING_SOURCES_MANAGE: "write",
 }
 
 
@@ -87,6 +91,7 @@ _MEMBER = _VIEWER | {
     Permission.PROMPTS_WRITE,
     Permission.DATASETS_WRITE,
     Permission.EXPERIMENTS_RUN,
+    Permission.INSIGHTS_FEEDBACK,
 }
 _ADMIN = _MEMBER | {
     Permission.KEY_REVOKE_ANY,
@@ -99,6 +104,7 @@ _ADMIN = _MEMBER | {
     Permission.ALERTS_WRITE,
     Permission.INSIGHTS_MANAGE,
     Permission.EVALUATORS_WRITE,
+    Permission.BILLING_SOURCES_MANAGE,
 }
 _OWNER = _ADMIN | {Permission.ORG_DELETE, Permission.ORG_SECURITY, Permission.CREDENTIALS_MANAGE}
 

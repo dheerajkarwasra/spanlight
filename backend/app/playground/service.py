@@ -108,7 +108,7 @@ async def run(
     credential that is not the organization's or a prompt version that is not the project's.
     `clock` is the app's wall clock: the budget guard, the spans and the pricing all read it.
     """
-    services = _configured(services)
+    services = require_services(services)
     plans = [await _plan(db, project, actor_id, config) for config in configs]
     prices = await load_price_book(db, project.org_id)
     await db.commit()  # no connection is held while the providers answer
@@ -124,7 +124,9 @@ async def run(
     return list(results)
 
 
-def _configured(services: GatewayServices | None) -> GatewayServices:
+def require_services(services: GatewayServices | None) -> GatewayServices:
+    """The gateway services, when the runtime runs here and credentials can be read; else
+    `409 NOT_CONFIGURED`. Shared with the replay service."""
     if services is None:
         raise not_configured("The gateway runtime is not running in this process.")
     if not services.settings.is_crypto_configured:

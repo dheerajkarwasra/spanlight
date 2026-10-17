@@ -1,9 +1,9 @@
 """Scores on traces and the score configs of a project.
 
-The config bodies, `ScoreConfigSpec` and `ScoreConfigPatch`, are owned by the scores domain
-(`app.scores.schemas`), which validates them; they are re-exported here so routers keep
-importing from `app.api.schemas`. Score values and config bounds are JSON numbers with at most
-four decimals; a boolean score's value is 1 or 0.
+The config bodies, `ScoreConfigSpec`, `ScoreConfigPatch` and `FailureCategoriesIn`, are owned by
+the scores domain (`app.scores.schemas`, `app.scores.failure_category`), which validates them;
+they are re-exported here so routers keep importing from `app.api.schemas`. Score values and
+config bounds are JSON numbers with at most four decimals; a boolean score's value is 1 or 0.
 """
 
 import uuid
@@ -15,6 +15,7 @@ from pydantic import ConfigDict, PlainSerializer
 
 from app.api.schemas.common import ApiModel
 from app.db.models import Score
+from app.scores.failure_category import FailureCategoriesIn
 from app.scores.schemas import (
     Comment,
     ScoreConfigPatch,
@@ -27,6 +28,7 @@ from app.scores.schemas import (
 from app.scores.types import ScoreDataType, ScoreSource
 
 __all__ = [
+    "FailureCategoriesIn",
     "ScoreConfigOut",
     "ScoreConfigPatch",
     "ScoreConfigSpec",

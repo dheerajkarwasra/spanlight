@@ -18,6 +18,7 @@ from app.annotations import queries
 from app.annotations.errors import (
     ItemNotAssignedError,
     ItemNotPendingError,
+    QueueInUseError,
     QueueItemNotFoundError,
     QueueNameTakenError,
     QueueNotFoundError,
@@ -32,6 +33,7 @@ from app.core.ids import new_id
 from app.db.errors import violated_constraint
 from app.db.models import AnnotationQueue, AnnotationQueueItem, AuditAction
 from app.db.models.annotations import QueueItemStatus
+from app.review.queries import policy_for_queue
 from app.scores.schemas import ScoreIn
 from app.scores.service import configs_in_project, write_scores
 from app.scores.types import ScoreSource
@@ -98,8 +100,12 @@ async def delete_queue(
     *,
     ip: str | None = None,
 ) -> None:
-    """Delete the queue with its items. Raises `QueueNotFoundError`."""
+    """Delete the queue with its items. Raises `QueueNotFoundError`, and `QueueInUseError`
+    while a review policy fills the queue (the policy's foreign key refuses the delete as
+    well)."""
     queue = await _queue(db, project_id, queue_id)
+    if await policy_for_queue(db, project_id, queue.id) is not None:
+        raise QueueInUseError
     item_count = await queries.count_items(db, queue.id)
     await queries.delete_queue(db, queue.id)
     await record_audit(

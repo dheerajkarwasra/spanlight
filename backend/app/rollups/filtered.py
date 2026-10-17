@@ -74,7 +74,12 @@ class RollupFilters:
 
 @dataclass(frozen=True, slots=True)
 class FilteredHour:
-    """The filtered span metrics of one UTC hour."""
+    """The filtered span metrics of one UTC hour.
+
+    ``class_errors`` is set by a caller that also reads the error rollups for an error class or
+    rate-limit kind (``app.alerts.metrics``): that hour's failed llm calls of the class and kind.
+    It is ``None`` when nobody read them.
+    """
 
     bucket_start: datetime
     spans: int
@@ -86,6 +91,7 @@ class FilteredHour:
     output_tokens: int
     latency_buckets: list[int]
     ttft_buckets: list[int]
+    class_errors: int | None = None
 
     @property
     def tokens(self) -> int:

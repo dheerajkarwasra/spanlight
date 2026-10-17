@@ -44,6 +44,7 @@ The `citext` extension is "trusted", so the owning role can create it during the
 | `METRICS_TOKEN` | – | Bearer token for `/metrics`; unset disables it |
 | `WORKER_METRICS_PORT` | – | Port on which the worker serves `/metrics` (same token); unset disables it |
 | `CREDENTIALS_KEYS` | – | Master keys that encrypt stored secrets, `<id>:<base64 of 32 bytes>[,…]`; the first entry seals new data. Unset leaves encryption off, and with it two-factor authentication (`409 NOT_CONFIGURED`); a malformed value stops startup. See [ADR 9](../docs/decisions/0009-application-master-key-encryption.md) |
+| `EE_LICENSE_KEY` | – | Enterprise license key (`spl_lic_…`); unset runs the community edition. A key that does not verify stops startup; an expired one turns its features off (`403 EE_LICENSE_REQUIRED`). `uv run spanlight license-status` shows what it grants. See [ADR 16](../docs/decisions/0016-open-core-ee-directories.md) |
 | `ANTHROPIC_API_KEY` | – | Enables the real demo traffic job (`claude-haiku-4-5`) |
 | `DEMO_MONTHLY_BUDGET_USD` | `1.00` | Demo stops once recorded month-to-date spend reaches this |
 | `DEMO_ENABLED` | key present | Demo job + `POST /api/v1/demo/session` |

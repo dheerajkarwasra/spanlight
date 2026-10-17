@@ -9,6 +9,15 @@ Every run does two things, in this order:
    oldest rollup hour)`` in daily chunks, newest first. Because the gap is read from the data,
    a backfill that was cut short (the task has a hard timeout) simply continues on the next run.
 
+   Error rollups get their own gap, because they are sparse: only hours with a failed llm call
+   have a row, so their oldest row says nothing about the span rollups and the oldest span says
+   nothing about them. Their gap runs from the hour of the oldest span that makes an error
+   rollup row (``FAILED_LLM_SPAN``, the insert's own predicate) to the oldest error rollup hour.
+   A project that has span rollups but no error history (an install upgraded with data) is
+   backfilled that way, and a history without failures never opens a gap. The two gaps of a
+   project are merged into one range, since a backfill rebuilds every table of the hours it
+   covers.
+
 The recompute comes first so a slow backfill never delays current data, and the backfill stops
 starting new chunks after ``BACKFILL_BUDGET_SECONDS`` so the run ends inside the task timeout.
 Projects with a gap are served smallest gap first: a small project is finished in one run and
@@ -25,17 +34,20 @@ After the rollups, the run also heals ``traces.has_scores`` flags a score/ingest
 
 import time
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
-from sqlalchemy import text
+from sqlalchemy import Row, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.observability import ROLLUP_DURATION
 from app.db.rls import bypass_rls
+from app.ingest.error_class import ErrorClass
 from app.jobs.context import TaskContext
 from app.rollups.compute import backfill_rollups, compute_rollups, floor_hour
+from app.rollups.error_compute import FAILED_LLM_SPAN
 from app.scores.repair import repair_has_scores
 
 logger = structlog.get_logger(__name__)
@@ -59,25 +71,52 @@ _PROJECTS_WITH_RECENT_SPANS = text(
     """
 )
 
-# For each project, its oldest span that is inside its retention (capped) and older than the
-# recompute window, and its oldest span rollup hour. Both are index lookups.
+# For each project with a span inside its retention (capped) and older than the recompute window:
+# that oldest span and the oldest span rollup hour, then the oldest such span that makes an error
+# rollup row and the oldest error rollup hour. All are index lookups; the oldest failure is one
+# probe per error class on `spans_project_error_class_started_idx`, so a project with many
+# failures is not scanned.
 _BACKFILL_CANDIDATES = text(
-    """
+    f"""
     SELECT p.id AS project_id,
            oldest.started_at AS oldest_span,
            (SELECT min(r.bucket_start) FROM span_rollups_hourly AS r
-            WHERE r.project_id = p.id) AS oldest_rollup
+            WHERE r.project_id = p.id) AS oldest_rollup,
+           failure.started_at AS oldest_failure,
+           (SELECT min(e.bucket_start) FROM error_rollups_hourly AS e
+            WHERE e.project_id = p.id) AS oldest_error_rollup
     FROM projects AS p
+    CROSS JOIN LATERAL (
+        SELECT :now - make_interval(days => least(p.retention_days, :max_days)) AS since
+    ) AS kept
     CROSS JOIN LATERAL (
         SELECT min(s.started_at) AS started_at
         FROM spans AS s
         WHERE s.project_id = p.id
-          AND s.started_at >= :now - make_interval(days => least(p.retention_days, :max_days))
+          AND s.started_at >= kept.since
           AND s.started_at < :window_start
     ) AS oldest
+    CROSS JOIN LATERAL (
+        SELECT min(first.started_at) AS started_at
+        FROM unnest(CAST(:error_classes AS text[])) AS c(error_class)
+        CROSS JOIN LATERAL (
+            SELECT s.started_at
+            FROM spans AS s
+            WHERE s.project_id = p.id
+              AND s.error_class = c.error_class
+              AND s.started_at >= kept.since
+              AND s.started_at < :window_start
+              AND {FAILED_LLM_SPAN}
+            ORDER BY s.started_at
+            LIMIT 1
+        ) AS first
+    ) AS failure
     WHERE oldest.started_at IS NOT NULL
     """
 )
+_ERROR_CLASSES = [error_class.value for error_class in ErrorClass]
+
+Gap = tuple[timedelta, uuid.UUID, datetime, datetime]
 
 
 async def run_rollup_hourly(context: TaskContext, _: dict[str, Any]) -> None:
@@ -128,27 +167,7 @@ async def roll_up_all(
     for row in recent:
         await _recompute(session_factory, context, row.project_id, window_start, window_end)
 
-    async with session_factory() as db:
-        await bypass_rls(db)
-        candidates = (
-            await db.execute(
-                _BACKFILL_CANDIDATES,
-                {"now": now, "max_days": MAX_BACKFILL_DAYS, "window_start": window_start},
-            )
-        ).all()
-
-    gaps: list[tuple[timedelta, uuid.UUID, datetime, datetime]] = []
-    for row in candidates:
-        gap_start = floor_hour(row.oldest_span)
-        # Recent rollups were just written, so the oldest rollup is normally at or after
-        # `window_start`; the gap ends where the rollups begin.
-        gap_end = (
-            window_start if row.oldest_rollup is None else min(row.oldest_rollup, window_start)
-        )
-        if gap_start < gap_end:
-            gaps.append((gap_end - gap_start, row.project_id, gap_start, gap_end))
-    # Smallest gap first; the project id makes the order deterministic.
-    gaps.sort(key=lambda gap: (gap[0], gap[1]))
+    gaps = await _find_gaps(session_factory, now, window_start)
 
     backfilled = 0
     for _, project_id, gap_start, gap_end in gaps:
@@ -164,6 +183,53 @@ async def roll_up_all(
                 deadline=deadline,
             )
     return len(recent), backfilled
+
+
+async def _find_gaps(
+    session_factory: async_sessionmaker[AsyncSession], now: datetime, window_start: datetime
+) -> list[Gap]:
+    async with session_factory() as db:
+        await bypass_rls(db)
+        candidates = (
+            await db.execute(
+                _BACKFILL_CANDIDATES,
+                {
+                    "now": now,
+                    "max_days": MAX_BACKFILL_DAYS,
+                    "window_start": window_start,
+                    "error_classes": _ERROR_CLASSES,
+                },
+            )
+        ).all()
+    return _gaps(candidates, window_start)
+
+
+def _gaps(candidates: Sequence[Row[Any]], window_start: datetime) -> list[Gap]:
+    """Each project's backfill range, smallest first (the project id breaks ties).
+
+    A project's range covers both of its gaps: the span gap and the error gap (module docstring).
+    Recent rollups were just written, so the oldest rollup is normally at or after
+    `window_start`; each gap ends where its rollups begin, and never after `window_start`.
+    """
+    gaps: list[Gap] = []
+    for row in candidates:
+        ranges = [_gap(row.oldest_span, row.oldest_rollup, window_start)]
+        if row.oldest_failure is not None:
+            ranges.append(_gap(row.oldest_failure, row.oldest_error_rollup, window_start))
+        open_ranges = [(start, end) for start, end in ranges if start < end]
+        if open_ranges:
+            gap_start = min(start for start, _ in open_ranges)
+            gap_end = max(end for _, end in open_ranges)
+            gaps.append((gap_end - gap_start, row.project_id, gap_start, gap_end))
+    gaps.sort(key=lambda gap: (gap[0], gap[1]))
+    return gaps
+
+
+def _gap(
+    oldest: datetime, oldest_rollup: datetime | None, window_start: datetime
+) -> tuple[datetime, datetime]:
+    end = window_start if oldest_rollup is None else min(oldest_rollup, window_start)
+    return floor_hour(oldest), end
 
 
 async def _recompute(

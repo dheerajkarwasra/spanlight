@@ -35,6 +35,7 @@ TRACE_CSV_COLUMNS: tuple[str, ...] = (
     "output_tokens",
     "cost_usd",
     "tags",
+    "metadata",
 )
 
 TAG_SEPARATOR = ";"
@@ -66,7 +67,8 @@ def _iso(moment: datetime) -> str:
     return moment.isoformat()
 
 
-def _money(value: Decimal | None) -> str:
+def money_cell(value: Decimal | None) -> str:
+    """Money as a decimal string; an unknown amount is an empty cell."""
     # `format(..., "f")` avoids scientific notation such as "0E-8".
     return "" if value is None else format(value, "f")
 
@@ -89,8 +91,9 @@ def trace_csv_line(row: TraceExportRow) -> bytes:
             str(row.error_count),
             str(row.input_tokens),
             str(row.output_tokens),
-            _money(row.cost_usd),
+            money_cell(row.cost_usd),
             TAG_SEPARATOR.join(row.tags),
+            json.dumps(row.metadata, sort_keys=True, ensure_ascii=False),
         )
     )
 
@@ -120,7 +123,8 @@ def _span_json(span: SpanExportRow) -> dict[str, Any]:
         "cached_tokens": span.cached_tokens,
         "cache_write_tokens": span.cache_write_tokens,
         "cache_write_1h_tokens": span.cache_write_1h_tokens,
-        "cost_usd": None if span.cost_usd is None else _money(span.cost_usd),
+        "cost_usd": None if span.cost_usd is None else money_cell(span.cost_usd),
+        "usage_rollup": span.usage_rollup,
         "pricing_version": span.pricing_version,
         "time_to_first_token_ms": span.time_to_first_token_ms,
         "input": span.input,
@@ -139,6 +143,7 @@ def _trace_json(row: TraceExportRow) -> dict[str, Any]:
         "external_user_id": row.user_id,
         "session_id": row.session_id,
         "tags": list(row.tags),
+        "metadata": dict(row.metadata),
         "status": row.status,
         "started_at": _iso(row.started_at),
         "ended_at": _iso(row.ended_at),
@@ -147,7 +152,7 @@ def _trace_json(row: TraceExportRow) -> dict[str, Any]:
         "error_count": row.error_count,
         "input_tokens": row.input_tokens,
         "output_tokens": row.output_tokens,
-        "cost_usd": None if row.cost_usd is None else _money(row.cost_usd),
+        "cost_usd": None if row.cost_usd is None else money_cell(row.cost_usd),
         "has_unpriced": row.has_unpriced,
     }
 

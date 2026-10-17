@@ -176,7 +176,9 @@ def _real_cost(prepared: Prepared, result: GatewayResult, now: datetime) -> Deci
         cache_write_tokens=usage.cache_write_tokens,
         cache_write_1h_tokens=usage.cache_write_1h_tokens,
     )
-    return prepared.worst_case if priced is None else priced.cost_usd
+    if priced is None or priced.cost_usd is None:
+        return prepared.worst_case
+    return priced.cost_usd
 
 
 def _log_failure(reservation: Reservation, result: GatewayResult) -> None:

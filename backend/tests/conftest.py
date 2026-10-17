@@ -60,6 +60,13 @@ _TABLES_TO_TRUNCATE = (
     "idempotency_keys",
     "worker_heartbeats",
     "rate_limit_buckets",
+    "provider_incidents",
+)
+# The status feed rows are seeded by migration 0702: reset their poll state instead of deleting.
+_RESET_STATUS_SOURCES = text(
+    "UPDATE provider_status_sources SET etag = NULL, last_modified = NULL, "
+    "last_polled_at = NULL, last_success_at = NULL, last_outcome = NULL, "
+    "consecutive_failures = 0, last_error_type = NULL"
 )
 
 
@@ -134,6 +141,7 @@ async def clean_database(engine: AsyncEngine) -> None:
         await connection.execute(
             text(f"TRUNCATE {', '.join(_TABLES_TO_TRUNCATE)} RESTART IDENTITY CASCADE")
         )
+        await connection.execute(_RESET_STATUS_SOURCES)
 
 
 @pytest.fixture

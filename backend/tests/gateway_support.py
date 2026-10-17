@@ -24,6 +24,9 @@ Helpers (import them from here; the fake provider and its stream steps live in
 - `read_gateway_spans(sessions, project_id)` / `read_gateway_span(...)`: drain the span recorder,
   then read the project's spans past row-level security (rows as dicts; the second asserts there
   is exactly one).
+- `PILOT_USAGE`, `PILOT_MESSAGE`, `MESSAGES_BODY`: the pilot's Anthropic exchange that wrote 6,404
+  prompt tokens to the 1-hour cache (`PILOT_MESSAGE` answers the request `MESSAGES_BODY`);
+  `PILOT_NATIVE` is its usage in the native convention and `PILOT_COST` its price.
 - `metric_delta(counter, **labels)`: snapshot a Prometheus counter; `.value` is how much it grew.
 - `logged(caplog, event)`: the structlog events of that name the test logged (as dicts).
 
@@ -50,6 +53,7 @@ import time
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +63,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.gateway import recorder
+from app.gateway.sse import Usage
 from tests.fake_provider import (
     Fail,
     FakeProvider,
@@ -73,6 +78,40 @@ FIXTURES = Path(__file__).parent / "gateway" / "fixtures"
 PUBLIC_ADDRESS = "93.184.216.34"
 # The longest a test waits for the span recorder's background writes.
 DRAIN_TIMEOUT_S = 5.0
+
+# The pilot's cache-writing Anthropic exchange. Its usage, as Anthropic sent it:
+PILOT_USAGE: dict[str, Any] = {
+    "input_tokens": 19,
+    "output_tokens": 12,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 6404,
+    "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 6404},
+}
+PILOT_MESSAGE: dict[str, Any] = {
+    "id": "msg_test_cachewrite01",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-haiku-4-5-20251001",
+    "content": [{"type": "text", "text": "Hello!"}],
+    "stop_reason": "end_turn",
+    "stop_sequence": None,
+    "usage": PILOT_USAGE,
+}
+MESSAGES_BODY: dict[str, Any] = {
+    "model": "claude-haiku-4-5",
+    "max_tokens": 64,
+    "messages": [{"role": "user", "content": "Hello"}],
+}
+# `PILOT_USAGE` in the native convention: `input_tokens` is the whole prompt.
+PILOT_NATIVE = Usage(
+    input_tokens=6423,
+    output_tokens=12,
+    cached_tokens=0,
+    cache_write_tokens=6404,
+    cache_write_1h_tokens=6404,
+)
+# 19 uncached * 1.00 + 6404 written (1 h) * 2.00 + 12 output * 5.00, per million tokens.
+PILOT_COST = Decimal("0.01288700")
 
 
 async def public_resolver(host: str, port: int) -> Sequence[str]:

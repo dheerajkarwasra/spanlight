@@ -1,5 +1,6 @@
 """Helpers shared by the baseline-spike detectors (`error_spike`, `latency_regression`,
-`cost_spike`): the spike rule, an exact percentile, fault exclusion and grouping.
+`cost_spike`) and `rate_limit_pressure`: the spike rule, an exact percentile, fault and
+gateway-refusal exclusion and grouping.
 
 All of it is pure; nothing here reads a clock or a database.
 """
@@ -8,7 +9,11 @@ import math
 from collections.abc import Callable, Iterable, Sequence
 from decimal import Decimal
 
+from app.ingest.rate_limit_kind import RateLimitKind
 from app.insights.context import LlmSpanRow
+
+# The kind of a refusal by Spanlight's own key limiter (`app.gateway.refusal_span`).
+GATEWAY_REFUSAL_KIND = RateLimitKind.GATEWAY.value
 
 
 def exceeds(current: Decimal, baseline: Decimal, ratio: Decimal, floor: Decimal) -> bool:
@@ -34,6 +39,15 @@ def percentile_nearest_rank(values: Sequence[int], percentile: Decimal) -> Decim
 def without_faults(spans: Iterable[LlmSpanRow]) -> list[LlmSpanRow]:
     """Drop fault-injected spans: these detectors judge real traffic, not lab scenarios."""
     return [span for span in spans if span.fault_scenario is None]
+
+
+def provider_traffic(spans: Iterable[LlmSpanRow]) -> list[LlmSpanRow]:
+    """Drop fault-injected spans and the gateway key limiter's own refusals.
+
+    A refusal (`rate_limit_kind == "gateway"`) never reached a provider and has no model, so it
+    says nothing about a model's error rate or a provider's limits.
+    """
+    return [span for span in without_faults(spans) if span.rate_limit_kind != GATEWAY_REFUSAL_KIND]
 
 
 def group_spans[K](

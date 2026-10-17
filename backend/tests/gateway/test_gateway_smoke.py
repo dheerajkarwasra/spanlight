@@ -71,10 +71,12 @@ async def test_a_chat_completion_passes_through_and_becomes_one_priced_span(
     assert (span["input_tokens"], span["output_tokens"], span["cached_tokens"]) == (19, 9, 8)
     assert span["cost_usd"] == CHAT_COST
     assert span["source_key_id"] == gateway_workspace.gateway_key_id
-    # The gateway started this trace, so it names it like its span: a trace list row reads
-    # "chat_completions gpt-4.1-mini-2025-04-14", not "Unnamed trace".
+    # The span is named by the model the provider answered with; the trace the gateway started
+    # by the model the client asked for, so a trace list row reads "chat_completions
+    # gpt-4.1-mini", not "Unnamed trace", and a `trace_name` budget on it matches.
+    assert span["name"] == "chat_completions gpt-4.1-mini-2025-04-14"
     [trace] = await read_gateway_traces(session_factory, gateway_workspace.project_id)
-    assert trace["name"] == span["name"] == "chat_completions gpt-4.1-mini-2025-04-14"
+    assert trace["name"] == "chat_completions gpt-4.1-mini"
 
 
 async def test_a_call_that_joins_a_trace_keeps_the_name_that_trace_already_has(

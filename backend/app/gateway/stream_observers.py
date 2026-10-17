@@ -19,7 +19,7 @@ from app.gateway.sse import (
     dict_at,
     json_object,
 )
-from app.gateway.usage import anthropic_usage, chat_usage, responses_usage
+from app.gateway.usage import anthropic_usage, chat_usage
 
 _NEW_SLOT_COST = 64  # charge for a new choice or tool call entry
 _USAGE_FIELDS = (
@@ -31,16 +31,23 @@ _USAGE_FIELDS = (
 # The cache-write split by TTL, nested under `usage.cache_creation`.
 _CACHE_CREATION = "cache_creation"
 _CACHE_CREATION_FIELDS = ("ephemeral_5m_input_tokens", "ephemeral_1h_input_tokens")
+# Server-side tool counts, nested under `usage.server_tool_use`; cumulative like the token counts.
+_SERVER_TOOL_USE = "server_tool_use"
+_SERVER_TOOL_FIELDS = ("web_search_requests",)
 _STREAMED_FIELDS = {"text_delta": "text", "thinking_delta": "thinking"}
-_RESPONSES_TERMINAL = frozenset({"response.completed", "response.incomplete", "response.failed"})
 
 
 class OpenAiChatObserver:
-    """Chat Completions chunks: deltas by choice index, usage from the final chunk."""
+    """Chat Completions chunks: deltas by choice index, usage from the final chunk.
+
+    Without a usage chunk (the client did not ask for one, or the stream was cut before it) the
+    usage is unknown: chat chunks carry no input count, so there is nothing to keep.
+    """
 
     def __init__(self) -> None:
         self._model: str | None = None
         self._response_id: str | None = None
+        self._service_tier: str | None = None
         self._usage: Usage | None = None
         self._budget = OutputBudget()
         self._content: dict[int, list[str]] = {}
@@ -54,7 +61,9 @@ class OpenAiChatObserver:
             return
         self._model = as_str(chunk.get("model")) or self._model
         self._response_id = as_str(chunk.get("id")) or self._response_id
-        self._usage = chat_usage(dict_at(chunk, "usage")) or self._usage
+        self._service_tier = as_str(chunk.get("service_tier")) or self._service_tier
+        usage = chat_usage(dict_at(chunk, "usage"), service_tier=self._service_tier)
+        self._usage = usage or self._usage
         choices = chunk.get("choices")
         for choice in choices if isinstance(choices, list) else []:
             if isinstance(choice, dict):
@@ -122,52 +131,25 @@ class OpenAiChatObserver:
             output=self._message(first) if first is not None else None,
             response_id=self._response_id,
             output_truncated=self._budget.truncated,
-        )
-
-
-class OpenAiResponsesObserver:
-    """Responses API events: the terminal event carries usage and the full output."""
-
-    def __init__(self) -> None:
-        self._model: str | None = None
-        self._response_id: str | None = None
-        self._usage: Usage | None = None
-        self._status: str | None = None
-        self._output: list[Any] | None = None
-
-    def on_frame(self, frame: SseFrame) -> None:
-        event = json_object(frame.data)
-        if event is None:
-            return
-        response = dict_at(event, "response")
-        self._model = as_str(response.get("model")) or self._model
-        self._response_id = as_str(response.get("id")) or self._response_id
-        if as_str(event.get("type")) not in _RESPONSES_TERMINAL:
-            return
-        self._status = as_str(response.get("status")) or self._status
-        output = response.get("output")
-        if isinstance(output, list):
-            self._output = output  # one frame, already bounded by the frame size limit
-        self._usage = responses_usage(dict_at(response, "usage")) or self._usage
-
-    def summary(self) -> StreamSummary:
-        return StreamSummary(
-            usage=self._usage,
-            model=self._model,
-            finish_reason=self._status,
-            output={"output": self._output} if self._output is not None else None,
-            response_id=self._response_id,
+            usage_complete=self._usage is not None and self._usage.output_tokens is not None,
+            saw_output=first is not None,
         )
 
 
 class AnthropicMessagesObserver:
-    """Messages events: input usage from ``message_start``, the rest from ``message_delta``."""
+    """Messages events: input usage from ``message_start``, the rest from ``message_delta``.
+
+    ``message_start`` reports ``output_tokens: 1`` before any token is generated; the answer's
+    count only comes with a ``message_delta`` whose usage carries ``output_tokens``. Until one is
+    seen the output count is unknown, so a cut stream keeps its input split and nothing else.
+    """
 
     def __init__(self) -> None:
         self._model: str | None = None
         self._response_id: str | None = None
         self._stop_reason: str | None = None
         self._usage: dict[str, Any] = {}  # the Messages usage shape, merged across events
+        self._final_usage_seen = False
         self._budget = OutputBudget()
         self._blocks: dict[int, dict[str, Any]] = {}
         self._parts: dict[tuple[int, str], list[str]] = {}
@@ -186,7 +168,10 @@ class AnthropicMessagesObserver:
         elif kind == "message_delta":
             delta = dict_at(event, "delta")
             self._stop_reason = as_str(delta.get("stop_reason")) or self._stop_reason
-            self._merge_usage(dict_at(event, "usage"))
+            usage = dict_at(event, "usage")
+            self._merge_usage(usage)
+            if as_int(usage.get("output_tokens")) is not None:
+                self._final_usage_seen = True
         elif kind == "content_block_start":
             block = dict_at(event, "content_block")
             if block and self._budget.spend(len(frame.data) + 1):  # the block is stored whole
@@ -205,11 +190,18 @@ class AnthropicMessagesObserver:
             value = as_int(usage.get(name))
             if value is not None:
                 self._usage[name] = value
-        split = dict_at(usage, _CACHE_CREATION)
-        for name in _CACHE_CREATION_FIELDS:
-            value = as_int(split.get(name))
-            if value is not None:
-                self._usage.setdefault(_CACHE_CREATION, {})[name] = value
+        for group, names in (
+            (_CACHE_CREATION, _CACHE_CREATION_FIELDS),
+            (_SERVER_TOOL_USE, _SERVER_TOOL_FIELDS),
+        ):
+            nested = dict_at(usage, group)
+            for name in names:
+                value = as_int(nested.get(name))
+                if value is not None:
+                    self._usage.setdefault(group, {})[name] = value
+        tier = as_str(usage.get("service_tier"))
+        if tier is not None:
+            self._usage["service_tier"] = tier
 
     def _on_delta(self, index: int, delta: dict[str, Any]) -> None:
         block = self._blocks.get(index)
@@ -247,11 +239,17 @@ class AnthropicMessagesObserver:
     def summary(self) -> StreamSummary:
         blocks = [self._build_block(i) for i in sorted(self._blocks)]
         output = {"role": "assistant", "content": blocks} if blocks else None
+        raw_usage = dict(self._usage)
+        if not self._final_usage_seen:
+            raw_usage.pop("output_tokens", None)  # the `message_start` placeholder, not a count
+        usage = anthropic_usage(raw_usage)
         return StreamSummary(
-            usage=anthropic_usage(self._usage),
+            usage=usage,
             model=self._model,
             finish_reason=self._stop_reason,
             output=output,
             response_id=self._response_id,
             output_truncated=self._budget.truncated,
+            usage_complete=self._final_usage_seen and usage is not None,
+            saw_output=bool(self._blocks),
         )

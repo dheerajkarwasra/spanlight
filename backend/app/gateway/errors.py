@@ -13,7 +13,8 @@ from typing import Any, Literal
 
 Surface = Literal["chat_completions", "responses", "messages", "models"]
 Envelope = Literal["openai", "anthropic"]
-RateLimitKind = Literal["rpm", "tpm", "org"]
+KeyLimitKind = Literal["rpm", "tpm", "org"]
+"""Which gateway key limit refused a call (not `app.ingest.rate_limit_kind.RateLimitKind`)."""
 
 
 def surface_for_path(path: str) -> Surface:
@@ -39,7 +40,12 @@ def envelope_for(surface: Surface, headers: Mapping[str, str]) -> Envelope:
 
 @dataclass(frozen=True)
 class ErrorKind:
-    """How one envelope names an error. ``code`` is OpenAI only; ``message`` overrides."""
+    """How one envelope names an error; ``message`` overrides the error's own.
+
+    ``code`` is rendered in the OpenAI envelope only. A passed-through provider error is never
+    rendered, so its kinds carry the provider's own code (OpenAI's ``error.code`` or Anthropic's
+    ``error.details.error_code``) for the span in both envelopes.
+    """
 
     type: str
     code: str | None = None
@@ -134,7 +140,7 @@ def invalid_key(conflicting: bool = False) -> GatewayError:
 
 
 def rate_limited(
-    kind: RateLimitKind, limit: int, retry_after: float, key_prefix: str | None = None
+    kind: KeyLimitKind, limit: int, retry_after: float, key_prefix: str | None = None
 ) -> GatewayError:
     who = f"gateway key {key_prefix}" if key_prefix else "this gateway key"
     messages = {

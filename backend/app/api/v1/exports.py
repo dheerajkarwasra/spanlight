@@ -1,4 +1,5 @@
-"""Trace exports: request a file of filtered traces, list requests, and get a download link.
+"""Exports: request a file of filtered traces or of the attribution table, list requests, and
+get a download link.
 
 The file is written by the `create_export` job to object storage; these routes only record the
 request and report its progress. A personal access token or session may use them, an API key
@@ -39,7 +40,7 @@ ExportCreator = Annotated[Access, Depends(idempotent(require(Permission.EXPORT_C
     "/exports",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=ExportOut,
-    summary="Request a trace export",
+    summary="Request an export",
 )
 async def create_trace_export(
     project_id: uuid.UUID,
@@ -48,14 +49,18 @@ async def create_trace_export(
     db: DbSession,
     settings: SettingsDep,
 ) -> ExportOut:
-    """Queue an export of the traces matching `filters`; `from` and `to` are required.
+    """Queue an export of the traces matching `filters` (`kind: traces`, the default) or of the
+    attribution table of a window (`kind: attribution`, CSV only); `from` and `to` are required.
+
+    An attribution export over more than 24 hours reads the daily rollups, so a metadata key must
+    be promoted in the project settings (`422 KEY_NOT_PROMOTED` otherwise).
 
     Answers `409 NOT_CONFIGURED` when object storage is not set up. Poll `GET .../exports/{id}`
     until `status` is `done`, then download from `download_url`.
     """
     project = access.require_project()
     store = require_object_store(settings)
-    export = await create_export(db, project_id=project.id, user_id=access.user_id, body=body)
+    export = await create_export(db, project=project, user_id=access.user_id, body=body)
     await db.commit()
     return export_out(export, store)
 

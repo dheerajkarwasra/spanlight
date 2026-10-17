@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.db.models import Span, Trace
+from app.explorer.metadata_filters import metadata_conditions
 from app.exports.schemas import ExportFilters, SpanExportRow, TraceExportRow
 
 
@@ -37,6 +38,7 @@ def trace_conditions(project_id: uuid.UUID, filters: ExportFilters) -> list[Colu
         conditions.append(Trace.session_id == filters.session_id)
     if filters.tag is not None:
         conditions.append(Trace.tags.contains([filters.tag]))
+    conditions += metadata_conditions(filters.metadata_key, filters.metadata_value)
     if filters.status == "error":
         conditions.append(Trace.error_count > 0)
     elif filters.status == "ok":
@@ -190,6 +192,7 @@ def _trace_row(trace: Trace, spans: list[SpanExportRow]) -> TraceExportRow:
         cost_usd=trace.cost_usd,
         has_unpriced=trace.has_unpriced,
         tags=list(trace.tags),
+        metadata=dict(trace.metadata_),
         spans=spans,
     )
 
@@ -219,4 +222,5 @@ def _span_row(span: Span) -> SpanExportRow:
         output=span.output,
         attributes=span.attributes,
         truncated=span.truncated,
+        usage_rollup=span.usage_rollup,
     )

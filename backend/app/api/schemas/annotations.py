@@ -7,7 +7,9 @@ import from one place.
 
 import uuid
 from datetime import datetime
+from typing import Any
 
+from app.annotations.queries import QueueProgress
 from app.annotations.schemas import CompletedScore, Completion, ItemsIn, QueueSpec
 from app.api.schemas.common import ApiModel
 from app.db.models import AnnotationQueue, AnnotationQueueItem
@@ -21,13 +23,23 @@ __all__ = [
     "QueueOut",
     "QueueProgressOut",
     "QueueSpec",
+    "ReasonProgressOut",
 ]
 
 
-class QueueProgressOut(ApiModel):
+class ReasonProgressOut(ApiModel):
     pending: int
     done: int
     skipped: int
+
+
+class QueueProgressOut(ApiModel):
+    """Counts over the whole queue, then per reason; every reason is present, zeros included."""
+
+    pending: int
+    done: int
+    skipped: int
+    by_reason: dict[str, ReasonProgressOut]
 
 
 class QueueOut(ApiModel):
@@ -39,14 +51,20 @@ class QueueOut(ApiModel):
     created_at: datetime
 
     @classmethod
-    def of(cls, queue: AnnotationQueue, progress: dict[str, int]) -> "QueueOut":
+    def of(cls, queue: AnnotationQueue, progress: QueueProgress) -> "QueueOut":
         return cls(
             id=queue.id,
             name=queue.name,
             instructions=queue.instructions,
             score_config_ids=queue.score_config_ids,
             progress=QueueProgressOut(
-                pending=progress["pending"], done=progress["done"], skipped=progress["skipped"]
+                pending=progress.total["pending"],
+                done=progress.total["done"],
+                skipped=progress.total["skipped"],
+                by_reason={
+                    reason: ReasonProgressOut(**counts)
+                    for reason, counts in progress.by_reason.items()
+                },
             ),
             created_at=queue.created_at,
         )
@@ -57,6 +75,8 @@ class QueueItemOut(ApiModel):
     trace_id: str
     span_id: str | None
     status: str
+    reason: str
+    reason_detail: dict[str, Any] | None
     assigned_to: uuid.UUID | None
     assigned_at: datetime | None
     completed_by: uuid.UUID | None

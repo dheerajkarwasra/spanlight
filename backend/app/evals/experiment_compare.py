@@ -12,6 +12,7 @@ from app.db.models import ExperimentItem, ExperimentRunStatus
 from app.evals import experiment_queries as queries
 from app.evals.compare import Comparison, ItemRow, compare_runs
 from app.evals.experiment_errors import ExperimentNotFoundError, RunNotFinishedError
+from app.scores.queries import boolean_score_names
 
 _ENDED = (ExperimentRunStatus.DONE.value, ExperimentRunStatus.FAILED.value)
 
@@ -54,4 +55,8 @@ async def compare_experiment_runs(
         if second.id == first.id
         else await queries.list_run_items(db, second.id, limit=limit)
     )
-    return compare_runs([_row(i) for i in items_a], [_row(i) for i in items_b])
+    return compare_runs(
+        [_row(i) for i in items_a],
+        [_row(i) for i in items_b],
+        boolean_scores=await boolean_score_names(db, project_id),
+    )

@@ -8,6 +8,12 @@ at least 2 projects or at least 50 errors in one. The finding is emitted into th
 project only when that project had at least one 5xx from the provider itself. Warning;
 critical at a share of 50 % or more. Key: `{provider}`. Evidence trace ids are the current
 project's own non-fault `provider_5xx` llm spans of the provider in the window.
+
+The finding cites the newest of `ctx.provider_incidents` for the provider that overlaps the
+window (`started_at < end` and `(resolved_at or now) + DETECTOR_GRACE > start`) in
+four `incident_*` metrics (all `None` without one) and an `incident_note` param. The citation
+only explains: thresholds, severity and the key ignore it, so a misleading status page can
+neither open nor silence a finding.
 """
 
 from collections import defaultdict
@@ -18,7 +24,8 @@ from decimal import Decimal
 from app.insights import format as fmt
 from app.insights.context import DetectorContext, LlmSpanRow, OrgProviderRow
 from app.insights.detectors._evidence import by_key, span_trace_ids
-from app.insights.schemas import Evidence, Finding, Severity
+from app.insights.schemas import Evidence, Finding, MetricValue, Severity
+from app.provider_status.types import DETECTOR_GRACE, ProviderIncidentRow
 
 KIND = "provider_incident"
 WINDOW = timedelta(minutes=30)
@@ -28,6 +35,7 @@ MIN_PROJECTS_AFFECTED = 2
 SOLO_PROJECT_MIN_ERRORS = 50
 CRITICAL_SHARE = Decimal("0.50")
 PROVIDER_5XX = "provider_5xx"
+NO_INCIDENT_NOTE = "No matching incident on the provider's status page."
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,10 +86,47 @@ def _own_failure_trace_ids(ctx: DetectorContext, provider: str) -> list[str]:
     return span_trace_ids(failed)
 
 
+def _overlaps(ctx: DetectorContext, incident: ProviderIncidentRow) -> bool:
+    end = ctx.now if incident.resolved_at is None else incident.resolved_at
+    return incident.started_at < ctx.window.end and end + DETECTOR_GRACE > ctx.window.start
+
+
+def _cited_incident(ctx: DetectorContext, provider: str) -> ProviderIncidentRow | None:
+    """The provider's newest incident overlapping the window, by `(started_at, id)`. Providers
+    match case-insensitively (a span's `OpenAI` is the feed's `openai`); `api_affected` is
+    already filtered by the loader, as the row does not carry it."""
+    overlapping = [
+        incident
+        for incident in ctx.provider_incidents
+        if incident.provider.lower() == provider.lower() and _overlaps(ctx, incident)
+    ]
+    return max(overlapping, key=lambda incident: (incident.started_at, incident.id), default=None)
+
+
+def _incident_metrics(incident: ProviderIncidentRow | None) -> dict[str, MetricValue]:
+    if incident is None:
+        return dict.fromkeys(
+            ("incident_id", "incident_title", "incident_url", "incident_impact"), None
+        )
+    return {
+        "incident_id": str(incident.id),
+        "incident_title": incident.title,
+        "incident_url": incident.url,
+        "incident_impact": incident.impact,
+    }
+
+
+def _incident_note(incident: ProviderIncidentRow | None) -> str:
+    if incident is None:
+        return NO_INCIDENT_NOTE
+    return f"Matches the provider's status page incident “{incident.title}” ({incident.impact})."
+
+
 def _finding(
     ctx: DetectorContext, provider: str, totals: _ProviderTotals, share: Decimal
 ) -> Finding:
     severity = Severity.CRITICAL if share >= CRITICAL_SHARE else Severity.WARNING
+    incident = _cited_incident(ctx, provider)
     return Finding(
         kind=KIND,
         severity=severity,
@@ -92,6 +137,7 @@ def _finding(
                 "org_errors": totals.org_errors,
                 "org_share": fmt.round_share(share),
                 "projects_affected": totals.projects_affected,
+                **_incident_metrics(incident),
             },
             window=ctx.window,
         ),
@@ -100,6 +146,7 @@ def _finding(
             "org_errors": fmt.count(totals.org_errors),
             "org_share": fmt.rate(share),
             "projects_affected": fmt.count_noun(totals.projects_affected, "project"),
+            "incident_note": _incident_note(incident),
         },
     )
 

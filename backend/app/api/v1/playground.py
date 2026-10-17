@@ -10,17 +10,23 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 
-from app.api.deps import Access, ClockDep, DbSession, require
-from app.api.schemas.playground import PlaygroundResultOut, PlaygroundRunIn, PlaygroundRunOut
+from app.api.deps import Access, ClockDep, DbSession, SettingsDep, require
+from app.api.schemas.playground import (
+    PlaygroundResultOut,
+    PlaygroundRunIn,
+    PlaygroundRunOut,
+    ReplayBudgetOut,
+)
 from app.core.idempotency import idempotent
 from app.core.permissions import Permission
 from app.core.ratelimit import enforce_rate_limit
 from app.gateway.context import GatewayServices
-from app.playground import service
+from app.playground import replay_budget, service
 
 router = APIRouter(prefix="/projects/{project_id}/playground", tags=["playground"])
 
 PlaygroundRunner = Annotated[Access, Depends(idempotent(require(Permission.EXPERIMENTS_RUN)))]
+PlaygroundReader = Annotated[Access, Depends(require(Permission.PROJECT_READ))]
 
 
 @router.post("/runs", response_model=PlaygroundRunOut, summary="Run prompts in the playground")
@@ -57,3 +63,22 @@ async def run_playground(
         clock=clock,
     )
     return PlaygroundRunOut(results=[PlaygroundResultOut.of(result) for result in results])
+
+
+@router.get("/replays/budget", response_model=ReplayBudgetOut, summary="Read the replay budget")
+async def read_replay_budget(
+    project_id: uuid.UUID,
+    access: PlaygroundReader,
+    db: DbSession,
+    settings: SettingsDep,
+    clock: ClockDep,
+) -> ReplayBudgetOut:
+    """The project's replay budget for the current UTC month: `REPLAY_MONTHLY_BUDGET_USD`, what
+    settled replays cost, what running ones hold, and what is left."""
+    budget = await replay_budget.read_budget(
+        db,
+        access.require_project().id,
+        budget=settings.replay_monthly_budget_usd,
+        now=clock(),
+    )
+    return ReplayBudgetOut.of(budget)

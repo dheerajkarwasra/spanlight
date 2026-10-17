@@ -15,23 +15,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.alerts.types import AlertRuleKind, Comparator, Metric
 from app.budgets.schemas import BudgetSpec
+from app.budgets.scope_parse import parse_metadata_scope
 from app.budgets.types import BudgetScope
 from app.db.models import AlertRule
 
-# The filter key each scope sets on the rule (`app.alerts.rules.metric_filters` reads them).
+# The filter key each one-value scope sets on the rule (`app.alerts.rules.metric_filters` reads
+# them). A `metadata` scope sets `metadata_key` and `metadata_value` instead, split from its
+# `scope_id` once here so the evaluation never parses it again.
 _SCOPE_FILTER = {
     BudgetScope.GATEWAY_KEY: "source_key_id",
     BudgetScope.USER: "external_user_id",
     BudgetScope.MODEL: "model",
+    BudgetScope.TRACE_NAME: "trace_name",
 }
 
 
 def scope_filters(scope: BudgetScope, scope_id: str | None) -> dict[str, str]:
     """The rule's `filters` for a budget scope: none for the whole project."""
-    key = _SCOPE_FILTER.get(scope)
-    if key is None or scope_id is None:
+    if scope_id is None:
         return {}
-    return {key: scope_id}
+    if scope is BudgetScope.METADATA:
+        key, value = parse_metadata_scope(scope_id)
+        return {"metadata_key": key, "metadata_value": value}
+    name = _SCOPE_FILTER.get(scope)
+    if name is None:
+        return {}
+    return {name: scope_id}
 
 
 def budget_rule_values(spec: BudgetSpec) -> dict[str, Any]:

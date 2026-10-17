@@ -1,4 +1,5 @@
-"""The `create_export` job: stream a project's matching traces to a file in object storage.
+"""The `create_export` job: stream a project's matching traces, or its attribution table, to a
+file in object storage (the attribution writer is `app.exports.attribution_job`).
 
 The job reads under the project's row-level security, never with the bypass flag: the project id
 in the payload is bound to every transaction it opens, so even a wrong filter cannot reach
@@ -26,14 +27,21 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
-from sqlalchemy import select, text, update
+from sqlalchemy import select, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.models import Export, ExportFormat, ExportStatus
-from app.db.rls import bind_project
+from app.db.models import Export, ExportFormat, ExportKind, ExportStatus
+from app.exports.attribution_job import attribution_batches
+from app.exports.job_support import (
+    STATEMENT_TIMEOUT_MS,
+    ExportFailedError,
+    Tally,
+    TooLargeError,
+    bound,
+)
 from app.exports.queries import count_traces_up_to, fetch_span_chunk, fetch_trace_batch
-from app.exports.schemas import ExportFilters, TraceExportRow
+from app.exports.schemas import AttributionExportIn, ExportFilters, TraceExportRow
 from app.exports.service import (
     CONTENT_TYPES,
     EXPORT_RETENTION,
@@ -60,31 +68,13 @@ BATCH_SIZES: dict[ExportFormat, int] = {ExportFormat.CSV: 1000, ExportFormat.JSO
 # Spans carry prompts and completions (up to 32 KB each side), so a batch is sized by spans.
 MAX_SPANS_PER_BATCH = 2000
 SPAN_CHUNK_SIZE = 500
-# Longest a single read may run. The lease is kept alive meanwhile, so this only ends a query
-# that has plainly run away.
-STATEMENT_TIMEOUT_MS = 120_000
 # A third of the 60 s lease: two missed beats still leave time before another worker may take over.
 HEARTBEAT_INTERVAL_SECONDS = 20.0
 _QUERY_CANCELED = "57014"
 
-ERROR_TOO_LARGE = "EXPORT_TOO_LARGE"
 ERROR_NOT_CONFIGURED = "NOT_CONFIGURED"
 ERROR_TIMEOUT = "EXPORT_TIMEOUT"
 ERROR_FAILED = "EXPORT_FAILED"
-
-
-class _TooLargeError(Exception):
-    """More traces than `MAX_EXPORT_TRACES` turned up while streaming (new ones arrived)."""
-
-
-@dataclass
-class _Tally:
-    """What the stream wrote, filled in by the generator the upload consumes."""
-
-    rows: int = 0
-    size_bytes: int = 0
-    # Set the moment the row was updated to point at the object; from then on the object is live.
-    recorded: bool = False
 
 
 @dataclass
@@ -96,8 +86,10 @@ class _Lease:
 
 @dataclass(frozen=True)
 class _Request:
+    """What the export row asked for: the trace filters, or the attribution request."""
+
     format: ExportFormat
-    filters: ExportFilters
+    body: ExportFilters | AttributionExportIn
 
 
 async def run_create_export(context: TaskContext, payload: dict[str, Any]) -> JobOutcome | None:
@@ -126,9 +118,9 @@ async def run_create_export(context: TaskContext, payload: dict[str, Any]) -> Jo
         )
     except LeaseLostError:
         raise
-    except _TooLargeError:
-        await _fail(factory, project_id, export_id, ERROR_TOO_LARGE)
-        log.info("export_failed", error_code=ERROR_TOO_LARGE)
+    except ExportFailedError as failed:
+        await _fail(factory, project_id, export_id, failed.code)
+        log.info("export_failed", error_code=failed.code)
     except OperationalError as error:
         if getattr(error.orig, "sqlstate", None) != _QUERY_CANCELED:
             await _fail_if_last_attempt(context, project_id, export_id, lease)
@@ -196,21 +188,22 @@ async def _count_then_write(
     request: _Request,
 ) -> None:
     factory = context.session_factory
-    async with _bound(factory, project_id, statement_timeout_ms=STATEMENT_TIMEOUT_MS) as db:
-        count = await count_traces_up_to(db, project_id, request.filters, MAX_EXPORT_TRACES)
-    if count > MAX_EXPORT_TRACES:
-        raise _TooLargeError
+    tally = Tally()
+    if isinstance(request.body, AttributionExportIn):
+        # The attribution table has no cheap count: the writer stops at the row cap instead.
+        body = attribution_batches(factory, project_id, request.body, tally)
+    else:
+        async with bound(factory, project_id, statement_timeout_ms=STATEMENT_TIMEOUT_MS) as db:
+            count = await count_traces_up_to(db, project_id, request.body, MAX_EXPORT_TRACES)
+        if count > MAX_EXPORT_TRACES:
+            raise TooLargeError
+        body = _encoded_batches(factory, project_id, request.body, request.format, tally)
 
     # Every attempt writes its own key (see `storage_key`), so this attempt may always delete what
     # it wrote without asking whether another attempt owns the file.
     key = storage_key(project_id, export_id, request.format, context.job.fence)
-    tally = _Tally()
     try:
-        await store.put(
-            key,
-            _encoded_batches(factory, project_id, request, tally),
-            CONTENT_TYPES[request.format],
-        )
+        await store.put(key, body, CONTENT_TYPES[request.format])
         if not await _finish_uninterrupted(factory, project_id, export_id, key, tally):
             # The row is gone (its project was deleted) or was no longer running (failed by the
             # reaper, or finished by another attempt): nothing points at this object.
@@ -236,23 +229,24 @@ async def _count_then_write(
 async def _encoded_batches(
     factory: async_sessionmaker[AsyncSession],
     project_id: uuid.UUID,
-    request: _Request,
-    tally: _Tally,
+    filters: ExportFilters,
+    export_format: ExportFormat,
+    tally: Tally,
 ) -> AsyncIterator[bytes]:
     """The file's bytes, one chunk per trace, tallying rows and size as it goes."""
-    csv = request.format is ExportFormat.CSV
-    size = BATCH_SIZES[request.format]
+    csv = export_format is ExportFormat.CSV
+    size = BATCH_SIZES[export_format]
     if csv:
         header = csv_header()
         tally.size_bytes += len(header)
         yield header
     after: tuple[datetime, str] | None = None
     while True:
-        async with _bound(factory, project_id, statement_timeout_ms=STATEMENT_TIMEOUT_MS) as db:
+        async with bound(factory, project_id, statement_timeout_ms=STATEMENT_TIMEOUT_MS) as db:
             rows = await fetch_trace_batch(
                 db,
                 project_id,
-                request.filters,
+                filters,
                 after=after,
                 size=size,
                 max_spans=None if csv else MAX_SPANS_PER_BATCH,
@@ -262,7 +256,7 @@ async def _encoded_batches(
         for row in rows:
             tally.rows += 1
             if tally.rows > MAX_EXPORT_TRACES:
-                raise _TooLargeError
+                raise TooLargeError
             if csv:
                 chunk = trace_csv_line(row)
                 tally.size_bytes += len(chunk)
@@ -289,7 +283,7 @@ async def _oversized_trace_lines(
     first = True
     after: tuple[datetime, str] | None = None
     while True:
-        async with _bound(factory, project_id, statement_timeout_ms=STATEMENT_TIMEOUT_MS) as db:
+        async with bound(factory, project_id, statement_timeout_ms=STATEMENT_TIMEOUT_MS) as db:
             spans = await fetch_span_chunk(
                 db, project_id, row.trace_id, after=after, size=SPAN_CHUNK_SIZE
             )
@@ -302,27 +296,6 @@ async def _oversized_trace_lines(
     yield JSONL_TAIL
 
 
-@contextlib.asynccontextmanager
-async def _bound(
-    factory: async_sessionmaker[AsyncSession],
-    project_id: uuid.UUID,
-    *,
-    statement_timeout_ms: int | None = None,
-) -> AsyncIterator[AsyncSession]:
-    """A session whose transaction sees only `project_id`'s rows. Callers commit what they write.
-
-    With `statement_timeout_ms`, a statement of this transaction that runs longer is cancelled.
-    """
-    async with factory() as db:
-        await bind_project(db, project_id)
-        if statement_timeout_ms is not None:
-            await db.execute(
-                text("SELECT set_config('statement_timeout', :ms, true)"),
-                {"ms": str(statement_timeout_ms)},
-            )
-        yield db
-
-
 async def _start(
     factory: async_sessionmaker[AsyncSession], project_id: uuid.UUID, export_id: uuid.UUID
 ) -> _Request | None:
@@ -331,14 +304,20 @@ async def _start(
     None covers an export that is gone (its project was deleted) and one that already finished,
     which a redelivered job must not redo.
     """
-    async with _bound(factory, project_id) as db:
+    async with bound(factory, project_id) as db:
         export = await db.get(Export, export_id, with_for_update=True)
         if export is None or export.project_id != project_id:
             return None
         if export.status not in (ExportStatus.QUEUED, ExportStatus.RUNNING):
             return None
         export.status = ExportStatus.RUNNING
-        request = _Request(export.format, ExportFilters.model_validate(export.filters))
+        body: ExportFilters | AttributionExportIn
+        if export.kind is ExportKind.ATTRIBUTION:
+            stored = {"kind": export.kind, "format": export.format, **export.filters}
+            body = AttributionExportIn.model_validate(stored)
+        else:
+            body = ExportFilters.model_validate(export.filters)
+        request = _Request(export.format, body)
         await db.commit()
     return request
 
@@ -348,14 +327,14 @@ async def _finish(
     project_id: uuid.UUID,
     export_id: uuid.UUID,
     key: str,
-    tally: _Tally,
+    tally: Tally,
 ) -> bool:
     """Record the finished export; False if its row is gone or no longer running (reaped).
 
     Sets `tally.recorded` right after the commit, before anything else can interrupt.
     """
     now = datetime.now(UTC)
-    async with _bound(factory, project_id) as db:
+    async with bound(factory, project_id) as db:
         result = await db.execute(
             update(Export)
             .where(
@@ -384,7 +363,7 @@ async def _finish_uninterrupted(
     project_id: uuid.UUID,
     export_id: uuid.UUID,
     key: str,
-    tally: _Tally,
+    tally: Tally,
 ) -> bool:
     """`_finish`, but a cancellation cannot interrupt it half-way.
 
@@ -413,7 +392,7 @@ async def _is_unreferenced(
     the expiry job or the project purge deletes a leaked one later.
     """
     try:
-        async with _bound(factory, project_id) as db:
+        async with bound(factory, project_id) as db:
             row = (
                 await db.execute(
                     select(Export.id, Export.storage_key).where(
@@ -433,7 +412,7 @@ async def _fail(
     export_id: uuid.UUID,
     error_code: str,
 ) -> None:
-    async with _bound(factory, project_id) as db:
+    async with bound(factory, project_id) as db:
         await db.execute(
             update(Export)
             .where(

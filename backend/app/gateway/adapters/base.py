@@ -13,8 +13,8 @@ Header rules, both ways, are allowlists:
   `x-api-key`, `cookie`, `x-spanlight-*`, `host`, `content-length` and everything else stay
   behind (and the upstream client keeps no cookie jar, so it adds no `cookie` of its own).
 - Back to the client, only `content-type`, `retry-after`, `retry-after-ms`, `x-ratelimit-*`,
-  `anthropic-ratelimit-*` and `openai-processing-ms` are kept, and the provider's
-  `request-id` or `x-request-id` becomes `x-upstream-request-id`.
+  `anthropic-ratelimit-*`, `anthropic-priority-*` and `openai-processing-ms` are kept, and the
+  provider's `request-id` or `x-request-id` becomes `x-upstream-request-id`.
 """
 
 import json
@@ -30,7 +30,7 @@ from app.gateway.errors import Surface
 _RESPONSE_HEADERS = frozenset(
     {"content-type", "retry-after", "retry-after-ms", "openai-processing-ms"}
 )
-_RESPONSE_HEADER_PREFIXES = ("x-ratelimit-", "anthropic-ratelimit-")
+_RESPONSE_HEADER_PREFIXES = ("x-ratelimit-", "anthropic-ratelimit-", "anthropic-priority-")
 _REQUEST_ID_HEADERS = frozenset({"request-id", "x-request-id"})
 UPSTREAM_REQUEST_ID_HEADER = "x-upstream-request-id"
 

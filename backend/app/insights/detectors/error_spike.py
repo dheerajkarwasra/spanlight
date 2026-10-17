@@ -1,6 +1,7 @@
 """error_spike: the error rate of one (environment, model) jumped well past its 7-day baseline.
 
-Reads: llm spans of the last 15 minutes, after dropping fault-injected spans, and the baseline
+Reads: llm spans of the last 15 minutes, after dropping fault-injected spans and the gateway
+key limiter's own refusals (`provider_traffic`: no model failed), and the baseline
 `error_rate` for the group's environment and model (any provider).
 Rule: per (environment, model) with at least 50 calls, `error_rate >= max(3 x baseline,
 baseline + 0.05)`, which also means `error_rate >= 0.05`. Warning; critical at `error_rate >= 0.25`.
@@ -18,7 +19,7 @@ from app.insights.detectors._evidence import by_key, key_part, span_trace_ids
 from app.insights.detectors.baselines import (
     exceeds,
     group_spans,
-    without_faults,
+    provider_traffic,
 )
 from app.insights.schemas import Evidence, Finding, Severity
 
@@ -37,7 +38,7 @@ class ErrorSpikeDetector:
     min_samples = MIN_CALLS
 
     def run(self, ctx: DetectorContext) -> list[Finding]:
-        spans = without_faults(ctx.llm_spans)
+        spans = provider_traffic(ctx.llm_spans)
         groups = group_spans(spans, lambda s: (s.environment, s.model))
         findings: list[Finding] = []
         for (environment, model), calls in groups.items():

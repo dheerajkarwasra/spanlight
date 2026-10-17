@@ -9,6 +9,7 @@ from types import MappingProxyType
 from uuid import UUID
 
 from app.insights.schemas import Window
+from app.provider_status.types import ProviderIncidentRow
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +51,8 @@ class LlmSpanRow:
     finish_reason: str | None
     status_message: str | None
     gateway: GatewayAttrs | None = None
+    # `gateway` when Spanlight's own key limiter refused the call: no provider was asked.
+    rate_limit_kind: str | None = None
 
     @property
     def fault_scenario(self) -> str | None:
@@ -137,12 +140,16 @@ class DetectorContext:
     baselines: Baselines
     org_provider_errors: Sequence[OrgProviderRow]
     truncated: bool = False
+    # The status-page incidents of the providers in `org_provider_errors` that overlap their
+    # 30-minute window (with `DETECTOR_GRACE`). They only explain a finding, never open one.
+    provider_incidents: Sequence[ProviderIncidentRow] = ()
 
     def __post_init__(self) -> None:
         # Tuples, so a detector cannot mutate lists shared by the other detectors.
         object.__setattr__(self, "llm_spans", tuple(self.llm_spans))
         object.__setattr__(self, "tool_spans", tuple(self.tool_spans))
         object.__setattr__(self, "org_provider_errors", tuple(self.org_provider_errors))
+        object.__setattr__(self, "provider_incidents", tuple(self.provider_incidents))
 
     def sliced(self, window: Window) -> "DetectorContext":
         """The same context with both span lists cut to `window` (`start <= started_at < end`)."""

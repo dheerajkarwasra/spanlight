@@ -33,13 +33,10 @@ from app.gateway.context import GatewayContext, GatewayRequest, GatewayResult
 from app.gateway.errors import Surface
 from app.gateway.fault_apply import StreamCutByFault
 from app.gateway.recorder import credentials_used, record_soon
+from app.gateway.responses_observer import OpenAiResponsesObserver
 from app.gateway.span_losses import span_not_built
 from app.gateway.sse import StreamObserver
-from app.gateway.stream_observers import (
-    AnthropicMessagesObserver,
-    OpenAiChatObserver,
-    OpenAiResponsesObserver,
-)
+from app.gateway.stream_observers import AnthropicMessagesObserver, OpenAiChatObserver
 from app.gateway.streaming import observe_stream
 from app.gateway.tracing import build_span
 from app.gateway.upstream_io import STREAM_IDLE_TIMEOUT_S, close_quietly
@@ -102,6 +99,8 @@ class GatewayStream:
         result = self._result
         result.client_disconnected = True
         result.disconnected_after_ms = (self._context.monotonic() - self._started) * 1000
+        if result.model is not None:  # the provider answered; its usage was never read
+            result.usage_unreported_reason = _unreported_reason(result)
         _record(self._request, self._context, result, self._started_at)
         await close_quietly(self._response)
 
@@ -149,12 +148,30 @@ async def _forward(
 
 
 def _take_summary(result: GatewayResult, observer: StreamObserver) -> None:
-    """What the observer read: the model, usage, finish reason and reassembled output."""
+    """What the observer read: the model, usage, finish reason and reassembled output.
+
+    A stream that ended before the provider's final usage keeps what it had (the input count
+    from `message_start`, say) and says why the rest is unknown, so the span has no cost
+    rather than a cheap one.
+    """
     summary = observer.summary()
     result.model = summary.model or result.model
     result.usage = summary.usage
     result.finish_reason = summary.finish_reason
     result.output = summary.output
+    if result.model is not None and (summary.usage is None or not summary.usage_complete):
+        result.usage_unreported_reason = _unreported_reason(result)
+
+
+def _unreported_reason(result: GatewayResult) -> str:
+    """`usage.unreported_reason` for a stream without its final usage, by the first cause."""
+    if result.client_disconnected:
+        return "client_disconnected"
+    if result.stream_error is not None:
+        return "stream_error"
+    if result.cut_by_fault:
+        return "stream_cut_by_fault"
+    return "no_final_usage"
 
 
 def _record(
@@ -165,7 +182,7 @@ def _record(
         span = build_span(request, result, context, started_at, context.clock())
         record_soon(context, span, credentials_used(result))
     except Exception as failure:  # noqa: BLE001 - counted and logged, the client has the stream
-        span_not_built(request.request_id, failure)
+        span_not_built(request.request_id, context.project_id, failure)
 
 
 def _ignore() -> None:

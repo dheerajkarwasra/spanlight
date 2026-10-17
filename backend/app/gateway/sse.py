@@ -41,19 +41,34 @@ class Usage:
 
     Cache reads (``cached_tokens``) and cache writes (``cache_write_tokens``, of which
     ``cache_write_1h_tokens`` were written with the 1-hour TTL) are parts of ``input_tokens``.
-    A part is ``None`` when the provider did not report it, never 0.
+    A part is ``None`` when the provider did not report it, never 0. ``output_tokens`` is
+    ``None`` when the provider never sent its final count (a stream cut before its last usage
+    event): the call's cost is then unknown, and Anthropic's ``output_tokens: 1`` placeholder
+    from ``message_start`` is never taken for it.
+
+    ``service_tier`` is one of the four stored values (``normalize_tier``) or ``None``; a
+    spelling that did not normalize is kept in ``service_tier_raw`` for the span's attributes.
+    ``web_search_requests`` is the provider's count of billed server-side web searches.
     """
 
     input_tokens: int
-    output_tokens: int
+    output_tokens: int | None
     cached_tokens: int | None  # None when the provider sent no cache detail
     cache_write_tokens: int | None = None
     cache_write_1h_tokens: int | None = None
+    service_tier: str | None = None
+    web_search_requests: int | None = None
+    service_tier_raw: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class StreamSummary:
-    """What an observer learned from a stream; ``None`` means the stream did not say."""
+    """What an observer learned from a stream; ``None`` means the stream did not say.
+
+    ``usage_complete`` is True only when the provider's final usage was seen, so a stream cut
+    short is told from one that never reports usage. ``saw_output`` says whether any part of
+    an answer arrived, which is what makes a missing final usage a cut rather than an empty call.
+    """
 
     usage: Usage | None = None
     model: str | None = None
@@ -61,6 +76,8 @@ class StreamSummary:
     output: dict[str, Any] | None = None
     response_id: str | None = None
     output_truncated: bool = False  # output stopped growing at the observer's memory cap
+    usage_complete: bool = False
+    saw_output: bool = False
 
 
 class StreamObserver(Protocol):

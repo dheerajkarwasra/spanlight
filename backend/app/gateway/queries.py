@@ -7,11 +7,12 @@ module writes.
 
 import uuid
 from collections.abc import Sequence
+from typing import cast
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import GatewayRoute, Project, ProviderCredential, User
+from app.db.models import BillingSource, GatewayRoute, Project, ProviderCredential, User
 from app.db.rls import bind_project
 
 
@@ -139,34 +140,48 @@ async def share_lock_credentials(
     return set(found.all())
 
 
-async def credentials_not_sealed_under(
-    db: AsyncSession, active_key_id: str, *, exclude: Sequence[uuid.UUID], limit: int
-) -> Sequence[ProviderCredential]:
-    """Up to `limit` credentials, across every organization, sealed under another key.
+# The tables whose rows hold a `Sealed` value under a key of CREDENTIALS_KEYS.
+SealedTable = type[ProviderCredential] | type[BillingSource]
+
+
+async def rows_not_sealed_under(
+    db: AsyncSession,
+    table: SealedTable,
+    active_key_id: str,
+    *,
+    exclude: Sequence[uuid.UUID],
+    limit: int,
+) -> Sequence[ProviderCredential | BillingSource]:
+    """Up to `limit` sealed rows of `table`, across every organization, under another key.
 
     For the reseal command, which runs as an operator and is the one caller allowed to read
-    across organizations. The rows are locked, and a row another transaction holds (a rotation,
-    another reseal) is waited for rather than skipped: a skipped row would keep needing the old
-    key while the command reported success.
+    across organizations. A row without a seal (a CSV billing source) is not listed. The rows
+    are locked, and a row another transaction holds (a rotation, another reseal) is waited for
+    rather than skipped: a skipped row would keep needing the old key while the command
+    reported success.
     """
     statement = (
-        select(ProviderCredential)
-        .where(ProviderCredential.key_id != active_key_id)
-        .order_by(ProviderCredential.id)
+        select(table)
+        .where(table.key_id.is_not(None), table.key_id != active_key_id)
+        .order_by(table.id)
         .limit(limit)
         .with_for_update()
         .execution_options(populate_existing=True)
     )
     if exclude:
-        statement = statement.where(ProviderCredential.id.not_in(exclude))
-    return (await db.scalars(statement)).all()
+        statement = statement.where(table.id.not_in(exclude))
+    # `select` over a union of mapped classes types its rows as `Base`; they are `table`'s.
+    return cast(Sequence[ProviderCredential | BillingSource], (await db.scalars(statement)).all())
 
 
-async def count_credentials_not_sealed_under(db: AsyncSession, active_key_id: str) -> int:
-    """How many credentials, across every organization, need a key other than the active one."""
+async def count_rows_not_sealed_under(
+    db: AsyncSession, table: SealedTable, active_key_id: str
+) -> int:
+    """How many rows of `table`, across every organization, need a key other than the active
+    one."""
     count = await db.scalar(
         select(func.count())
-        .select_from(ProviderCredential)
-        .where(ProviderCredential.key_id != active_key_id)
+        .select_from(table)
+        .where(table.key_id.is_not(None), table.key_id != active_key_id)
     )
     return int(count or 0)

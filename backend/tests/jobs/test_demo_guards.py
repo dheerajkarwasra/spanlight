@@ -59,6 +59,30 @@ async def test_demo_traffic_skips_at_a_firing_project_block_budget(
     assert [span.name for span in spans if span.kind is SpanKind.CHAIN] == ["support-bot"]
 
 
+async def test_demo_job_skip_message_is_otherwise_unchanged(
+    session_factory: SessionFactory,
+    settings: Settings,
+    demo_provider: FakeProvider,
+    app_clock: ManualClock,
+) -> None:
+    # The blocked demo call's status line is the gateway's 402 sentence: the budget's words as
+    # before, plus the soft-limit suffix `blocked_reason` adds once for every caller.
+    configured = keyed(settings)
+    await fire_demo_block_budget(session_factory, configured, app_clock)
+
+    await demo_traffic.run_demo_traffic(
+        await run_context(session_factory, configured, app_clock), {}
+    )
+
+    (blocked,) = [
+        span for span in await _spans(session_factory) if span.name.startswith("messages ")
+    ]
+    assert blocked.status_message == (
+        '402 BUDGET_EXCEEDED: Blocked by a Spanlight budget: Budget "Monthly cap" is exhausted: '
+        "$0.0020 of $0.0010 spent this month (soft limit, measured every 60 s)."
+    )
+
+
 async def test_demo_traffic_unwritten_span_is_spend_it_cannot_account_for(
     session_factory: SessionFactory,
     settings: Settings,

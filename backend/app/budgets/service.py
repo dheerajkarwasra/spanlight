@@ -33,8 +33,10 @@ from app.budgets.errors import (
 )
 from app.budgets.rule_sync import create_budget_rule, sync_budget_rule
 from app.budgets.schemas import BudgetPatch, BudgetSpec
+from app.budgets.scope_parse import parse_metadata_scope, parse_trace_name_scope
 from app.budgets.types import BudgetScope
 from app.config import Settings
+from app.core.redact import redact_text
 from app.db.errors import violated_constraint
 from app.db.models import AlertRule, AuditAction, Budget
 from app.services.audit import record_audit
@@ -208,11 +210,28 @@ async def _check_channels(db: AsyncSession, org_id: uuid.UUID, spec: BudgetSpec)
 
 
 async def _checked_scope(db: AsyncSession, project_id: uuid.UUID, spec: BudgetSpec) -> BudgetSpec:
-    """The spec with a `gateway_key` scope checked against the project and its id normalised."""
+    """The spec with its `scope_id` checked for the scope and normalised: a `gateway_key` id is
+    a key of the project, a `metadata` scope parses as `key=value` with a value ingest stores as
+    sent, a `trace_name` is trimmed. Raises `UnknownScopeError` otherwise."""
+    scope_id = spec.scope_id or ""
+    if spec.scope is BudgetScope.METADATA:
+        try:
+            _, value = parse_metadata_scope(scope_id)
+        except ValueError:
+            raise UnknownScopeError(UnknownScopeError.METADATA) from None
+        if redact_text(value) != value:
+            raise UnknownScopeError(UnknownScopeError.REDACTED)
+        return spec
+    if spec.scope is BudgetScope.TRACE_NAME:
+        try:
+            name = parse_trace_name_scope(scope_id)
+        except ValueError:
+            raise UnknownScopeError(UnknownScopeError.TRACE_NAME) from None
+        return spec.model_copy(update={"scope_id": name})
     if spec.scope is not BudgetScope.GATEWAY_KEY:
         return spec
     try:
-        key_id = uuid.UUID(spec.scope_id or "")
+        key_id = uuid.UUID(scope_id)
     except ValueError:
         raise UnknownScopeError from None
     if not await queries.is_gateway_key_of(db, project_id, key_id):

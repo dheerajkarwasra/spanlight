@@ -1,8 +1,9 @@
 """rate_limit_pressure: a large share of calls to one provider get rate limited.
 
 Reads: llm spans of the last 15 minutes. Fault-injected spans (`gateway.fault_scenario` set)
-are dropped before counting, `min_samples` included, because a simulated 429 says nothing
-about the real provider limit.
+and the gateway key limiter's own refusals (`rate_limit_kind == "gateway"`) are dropped before
+counting, `min_samples` included: a simulated 429 says nothing about the real provider limit,
+and a call Spanlight's limiter refused never reached the provider.
 
 Rule: per (environment, provider), the share of spans with error class `rate_limit` among all
 calls. At or above `WARNING_SHARE` the finding is a warning, at or above `CRITICAL_SHARE`
@@ -17,6 +18,7 @@ from decimal import Decimal
 from app.insights import format as fmt
 from app.insights.context import DetectorContext, LlmSpanRow
 from app.insights.detectors._evidence import by_key, key_part, span_trace_ids
+from app.insights.detectors.baselines import provider_traffic
 from app.insights.schemas import Evidence, Finding, Severity
 
 KIND = "rate_limit_pressure"
@@ -67,9 +69,8 @@ class RateLimitPressureDetector:
 
     def run(self, ctx: DetectorContext) -> list[Finding]:
         groups: dict[tuple[str | None, str | None], list[LlmSpanRow]] = defaultdict(list)
-        for span in ctx.llm_spans:
-            if span.fault_scenario is None:
-                groups[(span.environment, span.provider)].append(span)
+        for span in provider_traffic(ctx.llm_spans):
+            groups[(span.environment, span.provider)].append(span)
 
         findings: list[Finding] = []
         for (environment, provider), spans in groups.items():

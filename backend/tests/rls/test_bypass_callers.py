@@ -28,14 +28,19 @@ ALLOWED = {
     "app.alerts.cli_support",  # the dry-run CLI clears the flag at the start of each session
     "app.alerts.digest_queries",
     "app.alerts.job_queries",
+    "app.attribution.job_queries",  # the refresh job's list of projects
     "app.end_users.job_queries",
     "app.evals.jobs",
     "app.exports.expiry",
     "app.gateway.jobs",
     "app.insights.context_queries",  # the detectors' context, built by the run_detectors job
     "app.insights.job_queries",
+    "app.insights.precision_cli_queries",  # `spanlight doctor precision`, across projects
+    "app.jobs.tasks.cleanup",  # prunes SDK exporter counters across projects
     "app.jobs.tasks.retention",
+    "app.reconciliation.job_queries",
     "app.rollups.jobs",
+    "app.rollups.usage_rollup_backfill",  # `spanlight recompute-usage-rollups`, across projects
     "app.scores.repair",
 }
 

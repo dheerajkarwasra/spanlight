@@ -9,7 +9,9 @@ answers in the provider envelope of the path (`app.api.gw_errors`):
    time (an unknown prefix still runs a comparison), then its project, route and credentials
    loaded (`UNAUTHORIZED`);
 2. the organization ceiling, the key's requests per minute, then its tokens per minute
-   (`RATE_LIMITED`); the request's transaction ends here, before any upstream call;
+   (`RATE_LIMITED`); the request's transaction ends here, before any upstream call. A refused
+   model call is recorded as a span of the key's project (`app.gateway.refusal_span`, queued,
+   no database round trip); a refused `/models` call records nothing, like an admitted one;
 3. the body: at most 10 MB (`PAYLOAD_TOO_LARGE`), a JSON object with a string `model`
    (`INVALID_REQUEST`);
 4. `execute`, which applies the route (model allowlist, budget, cache, faults, retries and
@@ -51,17 +53,20 @@ from app.core.text import clean_text
 from app.db.timeouts import limit_statement_time
 from app.gateway.context import ByteStream, GatewayRequest, Received, context_for_key
 from app.gateway.errors import (
+    GatewayError,
     Surface,
     envelope_for,
     internal,
     invalid_key,
     invalid_request,
     request_too_large,
+    surface_for_path,
 )
 from app.gateway.execute import execute
 from app.gateway.key_context import KeyContext, find_key, load_key_context
 from app.gateway.key_limits import check_limits
 from app.gateway.models_endpoint import answer_models
+from app.gateway.refusal_span import record_refusal
 from app.gateway.runtime import GatewayRuntime
 from app.gateway.trace_headers import TraceHeaders
 
@@ -119,7 +124,9 @@ def presented_key(headers: Headers) -> str:
     return values[0]
 
 
-async def _authenticate(request: Request, *, check_tokens: bool) -> KeyContext:
+async def _authenticate(request: Request, *, model_call: bool) -> KeyContext:
+    """The key, after every limit passed. A model call checks the tokens window too, and its
+    refusal leaves a span."""
     # The call's clocks start here, so its overhead includes authentication, limits and the body.
     request.state.gateway_received = Received.now(request.app.state.clock)
     runtime = get_runtime(request)
@@ -145,22 +152,40 @@ async def _authenticate(request: Request, *, check_tokens: bool) -> KeyContext:
                 org_id=key_context.org_id,
                 settings=settings,
                 now=request.app.state.clock(),
-                check_tokens=check_tokens,
+                check_tokens=model_call,
             )
     # The transaction is over: nothing is held while the provider answers.
     if refusal is not None:
+        if model_call:
+            _record_refusal(request, runtime, key_context, refusal)
         raise refusal
     return key_context
 
 
+def _record_refusal(
+    request: Request, runtime: GatewayRuntime, key: KeyContext, refusal: GatewayError
+) -> None:
+    """Queue the refused call's span; the client's answer is the error handler's, unchanged."""
+    call = GatewayRequest(
+        surface=surface_for_path(request.url.path),
+        body={},  # never read: the limits are checked before the body
+        stream=False,
+        trace=TraceHeaders.from_headers(request.headers),
+        request_id=request_id_of(request),
+        received=getattr(request.state, "gateway_received", None),
+    )
+    context = context_for_key(key, runtime, clock=request.app.state.clock)
+    record_refusal(call, context, refusal)
+
+
 async def authenticate_gateway_key(request: Request) -> KeyContext:
     """The key of a model call, after every limit passed."""
-    return await _authenticate(request, check_tokens=True)
+    return await _authenticate(request, model_call=True)
 
 
 async def authenticate_models_key(request: Request) -> KeyContext:
     """The key of a `/models` call: the tokens window is not checked, nothing is consumed."""
-    return await _authenticate(request, check_tokens=False)
+    return await _authenticate(request, model_call=False)
 
 
 GatewayKey = Annotated[KeyContext, Depends(authenticate_gateway_key)]

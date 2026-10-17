@@ -1,11 +1,13 @@
 """Load what the detectors of one project run read: `load_context`.
 
-Four reads, each bounded: the project's llm spans and tool spans of the last 24 hours (newest
-first, at most `SPAN_CAP` each), one grouped read of the hourly rollups for the baselines, and
-the organization's provider errors of the last 30 minutes. The first three run in a transaction
-bound to the project (row-level security applies; the `project_id` filters are a second guard).
-The organization read spans projects, so it runs with row-level security bypassed in a
-transaction of its own, and the project binding is restored afterwards.
+Five reads, each bounded: the project's llm spans and tool spans of the last 24 hours (newest
+first, at most `SPAN_CAP` each), one grouped read of the hourly rollups for the baselines, the
+organization's provider errors of the last 30 minutes, and the status-page incidents of those
+providers. The first three run in a transaction bound to the project (row-level security
+applies; the `project_id` filters are a second guard). The organization read spans projects, so
+it runs with row-level security bypassed in a transaction of its own, and the project binding is
+restored afterwards. The incidents (a global table, no row-level security) are read in that
+restored project-bound transaction, never with the bypass.
 
 The baseline period is the 7 hour-aligned days that end where the 24-hour detection window
 starts, `[floor_hour(now - 24 h) - 7 d, floor_hour(now - 24 h))`, not the 7 days up to now: the
@@ -33,6 +35,8 @@ from app.insights.context_build import (
     gateway_attrs,
 )
 from app.insights.schemas import Window
+from app.provider_status import service as provider_status
+from app.provider_status.types import DETECTOR_GRACE, ProviderIncidentRow
 from app.rollups.compute import floor_hour
 from app.rollups.queries import summed_histogram
 
@@ -48,12 +52,14 @@ _GATEWAY_COLUMNS = ",\n".join(
 )
 
 # One row more than the cap, so a full page tells "exactly the cap" from "more than the cap".
+# Key-limit refusals (kind `gateway`) are left out before the cap: no detector judges Spanlight's
+# own limiter, and a refusal flood must not push real calls out of the read.
 _LLM_SPANS = text(
     f"""
     SELECT s.trace_id, s.span_id, t.session_id, t.external_user_id, t.environment, t.release,
            s.started_at, s.duration_ms, s.status, s.error_class, s.provider, s.model,
            s.input_tokens, s.output_tokens, s.cached_tokens, s.cost_usd, s.request_hash,
-           s.finish_reason, s.status_message,
+           s.finish_reason, s.status_message, s.rate_limit_kind,
            {_GATEWAY_COLUMNS},
            EXISTS (
                SELECT 1 FROM jsonb_object_keys(s.attributes) AS attribute_key
@@ -63,6 +69,8 @@ _LLM_SPANS = text(
     JOIN traces AS t ON t.project_id = s.project_id AND t.trace_id = s.trace_id
     WHERE s.project_id = :project_id
       AND s.kind = 'llm'
+      AND NOT s.usage_rollup
+      AND s.rate_limit_kind IS DISTINCT FROM 'gateway'
       AND s.started_at >= :start
       AND s.started_at < :end
     ORDER BY s.started_at DESC, s.span_id DESC
@@ -149,6 +157,7 @@ async def load_context(
     await db.commit()
     org_rows = await _org_provider_errors(db, org_id, now)
     await bind_project(db, project_id)
+    incidents = await _provider_incidents(db, org_rows, now)
     return DetectorContext(
         project_id=project_id,
         org_id=org_id,
@@ -159,6 +168,7 @@ async def load_context(
         baselines=baselines,
         org_provider_errors=org_rows,
         truncated=llm_truncated or tool_truncated,
+        provider_incidents=incidents,
     )
 
 
@@ -199,6 +209,7 @@ def _llm_row(values: RowMapping) -> LlmSpanRow:
         finish_reason=values["finish_reason"],
         status_message=values["status_message"],
         gateway=gateway_attrs(gateway_values, is_gateway=bool(values["is_gateway"])),
+        rate_limit_kind=values["rate_limit_kind"],
     )
 
 
@@ -271,3 +282,19 @@ async def _org_provider_errors(
         )
         for row in rows
     ]
+
+
+async def _provider_incidents(
+    db: AsyncSession, org_rows: Sequence[OrgProviderRow], now: datetime
+) -> list[ProviderIncidentRow]:
+    """The incidents overlapping the organization read's window, for each provider with a 5xx in
+    it (a provider without one cannot fire `provider_incident`), at most 20 per provider. Span
+    providers keep their sender's case and the feeds' are lowercase: matched lowercased."""
+    providers = sorted({row.provider.lower() for row in org_rows if row.provider_5xx >= 1})
+    incidents: list[ProviderIncidentRow] = []
+    for provider in providers:
+        start = now - ORG_PROVIDER_WINDOW
+        incidents += await provider_status.overlapping_api_incidents(
+            db, provider=provider, start=start, end=now, now=now, grace=DETECTOR_GRACE
+        )
+    return incidents
