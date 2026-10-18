@@ -212,7 +212,7 @@ def _payloads(span: SpanIn, capture_payloads: bool) -> tuple[Any, Any, bool]:
         return None, None, False
     stored_input, input_truncated = _prepare_payload(span.input)
     stored_output, output_truncated = _prepare_payload(span.output)
-    return stored_input, stored_output, input_truncated or output_truncated
+    return stored_input, stored_output, input_truncated or output_truncated or span.truncated
 
 
 def prepare_span_payloads(

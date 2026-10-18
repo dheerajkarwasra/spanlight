@@ -248,6 +248,8 @@ original design; everything else is a clarification.
   `pricing_version` and the trace's totals with it.
 - Payloads: secrets are redacted first, then `input`/`output` over 32 KB are replaced by a **string**
   holding the first 32 KB of their JSON text, with `truncated: true`.
+  A span may also send `truncated: true` itself (the Python SDK does when it cut a long string, a
+  long list or deep nesting before sending); the stored flag is set when either side cut.
 - The body may be `Content-Encoding: gzip` or `deflate`; the 5 MB limit applies after decompression.
   NaN/Infinity and NUL characters are rejected/stripped.
   JSON nested more than 64 levels deep, or holding a number of more than 4300 digits or one past

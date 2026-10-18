@@ -15,6 +15,7 @@ from pydantic import (
     BeforeValidator,
     ConfigDict,
     Field,
+    StrictBool,
     StrictFloat,
     StrictInt,
     StrictStr,
@@ -213,6 +214,8 @@ class SpanIn(BaseModel):
     # The prompt version the SDK fetched for this call. Not checked against the server's
     # versions: an id it has not seen (or one deleted since) is stored as sent.
     prompt_version_id: UUID | None = None
+    # Set by an SDK that cut the input or output to fit its own bounds before sending.
+    truncated: StrictBool = False
 
 
 # A cumulative SDK counter: what a Postgres bigint holds, never negative.
