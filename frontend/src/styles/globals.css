@@ -23,36 +23,40 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
+  /*
+   * Warm canvas, neutral greys: text, borders and subtle fills carry no violet hue. Violet is kept
+   * for meaning only (links, focus, chart series 1, the LLM span kind).
+   */
   /* Surfaces */
-  --canvas: #ecebe6;
-  --background: #fbfaf8;
+  --canvas: #efeeea;
+  --background: #fcfcfb;
   --surface: #ffffff;
-  --surface-muted: #f5f4f0;
-  --surface-hover: #efeee9;
-  --surface-selected: #f3efff;
-  --overlay: rgb(22 21 29 / 0.35);
+  --surface-muted: #f5f5f3;
+  --surface-hover: #efeeeb;
+  --surface-selected: #f2f1ee;
+  --overlay: rgb(23 23 23 / 0.35);
 
   /* Text */
-  --foreground: #16151d;
-  --muted-foreground: #5f5d6b;
-  --subtle-foreground: #6e6c7a;
+  --foreground: #171717;
+  --muted-foreground: #525252;
+  --subtle-foreground: #6b6b6b;
 
   /* Lines */
-  --border: #e8e6e1;
-  --border-strong: #868391;
+  --border: #e7e6e2;
+  --border-strong: #858585;
   /* The input outline is the border/strong token in Figma: keep the two in step. */
   --input: var(--border-strong);
 
   /* Brand: ink (primary actions), lime (highlight), violet (accent), fuchsia */
-  --ink: #16151d;
+  --ink: #171717;
   --ink-foreground: #ffffff;
   --lime: #d4ff3a;
-  --lime-foreground: #16151d;
+  --lime-foreground: #171717;
   --accent: #7c3aed;
   --accent-hover: #6d28d9;
   --accent-foreground: #ffffff;
-  --accent-subtle: #f1eaff;
-  --accent-subtle-foreground: #5b21b6;
+  --accent-subtle: #f2f1ee;
+  --accent-subtle-foreground: #404040;
   --fuchsia: #d946ef;
 
   /* Accent card gradient (Tokens card, success card). White text ≥ 4.5:1 on both stops. */
@@ -61,14 +65,14 @@
   --accent-card-foreground: #ffffff;
 
   /* Dark rail and dark "hero" cards. The rail-* text tokens work on both. */
-  --rail: #16151d;
+  --rail: #171717;
   --rail-foreground: #ffffff;
   --rail-muted-foreground: rgb(255 255 255 / 0.62);
   --rail-subtle-foreground: rgb(255 255 255 / 0.5);
   --rail-tile: rgb(255 255 255 / 0.07);
   --rail-tile-hover: rgb(255 255 255 / 0.1);
   --rail-danger: #fda4af;
-  --hero-card: #16151d;
+  --hero-card: #171717;
   --hero-card-foreground: #ffffff;
 
   /* Default avatar gradient (rail user tile) */
@@ -99,7 +103,7 @@
   --chart-2: #f43f5e;
   --chart-3: #0d9488;
   --chart-4: #f59e0b;
-  --chart-grid: #eeece7;
+  --chart-grid: #efeeeb;
   /* The non-peak bars on an ink card (Figma chart/bar-muted-on-ink): white at 11%. */
   --chart-bar-muted-on-ink: rgb(255 255 255 / 0.11);
   /* Provider incident bands behind a chart: a 12% fill under a 45° hatch (Figma chart/band-*). */
@@ -133,9 +137,9 @@
   --ring: #7c3aed;
 
   /* Elevation */
-  --elevation-xs: 0 1px 2px rgb(17 17 26 / 0.04);
-  --elevation-card: 0 1px 2px rgb(17 17 26 / 0.04), 0 4px 12px -6px rgb(17 17 26 / 0.06);
-  --elevation-lg: 0 2px 6px rgb(17 17 26 / 0.05), 0 24px 48px -16px rgb(17 17 26 / 0.22);
+  --elevation-xs: 0 1px 2px rgb(0 0 0 / 0.04);
+  --elevation-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 12px -6px rgb(0 0 0 / 0.06);
+  --elevation-lg: 0 2px 6px rgb(0 0 0 / 0.05), 0 24px 48px -16px rgb(0 0 0 / 0.22);
 }
 
 .dark {

@@ -36,30 +36,30 @@
 }
 
 :root[data-theme='light'] {
-  --sl-color-white: #16151d;
-  --sl-color-gray-1: #2a2933;
-  --sl-color-gray-2: #3a3846;
-  --sl-color-gray-3: #5f5d6b;
-  --sl-color-gray-4: #6e6c7a;
-  --sl-color-gray-5: #e8e6e1;
-  --sl-color-gray-6: #f5f4f0;
-  --sl-color-gray-7: #fbfaf8;
-  --sl-color-black: #fbfaf8;
+  --sl-color-white: #171717;
+  --sl-color-gray-1: #262626;
+  --sl-color-gray-2: #404040;
+  --sl-color-gray-3: #525252;
+  --sl-color-gray-4: #6b6b6b;
+  --sl-color-gray-5: #e7e6e2;
+  --sl-color-gray-6: #f5f5f3;
+  --sl-color-gray-7: #fcfcfb;
+  --sl-color-black: #fcfcfb;
 
-  --sl-color-accent-low: #f1eaff;
+  --sl-color-accent-low: #f2f1ee;
   --sl-color-accent: #7c3aed;
   --sl-color-accent-high: #5b21b6;
   --sl-color-text-accent: #7c3aed;
 
-  --sl-color-text: #16151d;
+  --sl-color-text: #171717;
   --spl-surface: #ffffff;
   --spl-success: #047857;
   --sl-color-bg-nav: var(--sl-color-black);
   --sl-color-bg-sidebar: var(--sl-color-black);
-  --sl-color-bg-inline-code: #f5f4f0;
-  --sl-color-hairline: #e8e6e1;
-  --sl-color-hairline-light: #e8e6e1;
-  --sl-color-hairline-shade: #e8e6e1;
+  --sl-color-bg-inline-code: #f5f5f3;
+  --sl-color-hairline: #e7e6e2;
+  --sl-color-hairline-light: #e7e6e2;
+  --sl-color-hairline-shade: #e7e6e2;
 }
 
 /* Focus is always visible, in the link colour. */
