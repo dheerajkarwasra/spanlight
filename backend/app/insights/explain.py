@@ -33,7 +33,6 @@ SYSTEM_PROMPT = (
 
 EXPLAIN_TAG = "doctor-explain"
 MAX_OUTPUT_TOKENS = 600
-TEMPERATURE = 0
 MAX_EXCERPTS = 5
 MAX_EXCERPT_CHARS = 2048
 MAX_PAYLOAD_CHARS = 1024
@@ -77,7 +76,6 @@ def build_explain_request(
         body={
             "model": model,
             "max_tokens": MAX_OUTPUT_TOKENS,
-            "temperature": TEMPERATURE,
             "system": SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": user_message(insight, info, excerpts)}],
         },
