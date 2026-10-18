@@ -194,6 +194,8 @@ These settings are off by default and, because `preserve()` makes an apply stop 
 
 `METRICS_TOKEN` guards `/metrics` on the api. Caddy doesn't proxy that path, so only something on the private network can scrape it, and without a token it answers 404. Set the token even if nothing scrapes yet: every `preserve()` variable has to exist before you apply `railway.ts` again.
 
+The worker's job metrics (billing-source fetches, provider status polls, attribution refreshes, retention and the other scheduled jobs) are served only on the worker's own `/metrics`, not the api's. Until the worker metrics block is enabled and a scraper runs in the project, none of them is collected, so a failing job shows only in the worker's logs and in Sentry.
+
 `CREDENTIALS_KEYS` holds the master key that encrypts secrets the app must read back, such as two-factor seeds, before they reach the database. Its format is `<key id>:<base64 of 32 bytes>`, and the first entry encrypts new data. Three things to know:
 
 - **Set the same value on the api and the worker.** The step 3 command does this in one loop. If the two differ, one service can't open what the other sealed.
