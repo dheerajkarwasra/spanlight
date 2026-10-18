@@ -22,7 +22,10 @@ export interface MetricSpec {
   key: MetricKey;
   label: string;
   kind: MetricKind;
-  /** Errors, latency and cost going up are bad; volume (traces, calls, tokens) has no tone. */
+  /**
+   * Errors and latency going up are bad. Volume (traces, calls, tokens) and total cost have no
+   * tone: a total moves with traffic, so less traffic would read as a cost improvement.
+   */
   increaseIsGood: boolean | null;
 }
 
@@ -32,7 +35,7 @@ export const METRICS: readonly MetricSpec[] = [
   { key: "error_rate", label: "Error rate", kind: "rate", increaseIsGood: false },
   { key: "p50_ms", label: "p50 latency", kind: "duration", increaseIsGood: false },
   { key: "p95_ms", label: "p95 latency", kind: "duration", increaseIsGood: false },
-  { key: "cost_usd", label: "Cost", kind: "cost", increaseIsGood: false },
+  { key: "cost_usd", label: "Cost", kind: "cost", increaseIsGood: null },
   { key: "input_tokens", label: "Input tokens", kind: "tokens", increaseIsGood: null },
   { key: "output_tokens", label: "Output tokens", kind: "tokens", increaseIsGood: null },
 ];

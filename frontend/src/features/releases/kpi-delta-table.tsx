@@ -17,8 +17,7 @@ import { cn } from "@/lib/utils";
 
 import { buildKpiRows, NO_COST_REASON, type KpiRow } from "./release-deltas";
 
-const DESCRIPTION =
-  "Candidate (B) against baseline (A). For errors, latency and cost, up is worse.";
+const DESCRIPTION = "Candidate (B) against baseline (A). For errors and latency, up is worse.";
 
 type Side = "a" | "b" | "change";
 
