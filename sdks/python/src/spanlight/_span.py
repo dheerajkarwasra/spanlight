@@ -18,7 +18,7 @@ from collections.abc import Callable, Mapping
 from typing import Any, Literal, get_args
 
 from ._ids import new_span_id
-from ._serialize import JsonValue, to_jsonable
+from ._serialize import JsonValue, to_jsonable, to_jsonable_cut
 from ._trace_state import TraceState
 from ._usage import SpanUsage
 
@@ -91,6 +91,9 @@ class Span(SpanUsage):
         self.prompt_version_id: str | None = None
         self.input: JsonValue = None
         self.output: JsonValue = None
+        # Whether the SDK cut the input or output to fit its bounds; sent as `truncated`.
+        self._input_cut = False
+        self._output_cut = False
         self.attributes: dict[str, JsonValue] = {}
 
         self._on_end = on_end
@@ -116,12 +119,12 @@ class Span(SpanUsage):
     def set_input(self, value: Any) -> None:
         """Record the operation's input (any JSON-serializable-ish value)."""
         if self._mutable:
-            self.input = to_jsonable(value)
+            self.input, self._input_cut = to_jsonable_cut(value)
 
     def set_output(self, value: Any) -> None:
         """Record the operation's output (any JSON-serializable-ish value)."""
         if self._mutable:
-            self.output = to_jsonable(value)
+            self.output, self._output_cut = to_jsonable_cut(value)
 
     def set_attribute(self, key: str, value: Any) -> None:
         """Attach a single custom attribute."""
@@ -241,6 +244,8 @@ class Span(SpanUsage):
         # Sent only when set, so payloads for servers that predate prompts stay unchanged.
         if self.prompt_version_id is not None:
             payload["prompt_version_id"] = self.prompt_version_id
+        if self._input_cut or self._output_cut:
+            payload["truncated"] = True
         return payload
 
     def __repr__(self) -> str:

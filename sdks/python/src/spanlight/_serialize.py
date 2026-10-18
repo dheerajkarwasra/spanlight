@@ -38,61 +38,70 @@ def to_jsonable(value: Any) -> JsonValue:
         ``float``, ``bool`` and ``None``. Unknown objects are rendered with
         ``repr``. Oversized strings and collections are truncated.
     """
+    return to_jsonable_cut(value)[0]
+
+
+def to_jsonable_cut(value: Any) -> tuple[JsonValue, bool]:
+    """Like :func:`to_jsonable`, plus whether anything was cut to fit the bounds."""
+    cut: list[bool] = []
     try:
-        return _convert(value, depth=0)
+        return _convert(value, 0, cut), bool(cut)
     except Exception:
-        return _truncate_string(_safe_repr(value))
+        return _truncate_string(_safe_repr(value), cut), bool(cut)
 
 
-def _convert(value: Any, depth: int) -> JsonValue:
+def _convert(value: Any, depth: int, cut: list[bool]) -> JsonValue:
     if value is None or isinstance(value, bool | int):
         return value
     if isinstance(value, float):
         return value if math.isfinite(value) else str(value)
     if isinstance(value, str):
-        return _truncate_string(value)
+        return _truncate_string(value, cut)
     if depth >= MAX_DEPTH:
+        cut.append(True)
         return "[max depth reached]"
 
     if isinstance(value, Mapping):
-        return _convert_mapping(value, depth)
+        return _convert_mapping(value, depth, cut)
     if isinstance(value, list | tuple | set | frozenset):
-        return _convert_sequence(list(value), depth)
+        return _convert_sequence(list(value), depth, cut)
     if isinstance(value, bytes | bytearray | memoryview):
         return f"<{len(value)} bytes>"
     if isinstance(value, enum.Enum):
-        return _convert(value.value, depth + 1)
+        return _convert(value.value, depth + 1, cut)
     if isinstance(value, dt.datetime | dt.date | dt.time):
         return value.isoformat()
     if isinstance(value, uuid.UUID):
         return str(value)
     if isinstance(value, BaseException):
-        return {"type": type(value).__name__, "message": _truncate_string(str(value))}
+        return {"type": type(value).__name__, "message": _truncate_string(str(value), cut)}
 
     dumped = _dump_model(value)
     if dumped is not None:
-        return _convert(dumped, depth + 1)
+        return _convert(dumped, depth + 1, cut)
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         fields = {field.name: getattr(value, field.name) for field in dataclasses.fields(value)}
-        return _convert_mapping(fields, depth)
+        return _convert_mapping(fields, depth, cut)
 
-    return _truncate_string(_safe_repr(value))
+    return _truncate_string(_safe_repr(value), cut)
 
 
-def _convert_mapping(value: Mapping[Any, Any], depth: int) -> dict[str, JsonValue]:
+def _convert_mapping(value: Mapping[Any, Any], depth: int, cut: list[bool]) -> dict[str, JsonValue]:
     result: dict[str, JsonValue] = {}
     for index, (key, item) in enumerate(value.items()):
         if index >= MAX_ITEMS:
             result["..."] = f"{len(value) - MAX_ITEMS} more keys truncated"
+            cut.append(True)
             break
-        result[str(key)] = _convert(item, depth + 1)
+        result[str(key)] = _convert(item, depth + 1, cut)
     return result
 
 
-def _convert_sequence(items: list[Any], depth: int) -> list[JsonValue]:
-    converted = [_convert(item, depth + 1) for item in items[:MAX_ITEMS]]
+def _convert_sequence(items: list[Any], depth: int, cut: list[bool]) -> list[JsonValue]:
+    converted = [_convert(item, depth + 1, cut) for item in items[:MAX_ITEMS]]
     if len(items) > MAX_ITEMS:
         converted.append(f"... {len(items) - MAX_ITEMS} more items truncated")
+        cut.append(True)
     return converted
 
 
@@ -113,9 +122,10 @@ def _dump_model(value: Any) -> Any | None:
     return None
 
 
-def _truncate_string(value: str) -> str:
+def _truncate_string(value: str, cut: list[bool]) -> str:
     if len(value) <= MAX_STRING_LENGTH:
         return value
+    cut.append(True)
     return value[:MAX_STRING_LENGTH] + _TRUNCATION_MARKER
 
 

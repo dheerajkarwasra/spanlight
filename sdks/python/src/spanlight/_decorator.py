@@ -196,7 +196,10 @@ def _traced_generator(
             item = step()
         except StopIteration as stop:
             _finish(
-                span, output=collected.result(stop.value), capture_output=options.capture_output
+                span,
+                output=collected.result(stop.value),
+                capture_output=options.capture_output,
+                output_cut=collected.truncated,
             )
             return stop.value
         except BaseException as exc:
@@ -212,7 +215,12 @@ def _traced_generator(
             try:
                 generator.close()
             finally:
-                _finish(span, output=collected.result(None), capture_output=options.capture_output)
+                _finish(
+                    span,
+                    output=collected.result(None),
+                    capture_output=options.capture_output,
+                    output_cut=collected.truncated,
+                )
             raise
         except BaseException as exc:
             step = functools.partial(generator.throw, exc)
@@ -250,7 +258,12 @@ async def _traced_async_generator(
         try:
             item = await step()
         except StopAsyncIteration:
-            _finish(span, output=collected.result(None), capture_output=options.capture_output)
+            _finish(
+                span,
+                output=collected.result(None),
+                capture_output=options.capture_output,
+                output_cut=collected.truncated,
+            )
             return
         except BaseException as exc:
             _finish(span, error=exc)
@@ -265,7 +278,12 @@ async def _traced_async_generator(
             try:
                 await generator.aclose()
             finally:
-                _finish(span, output=collected.result(None), capture_output=options.capture_output)
+                _finish(
+                    span,
+                    output=collected.result(None),
+                    capture_output=options.capture_output,
+                    output_cut=collected.truncated,
+                )
             raise
         except BaseException as exc:
             step = functools.partial(generator.athrow, exc)
@@ -305,6 +323,7 @@ def _finish(
     *,
     output: Any = None,
     capture_output: bool = False,
+    output_cut: bool = False,
     error: BaseException | None = None,
 ) -> None:
     """End ``span`` recording either its output or the error. Never raises."""
@@ -314,6 +333,8 @@ def _finish(
                 span.record_error(error)
         elif capture_output:
             span.set_output(output)
+            # The collector kept only the first MAX_ITEMS yielded items.
+            span._output_cut = span._output_cut or output_cut
         span.end()
     except Exception:
         logger.debug("observe: failed to finish span", exc_info=True)
