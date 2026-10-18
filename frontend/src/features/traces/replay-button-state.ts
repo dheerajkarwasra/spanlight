@@ -32,6 +32,8 @@ const REFUSAL_FALLBACKS: Record<string, string> = {
     "This span was stored without its request: payload capture was off, or retention removed it.",
   REPLAY_UNSUPPORTED_INPUT:
     "This span's input is not a provider request, so there is nothing to send.",
+  REPLAY_UNPRICED_OPTION:
+    "The request uses a priority tier or a provider-run tool, which the replay budget cannot price.",
 };
 const UNSUPPORTED_FALLBACK = REFUSAL_FALLBACKS.REPLAY_UNSUPPORTED_INPUT ?? "";
 

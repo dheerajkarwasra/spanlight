@@ -2661,10 +2661,25 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
   `ttft_ms` is `null`); `n` above 1 becomes 1; every output cap present, `max_tokens`, `max_completion_tokens` and the
   Responses API's `max_output_tokens`, is clamped to `min(stored, max_tokens override, 4096)` (the design named only the
   first two; without the third a Responses body could bypass the cap); a `messages` body with no cap gets
-  `min(1024, override)`; `model` is replaced by an override only when it differs from the body's. Each change is
+  `min(1024, override)`, and a `chat_completions` or `responses` body with no cap gets `max_completion_tokens` or
+  `max_output_tokens` of `min(override, 4096)` (added 2026-10-18: without it the provider's own default, often far
+  above 4096, could bill past the reserved worst case); `model` is replaced by an override only when it differs from the body's. Each change is
   listed in `changed`, plus `body` when `edited_body` was sent. `fidelity` is `exact` only when the source was exact
   and `changed` holds nothing but `stream` and `stream_options`; otherwise `modified`, and a `messages_only` source
   stays `messages_only`. An output cap that is not an integer is `REPLAY_UNSUPPORTED_INPUT`.
+- **Options billed beyond tokens are refused (added 2026-10-18).** `service_tier: "auto"` may route to a priority
+  tier, so it is sent as the surface's standard tier (`standard_only` on `messages`, else `default`) and listed in
+  `changed`. Any other `service_tier` but absent, `default` or `standard_only` (priority, flex and scale bill at other
+  rates), a chat `web_search_options`, or a `tools` entry that is not billed by tokens alone is
+  `422 REPLAY_UNPRICED_OPTION`, naming the option. Tools are an allowlist: no `type`, `function`, `custom`, and the
+  tools the caller's own code runs (types starting `bash_`, `text_editor_`, `computer`, `memory_`, `browser_`,
+  `local_shell`, `apply_patch`, and OpenAI's `shell` only with `environment.type` `local`, since its hosted
+  container is billed); any other type, a provider-run server tool known or new, is refused, so a new paid tool cannot slip
+  past the budget. The replay estimate and its settled `cost_usd` price tokens at the standard rate only, so such a
+  call would spend past the budget and record the wrong cost. Pricing the tier was the alternative; it still left
+  server-tool fees with no worst case to reserve, so refusing is the smaller complete rule. The check runs on
+  `POST …/playground/replays` (and on an edited body), not in `replay-source` classification, so the button stays
+  enabled and the refusal arrives with the run.
 - **Edited bodies.** `edited_body` replaces the stored request as a whole: a JSON object of at most 256 KB
   (`REPLAY_BODY_TOO_LARGE`), no NUL characters, re-checked by rules 4, 5 and 7, so markers cannot be sent and the
   body stays a request. An edit keeps the stored span's surface.

@@ -2,9 +2,9 @@
 
 The body is the stored request (or the user's edit of it) with every key passed through
 untouched except the ones that would change the bill or the recording: `stream` and
-`stream_options` are removed, `n` is forced to 1, the output cap is clamped to
-`MAX_OUTPUT_TOKENS`, and `model` is replaced by an override of the same provider family. Every
-change is recorded in `changed`; a replay is `exact` only when nothing but the streaming flags
+`stream_options` are removed, `n` is forced to 1, the output cap is clamped to (or, when absent,
+set to) `MAX_OUTPUT_TOKENS`, and `model` is replaced by an override of the same provider family.
+Every change is recorded in `changed`; a replay is `exact` only when nothing but the streaming flags
 moved, since those never change what the model is asked (`IGNORED_INPUT_KEYS`).
 """
 
@@ -30,6 +30,26 @@ MAX_EDITED_BODY_BYTES = 256 * 1024
 
 # Every output cap a provider body may carry: chat completions (both spellings), Responses.
 _OUTPUT_CAP_KEYS = ("max_tokens", "max_completion_tokens", "max_output_tokens")
+# The cap injected when a body has none, so the budget's worst case is what the provider enforces.
+_DEFAULT_CAP_KEY: dict[str, str] = {
+    "messages": "max_tokens",
+    "chat_completions": "max_completion_tokens",
+    "responses": "max_output_tokens",
+}
+# Billed beyond tokens (a priority tier, per-call tool fees) and not in the replay estimate.
+_STANDARD_TIERS = (None, "default", "standard_only")
+# Tool types billed by tokens alone: functions, and tools the caller's own code executes. Any
+# other type (a provider-run server tool, known or new) is refused, so the list fails safe.
+_TOKEN_ONLY_TOOLS = ("function", "custom")
+_CLIENT_TOOL_PREFIXES = (
+    "bash_",
+    "text_editor_",
+    "computer",
+    "memory_",
+    "browser_",
+    "local_shell",
+    "apply_patch",
+)
 _STREAM_KEYS = ("stream", "stream_options")
 _EXACT_CHANGES = frozenset(_STREAM_KEYS)
 
@@ -62,18 +82,51 @@ def _edited(edited_body: Mapping[str, Any]) -> dict[str, Any]:
     return dict(edited_body)
 
 
+def _standard_tier(body: dict[str, Any], surface: Surface, changed: list[str]) -> None:
+    """`auto` may route to a priority tier; send the surface's standard tier instead."""
+    if body.get("service_tier") == "auto":
+        body["service_tier"] = "standard_only" if surface == "messages" else "default"
+        changed.append("service_tier")
+
+
+def _unpriced_option(body: Mapping[str, Any]) -> str | None:
+    """The first body option the replay budget cannot price: a non-standard `service_tier`, a
+    chat `web_search_options`, or a tool that is not billed by tokens alone."""
+    if body.get("service_tier") not in _STANDARD_TIERS:
+        return "service_tier"
+    if "web_search_options" in body:
+        return "web_search_options"
+    tools = body.get("tools")
+    for tool in tools if isinstance(tools, list) else ():
+        kind = tool.get("type") if isinstance(tool, dict) else None
+        if kind is None or kind in _TOKEN_ONLY_TOOLS:
+            continue
+        if kind == "shell":
+            # OpenAI's shell runs in a billed hosted container unless the caller runs it locally.
+            environment = tool.get("environment")
+            if isinstance(environment, dict) and environment.get("type") == "local":
+                continue
+            return "tools (shell)"
+        if not isinstance(kind, str) or not kind.startswith(_CLIENT_TOOL_PREFIXES):
+            return f"tools ({kind})"
+    return None
+
+
 def _clamp_caps(
     body: dict[str, Any], surface: Surface, override: int | None, changed: list[str]
 ) -> int:
     """Clamp every output cap in `body` to `min(stored, override, MAX_OUTPUT_TOKENS)`; give the
-    `messages` surface its default when it has none. Returns the worst case that remains."""
+    `messages` surface its default and the OpenAI surfaces the ceiling when they have none.
+    Returns the worst case that remains."""
     ceiling = min(override or MAX_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS)
     worst = ceiling
     present = [key for key in _OUTPUT_CAP_KEYS if key in body]
-    if not present and surface == "messages":
-        worst = min(DEFAULT_ANTHROPIC_MAX_TOKENS, ceiling)
-        body["max_tokens"] = worst
-        changed.append("max_tokens")
+    if not present and surface in _DEFAULT_CAP_KEY:
+        if surface == "messages":
+            worst = min(DEFAULT_ANTHROPIC_MAX_TOKENS, ceiling)
+        key = _DEFAULT_CAP_KEY[surface]
+        body[key] = worst
+        changed.append(key)
         return worst
     for key in present:
         stored = body[key]
@@ -95,7 +148,8 @@ def build_replay(
     edited_body: Mapping[str, Any] | None,
 ) -> ReplayPlan:
     """Raises `ReplayRefusedError` for a credential of another family, an edited body that holds
-    markers, is not a request body or is over 256 KB, and a source with no model to send."""
+    markers, is not a request body or is over 256 KB, a body with an option the budget cannot
+    price, and a source with no model to send."""
     if not accepts(source.family, credential_provider):
         raise _refuse("REPLAY_PROVIDER_MISMATCH", provider=source.family)
     changed: list[str] = []
@@ -111,6 +165,10 @@ def build_replay(
     if isinstance(body.get("n"), int) and body["n"] > 1:
         body["n"] = 1
         changed.append("n")
+    _standard_tier(body, source.surface, changed)
+    option = _unpriced_option(body)
+    if option is not None:
+        raise _refuse("REPLAY_UNPRICED_OPTION", option=option)
     max_tokens = _clamp_caps(body, source.surface, max_tokens_override, changed)
     if model_override is not None and model_override != body.get("model"):
         body["model"] = model_override

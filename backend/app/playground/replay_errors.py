@@ -25,9 +25,13 @@ REFUSALS: dict[str, str] = {
         "No price is known for this model, so the replay budget could not count it."
     ),
     "REPLAY_BODY_TOO_LARGE": "The edited request is larger than 256 KB.",
+    "REPLAY_UNPRICED_OPTION": (
+        "The request uses {option}, which is billed beyond tokens, so the replay budget could "
+        "not count it."
+    ),
 }
-"""The eight refusal codes and their detail copy; `REPLAY_PROVIDER_MISMATCH` is formatted with
-the credential family the span needs."""
+"""The nine refusal codes and their detail copy; `REPLAY_PROVIDER_MISMATCH` is formatted with
+the credential family the span needs, `REPLAY_UNPRICED_OPTION` with the option."""
 
 
 class ReplayRefusedError(Exception):
