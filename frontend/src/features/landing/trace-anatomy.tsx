@@ -32,7 +32,7 @@ const COST_LINES = [
   { label: "Output", quantity: "420 × $10.00/M", amount: "$0.004200" },
 ] as const;
 
-const CARD = "flex flex-col rounded-[24px] border border-border bg-surface shadow-card";
+const CARD = "flex flex-col rounded-card border border-border bg-surface shadow-card";
 
 /**
  * The hero figure (Figma "Illo/Trace anatomy"): one traced request as a waterfall with the

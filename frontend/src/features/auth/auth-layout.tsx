@@ -29,8 +29,8 @@ interface AuthLayoutProps {
 
 /**
  * Sign in, sign up and the account flows around them (Figma "Sign in" and "Account flows"): the
- * form column on the mesh canvas, and on desktop the ink showcase panel listing real product
- * capabilities. Phones get the form only.
+ * form column on the mesh canvas, and on desktop the ink showcase panel with one drawn trace.
+ * Phones get the form only.
  */
 export function AuthLayout({ title, accent, description, status, children }: AuthLayoutProps) {
   return (

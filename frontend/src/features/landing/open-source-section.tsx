@@ -4,7 +4,6 @@ import { CopyButton } from "@/components/copy-button";
 import { Button } from "@/components/ui/button";
 
 import { DOCS_LINKS, EXTERNAL_LINKS, SECTION_IDS } from "./links";
-import { MeshBlob } from "./mesh-blob";
 import { ResponsiveCopy } from "./responsive-copy";
 
 const QUICKSTART_COMMAND = "docker compose up";
@@ -28,22 +27,6 @@ export function OpenSourceSection() {
       className="scroll-mt-6 px-5 pt-24 md:px-8 lg:pt-40"
     >
       <div className="relative mx-auto flex max-w-[1200px] flex-col gap-7 overflow-hidden rounded-card bg-hero-card px-[22px] pt-9 pb-6 text-hero-card-foreground md:p-12 xl:flex-row xl:items-center xl:gap-14 xl:py-[72px] xl:pr-16 xl:pl-[72px] dark:border dark:border-border">
-        <MeshBlob
-          tone="violet"
-          opacity={0.55}
-          className="top-[-120px] left-[160px] h-[260px] w-[300px] blur-[50px] xl:top-[-220px] xl:left-[780px] xl:h-[420px] xl:w-[560px] xl:blur-[85px]"
-        />
-        <MeshBlob
-          tone="fuchsia"
-          opacity={0.35}
-          className="top-[520px] left-[220px] h-[200px] w-[220px] blur-[50px] xl:top-[260px] xl:left-[1000px] xl:h-[300px] xl:w-[380px] xl:blur-[80px]"
-        />
-        <MeshBlob
-          tone="lime"
-          opacity={0.14}
-          className="hidden xl:top-[420px] xl:left-[-120px] xl:block xl:h-[220px] xl:w-[300px] xl:blur-[80px]"
-        />
-
         <div className="relative flex flex-col items-start gap-[18px] md:gap-6 xl:w-[540px] xl:shrink-0">
           <p className="text-overline text-lime uppercase">Open source · MIT core</p>
           <h2

@@ -20,7 +20,8 @@ const cardVariants = cva("relative min-w-0 rounded-card", {
     variant: {
       default: "border border-border bg-surface text-foreground shadow-card",
       hero: "bg-hero-card text-hero-card-foreground dark:border dark:border-border",
-      accent: "bg-linear-to-br from-accent-card-from to-accent-card-to text-accent-card-foreground",
+      accent:
+        "bg-linear-to-br from-accent-card-from to-accent-card-to text-accent-card-foreground dark:border dark:border-border",
       muted: "bg-surface-muted text-foreground",
     },
   },
