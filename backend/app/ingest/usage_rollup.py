@@ -11,6 +11,11 @@ The recursion climbs from each usage span to its ancestors and stops at depth 64
 malformed cycle (`a -> b -> a`: both are flagged, the honest reading of a broken parent chain)
 without the `CYCLE` clause. Only rows whose flag changes are written. The update ignores the
 gateway-ownership guard of the span upsert: the flag is derived server data, not client data.
+
+The project id is compared as `(SELECT CAST(:project_id AS uuid))`, a value the planner cannot
+see: a project missing from the column statistics is otherwise estimated at one row, and the plan
+scans all of the project's spans for every batch instead of probing the primary key for the
+batch's traces (35 ms instead of 0.6 ms on a 2,500-span project, growing with the project).
 """
 
 import uuid
@@ -24,7 +29,8 @@ USAGE_ROLLUP_RECOMPUTE: TextClause = text(
     WITH RECURSIVE members AS (
         SELECT span_id, parent_span_id, trace_id,
                (input_tokens IS NOT NULL OR output_tokens IS NOT NULL) AS has_usage
-        FROM spans WHERE project_id = :project_id AND trace_id = ANY(:trace_ids)
+        FROM spans
+        WHERE project_id = (SELECT CAST(:project_id AS uuid)) AND trace_id = ANY(:trace_ids)
     ),
     ancestors AS (                       -- (usage span, each of its ancestors)
         SELECT m.trace_id, m.span_id AS leaf, m.parent_span_id AS ancestor, 1 AS depth
@@ -42,7 +48,8 @@ USAGE_ROLLUP_RECOMPUTE: TextClause = text(
     UPDATE spans s
     SET usage_rollup = (r.span_id IS NOT NULL)
     FROM members m LEFT JOIN rollups r ON r.trace_id = m.trace_id AND r.span_id = m.span_id
-    WHERE s.project_id = :project_id AND s.trace_id = m.trace_id AND s.span_id = m.span_id
+    WHERE s.project_id = (SELECT CAST(:project_id AS uuid))
+      AND s.trace_id = m.trace_id AND s.span_id = m.span_id
       AND s.usage_rollup IS DISTINCT FROM (r.span_id IS NOT NULL)
     """
 )

@@ -12,9 +12,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import exists, func, text
+from sqlalchemy import Table, exists, func, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.dml import ReturningInsert
 
 from app.db.models import Score, Span, Trace
 from app.ingest.metadata import merge_metadata
@@ -171,18 +172,29 @@ async def _upsert_spans(
     source_key_id: uuid.UUID | None,
 ) -> None:
     ordered = sorted(spans, key=lambda span: (span.trace_id, span.span_id))
-    statement = insert(Span).values(
-        [
-            {
-                "project_id": project_id,
-                "trace_id": span.trace_id,
-                "span_id": span.span_id,
-                "source_key_id": source_key_id,
-                **{column: getattr(span, column) for column in _SPAN_COLUMNS},
-            }
-            for span in ordered
-        ]
-    )
+    rows = [
+        {
+            "project_id": project_id,
+            "trace_id": span.trace_id,
+            "span_id": span.span_id,
+            "source_key_id": source_key_id,
+            **{column: getattr(span, column) for column in _SPAN_COLUMNS},
+        }
+        for span in ordered
+    ]
+    statement = _SPAN_UPSERT_GUARDED if source_key_id is None else _SPAN_UPSERT
+    await session.execute(statement, rows)
+
+
+def _span_upsert(*, guarded: bool) -> ReturningInsert[tuple[str]]:
+    """The span upsert, compiled once and given the rows as parameters.
+
+    `RETURNING` makes SQLAlchemy render the rows into one multi-row INSERT per 1,000 rows
+    ("insertmanyvalues"), in the given order. Inlining the rows with `.values([...])` instead
+    compiled every column of every row again for each batch, the largest CPU cost of ingestion.
+    """
+    spans: Table = Span.__table__  # type: ignore[assignment]  # mapped classes type it loosely
+    statement = insert(spans)
     update_columns: dict[str, Any] = {
         column: statement.excluded[column] for column in _SPAN_COLUMNS
     }
@@ -192,20 +204,23 @@ async def _upsert_spans(
     # ingestion never overwrite it, so a replayed SDK span with the same id cannot rewrite the
     # cost or tokens a gateway key is accountable for. The span is counted as accepted and left
     # as it is, so a replay is still idempotent.
-    not_gateway_owned = Span.source_key_id.is_(None) if source_key_id is None else None
-    statement = statement.on_conflict_do_update(
-        index_elements=[Span.project_id, Span.trace_id, Span.span_id],
+    return statement.on_conflict_do_update(
+        index_elements=[spans.c.project_id, spans.c.trace_id, spans.c.span_id],
         set_=update_columns,
-        where=not_gateway_owned,
-    )
-    await session.execute(statement)
+        where=spans.c.source_key_id.is_(None) if guarded else None,
+    ).returning(spans.c.span_id)
+
+
+_SPAN_UPSERT_GUARDED = _span_upsert(guarded=True)  # native and OTLP spans
+_SPAN_UPSERT = _span_upsert(guarded=False)  # the gateway's own spans
 
 
 # Retry calls and retry cost: among a trace's llm spans with a request hash, cache
 # hits and fault-injected spans left out, every span of a hash but the last by
 # `(started_at, span_id)` is superseded. `retry_cost_usd` is unknown (NULL) when any superseded
 # span is unpriced, and, like `cost_usd`, when the sum is too large for numeric(14, 8). A trace
-# with no superseded span has a known zero of both.
+# with no superseded span has a known zero of both. The project id is hidden from the planner as
+# `(SELECT CAST(:project_id AS uuid))`, for the reason in `app.ingest.usage_rollup`.
 _RECOMPUTE_ROLLUPS = text(
     """
     WITH ranked AS (
@@ -215,7 +230,7 @@ _RECOMPUTE_ROLLUPS = text(
                    PARTITION BY trace_id, request_hash ORDER BY started_at DESC, span_id DESC
                ) AS position
         FROM spans
-        WHERE project_id = :project_id AND trace_id = ANY(:trace_ids)
+        WHERE project_id = (SELECT CAST(:project_id AS uuid)) AND trace_id = ANY(:trace_ids)
           AND kind = 'llm'
           AND request_hash IS NOT NULL
           AND attributes->>'spanlight.cache' IS DISTINCT FROM 'hit'
@@ -271,11 +286,11 @@ _RECOMPUTE_ROLLUPS = text(
                min(started_at)                            AS started_at,
                max(ended_at)                              AS ended_at
         FROM spans
-        WHERE project_id = :project_id AND trace_id = ANY(:trace_ids)
+        WHERE project_id = (SELECT CAST(:project_id AS uuid)) AND trace_id = ANY(:trace_ids)
         GROUP BY trace_id
     ) AS s
     LEFT JOIN superseded AS r ON r.trace_id = s.trace_id
-    WHERE t.project_id = :project_id AND t.trace_id = s.trace_id
+    WHERE t.project_id = (SELECT CAST(:project_id AS uuid)) AND t.trace_id = s.trace_id
     """
 )
 
