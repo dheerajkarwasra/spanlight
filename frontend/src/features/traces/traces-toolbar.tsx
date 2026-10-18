@@ -1,4 +1,5 @@
-import { Loader2 } from "lucide-react";
+import { Loader2, SlidersHorizontal } from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { HasScoresToggle, ScoreFacet } from "@/features/scores";
@@ -50,6 +51,16 @@ export function TracesToolbar({
   const options = optionsQuery.data;
   const promotedKeys = useProjectQuery().data?.promoted_metadata_keys ?? [];
   const chips = activeFilters.filter((filter) => filter.key !== "q");
+  // The less used facets sit behind "More filters"; they stay shown while any of them is set.
+  const moreActive = [
+    search.error_class,
+    search.release,
+    search.tag,
+    search.score,
+    search.has_scores,
+  ].filter((value) => value !== undefined).length;
+  const [moreOpen, setMoreOpen] = useState(false);
+  const showMore = moreOpen || moreActive > 0;
 
   return (
     <div className="flex flex-col gap-4 md:gap-2.5">
@@ -75,18 +86,6 @@ export function TracesToolbar({
             }}
           />
           <FacetSelect
-            label="Error class"
-            value={search.error_class}
-            options={ERROR_CLASSES}
-            optionLabel={(value) => (isErrorClass(value) ? errorClassLabel(value) : value)}
-            onChange={(value) => {
-              onFilterChange(
-                "error_class",
-                value !== undefined && isErrorClass(value) ? value : undefined,
-              );
-            }}
-          />
-          <FacetSelect
             label="Model"
             value={search.model}
             options={options?.models ?? []}
@@ -95,38 +94,70 @@ export function TracesToolbar({
               onFilterChange("model", value);
             }}
           />
-          <FacetSelect
-            label="Release"
-            value={search.release}
-            options={options?.releases ?? []}
-            loading={optionsQuery.isPending}
-            onChange={(value) => {
-              onFilterChange("release", value);
-            }}
-          />
-          <FacetSelect
-            label="Tag"
-            value={search.tag}
-            options={options?.tags ?? []}
-            loading={optionsQuery.isPending}
-            onChange={(value) => {
-              onFilterChange("tag", value);
-            }}
-          />
-          <ScoreFacet
-            params={search}
-            recentNames={options?.score_names ?? []}
-            onApply={onFiltersChange}
-            chipClassName={SCORE_CHIP}
-          />
-          <HasScoresToggle
-            pressed={search.has_scores === true}
-            onChange={(pressed) => {
-              onFiltersChange({ has_scores: pressed ? true : undefined });
-            }}
-            chipClassName={SCORE_CHIP}
-          />
           <RetryFacets search={search} onChange={onFiltersChange} />
+          {moreActive === 0 ? (
+            <Button
+              variant="ghost"
+              aria-expanded={showMore}
+              onClick={() => {
+                setMoreOpen((open) => !open);
+              }}
+              className={cn(
+                CHIP_BASE,
+                "text-muted-foreground hover:text-foreground [&_svg]:size-3.5",
+              )}
+            >
+              <SlidersHorizontal aria-hidden />
+              {showMore ? "Fewer filters" : "More filters"}
+            </Button>
+          ) : null}
+          {showMore ? (
+            <>
+              <FacetSelect
+                label="Error class"
+                value={search.error_class}
+                options={ERROR_CLASSES}
+                optionLabel={(value) => (isErrorClass(value) ? errorClassLabel(value) : value)}
+                onChange={(value) => {
+                  onFilterChange(
+                    "error_class",
+                    value !== undefined && isErrorClass(value) ? value : undefined,
+                  );
+                }}
+              />
+              <FacetSelect
+                label="Release"
+                value={search.release}
+                options={options?.releases ?? []}
+                loading={optionsQuery.isPending}
+                onChange={(value) => {
+                  onFilterChange("release", value);
+                }}
+              />
+              <FacetSelect
+                label="Tag"
+                value={search.tag}
+                options={options?.tags ?? []}
+                loading={optionsQuery.isPending}
+                onChange={(value) => {
+                  onFilterChange("tag", value);
+                }}
+              />
+              <ScoreFacet
+                params={search}
+                recentNames={options?.score_names ?? []}
+                onApply={onFiltersChange}
+                chipClassName={SCORE_CHIP}
+              />
+              <HasScoresToggle
+                pressed={search.has_scores === true}
+                onChange={(pressed) => {
+                  onFiltersChange({ has_scores: pressed ? true : undefined });
+                }}
+                chipClassName={SCORE_CHIP}
+              />
+            </>
+          ) : null}
           <AddFilterPopover
             search={search}
             metadataKeys={metadataKeyOptions(

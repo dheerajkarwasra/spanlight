@@ -82,7 +82,7 @@ function SelectDayForm({ run, onDone }: SelectDayFormProps) {
             <label
               key={option}
               className={cn(
-                "flex cursor-pointer items-center gap-3 rounded-[14px] border px-3 py-2.5 text-sm font-medium",
+                "flex cursor-pointer items-center gap-3 rounded-input border px-3 py-2.5 text-sm font-medium",
                 option === day
                   ? "border-accent bg-surface-selected"
                   : "border-transparent bg-surface-muted",

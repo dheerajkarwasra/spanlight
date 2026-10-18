@@ -3,7 +3,6 @@ import { ArrowLeft, ChevronDown, LogOut } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Logo } from "@/components/logo";
-import { MeshBackdrop } from "@/components/mesh-backdrop";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,7 +36,6 @@ export function AccountShell({ children }: AccountShellProps) {
       >
         Skip to content
       </a>
-      <MeshBackdrop className="-top-[120px] -left-[200px] lg:top-0 lg:-right-4 lg:left-auto" />
 
       <header className="relative mx-auto flex w-full max-w-[884px] items-center justify-between gap-3 px-4 pt-4 sm:px-6 sm:pt-6">
         <div className="flex min-w-0 items-center gap-3 sm:gap-5">

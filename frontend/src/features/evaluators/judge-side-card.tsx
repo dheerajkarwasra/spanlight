@@ -14,7 +14,7 @@ import { JUDGE_TEMPLATES, type EvaluatorFormValues } from "./evaluator-schema";
 /** `{{name}}` in violet, the rest as typed. */
 function TemplateText({ text }: { text: string }) {
   return (
-    <pre className="rounded-[14px] bg-surface-muted p-3.5 font-mono text-xs leading-relaxed [overflow-wrap:anywhere] whitespace-pre-wrap text-foreground">
+    <pre className="rounded-input bg-surface-muted p-3.5 font-mono text-xs leading-relaxed [overflow-wrap:anywhere] whitespace-pre-wrap text-foreground">
       {text.split(/(\{\{\s*[\w.]+\s*\}\})/).map((part, index) =>
         /^\{\{/.test(part) ? (
           <span key={index} className="text-accent">

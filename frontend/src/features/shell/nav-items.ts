@@ -95,6 +95,11 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: MessagesSquare,
         shortcut: "G S",
       },
+    ],
+  },
+  {
+    heading: "Monitor",
+    items: [
       {
         label: "Doctor",
         to: "/$orgId/$projectId/doctor",
@@ -108,6 +113,13 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: Activity,
         shortcut: "G V",
       },
+      { label: "Alerts", to: "/$orgId/$projectId/alerts", icon: BellRing, shortcut: "G A" },
+      { label: "Budgets", to: "/$orgId/$projectId/budgets", icon: Wallet, shortcut: "G B" },
+    ],
+  },
+  {
+    heading: "Analyze",
+    items: [
       {
         label: "Releases",
         to: "/$orgId/$projectId/releases",
@@ -125,11 +137,9 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   { heading: "Improve", items: IMPROVE_ITEMS },
   {
-    heading: null,
+    heading: "Configure",
     items: [
       { label: "Gateway", to: "/$orgId/$projectId/gateway", icon: Waypoints, shortcut: "G G" },
-      { label: "Alerts", to: "/$orgId/$projectId/alerts", icon: BellRing, shortcut: "G A" },
-      { label: "Budgets", to: "/$orgId/$projectId/budgets", icon: Wallet, shortcut: "G B" },
       { label: "Settings", to: "/$orgId/$projectId/settings", icon: Settings, shortcut: "G ," },
     ],
   },

@@ -2,7 +2,6 @@ import { Key, Lock, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { CopyButton } from "@/components/copy-button";
-import { MeshBackdrop } from "@/components/mesh-backdrop";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import type { CreatedApiKey, Role } from "@/lib/api";
@@ -55,8 +54,6 @@ export function ApiKeyCard({
 
   return (
     <Card variant="hero" className="flex flex-col gap-3.5 overflow-hidden p-5 sm:p-6">
-      <MeshBackdrop intensity="soft" className="-top-[300px] right-auto left-[380px]" />
-
       <div className="relative flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="flex min-w-0 items-center gap-2.5">
           <span

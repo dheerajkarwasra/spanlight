@@ -20,7 +20,6 @@ export function OnboardingLayout({ stepper, exitLink, children }: OnboardingLayo
   return (
     <div className="relative flex min-h-dvh flex-col gap-8 overflow-clip bg-canvas px-4 pt-5 pb-12 sm:px-12 sm:pt-9 lg:gap-16">
       <MeshBackdrop className="-top-[210px] -right-[120px]" />
-      <MeshBackdrop className="top-[640px] right-auto -left-[360px]" />
 
       <header className="relative grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-5 lg:grid-cols-[1fr_auto_1fr]">
         <Logo />

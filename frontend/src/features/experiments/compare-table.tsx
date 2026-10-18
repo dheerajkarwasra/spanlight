@@ -38,7 +38,7 @@ export function CompareTable({ items, sort, inputs, names }: CompareTableProps) 
 
   return (
     <Card role="region" aria-labelledby={titleId} className="flex flex-col gap-3.5 p-5 sm:p-6">
-      <div className="sticky top-3 z-10 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[22px] border border-border bg-surface px-3.5 py-2.5 shadow-lg sm:rounded-full">
+      <div className="sticky top-3 z-10 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-tile border border-border bg-surface px-3.5 py-2.5 shadow-lg sm:rounded-full">
         <span className="text-label font-semibold text-muted-foreground">Sort by change in</span>
         <SegmentedControl
           aria-label="Sort by change in"

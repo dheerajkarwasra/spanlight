@@ -20,7 +20,7 @@ export function CapturePayloadsField({ control, canEdit }: CapturePayloadsFieldP
   const descriptionId = useId();
 
   return (
-    <div className="flex items-start gap-4 rounded-tile bg-surface-muted p-4">
+    <div className="flex items-start gap-4 border-t border-border pt-4">
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <Label htmlFor={switchId} className="text-sm">
           Capture prompts &amp; completions
@@ -55,7 +55,7 @@ export function WeeklyDigestField({ control, canEdit }: CapturePayloadsFieldProp
   const descriptionId = useId();
 
   return (
-    <div className="flex items-start gap-4 rounded-tile bg-surface-muted p-4">
+    <div className="flex items-start gap-4 border-t border-border pt-4">
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <Label htmlFor={switchId} className="text-sm">
           Weekly digest email

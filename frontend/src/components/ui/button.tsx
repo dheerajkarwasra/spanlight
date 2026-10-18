@@ -19,9 +19,9 @@ import { cn } from "@/lib/utils";
 const buttonVariants = cva(
   [
     "inline-flex shrink-0 items-center justify-center gap-2 rounded-full font-semibold whitespace-nowrap",
-    "transition-[background-color,color,box-shadow,transform] duration-200 ease-out-quart select-none",
+    "transition-[background-color,color,box-shadow,transform] duration-150 ease-out-quart select-none",
     "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
-    "active:translate-y-px disabled:pointer-events-none disabled:opacity-50",
+    "active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50",
     "[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   ],
   {
@@ -29,12 +29,13 @@ const buttonVariants = cva(
       variant: {
         primary: "bg-ink text-ink-foreground hover:bg-ink/90",
         secondary:
-          "border border-border bg-surface text-foreground shadow-card hover:bg-surface-muted",
+          "border border-border bg-surface text-foreground shadow-xs hover:bg-surface-muted",
         ghost: "text-foreground hover:bg-surface-hover",
         accent: "bg-accent text-accent-foreground hover:bg-accent-hover",
         highlight: "bg-lime text-lime-foreground hover:bg-lime/85",
         danger: "bg-danger text-danger-foreground hover:bg-danger-hover",
-        link: "h-auto rounded-sm px-0 text-accent underline-offset-4 hover:underline active:translate-y-0",
+        // The dark accent is near-white, so dark links keep a faint underline to read as links.
+        link: "h-auto rounded-sm px-0 text-accent underline-offset-4 hover:underline active:scale-100 dark:underline dark:decoration-border-strong",
       },
       size: {
         sm: "h-8 px-3.5 text-label",

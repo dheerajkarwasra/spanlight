@@ -134,76 +134,82 @@
 
   /* Elevation */
   --elevation-xs: 0 1px 2px rgb(17 17 26 / 0.04);
-  --elevation-card: 0 1px 2px rgb(17 17 26 / 0.04), 0 12px 32px -12px rgb(17 17 26 / 0.1);
+  --elevation-card: 0 1px 2px rgb(17 17 26 / 0.04), 0 4px 12px -6px rgb(17 17 26 / 0.06);
   --elevation-lg: 0 2px 6px rgb(17 17 26 / 0.05), 0 24px 48px -16px rgb(17 17 26 / 0.22);
 }
 
 .dark {
-  --canvas: #07070a;
-  --background: #111016;
-  --surface: #18171f;
-  --surface-muted: #1f1e27;
-  --surface-hover: #26252f;
-  --surface-selected: #2a2340;
-  --overlay: rgb(0 0 0 / 0.6);
+  /*
+   * Neutral, hue-free greys on black: the dark theme carries no violet tint. Lime is the one
+   * brand colour; status and categorical data colours keep their hues because they carry meaning.
+   */
+  --canvas: #000000;
+  --background: #0a0a0a;
+  --surface: #141414;
+  --surface-muted: #1a1a1a;
+  --surface-hover: #202020;
+  --surface-selected: #242424;
+  --overlay: rgb(0 0 0 / 0.7);
 
-  --foreground: #f4f3f7;
-  --muted-foreground: #a8a6b5;
-  --subtle-foreground: #9896a6;
+  --foreground: #fafafa;
+  --muted-foreground: #a3a3a3;
+  --subtle-foreground: #8f8f8f;
 
-  --border: #2a2933;
-  --border-strong: #76747f;
+  --border: #262626;
+  --border-strong: #737373;
   --input: var(--border-strong);
 
   /* Primary actions turn lime in the dark theme. */
   --ink: #d4ff3a;
-  --ink-foreground: #16151d;
+  --ink-foreground: #0a0a0a;
   --lime: #d4ff3a;
-  --lime-foreground: #16151d;
-  --accent: #a78bfa;
-  --accent-hover: #c4b5fd;
-  --accent-foreground: #16151d;
-  --accent-subtle: #2a2340;
-  --accent-subtle-foreground: #c4b5fd;
-  --fuchsia: #e879f9;
+  --lime-foreground: #0a0a0a;
+  /* Monochrome accent: links, focus and the first chart series are near-white. */
+  --accent: #e5e5e5;
+  --accent-hover: #ffffff;
+  --accent-foreground: #0a0a0a;
+  --accent-subtle: #242424;
+  --accent-subtle-foreground: #e5e5e5;
+  --fuchsia: #d4d4d4;
 
-  --accent-card-from: #7c3aed;
-  --accent-card-to: #c026d3;
-  --accent-card-foreground: #ffffff;
+  /* The accent card becomes a raised neutral card. */
+  --accent-card-from: #262626;
+  --accent-card-to: #1a1a1a;
+  --accent-card-foreground: #fafafa;
 
-  --rail: #050507;
-  --rail-foreground: #ffffff;
+  --rail: #0a0a0a;
+  --rail-foreground: #fafafa;
   --rail-muted-foreground: rgb(255 255 255 / 0.62);
   --rail-subtle-foreground: rgb(255 255 255 / 0.5);
-  --rail-tile: rgb(255 255 255 / 0.07);
-  --rail-tile-hover: rgb(255 255 255 / 0.1);
+  --rail-tile: rgb(255 255 255 / 0.06);
+  --rail-tile-hover: rgb(255 255 255 / 0.09);
   --rail-danger: #fda4af;
-  /* A black card on a black panel disappears: hero cards lift to a violet-tinted surface. */
-  --hero-card: #1d1b27;
-  --hero-card-foreground: #ffffff;
+  /* A black card on a black panel disappears: hero cards lift to a neutral grey. */
+  --hero-card: #1a1a1a;
+  --hero-card-foreground: #fafafa;
 
   --success: #4ade80;
-  --success-subtle: #10261b;
+  --success-subtle: #0f2318;
   --warning: #fbbf24;
-  --warning-subtle: #2a2210;
+  --warning-subtle: #261f0e;
   --danger: #fb7185;
   --danger-hover: #fda4af;
   --danger-text: #fda4af;
-  --danger-subtle: #2c1418;
-  --danger-foreground: #16151d;
+  --danger-subtle: #2a1316;
+  --danger-foreground: #0a0a0a;
 
-  --kind-llm: #a78bfa;
+  --kind-llm: #e5e5e5;
   --kind-tool: #fb923c;
   --kind-retrieval: #2dd4bf;
   --kind-chain: #60a5fa;
-  --kind-http: #a8a29e;
-  --kind-other: #9896a6;
+  --kind-http: #a3a3a3;
+  --kind-other: #8f8f8f;
 
-  --chart-1: #a78bfa;
+  --chart-1: #e5e5e5;
   --chart-2: #fb7185;
   --chart-3: #2dd4bf;
   --chart-4: #fbbf24;
-  --chart-grid: #26252f;
+  --chart-grid: #1f1f1f;
   --chart-bar-muted-on-ink: rgb(255 255 255 / 0.11);
   --chart-band-warning: #fbbf24;
   /* Restated so the mix picks up the dark band colour wherever `.dark` is applied. */
@@ -220,19 +226,21 @@
   --chart-class-gateway: #b9b7b1;
   --chart-class-unknown: #6f6d68;
 
-  --mesh-1: #4c1d95;
-  --mesh-2: #713f12;
-  --mesh-3: #0c4a6e;
-  --mesh-opacity: 0.35;
+  /* No decorative glow in the dark theme. */
+  --mesh-1: transparent;
+  --mesh-2: transparent;
+  --mesh-3: transparent;
+  --mesh-opacity: 0;
 
   --syntax-string: #5eead4;
+  --code-keyword: #e5e5e5;
 
-  --ring: #a78bfa;
+  --ring: #e5e5e5;
 
   /* Dark surfaces rely on borders, not shadows. */
   --elevation-xs: none;
   --elevation-card: none;
-  --elevation-lg: 0 24px 48px -12px rgb(0 0 0 / 0.6);
+  --elevation-lg: 0 24px 48px -12px rgb(0 0 0 / 0.7);
 }
 
 @theme inline {
@@ -379,21 +387,21 @@
   --text-code: 0.875rem; /* Mono/Code */
   --text-code--line-height: 1.7;
 
-  /* Shape: pills are rounded-full; cards 28, dialogs 24, tiles 18, inputs 14, tooltips 12, checkboxes 5 */
+  /* Shape: pills are rounded-full; cards 20, dialogs 18, popovers 14, tiles 12, inputs 10, tooltips 10, checkboxes 5 */
   --radius-xs: 0.375rem;
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
   --radius-lg: 0.875rem;
   --radius-xl: 1rem;
-  --radius-2xl: 1.125rem;
-  --radius-3xl: 1.5rem;
-  --radius-input: 0.875rem;
+  --radius-2xl: 0.75rem;
+  --radius-3xl: 1.125rem;
+  --radius-input: 0.625rem;
   --radius-checkbox: 0.3125rem;
-  --radius-tooltip: 0.75rem;
-  --radius-tile: 1.125rem;
-  --radius-popover: 1.125rem;
-  --radius-dialog: 1.5rem;
-  --radius-card: 1.75rem;
+  --radius-tooltip: 0.625rem;
+  --radius-tile: 0.75rem;
+  --radius-popover: 0.875rem;
+  --radius-dialog: 1.125rem;
+  --radius-card: 1.25rem;
 
   --shadow-xs: var(--elevation-xs);
   --shadow-sm: var(--elevation-card);

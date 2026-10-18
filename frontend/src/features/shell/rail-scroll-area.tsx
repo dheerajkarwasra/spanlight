@@ -74,7 +74,7 @@ export function RailScrollArea({ children, revealKey, className }: RailScrollAre
         onScroll={update}
         // The padding keeps the links' 2 px offset focus rings inside the clipping box; the scroll
         // padding keeps a link reached by keyboard clear of the 32 px fades.
-        className="-mx-1 min-h-0 flex-1 scroll-py-8 overflow-y-auto overscroll-contain px-1 py-1"
+        className="-mx-1 min-h-0 flex-1 scroll-py-8 [scrollbar-width:none] overflow-y-auto overscroll-contain px-1 py-1 [&::-webkit-scrollbar]:hidden"
       >
         {children}
       </div>

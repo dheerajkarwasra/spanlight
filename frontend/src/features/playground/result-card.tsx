@@ -80,7 +80,7 @@ function Empty() {
     <div className="flex flex-col items-center gap-2 px-2 py-4 text-center">
       <span
         aria-hidden
-        className="flex size-12 items-center justify-center rounded-full bg-mesh-1 text-accent"
+        className="flex size-12 items-center justify-center rounded-full bg-accent-subtle text-accent-subtle-foreground"
       >
         <FlaskConical className="size-[22px]" strokeWidth={1.75} />
       </span>

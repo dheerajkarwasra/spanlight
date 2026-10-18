@@ -1,7 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Waypoints } from "lucide-react";
 
-import { MeshBackdrop } from "@/components/mesh-backdrop";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -19,8 +18,6 @@ interface GatewaySetupCardProps {
 export function GatewaySetupCard({ orgId, projectId }: GatewaySetupCardProps) {
   return (
     <Card variant="hero" className="flex flex-col gap-3.5 overflow-hidden p-5 sm:p-6">
-      <MeshBackdrop intensity="soft" className="-top-[300px] right-auto left-[380px]" />
-
       <div className="relative flex min-w-0 items-center gap-2.5">
         <span
           aria-hidden

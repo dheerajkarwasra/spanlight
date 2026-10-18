@@ -39,7 +39,7 @@ function NavGroup({
 
   return (
     <>
-      <p id={headingId} className="px-4 pb-1.5 text-overline text-subtle-foreground uppercase">
+      <p id={headingId} className="px-3 pb-1 text-overline text-subtle-foreground uppercase">
         {group.label}
       </p>
       <ul aria-labelledby={headingId} className="flex flex-col gap-0.5">
@@ -49,13 +49,13 @@ function NavGroup({
               to={item.to}
               params={params}
               onClick={onNavigate}
-              className="group flex h-10 items-center justify-between gap-3 rounded-full px-4 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground data-[status=active]:bg-ink data-[status=active]:font-semibold data-[status=active]:text-ink-foreground"
+              className="group flex h-9 items-center justify-between gap-3 rounded-lg px-3 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors duration-150 hover:bg-surface-hover hover:text-foreground data-[status=active]:bg-surface-hover data-[status=active]:text-foreground"
               activeProps={{ "aria-current": "page" }}
             >
               {item.label}
               <span
                 aria-hidden
-                className="hidden size-1.5 shrink-0 rounded-full bg-lime group-data-[status=active]:block dark:bg-lime-foreground"
+                className="hidden size-1.5 shrink-0 rounded-full bg-foreground group-data-[status=active]:block dark:bg-lime"
               />
             </Link>
           </li>

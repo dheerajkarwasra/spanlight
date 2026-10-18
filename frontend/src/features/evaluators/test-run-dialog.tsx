@@ -57,7 +57,7 @@ function TracePicker({ value, onChange }: { value: string; onChange: (traceId: s
             <label
               key={trace.trace_id}
               className={cn(
-                "flex cursor-pointer items-center gap-3 rounded-[14px] border px-3 py-2 text-sm",
+                "flex cursor-pointer items-center gap-3 rounded-input border px-3 py-2 text-sm",
                 value === trace.trace_id
                   ? "border-accent bg-surface-selected"
                   : "border-transparent bg-surface-muted",

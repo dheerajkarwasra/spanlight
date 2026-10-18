@@ -17,10 +17,7 @@ export function MetadataBlock({ metadata }: { metadata: Readonly<Record<string, 
   const pairs = sortedPairs(metadata);
 
   return (
-    <section
-      aria-labelledby={headingId}
-      className="flex flex-col gap-2.5 rounded-tile bg-surface-muted px-4.5 py-4"
-    >
+    <section aria-labelledby={headingId} className="flex flex-col gap-2.5">
       <div className="flex items-center gap-2">
         <h2 id={headingId} className="text-sm font-semibold text-foreground">
           Metadata
@@ -43,7 +40,7 @@ export function MetadataBlock({ metadata }: { metadata: Readonly<Record<string, 
             return (
               <li
                 key={key}
-                className="relative flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md bg-surface px-3 py-1.5 font-mono sm:min-h-0"
+                className="relative flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md bg-surface-muted px-3 py-1.5 font-mono sm:min-h-0"
               >
                 <span className="max-w-48 shrink-0 truncate text-xs text-muted-foreground">
                   {key}

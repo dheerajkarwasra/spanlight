@@ -13,7 +13,7 @@ interface ToggleTileProps {
 export function ToggleTile({ label, description, checked, onCheckedChange }: ToggleTileProps) {
   const id = useId();
   return (
-    <div className="flex items-center justify-between gap-4 rounded-[14px] bg-surface-muted px-3.5 py-3">
+    <div className="flex items-center justify-between gap-4 rounded-tile bg-surface-muted px-3.5 py-3">
       <div className="flex min-w-0 flex-col gap-0.5">
         <label htmlFor={id} className="text-sm font-semibold text-foreground">
           {label}

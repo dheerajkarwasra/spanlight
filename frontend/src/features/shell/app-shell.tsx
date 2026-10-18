@@ -1,4 +1,4 @@
-import { Outlet, useMatch } from "@tanstack/react-router";
+import { Outlet, useLocation, useMatch } from "@tanstack/react-router";
 import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
@@ -83,6 +83,8 @@ function ChromeShell() {
   }, []);
 
   useKeyboardShortcuts(togglePalette);
+  // The mesh is a hero decoration: only the Overview greeting gets it, data pages stay plain.
+  const onOverview = useLocation({ select: (location) => location.pathname.endsWith("/overview") });
 
   useEffect(() => {
     if (projectQuery.isSuccess) {
@@ -137,7 +139,9 @@ function ChromeShell() {
       </Sheet>
 
       <div className="relative flex min-w-0 flex-1 flex-col overflow-clip bg-background lg:min-h-[calc(100dvh-1.5rem)] lg:rounded-card">
-        <MeshBackdrop className="-top-[120px] -left-[200px] lg:top-0 lg:-right-4 lg:left-auto" />
+        {onOverview ? (
+          <MeshBackdrop className="-top-[120px] -left-[200px] lg:top-0 lg:-right-4 lg:left-auto" />
+        ) : null}
 
         <MobileAppBar
           className="lg:hidden"

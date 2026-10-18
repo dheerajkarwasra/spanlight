@@ -4,11 +4,12 @@ import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Bento cards (28px radius). Variants:
+ * Bento cards (20px radius). Variants:
  * - `default` white surface, hairline border, soft shadow.
  * - `hero`    dark ink card for the headline metric; use rail-* tokens for text inside
  *             (text-rail-muted-foreground, bg-rail-tile ...).
- * - `accent`  violet → fuchsia gradient with white text. At most once per page.
+ * - `accent`  violet → fuchsia gradient with white text (a neutral raised card in dark). At most
+ *             once per page.
  * - `muted`   flat surface-muted panel without shadow, for secondary groupings.
  *
  * Cards have no padding of their own: compose CardHeader / CardContent / CardFooter, or pass

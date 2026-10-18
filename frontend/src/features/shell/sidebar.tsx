@@ -26,29 +26,29 @@ const RAIL_FOCUS =
 
 const SETTINGS_PATH: NavItem["to"] = "/$orgId/$projectId/settings";
 
-/** Everything the rail's page links share: pill shape, lime active state, muted inactive state. */
+/** Everything the rail's page links share: a quiet row, a soft active state with a lime dot. */
 const RAIL_LINK = {
   className: cn(
-    "flex h-11 items-center justify-between rounded-xl px-4 text-sm transition-colors duration-200",
+    "flex h-9 items-center gap-2.5 rounded-lg px-3 text-sm font-medium transition-colors duration-150",
     RAIL_FOCUS,
   ),
   activeProps: {
-    className: "bg-lime font-bold text-lime-foreground",
+    className: "bg-rail-tile-hover text-rail-foreground",
     "aria-current": "page" as const,
   },
   inactiveProps: {
-    className:
-      "font-medium text-rail-muted-foreground hover:bg-rail-tile hover:text-rail-foreground",
+    className: "text-rail-muted-foreground hover:bg-rail-tile hover:text-rail-foreground",
   },
 };
 
-/** The link's content: the label, and a dark dot on the active one. */
-function railLabel(label: string, badge?: NavItem["badge"]) {
+/** The link's content: icon, label, an optional count, and a lime dot on the active one. */
+function railLabel({ label, icon: Icon, badge }: Pick<NavItem, "label" | "icon" | "badge">) {
   return ({ isActive }: { isActive: boolean }) => (
     <>
-      {label}
-      {badge === "open-critical" ? <OpenCriticalBadge active={isActive} /> : null}
-      {isActive ? <span aria-hidden className="size-1.5 rounded-full bg-lime-foreground" /> : null}
+      <Icon aria-hidden className="size-4 shrink-0 opacity-80" strokeWidth={1.75} />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {badge === "open-critical" ? <OpenCriticalBadge /> : null}
+      {isActive ? <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-lime" /> : null}
     </>
   );
 }
@@ -58,7 +58,7 @@ function railLabel(label: string, badge?: NavItem["badge"]) {
  * account's Security page, which is no child of the settings route, so the active state is read
  * from the address by hand.
  */
-function LockedSettingsLink({ label, onNavigate }: { label: string; onNavigate?: () => void }) {
+function LockedSettingsLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
   const onSettings = useLocation({
     select: (location) => /\/settings(\/|$)/.test(location.pathname),
   });
@@ -71,7 +71,7 @@ function LockedSettingsLink({ label, onNavigate }: { label: string; onNavigate?:
       aria-current={onSettings ? "page" : undefined}
       className={cn(className, onSettings ? activeProps.className : inactiveProps.className)}
     >
-      {railLabel(label)({ isActive: onSettings })}
+      {railLabel(item)({ isActive: onSettings })}
     </Link>
   );
 }
@@ -87,13 +87,13 @@ function NavGroupItems({ group, settingsLocked, onNavigate }: NavGroupItemsProps
   const params = useProjectParams();
   const headingId = useId();
 
-  const links = group.items.map(({ label, to, badge }) => (
-    <li key={to}>
-      {settingsLocked && to === SETTINGS_PATH ? (
-        <LockedSettingsLink label={label} onNavigate={onNavigate} />
+  const links = group.items.map((item) => (
+    <li key={item.to}>
+      {settingsLocked && item.to === SETTINGS_PATH ? (
+        <LockedSettingsLink item={item} onNavigate={onNavigate} />
       ) : (
-        <Link to={to} params={params} {...RAIL_LINK} onClick={onNavigate}>
-          {railLabel(label, badge)}
+        <Link to={item.to} params={params} {...RAIL_LINK} onClick={onNavigate}>
+          {railLabel(item)}
         </Link>
       )}
     </li>
@@ -103,11 +103,11 @@ function NavGroupItems({ group, settingsLocked, onNavigate }: NavGroupItemsProps
     return <>{links}</>;
   }
   return (
-    <li className="mt-3">
-      <p id={headingId} className="px-4 pb-1.5 text-overline text-rail-subtle-foreground uppercase">
+    <li className="mt-4">
+      <p id={headingId} className="px-3 pb-1 text-overline text-rail-subtle-foreground uppercase">
         {group.heading}
       </p>
-      <ul aria-labelledby={headingId} className="flex flex-col gap-1">
+      <ul aria-labelledby={headingId} className="flex flex-col gap-0.5">
         {links}
       </ul>
     </li>
@@ -115,8 +115,8 @@ function NavGroupItems({ group, settingsLocked, onNavigate }: NavGroupItemsProps
 }
 
 /**
- * The floating dark rail (Figma "App/Rail"): logo, project switcher, pill navigation with a
- * lime active state, the "Connect your app" tile and the account tile. The header and footer stay
+ * The floating dark rail (Figma "App/Rail"): logo, project switcher, grouped navigation with a
+ * quiet active row and a lime dot, the "Connect your app" tile and the account tile. The header and footer stay
  * put and only the navigation scrolls, with the current page kept in view (Figma "Fixes
  * 2026-10-13"). On a window too short for that (600 px or less) the whole rail scrolls instead.
  */
@@ -130,12 +130,14 @@ export function Sidebar({ onNavigate, headerAction, className }: SidebarProps) {
   return (
     <div
       className={cn(
-        "flex h-full flex-col gap-5 overflow-y-auto rounded-card bg-rail px-4 pt-5 pb-4 text-rail-foreground",
+        "flex h-full flex-col gap-5 overflow-y-auto rounded-card bg-rail px-3 pt-5 pb-3 text-rail-foreground dark:border dark:border-border",
         className,
       )}
     >
       <div className="flex shrink-0 items-center justify-between gap-2">
-        <Logo tone="on-dark" />
+        <div className="px-1">
+          <Logo tone="on-dark" />
+        </div>
         {headerAction}
       </div>
 
@@ -146,7 +148,7 @@ export function Sidebar({ onNavigate, headerAction, className }: SidebarProps) {
         className="flex-1 [@media(max-height:37.5rem)]:flex-none"
       >
         <nav aria-label="Main">
-          <ul className="flex flex-col gap-1">
+          <ul className="flex flex-col gap-0.5">
             {NAV_GROUPS.filter((group) => group.items.length > 0).map((group, index) => (
               <NavGroupItems
                 key={group.heading ?? index}
@@ -165,7 +167,7 @@ export function Sidebar({ onNavigate, headerAction, className }: SidebarProps) {
           search={{ org: params.orgId, project: params.projectId }}
           onClick={onNavigate}
           className={cn(
-            "flex flex-col gap-1.5 rounded-[20px] bg-rail-tile p-4 transition-colors duration-200 hover:bg-rail-tile-hover",
+            "flex flex-col gap-1 rounded-tile bg-rail-tile p-3.5 transition-colors duration-150 hover:bg-rail-tile-hover",
             RAIL_FOCUS,
           )}
         >

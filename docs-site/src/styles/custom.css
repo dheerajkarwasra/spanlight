@@ -8,30 +8,31 @@
   --sl-font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
   --sl-line-height: 1.65;
 
-  --sl-color-white: #f4f3f7;
-  --sl-color-gray-1: #e9e8ee;
-  --sl-color-gray-2: #d9d8e0;
-  --sl-color-gray-3: #a8a6b5;
-  --sl-color-gray-4: #9896a6;
-  --sl-color-gray-5: #2a2933;
-  --sl-color-gray-6: #18171f;
-  --sl-color-black: #111016;
+  --sl-color-white: #fafafa;
+  --sl-color-gray-1: #e5e5e5;
+  --sl-color-gray-2: #d4d4d4;
+  --sl-color-gray-3: #a3a3a3;
+  --sl-color-gray-4: #8f8f8f;
+  --sl-color-gray-5: #262626;
+  --sl-color-gray-6: #141414;
+  --sl-color-black: #0a0a0a;
 
-  --sl-color-accent-low: #2a2340;
-  --sl-color-accent: #a78bfa;
-  --sl-color-accent-high: #c4b5fd;
-  --sl-color-text-accent: #a78bfa;
+  /* Monochrome dark theme, like the dashboard: no violet tint. */
+  --sl-color-accent-low: #242424;
+  --sl-color-accent: #e5e5e5;
+  --sl-color-accent-high: #ffffff;
+  --sl-color-text-accent: #e5e5e5;
 
   --sl-color-bg-nav: var(--sl-color-black);
   --sl-color-bg-sidebar: var(--sl-color-black);
-  --sl-color-bg-inline-code: #1f1e27;
-  --sl-color-hairline: #2a2933;
-  --sl-color-hairline-light: #2a2933;
+  --sl-color-bg-inline-code: #1a1a1a;
+  --sl-color-hairline: #262626;
+  --sl-color-hairline-light: #262626;
 
-  --spl-surface: #18171f;
+  --spl-surface: #141414;
   --spl-success: #4ade80;
   --spl-lime: #d4ff3a;
-  --spl-on-lime: #16151d;
+  --spl-on-lime: #0a0a0a;
 }
 
 :root[data-theme='light'] {

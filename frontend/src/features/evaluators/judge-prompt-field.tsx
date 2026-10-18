@@ -75,7 +75,7 @@ function OwnPromptFields({ form }: { form: Form }) {
 
   if (prompts.isPending) {
     return (
-      <Skeleton role="status" aria-label="Loading prompts" className="h-[74px] rounded-[14px]" />
+      <Skeleton role="status" aria-label="Loading prompts" className="h-[74px] rounded-input" />
     );
   }
   if (prompts.data === undefined) {

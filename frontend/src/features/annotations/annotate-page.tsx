@@ -2,7 +2,6 @@ import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 
 import { ErrorState } from "@/components/error-state";
-import { MeshBackdrop } from "@/components/mesh-backdrop";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ReasonBanner, SaveFromReviewDialog } from "@/features/review";
 import { FAILURE_CATEGORY_SCORE } from "@/features/scores";
@@ -99,7 +98,6 @@ export function AnnotatePage() {
   return (
     <div className="min-h-dvh bg-background lg:bg-canvas lg:p-3">
       <div className="relative flex min-h-dvh flex-col gap-6 overflow-clip bg-background px-4 pt-5 pb-10 lg:min-h-[calc(100dvh-1.5rem)] lg:gap-8 lg:rounded-card lg:px-10 lg:pt-7">
-        <MeshBackdrop className="top-0 left-[420px] max-lg:-left-[200px]" />
         <div className="relative">
           <WorkBar
             queueId={queueId}

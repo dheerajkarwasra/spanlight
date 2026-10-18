@@ -12,7 +12,7 @@ interface EmptyStateProps {
   className?: string;
 }
 
-/** Icon tile on a soft mesh blob, a bold title, a muted explanation and the next step. */
+/** A quiet icon tile, a bold title, a muted explanation and the next step. */
 export function EmptyState({ icon: Icon, title, description, action, className }: EmptyStateProps) {
   return (
     <div
@@ -21,16 +21,14 @@ export function EmptyState({ icon: Icon, title, description, action, className }
         className,
       )}
     >
-      <div aria-hidden className="relative flex size-24 items-center justify-center">
-        <span className="absolute top-1 left-2 size-14 rounded-full bg-mesh-2 opacity-70 blur-xl" />
-        <span className="absolute top-3 right-1 size-14 rounded-full bg-mesh-1 opacity-80 blur-xl" />
-        <span className="absolute bottom-1 left-6 size-14 rounded-full bg-mesh-3 opacity-70 blur-xl" />
-        <span className="relative flex size-16 items-center justify-center rounded-2xl border border-border bg-surface shadow-card">
-          <Icon className="size-7 text-foreground" strokeWidth={1.75} />
-        </span>
-      </div>
+      <span
+        aria-hidden
+        className="flex size-12 items-center justify-center rounded-tile border border-border bg-surface-muted"
+      >
+        <Icon className="size-5 text-muted-foreground" strokeWidth={1.75} />
+      </span>
       <div className="flex max-w-sm flex-col gap-1.5">
-        <h3 className="text-lg font-bold tracking-[-0.01em] text-foreground">{title}</h3>
+        <h3 className="text-base font-semibold tracking-[-0.01em] text-foreground">{title}</h3>
         <div className="text-sm text-muted-foreground">{description}</div>
       </div>
       {action ? (
