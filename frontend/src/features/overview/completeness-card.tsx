@@ -46,44 +46,51 @@ export function CompletenessCard({ result, rangeLabel, className }: Completeness
   const ratio = completenessText(result);
   return (
     <Card role="region" aria-labelledby={titleId} className={cn(CARD_CLASSES, className)}>
-      <CompletenessHeader
-        titleId={titleId}
-        rangeLabel={rangeLabel}
-        reason={completenessReason(result)}
-      />
-      <div className="flex flex-col gap-4 @2xl:flex-row @2xl:items-center">
-        <div className="flex shrink-0 flex-col items-start gap-1.5 @2xl:w-[250px]">
-          <p className="text-h1 text-foreground tabular">
-            {ratio ?? <UnknownValue reason={NO_RATIO_REASON} />}
-          </p>
-          {result.lower_bound ? (
-            <div className="flex items-center gap-1.5">
-              <Badge>lower bound</Badge>
-              <InfoButton label="Why this is a lower bound" content={LOWER_BOUND_REASON} />
-            </div>
-          ) : null}
-          <p className="text-xs font-medium text-muted-foreground">{storedLine(result)}</p>
+      <div className="flex flex-col gap-4 @4xl:flex-row @4xl:items-center @4xl:gap-6">
+        <CompletenessHeader
+          titleId={titleId}
+          rangeLabel={rangeLabel}
+          reason={completenessReason(result)}
+        />
+        <div className="flex flex-col gap-4 @4xl:flex-1 @4xl:flex-row @4xl:items-center @4xl:gap-6">
+          <div className="flex shrink-0 flex-col items-start gap-1.5 @4xl:w-[200px]">
+            <p className="text-metric text-foreground tabular">
+              {ratio ?? <UnknownValue reason={NO_RATIO_REASON} />}
+            </p>
+            {result.lower_bound ? (
+              <div className="flex items-center gap-1.5">
+                <Badge>lower bound</Badge>
+                <InfoButton label="Why this is a lower bound" content={LOWER_BOUND_REASON} />
+              </div>
+            ) : null}
+            <p className="text-xs font-medium text-muted-foreground">{storedLine(result)}</p>
+          </div>
+          <ul
+            aria-label="Spans lost by source"
+            className="grid min-w-0 flex-1 grid-cols-3 divide-x divide-border"
+          >
+            {lossTiles(result.losses).map((tile) => (
+              <li
+                key={tile.source}
+                className="flex min-w-0 flex-col gap-1 px-4 first:pl-0 last:pr-0 max-sm:px-3"
+              >
+                <span className="text-xs font-medium break-words text-muted-foreground">
+                  {tile.label}
+                </span>
+                <span className="text-h2 text-foreground tabular">
+                  {tile.count === null ? (
+                    <UnknownValue reason={tile.unknownReason ?? SDK_UNREPORTED_REASON} />
+                  ) : (
+                    formatInteger(tile.count)
+                  )}
+                </span>
+                <span className="text-xs font-medium break-words text-muted-foreground">
+                  {tile.detail}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
-        <ul aria-label="Spans lost by source" className="grid min-w-0 flex-1 gap-3 @md:grid-cols-3">
-          {lossTiles(result.losses).map((tile) => (
-            <li
-              key={tile.source}
-              className="flex min-w-0 flex-col gap-1 rounded-tile bg-surface-muted p-3.5"
-            >
-              <span className="text-xs font-medium text-muted-foreground">{tile.label}</span>
-              <span className="text-h2 text-foreground tabular">
-                {tile.count === null ? (
-                  <UnknownValue reason={tile.unknownReason ?? SDK_UNREPORTED_REASON} />
-                ) : (
-                  formatInteger(tile.count)
-                )}
-              </span>
-              <span className="text-xs font-medium break-words text-muted-foreground">
-                {tile.detail}
-              </span>
-            </li>
-          ))}
-        </ul>
       </div>
     </Card>
   );
@@ -99,7 +106,7 @@ interface CompletenessHeaderProps {
 function CompletenessHeader({ titleId, rangeLabel, reason }: CompletenessHeaderProps) {
   const { orgId, projectId } = useProjectParams();
   return (
-    <div className="flex flex-col gap-1 @lg:flex-row @lg:items-start @lg:gap-3">
+    <div className="flex flex-col gap-1 @lg:flex-row @lg:items-start @lg:gap-3 @4xl:w-[300px] @4xl:shrink-0 @4xl:flex-col @4xl:gap-1">
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex items-center gap-1.5">
           <CardTitle id={titleId}>Telemetry completeness</CardTitle>

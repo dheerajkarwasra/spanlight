@@ -1,5 +1,14 @@
 import { CircleDollarSign, Info, RotateCw } from "lucide-react";
-import { Bar, BarChart, Rectangle, Tooltip, XAxis, YAxis, type BarShapeProps } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Rectangle,
+  Tooltip,
+  XAxis,
+  YAxis,
+  type BarShapeProps,
+} from "recharts";
 
 import { ChartDataTableView } from "@/components/chart-data-table";
 import { ChartTooltip } from "@/components/chart-parts";
@@ -8,7 +17,15 @@ import { UnknownValue } from "@/components/unknown-value";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { Bucket, ModelMetrics, OverviewMetrics } from "@/lib/api";
-import { BAR_MAX_SIZE, HIGHLIGHT_BAR_COLOR, INK_AXIS_TICK, INK_BAR_COLOR } from "@/lib/chart-theme";
+import {
+  BAR_MAX_SIZE,
+  BAR_RADIUS,
+  HIGHLIGHT_BAR_COLOR,
+  INK_AXIS_TICK,
+  INK_BAR_COLOR,
+  PARTIAL_OPACITY,
+  SERIES_COLORS,
+} from "@/lib/chart-theme";
 import { formatCost, formatInteger, parseMoney } from "@/lib/format";
 import type { ResolvedRange } from "@/lib/time-range";
 import { cn } from "@/lib/utils";
@@ -25,6 +42,7 @@ import { shortRangeLabel } from "./hero";
 import { percentDelta, previousPeriodLabel } from "./kpis";
 import {
   daysInMonth,
+  formatAxisCost,
   formatCompactCost,
   formatShare,
   formatTileCost,
@@ -55,8 +73,8 @@ const monthFormat = new Intl.DateTimeFormat("en-US", { month: "long" });
 
 /**
  * The headline card (Figma "Spend card"): spend for the window with muted cents, the change
- * versus the previous window, a monthly projection for short windows, spend per bucket with
- * the peak in lime, and the three most expensive models.
+ * versus the previous window, a monthly projection for short windows, spend per bucket on a
+ * dollar axis with the peak in lime, and the three most expensive models on one line.
  */
 export function SpendCard({
   metrics,
@@ -83,7 +101,7 @@ export function SpendCard({
   return (
     <Card
       variant="hero"
-      className={cn("flex flex-col gap-6 overflow-hidden p-6 sm:p-7", className)}
+      className={cn("flex flex-col gap-5 overflow-hidden p-6 sm:p-7", className)}
     >
       <div className="flex flex-col">
         <div className="flex items-center justify-between gap-3">
@@ -138,7 +156,7 @@ export function SpendCard({
       </div>
 
       <CostBars points={points} bucket={bucket} range={range} now={now} />
-      <TopModelTiles models={models} />
+      <TopModelsLine models={models} />
     </Card>
   );
 }
@@ -162,7 +180,7 @@ interface CostBarsProps {
   now: Date;
 }
 
-const BAR_AREA_CLASSES = "relative min-h-[156px] flex-1";
+const BAR_AREA_CLASSES = "relative min-h-[140px] flex-1 sm:min-h-[160px]";
 
 /** The translucent bar colour would vanish on the ink tooltip; key ordinary bars in light grey. */
 const TOOLTIP_BAR_KEY_COLOR = "var(--rail-muted-foreground)";
@@ -204,7 +222,10 @@ function CostBars({ points, bucket, range, now }: CostBarsProps) {
     );
   }
 
-  const peak = peakIndex(data.map((point) => point.costUsd));
+  const peak = peakIndex(
+    data.map((point) => point.costUsd),
+    data.map((point) => point.partial),
+  );
   const peakPoint = peak === null ? undefined : data[peak];
   const indexByBucket = new Map(data.map((point, index) => [point.bucketStart, index]));
   const lastIndex = data.length - 1;
@@ -234,10 +255,11 @@ function CostBars({ points, bucket, range, now }: CostBarsProps) {
           responsive
           style={{ width: "100%", height: "100%" }}
           data={data}
-          margin={{ top: 24, right: 0, bottom: 0, left: 0 }}
-          barCategoryGap="18%"
+          margin={{ top: 20, right: 0, bottom: 0, left: 0 }}
+          barCategoryGap="30%"
           accessibilityLayer={false}
         >
+          <CartesianGrid vertical={false} stroke="var(--rail-tile)" strokeWidth={1} />
           <XAxis
             dataKey="bucketStart"
             ticks={tickValues.filter((value): value is string => value !== undefined)}
@@ -255,7 +277,16 @@ function CostBars({ points, bucket, range, now }: CostBarsProps) {
               />
             )}
           />
-          <YAxis hide domain={[0, "dataMax"]} />
+          <YAxis
+            width="auto"
+            tickCount={4}
+            domain={[0, "auto"]}
+            tickLine={false}
+            axisLine={false}
+            tickMargin={6}
+            tick={{ ...INK_AXIS_TICK, fontWeight: 500 }}
+            tickFormatter={formatAxisCost}
+          />
           <Tooltip
             cursor={{ fill: "var(--rail-tile)" }}
             isAnimationActive={false}
@@ -268,12 +299,17 @@ function CostBars({ points, bucket, range, now }: CostBarsProps) {
               return (
                 <ChartTooltip
                   active={active}
-                  title={formatBucketRange(point.bucketStart, bucket, now)}
+                  title={formatBucketRange(point.bucketStart, bucket, now, point.partial)}
                   rows={[
                     {
                       label: point.costUsd === null ? "Spend · no priced calls" : "Spend",
                       value: formatCost(point.costUsd),
                       color: index === peak ? HIGHLIGHT_BAR_COLOR : TOOLTIP_BAR_KEY_COLOR,
+                    },
+                    {
+                      label: "Calls",
+                      value: formatInteger(point.llmCalls),
+                      color: SERIES_COLORS.calls,
                     },
                   ]}
                 />
@@ -283,24 +319,29 @@ function CostBars({ points, bucket, range, now }: CostBarsProps) {
           <Bar
             dataKey="costUsd"
             name="Spend"
-            radius={[8, 8, 3, 3]}
+            radius={BAR_RADIUS}
             maxBarSize={BAR_MAX_SIZE}
             isAnimationActive={false}
             shape={(props: BarShapeProps) => (
-              <PeakAwareBar {...props} isPeak={props.originalDataIndex === peak} />
+              <PeakAwareBar
+                {...props}
+                isPeak={props.originalDataIndex === peak}
+                partial={data[props.originalDataIndex]?.partial === true}
+              />
             )}
           />
         </BarChart>
       </div>
       <ChartDataTableView
         table={{
-          caption: `Spend per ${noun} in US dollars`,
-          columns: [noun === "hour" ? "Hour" : "Day", "Spend"],
+          caption: `Spend per ${noun} in US dollars, with LLM calls`,
+          columns: [noun === "hour" ? "Hour" : "Day", "Spend", "Calls"],
           rows: data.map((point) => ({
             key: point.bucketStart,
             cells: [
-              formatBucketLabel(point.bucketStart, bucket),
+              `${formatBucketLabel(point.bucketStart, bucket)}${point.partial ? " (partial)" : ""}`,
               formatCost(point.costUsd) ?? "No priced calls",
+              formatInteger(point.llmCalls) ?? "0",
             ],
           })),
         }}
@@ -315,7 +356,7 @@ interface TickProps {
   payload: { value: string };
 }
 
-/** Axis label centred under its bar, except the outermost ones, which align to the card edge. */
+/** Axis label centred under its bar, except the outermost ones, which align to the plot edge. */
 function EdgeAlignedTick({
   x,
   y,
@@ -345,14 +386,23 @@ function EdgeAlignedTick({
 }
 
 /**
- * One spend bar. The peak is lime with its value above it (Figma "Peak value"). Recharts skips
- * buckets without a priced call, so the peak is matched on the data index, not the render index.
+ * One spend bar. The peak is lime with its value above it (Figma "Peak value"); a partial bucket
+ * is drawn at 45 %. Recharts skips buckets without a priced call, so the peak is matched on the
+ * data index, not the render index.
  */
-function PeakAwareBar({ isPeak, ...props }: BarShapeProps & { isPeak: boolean }) {
+function PeakAwareBar({
+  isPeak,
+  partial,
+  ...props
+}: BarShapeProps & { isPeak: boolean; partial: boolean }) {
   const value = typeof props.value === "number" ? props.value : null;
   return (
     <g>
-      <Rectangle {...props} fill={isPeak ? HIGHLIGHT_BAR_COLOR : INK_BAR_COLOR} />
+      <Rectangle
+        {...props}
+        fill={isPeak ? HIGHLIGHT_BAR_COLOR : INK_BAR_COLOR}
+        fillOpacity={partial ? PARTIAL_OPACITY : 1}
+      />
       {isPeak && value !== null ? (
         <text
           x={props.x + props.width / 2}
@@ -373,11 +423,11 @@ const SKELETON_BARS = [32, 44, 36, 56, 50, 64, 52, 74, 92, 60, 48, 40];
 
 function CostBarsSkeleton() {
   return (
-    <div aria-hidden className={cn(BAR_AREA_CLASSES, "flex items-end gap-1.5 pb-7")}>
+    <div aria-hidden className={cn(BAR_AREA_CLASSES, "flex items-end gap-1.5 pb-7 pl-11")}>
       {SKELETON_BARS.map((height, index) => (
         <div
           key={index}
-          className="flex-1 rounded-t-lg rounded-b-[3px] bg-rail-tile"
+          className="flex-1 rounded-t bg-rail-tile"
           style={{ height: `${height}%` }}
         />
       ))}
@@ -391,7 +441,7 @@ export function SpendCardSkeleton({ className }: { className?: string }) {
     <Card
       variant="hero"
       aria-hidden
-      className={cn("flex min-h-[466px] flex-col gap-6 overflow-hidden p-6 sm:p-7", className)}
+      className={cn("flex min-h-[400px] flex-col gap-5 overflow-hidden p-6 sm:p-7", className)}
     >
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
@@ -399,14 +449,10 @@ export function SpendCardSkeleton({ className }: { className?: string }) {
           <div className="h-[25px] w-16 rounded-full bg-rail-tile" />
         </div>
         <div className="h-[60px] w-56 rounded-lg bg-rail-tile" />
-        <div className="h-4 w-64 rounded-md bg-rail-tile" />
+        <div className="h-4 w-64 max-w-full rounded-md bg-rail-tile" />
       </div>
       <CostBarsSkeleton />
-      <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
-        {MODEL_DOT_CLASSES.map((dot) => (
-          <div key={dot} className="h-[73px] rounded-tile bg-rail-tile sm:h-[79px]" />
-        ))}
-      </div>
+      <TopModelsLineSkeleton />
     </Card>
   );
 }
@@ -415,15 +461,14 @@ export function SpendCardSkeleton({ className }: { className?: string }) {
 
 const MODEL_DOT_CLASSES = ["bg-lime", "bg-chart-1", "bg-chart-3"] as const;
 
-function TopModelTiles({ models }: { models: Loadable<ModelMetrics[]> }) {
+function TopModelsLineSkeleton() {
+  return <div aria-hidden className="h-4 w-72 max-w-full rounded-md bg-rail-tile" />;
+}
+
+/** The three most expensive models on one line: dot, short name, cost and share of spend. */
+function TopModelsLine({ models }: { models: Loadable<ModelMetrics[]> }) {
   if (models.status === "pending") {
-    return (
-      <div aria-hidden className="grid grid-cols-3 gap-2 sm:gap-2.5">
-        {MODEL_DOT_CLASSES.map((dot) => (
-          <div key={dot} className="h-[73px] rounded-tile bg-rail-tile sm:h-[79px]" />
-        ))}
-      </div>
-    );
+    return <TopModelsLineSkeleton />;
   }
   // A failed models request is reported (with a retry) by the Models card below.
   if (models.status === "error") {
@@ -436,31 +481,24 @@ function TopModelTiles({ models }: { models: Loadable<ModelMetrics[]> }) {
   }
 
   return (
-    <ul aria-label="Top models by spend" className="grid grid-cols-3 gap-2 sm:gap-2.5">
+    <ul aria-label="Top models by spend" className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs">
       {top.map((entry, index) => (
         <li
           key={entry.key}
           title={entry.model}
-          className="flex min-w-0 flex-col gap-1.5 overflow-hidden rounded-tile bg-rail-tile px-2.5 py-3 sm:p-3.5"
+          className="flex min-w-0 items-center gap-1.5 whitespace-nowrap"
         >
-          <span className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-rail-muted-foreground">
-            <span
-              aria-hidden
-              className={cn("size-1.5 shrink-0 rounded-full", MODEL_DOT_CLASSES[index])}
-            />
-            <span aria-hidden className="truncate">
-              {shortModelLabel(entry.model)}
-            </span>
-            <span className="sr-only">{entry.model}</span>
+          <span
+            aria-hidden
+            className={cn("size-1.5 shrink-0 rounded-full", MODEL_DOT_CLASSES[index])}
+          />
+          <span aria-hidden className="font-medium text-rail-muted-foreground">
+            {shortModelLabel(entry.model)}
           </span>
-          <span className="flex min-w-0 items-baseline gap-1.5 whitespace-nowrap">
-            <span className="text-h2 text-hero-card-foreground tabular">
-              {formatTileCost(entry.costUsd)}
-            </span>
-            <span className="text-xs font-medium text-rail-subtle-foreground tabular max-sm:sr-only">
-              {formatShare(entry.share)}
-              <span className="sr-only"> of spend</span>
-            </span>
+          <span className="sr-only">{entry.model}</span>
+          <span className="font-semibold text-hero-card-foreground tabular">
+            {formatTileCost(entry.costUsd)} · {formatShare(entry.share)}
+            <span className="sr-only"> of spend</span>
           </span>
         </li>
       ))}

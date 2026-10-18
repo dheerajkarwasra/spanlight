@@ -11,6 +11,7 @@ import { CARD_LAYOUT } from "./kpi-card-placeholders";
 import {
   buildKpiCards,
   formatDeltaMagnitude,
+  KPI_ZERO_BASED,
   kpiTrend,
   type KpiCardModel,
   type KpiDelta,
@@ -25,7 +26,7 @@ const SPARKLINE_TONES: Record<KpiId, SparklineTone> = {
   tokens: "on-accent",
 };
 
-/** The Tokens card is the page's one accent (violet → fuchsia) card. */
+/** The Tokens card is the page's one accent card (violet → fuchsia; neutral raised in dark). */
 const ACCENT_KPI: KpiId = "tokens";
 
 interface KpiCardsProps {
@@ -38,7 +39,8 @@ interface KpiCardsProps {
 }
 
 /**
- * p95 latency, error rate, LLM calls and tokens, each with a delta and a sparkline. The values
+ * p95 latency, error rate, LLM calls and tokens, each with a delta and a sparkline over the
+ * whole window, stacked top to bottom so nothing truncates at 213 px. The values
  * share one size, fitted to the widest of them, so none is ever cut short ("50. …").
  */
 export function KpiCards({ metrics, points, comparisonLabel, className }: KpiCardsProps) {
@@ -49,7 +51,7 @@ export function KpiCards({ metrics, points, comparisonLabel, className }: KpiCar
     ),
   );
   return (
-    <ul aria-label="Key metrics" className={cn("grid gap-4 sm:grid-cols-2", className)}>
+    <ul aria-label="Key metrics" className={cn("grid grid-cols-2 gap-3 sm:gap-4", className)}>
       {cards.map((card) => (
         <li key={card.id} className="min-w-0">
           <KpiCard
@@ -80,40 +82,40 @@ function KpiCard({ card, points, comparisonLabel, valueFontSize }: KpiCardProps)
       className={cn(
         CARD_LAYOUT,
         accent &&
-          "shadow-[0_14px_32px_-14px_color-mix(in_srgb,var(--accent-card-from)_60%,transparent)]",
+          "shadow-[0_14px_32px_-14px_color-mix(in_srgb,var(--accent-card-from)_60%,transparent)] dark:shadow-none",
       )}
     >
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-        <p className={cn("text-sm font-medium", accent ? "" : "text-muted-foreground")}>
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <p className={cn("truncate text-sm font-medium", accent ? "" : "text-muted-foreground")}>
           {card.label}
         </p>
-        {/* The size container the fitted font size is measured against. */}
-        <div className="@container">
-          <p
-            data-kpi-value
-            style={valueFontSize ? { fontSize: valueFontSize } : undefined}
-            className={cn("text-metric whitespace-nowrap", accent ? "" : "text-foreground")}
-          >
-            <ApproxValue
-              value={card.value}
-              approximate={card.approximate}
-              unknownReason={card.unknownReason}
-            />
-          </p>
-        </div>
-        {card.detail ? (
-          <p
-            className={cn(
-              "truncate text-xs font-medium tabular",
-              accent ? "" : "text-subtle-foreground",
-            )}
-          >
-            <KpiDetail card={card} />
-          </p>
-        ) : null}
-      </div>
-      <div className="flex shrink-0 flex-col items-end justify-between gap-3">
         <KpiDeltaPill delta={card.delta} accent={accent} comparisonLabel={comparisonLabel} />
+      </div>
+      {/* The size container the fitted font size is measured against. */}
+      <div className="@container">
+        <p
+          data-kpi-value
+          style={valueFontSize ? { fontSize: valueFontSize } : undefined}
+          className={cn("text-metric whitespace-nowrap", accent ? "" : "text-foreground")}
+        >
+          <ApproxValue
+            value={card.value}
+            approximate={card.approximate}
+            unknownReason={card.unknownReason}
+          />
+        </p>
+      </div>
+      {card.detail ? (
+        <p
+          className={cn(
+            "truncate text-xs font-medium tabular",
+            accent ? "" : "text-subtle-foreground",
+          )}
+        >
+          <KpiDetail card={card} />
+        </p>
+      ) : null}
+      <div className="mt-auto pt-1.5">
         <KpiSparkline id={card.id} points={points} />
       </div>
     </Card>
@@ -141,16 +143,22 @@ function KpiSparkline({ id, points }: { id: KpiId; points: KpiCardsProps["points
   if (points === null) {
     // The light shimmer would glare on the gradient card; use a soft translucent block there.
     return id === ACCENT_KPI ? (
-      <span aria-hidden className="block h-8 w-24 rounded-md bg-accent-card-foreground/15" />
+      <span aria-hidden className="block h-8 w-full rounded-md bg-accent-card-foreground/15" />
     ) : (
-      <Skeleton className="h-8 w-24" />
+      <Skeleton className="h-8 w-full" />
     );
   }
   if (points === "error") {
     // The calls chart shows the error and the retry; keep the card's shape here.
-    return <span aria-hidden className="block h-8 w-24" />;
+    return <span aria-hidden className="block h-8" />;
   }
-  return <Sparkline values={kpiTrend(id, points)} tone={SPARKLINE_TONES[id]} />;
+  return (
+    <Sparkline
+      values={kpiTrend(id, points)}
+      tone={SPARKLINE_TONES[id]}
+      zeroBased={KPI_ZERO_BASED[id]}
+    />
+  );
 }
 
 interface KpiDeltaPillProps {

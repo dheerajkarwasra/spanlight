@@ -173,23 +173,27 @@ export function buildKpiCards({ current, previous, approximate }: OverviewMetric
   ];
 }
 
-/** KPI sparklines show the recent trend: the last 8 buckets (Figma "Sparkline/*"). */
-export const SPARKLINE_BUCKETS = 8;
-
 /**
- * Per-bucket values behind a KPI's sparkline, latest `SPARKLINE_BUCKETS` buckets only.
- * Unknown buckets stay null (drawn as gaps).
+ * Counts and rates start their sparkline at zero, so a flat 0 % error rate draws along the bottom
+ * instead of mid-box; latency keeps a min–max domain (its shape is what matters).
  */
+export const KPI_ZERO_BASED: Record<KpiId, boolean> = {
+  p95: false,
+  error_rate: true,
+  llm_calls: true,
+  tokens: true,
+};
+
+/** Per-bucket values behind a KPI's sparkline, over the whole window. Unknown buckets stay null. */
 export function kpiTrend(id: KpiId, points: readonly ChartPoint[]): (number | null)[] {
-  const recent = points.slice(-SPARKLINE_BUCKETS);
   switch (id) {
     case "p95":
-      return recent.map((point) => point.p95Ms);
+      return points.map((point) => point.p95Ms);
     case "error_rate":
-      return recent.map((point) => (point.llmCalls > 0 ? point.errors / point.llmCalls : null));
+      return points.map((point) => (point.llmCalls > 0 ? point.errors / point.llmCalls : null));
     case "llm_calls":
-      return recent.map((point) => point.llmCalls);
+      return points.map((point) => point.llmCalls);
     case "tokens":
-      return recent.map((point) => point.tokens);
+      return points.map((point) => point.tokens);
   }
 }

@@ -1,5 +1,5 @@
 import type { ModelMetrics } from "@/lib/api";
-import { parseMoney } from "@/lib/format";
+import { formatCost, parseMoney } from "@/lib/format";
 
 /**
  * Pure helpers for the Spend card: the split headline amount, the monthly projection, the
@@ -101,14 +101,17 @@ export function formatTileCost(amount: number): string {
 }
 
 /**
- * Index of the highest known value, or null when nothing is above zero. Ties go to the most
- * recent bucket, so a flat series highlights "now".
+ * Index of the highest known value over the complete buckets (`partial[index]` false), or null
+ * when nothing is above zero. Ties go to the most recent bucket, so a flat series highlights "now".
  */
-export function peakIndex(values: readonly (number | null)[]): number | null {
+export function peakIndex(
+  values: readonly (number | null)[],
+  partial: readonly boolean[] = [],
+): number | null {
   let peak: number | null = null;
   let peakValue = 0;
   for (const [index, value] of values.entries()) {
-    if (value !== null && value > 0 && value >= peakValue) {
+    if (partial[index] !== true && value !== null && value > 0 && value >= peakValue) {
       peak = index;
       peakValue = value;
     }
@@ -195,4 +198,18 @@ export function relativeBucketLabel(stepsBack: number, bucket: "hour" | "day"): 
     return bucket === "hour" ? "Now" : "Today";
   }
   return `−${stepsBack}${bucket === "hour" ? "h" : "d"}`;
+}
+
+/**
+ * Spend axis tick: "$0", "$0.0005", "$0.25", "$40", "$1.2K". `formatCost`'s sub-cent precision
+ * without its trailing zeros, so the axis stays narrow.
+ */
+export function formatAxisCost(amount: number): string {
+  if (amount === 0) {
+    return "$0";
+  }
+  if (Math.abs(amount) >= 10) {
+    return Math.abs(amount) >= 1000 ? formatCompactCost(amount) : formatTileCost(amount);
+  }
+  return (formatCost(amount) ?? "").replace(/(\.\d{2}\d*?)0+$/, "$1");
 }

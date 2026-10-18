@@ -11,7 +11,7 @@ export const NO_INCIDENT = "none";
 
 /**
  * The calls/errors numbers as a table, one row per bucket: the visible "Show table" view and the
- * chart's screen-reader twin. `bands` adds the "Provider incidents" column; null leaves it out
+ * chart's screen-reader twin. "Partial" marks a bucket the window clips or that is still filling. `bands` adds the "Provider incidents" column; null leaves it out
  * (incidents unknown, or switched off by the viewer).
  */
 export function callsTable(
@@ -20,7 +20,13 @@ export function callsTable(
   bands: readonly Band[] | null,
 ): ChartDataTable {
   const noun = bucketNoun(bucket);
-  const columns = [noun === "hour" ? "Hour" : "Day", "LLM calls", "Errors", "Error rate"];
+  const columns = [
+    noun === "hour" ? "Hour" : "Day",
+    "LLM calls",
+    "Errors",
+    "Error rate",
+    "Partial",
+  ];
   return {
     caption: `LLM calls and errors per ${noun}`,
     columns: bands === null ? columns : [...columns, "Provider incidents"],
@@ -31,6 +37,7 @@ export function callsTable(
         formatInteger(point.llmCalls) ?? "0",
         formatInteger(point.errors) ?? "0",
         formatPercent(rate) ?? "—",
+        point.partial ? "✓" : "",
       ];
       if (bands !== null) {
         const titles = incidentsAt(bands, point.bucketStart, bucket);

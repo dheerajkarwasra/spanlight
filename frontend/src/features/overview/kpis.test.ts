@@ -136,8 +136,26 @@ describe("buildKpiCards", () => {
 
 describe("kpiTrend", () => {
   const points: ChartPoint[] = [
-    { bucketStart: "a", llmCalls: 4, errors: 1, p95Ms: 900, costUsd: 0.1, tokens: 300 },
-    { bucketStart: "b", llmCalls: 0, errors: 0, p95Ms: null, costUsd: null, tokens: 0 },
+    {
+      bucketStart: "a",
+      llmCalls: 4,
+      errors: 1,
+      succeeded: 3,
+      partial: true,
+      p95Ms: 900,
+      costUsd: 0.1,
+      tokens: 300,
+    },
+    {
+      bucketStart: "b",
+      llmCalls: 0,
+      errors: 0,
+      succeeded: 0,
+      partial: false,
+      p95Ms: null,
+      costUsd: null,
+      tokens: 0,
+    },
   ];
 
   it("maps each card to its per-bucket series", () => {
@@ -147,16 +165,18 @@ describe("kpiTrend", () => {
     expect(kpiTrend("tokens", points)).toEqual([300, 0]);
   });
 
-  it("keeps only the most recent buckets", () => {
+  it("covers every bucket of the window", () => {
     const many: ChartPoint[] = Array.from({ length: 24 }, (_, index) => ({
       bucketStart: String(index),
       llmCalls: index,
       errors: 0,
+      succeeded: index,
+      partial: false,
       p95Ms: null,
       costUsd: null,
       tokens: 0,
     }));
-    expect(kpiTrend("llm_calls", many)).toEqual([16, 17, 18, 19, 20, 21, 22, 23]);
+    expect(kpiTrend("llm_calls", many)).toHaveLength(24);
   });
 });
 

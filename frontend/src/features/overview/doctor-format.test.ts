@@ -1,15 +1,26 @@
 import { describe, expect, it } from "vitest";
 
-import type { Health } from "@/lib/api";
+import type { Health, Kpis } from "@/lib/api";
 
 import {
-  componentDetail,
+  componentRows,
   formatComponentValue,
+  formatPoints,
   healthBand,
-  penaltyRows,
   ringFraction,
-  summaryLine,
-} from "./health-format";
+} from "./doctor-format";
+
+const METRICS: Kpis = {
+  traces: 51,
+  llm_calls: 99,
+  error_rate: 0,
+  p50_ms: 910,
+  p95_ms: 1290,
+  cost_usd: "0.0204",
+  unpriced_calls: 0,
+  input_tokens: 0,
+  output_tokens: 0,
+};
 
 function health(overrides: Partial<Health>): Health {
   return {
@@ -53,37 +64,43 @@ describe("component values", () => {
     expect(formatComponentValue("cost", "n/a")).toBeNull();
   });
 
-  it("drops the baseline when it is unknown", () => {
-    expect(
-      componentDetail({ name: "latency", penalty: 10, observed: "1840", baseline: null }),
-    ).toBe("1.84 s");
-    expect(
-      componentDetail({ name: "latency", penalty: 10, observed: "1840", baseline: "1620" }),
-    ).toBe("1.84 s vs 1.62 s baseline");
+  it("says when there is no previous window to compare with", () => {
+    const rows = componentRows(
+      health({ components: [{ name: "latency", penalty: 10, observed: "1840", baseline: null }] }),
+      METRICS,
+      true,
+    );
+    expect(rows[2]).toMatchObject({ value: "p95 1.84 s", note: "no previous window" });
   });
 });
 
-describe("penaltyRows", () => {
-  it("lists only components that took points off, with a true minus sign", () => {
-    const rows = penaltyRows([
-      { name: "errors", penalty: 20, observed: "0.2", baseline: "0.01" },
-      { name: "cost", penalty: 0, observed: "1", baseline: "1" },
-    ]);
-    expect(rows).toEqual([
-      { name: "errors", label: "Errors", penalty: "−20", detail: "20.0% vs 1.0% baseline" },
-    ]);
+describe("formatPoints", () => {
+  it("shows points off the cap with a true minus sign", () => {
+    expect(formatPoints(20, 30)).toBe("−20 of 30");
+    expect(formatPoints(0, 40)).toBe("0 of 40");
   });
 });
 
-describe("summaryLine", () => {
+describe("componentRows", () => {
   it("keeps real findings visible when the window had no LLM calls", () => {
-    expect(
-      summaryLine(health({ value: null, open_critical: 1, open_warning: 1 }), "last 24h"),
-    ).toBe("No LLM calls · 2 open findings (1 critical, 1 warning) · last 24h");
+    const rows = componentRows(
+      health({
+        value: null,
+        open_critical: 1,
+        open_warning: 1,
+        components: [{ name: "findings", penalty: 20, observed: "2", baseline: null }],
+      }),
+      METRICS,
+      true,
+    );
+    expect(rows[0]).toMatchObject({ value: "2 open", note: "1 critical, 1 warning", penalty: 20 });
+    expect(rows[1]).toMatchObject({ value: null, penalty: null });
   });
 
-  it("says there are no findings only when there is a score", () => {
-    expect(summaryLine(health({}), "last 7d")).toBe("No open findings · last 7d");
-    expect(summaryLine(health({ value: null }), "last 7d")).toBe("No LLM calls · last 7d");
+  it("leaves findings unknown before the first detector pass", () => {
+    expect(componentRows(health({}), METRICS, false)[0]).toMatchObject({
+      value: "No detector pass yet",
+      penalty: null,
+    });
   });
 });

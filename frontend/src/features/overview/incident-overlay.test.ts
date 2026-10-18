@@ -47,7 +47,16 @@ function model(provider: string | null): ModelMetrics {
 const WINDOW = { start: new Date("2026-10-16T00:00:00Z"), end: new Date("2026-10-16T12:00:00Z") };
 
 function point(bucketStart: string): ChartPoint {
-  return { bucketStart, llmCalls: 1, errors: 0, p95Ms: null, costUsd: null, tokens: 0 };
+  return {
+    bucketStart,
+    llmCalls: 1,
+    errors: 0,
+    succeeded: 1,
+    partial: false,
+    p95Ms: null,
+    costUsd: null,
+    tokens: 0,
+  };
 }
 
 const POINTS = ["00", "01", "02", "03"].map((hour) => point(`2026-10-16T${hour}:00:00Z`));

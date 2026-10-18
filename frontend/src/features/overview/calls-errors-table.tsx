@@ -12,17 +12,18 @@ import { cn } from "@/lib/utils";
 
 import { NO_INCIDENT } from "./calls-table";
 
-/** Numbers right-aligned; the label column and the incidents column read as text. */
+/** Numbers right-aligned, the partial mark centred; the label and incidents columns read as text. */
 const NUMERIC_COLUMNS = new Set([1, 2, 3]);
+const PARTIAL_COLUMN = 4;
 
 /**
- * The card's "Show table" view: every bucket with its calls, errors, error rate and, when the
- * overlay is on, the overlapping provider incidents. It carries everything the bands show. The box
- * is the only scroller (both axes) and takes keyboard focus, so it can be scrolled without a mouse.
+ * The card's "Show table" view: every bucket with its calls, errors, error rate, partial mark and,
+ * when the overlay is on, the overlapping provider incidents. It carries everything the bands show.
+ * The box is the only scroller (both axes) and takes keyboard focus, so it can be scrolled without a mouse.
  */
 export function CallsErrorsTable({ table }: { table: ChartDataTable }) {
   const [labelColumn, ...valueColumns] = table.columns;
-  const hasIncidents = table.columns.length > 4;
+  const hasIncidents = table.columns.length > PARTIAL_COLUMN + 1;
   return (
     <div className="flex flex-col gap-2">
       <div
@@ -40,7 +41,10 @@ export function CallsErrorsTable({ table }: { table: ChartDataTable }) {
                 <TableHead
                   key={column}
                   scope="col"
-                  className={cn(NUMERIC_COLUMNS.has(index + 1) && "text-right")}
+                  className={cn(
+                    NUMERIC_COLUMNS.has(index + 1) && "text-right",
+                    index + 1 === PARTIAL_COLUMN && "text-center",
+                  )}
                 >
                   {column}
                 </TableHead>
@@ -60,12 +64,13 @@ export function CallsErrorsTable({ table }: { table: ChartDataTable }) {
                       key={table.columns[index + 1] ?? index}
                       className={cn(
                         "h-10",
-                        NUMERIC_COLUMNS.has(index + 1)
-                          ? "text-right tabular"
-                          : cn(
-                              "min-w-56 whitespace-normal",
-                              value === NO_INCIDENT && "text-muted-foreground",
-                            ),
+                        NUMERIC_COLUMNS.has(index + 1) && "text-right tabular",
+                        index + 1 === PARTIAL_COLUMN && "text-center",
+                        index + 1 > PARTIAL_COLUMN &&
+                          cn(
+                            "min-w-56 whitespace-normal",
+                            value === NO_INCIDENT && "text-muted-foreground",
+                          ),
                       )}
                     >
                       {value}

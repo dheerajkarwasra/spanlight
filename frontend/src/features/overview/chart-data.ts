@@ -1,5 +1,8 @@
 import type { Bucket, TimeseriesPoint } from "@/lib/api";
 import { parseMoney } from "@/lib/format";
+import { bucketFor, type ResolvedRange } from "@/lib/time-range";
+
+export const BUCKET_MS: Record<Bucket, number> = { hour: 3_600_000, day: 86_400_000 };
 
 /** One timeseries bucket, reshaped for Recharts. Unknown values stay null (drawn as gaps). */
 export interface ChartPoint {
@@ -7,20 +10,42 @@ export interface ChartPoint {
   bucketStart: string;
   llmCalls: number;
   errors: number;
+  /** `llmCalls − errors`: the lower segment of the calls stack. */
+  succeeded: number;
+  /**
+   * The bucket is not whole: the window clips it (the first) or it is still filling (the last).
+   * Its sums are real; charts draw it fainter, label it "partial" and leave it out of the peak.
+   */
+  partial: boolean;
   p95Ms: number | null;
   costUsd: number | null;
   tokens: number;
 }
 
-export function toChartPoints(points: readonly TimeseriesPoint[]): ChartPoint[] {
-  return points.map((point) => ({
-    bucketStart: point.bucket_start,
-    llmCalls: point.llm_calls,
-    errors: point.errors,
-    p95Ms: point.p95_ms,
-    costUsd: parseMoney(point.cost_usd),
-    tokens: point.tokens,
-  }));
+/**
+ * The backend returns gapless UTC buckets from the one holding the window's start
+ * (`app/metrics/service.py: timeseries`), so the first and last buckets can be partial.
+ */
+export function toChartPoints(
+  points: readonly TimeseriesPoint[],
+  range: Pick<ResolvedRange, "from" | "to" | "durationMs">,
+): ChartPoint[] {
+  const step = BUCKET_MS[bucketFor(range.durationMs)];
+  const from = Date.parse(range.from);
+  const to = Date.parse(range.to);
+  return points.map((point) => {
+    const start = Date.parse(point.bucket_start);
+    return {
+      bucketStart: point.bucket_start,
+      llmCalls: point.llm_calls,
+      errors: point.errors,
+      succeeded: point.llm_calls - point.errors,
+      partial: start < from || start + step > to,
+      p95Ms: point.p95_ms,
+      costUsd: parseMoney(point.cost_usd),
+      tokens: point.tokens,
+    };
+  });
 }
 
 const hourTickFormat = new Intl.DateTimeFormat("en-US", {
@@ -87,9 +112,20 @@ function isSameLocalDay(a: Date, b: Date): boolean {
 
 /**
  * Tooltip heading. Hourly: "Today · 10:00 – 11:00", "Yesterday · 23:00 – 00:00" or
- * "Oct 6 · 09:00 – 10:00". Daily: "Today", "Yesterday" or "Mon, Oct 6".
+ * "Oct 6 · 09:00 – 10:00". Daily: "Today", "Yesterday" or "Mon, Oct 6". A partial bucket gets
+ * " · partial".
  */
-export function formatBucketRange(iso: string, bucket: Bucket, now: Date = new Date()): string {
+export function formatBucketRange(
+  iso: string,
+  bucket: Bucket,
+  now: Date = new Date(),
+  partial = false,
+): string {
+  const label = bucketRangeLabel(iso, bucket, now);
+  return label && partial ? `${label} · partial` : label;
+}
+
+function bucketRangeLabel(iso: string, bucket: Bucket, now: Date): string {
   const start = parse(iso);
   if (!start) {
     return "";

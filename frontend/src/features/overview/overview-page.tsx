@@ -23,9 +23,10 @@ export function OverviewPage() {
   const environmentLabel = environment ?? "All environments";
 
   const date = formatHeroDate(now);
-  // Windows over 24 h read hourly rollups: the chip explains the "≈" on percentile values. With
-  // nothing to show in the window there are no percentiles, so no chip either. While the previous
-  // range is held as placeholder data, its flag says nothing about the new window.
+  // A window that reads any rollup hour (the default 24 h does) estimates percentiles: the chip
+  // explains the "≈" on percentile values. With nothing to show in the window there are no
+  // percentiles, so no chip either. While the previous range is held as placeholder data, its flag
+  // says nothing about the new window.
   const { overview } = queries;
   const estimated =
     state === "ready" && !overview.isPlaceholderData && overview.data?.approximate === true;

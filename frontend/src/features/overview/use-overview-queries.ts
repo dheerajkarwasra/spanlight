@@ -24,6 +24,9 @@ export const INCIDENT_OVERLAY_LIMIT = 100;
 /** How often the "Live" latest-traces list refreshes. */
 export const LIVE_REFRESH_MS = 15_000;
 
+/** The newest detector runs the Doctor card reads its last pass from (one pass is ~15 runs). */
+export const DETECTOR_RUNS_LIMIT = 20;
+
 /** How often the first-run screen checks whether the first trace has arrived. */
 export const FIRST_TRACE_POLL_MS = 3_000;
 
@@ -63,6 +66,23 @@ export function useOverviewQueries() {
     queryKey: keys.health(metricsWindow),
     queryFn: () => insightsApi.health(projectId, metricsWindow),
     placeholderData: keepPreviousData,
+  });
+
+  // The last detector pass. Its own key under the Doctor prefix: the Doctor page caches one run.
+  const detectorRuns = useQuery({
+    queryKey: [...keys.detectorRuns, DETECTOR_RUNS_LIMIT],
+    queryFn: () => insightsApi.detectorRuns(projectId, DETECTOR_RUNS_LIMIT),
+    placeholderData: keepPreviousData,
+  });
+
+  // The most recently seen open finding, asked for only while there are open findings.
+  const topInsightQuery = { status: ["open", "acknowledged"], limit: 1 } as const;
+  const openFindings = (health.data?.open_critical ?? 0) + (health.data?.open_warning ?? 0);
+  const topInsight = useQuery({
+    queryKey: keys.insights(topInsightQuery),
+    queryFn: () => insightsApi.list(projectId, topInsightQuery),
+    select: (page) => page.items[0],
+    enabled: openFindings > 0,
   });
 
   // Losses are counted per project, not per environment, so the window alone scopes them.
@@ -152,6 +172,8 @@ export function useOverviewQueries() {
     timeseries,
     models,
     health,
+    detectorRuns,
+    topInsight,
     completeness,
     incidents,
     recentErrors,

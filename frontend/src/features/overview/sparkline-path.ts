@@ -45,20 +45,22 @@ function smoothPath(points: readonly Point[]): string {
 }
 
 /**
- * Scales a series into the sparkline box. Higher values sit higher. A flat series is drawn
- * through the middle. Runs of a single known value have no line but still get the end dot
- * when they are the latest value.
+ * Scales a series into the sparkline box. Higher values sit higher. `zeroBased` puts 0 on the
+ * bottom edge (counts and rates), otherwise the domain is min–max and a flat series is drawn
+ * through the middle. Runs of a single known value have no line but still get the end dot when
+ * they are the latest value.
  */
 export function buildSparkline(
   values: readonly (number | null)[],
   box: SparklineBox = SPARKLINE_BOX,
+  { zeroBased = false }: { zeroBased?: boolean } = {},
 ): SparklineGeometry {
   const known = values.filter((value): value is number => value !== null && Number.isFinite(value));
   if (known.length === 0) {
     return { paths: [], end: null };
   }
 
-  const min = Math.min(...known);
+  const min = zeroBased ? Math.min(0, ...known) : Math.min(...known);
   const max = Math.max(...known);
   const plotWidth = box.width - box.insetX * 2;
   const plotHeight = box.height - box.insetY * 2;
@@ -66,7 +68,10 @@ export function buildSparkline(
 
   function toPoint(value: number, index: number): Point {
     const x = values.length > 1 ? box.insetX + index * stepX : box.width - box.insetX;
-    const ratio = max === min ? 0.5 : (value - min) / (max - min);
+    let ratio = zeroBased ? 0 : 0.5;
+    if (max !== min) {
+      ratio = (value - min) / (max - min);
+    }
     return { x, y: box.insetY + (1 - ratio) * plotHeight };
   }
 

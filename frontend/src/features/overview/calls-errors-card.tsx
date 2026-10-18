@@ -5,7 +5,7 @@ import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-export const PLOT_HEIGHT_CLASSES = "h-[150px] sm:h-[196px]";
+export const PLOT_HEIGHT_CLASSES = "h-[180px] sm:h-[262px]";
 
 interface CallsErrorsCardProps {
   description?: ReactNode;

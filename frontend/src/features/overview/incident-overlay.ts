@@ -2,9 +2,7 @@ import type { Bucket, ModelMetrics, ProviderIncident } from "@/lib/api";
 import { clipBands, type Band, type BandWindow } from "@/lib/incident-bands";
 import { feedLabel } from "@/lib/provider-label";
 
-import type { ChartPoint } from "./chart-data";
-
-const BUCKET_MS: Record<Bucket, number> = { hour: 3_600_000, day: 86_400_000 };
+import { BUCKET_MS, type ChartPoint } from "./chart-data";
 
 /**
  * The providers the project called in the window, lowercased: span providers keep their

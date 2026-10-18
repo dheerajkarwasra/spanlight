@@ -3,7 +3,8 @@ import { useId } from "react";
 import { SeriesKey } from "@/components/chart-parts";
 import { ChartViewToggle } from "@/components/chart-view-toggle";
 import { Switch } from "@/components/ui/switch";
-import { SERIES_COLORS } from "@/lib/chart-theme";
+import type { Bucket } from "@/lib/api";
+import { PARTIAL_OPACITY, SERIES_COLORS } from "@/lib/chart-theme";
 import type { ChartView } from "@/lib/use-stored-choice";
 
 import { IncidentLegendItems } from "./incident-bands";
@@ -27,10 +28,17 @@ interface CallsErrorsLegendProps {
   incidents: IncidentControls;
   view: ChartView;
   onViewChange: (view: ChartView) => void;
+  /** The "Partial hour/day" key renders only when a partial bucket is drawn. */
+  partialBucket: Bucket | null;
 }
 
 /** The legend row: series keys, incident keys, then "Show table" and "Show incidents". */
-export function CallsErrorsLegend({ incidents, view, onViewChange }: CallsErrorsLegendProps) {
+export function CallsErrorsLegend({
+  incidents,
+  view,
+  onViewChange,
+  partialBucket,
+}: CallsErrorsLegendProps) {
   const switchId = useId();
   const { feed, shown, hasBands } = incidents;
   return (
@@ -40,15 +48,21 @@ export function CallsErrorsLegend({ incidents, view, onViewChange }: CallsErrors
         className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-medium"
       >
         <li className="flex items-center gap-1.5">
-          <SeriesKey color={SERIES_COLORS.calls} shape="line" />
-          <span>Calls</span>
+          <SeriesKey color={SERIES_COLORS.calls} shape="bar" />
+          <span>Succeeded</span>
         </li>
         <li className="flex items-center gap-1.5">
-          <SeriesKey color={SERIES_COLORS.errors} shape="line" />
-          <span>
-            Errors<span className="max-sm:hidden"> (right axis)</span>
-          </span>
+          <SeriesKey color={SERIES_COLORS.errors} shape="bar" />
+          <span>Failed</span>
         </li>
+        {partialBucket ? (
+          <li className="flex items-center gap-1.5">
+            <span className="flex" style={{ opacity: PARTIAL_OPACITY }}>
+              <SeriesKey color={SERIES_COLORS.calls} shape="bar" />
+            </span>
+            <span>Partial {partialBucket}</span>
+          </li>
+        ) : null}
         {feed === "ready" && shown && hasBands ? (
           <IncidentLegendItems hasCritical={incidents.hasCritical} />
         ) : null}

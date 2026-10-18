@@ -1,20 +1,31 @@
 import { useId } from "react";
-import { Area, CartesianGrid, ComposedChart, Line, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Rectangle,
+  Tooltip,
+  XAxis,
+  YAxis,
+  type BarShapeProps,
+} from "recharts";
 
-import { AreaGradient, ChartTooltip } from "@/components/chart-parts";
+import { ChartTooltip } from "@/components/chart-parts";
 import type { Bucket } from "@/lib/api";
 import {
+  BAR_CURSOR,
+  BAR_MAX_SIZE,
+  BAR_RADIUS,
   CHART_MARGIN,
   GRID_PROPS,
-  LINE_CURSOR,
-  LINE_SERIES_PROPS,
+  PARTIAL_OPACITY,
   SERIES_COLORS,
+  SURFACE_GAP_PROPS,
   X_AXIS_PROPS,
   Y_AXIS_PROPS,
 } from "@/lib/chart-theme";
 import { formatCompact, formatInteger, formatPercent } from "@/lib/format";
 import type { Band } from "@/lib/incident-bands";
-import { useMediaQuery } from "@/lib/use-media-query";
 
 import { PLOT_HEIGHT_CLASSES } from "./calls-errors-card";
 import { formatBucketRange, formatBucketTick, type ChartPoint } from "./chart-data";
@@ -32,52 +43,52 @@ interface CallsErrorsPlotProps {
 }
 
 /**
- * LLM calls per bucket as a violet area, failed calls as a rose line on their own right-hand
- * axis (errors are usually two orders of magnitude smaller), provider incidents as shaded bands
- * behind both. Phones get a simplified plot without y axes.
+ * LLM calls per bucket on one axis: failed calls are a subset of the calls, so they stack in rose
+ * on top of the succeeded calls in violet. Partial buckets are drawn at 45 %; provider incidents
+ * are shaded bands behind the bars.
  */
 export function CallsErrorsPlot({ points, bucket, now, bands, label }: CallsErrorsPlotProps) {
-  const ids = useId();
-  const gradientId = `${ids}-calls-fill`;
-  const hatchId = `${ids}-incident-hatch`;
+  const hatchId = `${useId()}-incident-hatch`;
   const byBucket = new Map(points.map((point) => [point.bucketStart, point]));
-  const showAxes = useMediaQuery("(min-width: 640px)");
+
+  /** Each segment fades with its bucket; the succeeded segment rounds its top when nothing failed. */
+  function segment(props: BarShapeProps, top: boolean) {
+    const point = points[props.originalDataIndex];
+    return (
+      <Rectangle
+        {...props}
+        radius={top || point?.errors === 0 ? BAR_RADIUS : 0}
+        fillOpacity={point?.partial ? PARTIAL_OPACITY : 1}
+      />
+    );
+  }
 
   return (
     <div role="img" aria-label={label} className={PLOT_HEIGHT_CLASSES}>
-      <ComposedChart
+      <BarChart
         responsive
         style={{ width: "100%", height: "100%" }}
         data={points}
-        margin={showAxes ? CHART_MARGIN : { top: 8, right: 4, bottom: 0, left: 4 }}
+        margin={CHART_MARGIN}
+        barCategoryGap="30%"
         accessibilityLayer={false}
       >
         <defs>
-          <AreaGradient id={gradientId} color={SERIES_COLORS.calls} />
           <HatchPattern id={hatchId} />
         </defs>
         <CartesianGrid {...GRID_PROPS} />
         <XAxis
           dataKey="bucketStart"
           {...X_AXIS_PROPS}
-          minTickGap={showAxes ? 32 : 48}
+          minTickGap={32}
           tickFormatter={(value: string) => formatBucketTick(value, bucket)}
         />
         <YAxis
           yAxisId="calls"
-          hide={!showAxes}
           {...Y_AXIS_PROPS}
-          width={40}
-          allowDecimals={false}
-          tickFormatter={(value: number) => formatCompact(value) ?? ""}
-        />
-        <YAxis
-          yAxisId="errors"
-          orientation="right"
-          hide={!showAxes}
-          {...Y_AXIS_PROPS}
-          tick={{ fill: "var(--danger-text)", fontSize: 12 }}
-          width={32}
+          width="auto"
+          tickCount={5}
+          domain={[0, "auto"]}
           allowDecimals={false}
           tickFormatter={(value: number) => formatCompact(value) ?? ""}
         />
@@ -87,7 +98,7 @@ export function CallsErrorsPlot({ points, bucket, now, bands, label }: CallsErro
           yAxisId="calls"
         />
         <Tooltip
-          cursor={LINE_CURSOR}
+          cursor={BAR_CURSOR}
           isAnimationActive={false}
           content={({ active, label: bucketStart }) => {
             const point = typeof bucketStart === "string" ? byBucket.get(bucketStart) : undefined;
@@ -99,7 +110,7 @@ export function CallsErrorsPlot({ points, bucket, now, bands, label }: CallsErro
             return (
               <ChartTooltip
                 active={active}
-                title={formatBucketRange(point.bucketStart, bucket, now)}
+                title={formatBucketRange(point.bucketStart, bucket, now, point.partial)}
                 rows={[
                   {
                     label: "Calls",
@@ -107,7 +118,7 @@ export function CallsErrorsPlot({ points, bucket, now, bands, label }: CallsErro
                     color: SERIES_COLORS.calls,
                   },
                   {
-                    label: "Errors",
+                    label: "Failed",
                     value:
                       rate === null ? errorValue : `${errorValue} · ${formatPercent(rate) ?? ""}`,
                     color: SERIES_COLORS.errors,
@@ -118,24 +129,28 @@ export function CallsErrorsPlot({ points, bucket, now, bands, label }: CallsErro
             );
           }}
         />
-        <Area
+        <Bar
           yAxisId="calls"
-          dataKey="llmCalls"
-          name="LLM calls"
-          {...LINE_SERIES_PROPS}
-          stroke={SERIES_COLORS.calls}
-          fill={`url(#${gradientId})`}
-          activeDot={{ ...LINE_SERIES_PROPS.activeDot, fill: SERIES_COLORS.calls }}
+          dataKey="succeeded"
+          name="Succeeded"
+          stackId="calls"
+          fill={SERIES_COLORS.calls}
+          maxBarSize={BAR_MAX_SIZE}
+          isAnimationActive={false}
+          shape={(props: BarShapeProps) => segment(props, false)}
         />
-        <Line
-          yAxisId="errors"
+        <Bar
+          yAxisId="calls"
           dataKey="errors"
-          name="Errors"
-          {...LINE_SERIES_PROPS}
-          stroke={SERIES_COLORS.errors}
-          activeDot={{ ...LINE_SERIES_PROPS.activeDot, fill: SERIES_COLORS.errors }}
+          name="Failed"
+          stackId="calls"
+          fill={SERIES_COLORS.errors}
+          {...SURFACE_GAP_PROPS}
+          maxBarSize={BAR_MAX_SIZE}
+          isAnimationActive={false}
+          shape={(props: BarShapeProps) => segment(props, true)}
         />
-      </ComposedChart>
+      </BarChart>
     </div>
   );
 }

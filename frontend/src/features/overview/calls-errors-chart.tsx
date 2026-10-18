@@ -46,7 +46,8 @@ function incidentFeed(bands: Band[] | undefined, pollingOff: boolean): IncidentF
 }
 
 /**
- * Figma "Calls & errors card" with the "Incident overlay": calls and errors per bucket, provider
+ * Figma "Calls & errors card" with the "Incident overlay": calls per bucket with the failed ones
+ * stacked on top, provider
  * incidents shaded behind them (switchable, remembered per viewer), and a "Show table" view that
  * lists the same numbers and incidents per bucket.
  */
@@ -67,7 +68,7 @@ export function CallsErrorsChart({
   const errorsLabel = `${formatInteger(errors) ?? "0"} ${errors === 1 ? "error" : "errors"}`;
   const table = callsTable(points, bucket, feed === "ready" && overlayOn ? shownBands : null);
   const incidents = incidentSummary(shownBands);
-  const label = `LLM calls and errors per ${bucketNoun(bucket)}: ${callsLabel}, ${errorsLabel} in total${
+  const label = `LLM calls and failed calls per ${bucketNoun(bucket)}: ${callsLabel}, ${errorsLabel} in total${
     incidents ? `; ${incidents}` : ""
   }`;
 
@@ -79,7 +80,9 @@ export function CallsErrorsChart({
           <span className="sm:hidden">
             {bucketAdjective(bucket)} · {rangeLabel}
           </span>
-          <span className="max-sm:hidden">{bucketAdjective(bucket)} · errors on right axis</span>
+          <span className="max-sm:hidden">
+            {bucketAdjective(bucket)} · {rangeLabel} · failed calls stack on top
+          </span>
         </>
       }
       totals={
@@ -103,6 +106,7 @@ export function CallsErrorsChart({
         }}
         view={view}
         onViewChange={setView}
+        partialBucket={points.some((point) => point.partial) ? bucket : null}
       />
       <div className={cn("transition-opacity", isRefreshing && "opacity-60")}>
         {!hasCallData(points) ? (

@@ -9,8 +9,10 @@ import {
   CompletenessCardSkeleton,
 } from "./completeness-card";
 import { shortRangeLabel } from "./hero";
-import { HealthTile, HealthTileError, HealthTileSkeleton } from "./health-tile";
+import { DoctorCard, DoctorCardError, DoctorCardSkeleton } from "./doctor-card";
+import { providerStatusLine } from "./doctor-format";
 import { overviewBands, usedProviders } from "./incident-overlay";
+import { loadable } from "./loadable";
 import { LatestTraces, LatestTracesError, LatestTracesSkeleton } from "./latest-traces";
 import { ModelTable, ModelTableError, ModelTableSkeleton } from "./model-table";
 import { RecentErrors, RecentErrorsError, RecentErrorsSkeleton } from "./recent-errors";
@@ -57,7 +59,7 @@ export function CallsSection({ queries, now, className }: SectionProps) {
     <CallsErrorsChart
       className={className}
       data={{
-        points: toChartPoints(timeseries.data),
+        points: toChartPoints(timeseries.data, range),
         bucket,
         rangeLabel: shortRangeLabel(range),
         now,
@@ -98,14 +100,32 @@ export function CompletenessSection({ queries, className }: Omit<SectionProps, "
   );
 }
 
-export function HealthSection({ queries, className }: Omit<SectionProps, "now">) {
-  const { health, range } = queries;
-  if (health.isPending) {
-    return <HealthTileSkeleton className={className} />;
+/**
+ * The providers' status line: pending while the models (the providers in use) or the incidents
+ * load; null when either failed (the Models card reports that error).
+ */
+function providerStatus(queries: OverviewQueries) {
+  const { incidents, models } = queries;
+  if (incidents.isError || models.isError) {
+    return null;
+  }
+  if (!incidents.data || !models.data) {
+    return { status: "pending" } as const;
+  }
+  return {
+    status: "success",
+    data: providerStatusLine(incidents.data, usedProviders(models.data)),
+  } as const;
+}
+
+export function DoctorSection({ queries, now, className }: SectionProps) {
+  const { health, overview, detectorRuns, topInsight } = queries;
+  if (health.isPending || !overview.data) {
+    return <DoctorCardSkeleton className={className} />;
   }
   if (health.isError) {
     return (
-      <HealthTileError
+      <DoctorCardError
         className={className}
         error={health.error}
         onRetry={() => {
@@ -115,10 +135,14 @@ export function HealthSection({ queries, className }: Omit<SectionProps, "now">)
     );
   }
   return (
-    <HealthTile
+    <DoctorCard
       className={cn("transition-opacity", health.isPlaceholderData && "opacity-60", className)}
       health={health.data}
-      rangeLabel={shortRangeLabel(range)}
+      metrics={overview.data.current}
+      runs={loadable(detectorRuns, (runs) => runs)}
+      topInsight={topInsight.data}
+      providers={providerStatus(queries)}
+      now={now}
     />
   );
 }

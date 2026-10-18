@@ -31,13 +31,22 @@ function point(overrides: Partial<TimeseriesPoint> = {}): TimeseriesPoint {
   };
 }
 
+/** A 24 h window that holds the 14:00 bucket whole. */
+const RANGE = {
+  from: "2026-10-07T00:00:00Z",
+  to: "2026-10-08T00:00:00Z",
+  durationMs: 24 * 3600_000,
+};
+
 describe("toChartPoints", () => {
   it("parses money and keeps the counts", () => {
-    expect(toChartPoints([point()])).toEqual([
+    expect(toChartPoints([point()], RANGE)).toEqual([
       {
         bucketStart: "2026-10-07T14:00:00Z",
         llmCalls: 10,
         errors: 2,
+        succeeded: 8,
+        partial: false,
         p95Ms: 900,
         costUsd: 0.25,
         tokens: 500,
@@ -45,8 +54,19 @@ describe("toChartPoints", () => {
     ]);
   });
 
+  it("marks the buckets the window clips or that are still filling as partial", () => {
+    const points = toChartPoints(
+      [
+        point({ bucket_start: "2026-10-06T23:00:00Z" }),
+        point({ bucket_start: "2026-10-07T23:00:00Z" }),
+      ],
+      { ...RANGE, from: "2026-10-06T23:30:00Z", to: "2026-10-07T23:30:00Z" },
+    );
+    expect(points.map((chartPoint) => chartPoint.partial)).toEqual([true, true]);
+  });
+
   it("keeps unknown values null so charts draw gaps", () => {
-    const [chartPoint] = toChartPoints([point({ p95_ms: null, cost_usd: null })]);
+    const [chartPoint] = toChartPoints([point({ p95_ms: null, cost_usd: null })], RANGE);
     expect(chartPoint?.p95Ms).toBeNull();
     expect(chartPoint?.costUsd).toBeNull();
   });
@@ -54,24 +74,30 @@ describe("toChartPoints", () => {
 
 describe("summarizeCalls", () => {
   it("totals calls and errors", () => {
-    const points = toChartPoints([
-      point({ llm_calls: 5, errors: 1 }),
-      point({ llm_calls: 0, errors: 0 }),
-      point({ llm_calls: 7, errors: 0 }),
-    ]);
+    const points = toChartPoints(
+      [
+        point({ llm_calls: 5, errors: 1 }),
+        point({ llm_calls: 0, errors: 0 }),
+        point({ llm_calls: 7, errors: 0 }),
+      ],
+      RANGE,
+    );
     expect(summarizeCalls(points)).toEqual({ calls: 12, errors: 1 });
   });
 });
 
 describe("emptiness checks", () => {
   it("treats all-zero series as empty", () => {
-    const zeros = toChartPoints([point({ llm_calls: 0, errors: 0, p95_ms: null, cost_usd: "0" })]);
+    const zeros = toChartPoints(
+      [point({ llm_calls: 0, errors: 0, p95_ms: null, cost_usd: "0" })],
+      RANGE,
+    );
     expect(hasCallData(zeros)).toBe(false);
     expect(hasCostData(zeros)).toBe(false);
   });
 
   it("detects real data", () => {
-    const data = toChartPoints([point()]);
+    const data = toChartPoints([point()], RANGE);
     expect(hasCallData(data)).toBe(true);
     expect(hasCostData(data)).toBe(true);
   });

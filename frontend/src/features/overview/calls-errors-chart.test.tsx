@@ -12,6 +12,8 @@ const POINTS: ChartPoint[] = ["00", "01", "02", "03"].map((hour, index) => ({
   bucketStart: `2026-10-16T${hour}:00:00Z`,
   llmCalls: 100 + index,
   errors: index,
+  succeeded: 100,
+  partial: false,
   p95Ms: null,
   costUsd: null,
   tokens: 0,

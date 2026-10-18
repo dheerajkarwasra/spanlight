@@ -8,17 +8,14 @@ import { cn } from "@/lib/utils";
 import { ModelCost, ModelLatency, ModelName } from "./model-cells";
 import { modelRowKey, unpricedCalls } from "./models";
 
-/** One tile per model, shown when the card is narrow. */
+/** One hairline-divided row per model, shown when the card is narrow. */
 export function ModelTiles({ models }: { models: ModelMetrics[] }) {
   const unpriced = unpricedCalls(models);
   return (
-    <div className="mt-2 flex flex-col gap-2 @4xl:hidden">
-      <ul className="grid gap-2 @xl:grid-cols-2 @3xl:grid-cols-3">
+    <div className="mt-2 flex flex-col gap-2 px-2 sm:px-5 @4xl:hidden">
+      <ul className="grid gap-x-6 @xl:grid-cols-2 @3xl:grid-cols-3">
         {models.map((model) => (
-          <li
-            key={modelRowKey(model)}
-            className="flex flex-col gap-3 rounded-tile bg-surface-muted p-4"
-          >
+          <li key={modelRowKey(model)} className="flex flex-col gap-3 border-t border-border py-4">
             <div className="flex items-center gap-2">
               <span className="min-w-0 flex-1 truncate">
                 <ModelName model={model.model} />
