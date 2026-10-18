@@ -8,6 +8,7 @@ import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
+import click
 import psycopg
 import pytest
 from typer.testing import CliRunner, Result
@@ -144,4 +145,5 @@ def test_parse_since_rejects_junk(runner: CliRunner) -> None:
     result = _recompute(runner, "--since", "soon")
 
     assert result.exit_code == 2
-    assert "--since" in result.output
+    # Typer forces Rich colours on GitHub Actions, which styles each dash of the option apart.
+    assert "--since" in click.unstyle(result.output)
