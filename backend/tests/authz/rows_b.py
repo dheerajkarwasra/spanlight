@@ -1,5 +1,5 @@
 """The matrix rows for prompts, scores, the span cost explanation, billing sources, datasets,
-annotation queues, evaluators, experiments and the playground.
+annotation queues, the review policy, evaluators, experiments, the playground and exact replay.
 
 One row per route, with the permission that is meant to guard it. The rows for the gateway,
 alerts, insights and the rest are in `rows_a.py`.
@@ -34,6 +34,7 @@ SCORE_ROWS = (
     Row("GET", f"{PRJ}/traces/{{trace_id}}/scores", P.PROJECT_READ),
     Row("POST", f"{PRJ}/traces/{{trace_id}}/scores", P.SCORES_WRITE),
     Row("DELETE", f"{PRJ}/scores/{{score_id}}", P.SCORES_WRITE),
+    Row("POST", f"{PRJ}/score-configs/failure-category", P.SCORES_WRITE),
 )
 
 # Bet 1: the lines behind one span's stored cost. API-key readable, like the trace detail.
@@ -90,6 +91,18 @@ ANNOTATION_ROWS = (
     Row("POST", f"{QUEUE}/items/{{item_id}}/release", P.ANNOTATIONS_WRITE),
 )
 
+REVIEW_POLICY = f"{PRJ}/review-policy"
+
+# Bet 5: the project's one review policy. The handler answers 404 `NOT_FOUND` while the project
+# has none, which the matrix workspace never does, so reading or deleting it may 404.
+REVIEW_ROWS = (
+    Row("GET", REVIEW_POLICY, P.PROJECT_READ, also=frozenset({404})),
+    Row("PUT", REVIEW_POLICY, P.ANNOTATIONS_WRITE),
+    Row("DELETE", REVIEW_POLICY, P.ANNOTATIONS_WRITE, also=frozenset({404})),
+    Row("POST", f"{REVIEW_POLICY}/runs", P.ANNOTATIONS_WRITE),
+    Row("GET", f"{REVIEW_POLICY}/selections", P.PROJECT_READ),
+)
+
 EVALUATOR = f"{PRJ}/evaluators/{{evaluator_id}}"
 
 EVALUATOR_ROWS = (
@@ -119,6 +132,14 @@ EXPERIMENT_ROWS = (
     Row("POST", f"{PRJ}/playground/runs", P.EXPERIMENTS_RUN),
 )
 
+# Bet 4: exact replay. Sending one spends like a playground run; reading is for any member.
+REPLAY_ROWS = (
+    Row("GET", f"{PRJ}/traces/{{trace_id}}/spans/{{span_id}}/replay-source", P.PROJECT_READ),
+    Row("GET", f"{PRJ}/playground/replays", P.PROJECT_READ),
+    Row("GET", f"{PRJ}/playground/replays/budget", P.PROJECT_READ),
+    Row("POST", f"{PRJ}/playground/replays", P.EXPERIMENTS_RUN),
+)
+
 ROWS_B = (
     PROMPT_ROWS
     + SCORE_ROWS
@@ -128,4 +149,6 @@ ROWS_B = (
     + ANNOTATION_ROWS
     + EVALUATOR_ROWS
     + EXPERIMENT_ROWS
+    + REVIEW_ROWS
+    + REPLAY_ROWS
 )

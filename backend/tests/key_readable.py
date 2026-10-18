@@ -26,6 +26,9 @@ KEY_READABLE: frozenset[Route] = frozenset(
         # (docs/api-deviations.md, "Releases" and "Users").
         ("GET", "/api/v1/projects/{project_id}/releases"),
         ("GET", "/api/v1/projects/{project_id}/releases/compare"),
+        # Bet 5: failure-category rates per release (docs/api-deviations.md, "Failure-category
+        # rates").
+        ("GET", "/api/v1/projects/{project_id}/releases/failure-categories"),
         ("GET", "/api/v1/projects/{project_id}/users"),
         ("GET", "/api/v1/projects/{project_id}/users/{external_user_id:path}"),
         # Bet 3: spend by metadata, trace name, user or release, for the same CI job.

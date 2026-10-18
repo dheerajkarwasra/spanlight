@@ -103,6 +103,8 @@ INSIGHT_ROWS = (
 PROJECT_DATA_ROWS = (
     Row("GET", f"{PRJ}/releases", P.PROJECT_READ),
     Row("GET", f"{PRJ}/releases/compare", P.PROJECT_READ),
+    # Bet 5: 404 `NOT_FOUND` from the handler until the project has a failure-category config.
+    Row("GET", f"{PRJ}/releases/failure-categories", P.PROJECT_READ, also=frozenset({404})),
     Row("GET", f"{PRJ}/users", P.PROJECT_READ),
     Row("GET", f"{PRJ}/users/{{external_user_id:path}}", P.PROJECT_READ),
     Row("GET", f"{PRJ}/attribution", P.PROJECT_READ),

@@ -53,10 +53,11 @@ WRITE_GUARDED: set[Route] = {
     ("DELETE", "/api/v1/projects/{project_id}"),
     ("POST", "/api/v1/projects/{project_id}/keys"),
     ("DELETE", "/api/v1/projects/{project_id}/keys/{key_id}"),
-    # Phases 2-5: gateway, alerts, budgets, the Doctor, prompts, scores, datasets, annotation,
-    # evaluators and experiments. Every one is a non-GET method, refused to a read token whatever
-    # its permission. Some do not mutate (`alert-rules/preview`, `insights/{id}/explain`, an
-    # evaluator test) but run work a read-only credential must not start.
+    # Phases 2-5 and Bets 1-5: gateway, alerts, budgets, the Doctor, prompts, scores, datasets,
+    # annotation, the review policy, evaluators, experiments and replay. Every one is a non-GET
+    # method, refused to a read token whatever its permission. Some do not mutate
+    # (`alert-rules/preview`, `insights/{id}/explain`, an evaluator test) but run work a
+    # read-only credential must not start.
     ("DELETE", "/api/v1/orgs/{org_id}/alert-channels/{channel_id}"),
     ("DELETE", "/api/v1/orgs/{org_id}/billing-sources/{source_id}"),
     ("DELETE", "/api/v1/orgs/{org_id}/credentials/{credential_id}"),
@@ -73,6 +74,7 @@ WRITE_GUARDED: set[Route] = {
     ("DELETE", "/api/v1/projects/{project_id}/insights/{insight_id}/feedback"),
     ("DELETE", "/api/v1/projects/{project_id}/prompts/{name:path}"),
     ("DELETE", "/api/v1/projects/{project_id}/prompts/{name:path}/labels/{label}"),
+    ("DELETE", "/api/v1/projects/{project_id}/review-policy"),
     ("DELETE", "/api/v1/projects/{project_id}/score-configs/{config_id}"),
     ("DELETE", "/api/v1/projects/{project_id}/scores/{score_id}"),
     ("PATCH", "/api/v1/orgs/{org_id}/alert-channels/{channel_id}"),
@@ -127,14 +129,18 @@ WRITE_GUARDED: set[Route] = {
     ("POST", "/api/v1/projects/{project_id}/insights/{insight_id}/mute"),
     ("POST", "/api/v1/projects/{project_id}/insights/{insight_id}/resolve"),
     ("POST", "/api/v1/projects/{project_id}/insights/{insight_id}/unmute"),
+    ("POST", "/api/v1/projects/{project_id}/playground/replays"),
     ("POST", "/api/v1/projects/{project_id}/playground/runs"),
     ("POST", "/api/v1/projects/{project_id}/prompts"),
     ("POST", "/api/v1/projects/{project_id}/prompts/{name:path}/versions"),
+    ("POST", "/api/v1/projects/{project_id}/review-policy/runs"),
     ("POST", "/api/v1/projects/{project_id}/score-configs"),
+    ("POST", "/api/v1/projects/{project_id}/score-configs/failure-category"),
     ("POST", "/api/v1/projects/{project_id}/traces/{trace_id}/scores"),
     ("PUT", "/api/v1/projects/{project_id}/gateway/routes/{route_id}"),
     ("PUT", "/api/v1/projects/{project_id}/insights/{insight_id}/feedback"),
     ("PUT", "/api/v1/projects/{project_id}/prompts/{name:path}/labels/{label}"),
+    ("PUT", "/api/v1/projects/{project_id}/review-policy"),
 }
 
 # The refusals a credential or its scope can cause. A route that merely rejects a made-up body

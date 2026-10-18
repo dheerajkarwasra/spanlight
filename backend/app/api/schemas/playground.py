@@ -68,7 +68,7 @@ class PlaygroundRunOut(ApiModel):
 
 
 class ReplayBudgetOut(ApiModel):
-    """The project's replay budget for the current UTC month (spec §6.6)."""
+    """The project's replay budget for the current UTC month."""
 
     monthly_budget_usd: Money
     # What settled replays were charged this month.

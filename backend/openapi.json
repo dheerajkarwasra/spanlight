@@ -12013,7 +12013,7 @@
         "type": "object"
       },
       "ReplayBudgetOut": {
-        "description": "The project's replay budget for the current UTC month (spec §6.6).",
+        "description": "The project's replay budget for the current UTC month.",
         "properties": {
           "month_start": {
             "format": "date-time",

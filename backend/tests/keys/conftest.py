@@ -95,11 +95,13 @@ RELEASES = ("v1", "v2")
 async def release_and_user_data(
     world: World, client: httpx.AsyncClient, session_factory: Any
 ) -> None:
-    """Give both projects of `world` two releases and an end user with refreshed statistics.
+    """Give both projects of `world` two releases, a failure-category config and an end user
+    with refreshed statistics.
 
-    The release comparison and the end-user detail answer 404 on a project without them, the
-    same answer as for another tenant's project; with them, a credential that gets through gets
-    a 200. Kept apart from `world`, whose own project must hold exactly one trace.
+    The release comparison, the failure-category rates and the end-user detail answer 404 on a
+    project without them, the same answer as for another tenant's project; with them, a
+    credential that gets through gets a 200. Kept apart from `world`, whose own project must
+    hold exactly one trace.
     """
     other_ingest = await create_api_key(world.owner, world.other_project_id)
     for api_key in (world.workspace.api_key, other_ingest["secret"]):
@@ -111,5 +113,11 @@ async def release_and_user_data(
                 headers=bearer(api_key),
             )
             assert response.status_code == 200, response.text
+    for project_id in (world.workspace.project_id, world.other_project_id):
+        response = await world.owner.post(
+            f"/api/v1/projects/{project_id}/score-configs/failure-category",
+            json={"categories": ["none", "wrong_answer"]},
+        )
+        assert response.status_code == 201, response.text
     run = await refresh_all(session_factory, now=datetime.now(UTC))
     assert run.projects_failed == 0 and run.projects >= 2

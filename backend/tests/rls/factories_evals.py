@@ -1,6 +1,7 @@
-"""Row factories for the prompt, score, dataset, annotation, evaluator and experiment tables."""
+"""Row factories for the prompt, score, dataset, annotation, review, evaluator, experiment and
+replay tables."""
 
-from tests.rls.row_spec import HEX32, SLUG, RowFactory, parent
+from tests.rls.row_spec import HEX16, HEX32, SLUG, RowFactory, parent
 
 EVALS = (
     RowFactory(
@@ -84,6 +85,23 @@ EVALS = (
         parents=(parent("annotation_queues", queue_id="id"),),
     ),
     RowFactory(
+        table="review_policies",
+        sql=(
+            "INSERT INTO review_policies (id, project_id, queue_id) "
+            "VALUES (gen_random_uuid(), :project_id, :queue_id) RETURNING *"
+        ),
+        touch="enabled",
+        parents=(parent("annotation_queues", queue_id="id"),),
+    ),
+    RowFactory(
+        table="review_selections",
+        sql=(
+            "INSERT INTO review_selections (project_id, day, ran_at) "
+            "VALUES (:project_id, current_date, now()) RETURNING *"
+        ),
+        touch="cap_hit",
+    ),
+    RowFactory(
         table="evaluators",
         sql=(
             "INSERT INTO evaluators (id, project_id, name, kind, config) "
@@ -130,5 +148,14 @@ EVALS = (
             parent("experiment_runs", run_id="id"),
             parent("dataset_items", dataset_item_id="id"),
         ),
+    ),
+    RowFactory(
+        table="replay_runs",
+        sql=(
+            "INSERT INTO replay_runs (id, project_id, source_trace_id, source_span_id, model, "
+            f"fidelity, status, started_at) VALUES (gen_random_uuid(), :project_id, {HEX32}, "
+            f"{HEX16}, 'gpt-4o', 'exact', 'running', now()) RETURNING *"
+        ),
+        touch="heartbeat_at",
     ),
 )

@@ -231,6 +231,7 @@ def test_retry_after_is_not_a_way_to_end() -> None:
         "ok",
         "skipped_not_configured",
         "skipped_budget",
+        "already_selected",
     }
     assert JobOutcome.SKIPPED_BUDGET.is_skipped and not JobOutcome.OK.is_skipped
 
@@ -281,7 +282,7 @@ async def test_scheduler_dedupes_per_period(
         again = await schedule_periodic(db, settings, now + timedelta(minutes=5))
         later = await schedule_periodic(db, settings, now + timedelta(minutes=25))
     # Every periodic job the test settings enable (demo, alerts, digest, detectors, user stats,
-    # billing fetches, provider status polling) and the always-scheduled ones.
+    # billing fetches, provider status polling, review selection) and the always-scheduled ones.
     assert sorted(first) == [
         "backup_database",
         "cleanup_sessions",
@@ -300,6 +301,7 @@ async def test_scheduler_dedupes_per_period(
         "rollup_hourly",
         "run_detectors",
         "sample_for_evaluation",
+        "select_for_review",
         "weekly_digest",
     ]
     assert same_period == []
