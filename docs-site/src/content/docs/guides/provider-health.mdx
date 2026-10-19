@@ -30,7 +30,7 @@ The [Doctor](/docs/doctor/) runs the same reasoning every 15 minutes: its `provi
 
 ## The provider cards
 
-One card per provider that had LLM calls in the window, busiest first: by LLM calls, then by failed calls. Calls whose provider is unknown get a card of their own, titled "Unknown provider", ordered by its calls like the others (on a tie it comes last).
+One card per provider that had LLM calls in the window, busiest first: by LLM calls, then by failed calls. Calls with no provider get a card of their own, titled "No provider", ordered by its calls like the others (on a tie it comes last).
 
 - **LLM calls** in the window.
 - **Error rate**: failed LLM calls divided by LLM calls, with the number of failed calls under it. Calls the [Integration Lab](/docs/gateway/lab/) faulted on purpose are not counted as failures.
@@ -120,7 +120,7 @@ Open **Provider health** on a window with LLM calls. Each provider your project 
 
 - **The page says "No LLM calls in this window".** Widen the time range, or choose **All environments**. Only spans of kind `llm` count.
 - **Failed calls have no kind or no provider error type.** They were stored before this release, or the client did not send the fields: OTLP spans get a kind from the message only, and the Python SDK records the error type, code and rate-limit headers from version 0.2.0. See [the Python SDK](/docs/python-sdk/#failed-calls).
-- **A card is titled "Unknown provider".** Those calls have no provider. With OTLP, set `gen_ai.provider.name`.
+- **A card is titled "No provider".** No provider answered those calls, or none was reported. Gateway cache hits and calls the gateway refused name no provider on purpose. For other calls sent with OTLP, set `gen_ai.provider.name`.
 - **A feed shows a Stale badge.** The worker has not fetched that feed recently, or the feed answered with an error. Check that the worker runs and that the host can reach the feed; see the [detectors runbook](/docs/runbooks/detectors/#provider-status-feeds).
 - **The list says provider status feeds are off.** `PROVIDER_STATUS_POLLING_ENABLED` is `false` on this server. Stored incidents stay readable through the API.
 - **Retry cost is "—".** A retried call has no price, or the traces were stored before retries were tracked. See [Retry cost](#retry-cost).

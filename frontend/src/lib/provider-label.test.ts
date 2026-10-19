@@ -12,9 +12,9 @@ describe("providerLabel", () => {
     expect(providerLabel("acme")).toBe("acme");
   });
 
-  it("says Unknown provider for a call that named none", () => {
-    expect(providerLabel(null)).toBe("Unknown provider");
-    expect(providerLabel("  ")).toBe("Unknown provider");
+  it("says No provider for a call that named none", () => {
+    expect(providerLabel(null)).toBe("No provider");
+    expect(providerLabel("  ")).toBe("No provider");
   });
 });
 

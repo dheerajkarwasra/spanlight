@@ -13,7 +13,15 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from .._span import Span
-from ._common import ClientGetter, Endpoint, as_int, client_getter, get_field, patch_method
+from ._common import (
+    ClientGetter,
+    Endpoint,
+    as_int,
+    client_getter,
+    get_field,
+    patch_copies,
+    patch_method,
+)
 from ._modifiers import has_request_option
 from ._openai_response import (
     chat_output,
@@ -48,7 +56,8 @@ def wrap_openai(
     Every ``chat.completions.create`` and ``responses.create`` call becomes an
     ``llm`` span with the model, token usage, time-to-first-token (streams),
     sanitized request parameters and the response. Errors are recorded and
-    re-raised unchanged. Wrapping the same client twice is harmless.
+    re-raised unchanged. Clients made with ``client.with_options(...)`` or
+    ``client.copy(...)`` are instrumented too. Wrapping the same client twice is harmless.
 
     Args:
         client: The OpenAI client to instrument.
@@ -90,6 +99,7 @@ def _instrument(client: Any, spanlight: Spanlight | None, provider: str) -> None
         _patch_create(
             resource, endpoint, get_client, is_async=isinstance(resource, async_resources)
         )
+    patch_copies(client, lambda copy: wrap_openai(copy, spanlight=spanlight, provider=provider))
 
 
 def _patch_create(

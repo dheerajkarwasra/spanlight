@@ -251,6 +251,27 @@ async def test_async_messages_create(tracer, ingest):
     assert span["usage"]["output_tokens"] == 9
 
 
+def test_with_options_and_copy_clients_are_traced(tracer, ingest):
+    provider = MockProvider(json_response(ANTHROPIC_MESSAGE))
+    client = make_client(provider, tracer)
+
+    client.with_options(timeout=5).messages.create(model=MODEL, max_tokens=8, messages=MESSAGES)
+    client.copy().messages.create(model=MODEL, max_tokens=8, messages=MESSAGES)
+
+    assert len(flushed_spans(tracer, ingest)) == 2
+
+
+def test_beta_messages_are_traced(tracer, ingest):
+    client = make_client(MockProvider(json_response(ANTHROPIC_MESSAGE)), tracer)
+    client.beta.messages.create(model=MODEL, max_tokens=8, messages=MESSAGES, betas=["x-1"])
+    streaming = make_client(MockProvider(sse_response(anthropic_text_stream())), tracer)
+    with streaming.beta.messages.stream(model=MODEL, max_tokens=8, messages=MESSAGES) as stream:
+        "".join(stream.text_stream)
+
+    spans = flushed_spans(tracer, ingest)
+    assert [span["usage"]["input_tokens"] for span in spans] == [1515, 25]
+
+
 def test_create_with_stream_true(tracer, ingest):
     provider = MockProvider(sse_response(anthropic_text_stream()))
     client = make_client(provider, tracer)

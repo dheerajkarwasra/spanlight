@@ -21,7 +21,7 @@ Spanlight stores the prompts and completions your application sends, so you deci
 
 ## Redaction always runs
 
-Before a span is stored, Spanlight replaces secrets in its input, output, attributes and status message with `[REDACTED]`. It also checks the names of keys in JSON objects. You cannot turn this off. It replaces:
+Before a span is stored, Spanlight replaces secrets in its input, output, attributes, status message, name and trace name with `[REDACTED]`. It also checks the names of keys in JSON objects. You cannot turn this off. It replaces:
 
 - Spanlight credentials of every kind (API keys, personal access tokens and gateway keys).
 - Anthropic keys and OpenAI-style keys, including `sk-proj-` and `sk-svcacct-` keys.
@@ -31,7 +31,7 @@ Before a span is stored, Spanlight replaces secrets in its input, output, attrib
 
 Redaction runs before the 1 MB truncation, so a secret cut in half by the limit cannot survive in part.
 
-Redaction is a safety net, not a guarantee. A secret in a shape none of these patterns match is stored as sent, and a card typed in groups of one to three digits is not detected. Fields such as `user_id` are stored as you send them, so do not put an email address there. If a payload must never be stored, turn off payload capture instead. [How ingestion works](/docs/concepts/ingestion/#what-is-redacted) has the full pipeline.
+Redaction is a safety net, not a guarantee. A secret in a shape none of these patterns match is stored as sent, and a card typed in groups of one to three digits is not detected. Identifiers (`user_id`, `session_id`, tags, environment and release) are stored as you send them, so do not put an email address or a secret there. If a payload must never be stored, turn off payload capture instead. [How ingestion works](/docs/concepts/ingestion/#what-is-redacted) has the full pipeline.
 
 ## Turn off prompt and completion capture
 

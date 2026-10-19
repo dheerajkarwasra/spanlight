@@ -54,7 +54,7 @@ class JudgeConfig(_Config):
     prompt_version_id: uuid.UUID
     credential_id: uuid.UUID
     model: str = Field(min_length=1, max_length=200)
-    max_tokens: int = Field(default=256, ge=1, le=MAX_JUDGE_TOKENS)
+    max_tokens: int = Field(default=1024, ge=1, le=MAX_JUDGE_TOKENS)
     # None (the default) sends no `temperature`: the newest Claude models reject non-default
     # sampling parameters with a 400.
     temperature: Decimal | None = Field(default=None, ge=0, le=2, decimal_places=2)
@@ -74,7 +74,7 @@ class JudgeConfigIn(_Config):
     judge_template: JudgeTemplateName | None = None
     credential_id: uuid.UUID
     model: str = Field(min_length=1, max_length=200)
-    max_tokens: int = Field(default=256, ge=1, le=MAX_JUDGE_TOKENS)
+    max_tokens: int = Field(default=1024, ge=1, le=MAX_JUDGE_TOKENS)
     temperature: Decimal | None = Field(default=None, ge=0, le=2, decimal_places=2)
 
     @model_validator(mode="after")

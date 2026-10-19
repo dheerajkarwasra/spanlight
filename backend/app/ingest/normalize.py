@@ -98,7 +98,7 @@ def normalize_span(
         span_id=span.span_id,
         parent_span_id=span.parent_span_id,
         kind=span.kind,
-        name=span.name,
+        name=redact_text(span.name),
         status=span.status,
         status_message=status_message,
         error_class=error_class,

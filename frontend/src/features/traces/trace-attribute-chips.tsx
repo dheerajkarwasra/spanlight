@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { useProjectParams } from "@/features/shell";
-import type { Span, TraceDetail } from "@/lib/api";
+import { toPathId, type Span, type TraceDetail } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import { PromptVersionRef } from "./prompt-version-ref";
@@ -60,7 +60,7 @@ export function TraceAttributeChips({ trace }: { trace: TraceDetail }) {
         <Chip label="Session">
           <Link
             to="/$orgId/$projectId/sessions/$sessionId"
-            params={{ orgId, projectId, sessionId: trace.session_id }}
+            params={{ orgId, projectId, sessionId: toPathId(trace.session_id) }}
             title={`Open session ${trace.session_id}`}
             className="truncate rounded-sm font-mono text-label text-accent hover:underline"
           >

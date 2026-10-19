@@ -78,7 +78,7 @@ function TraceSummaryStrip({ trace }: { trace: TraceDetail }) {
   const failed = failedSpanCount(trace.spans);
   const totalTokens = trace.input_tokens + trace.output_tokens;
   return (
-    <dl className="-mx-5 grid grid-cols-2 gap-y-4 border-y border-border py-4 sm:-mx-6 sm:grid-cols-3 lg:grid-cols-[12.25rem_repeat(5,minmax(0,1fr))]">
+    <dl className="-mx-5 grid grid-cols-2 gap-y-4 border-y border-border py-4 sm:-mx-6 sm:grid-cols-3 xl:grid-cols-[12.25rem_repeat(5,minmax(0,1fr))]">
       {/* Two columns at 375 px leave no room for date and time on one line: it wraps, never cuts. */}
       <Stat label="Started" wrap>
         <SummaryValue
@@ -153,11 +153,11 @@ function Stat({
   children: ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1 px-5 sm:px-6 lg:border-l lg:border-border lg:first:border-l-0">
+    <div className="flex min-w-0 flex-col gap-1 px-5 sm:px-6 xl:border-l xl:border-border xl:first:border-l-0">
       <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
       <dd
         className={cn(
-          "flex min-w-0 items-baseline gap-2 text-card",
+          "flex min-w-0 flex-wrap items-baseline gap-x-2 text-card",
           wrap ? "sm:whitespace-nowrap" : "whitespace-nowrap",
         )}
       >
@@ -172,7 +172,7 @@ export function TraceHeaderSkeleton() {
     <Card aria-hidden className="flex flex-col gap-4 p-5 sm:p-6">
       <Skeleton className="h-9 w-64 max-w-full" />
       <Skeleton className="h-4 w-80 max-w-full" />
-      <div className="-mx-5 grid grid-cols-2 gap-y-4 border-y border-border py-4 sm:-mx-6 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="-mx-5 grid grid-cols-2 gap-y-4 border-y border-border py-4 sm:-mx-6 sm:grid-cols-3 xl:grid-cols-6">
         {Array.from({ length: 6 }, (_, index) => (
           <div key={index} className="flex flex-col gap-2 px-5">
             <Skeleton className="h-3 w-14" />

@@ -162,6 +162,11 @@ function parsePart(part: unknown): ChatPart {
         content: flattenToolResultContent(part.content ?? part.response),
         isError: part.is_error === true,
       };
+    case "thinking":
+      // The signature is an opaque base64 blob; only the reasoning text is worth showing.
+      return { type: "json", value: { type: "thinking", thinking: part.thinking } };
+    case "redacted_thinking":
+      return { type: "json", value: { type: "redacted_thinking" } };
     default:
       return { type: "json", value: part };
   }
@@ -175,9 +180,18 @@ function parseContent(content: unknown): ChatPart[] | null {
     return content === "" ? [] : [{ type: "text", text: content }];
   }
   if (Array.isArray(content)) {
-    return content.map(parsePart);
+    return content.filter((block) => !isEmptyThinking(block)).map(parsePart);
   }
   return null;
+}
+
+/** Anthropic returns a thinking block with empty text and only a signature by default. */
+function isEmptyThinking(block: unknown): boolean {
+  return (
+    isObject(block) &&
+    block.type === "thinking" &&
+    (typeof block.thinking !== "string" || block.thinking.trim() === "")
+  );
 }
 
 function parseOpenAiToolCalls(toolCalls: unknown): ChatPart[] {

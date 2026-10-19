@@ -31,7 +31,7 @@ export type {
   ExportListQuery,
   TraceExportInput,
 } from "./exports";
-export { endUsersApi, fromPathUserId, toPathUserId } from "./end-users";
+export { endUsersApi, fromPathId, toPathId } from "./end-users";
 export { evaluatorsApi } from "./evaluators";
 export type * from "./evaluators";
 export { experimentsApi } from "./experiments";

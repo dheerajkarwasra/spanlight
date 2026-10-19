@@ -1,8 +1,10 @@
 """Instrumentation for the official ``anthropic`` Python SDK.
 
 :func:`wrap_anthropic` patches ``messages.create`` (including
-``stream=True``), the ``messages.stream(...)`` helper and
-``messages.batches.results`` on one client instance, sync or async.
+``stream=True``), ``messages.parse``, the ``messages.stream(...)`` helper and
+``messages.batches.results`` on one client instance, sync or async, on its beta
+surface (``client.beta.messages``) and on the clients its ``copy()`` and
+``with_options()`` return.
 
 Token accounting: Anthropic reports ``input_tokens`` *excluding* prompt-cache
 reads and writes. To keep one meaning across providers, spans record
@@ -25,9 +27,11 @@ from ._anthropic_message import PROVIDER, record_message_metadata, record_usage
 from ._anthropic_stream import AsyncStreamManager, MessagesStreamAccumulator, SyncStreamManager
 from ._common import (
     WRAPPED_MARKER,
+    ClientGetter,
     Endpoint,
     client_getter,
     get_field,
+    patch_copies,
     patch_method,
     pop_prompt,
 )
@@ -51,7 +55,10 @@ def wrap_anthropic(client: ClientT, *, spanlight: Spanlight | None = None) -> Cl
     are recorded and re-raised unchanged. Each result read through
     ``messages.batches.results`` becomes an ``llm`` span at the batch rate in
     a trace of its own, with ids fixed by the batch, so reading a batch twice
-    records it once. Wrapping twice is harmless.
+    records it once. ``messages.parse`` and the same methods of
+    ``client.beta.messages`` are traced too, and so are clients made with
+    ``client.with_options(...)`` or ``client.copy(...)``. Wrapping twice is
+    harmless.
 
     Args:
         client: The Anthropic client to instrument.
@@ -71,15 +78,26 @@ def _instrument(client: Any, spanlight: Spanlight | None) -> None:
     from anthropic import AsyncStream, Stream
     from anthropic.resources.messages import AsyncMessages
 
-    from ._anthropic_batch import patch_batch_results
-
     get_client = client_getter(spanlight)
     endpoint = MessagesEndpoint(PROVIDER, (Stream, AsyncStream))
-    messages = client.messages
-    is_async = isinstance(messages, AsyncMessages)
+    _instrument_messages(client.messages, endpoint, get_client, AsyncMessages)
+    patch_copies(client, lambda copy: wrap_anthropic(copy, spanlight=spanlight))
+    # Fast mode, compaction and the tool runner exist only on the beta surface.
+    from anthropic.resources.beta.messages import AsyncMessages as AsyncBetaMessages
 
+    _instrument_messages(client.beta.messages, endpoint, get_client, AsyncBetaMessages)
+
+
+def _instrument_messages(
+    messages: Any, endpoint: MessagesEndpoint, get_client: ClientGetter, async_cls: type
+) -> None:
+    from ._anthropic_batch import patch_batch_results
+
+    is_async = isinstance(messages, async_cls)
     wrap = wrap_async_method if is_async else wrap_sync_method
-    patch_method(messages, "create", lambda original: wrap(original, endpoint, get_client))
+    # `parse` is a separate request, not a call to `create`, so it needs its own span.
+    for name in ("create", "parse"):
+        patch_method(messages, name, lambda original: wrap(original, endpoint, get_client))
 
     manager_cls = AsyncStreamManager if is_async else SyncStreamManager
 
