@@ -17,6 +17,7 @@ from sqlalchemy import Text, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.core.errors import ProblemError
 from app.db.models import Span, Trace
 from app.explorer.trace_queries import escape_like
 
@@ -33,6 +34,9 @@ INDEX_USABLE = text(
     "'pg_catalog.texticlike(text, text)'::regprocedure, "
     "to_regprocedure('spanlight_search_text(jsonb, jsonb)'))"
 )
+# A trace-list search that runs longer is stopped and answered `422 SEARCH_TOO_BROAD`, inside the
+# API's statement timeout, so a broad search gets a clear answer instead of a 503 to retry.
+SEARCH_TIMEOUT_MS = 5000
 # How far back content is searched when the index cannot be used.
 UNINDEXED_SPAN = timedelta(hours=1)
 
@@ -69,3 +73,12 @@ def text_search(
         )
         matches.append(Trace.trace_id.in_(matching_spans))
     return or_(*matches)
+
+
+def search_too_broad() -> ProblemError:
+    return ProblemError(
+        422,
+        "SEARCH_TOO_BROAD",
+        "This search matches too much to finish. Narrow the time range or search for more "
+        "specific text.",
+    )

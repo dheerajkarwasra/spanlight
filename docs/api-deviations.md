@@ -189,8 +189,9 @@ original design; everything else is a clarification.
   a case-insensitive substring of a preview of a span's input and output (the last 2,000 characters of
   the input and the first 2,000 of the output, as JSON text, so newlines and quotes inside strings appear
   as `\n` and `\"`). Only spans that started inside `[from, to)` are searched, so a span that starts
-  after `to` does not make its trace match. A search too broad to finish within the API statement timeout
-  is answered `503 SERVICE_UNAVAILABLE` with `Retry-After`; narrow the window or the text. Exports apply
+  after `to` does not make its trace match. The trace-list query of a search runs under a 5 s statement
+  limit; a search too broad to finish in it (typically a word found in most spans of a long window) is
+  answered `422 SEARCH_TOO_BROAD`, not retried, and the dashboard shows its `detail`. Exports apply
   the same `q`. The search index is only usable under row-level security when the migrations (and
   `spanlight ensure-app-role`) run as a superuser, which marks the search functions LEAKPROOF (migration
   1007 explains why that is safe). Otherwise content search covers only the spans that started in the last

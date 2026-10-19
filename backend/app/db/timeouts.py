@@ -28,10 +28,18 @@ def limit_statement_time(session: AsyncSession, milliseconds: int) -> None:
         connection.execute(_SET_STATEMENT_TIMEOUT, parameters)
 
 
+async def set_statement_limit(session: AsyncSession, milliseconds: int) -> None:
+    """Cancel the rest of the current transaction's statements after ``milliseconds`` each.
+
+    ``0`` lifts the limit. Ends with the transaction.
+    """
+    await session.execute(_SET_STATEMENT_TIMEOUT, {"milliseconds": str(milliseconds)})
+
+
 async def lift_statement_limit(session: AsyncSession) -> None:
     """Let the statements of the current transaction run as long as they need.
 
     For the few requests whose work is long by nature and cannot be split, such as deleting a
     project together with millions of spans through its foreign keys. Ends with the transaction.
     """
-    await session.execute(_SET_STATEMENT_TIMEOUT, {"milliseconds": "0"})
+    await set_statement_limit(session, 0)
