@@ -3,7 +3,7 @@
 `q` matches a trace when its name contains `q` (ignoring case), when `q` is its id, or when one
 of its spans in the window carries `q` in a preview of its input or output. The preview is the
 last 2,000 characters of the input and the first 2,000 of the output as JSON text, indexed with
-`pg_trgm` by migration 1006 (which also explains why the search functions are LEAKPROOF).
+`pg_trgm` by migration 1007 (which also explains why the search functions are LEAKPROOF).
 
 Row-level security lets Postgres use that index only when both search functions are marked
 LEAKPROOF, which needs a superuser at migration time. Without the marks every search would scan
@@ -20,7 +20,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from app.db.models import Span, Trace
 from app.explorer.trace_queries import escape_like
 
-# The function `spans_content_trgm_idx` indexes (migration 1006), called on the same columns so
+# The function `spans_content_trgm_idx` indexes (migration 1007), called on the same columns so
 # the planner matches the index.
 SEARCH_TEXT = func.spanlight_search_text(Span.input, Span.output, type_=Text)
 # A trigram index needs three characters to narrow anything; shorter text searches names only.
@@ -55,7 +55,7 @@ def text_search(
     The caller limits the traces to its window; `content_from` comes from `content_start`.
     """
     # Always ends with `%`, never with an escape character: the LEAKPROOF mark on `texticlike`
-    # (migration 1006) relies on the app never sending a pattern that can fail on row data.
+    # (migration 1007) relies on the app never sending a pattern that can fail on row data.
     pattern = f"%{escape_like(q)}%"
     matches = [Trace.name.ilike(pattern, escape="\\"), Trace.trace_id == q.lower()]
     if len(q) >= MIN_CONTENT_QUERY:

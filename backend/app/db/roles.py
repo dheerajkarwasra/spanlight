@@ -75,7 +75,7 @@ def _grant_app_functions(connection: psycopg.Connection[Any], role_id: sql.Ident
 def _mark_search_leakproof(connection: psycopg.Connection[Any]) -> None:
     """Mark `texticlike` LEAKPROOF again, so content search can use its index under RLS.
 
-    Migration 1006 sets the mark and says why it is safe; `pg_dump` does not keep it on a catalog
+    Migration 1007 sets the mark and says why it is safe; `pg_dump` does not keep it on a catalog
     function, so a restored database loses it, and this step (which runs after every restore and
     deploy) restores it. Only a superuser can set it; anyone else leaves search correct but slow.
     """

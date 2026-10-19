@@ -6,7 +6,9 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 ### Added
 
-- **Search what the model said.** The Traces search box (and `q` on `GET /api/v1/projects/{id}/traces` and exports) now also matches span content: with three or more characters it searches the end of each span's input and the start of its output (2,000 characters of each) for spans in the selected time range. A `pg_trgm` index (migration 1006, built concurrently) answers it.
+- **Search what the model said.** The Traces search box (and `q` on `GET /api/v1/projects/{id}/traces` and exports) now also matches span content: with three or more characters it searches the end of each span's input and the start of its output (2,000 characters of each) for spans in the selected time range. A `pg_trgm` index (migration 1007, built concurrently) answers it.
+- **Trace compare.** Select two traces and choose **Compare** to see them step by step: spans are paired by name and order, with the change in duration, tokens and cost, whether the input and output changed, and steps that exist or failed on one side only. Also `GET /api/v1/projects/{project_id}/traces/compare?a=&b=`.
+- **`agent` span kind.** OpenTelemetry GenAI `invoke_agent` and `create_agent`, OpenInference `AGENT` and Traceloop `agent` spans are now `agent` instead of `chain`, with their own colour and icon in the waterfall. Native ingestion accepts `"kind": "agent"`. Spans stored earlier keep `chain`. Migration `1006` adds the enum value; Postgres cannot remove it, so the downgrade sets `agent` spans back to `chain` instead.
 
 ### Changed
 

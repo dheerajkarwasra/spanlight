@@ -106,7 +106,8 @@ Open the model call. It shows the messages, the answer, the token counts and the
 | OpenInference span kind | Spanlight kind | Example from the recorded runs |
 | --- | --- | --- |
 | `LLM` | `llm` | `ChatCompletion`, `ChatOpenAI` |
-| `CHAIN`, `AGENT` | `chain` | `RunnableSequence`, `StrOutputParser`, a runnable named `weather_agent` |
+| `CHAIN` | `chain` | `RunnableSequence`, `StrOutputParser` |
+| `AGENT` | `agent` | A runnable named `weather_agent` |
 | `TOOL` | `tool` | A LangChain tool such as `get_weather` |
 | `RETRIEVER` | `retrieval` | A LangChain retriever |
 | Anything else, such as `PROMPT` | `other` | `ChatPromptTemplate` |

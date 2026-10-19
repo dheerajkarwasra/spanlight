@@ -334,7 +334,7 @@
             "span_id": "9578df49c634dd8f",
             "parent_span_id": null,
             "convention": "gen_ai",
-            "kind": "chain",
+            "kind": "agent",
             "provider": "openai",
             "model": "gpt-4.1-mini",
             "usage": {
@@ -631,7 +631,7 @@
             "span_id": "9a9da16246dc74a6",
             "parent_span_id": null,
             "convention": "gen_ai",
-            "kind": "chain",
+            "kind": "agent",
             "provider": "openai",
             "model": "gpt-4.1-mini",
             "usage": {
@@ -994,7 +994,7 @@
             "span_id": "994947304e43b321",
             "parent_span_id": null,
             "convention": "gen_ai",
-            "kind": "chain",
+            "kind": "agent",
             "provider": "openai",
             "model": "gpt-4.1-mini",
             "usage": {
@@ -1364,7 +1364,7 @@
             "span_id": "925ae1b59354f28c",
             "parent_span_id": null,
             "convention": "gen_ai",
-            "kind": "chain",
+            "kind": "agent",
             "provider": "openai",
             "model": "gpt-4.1-mini",
             "usage": {
@@ -1912,7 +1912,7 @@
             "span_id": "f15475aa062435ec",
             "parent_span_id": null,
             "convention": "gen_ai",
-            "kind": "chain",
+            "kind": "agent",
             "provider": "openai",
             "model": "gpt-4.1-mini",
             "usage": {

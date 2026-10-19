@@ -1,7 +1,7 @@
 """Index a bounded text preview of span input and output for content search.
 
-Revision ID: 1006
-Revises: 1003
+Revision ID: 1007
+Revises: 1006
 Create Date: 2026-10-19
 
 The trace list's `q` also matches what was sent to and returned by a span, not only the trace
@@ -41,8 +41,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "1006"
-down_revision: str | None = "1003"
+revision: str = "1007"
+down_revision: str | None = "1006"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

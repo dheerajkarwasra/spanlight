@@ -193,7 +193,7 @@ original design; everything else is a clarification.
   is answered `503 SERVICE_UNAVAILABLE` with `Retry-After`; narrow the window or the text. Exports apply
   the same `q`. The search index is only usable under row-level security when the migrations (and
   `spanlight ensure-app-role`) run as a superuser, which marks the search functions LEAKPROOF (migration
-  1006 explains why that is safe). Otherwise content search covers only the spans that started in the last
+  1007 explains why that is safe). Otherwise content search covers only the spans that started in the last
   hour of the window (name and id matches still cover the whole window), so it stays well under the timeout.
 - Money is a decimal string with up to 8 fractional digits, e.g. `"0.00021000"`.
 
@@ -2469,7 +2469,8 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
   longer counts as an LLM call. OpenInference `LLM`/`EMBEDDING` `llm`, `TOOL` `tool`, `CHAIN`/`AGENT` `chain`,
   `RETRIEVER`/`RERANKER` `retrieval`, anything else `other`. Vercel `…doGenerate`/`…doStream`/`…doEmbed` `llm`,
   `ai.toolCall` `tool`, any other `ai.*` operation `chain`. Traceloop `workflow`/`task`/`agent` `chain`, `tool`
-  `tool`, anything else `other`. Values are compared trimmed and lower-cased. No new `SpanKind` value.
+  `tool`, anything else `other`. Values are compared trimmed and lower-cased. No new `SpanKind` value. **Changed
+  2026-10-19:** agent spans are `agent`, not `chain` (see "Agent span kind and trace compare").
 - **Error classification.** `STATUS_ATTRIBUTES` is `spanlight.gateway.upstream_status`, `http.response.status_code`,
   `http.status_code`, `error.status`, `spanlight.gateway.status`. `error.type` holding 1 to 3 ASCII digits is a numeric
   status read after those five (`503` is `provider_5xx`). Otherwise its text is matched against the message patterns
@@ -2784,3 +2785,31 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
   when the request carries `edited_body`: the edited body is checked again (size, markers, request shape, provider
   family) and the replay is always `modified`, never `exact`. Every other refusal stays a refusal with or without
   an edit.
+
+## Agent span kind and trace compare (added 2026-10-19)
+
+- **New `SpanKind` value `agent`.** OTLP `gen_ai.operation.name` `invoke_agent` and `create_agent`, OpenInference
+  `AGENT` and Traceloop `agent` are `agent` (they were `chain`). `invoke_workflow`, `CHAIN`, `workflow` and `task`
+  stay `chain`; Vercel AI SDK legacy `ai.*` operations stay `chain` (AI SDK 7 agents arrive through the GenAI
+  convention). Native ingestion accepts `"kind": "agent"`. Spans stored earlier keep `chain`; there is no backfill.
+  `agent` spans are not LLM calls: every metric that counts `llm` spans is unchanged. The recorded OTLP fixtures'
+  expected kinds changed accordingly. The Python SDK's `SpanKind` does not list `agent` yet: older servers reject an
+  unknown native kind, so the SDK adds it in a release that requires this server.
+- **Migration `1006`** adds the enum value outside the migration's transaction (`ALTER TYPE span_kind ADD VALUE IF
+  NOT EXISTS 'agent'`); no row is read or rewritten. Postgres cannot drop an enum value, so the downgrade sets
+  `agent` spans back to `chain` and deletes the `agent` rows of `span_rollups_hourly` (the rollup job rewrites them),
+  with the worker bypass; the value stays in the type. During a rolling deploy an older app instance fails to read an
+  `agent` span until it is replaced.
+- **`GET /api/v1/projects/{project_id}/traces/compare?a=&b=`** compares two traces of the project. Access is trace
+  detail's (`project:read`; API keys with `traces:read`). If either trace is not in the project the answer is the
+  same `404 NOT_FOUND` as trace detail, without saying which. The answer has both trace summaries, `totals` (B minus
+  A: duration, tokens, span and error counts; `cost_usd` null when either trace has an unpriced call), `steps` and
+  `truncated`.
+- **Steps.** Spans pair by name and occurrence (the first span of a name in start order is occurrence 1), in trace
+  A's order; a step only in B follows the last step before it that A also has. Each step has both sides (`a`, `b`,
+  null when missing), the deltas B minus A (null unless both sides have the value) and `input_changed` /
+  `output_changed`. Payloads are compared by an md5 of their JSONB text in the database and are not returned; the
+  flags are null when a side is missing, a payload was not captured, or the payloads match but a span was truncated
+  at ingest. Parallel spans of one name that start at the same instant are ordered by span id and may pair
+  crosswise. At most 2,000 spans of each trace are compared (`truncated: true` when one has more); `totals` always
+  cover the whole traces.

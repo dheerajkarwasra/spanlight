@@ -150,7 +150,7 @@ def test_operation_sets_kind_and_operation() -> None:
     assert tool.kind is SpanKind.TOOL
     assert tool.operation == "execute_tool"
     agent = map_gen_ai({"gen_ai.operation.name": " Invoke_Agent "})
-    assert agent.kind is SpanKind.CHAIN
+    assert agent.kind is SpanKind.AGENT
     assert agent.operation == " Invoke_Agent "
     unknown = map_gen_ai({"gen_ai.operation.name": "mystery"})
     assert unknown.kind is SpanKind.OTHER

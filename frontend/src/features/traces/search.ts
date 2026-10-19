@@ -44,6 +44,14 @@ export const traceFiltersSchema = projectSearchSchema.extend({
 
 export type TraceFilters = z.infer<typeof traceFiltersSchema>;
 
+/** The two traces of the compare page: `a` is the baseline, `b` the candidate. */
+export const traceCompareSearchSchema = projectSearchSchema.extend({
+  a: z.string().optional().catch(undefined),
+  b: z.string().optional().catch(undefined),
+  /** Hide steps with the same output and no change. */
+  changed: z.boolean().optional().catch(undefined),
+});
+
 export const traceDetailSearchSchema = projectSearchSchema.extend({
   span: z.string().optional().catch(undefined),
 });

@@ -1248,7 +1248,7 @@
             "span_id": "60093be12a6372c4",
             "parent_span_id": null,
             "convention": "openinference",
-            "kind": "chain",
+            "kind": "agent",
             "provider": null,
             "model": null,
             "usage": {
