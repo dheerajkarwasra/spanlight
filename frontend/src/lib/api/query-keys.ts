@@ -88,6 +88,7 @@ export const queryKeys = {
       /** One span with its payloads; under `trace(traceId)` so invalidating a trace covers it. */
       span: (traceId: string, spanId: string) =>
         [...all, "trace", traceId, "span", spanId] as const,
+      traceComparison: (a: string, b: string) => [...all, "trace-comparison", a, b] as const,
       /** One span's cost explanation; under `trace(traceId)` so invalidating a trace covers it. */
       costExplanation: (traceId: string, spanId: string) =>
         [...all, "trace", traceId, "span", spanId, "cost-explanation"] as const,

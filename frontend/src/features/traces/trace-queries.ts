@@ -95,6 +95,17 @@ export function useSpanQuery(traceId: string, span: Span) {
   });
 }
 
+/** Two traces step by step; `enabled` once both ids are known and differ. */
+export function useTraceComparisonQuery(a: string | undefined, b: string | undefined) {
+  const { projectId } = useProjectParams();
+  return useQuery({
+    queryKey: queryKeys.project(projectId).traceComparison(a ?? "", b ?? ""),
+    queryFn: () => projectsApi.compareTraces(projectId, a ?? "", b ?? ""),
+    staleTime: 60_000,
+    enabled: a !== undefined && b !== undefined && a !== b,
+  });
+}
+
 /** One trace with all of its spans. Trace data rarely changes once ingested. */
 export function useTraceQuery(traceId: string, options: { enabled?: boolean } = {}) {
   const { projectId } = useProjectParams();

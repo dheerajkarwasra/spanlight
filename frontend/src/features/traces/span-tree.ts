@@ -265,6 +265,7 @@ export const SPAN_KIND_ORDER: readonly SpanKind[] = [
   "tool",
   "retrieval",
   "chain",
+  "agent",
   "http",
   "other",
 ];

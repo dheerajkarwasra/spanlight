@@ -1,7 +1,7 @@
 """Add `spans.payload_bytes`.
 
-Revision ID: 1007
-Revises: 1003
+Revision ID: 1008
+Revises: 1007
 Create Date: 2026-10-19
 
 The payload cap goes from 32 KB to 1 MiB per input and output. Trace detail, exports and the
@@ -19,8 +19,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "1007"
-down_revision: str | None = "1003"
+revision: str = "1008"
+down_revision: str | None = "1007"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

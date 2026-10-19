@@ -14722,6 +14722,7 @@
           "tool",
           "retrieval",
           "chain",
+          "agent",
           "http",
           "other"
         ],
@@ -15149,6 +15150,194 @@
         "title": "StatusSourceOut",
         "type": "object"
       },
+      "StepOut": {
+        "description": "A span of trace A and its counterpart in trace B, paired by name and occurrence.",
+        "properties": {
+          "a": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StepSpanOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "b": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StepSpanOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "input_changed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Changed"
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "occurrence": {
+            "title": "Occurrence",
+            "type": "integer"
+          },
+          "output_changed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Changed"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
+          }
+        },
+        "required": [
+          "name",
+          "occurrence",
+          "a",
+          "b",
+          "duration_ms",
+          "input_tokens",
+          "output_tokens",
+          "cost_usd",
+          "input_changed",
+          "output_changed"
+        ],
+        "title": "StepOut",
+        "type": "object"
+      },
+      "StepSpanOut": {
+        "description": "One side of a compared step: the span's stored values, nulls as stored.",
+        "properties": {
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "number"
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SpanKind"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
+          },
+          "span_id": {
+            "title": "Span Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SpanStatus"
+          }
+        },
+        "required": [
+          "span_id",
+          "kind",
+          "status",
+          "model",
+          "duration_ms",
+          "input_tokens",
+          "output_tokens",
+          "cost_usd"
+        ],
+        "title": "StepSpanOut",
+        "type": "object"
+      },
       "Target": {
         "additionalProperties": false,
         "description": "One provider credential the route can send a call to.",
@@ -15499,6 +15688,39 @@
           "item_ids"
         ],
         "title": "TraceAddedOut",
+        "type": "object"
+      },
+      "TraceCompareOut": {
+        "properties": {
+          "a": {
+            "$ref": "#/components/schemas/TraceSummaryOut"
+          },
+          "b": {
+            "$ref": "#/components/schemas/TraceSummaryOut"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/StepOut"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/TraceTotalsDeltaOut"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "a",
+          "b",
+          "totals",
+          "steps",
+          "truncated"
+        ],
+        "title": "TraceCompareOut",
         "type": "object"
       },
       "TraceDetailOut": {
@@ -15971,6 +16193,52 @@
           "scores"
         ],
         "title": "TraceSummaryOut",
+        "type": "object"
+      },
+      "TraceTotalsDeltaOut": {
+        "description": "Trace B minus trace A.",
+        "properties": {
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "number"
+          },
+          "error_count": {
+            "title": "Error Count",
+            "type": "integer"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "span_count": {
+            "title": "Span Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "duration_ms",
+          "input_tokens",
+          "output_tokens",
+          "cost_usd",
+          "span_count",
+          "error_count"
+        ],
+        "title": "TraceTotalsDeltaOut",
         "type": "object"
       },
       "TruncatedStreamParams": {
@@ -29136,6 +29404,7 @@
             }
           },
           {
+            "description": "Matches the trace name (substring, ignoring case), an exact trace id, or, with 3+ characters, a preview of the input and output of a span started in the window.",
             "in": "query",
             "name": "q",
             "required": false,
@@ -29149,6 +29418,7 @@
                   "type": "null"
                 }
               ],
+              "description": "Matches the trace name (substring, ignoring case), an exact trace id, or, with 3+ characters, a preview of the input and output of a span started in the window.",
               "title": "Q"
             }
           },
@@ -29241,6 +29511,65 @@
             "description": "Successful Response"
           },
           "422": {
+            "description": "A parameter is invalid (`VALIDATION_ERROR`), or a `q` search matched too much to finish (`SEARCH_TOO_BROAD`)."
+          }
+        },
+        "summary": "List Traces",
+        "tags": [
+          "traces"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/traces/compare": {
+      "get": {
+        "description": "Two traces of this project, step by step: B's change against A.\n\nRegistered before `/traces/{trace_id}`, which would otherwise take `compare` as an id. A\nmissing trace is a 404 that does not say which one, as trace detail's.",
+        "operationId": "compare_traces_api_v1_projects__project_id__traces_compare_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "a",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "A",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "b",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "B",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceCompareOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
             "content": {
               "application/json": {
                 "schema": {
@@ -29251,7 +29580,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List Traces",
+        "summary": "Compare Traces",
         "tags": [
           "traces"
         ]

@@ -66,7 +66,7 @@ export interface OnboardingStatus {
   first_trace_at: string | null;
 }
 
-export type SpanKind = "llm" | "tool" | "retrieval" | "chain" | "http" | "other";
+export type SpanKind = "llm" | "tool" | "retrieval" | "chain" | "agent" | "http" | "other";
 export type SpanStatus = "ok" | "error" | "unset";
 export type TraceStatusFilter = "ok" | "error";
 
@@ -204,6 +204,54 @@ export interface Span {
 
 export interface TraceDetail extends TraceSummary {
   spans: Span[];
+}
+
+/** One side of a compared step: the span's stored values. */
+export interface StepSpan {
+  span_id: string;
+  kind: SpanKind;
+  status: SpanStatus;
+  model: string | null;
+  duration_ms: number;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cost_usd: string | null;
+}
+
+/** A span of trace A and its counterpart in trace B, paired by name and occurrence. */
+export interface CompareStep {
+  name: string;
+  /** 1 for the first span of this name in its trace, 2 for the second. */
+  occurrence: number;
+  /** Null: the step is only in trace B. */
+  a: StepSpan | null;
+  /** Null: the step is only in trace A. */
+  b: StepSpan | null;
+  /** B minus A; null unless both sides have the value. */
+  duration_ms: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cost_usd: string | null;
+  /** Null when it cannot be known (a side missing, not captured, or truncated). */
+  input_changed: boolean | null;
+  output_changed: boolean | null;
+}
+
+export interface TraceComparison {
+  a: TraceSummary;
+  b: TraceSummary;
+  /** B minus A over the whole traces; `cost_usd` null when either has an unpriced call. */
+  totals: {
+    duration_ms: number;
+    input_tokens: number;
+    output_tokens: number;
+    cost_usd: string | null;
+    span_count: number;
+    error_count: number;
+  };
+  steps: CompareStep[];
+  /** A trace has more than 2,000 spans; only the first 2,000 of each were compared. */
+  truncated: boolean;
 }
 
 export interface SessionSummary {

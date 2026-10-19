@@ -6,8 +6,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for the idea. Please check the [roadmap](https://github.com/dheerajkarwasra/spanlight#roadmap)
-        first: it may already be planned, and the phase it belongs to affects when it can land.
+        Thanks for the idea. Please check the existing [ideas](https://github.com/dheerajkarwasra/spanlight/discussions/categories/ideas)
+        first: someone may already have proposed it.
   - type: textarea
     id: problem
     attributes:
@@ -45,6 +45,6 @@ body:
     attributes:
       label: Before submitting
       options:
-        - label: I searched the existing issues and the roadmap.
+        - label: I searched the existing issues and ideas.
           required: true
         - label: I would be willing to help build this.

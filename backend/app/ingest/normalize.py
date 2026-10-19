@@ -26,7 +26,7 @@ from app.pricing.cost import PriceBook
 
 MAX_PAYLOAD_BYTES = 1024 * 1024
 # The most two payloads held under the old 32 KB cap: the size read for a span stored before
-# `spans.payload_bytes` existed (migration 1007), so byte budgets stay safe on old rows.
+# `spans.payload_bytes` existed (migration 1008), so byte budgets stay safe on old rows.
 LEGACY_PAYLOAD_BYTES = 2 * 32 * 1024
 MAX_ATTRIBUTES_BYTES = 64 * 1024
 MAX_SPAN_AGE = timedelta(days=90)  # the longest retention a project can configure

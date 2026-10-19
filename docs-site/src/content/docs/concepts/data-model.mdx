@@ -45,7 +45,8 @@ A span has a **kind**:
 | `llm` | A model call. The Overview counts spans of this kind as LLM calls, and they carry the model, token counts and cost. |
 | `tool` | A tool or function the model asked for. |
 | `retrieval` | A lookup, for example in a vector store or database. |
-| `chain` | A step that wraps other steps, such as a pipeline or an agent run. |
+| `chain` | A step that wraps other steps, such as a pipeline or a workflow. |
+| `agent` | An agent run: the step that decides which model calls and tools to run. Spans stored by earlier Spanlight versions have `chain` instead. |
 | `http` | An HTTP call. |
 | `other` | Anything else. This is the default when a span does not say. |
 

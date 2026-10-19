@@ -83,8 +83,10 @@ def _is_key_scope(response: httpx.Response) -> bool:
     )
 
 
-def _params(path: str) -> dict[str, str] | None:
+def _params(path: str, trace_id: str) -> dict[str, str] | None:
     """The query a route needs before it looks at anything else."""
+    if path.endswith("/traces/compare"):
+        return {"a": trace_id, "b": trace_id}
     if path.endswith("/invites/preview"):
         return {"token": "x"}
     if path.endswith("/releases/compare"):
@@ -95,13 +97,13 @@ def _params(path: str) -> dict[str, str] | None:
 
 
 async def _call(
-    client: httpx.AsyncClient, method: str, path: str, **headers: str
+    client: httpx.AsyncClient, method: str, path: str, trace_id: str = "", **headers: str
 ) -> httpx.Response:
     response = await client.request(
         method,
         path,
         json={} if method in {"POST", "PUT", "PATCH", "DELETE"} else None,
-        params=_params(path),
+        params=_params(path, trace_id),
         headers=headers,
     )
     assert "set-cookie" not in response.headers, (method, path)
@@ -118,9 +120,13 @@ async def test_an_api_key_is_refused_everywhere_except_the_key_readable_routes(
         other = _fill(
             template, world, project_id=world.other_project_id, trace_id=world.other_trace_id
         )
-        read_own = await _call(bare_client, method, own, **bearer(world.read_key))
-        read_other = await _call(bare_client, method, other, **bearer(world.read_key))
-        ingest_own = await _call(bare_client, method, own, **bearer(world.workspace.api_key))
+        read_own = await _call(bare_client, method, own, world.trace_id, **bearer(world.read_key))
+        read_other = await _call(
+            bare_client, method, other, world.other_trace_id, **bearer(world.read_key)
+        )
+        ingest_own = await _call(
+            bare_client, method, own, world.trace_id, **bearer(world.workspace.api_key)
+        )
 
         if (method, template) in KEY_READABLE:
             # Its own project with `traces:read`; a 404 for any other project, whatever the scope.

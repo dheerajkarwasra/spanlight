@@ -1,9 +1,9 @@
 """Span kind tables for every convention (spec §4.4).
 
-No new ``SpanKind`` value: each exporter kind maps onto the existing six, and the finer value
-is kept as ``spanlight.operation`` by the mappers. Every lookup runs on the stripped,
-lower-cased text so ``"llm"``, ``" Chain "`` and ``7`` resolve the same way as their canonical
-spellings (an unknown value is ``other``).
+Each exporter kind maps onto a ``SpanKind``; the finer value is kept as ``spanlight.operation``
+by the mappers. Agent spans are ``agent``; workflows and tasks stay ``chain``. Every lookup runs
+on the stripped, lower-cased text so ``"llm"``, ``" Chain "`` and ``7`` resolve the same way as
+their canonical spellings (an unknown value is ``other``).
 """
 
 from collections.abc import Mapping
@@ -18,8 +18,8 @@ _GEN_AI_OPERATIONS: dict[str, SpanKind] = {
     "generate_content": SpanKind.LLM,
     "embeddings": SpanKind.LLM,
     "execute_tool": SpanKind.TOOL,
-    "invoke_agent": SpanKind.CHAIN,
-    "create_agent": SpanKind.CHAIN,
+    "invoke_agent": SpanKind.AGENT,
+    "create_agent": SpanKind.AGENT,
     "invoke_workflow": SpanKind.CHAIN,
     "retrieval": SpanKind.RETRIEVAL,
 }
@@ -29,7 +29,7 @@ _OPENINFERENCE_KINDS: dict[str, SpanKind] = {
     "embedding": SpanKind.LLM,
     "tool": SpanKind.TOOL,
     "chain": SpanKind.CHAIN,
-    "agent": SpanKind.CHAIN,
+    "agent": SpanKind.AGENT,
     "retriever": SpanKind.RETRIEVAL,
     "reranker": SpanKind.RETRIEVAL,
 }
@@ -40,7 +40,7 @@ _VERCEL_TOOL_CALL = "ai.toolcall"
 _TRACELOOP_KINDS: dict[str, SpanKind] = {
     "workflow": SpanKind.CHAIN,
     "task": SpanKind.CHAIN,
-    "agent": SpanKind.CHAIN,
+    "agent": SpanKind.AGENT,
     "tool": SpanKind.TOOL,
 }
 

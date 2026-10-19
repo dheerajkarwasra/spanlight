@@ -131,6 +131,65 @@ class TraceDetailOut(TraceSummaryOut):
     spans: list[SpanOut]
 
 
+class TraceTotalsDeltaOut(BaseModel):
+    """Trace B minus trace A."""
+
+    duration_ms: float
+    input_tokens: int
+    output_tokens: int
+    cost_usd: Money | None
+    """Null when either trace has an unpriced call or no cost."""
+    span_count: int
+    error_count: int
+
+
+class StepSpanOut(BaseModel):
+    """One side of a compared step: the span's stored values, nulls as stored."""
+
+    span_id: str
+    kind: SpanKind
+    status: SpanStatus
+    model: str | None
+    duration_ms: float
+    input_tokens: int | None
+    output_tokens: int | None
+    cost_usd: Money | None
+
+
+class StepOut(BaseModel):
+    """A span of trace A and its counterpart in trace B, paired by name and occurrence."""
+
+    name: str
+    occurrence: int
+    """1 for the first span of this name in its trace (in start order), 2 for the second."""
+    a: StepSpanOut | None
+    """Null when the step is only in trace B."""
+    b: StepSpanOut | None
+    """Null when the step is only in trace A."""
+    duration_ms: float | None
+    """B minus A; null unless both sides exist. So are the other deltas, which are also null
+    when either side did not report the value."""
+    input_tokens: int | None
+    output_tokens: int | None
+    cost_usd: Money | None
+    input_changed: bool | None
+    """Whether the span was asked something else. Null when a side is missing or captured no
+    input, or when the inputs match but one of the spans was truncated at ingest (input or
+    output)."""
+    output_changed: bool | None
+    """The same for the output. Same input with a changed output is a nondeterministic step."""
+
+
+class TraceCompareOut(BaseModel):
+    a: TraceSummaryOut
+    b: TraceSummaryOut
+    totals: TraceTotalsDeltaOut
+    steps: list[StepOut]
+    """In trace A's order; a step only in B follows the last step before it that A also has."""
+    truncated: bool
+    """A trace has more than 2,000 spans: only the first 2,000 of each, by start, are compared."""
+
+
 class SessionSummaryOut(BaseModel):
     session_id: str
     trace_count: int
