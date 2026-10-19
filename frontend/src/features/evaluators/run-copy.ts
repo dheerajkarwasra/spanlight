@@ -38,6 +38,8 @@ const ERROR_COPY: Record<string, string> = {
   gateway_budget_blocked: "A project budget blocked the call.",
   verdict_unparseable: "The judge's reply was not a valid score.",
   judge_no_answer: "The judge model returned no answer.",
+  judge_truncated:
+    "The judge reached its max tokens before giving a score. Raise max tokens and run it again.",
   judge_template_invalid: "The judge prompt could not be filled from this trace.",
   judge_prompt_too_large:
     "With this trace filled in, the judge prompt is larger than 256 KB, so it was not sent.",

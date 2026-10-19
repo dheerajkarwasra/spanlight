@@ -82,7 +82,7 @@ A judge sends the trace to a model with a scoring prompt and reads a score and a
 
 **What the judge sees.** The input (a chat is shown as `role: content` lines, system messages included), the output text and, when the item has one, the expected output (otherwise `(none)`). Each is cut to 8000 characters with a `…[truncated]` marker before it is sent.
 
-**What it needs.** A credential of your organization for **Anthropic or OpenAI**, a model with a known price (without a price the budget could not be enforced, so a model that costs nothing or has no price answers `422 EVALUATOR_MODEL_UNPRICED`), `max_tokens` (256 by default, up to 4096), and a monthly budget. `temperature` is not sent unless you set it, because the newest Claude models reject non-default sampling settings. It needs `CREDENTIALS_KEYS` to be set.
+**What it needs.** A credential of your organization for **Anthropic or OpenAI**, a model with a known price (without a price the budget could not be enforced, so a model that costs nothing or has no price answers `422 EVALUATOR_MODEL_UNPRICED`), `max_tokens` (1024 by default, up to 4096), and a monthly budget. `temperature` is not sent unless you set it, because the newest Claude models reject non-default sampling settings. Claude models that think by default (generation 5 and later) are asked for `low` effort, since their thinking counts against `max_tokens`. It needs `CREDENTIALS_KEYS` to be set.
 
 ### The four built-in judges
 
@@ -228,6 +228,7 @@ Online runs and their scores follow the project's retention: they are deleted on
 | `budget_exceeded` | The judge's monthly budget could not cover another call. Nothing was sent or charged. |
 | `gateway_budget_blocked` | A project budget set to block stopped the judge's call. |
 | `verdict_unparseable` | The judge's answer had no usable score. It may have been billed. |
+| `judge_truncated` | The judge reached `max_tokens` before giving a score, usually because the model spent them thinking. It was billed. Raise `max_tokens`. |
 | `regex_timeout` | A regex rule ran out of its 1 second. |
 | `judge_prompt_too_large` | The judge's prompt, with the trace filled in, would exceed 256 KB. Nothing was sent. |
 | `webhook_status_<code>`, `webhook_invalid_reply`, `webhook_unreachable` | A webhook evaluator failed (above). |

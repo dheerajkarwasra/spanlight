@@ -1616,7 +1616,7 @@ members hold `prompts:write`, `datasets:write`, `scores:write`, `annotations:wri
 ### Evaluators
 
 - **Shape.** `config` is a discriminated union on `kind`: `heuristic` (with a `check` holding one `rule`), `llm_judge`
-  (`prompt_version_id`, `credential_id`, `model`, `max_tokens` 1 to 4096 defaulting to 256, `temperature` unset by default)
+  (`prompt_version_id`, `credential_id`, `model`, `max_tokens` 1 to 4096 defaulting to 1024, `temperature` unset by default)
   or `webhook` (`channel_id`). A name follows the score-name rule, because the scores it writes carry it.
   `PATCH` takes `name`, `enabled`, `sampling_rate`, `filters`, `monthly_budget_usd` and a partial `config` that merges
   into the stored one and cannot change `kind`.
@@ -1643,6 +1643,13 @@ members hold `prompts:write`, `datasets:write`, `scores:write`, `annotations:wri
   ≤ the budget; otherwise the run is `failed` with `budget_exceeded` and no request is sent. A `running` run with no heartbeat
   for 10 minutes becomes `failed`, `abandoned`, charged its reservation. `GET …/budget` returns `monthly_budget_usd`,
   `spent_usd`, `reserved_usd`, `remaining_usd` (null without a budget) and `month_start`.
+- **Thinking models (2026-10-19).** Claude models that think by default (generation 5 on, Fable, Mythos) spend
+  thinking tokens out of `max_tokens`; at the old 256 default a Haiku 5.5 judge ran out before answering on every call.
+  The judge now sends `output_config: {"effort": "low"}` to those models only (Haiku 4.5 and Sonnet 4.5 reject
+  `effort`, and older Opus models do not think unasked), and the default `max_tokens` is 1024. Stored judges keep the
+  `max_tokens` they were saved with. A call that stopped on its token limit (`max_tokens` from Anthropic, `length` from
+  OpenAI) without a readable verdict fails with **`judge_truncated`** instead of `judge_no_answer` or
+  `verdict_unparseable`, and is charged like them.
 - **Test.** `POST …/{id}/test` with `{trace_id}` evaluates the trace's last LLM span now and returns `{scores, cost_usd,
   reasoning}` without storing scores. A judge's test reserves like a sampled run. Over budget it is
   **`402 EVALUATOR_BUDGET_EXCEEDED`**; any other failure is **`502 EVALUATOR_FAILED`** with the run's error code in `error`.

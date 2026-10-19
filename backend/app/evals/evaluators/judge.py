@@ -18,6 +18,7 @@ caller that has already reserved. Prompts, answers and reasoning are never logge
 """
 
 import asyncio
+import re
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -59,6 +60,14 @@ TRACE_NAME_PREFIX = "judge:"
 # The call's whole budget. A sampled run executes in a worker task that is cancelled after 50 s;
 # ending the call well before that lets the gateway record the timeout and the run settle.
 CALL_TIMEOUT_MS = 30_000
+# Claude models that think by default (generation 5 on, Fable and Mythos). Unasked, they think at
+# medium effort or more, which can spend the whole `max_tokens` before the answer. Older models
+# either do not think unasked or reject `effort` (Haiku 4.5, Sonnet 4.5).
+_THINKS_BY_DEFAULT = re.compile(
+    r"claude-(?:fable|mythos)-|claude-(?:opus|sonnet|haiku)-(?:[5-9]|\d\d)"
+)
+# Finish reasons of an answer cut off by its token limit: Anthropic's, then OpenAI's.
+_TRUNCATED = ("max_tokens", "length")
 
 Execute = Callable[[GatewayRequest, GatewayContext], Awaitable[GatewayResult]]
 
@@ -183,21 +192,24 @@ class JudgeEvaluator:
             raise JudgeCallError("gateway_budget_blocked", Decimal(0))
         usage_cost = self._usage_cost(prepared, result)
         text = None
+        truncated = False
         if result.error is None and result.status == 200 and result.body is not None:
-            text = _answer_text(prepared.request.surface, result.body)
+            summary = summarize_response(prepared.request.surface, result.body)
+            text = _answer_text(summary.output)
+            truncated = summary.finish_reason in _TRUNCATED
         if text is None:
             billed = may_have_billed(result)
             charge = failed_call_charge(
                 may_have_billed=billed, usage_cost=usage_cost, estimate=prepared.estimate
             )
-            raise JudgeCallError(_failure_code(result), charge)
+            raise JudgeCallError("judge_truncated" if truncated else _failure_code(result), charge)
         try:
             verdict = parse_verdict(text)
         except VerdictUnparseable as error:
             charge = failed_call_charge(
                 may_have_billed=True, usage_cost=usage_cost, estimate=prepared.estimate
             )
-            raise JudgeCallError(error.code, charge) from None
+            raise JudgeCallError("judge_truncated" if truncated else error.code, charge) from None
         return EvalResult(
             scores=[_score(prepared.input, self.name, verdict.score, verdict.reasoning)],
             cost_usd=prepared.estimate if usage_cost is None else usage_cost,
@@ -251,7 +263,8 @@ def _body(provider: ProviderKind, config: JudgeConfig, messages: list[Message]) 
     """The provider-native body: Anthropic takes the system text apart, OpenAI first.
 
     `temperature` is sent only when the config sets one: the newest Claude models reject
-    non-default sampling parameters.
+    non-default sampling parameters. A Claude model that thinks by default gets `low` effort: a
+    verdict needs little reasoning, and the thinking shares `max_tokens` with the answer.
     """
     system = [m.content for m in messages if m.role == "system"]
     rest = [{"role": m.role, "content": m.content} for m in messages if m.role != "system"]
@@ -260,6 +273,8 @@ def _body(provider: ProviderKind, config: JudgeConfig, messages: list[Message]) 
         body["temperature"] = float(config.temperature)
     if provider == ProviderKind.ANTHROPIC:
         body["max_tokens"] = config.max_tokens
+        if _THINKS_BY_DEFAULT.match(config.model):
+            body["output_config"] = {"effort": "low"}
         if system:
             body["system"] = "\n\n".join(system)
         body["messages"] = rest
@@ -270,9 +285,8 @@ def _body(provider: ProviderKind, config: JudgeConfig, messages: list[Message]) 
     return body
 
 
-def _answer_text(surface: Surface, body: bytes) -> str | None:
-    """The text of a provider answer on `surface`; None when it has none."""
-    output = summarize_response(surface, body).output
+def _answer_text(output: dict[str, Any] | None) -> str | None:
+    """The text of a summarized provider answer; None when it has none."""
     content = output.get("content") if output is not None else None
     if isinstance(content, list):
         content = "".join(
@@ -289,7 +303,8 @@ def _answer_text(surface: Surface, body: bytes) -> str | None:
 
 def _failure_code(result: GatewayResult) -> str:
     """`judge_status_<code>` for an error status, else `judge_no_answer` (a success without
-    readable text, or a call that ended without a response)."""
+    readable text, or a call that ended without a response). A success cut off by `max_tokens`
+    before a readable verdict is `judge_truncated`, decided by the caller."""
     if result.status >= 400:
         return f"judge_status_{result.status}"
     return "judge_no_answer"
