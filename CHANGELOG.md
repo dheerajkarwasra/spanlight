@@ -4,6 +4,10 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Fixed
+
+- **Python SDK: tracing no longer raises into your code or loses whole traces on bad values** (next SDK release). `with spanlight.span(...)` re-raises an exception whose `__str__` raises unchanged, instead of a `RuntimeError` from the SDK. `set_usage` ignores counts that are not whole numbers from 0 to the server's limit, `record_error` accepts any value, and `set_attribute(s)` and `span(attributes=)` ignore what they cannot use, all instead of raising. Trace fields the server would reject, which made it drop every span of the trace, are made to fit: `""` is unset, non-strings become text, `name`, `user_id` and `session_id` are cut to 256 characters, `environment` to 64 and `release` to 128, `tags="beta"` is one tag (it was four), and a trace keeps 20 tags of up to 64 characters, with one warning per kind of fix. A span that cannot be encoded as JSON is dropped alone and counted as failed, instead of losing its whole batch. `wrap_anthropic` and `wrap_openai` also trace the clients that `with_options(...)` and `copy(...)` return, and `wrap_anthropic` traces `messages.parse` and `client.beta.messages` (`create`, `parse`, `stream` and batch results), so fast mode, compaction and the tool runner record spans; they recorded none. A forked child that only calls `flush()` no longer waits on the parent's in-flight batch, and an `@observe` async generator left by `async for ... break` is no longer recorded as failed with `CancelledError` when the event loop shuts down.
+
 ### Changed
 
 - **The quickstart runs released images.** `deploy/compose.yaml` takes the images from `SPANLIGHT_IMAGE` and `SPANLIGHT_WEB_IMAGE`, which `deploy/.env.example` sets to the GHCR images of the current release, so `docker compose ... up -d` pulls instead of building. Leave both unset to build from the checkout with `--build` (`spanlight:local`, `spanlight-web:local`), as before.

@@ -9,6 +9,7 @@ observes streaming responses as the caller consumes them.
 
 from __future__ import annotations
 
+import functools
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping
@@ -245,3 +246,18 @@ def patch_method(
     if original is None or getattr(original, WRAPPED_MARKER, False):
         return
     setattr(resource, attribute, make_wrapper(original))
+
+
+def patch_copies(client: Any, instrument: Callable[[Any], Any]) -> None:
+    """Instrument the clients that ``client.copy()`` and ``client.with_options()`` return, too."""
+
+    def make_wrapper(original: Callable[..., Any]) -> Callable[..., Any]:
+        @functools.wraps(original)
+        def copy(*args: Any, **kwargs: Any) -> Any:
+            return instrument(original(*args, **kwargs))
+
+        setattr(copy, WRAPPED_MARKER, True)
+        return copy
+
+    for attribute in ("copy", "with_options"):
+        patch_method(client, attribute, make_wrapper)

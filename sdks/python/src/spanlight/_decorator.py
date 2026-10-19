@@ -16,6 +16,7 @@ SDK itself are swallowed so they cannot break the decorated function.
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import inspect
 import logging
@@ -252,6 +253,10 @@ async def _traced_async_generator(
     """Async counterpart of :func:`_traced_generator`."""
     collected = _OutputCollector(enabled=options.capture_output)
     step: Callable[[], Any] = functools.partial(generator.asend, None)
+    # A cancellation thrown in at a `yield` means the consumer abandoned the generator: asyncio
+    # closes one left behind by `async for ... break` that way at loop shutdown. Like a `break`
+    # over a sync generator, that ends the span as ok, not failed.
+    abandoned: BaseException | None = None
     while True:
         previous = get_current_span()
         token = set_current_span(span)
@@ -266,7 +271,15 @@ async def _traced_async_generator(
             )
             return
         except BaseException as exc:
-            _finish(span, error=exc)
+            if exc is abandoned:
+                _finish(
+                    span,
+                    output=collected.result(None),
+                    capture_output=options.capture_output,
+                    output_cut=collected.truncated,
+                )
+            else:
+                _finish(span, error=exc)
             raise
         finally:
             restore_current_span(token, previous)
@@ -286,6 +299,7 @@ async def _traced_async_generator(
                 )
             raise
         except BaseException as exc:
+            abandoned = exc if isinstance(exc, asyncio.CancelledError) else None
             step = functools.partial(generator.athrow, exc)
         else:
             step = functools.partial(generator.asend, sent)

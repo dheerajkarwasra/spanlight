@@ -92,8 +92,8 @@ def handle(question: str, user_id: str) -> str:
 This produces one trace with three nested spans.
 
 - `@observe(name=None, kind="chain", capture_input=True, capture_output=True)` traces plain functions, `async def`, generators and async generators. `kind` is one of `llm`, `tool`, `retrieval`, `chain`, `http` or `other`. Both `@observe` and `@observe(...)` work.
-- `span(name, kind="chain", input=None, attributes=None)` is a context manager (also `async with`) that yields a `Span` with `set_input`, `set_output`, `set_attribute`, `set_attributes`, `set_model`, `set_usage`, `mark_first_token` and `record_error`. An exception that escapes the block marks the span as failed and is re-raised.
-- `update_trace(name=None, user_id=None, session_id=None, tags=None, metadata=None)` sets trace-level fields from anywhere inside the trace. Tags accumulate. Metadata keys accumulate too, a later value replacing a key's earlier one; the [Attribution](/docs/concepts/attribution/) page groups cost by them. Up to 32 keys of `a-z`, `0-9`, `_`, `.` and `-`, values of 1 to 256 characters; an invalid entry is dropped with a debug log.
+- `span(name, kind="chain", input=None, attributes=None)` is a context manager (also `async with`) that yields a `Span` with `set_input`, `set_output`, `set_attribute`, `set_attributes`, `set_model`, `set_usage`, `mark_first_token` and `record_error`. An exception that escapes the block marks the span as failed and is re-raised unchanged, even one whose `__str__` raises. The setters never raise: a value they cannot use, such as a token count that is not a number, is ignored with a debug log.
+- `update_trace(name=None, user_id=None, session_id=None, tags=None, metadata=None)` sets trace-level fields from anywhere inside the trace. Tags accumulate. Metadata keys accumulate too, a later value replacing a key's earlier one; the [Attribution](/docs/concepts/attribution/) page groups cost by them. Up to 32 keys of `a-z`, `0-9`, `_`, `.` and `-`, values of 1 to 256 characters; an invalid entry is dropped with a debug log. The other fields are made to fit the server's limits instead of losing the trace: `""` counts as unset, non-strings become text, ids and the name are cut to 256 characters, `tags="beta"` is one tag, and a trace keeps 20 tags of up to 64 characters ([details](/docs/reference/python-sdk/#update_trace)).
 
 Long-running servers need nothing else. Short scripts, CLIs and serverless handlers should call `spanlight.flush()` before they exit; an `atexit` hook also flushes, with a timeout.
 
@@ -139,7 +139,7 @@ anthropic_client = spanlight.wrap_anthropic(Anthropic())
 openai_client = spanlight.wrap_openai(OpenAI())
 ```
 
-`wrap_anthropic` instruments `messages.create` (including `stream=True`) and `messages.stream` on `Anthropic` and `AsyncAnthropic`. `wrap_openai` instruments `chat.completions.create` and `responses.create` on `OpenAI`, `AsyncOpenAI` and the Azure variants; an Azure client is recorded with the provider `azure_openai`, which stays unpriced until you add a price override for it. Streaming works without changes to your code and records time to first token. For OpenAI Chat Completions, ask for usage in the stream with `stream_options={"include_usage": True}`.
+`wrap_anthropic` instruments `messages.create` (including `stream=True`) and `messages.stream` on `Anthropic` and `AsyncAnthropic`. In the next SDK release it also instruments `messages.parse`, the same methods of `client.beta.messages` (where fast mode, compaction and the tool runner live), and the clients that `with_options(...)` and `copy(...)` return. `wrap_openai` instruments `chat.completions.create` and `responses.create` on `OpenAI`, `AsyncOpenAI` and the Azure variants; an Azure client is recorded with the provider `azure_openai`, which stays unpriced until you add a price override for it. Streaming works without changes to your code and records time to first token. For OpenAI Chat Completions, ask for usage in the stream with `stream_options={"include_usage": True}`.
 
 If you point the OpenAI client at a compatible API, name the provider yourself: `wrap_openai(client, provider="openrouter")`.
 
@@ -247,7 +247,7 @@ The rate-limit headers of a failed call pass a fixed allowlist of 29 names befor
 
 ## Delivery guarantees
 
-A batch goes out when it reaches `batch_size` spans or after `flush_interval` seconds. Network errors, `429` and `5xx` are retried with jittered exponential backoff, and `Retry-After` is honoured. Other `4xx` responses are not retried; they are logged to the `spanlight` logger, as are spans the server rejects. Ingestion is idempotent by design: a retried batch upserts the same rows, so it does not double-count.
+A batch goes out when it reaches `batch_size` spans or after `flush_interval` seconds. Network errors, `429` and `5xx` are retried with jittered exponential backoff, and `Retry-After` is honoured. Other `4xx` responses are not retried; they are logged to the `spanlight` logger, as are spans the server rejects. Ingestion is idempotent by design: a retried batch upserts the same rows, so it does not double-count. A span that cannot be encoded as JSON is dropped alone and counted as failed; the rest of its batch is sent.
 
 From SDK 0.2.0, the next release, every batch of spans also reports what the SDK lost: a `client` object with the SDK's name and version, a random exporter id (new in each process, and in a forked child) and two running totals, the spans and scores dropped because the queue was full and those lost after retries or rejected by the server. It holds no span content. The server turns the totals into [telemetry completeness](/docs/concepts/telemetry-completeness/); an older server ignores the object.
 

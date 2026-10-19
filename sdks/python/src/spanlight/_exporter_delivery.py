@@ -135,12 +135,13 @@ class Delivery:
     def _send_batch(
         self, target: _Target, batch: list[SpanPayload], client: Mapping[str, Any] | None
     ) -> None:
+        batch, encoded = self._encode_each(target, batch)
         if not batch:
             return
-        envelope: dict[str, Any] = {target.body_key: batch}
+        fields = [f'"{target.body_key}":[{",".join(encoded)}]']
         if client is not None and target.body_key == SPANS:
-            envelope["client"] = dict(client)
-        body = json.dumps(envelope, separators=(",", ":"), default=str).encode()
+            fields.append('"client":' + json.dumps(dict(client), separators=(",", ":")))
+        body = ("{" + ",".join(fields) + "}").encode()
         if self._gzip:
             body = gzip.compress(body)
 
@@ -178,6 +179,27 @@ class Delivery:
             delay = self.retry_delay(attempt, retry_after)
             logger.debug("Export failed (%s); retrying in %.2fs", failure, delay)
             self._sleep(delay)
+
+    def _encode_each(
+        self, target: _Target, batch: list[SpanPayload]
+    ) -> tuple[list[SpanPayload], list[str]]:
+        """JSON-encode each item on its own, so one that cannot be encoded loses only itself."""
+        kept: list[SpanPayload] = []
+        encoded: list[str] = []
+        for item in batch:
+            try:
+                encoded.append(json.dumps(item, separators=(",", ":"), default=str))
+            except Exception as exc:
+                self.failed += 1
+                logger.warning(
+                    "Dropping %s %s: it cannot be encoded as JSON (%s)",
+                    target.body_key[:-1],
+                    item.get(target.id_field),
+                    type(exc).__name__,
+                )
+            else:
+                kept.append(item)
+        return kept, encoded
 
     def _split_and_send(
         self, target: _Target, batch: list[SpanPayload], client: Mapping[str, Any] | None
