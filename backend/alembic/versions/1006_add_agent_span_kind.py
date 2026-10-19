@@ -1,7 +1,7 @@
 """Add `agent` to the `span_kind` enum.
 
 Revision ID: 1006
-Revises: 1003
+Revises: 1005
 Create Date: 2026-10-19
 
 Agent spans (GenAI `invoke_agent` / `create_agent`, OpenInference `AGENT`, Traceloop `agent`)
@@ -25,7 +25,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "1006"
-down_revision: str | None = "1003"
+down_revision: str | None = "1005"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
