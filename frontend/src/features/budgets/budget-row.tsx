@@ -24,17 +24,15 @@ interface BudgetRowProps {
   /** What the scope is called: the project or gateway key name, the user ID or the model. */
   scopeName: string | null;
   canWrite: boolean;
-  readOnlyId: string;
 }
 
 /**
  * Figma "Budgets/Budget row" (normal, blocking, unknown) and its 375 px tile: name with the
  * "Blocking (soft)" badge (Figma "Budgets / Soft-limit label", its tooltip on hover and focus), scope, period, spend, reset, Edit and more. The tile stacks the same parts.
  */
-export function BudgetRow({ budget, scopeName, canWrite, readOnlyId }: BudgetRowProps) {
+export function BudgetRow({ budget, scopeName, canWrite }: BudgetRowProps) {
   const blocking = isBlocking(budget);
   const mono = budget.scope !== "project";
-  const describedBy = canWrite ? undefined : readOnlyId;
   const scope = scopeName ?? <UnknownValue reason="This gateway key no longer exists." />;
 
   return (
@@ -90,22 +88,22 @@ export function BudgetRow({ budget, scopeName, canWrite, readOnlyId }: BudgetRow
           ))
         )}
       </p>
-      <div className="flex items-center gap-1.5 @[56rem]:flex-1 @[56rem]:justify-end">
-        <BudgetDialog
-          budget={budget}
-          trigger={
-            <RowAction
-              disabled={!canWrite}
-              aria-label={`Edit ${budget.name}`}
-              aria-describedby={describedBy}
-              className="@max-[56rem]:h-11 @max-[56rem]:flex-1"
-            >
-              Edit
-            </RowAction>
-          }
-        />
-        <BudgetRowMenu budget={budget} canWrite={canWrite} readOnlyId={readOnlyId} />
-      </div>
+      {canWrite ? (
+        <div className="flex items-center gap-1.5 @[56rem]:flex-1 @[56rem]:justify-end">
+          <BudgetDialog
+            budget={budget}
+            trigger={
+              <RowAction
+                aria-label={`Edit ${budget.name}`}
+                className="@max-[56rem]:h-11 @max-[56rem]:flex-1"
+              >
+                Edit
+              </RowAction>
+            }
+          />
+          <BudgetRowMenu budget={budget} />
+        </div>
+      ) : null}
     </li>
   );
 }

@@ -1,7 +1,6 @@
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { DisabledReason } from "@/components/disabled-reason";
 import { RelativeTime } from "@/components/relative-time";
 import { RowAction } from "@/components/tile-list";
 import { Badge } from "@/components/ui/badge";
@@ -78,12 +77,9 @@ export function RevokeKeyAction({ apiKey, ability }: { apiKey: ApiKey; ability: 
   const revokeKey = useRevokeApiKey();
   const decision = revokeDecision(apiKey, ability);
 
+  // A key this role may not revoke shows no action at all (the server refuses it anyway).
   if (!decision.allowed) {
-    return (
-      <DisabledReason reason={decision.reason}>
-        <RowAction disabled>Revoke</RowAction>
-      </DisabledReason>
-    );
+    return null;
   }
 
   return (

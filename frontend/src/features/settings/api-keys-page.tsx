@@ -1,14 +1,15 @@
 import { KeyRound } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { DisabledReason } from "@/components/disabled-reason";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
+import { ReadOnlyNote } from "@/components/read-only-note";
 import { SectionCard } from "@/components/section-card";
 import { TileListSkeleton } from "@/components/tile-list";
 import { Button } from "@/components/ui/button";
 import { useMe } from "@/features/auth";
 import { usePermission } from "@/features/shell";
+import { viewOnlyCopy } from "@/lib/permissions";
 
 import { ApiKeyList } from "./api-key-list";
 import { useApiKeysQuery } from "./api-key-queries";
@@ -26,18 +27,21 @@ export function ApiKeysPage() {
   };
 
   return (
-    <SectionCard
-      title="API keys"
-      description="Keys let an application send traces to this project or read them through the API. The secret is shown once."
-      actions={<CreateKeyButton canCreate={canCreate} />}
-      className="gap-3"
-    >
-      <ApiKeysContent
-        query={keysQuery}
-        ability={ability}
-        emptyAction={canCreate ? <CreateKeyButton canCreate /> : undefined}
-      />
-    </SectionCard>
+    <div className="flex flex-col gap-5">
+      {canCreate ? null : <ReadOnlyNote>{viewOnlyCopy("API keys", "key:create")}</ReadOnlyNote>}
+      <SectionCard
+        title="API keys"
+        description="Keys let an application send traces to this project or read them through the API. The secret is shown once."
+        actions={<CreateKeyButton canCreate={canCreate} />}
+        className="gap-3"
+      >
+        <ApiKeysContent
+          query={keysQuery}
+          ability={ability}
+          emptyAction={canCreate ? <CreateKeyButton canCreate /> : undefined}
+        />
+      </SectionCard>
+    </div>
   );
 }
 
@@ -92,13 +96,7 @@ function ApiKeysContent({ query, ability, emptyAction }: ApiKeysContentProps) {
 
 function CreateKeyButton({ canCreate }: { canCreate: boolean }) {
   if (!canCreate) {
-    return (
-      <DisabledReason reason="Viewers can't create API keys. Ask an admin for access.">
-        <Button variant="primary" disabled>
-          Create key
-        </Button>
-      </DisabledReason>
-    );
+    return null;
   }
 
   return <CreateApiKeyDialog trigger={<Button variant="primary">Create key</Button>} />;

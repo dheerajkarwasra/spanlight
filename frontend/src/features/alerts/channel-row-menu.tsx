@@ -16,18 +16,15 @@ import { RotateSecretDialog } from "./rotate-secret-dialog";
 
 interface ChannelRowMenuProps {
   channel: AlertChannel;
-  canWrite: boolean;
-  readOnlyId: string;
 }
 
 type OpenDialog = "edit" | "rotate" | "delete" | null;
 
 /**
  * Figma "Alerts — Channels — row menu": Edit, Rotate signing secret (webhooks only) and Delete.
- * Every item changes the channel, so the menu is disabled, with the page's reason, for people
- * without `alerts:write`.
+ * Every item changes the channel, so only people with `alerts:write` get the menu.
  */
-export function ChannelRowMenu({ channel, canWrite, readOnlyId }: ChannelRowMenuProps) {
+export function ChannelRowMenu({ channel }: ChannelRowMenuProps) {
   const [dialog, setDialog] = useState<OpenDialog>(null);
 
   function openChange(which: Exclude<OpenDialog, null>) {
@@ -43,9 +40,7 @@ export function ChannelRowMenu({ channel, canWrite, readOnlyId }: ChannelRowMenu
           <Button
             variant="secondary"
             size="icon-sm"
-            disabled={!canWrite}
             aria-label={`More actions for ${channel.name}`}
-            aria-describedby={canWrite ? undefined : readOnlyId}
             className="border-border-strong shadow-none"
           >
             <Ellipsis aria-hidden />

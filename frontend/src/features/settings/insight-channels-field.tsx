@@ -3,7 +3,6 @@ import { Controller, type Control } from "react-hook-form";
 
 import { ChipMultiSelect } from "@/components/chip-multi-select";
 import { FormField } from "@/components/form-field";
-import { ReadOnlyLine } from "@/components/read-only-line";
 import { Button } from "@/components/ui/button";
 import { channelOptions, MAX_RULE_CHANNELS, useAlertChannelsQuery } from "@/features/alerts";
 import { useProjectParams } from "@/features/shell";
@@ -11,8 +10,6 @@ import { useProjectParams } from "@/features/shell";
 import type { ProjectSettingsValues } from "./project-settings-schema";
 
 export const INSIGHT_CHANNELS_HINT = "Only critical insights notify, once each time one opens.";
-export const INSIGHT_CHANNELS_READ_ONLY_REASON =
-  "Only admins and owners can change project settings.";
 
 interface InsightChannelsFieldProps {
   control: Control<ProjectSettingsValues>;
@@ -110,7 +107,6 @@ function ReadOnlyChannels({ names, status }: { names: readonly string[]; status:
         {content}
       </div>
       <div className="flex flex-col gap-0.5">
-        <ReadOnlyLine>{INSIGHT_CHANNELS_READ_ONLY_REASON}</ReadOnlyLine>
         <p className="text-xs font-medium text-muted-foreground">{INSIGHT_CHANNELS_HINT}</p>
       </div>
     </div>

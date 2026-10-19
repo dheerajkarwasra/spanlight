@@ -3,7 +3,7 @@
  * `features/alerts`: the tab frame, metric labels and formatters, rule state and summary helpers,
  * the channel chips and channel options. Import from this file, not from the modules behind it.
  */
-export { ALERTS_READ_ONLY_REASON, AlertsLayout, AlertsReadOnlyLine } from "./alerts-layout";
+export { AlertsLayout } from "./alerts-layout";
 export { AlertsHeaderTabs } from "./alerts-header-tabs";
 export { useAlertChannelsQuery } from "./alerts-queries";
 export { ChannelChips } from "./channel-chips";

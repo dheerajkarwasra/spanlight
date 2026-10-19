@@ -1,6 +1,8 @@
 # Self-host Spanlight with one command:
 #   cp deploy/.env.example deploy/.env   # then fill in the secrets
-#   docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
+#   docker compose -f deploy/compose.yaml --env-file deploy/.env up -d
+# The images are the release in SPANLIGHT_IMAGE / SPANLIGHT_WEB_IMAGE (set in .env.example); add
+# --build, or leave both unset, to build from this checkout instead (`spanlight:local`).
 # The dashboard is served on http://localhost:${WEB_PORT:-8080}.
 
 name: spanlight
@@ -10,7 +12,7 @@ x-backend: &backend
     context: ..
     dockerfile: deploy/Dockerfile
     target: backend
-  image: spanlight:local
+  image: ${SPANLIGHT_IMAGE:-spanlight:local}
   restart: unless-stopped
   environment: &backend-env
     DATABASE_URL: postgresql+psycopg://spanlight_app:${APP_DB_PASSWORD:?set APP_DB_PASSWORD}@postgres:5432/spanlight
@@ -182,6 +184,7 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
       target: web
+    image: ${SPANLIGHT_WEB_IMAGE:-spanlight-web:local}
     restart: unless-stopped
     environment:
       API_UPSTREAM: api:8000

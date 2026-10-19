@@ -1,8 +1,10 @@
 import { FlaskConical } from "lucide-react";
 
+import { ReadOnlyNote } from "@/components/read-only-note";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { usePermission } from "@/features/shell";
+import { viewOnlyCopy } from "@/lib/permissions";
 
 import { GatewayLayout } from "../gateway-layout";
 import { LabRuns } from "./lab-runs";
@@ -19,6 +21,9 @@ export function GatewayLabPage() {
   return (
     <GatewayLayout>
       <div className="flex flex-col gap-6">
+        {canWrite ? null : (
+          <ReadOnlyNote>{viewOnlyCopy("fault profiles", "gateway:write")}</ReadOnlyNote>
+        )}
         <Card className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:gap-5 sm:p-6">
           <span
             aria-hidden
@@ -29,19 +34,16 @@ export function GatewayLabPage() {
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <h2 className="text-card">Integration Lab</h2>
             <p className="text-sm text-muted-foreground">{LAB_INTRO}</p>
-            {canWrite ? null : (
-              <p className="text-xs font-medium text-muted-foreground">
-                Only admins and owners can change fault profiles.
-              </p>
-            )}
           </div>
-          <ProfileDialog
-            trigger={
-              <Button variant="primary" disabled={!canWrite} className="max-sm:w-full">
-                New fault profile
-              </Button>
-            }
-          />
+          {canWrite ? (
+            <ProfileDialog
+              trigger={
+                <Button variant="primary" className="max-sm:w-full">
+                  New fault profile
+                </Button>
+              }
+            />
+          ) : null}
         </Card>
         <ProfileList canWrite={canWrite} />
         <LabRuns />

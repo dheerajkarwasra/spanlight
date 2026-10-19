@@ -1,12 +1,9 @@
-import { Download, ShieldCheck } from "lucide-react";
+import { Download } from "lucide-react";
 
 import { Callout } from "@/components/callout";
 import { DisabledReason } from "@/components/disabled-reason";
-import { EmptyState } from "@/components/empty-state";
 import { SectionCard } from "@/components/section-card";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { usePermission } from "@/features/shell";
 
 import { AuditFilterBar } from "./audit-filter-bar";
 import { AuditLogContent } from "./audit-log-content";
@@ -14,21 +11,8 @@ import { useAuditLogQuery } from "./audit-queries";
 import { useAuditCsv } from "./use-audit-csv";
 import { useAuditFilters } from "./use-audit-filters";
 
+/** A role without `audit:read` never gets here: `SettingsLayout` shows the no-access state. */
 export function AuditLogPage() {
-  const canRead = usePermission("audit:read");
-
-  if (!canRead) {
-    return (
-      <Card>
-        <EmptyState
-          icon={ShieldCheck}
-          title="Audit log is restricted"
-          description="Only admins and owners can view the audit log. Ask one of them if you need to review activity in this organization."
-        />
-      </Card>
-    );
-  }
-
   return <AuditLogCard />;
 }
 

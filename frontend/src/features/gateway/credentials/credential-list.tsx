@@ -8,7 +8,6 @@ interface CredentialListProps {
   credentials: readonly Credential[];
   routes: readonly Route[];
   canManage: boolean;
-  ownerReasonId: string;
   onNotConfigured: () => void;
 }
 
@@ -17,7 +16,6 @@ export function CredentialList({
   credentials,
   routes,
   canManage,
-  ownerReasonId,
   onNotConfigured,
 }: CredentialListProps) {
   const uses = routeUsesByCredential(routes);
@@ -40,7 +38,6 @@ export function CredentialList({
             key={credential.id}
             credential={credential}
             canManage={canManage}
-            ownerReasonId={ownerReasonId}
             uses={uses.get(credential.id)}
             routes={routes}
             onNotConfigured={onNotConfigured}
