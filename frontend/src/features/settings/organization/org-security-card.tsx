@@ -21,6 +21,8 @@ interface OrgSecurityCardProps {
   org: Org;
   /** Owners (`org:security`): a switch that saves on its own. Everyone else sees the status. */
   canChange: boolean;
+  /** False under the page's view-only banner, which already says who can change things. */
+  sayWhoCanChange?: boolean;
 }
 
 /**
@@ -28,7 +30,7 @@ interface OrgSecurityCardProps {
  * saves; turning it off saves at once. The switch shows the stored value, so a refused save (`409
  * NOT_CONFIGURED`, `409 TWO_FACTOR_NOT_ENABLED`) leaves it off and the card says why.
  */
-export function OrgSecurityCard({ org, canChange }: OrgSecurityCardProps) {
+export function OrgSecurityCard({ org, canChange, sayWhoCanChange = true }: OrgSecurityCardProps) {
   const titleId = useId();
   const switchId = useId();
   const descriptionId = useId();
@@ -77,7 +79,7 @@ export function OrgSecurityCard({ org, canChange }: OrgSecurityCardProps) {
       <RequireTwoFactorTile
         {...(canChange ? { labelFor: switchId } : {})}
         descriptionId={descriptionId}
-        description={requirementDescription(org.name, org.require_2fa, canChange)}
+        description={requirementDescription(org.name, org.require_2fa, canChange, sayWhoCanChange)}
       >
         {canChange ? (
           mustEnableOwn ? (

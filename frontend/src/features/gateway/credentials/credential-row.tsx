@@ -18,10 +18,8 @@ import { RotateDialog } from "./rotate-dialog";
 
 interface CredentialRowProps {
   credential: Credential;
-  /** Owners only. Everyone else sees the controls disabled, with the reason on the page. */
+  /** Owners only. Everyone else gets no actions; the page's banner says why. */
   canManage: boolean;
-  /** The id of the page's inline "owners only" notice. */
-  ownerReasonId: string;
   /** Routes of this project that target the credential, when any do. */
   uses: readonly RouteUse[] | undefined;
   routes: readonly Route[];
@@ -38,7 +36,6 @@ interface CredentialRowProps {
 export function CredentialRow({
   credential,
   canManage,
-  ownerReasonId,
   uses,
   routes,
   onNotConfigured,
@@ -48,8 +45,6 @@ export function CredentialRow({
   const usedBy = usedByLabel(uses);
   const label = baseUrlLabel(credential);
   const host = label ?? <UnknownValue reason="This server has no base URL stored" />;
-  const ownerReason = canManage ? undefined : ownerReasonId;
-  const deleteReason = [ownerReason, usedBy ? usedById : undefined].filter(Boolean).join(" ");
 
   return (
     <li className="flex flex-col gap-3 rounded-tile bg-surface-muted p-4 @[44rem]:flex-row @[44rem]:items-center @[44rem]:py-2.5 @[44rem]:pr-3 @[44rem]:pl-4">
@@ -125,51 +120,49 @@ export function CredentialRow({
         <CheckStatus credential={credential} checking={check.isPending} />
       </div>
       <div className={CREDENTIAL_COLUMNS.actions}>
-        <div className="flex items-center gap-1.5">
-          <Button
-            size="sm"
-            disabled={!canManage || check.isPending}
-            aria-label={`Check ${credential.name}`}
-            aria-describedby={ownerReason}
-            onClick={() => {
-              check.mutate(credential.id, {
-                onError: (error) => {
-                  toast.error(errorMessage(error));
-                },
-              });
-            }}
-          >
-            Check
-          </Button>
-          <RotateDialog
-            credential={credential}
-            onNotConfigured={onNotConfigured}
-            trigger={
+        {canManage ? (
+          <>
+            <div className="flex items-center gap-1.5">
               <Button
                 size="sm"
-                disabled={!canManage}
-                aria-label={`Rotate ${credential.name}`}
-                aria-describedby={ownerReason}
+                disabled={check.isPending}
+                aria-label={`Check ${credential.name}`}
+                onClick={() => {
+                  check.mutate(credential.id, {
+                    onError: (error) => {
+                      toast.error(errorMessage(error));
+                    },
+                  });
+                }}
               >
-                Rotate
+                Check
               </Button>
-            }
-          />
-        </div>
-        <DeleteCredentialDialog
-          credential={credential}
-          routes={routes}
-          trigger={
-            <Button
-              size="icon-sm"
-              disabled={!canManage || usedBy !== null}
-              aria-label={`Delete ${credential.name}`}
-              aria-describedby={deleteReason || undefined}
-            >
-              <Trash2 aria-hidden />
-            </Button>
-          }
-        />
+              <RotateDialog
+                credential={credential}
+                onNotConfigured={onNotConfigured}
+                trigger={
+                  <Button size="sm" aria-label={`Rotate ${credential.name}`}>
+                    Rotate
+                  </Button>
+                }
+              />
+            </div>
+            <DeleteCredentialDialog
+              credential={credential}
+              routes={routes}
+              trigger={
+                <Button
+                  size="icon-sm"
+                  disabled={usedBy !== null}
+                  aria-label={`Delete ${credential.name}`}
+                  aria-describedby={usedBy ? usedById : undefined}
+                >
+                  <Trash2 aria-hidden />
+                </Button>
+              }
+            />
+          </>
+        ) : null}
       </div>
       {usedBy ? (
         <p id={usedById} className="text-xs font-medium text-subtle-foreground @[44rem]:sr-only">

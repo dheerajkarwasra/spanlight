@@ -77,8 +77,8 @@ describe("ApiKeyList", () => {
 
     expect(within(own).getByRole("button", { name: "Revoke key mine" })).toBeEnabled();
 
-    expect(within(other).getByRole("button", { name: "Revoke" })).toBeDisabled();
-    expect(within(other).getByText("You can only revoke keys you created.")).toBeInTheDocument();
+    // Not the member's key: no revoke action at all.
+    expect(within(other).queryByRole("button", { name: /Revoke/ })).toBeNull();
 
     expect(within(revoked).queryByRole("button")).not.toBeInTheDocument();
     expect(within(revoked).getAllByText("Revoked").length).toBeGreaterThan(0);

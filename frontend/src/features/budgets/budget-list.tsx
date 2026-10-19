@@ -9,7 +9,6 @@ interface BudgetListProps {
   gatewayKeys: readonly GatewayKey[] | undefined;
   projectName: string | null;
   canWrite: boolean;
-  readOnlyId: string;
 }
 
 /** The scope's display name; null for a gateway key that no longer exists. */
@@ -35,13 +34,7 @@ function scopeName(
 }
 
 /** Figma "Budgets — List": tiles under overline column labels, in the server's order. */
-export function BudgetList({
-  budgets,
-  gatewayKeys,
-  projectName,
-  canWrite,
-  readOnlyId,
-}: BudgetListProps) {
+export function BudgetList({ budgets, gatewayKeys, projectName, canWrite }: BudgetListProps) {
   return (
     <div className="@container flex flex-col gap-1.5">
       <div
@@ -61,7 +54,6 @@ export function BudgetList({
             budget={budget}
             scopeName={scopeName(budget, gatewayKeys, projectName)}
             canWrite={canWrite}
-            readOnlyId={readOnlyId}
           />
         ))}
       </ul>

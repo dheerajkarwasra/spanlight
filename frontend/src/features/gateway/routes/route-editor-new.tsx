@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { Callout } from "@/components/callout";
 import { ErrorState } from "@/components/error-state";
+import { NoAccess } from "@/components/no-access";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { usePermission, useProjectParams } from "@/features/shell";
@@ -34,6 +35,10 @@ interface NewRouteEditorProps {
  */
 export function NewRouteEditor({ name, onCancel }: NewRouteEditorProps) {
   const lookups = useRouteLookups();
+  const canWrite = usePermission("gateway:write");
+  if (!canWrite) {
+    return <NoAccess page="New route" permission="gateway:write" />;
+  }
   if (!lookups.credentialsLoaded) {
     return lookups.credentialsError ? (
       <ErrorState
@@ -55,7 +60,6 @@ function NewRouteForm({
 }: NewRouteEditorProps & { lookups: RouteLookups }) {
   const { orgId, projectId } = useProjectParams();
   const navigate = useNavigate();
-  const canWrite = usePermission("gateway:write");
   const createRoute = useCreateRoute();
   const { form, errors } = useRouteForm(newRouteFormValues(lookups.credentials[0]?.id ?? null));
   // The whole draft (its name included) exists only here until it is created.
@@ -126,9 +130,9 @@ function NewRouteForm({
       <RouteEditorForm
         form={form}
         onSubmit={submit}
-        context={{ credentials: lookups.credentials, keys: [], canWrite }}
+        context={{ credentials: lookups.credentials, keys: [], canWrite: true }}
         footer={
-          bar && canWrite ? (
+          bar ? (
             <RouteSaveBar state={bar} saving={createRoute.isPending} onCancel={onCancel} />
           ) : null
         }
