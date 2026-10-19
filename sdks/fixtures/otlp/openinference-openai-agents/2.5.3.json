@@ -1,0 +1,925 @@
+{
+  "library": "openinference-openai-agents",
+  "version": "2.5.3",
+  "recorded_at": "2026-10-19T02:12:56Z",
+  "recorder": {
+    "runtime": "python 3.13.9",
+    "otel_sdk": "1.45.1",
+    "harness": "sdks/fixtures/otlp/record@b47b547"
+  },
+  "scenarios": [
+    {
+      "name": "agent_tool_llm",
+      "export": {
+        "content_type": "application/x-protobuf",
+        "body_base64": "Cpg1CtIBCiIKFnRlbGVtZXRyeS5zZGsubGFuZ3VhZ2USCAoGcHl0aG9uCiUKEnRlbGVtZXRyeS5zZGsubmFtZRIPCg1vcGVudGVsZW1ldHJ5CiEKFXRlbGVtZXRyeS5zZGsudmVyc2lvbhIICgYxLjQ1LjEKPQoTc2VydmljZS5pbnN0YW5jZS5pZBImCiQ0ZTM3YTZjYi02NmNiLTRjYjEtYTUwZS1jOGY3MWNiZDY0NmMKIwoMc2VydmljZS5uYW1lEhMKEXNwYW5saWdodC1maXh0dXJlEsAzCjQKK29wZW5pbmZlcmVuY2UuaW5zdHJ1bWVudGF0aW9uLm9wZW5haV9hZ2VudHMSBTIuNS4zEqIPChCFuSXPq66ZOO74H5MpP4eYEggXRuEeeMt4HyIIvcPklh1zVkQqCmdlbmVyYXRpb24wATkAEkffc8zfGEEAsJbuc8zfGEoWCgpsbG0uc3lzdGVtEggKBm9wZW5haUogCg5sbG0ubW9kZWxfbmFtZRIOCgxncHQtNC4xLW1pbmlKSQoZbGxtLmludm9jYXRpb25fcGFyYW1ldGVycxIsCip7ImJhc2VfdXJsIjogImh0dHA6Ly8xMjcuMC4wLjE6NTQyNjAvdjEvIn1KvwEKC2lucHV0LnZhbHVlEq8BCqwBW3siY29udGVudCI6ICJBbnN3ZXIgd2VhdGhlciBxdWVzdGlvbnMgd2l0aCB0aGUgZ2V0X3dlYXRoZXIgdG9vbC4iLCAicm9sZSI6ICJzeXN0ZW0ifSwgeyJyb2xlIjogInVzZXIiLCAiY29udGVudCI6ICJXaGF0IGlzIHRoZSB3ZWF0aGVyIGluIFBhcmlzIGFuZCBUb2t5bz8gVXNlIHRoZSB0b29sLiJ9XUolCg9pbnB1dC5taW1lX3R5cGUSEgoQYXBwbGljYXRpb24vanNvbkotCiFsbG0uaW5wdXRfbWVzc2FnZXMuMC5tZXNzYWdlLnJvbGUSCAoGc3lzdGVtSl0KJGxsbS5pbnB1dF9tZXNzYWdlcy4wLm1lc3NhZ2UuY29udGVudBI1CjNBbnN3ZXIgd2VhdGhlciBxdWVzdGlvbnMgd2l0aCB0aGUgZ2V0X3dlYXRoZXIgdG9vbC5KKwohbGxtLmlucHV0X21lc3NhZ2VzLjEubWVzc2FnZS5yb2xlEgYKBHVzZXJKXwokbGxtLmlucHV0X21lc3NhZ2VzLjEubWVzc2FnZS5jb250ZW50EjcKNVdoYXQgaXMgdGhlIHdlYXRoZXIgaW4gUGFyaXMgYW5kIFRva3lvPyBVc2UgdGhlIHRvb2wuSsoDCgxvdXRwdXQudmFsdWUSuQMKtgNbeyJjb250ZW50IjogbnVsbCwgInJlZnVzYWwiOiBudWxsLCAicm9sZSI6ICJhc3Npc3RhbnQiLCAiYW5ub3RhdGlvbnMiOiBbXSwgImF1ZGlvIjogbnVsbCwgImZ1bmN0aW9uX2NhbGwiOiBudWxsLCAidG9vbF9jYWxscyI6IFt7ImlkIjogImNhbGxfdGVzdDAwMDAwMDAwMDAwMDAwMDBhMSIsICJmdW5jdGlvbiI6IHsiYXJndW1lbnRzIjogIntcImNpdHlcIjpcIlBhcmlzXCIsXCJ1bml0XCI6XCJjZWxzaXVzXCJ9IiwgIm5hbWUiOiAiZ2V0X3dlYXRoZXIifSwgInR5cGUiOiAiZnVuY3Rpb24ifSwgeyJpZCI6ICJjYWxsX3Rlc3QwMDAwMDAwMDAwMDAwMDAwYjIiLCAiZnVuY3Rpb24iOiB7ImFyZ3VtZW50cyI6ICJ7XCJjaXR5XCI6XCJUb2t5b1wiLFwidW5pdFwiOlwiY2Vsc2l1c1wifSIsICJuYW1lIjogImdldF93ZWF0aGVyIn0sICJ0eXBlIjogImZ1bmN0aW9uIn1dfV1KJgoQb3V0cHV0Lm1pbWVfdHlwZRISChBhcHBsaWNhdGlvbi9qc29uSjEKImxsbS5vdXRwdXRfbWVzc2FnZXMuMC5tZXNzYWdlLnJvbGUSCwoJYXNzaXN0YW50SlgKN2xsbS5vdXRwdXRfbWVzc2FnZXMuMC5tZXNzYWdlLnRvb2xfY2FsbHMuMC50b29sX2NhbGwuaWQSHQobY2FsbF90ZXN0MDAwMDAwMDAwMDAwMDAwMGExSlMKQmxsbS5vdXRwdXRfbWVzc2FnZXMuMC5tZXNzYWdlLnRvb2xfY2FsbHMuMC50b29sX2NhbGwuZnVuY3Rpb24ubmFtZRINCgtnZXRfd2VhdGhlckpuCkdsbG0ub3V0cHV0X21lc3NhZ2VzLjAubWVzc2FnZS50b29sX2NhbGxzLjAudG9vbF9jYWxsLmZ1bmN0aW9uLmFyZ3VtZW50cxIjCiF7ImNpdHkiOiJQYXJpcyIsInVuaXQiOiJjZWxzaXVzIn1KWAo3bGxtLm91dHB1dF9tZXNzYWdlcy4wLm1lc3NhZ2UudG9vbF9jYWxscy4xLnRvb2xfY2FsbC5pZBIdChtjYWxsX3Rlc3QwMDAwMDAwMDAwMDAwMDAwYjJKUwpCbGxtLm91dHB1dF9tZXNzYWdlcy4wLm1lc3NhZ2UudG9vbF9jYWxscy4xLnRvb2xfY2FsbC5mdW5jdGlvbi5uYW1lEg0KC2dldF93ZWF0aGVySm4KR2xsbS5vdXRwdXRfbWVzc2FnZXMuMC5tZXNzYWdlLnRvb2xfY2FsbHMuMS50b29sX2NhbGwuZnVuY3Rpb24uYXJndW1lbnRzEiMKIXsiY2l0eSI6IlRva3lvIiwidW5pdCI6ImNlbHNpdXMifUocChZsbG0udG9rZW5fY291bnQucHJvbXB0EgIYUkogChpsbG0udG9rZW5fY291bnQuY29tcGxldGlvbhICGC5KIAoXb3BlbmluZmVyZW5jZS5zcGFuLmtpbmQSBQoDTExNegIYAYUBAAEAABLUBAoQhbklz6uumTju+B+TKT+HmBIIdBrDXPUKh8oiCL3D5JYdc1ZEKgtnZXRfd2VhdGhlcjABOQCwR+9zzN8YQQBk1O9zzN8YShoKCXRvb2wubmFtZRINCgtnZXRfd2VhdGhlckoyCgtpbnB1dC52YWx1ZRIjCiF7ImNpdHkiOiJQYXJpcyIsInVuaXQiOiJjZWxzaXVzIn1KJQoPaW5wdXQubWltZV90eXBlEhIKEGFwcGxpY2F0aW9uL2pzb25KJgoMb3V0cHV0LnZhbHVlEhYKFDE4IGRlZ3JlZXMgYW5kIHN1bm55SjkKEHRvb2wuZGVzY3JpcHRpb24SJQojR2V0IHRoZSBjdXJyZW50IHdlYXRoZXIgZm9yIGEgY2l0eS5KgwIKD3Rvb2wucGFyYW1ldGVycxLvAQrsAXsicHJvcGVydGllcyI6IHsiY2l0eSI6IHsidGl0bGUiOiAiQ2l0eSIsICJ0eXBlIjogInN0cmluZyJ9LCAidW5pdCI6IHsiZGVmYXVsdCI6ICJjZWxzaXVzIiwgInRpdGxlIjogIlVuaXQiLCAidHlwZSI6ICJzdHJpbmcifX0sICJyZXF1aXJlZCI6IFsiY2l0eSIsICJ1bml0Il0sICJ0aXRsZSI6ICJnZXRfd2VhdGhlcl9hcmdzIiwgInR5cGUiOiAib2JqZWN0IiwgImFkZGl0aW9uYWxQcm9wZXJ0aWVzIjogZmFsc2V9SiEKF29wZW5pbmZlcmVuY2Uuc3Bhbi5raW5kEgYKBFRPT0x6AhgBhQEAAQAAEtQEChCFuSXPq66ZOO74H5MpP4eYEgg+RHq15+sHhiIIvcPklh1zVkQqC2dldF93ZWF0aGVyMAE5APhb73PM3xhBAJLY73PM3xhKGgoJdG9vbC5uYW1lEg0KC2dldF93ZWF0aGVySjIKC2lucHV0LnZhbHVlEiMKIXsiY2l0eSI6IlRva3lvIiwidW5pdCI6ImNlbHNpdXMifUolCg9pbnB1dC5taW1lX3R5cGUSEgoQYXBwbGljYXRpb24vanNvbkomCgxvdXRwdXQudmFsdWUSFgoUMTggZGVncmVlcyBhbmQgc3VubnlKOQoQdG9vbC5kZXNjcmlwdGlvbhIlCiNHZXQgdGhlIGN1cnJlbnQgd2VhdGhlciBmb3IgYSBjaXR5LkqDAgoPdG9vbC5wYXJhbWV0ZXJzEu8BCuwBeyJwcm9wZXJ0aWVzIjogeyJjaXR5IjogeyJ0aXRsZSI6ICJDaXR5IiwgInR5cGUiOiAic3RyaW5nIn0sICJ1bml0IjogeyJkZWZhdWx0IjogImNlbHNpdXMiLCAidGl0bGUiOiAiVW5pdCIsICJ0eXBlIjogInN0cmluZyJ9fSwgInJlcXVpcmVkIjogWyJjaXR5IiwgInVuaXQiXSwgInRpdGxlIjogImdldF93ZWF0aGVyX2FyZ3MiLCAidHlwZSI6ICJvYmplY3QiLCAiYWRkaXRpb25hbFByb3BlcnRpZXMiOiBmYWxzZX1KIQoXb3BlbmluZmVyZW5jZS5zcGFuLmtpbmQSBgoEVE9PTHoCGAGFAQABAAASbgoQhbklz6uumTju+B+TKT+HmBIIvcPklh1zVkQiCFlAotxPJcCNKgR0dXJuMAE5ABgw33PM3xhBAGjy73PM3xhKIgoXb3BlbmluZmVyZW5jZS5zcGFuLmtpbmQSBwoFQ0hBSU56AhgBhQEAAQAAEq8VChCFuSXPq66ZOO74H5MpP4eYEghyn4KrNUE14SIIXsqQ1tecutYqCmdlbmVyYXRpb24wATkAzM3wc8zfGEEAUp7xc8zfGEoWCgpsbG0uc3lzdGVtEggKBm9wZW5haUogCg5sbG0ubW9kZWxfbmFtZRIOCgxncHQtNC4xLW1pbmlKSQoZbGxtLmludm9jYXRpb25fcGFyYW1ldGVycxIsCip7ImJhc2VfdXJsIjogImh0dHA6Ly8xMjcuMC4wLjE6NTQyNjAvdjEvIn1K8wUKC2lucHV0LnZhbHVlEuMFCuAFW3siY29udGVudCI6ICJBbnN3ZXIgd2VhdGhlciBxdWVzdGlvbnMgd2l0aCB0aGUgZ2V0X3dlYXRoZXIgdG9vbC4iLCAicm9sZSI6ICJzeXN0ZW0ifSwgeyJyb2xlIjogInVzZXIiLCAiY29udGVudCI6ICJXaGF0IGlzIHRoZSB3ZWF0aGVyIGluIFBhcmlzIGFuZCBUb2t5bz8gVXNlIHRoZSB0b29sLiJ9LCB7InJvbGUiOiAiYXNzaXN0YW50IiwgImNvbnRlbnQiOiBudWxsLCAidG9vbF9jYWxscyI6IFt7ImlkIjogImNhbGxfdGVzdDAwMDAwMDAwMDAwMDAwMDBhMSIsICJ0eXBlIjogImZ1bmN0aW9uIiwgImZ1bmN0aW9uIjogeyJuYW1lIjogImdldF93ZWF0aGVyIiwgImFyZ3VtZW50cyI6ICJ7XCJjaXR5XCI6XCJQYXJpc1wiLFwidW5pdFwiOlwiY2Vsc2l1c1wifSJ9fSwgeyJpZCI6ICJjYWxsX3Rlc3QwMDAwMDAwMDAwMDAwMDAwYjIiLCAidHlwZSI6ICJmdW5jdGlvbiIsICJmdW5jdGlvbiI6IHsibmFtZSI6ICJnZXRfd2VhdGhlciIsICJhcmd1bWVudHMiOiAie1wiY2l0eVwiOlwiVG9reW9cIixcInVuaXRcIjpcImNlbHNpdXNcIn0ifX1dfSwgeyJyb2xlIjogInRvb2wiLCAidG9vbF9jYWxsX2lkIjogImNhbGxfdGVzdDAwMDAwMDAwMDAwMDAwMDBhMSIsICJjb250ZW50IjogIjE4IGRlZ3JlZXMgYW5kIHN1bm55In0sIHsicm9sZSI6ICJ0b29sIiwgInRvb2xfY2FsbF9pZCI6ICJjYWxsX3Rlc3QwMDAwMDAwMDAwMDAwMDAwYjIiLCAiY29udGVudCI6ICIxOCBkZWdyZWVzIGFuZCBzdW5ueSJ9XUolCg9pbnB1dC5taW1lX3R5cGUSEgoQYXBwbGljYXRpb24vanNvbkotCiFsbG0uaW5wdXRfbWVzc2FnZXMuMC5tZXNzYWdlLnJvbGUSCAoGc3lzdGVtSl0KJGxsbS5pbnB1dF9tZXNzYWdlcy4wLm1lc3NhZ2UuY29udGVudBI1CjNBbnN3ZXIgd2VhdGhlciBxdWVzdGlvbnMgd2l0aCB0aGUgZ2V0X3dlYXRoZXIgdG9vbC5KKwohbGxtLmlucHV0X21lc3NhZ2VzLjEubWVzc2FnZS5yb2xlEgYKBHVzZXJKXwokbGxtLmlucHV0X21lc3NhZ2VzLjEubWVzc2FnZS5jb250ZW50EjcKNVdoYXQgaXMgdGhlIHdlYXRoZXIgaW4gUGFyaXMgYW5kIFRva3lvPyBVc2UgdGhlIHRvb2wuSjAKIWxsbS5pbnB1dF9tZXNzYWdlcy4yLm1lc3NhZ2Uucm9sZRILCglhc3Npc3RhbnRKVwo2bGxtLmlucHV0X21lc3NhZ2VzLjIubWVzc2FnZS50b29sX2NhbGxzLjAudG9vbF9jYWxsLmlkEh0KG2NhbGxfdGVzdDAwMDAwMDAwMDAwMDAwMDBhMUpSCkFsbG0uaW5wdXRfbWVzc2FnZXMuMi5tZXNzYWdlLnRvb2xfY2FsbHMuMC50b29sX2NhbGwuZnVuY3Rpb24ubmFtZRINCgtnZXRfd2VhdGhlckptCkZsbG0uaW5wdXRfbWVzc2FnZXMuMi5tZXNzYWdlLnRvb2xfY2FsbHMuMC50b29sX2NhbGwuZnVuY3Rpb24uYXJndW1lbnRzEiMKIXsiY2l0eSI6IlBhcmlzIiwidW5pdCI6ImNlbHNpdXMifUpXCjZsbG0uaW5wdXRfbWVzc2FnZXMuMi5tZXNzYWdlLnRvb2xfY2FsbHMuMS50b29sX2NhbGwuaWQSHQobY2FsbF90ZXN0MDAwMDAwMDAwMDAwMDAwMGIySlIKQWxsbS5pbnB1dF9tZXNzYWdlcy4yLm1lc3NhZ2UudG9vbF9jYWxscy4xLnRvb2xfY2FsbC5mdW5jdGlvbi5uYW1lEg0KC2dldF93ZWF0aGVySm0KRmxsbS5pbnB1dF9tZXNzYWdlcy4yLm1lc3NhZ2UudG9vbF9jYWxscy4xLnRvb2xfY2FsbC5mdW5jdGlvbi5hcmd1bWVudHMSIwoheyJjaXR5IjoiVG9reW8iLCJ1bml0IjoiY2Vsc2l1cyJ9SisKIWxsbS5pbnB1dF9tZXNzYWdlcy4zLm1lc3NhZ2Uucm9sZRIGCgR0b29sSj4KJGxsbS5pbnB1dF9tZXNzYWdlcy4zLm1lc3NhZ2UuY29udGVudBIWChQxOCBkZWdyZWVzIGFuZCBzdW5ueUpKCilsbG0uaW5wdXRfbWVzc2FnZXMuMy5tZXNzYWdlLnRvb2xfY2FsbF9pZBIdChtjYWxsX3Rlc3QwMDAwMDAwMDAwMDAwMDAwYTFKKwohbGxtLmlucHV0X21lc3NhZ2VzLjQubWVzc2FnZS5yb2xlEgYKBHRvb2xKPgokbGxtLmlucHV0X21lc3NhZ2VzLjQubWVzc2FnZS5jb250ZW50EhYKFDE4IGRlZ3JlZXMgYW5kIHN1bm55SkoKKWxsbS5pbnB1dF9tZXNzYWdlcy40Lm1lc3NhZ2UudG9vbF9jYWxsX2lkEh0KG2NhbGxfdGVzdDAwMDAwMDAwMDAwMDAwMDBiMkq4AQoMb3V0cHV0LnZhbHVlEqcBCqQBW3siY29udGVudCI6ICJIZWxsbyEgSG93IGNhbiBJIGhlbHAgeW91IHRvZGF5PyIsICJyZWZ1c2FsIjogbnVsbCwgInJvbGUiOiAiYXNzaXN0YW50IiwgImFubm90YXRpb25zIjogW10sICJhdWRpbyI6IG51bGwsICJmdW5jdGlvbl9jYWxsIjogbnVsbCwgInRvb2xfY2FsbHMiOiBudWxsfV1KJgoQb3V0cHV0Lm1pbWVfdHlwZRISChBhcHBsaWNhdGlvbi9qc29uSjEKImxsbS5vdXRwdXRfbWVzc2FnZXMuMC5tZXNzYWdlLnJvbGUSCwoJYXNzaXN0YW50SksKJWxsbS5vdXRwdXRfbWVzc2FnZXMuMC5tZXNzYWdlLmNvbnRlbnQSIgogSGVsbG8hIEhvdyBjYW4gSSBoZWxwIHlvdSB0b2RheT9KHAoWbGxtLnRva2VuX2NvdW50LnByb21wdBICGBNKIAoabGxtLnRva2VuX2NvdW50LmNvbXBsZXRpb24SAhgJSiAKF29wZW5pbmZlcmVuY2Uuc3Bhbi5raW5kEgUKA0xMTXoCGAGFAQABAAASbgoQhbklz6uumTju+B+TKT+HmBIIXsqQ1tecutYiCFlAotxPJcCNKgR0dXJuMAE5AOz673PM3xhBAE7/8XPM3xhKIgoXb3BlbmluZmVyZW5jZS5zcGFuLmtpbmQSBwoFQ0hBSU56AhgBhQEAAQAAErgBChCFuSXPq66ZOO74H5MpP4eYEghZQKLcTyXAjSIIlw68qnCXbWsqDXdlYXRoZXJfYWdlbnQwATkA8yzfc8zfGEEAswnyc8zfGEogCg1ncmFwaC5ub2RlLmlkEg8KDXdlYXRoZXJfYWdlbnRKHQoKYWdlbnQubmFtZRIPCg13ZWF0aGVyX2FnZW50SiIKF29wZW5pbmZlcmVuY2Uuc3Bhbi5raW5kEgcKBUFHRU5UegIYAYUBAAEAABJ4ChCFuSXPq66ZOO74H5MpP4eYEgiXDryqcJdtayIIYAk74SpjcsQqDkFnZW50IHdvcmtmbG93MAE5AGcX33PM3xhBAD8M8nPM3xhKIgoXb3BlbmluZmVyZW5jZS5zcGFuLmtpbmQSBwoFQ0hBSU56AhgBhQEAAQAAEm4KEIW5Jc+rrpk47vgfkyk/h5gSCGAJO+EqY3LEKg5BZ2VudCB3b3JrZmxvdzABObCGFd9zzN8YQXgxDfJzzN8YSiIKF29wZW5pbmZlcmVuY2Uuc3Bhbi5raW5kEgcKBUFHRU5UegIYAYUBAAEAAA=="
+      },
+      "preview": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "telemetry.sdk.language",
+                  "value": {
+                    "stringValue": "python"
+                  }
+                },
+                {
+                  "key": "telemetry.sdk.name",
+                  "value": {
+                    "stringValue": "opentelemetry"
+                  }
+                },
+                {
+                  "key": "telemetry.sdk.version",
+                  "value": {
+                    "stringValue": "1.45.1"
+                  }
+                },
+                {
+                  "key": "service.instance.id",
+                  "value": {
+                    "stringValue": "4e37a6cb-66cb-4cb1-a50e-c8f71cbd646c"
+                  }
+                },
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "spanlight-fixture"
+                  }
+                }
+              ]
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "openinference.instrumentation.openai_agents",
+                  "version": "2.5.3"
+                },
+                "spans": [
+                  {
+                    "traceId": "hbklz6uumTju+B+TKT+HmA==",
+                    "spanId": "F0bhHnjLeB8=",
+                    "parentSpanId": "vcPklh1zVkQ=",
+                    "name": "generation",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792375974756028928",
+                    "endTimeUnixNano": "1792375975012904960",
+                    "attributes": [
+                      {
+                        "key": "llm.system",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "llm.model_name",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "llm.invocation_parameters",
+                        "value": {
+                          "stringValue": "{\"base_url\": \"http://127.0.0.1:54260/v1/\"}"
+                        }
+                      },
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "[{\"content\": \"Answer weather questions with the get_weather tool.\", \"role\": \"system\"}, {\"role\": \"user\", \"content\": \"What is the weather in Paris and Tokyo? Use the tool.\"}]"
+                        }
+                      },
+                      {
+                        "key": "input.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.0.message.role",
+                        "value": {
+                          "stringValue": "system"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.0.message.content",
+                        "value": {
+                          "stringValue": "Answer weather questions with the get_weather tool."
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.1.message.role",
+                        "value": {
+                          "stringValue": "user"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.1.message.content",
+                        "value": {
+                          "stringValue": "What is the weather in Paris and Tokyo? Use the tool."
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "[{\"content\": null, \"refusal\": null, \"role\": \"assistant\", \"annotations\": [], \"audio\": null, \"function_call\": null, \"tool_calls\": [{\"id\": \"call_test0000000000000000a1\", \"function\": {\"arguments\": \"{\\\"city\\\":\\\"Paris\\\",\\\"unit\\\":\\\"celsius\\\"}\", \"name\": \"get_weather\"}, \"type\": \"function\"}, {\"id\": \"call_test0000000000000000b2\", \"function\": {\"arguments\": \"{\\\"city\\\":\\\"Tokyo\\\",\\\"unit\\\":\\\"celsius\\\"}\", \"name\": \"get_weather\"}, \"type\": \"function\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "output.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.role",
+                        "value": {
+                          "stringValue": "assistant"
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.tool_calls.0.tool_call.id",
+                        "value": {
+                          "stringValue": "call_test0000000000000000a1"
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.tool_calls.0.tool_call.function.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.tool_calls.0.tool_call.function.arguments",
+                        "value": {
+                          "stringValue": "{\"city\":\"Paris\",\"unit\":\"celsius\"}"
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.tool_calls.1.tool_call.id",
+                        "value": {
+                          "stringValue": "call_test0000000000000000b2"
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.tool_calls.1.tool_call.function.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.tool_calls.1.tool_call.function.arguments",
+                        "value": {
+                          "stringValue": "{\"city\":\"Tokyo\",\"unit\":\"celsius\"}"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.prompt",
+                        "value": {
+                          "intValue": "82"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.completion",
+                        "value": {
+                          "intValue": "46"
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "LLM"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "hbklz6uumTju+B+TKT+HmA==",
+                    "spanId": "dBrDXPUKh8o=",
+                    "parentSpanId": "vcPklh1zVkQ=",
+                    "name": "get_weather",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792375975024504832",
+                    "endTimeUnixNano": "1792375975033725952",
+                    "attributes": [
+                      {
+                        "key": "tool.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "{\"city\":\"Paris\",\"unit\":\"celsius\"}"
+                        }
+                      },
+                      {
+                        "key": "input.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "18 degrees and sunny"
+                        }
+                      },
+                      {
+                        "key": "tool.description",
+                        "value": {
+                          "stringValue": "Get the current weather for a city."
+                        }
+                      },
+                      {
+                        "key": "tool.parameters",
+                        "value": {
+                          "stringValue": "{\"properties\": {\"city\": {\"title\": \"City\", \"type\": \"string\"}, \"unit\": {\"default\": \"celsius\", \"title\": \"Unit\", \"type\": \"string\"}}, \"required\": [\"city\", \"unit\"], \"title\": \"get_weather_args\", \"type\": \"object\", \"additionalProperties\": false}"
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "TOOL"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "hbklz6uumTju+B+TKT+HmA==",
+                    "spanId": "PkR6tefrB4Y=",
+                    "parentSpanId": "vcPklh1zVkQ=",
+                    "name": "get_weather",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792375975025833984",
+                    "endTimeUnixNano": "1792375975033999872",
+                    "attributes": [
+                      {
+                        "key": "tool.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "{\"city\":\"Tokyo\",\"unit\":\"celsius\"}"
+                        }
+                      },
+                      {
+                        "key": "input.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "18 degrees and sunny"
+                        }
+                      },
+                      {
+                        "key": "tool.description",
+                        "value": {
+                          "stringValue": "Get the current weather for a city."
+                        }
+                      },
+                      {
+                        "key": "tool.parameters",
+                        "value": {
+                          "stringValue": "{\"properties\": {\"city\": {\"title\": \"City\", \"type\": \"string\"}, \"unit\": {\"default\": \"celsius\", \"title\": \"Unit\", \"type\": \"string\"}}, \"required\": [\"city\", \"unit\"], \"title\": \"get_weather_args\", \"type\": \"object\", \"additionalProperties\": false}"
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "TOOL"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "hbklz6uumTju+B+TKT+HmA==",
+                    "spanId": "vcPklh1zVkQ=",
+                    "parentSpanId": "WUCi3E8lwI0=",
+                    "name": "turn",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792375974754523136",
+                    "endTimeUnixNano": "1792375975035693056",
+                    "attributes": [
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "CHAIN"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "hbklz6uumTju+B+TKT+HmA==",
+                    "spanId": "cp+CqzVBNeE=",
+                    "parentSpanId": "XsqQ1tecutY=",
+                    "name": "generation",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792375975050071040",
+                    "endTimeUnixNano": "1792375975063736832",
+                    "attributes": [
+                      {
+                        "key": "llm.system",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "llm.model_name",
+                        "value": {
+                          "stringValue": "gpt-4.1-mini"
+                        }
+                      },
+                      {
+                        "key": "llm.invocation_parameters",
+                        "value": {
+                          "stringValue": "{\"base_url\": \"http://127.0.0.1:54260/v1/\"}"
+                        }
+                      },
+                      {
+                        "key": "input.value",
+                        "value": {
+                          "stringValue": "[{\"content\": \"Answer weather questions with the get_weather tool.\", \"role\": \"system\"}, {\"role\": \"user\", \"content\": \"What is the weather in Paris and Tokyo? Use the tool.\"}, {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"call_test0000000000000000a1\", \"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"arguments\": \"{\\\"city\\\":\\\"Paris\\\",\\\"unit\\\":\\\"celsius\\\"}\"}}, {\"id\": \"call_test0000000000000000b2\", \"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"arguments\": \"{\\\"city\\\":\\\"Tokyo\\\",\\\"unit\\\":\\\"celsius\\\"}\"}}]}, {\"role\": \"tool\", \"tool_call_id\": \"call_test0000000000000000a1\", \"content\": \"18 degrees and sunny\"}, {\"role\": \"tool\", \"tool_call_id\": \"call_test0000000000000000b2\", \"content\": \"18 degrees and sunny\"}]"
+                        }
+                      },
+                      {
+                        "key": "input.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.0.message.role",
+                        "value": {
+                          "stringValue": "system"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.0.message.content",
+                        "value": {
+                          "stringValue": "Answer weather questions with the get_weather tool."
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.1.message.role",
+                        "value": {
+                          "stringValue": "user"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.1.message.content",
+                        "value": {
+                          "stringValue": "What is the weather in Paris and Tokyo? Use the tool."
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.2.message.role",
+                        "value": {
+                          "stringValue": "assistant"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.2.message.tool_calls.0.tool_call.id",
+                        "value": {
+                          "stringValue": "call_test0000000000000000a1"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.2.message.tool_calls.0.tool_call.function.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.2.message.tool_calls.0.tool_call.function.arguments",
+                        "value": {
+                          "stringValue": "{\"city\":\"Paris\",\"unit\":\"celsius\"}"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.2.message.tool_calls.1.tool_call.id",
+                        "value": {
+                          "stringValue": "call_test0000000000000000b2"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.2.message.tool_calls.1.tool_call.function.name",
+                        "value": {
+                          "stringValue": "get_weather"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.2.message.tool_calls.1.tool_call.function.arguments",
+                        "value": {
+                          "stringValue": "{\"city\":\"Tokyo\",\"unit\":\"celsius\"}"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.3.message.role",
+                        "value": {
+                          "stringValue": "tool"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.3.message.content",
+                        "value": {
+                          "stringValue": "18 degrees and sunny"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.3.message.tool_call_id",
+                        "value": {
+                          "stringValue": "call_test0000000000000000a1"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.4.message.role",
+                        "value": {
+                          "stringValue": "tool"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.4.message.content",
+                        "value": {
+                          "stringValue": "18 degrees and sunny"
+                        }
+                      },
+                      {
+                        "key": "llm.input_messages.4.message.tool_call_id",
+                        "value": {
+                          "stringValue": "call_test0000000000000000b2"
+                        }
+                      },
+                      {
+                        "key": "output.value",
+                        "value": {
+                          "stringValue": "[{\"content\": \"Hello! How can I help you today?\", \"refusal\": null, \"role\": \"assistant\", \"annotations\": [], \"audio\": null, \"function_call\": null, \"tool_calls\": null}]"
+                        }
+                      },
+                      {
+                        "key": "output.mime_type",
+                        "value": {
+                          "stringValue": "application/json"
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.role",
+                        "value": {
+                          "stringValue": "assistant"
+                        }
+                      },
+                      {
+                        "key": "llm.output_messages.0.message.content",
+                        "value": {
+                          "stringValue": "Hello! How can I help you today?"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.prompt",
+                        "value": {
+                          "intValue": "19"
+                        }
+                      },
+                      {
+                        "key": "llm.token_count.completion",
+                        "value": {
+                          "intValue": "9"
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "LLM"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "hbklz6uumTju+B+TKT+HmA==",
+                    "spanId": "XsqQ1tecutY=",
+                    "parentSpanId": "WUCi3E8lwI0=",
+                    "name": "turn",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792375975036251136",
+                    "endTimeUnixNano": "1792375975070092800",
+                    "attributes": [
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "CHAIN"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "hbklz6uumTju+B+TKT+HmA==",
+                    "spanId": "WUCi3E8lwI0=",
+                    "parentSpanId": "lw68qnCXbWs=",
+                    "name": "weather_agent",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792375974754317056",
+                    "endTimeUnixNano": "1792375975070774016",
+                    "attributes": [
+                      {
+                        "key": "graph.node.id",
+                        "value": {
+                          "stringValue": "weather_agent"
+                        }
+                      },
+                      {
+                        "key": "agent.name",
+                        "value": {
+                          "stringValue": "weather_agent"
+                        }
+                      },
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "AGENT"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "hbklz6uumTju+B+TKT+HmA==",
+                    "spanId": "lw68qnCXbWs=",
+                    "parentSpanId": "YAk74SpjcsQ=",
+                    "name": "Agent workflow",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792375974752904960",
+                    "endTimeUnixNano": "1792375975070940928",
+                    "attributes": [
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "CHAIN"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  },
+                  {
+                    "traceId": "hbklz6uumTju+B+TKT+HmA==",
+                    "spanId": "YAk74SpjcsQ=",
+                    "name": "Agent workflow",
+                    "kind": "SPAN_KIND_INTERNAL",
+                    "startTimeUnixNano": "1792375974752782000",
+                    "endTimeUnixNano": "1792375975071003000",
+                    "attributes": [
+                      {
+                        "key": "openinference.span.kind",
+                        "value": {
+                          "stringValue": "AGENT"
+                        }
+                      }
+                    ],
+                    "status": {
+                      "code": "STATUS_CODE_OK"
+                    },
+                    "flags": 256
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accepted": 9,
+        "rejected": [],
+        "spans": [
+          {
+            "span_id": "1746e11e78cb781f",
+            "parent_span_id": "bdc3e4961d735644",
+            "convention": "openinference",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "usage": {
+              "input_tokens": 82,
+              "output_tokens": 46,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "priced",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "llm",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "741ac35cf50a87ca",
+            "parent_span_id": "bdc3e4961d735644",
+            "convention": "openinference",
+            "kind": "tool",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "tool",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "3e447ab5e7eb0786",
+            "parent_span_id": "bdc3e4961d735644",
+            "convention": "openinference",
+            "kind": "tool",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "tool",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "bdc3e4961d735644",
+            "parent_span_id": "5940a2dc4f25c08d",
+            "convention": "openinference",
+            "kind": "chain",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": false,
+            "output_present": false,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "chain",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "729f82ab354135e1",
+            "parent_span_id": "5eca90d6d79cbad6",
+            "convention": "openinference",
+            "kind": "llm",
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "usage": {
+              "input_tokens": 19,
+              "output_tokens": 9,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "priced",
+            "finish_reason": null,
+            "input_present": true,
+            "output_present": true,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "llm",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "5eca90d6d79cbad6",
+            "parent_span_id": "5940a2dc4f25c08d",
+            "convention": "openinference",
+            "kind": "chain",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": false,
+            "output_present": false,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "chain",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "5940a2dc4f25c08d",
+            "parent_span_id": "970ebcaa70976d6b",
+            "convention": "openinference",
+            "kind": "chain",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": false,
+            "output_present": false,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "agent",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "970ebcaa70976d6b",
+            "parent_span_id": "60093be12a6372c4",
+            "convention": "openinference",
+            "kind": "chain",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": false,
+            "output_present": false,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "chain",
+            "trace": {
+              "name": null,
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          },
+          {
+            "span_id": "60093be12a6372c4",
+            "parent_span_id": null,
+            "convention": "openinference",
+            "kind": "chain",
+            "provider": null,
+            "model": null,
+            "usage": {
+              "input_tokens": null,
+              "output_tokens": null,
+              "cached_tokens": null,
+              "cache_write_tokens": null
+            },
+            "usage_rollup": false,
+            "usage_state": "not_applicable",
+            "finish_reason": null,
+            "input_present": false,
+            "output_present": false,
+            "time_to_first_token_ms": null,
+            "status": "ok",
+            "error_class": null,
+            "operation": "agent",
+            "trace": {
+              "name": "Agent workflow",
+              "environment": null,
+              "release": null,
+              "user_id": null,
+              "session_id": null,
+              "metadata": {}
+            }
+          }
+        ],
+        "trace": {
+          "span_count": 9,
+          "input_tokens": 101,
+          "output_tokens": 55,
+          "has_unpriced": false
+        },
+        "loses": [
+          "cached_tokens",
+          "finish_reason",
+          "time_to_first_token_ms"
+        ]
+      }
+    }
+  ]
+}

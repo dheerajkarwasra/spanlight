@@ -129,7 +129,7 @@ Which attribute fills which field is listed in [OpenInference](/docs/reference/o
 - **Time to first token.** On a stream OpenInference sends it as a span event named `First Token Stream Event`, not as an attribute. Spanlight does not read span events, so the span has no time to first token.
 - **The model of a failed call.** OpenInference 0.1.65 sets no `llm.model_name` when the call fails; the requested model is only inside the `llm.invocation_parameters` text, which is not read. The span has no model and no usage, and its usage state is `model_unknown`.
 - **Cache writes.** The recorded calls went to OpenAI, which reports none. `llm.token_count.prompt_details.cache_write` is read when an instrumentation sends it.
-- **Anthropic and LangGraph.** They were not recorded, so this page makes no claim about them. The recorded agent is a LangChain runnable that drives the tool loop itself.
+- **Anthropic.** It was not recorded, so this page makes no claim about it. The recorded LangChain agent is a runnable that drives the tool loop itself; for a LangGraph agent, see [LangGraph](/docs/integrations/langgraph/).
 - **Exporter-computed cost.** Spanlight never reads one; it prices every span itself.
 
 [OTLP compatibility](/docs/reference/otlp-compatibility/#openinference-openai-0165) shows each recorded scenario field by field, for [OpenAI](/docs/reference/otlp-compatibility/#openinference-openai-0165) and [LangChain](/docs/reference/otlp-compatibility/#openinference-langchain-0179).

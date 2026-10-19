@@ -4,6 +4,14 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Added
+
+- **Agent framework guides with recorded fixtures.** New integration pages for the OpenAI Agents SDK, LangGraph, Pydantic AI and LlamaIndex, each backed by a recorded OTLP fixture of a small agent run (one tool round trip, two model calls) through the framework's own OpenTelemetry instrumentation: `openinference-openai-agents` 2.5.3, `openinference-langgraph` (LangGraph 1.2.16), `pydantic-ai` 2.57.0 and `openinference-llama-index` 4.6.0. The fixtures are on the OTLP compatibility page and in the weekly matrix.
+
+### Fixed
+
+- **LlamaIndex prompt-building spans no longer mark a trace as unpriced.** LlamaIndex labels `OpenAI._prepare_chat_with_tools` an OpenInference `LLM` span although it makes no model call. An OpenInference `LLM` span with only `input.value` (no messages and no token counts) is now stored as a `chain` with no model.
+
 ## [0.6.0] - 2026-10-19
 
 The first tagged server release: images on GHCR, and every change recorded under 0.2.0 to 0.5.0 below ships in it.
