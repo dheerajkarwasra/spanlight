@@ -39,17 +39,20 @@ def _openai_usage(
     web_search_requests: int | None,
 ) -> Usage | None:
     """Chat Completions (`prompt_tokens`, `completion_tokens`, `prompt_tokens_details`) or
-    Responses (`input_tokens`, `output_tokens`, `input_tokens_details`) usage."""
+    Responses (`input_tokens`, `output_tokens`, `input_tokens_details`) usage. The details carry
+    cache reads and, from GPT-5.6 on, cache writes; both are inside the input count."""
     tokens_in = as_int(usage.get(input_field))
     if tokens_in is None:
         return None
     tokens_out = as_int(usage.get(output_field))
-    cached = as_int(dict_at(usage, details_field).get("cached_tokens"))
+    details = dict_at(usage, details_field)
+    cached = as_int(details.get("cached_tokens"))
     tier, raw = _tier("openai", service_tier)
     return Usage(
         tokens_in,
         tokens_out,
         cached,
+        as_int(details.get("cache_write_tokens")),
         service_tier=tier,
         web_search_requests=web_search_requests,
         service_tier_raw=raw,

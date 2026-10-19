@@ -234,3 +234,24 @@ def test_responses_stream_completed_sets_no_reason(tracer, ingest):
     span = flushed_spans(tracer, ingest)[0]
     assert "usage.unreported_reason" not in span["attributes"]
     assert span["usage"]["output_tokens"] == 6
+
+
+def test_chat_records_openai_cache_writes(tracer, ingest):
+    """GPT-5.6 and later report cache writes in the details, inside ``prompt_tokens``."""
+    usage = {
+        **OPENAI_CHAT_COMPLETION["usage"],
+        "prompt_tokens": 15_000,
+        "prompt_tokens_details": {"cached_tokens": 12_000, "cache_write_tokens": 3_000},
+    }
+    client = make_client(
+        MockProvider(json_response({**OPENAI_CHAT_COMPLETION, "usage": usage})), tracer
+    )
+
+    client.chat.completions.create(model="gpt-6-sol", messages=MESSAGES)
+
+    span = flushed_spans(tracer, ingest)[0]
+    assert (
+        span["usage"]["input_tokens"],
+        span["usage"]["cached_tokens"],
+        span["usage"]["cache_write_tokens"],
+    ) == (15_000, 12_000, 3_000)

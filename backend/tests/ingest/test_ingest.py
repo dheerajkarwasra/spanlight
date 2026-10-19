@@ -428,7 +428,7 @@ async def test_unknown_model_or_missing_usage_has_null_cost(
         client,
         workspace,
         [
-            span(trace_id=trace_id, model="gpt-4.1-nano"),
+            span(trace_id=trace_id, model="gpt-4.1-turbo"),
             span(trace_id=trace_id, usage={"input_tokens": 10}),
         ],
     )

@@ -9,7 +9,7 @@ from app.core.model_match import matches_model
 from app.pricing.cost import Price, PriceBook
 from app.pricing.prices import EFFECTIVE_FROM, PRICING_VERSION, SEED_PRICES
 
-AT = datetime(2026, 10, 16, 12, tzinfo=UTC)
+AT = datetime(2026, 10, 19, 12, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -67,7 +67,7 @@ def test_known_models_and_snapshots(book: PriceBook, model: str, expected: str) 
 
 
 @pytest.mark.parametrize(
-    "model", ["gpt-4.1-nano", "gpt-4o-audio-preview", "claude-3-opus", "llama-3-70b", ""]
+    "model", ["gpt-4.1-turbo", "gpt-4o-audio-preview", "claude-3-opus", "llama-3-70b", ""]
 )
 def test_unknown_models_cost_null_never_zero(book: PriceBook, model: str) -> None:
     assert _cost(book, model) is None

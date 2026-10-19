@@ -135,7 +135,7 @@ describe("formatLine", () => {
         dimmed: false,
       },
       {
-        kind: "Cache write · 5 min",
+        kind: "Cache write",
         quantity: "0",
         rate: "$3.75 / MTok",
         multiplier: "×1",

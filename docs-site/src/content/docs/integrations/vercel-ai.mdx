@@ -172,7 +172,7 @@ Each `generateText`, `streamText` or `generateObject` call is one trace.
 
 - **Trace metadata and the trace name in GenAI mode.** AI SDK 7's `OpenTelemetry` integration does not send the runtime context. It sends `functionId` as `gen_ai.agent.name`, which Spanlight does not use as the trace name, so the trace is named after its root span. Use `LegacyOpenTelemetry` for both.
 - **Cached tokens of a non-streamed call on AI SDK 5 and 6.** Only `streamText` writes `ai.usage.cachedInputTokens` there. AI SDK 7 sends them on every call.
-- **The lifetime of a cache write.** AI SDK 5 and 6 send no cache-write count. When AI SDK 7 sends one (`ai.usage.inputTokenDetails.cacheWriteTokens`), no attribute says whether it was a 5-minute or a 1-hour write, so every cache write is priced at the 5-minute rate. The recorded calls went to OpenAI, which reports no cache writes.
+- **The lifetime of a cache write.** AI SDK 5 and 6 send no cache-write count. When AI SDK 7 sends one (`ai.usage.inputTokenDetails.cacheWriteTokens`), no attribute says whether it was a 5-minute or a 1-hour write, so every cache write is priced at the 5-minute rate. The recorded calls went to an OpenAI model older than GPT-5.6, which reports no cache writes.
 - **Time to first token of a call that does not stream.** There is no first chunk.
 - **Usage and output of a failed call.** The span keeps the error and the prompt.
 - **Calls outside the AI SDK, browser calls, and edge runtimes without an OpenTelemetry SDK.** Only what the AI SDK exports on a Node.js server is sent.

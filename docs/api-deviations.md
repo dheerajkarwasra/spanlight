@@ -1983,6 +1983,28 @@ Calls made after the full test pass on behaviour the spec left open.
   value is kept in `usage.service_tier_raw`. A failed request is an error span without usage, except an OpenAI
   Responses body with `status: "failed"`, which keeps the usage it reports.
 
+## OpenAI price coverage and cache writes (added 2026-10-19)
+
+- **Price table `2026-10-19`** adds the OpenAI text models published on 2026-10-19: GPT-6 (`gpt-6-astra`,
+  `gpt-6.1-sol`, `gpt-6-sol`, `gpt-6-luna`), GPT-5.6 (`sol`, `terra`, `luna`, `cyber`), GPT-5.5 down to GPT-5 with
+  their mini, nano and pro models, `gpt-5.3-codex`, `chat-latest`, the GPT-Rosalind models, `gpt-4.1-nano`, `o3`,
+  `o3-pro`, `o1`, `o1-pro` and the legacy models. Anthropic and Google rows, tier factors and fees carry over
+  unchanged; `2026-10-16` is kept as a historical snapshot. Realtime, audio, image, transcription and embedding models
+  are not priced.
+- **Dated rows win.** `gpt-4o-2024-05-13` is billed at twice the `gpt-4o` rate; under the longest-pattern rule its own
+  row now prices it. Spans stored under earlier snapshots keep the `gpt-4o` cost they were given.
+- **OpenAI cache writes** (GPT-5.6 and later, 1.25 times the input rate, one 30-minute lifetime) are stored in
+  `cache_write_5m_per_mtok`, the column for the provider's default cache-write lifetime; `cache_write_1h_per_mtok` stays
+  null for OpenAI. The SDK and the gateway read `prompt_tokens_details.cache_write_tokens` (Chat Completions) or
+  `input_tokens_details.cache_write_tokens` (Responses) into `usage.cache_write_tokens`; OpenAI counts the writes
+  inside the input count, as Spanlight does. The cost-explanation line `cache_write_5m` is labelled "Cache write" in
+  the dashboard, since its lifetime depends on the provider.
+- **Long prompts.** OpenAI models with a 1.05M context window bill prompts over 272,000 input tokens at 2 times the
+  input and cache rates and 1.5 times output for the whole request: a second row with `min_prompt_tokens` 272001.
+- **Not modelled yet:** OpenAI Fast and Ultrafast modes (the model pages now give Fast as 2 times the applicable
+  rates; `openai`/`priority` stays unmodelled until checked per model), the GPT-5.6 Sol promotional rate after
+  2026-11-21, and the 10 % regional and FedRAMP uplift.
+
 ## Provider path (added 2026-10-15)
 
 - **Span fields.** `SpanOut` gains `provider_error_type` and `provider_error_code` (each at most 64 characters) and

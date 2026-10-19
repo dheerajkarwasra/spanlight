@@ -70,7 +70,7 @@ export function statusCopy(status: ExplanationStatus, message: string | null): S
 const LINE_LABELS: Record<CostLineKind, string> = {
   uncached_input: "Uncached input",
   cache_read: "Cache read",
-  cache_write_5m: "Cache write · 5 min",
+  cache_write_5m: "Cache write",
   cache_write_1h: "Cache write · 1 h",
   output: "Output",
   web_search: "Web search",

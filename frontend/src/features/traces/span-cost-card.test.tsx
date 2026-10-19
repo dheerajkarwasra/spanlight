@@ -160,7 +160,7 @@ describe("SpanCostCard", () => {
     expect(rows.map((row) => row.textContent)).toEqual([
       "Uncached input12,310$3.00 / MTok×1$0.036930",
       "Cache read48,200$0.30 / MTok×1$0.014460",
-      "Cache write · 5 min0$3.75 / MTok×1$0",
+      "Cache write0$3.75 / MTok×1$0",
       "Cache write · 1 h0$6.00 / MTok×1$0",
       "Output812$15.00 / MTok×1$0.012180",
     ]);

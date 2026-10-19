@@ -12,7 +12,7 @@ from app.pricing.fees import FeeBook, ServerToolFee
 from app.pricing.prices import ALL_SNAPSHOTS, PRICING_VERSION
 from app.pricing.tiers import multipliers_for
 
-AT = datetime(2026, 10, 16, 12, tzinfo=UTC)
+AT = datetime(2026, 10, 19, 12, tzinfo=UTC)
 SONNET_46 = "claude-sonnet-4-6"
 
 
@@ -232,7 +232,7 @@ def test_gemini_alias_prices_as_google(book: PriceBook) -> None:
     # (1000 * 0.30 + 100 * 2.50) / 1e6.
     result = _cost(book, "gemini", "gemini-2.5-flash")
     assert result == CostResult(
-        cost_usd=Decimal("0.00055000"), fee_usd=None, pricing_version="2026-10-16"
+        cost_usd=Decimal("0.00055000"), fee_usd=None, pricing_version="2026-10-19"
     )
     assert _cost(book, " Vertex_AI ", "gemini-2.5-flash") == result
 
@@ -251,10 +251,10 @@ def test_gemini_tier_at_200001(book: PriceBook) -> None:
 
 
 def test_find_by_version_ignores_other_snapshots(book: PriceBook) -> None:
-    # Sonnet 5.5's cache read was 0.20 in 2026-10-15 and 0.10 from 2026-10-16.
+    # Sonnet 5.5's cache read was 0.20 in 2026-10-15 and 0.10 from 2026-10-16 (still in 2026-10-19).
     current = book.find("anthropic", "claude-sonnet-5-5", AT)
     older = book.find_by_version("2026-10-15", "anthropic", "claude-sonnet-5-5", AT)
-    assert current is not None and current.version == "2026-10-16"
+    assert current is not None and current.version == "2026-10-19"
     assert current.cached_input_per_mtok == Decimal("0.10")
     assert older is not None and older.version == "2026-10-15"
     assert older.cached_input_per_mtok == Decimal("0.20")

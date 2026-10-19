@@ -9,8 +9,11 @@ Anthropic rows carry the prompt-cache write rates by lifetime: 1.25x the input
 rate for a 5-minute cache and 2x for a 1-hour cache. A model that bills longer
 prompts at a higher rate gets one extra row per tier, `min_prompt_tokens` being
 the smallest prompt the row prices (Claude Haiku 5.5 over 100,000 tokens,
-Gemini Pro over 200,000). OpenAI does not bill cache writes separately, so its
-rows have no write rate. Gemini (`google`) bills cache storage per hour, not
+Gemini Pro over 200,000, OpenAI's 1.05M-context models over 272,000). OpenAI
+bills cache writes from GPT-5.6 on, at 1.25x the input rate, with one 30-minute
+lifetime: that rate sits in the 5-minute column, the provider's default
+lifetime, and OpenAI never reports a 1-hour split. Earlier OpenAI models bill
+no writes, so their rows have no write rate. Gemini (`google`) bills cache storage per hour, not
 per write, so its rows have no write rate either; that storage is not modelled.
 Gemini output tokens must include thinking tokens (`thoughts_token_count`): an
 integration that reports only `candidates_token_count` under-prices. Gemini
@@ -35,7 +38,9 @@ corrected or new rate goes into a new snapshot with a new date, and a stored
 cost is never re-priced. The `2026-10-16` snapshot corrects the Claude Sonnet
 5.5 cache-read rate ($0.10, not $0.20): a Sonnet 5.5 span priced under
 `2026-10-15` keeps its stored cost, whose cache-read part is twice the billed
-rate.
+rate. The `2026-10-19` snapshot adds the GPT-6, GPT-5.x, o-series and legacy
+OpenAI models and the dated `gpt-4o-2024-05-13` row, which earlier snapshots
+priced at the `gpt-4o` rate (half what OpenAI bills).
 
 The docs site builds its Prices page from the current snapshot only
 (`docs-site/scripts/lib/prices.mjs`): the `_price(...)` calls inside the
@@ -44,8 +49,9 @@ and the `_fee(...)` calls of `SEED_FEES`. Keep them literal so the parser can
 read them; historical snapshots are not rendered.
 
 Sources: https://platform.claude.com/docs/en/about-claude/pricing (and the
-owner's copy of the pricing table, 2026-10-15), https://openai.com/api/pricing
-and https://ai.google.dev/gemini-api/docs/pricing (checked 2026-10-15).
+owner's copy of the pricing table, 2026-10-15), https://ai.google.dev/gemini-api/docs/pricing
+(checked 2026-10-15) and https://developers.openai.com/api/docs/pricing with the
+model pages and the prompt-caching guide (checked 2026-10-19).
 """
 
 from collections.abc import Mapping
@@ -58,8 +64,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.pricing.cost import PriceBook
 
-PRICING_VERSION = "2026-10-16"
-EFFECTIVE_FROM = datetime(2026, 10, 16, tzinfo=UTC)
+PRICING_VERSION = "2026-10-19"
+EFFECTIVE_FROM = datetime(2026, 10, 19, tzinfo=UTC)
 
 
 @dataclass(frozen=True)
@@ -214,13 +220,100 @@ SEED_PRICES: tuple[SeedPrice, ...] = (
     _price(
         "anthropic", "claude-3-5-haiku", "0.80", "4.00", "0.08", write_5m="1.00", write_1h="1.60"
     ),
-    # OpenAI. Cached = cached-input rate; cache writes are not billed separately.
-    _price("openai", "gpt-4o", "2.50", "10.00", "1.25"),
-    _price("openai", "gpt-4o-mini", "0.15", "0.60", "0.075"),
+    # OpenAI. Cached = cached-input rate. GPT-5.6 and later bill a cache write at 1.25x the input
+    # rate (one 30-minute lifetime, kept in the 5-minute column); earlier models bill no writes.
+    # Models with a 1.05M context window bill prompts over 272K input tokens at 2x the input and
+    # cache rates and 1.5x output for the whole request: the second row of those models.
+    _price("openai", "gpt-6-astra", "10.00", "50.00", "1.00", write_5m="12.50"),
+    _price(
+        "openai",
+        "gpt-6-astra",
+        "20.00",
+        "75.00",
+        "2.00",
+        write_5m="25.00",
+        min_prompt_tokens=272_001,
+    ),
+    _price("openai", "gpt-6.1-sol", "2.00", "10.00", "0.10", write_5m="2.50"),
+    _price(
+        "openai", "gpt-6.1-sol", "4.00", "15.00", "0.20", write_5m="5.00", min_prompt_tokens=272_001
+    ),
+    _price("openai", "gpt-6-sol", "2.00", "10.00", "0.20", write_5m="2.50"),
+    _price(
+        "openai", "gpt-6-sol", "4.00", "15.00", "0.40", write_5m="5.00", min_prompt_tokens=272_001
+    ),
+    _price("openai", "gpt-6-luna", "0.10", "0.50", "0.01", write_5m="0.125"),
+    _price(
+        "openai", "gpt-6-luna", "0.20", "0.75", "0.02", write_5m="0.25", min_prompt_tokens=272_001
+    ),
+    # GPT-5.6 Sol's promotional rate is guaranteed only through 2026-11-21.
+    _price("openai", "gpt-5.6-sol", "4.00", "20.00", "0.40", write_5m="5.00"),
+    _price(
+        "openai",
+        "gpt-5.6-sol",
+        "8.00",
+        "30.00",
+        "0.80",
+        write_5m="10.00",
+        min_prompt_tokens=272_001,
+    ),
+    _price("openai", "gpt-5.6-terra", "2.00", "12.00", "0.20", write_5m="2.50"),
+    _price(
+        "openai",
+        "gpt-5.6-terra",
+        "4.00",
+        "18.00",
+        "0.40",
+        write_5m="5.00",
+        min_prompt_tokens=272_001,
+    ),
+    _price("openai", "gpt-5.6-luna", "0.20", "1.20", "0.02", write_5m="0.25"),
+    _price(
+        "openai", "gpt-5.6-luna", "0.40", "1.80", "0.04", write_5m="0.50", min_prompt_tokens=272_001
+    ),
+    _price("openai", "gpt-5.6-cyber", "12.50", "75.00", "1.25", write_5m="15.625"),
+    _price("openai", "gpt-5.5", "5.00", "30.00", "0.50"),
+    _price("openai", "gpt-5.5", "10.00", "45.00", "1.00", min_prompt_tokens=272_001),
+    _price("openai", "gpt-5.5-pro", "30.00", "180.00", None),
+    _price("openai", "gpt-5.5-pro", "60.00", "270.00", None, min_prompt_tokens=272_001),
+    _price("openai", "gpt-5.4", "2.50", "15.00", "0.25"),
+    _price("openai", "gpt-5.4", "5.00", "22.50", "0.50", min_prompt_tokens=272_001),
+    _price("openai", "gpt-5.4-pro", "30.00", "180.00", None),
+    _price("openai", "gpt-5.4-pro", "60.00", "270.00", None, min_prompt_tokens=272_001),
+    _price("openai", "gpt-5.4-mini", "0.75", "4.50", "0.075"),
+    _price("openai", "gpt-5.4-nano", "0.20", "1.25", "0.02"),
+    _price("openai", "gpt-5.3-codex", "1.75", "14.00", "0.175"),
+    _price("openai", "gpt-5.2", "1.75", "14.00", "0.175"),
+    _price("openai", "gpt-5.2-pro", "21.00", "168.00", None),
+    _price("openai", "gpt-5.1", "1.25", "10.00", "0.125"),
+    _price("openai", "gpt-5", "1.25", "10.00", "0.125"),
+    _price("openai", "gpt-5-mini", "0.25", "2.00", "0.025"),
+    _price("openai", "gpt-5-nano", "0.05", "0.40", "0.005"),
+    _price("openai", "gpt-5-pro", "15.00", "120.00", None),
+    _price("openai", "chat-latest", "5.00", "30.00", "0.50"),
+    _price("openai", "gpt-rosalind-research", "5.00", "25.00", "0.50"),
+    _price("openai", "gpt-rosalind-discovery", "5.00", "25.00", "0.50"),
     _price("openai", "gpt-4.1", "2.00", "8.00", "0.50"),
     _price("openai", "gpt-4.1-mini", "0.40", "1.60", "0.10"),
-    _price("openai", "o3-mini", "1.10", "4.40", "0.55"),
+    _price("openai", "gpt-4.1-nano", "0.10", "0.40", "0.025"),
+    _price("openai", "gpt-4o", "2.50", "10.00", "1.25"),
+    # The first gpt-4o snapshot bills twice the gpt-4o rate; the longer pattern wins.
+    _price("openai", "gpt-4o-2024-05-13", "5.00", "15.00", None),
+    _price("openai", "gpt-4o-mini", "0.15", "0.60", "0.075"),
     _price("openai", "o4-mini", "1.10", "4.40", "0.275"),
+    _price("openai", "o3", "2.00", "8.00", "0.50"),
+    _price("openai", "o3-mini", "1.10", "4.40", "0.55"),
+    _price("openai", "o3-pro", "20.00", "80.00", None),
+    _price("openai", "o1", "15.00", "60.00", "7.50"),
+    _price("openai", "o1-pro", "150.00", "600.00", None),
+    _price("openai", "gpt-4-turbo-2024-04-09", "10.00", "30.00", None),
+    _price("openai", "gpt-4-0613", "30.00", "60.00", None),
+    _price("openai", "gpt-3.5-turbo", "0.50", "1.50", None),
+    _price("openai", "gpt-3.5-turbo-0125", "0.50", "1.50", None),
+    _price("openai", "gpt-3.5-turbo-1106", "1.00", "2.00", None),
+    _price("openai", "gpt-3.5-turbo-instruct", "1.50", "2.00", None),
+    _price("openai", "davinci-002", "2.00", "2.00", None),
+    _price("openai", "babbage-002", "0.40", "0.40", None),
     # Google Gemini, paid tier, text input. Cached = context-cache read rate; cache storage is
     # billed per hour and is not modelled. Prompts over 200K tokens bill at the next tier.
     _price("google", "gemini-2.5-pro", "1.25", "10.00", "0.125"),
@@ -260,6 +353,129 @@ CURRENT_SNAPSHOT = PriceSnapshot(
     version=PRICING_VERSION,
     effective_from=EFFECTIVE_FROM,
     prices=SEED_PRICES,
+    tier_multipliers=TIER_MULTIPLIERS,
+    commitment_billed=COMMITMENT_BILLED,
+    fees=SEED_FEES,
+)
+
+
+# Released 2026-10-16 (sources checked 2026-10-15), verbatim. Its OpenAI rows predate the GPT-5 and
+# GPT-6 families and OpenAI's cache-write rates. Its multipliers, commitment flags and fees are the
+# current ones, unchanged in 2026-10-19; a snapshot that changes them must freeze a copy here.
+_PRICES_2026_10_16: tuple[SeedPrice, ...] = (
+    # Anthropic. Cached = prompt-cache read rate; writes = 1.25x (5 m) and 2x (1 h) the input rate.
+    _price(
+        "anthropic", "claude-haiku-4-5", "1.00", "5.00", "0.10", write_5m="1.25", write_1h="2.00"
+    ),
+    _price(
+        "anthropic", "claude-sonnet-4-5", "3.00", "15.00", "0.30", write_5m="3.75", write_1h="6.00"
+    ),
+    _price(
+        "anthropic", "claude-sonnet-4-6", "3.00", "15.00", "0.30", write_5m="3.75", write_1h="6.00"
+    ),
+    _price(
+        "anthropic", "claude-opus-4-5", "5.00", "25.00", "0.50", write_5m="6.25", write_1h="10.00"
+    ),
+    _price(
+        "anthropic", "claude-opus-4-6", "5.00", "25.00", "0.50", write_5m="6.25", write_1h="10.00"
+    ),
+    _price(
+        "anthropic", "claude-opus-4-7", "5.00", "25.00", "0.50", write_5m="6.25", write_1h="10.00"
+    ),
+    _price(
+        "anthropic", "claude-opus-4-8", "5.00", "25.00", "0.50", write_5m="6.25", write_1h="10.00"
+    ),
+    _price(
+        "anthropic", "claude-opus-5", "5.00", "25.00", "0.50", write_5m="6.25", write_1h="10.00"
+    ),
+    _price(
+        "anthropic", "claude-opus-5-5", "4.00", "20.00", "0.20", write_5m="5.00", write_1h="8.00"
+    ),
+    _price(
+        "anthropic", "claude-sonnet-5", "2.00", "10.00", "0.20", write_5m="2.50", write_1h="4.00"
+    ),
+    # Cache read corrected from 0.20 (the 2026-10-15 snapshot) to the published 0.10.
+    _price(
+        "anthropic", "claude-sonnet-5-5", "2.00", "10.00", "0.10", write_5m="2.50", write_1h="4.00"
+    ),
+    _price(
+        "anthropic", "claude-haiku-5-5", "0.10", "0.50", "0.01", write_5m="0.125", write_1h="0.20"
+    ),
+    # Prompts over 100K tokens bill the whole prompt at the next tier.
+    _price(
+        "anthropic",
+        "claude-haiku-5-5",
+        "0.50",
+        "2.50",
+        "0.05",
+        write_5m="0.625",
+        write_1h="1.00",
+        min_prompt_tokens=100_001,
+    ),
+    _price(
+        "anthropic",
+        "claude-fable-5-1",
+        "10.00",
+        "50.00",
+        "0.25",
+        write_5m="12.50",
+        write_1h="20.00",
+    ),
+    _price(
+        "anthropic",
+        "claude-mythos-5-1",
+        "10.00",
+        "50.00",
+        "0.25",
+        write_5m="12.50",
+        write_1h="20.00",
+    ),
+    _price(
+        "anthropic", "claude-fable-5", "10.00", "50.00", "1.00", write_5m="12.50", write_1h="20.00"
+    ),
+    _price(
+        "anthropic", "claude-mythos-5", "10.00", "50.00", "1.00", write_5m="12.50", write_1h="20.00"
+    ),
+    _price(
+        "anthropic", "claude-opus-4-1", "15.00", "75.00", "1.50", write_5m="18.75", write_1h="30.00"
+    ),
+    _price(
+        "anthropic", "claude-opus-4", "15.00", "75.00", "1.50", write_5m="18.75", write_1h="30.00"
+    ),
+    _price(
+        "anthropic", "claude-sonnet-4", "3.00", "15.00", "0.30", write_5m="3.75", write_1h="6.00"
+    ),
+    # Anthropic names this model `claude-3-5-haiku` (`claude-3-5-haiku-20241022`, `-latest`).
+    _price(
+        "anthropic", "claude-3-5-haiku", "0.80", "4.00", "0.08", write_5m="1.00", write_1h="1.60"
+    ),
+    # OpenAI. Cached = cached-input rate; cache writes are not billed separately.
+    _price("openai", "gpt-4o", "2.50", "10.00", "1.25"),
+    _price("openai", "gpt-4o-mini", "0.15", "0.60", "0.075"),
+    _price("openai", "gpt-4.1", "2.00", "8.00", "0.50"),
+    _price("openai", "gpt-4.1-mini", "0.40", "1.60", "0.10"),
+    _price("openai", "o3-mini", "1.10", "4.40", "0.55"),
+    _price("openai", "o4-mini", "1.10", "4.40", "0.275"),
+    # Google Gemini, paid tier, text input. Cached = context-cache read rate; cache storage is
+    # billed per hour and is not modelled. Prompts over 200K tokens bill at the next tier.
+    _price("google", "gemini-2.5-pro", "1.25", "10.00", "0.125"),
+    _price("google", "gemini-2.5-pro", "2.50", "15.00", "0.25", min_prompt_tokens=200_001),
+    _price("google", "gemini-2.5-flash", "0.30", "2.50", "0.03"),
+    _price("google", "gemini-2.5-flash-lite", "0.10", "0.40", "0.01"),
+    _price("google", "gemini-3-flash-preview", "0.50", "3.00", "0.05"),
+    _price("google", "gemini-3.1-pro-preview", "2.00", "12.00", "0.20"),
+    _price("google", "gemini-3.1-pro-preview", "4.00", "18.00", "0.40", min_prompt_tokens=200_001),
+    _price("google", "gemini-3.1-flash-lite", "0.25", "1.50", "0.025"),
+    _price("google", "gemini-3.5-flash-lite", "0.30", "2.50", "0.03"),
+    # Both Flash rates double on 2027-01-01 (next snapshot).
+    _price("google", "gemini-3.6-flash", "0.75", "3.75", "0.075"),
+    _price("google", "gemini-3.8-flash", "0.75", "3.75", "0.075"),
+)
+
+SNAPSHOT_2026_10_16 = PriceSnapshot(
+    version="2026-10-16",
+    effective_from=datetime(2026, 10, 16, tzinfo=UTC),
+    prices=_PRICES_2026_10_16,
     tier_multipliers=TIER_MULTIPLIERS,
     commitment_billed=COMMITMENT_BILLED,
     fees=SEED_FEES,
@@ -361,7 +577,11 @@ SNAPSHOT_2026_10_01 = PriceSnapshot(
 
 # Oldest first. Every snapshot is written to the price table, so a span dated before the current
 # snapshot is priced by the one in force when it started.
-HISTORICAL_SNAPSHOTS: tuple[PriceSnapshot, ...] = (SNAPSHOT_2026_10_01, SNAPSHOT_2026_10_15)
+HISTORICAL_SNAPSHOTS: tuple[PriceSnapshot, ...] = (
+    SNAPSHOT_2026_10_01,
+    SNAPSHOT_2026_10_15,
+    SNAPSHOT_2026_10_16,
+)
 ALL_SNAPSHOTS: tuple[PriceSnapshot, ...] = (*HISTORICAL_SNAPSHOTS, CURRENT_SNAPSHOT)
 
 

@@ -39,18 +39,24 @@ def usage_fields(usage: Any) -> dict[str, Any]:
 
     Chat completions name the counts ``prompt_tokens`` / ``completion_tokens``; the
     Responses API names them ``input_tokens`` / ``output_tokens``. Both include cached
-    tokens in the prompt count, as Spanlight does.
+    tokens and cache writes (GPT-5.6 and later) in the prompt count, as Spanlight does.
     """
     if get_field(usage, "prompt_tokens") is not None:
         return {
             "input_tokens": as_int(get_field(usage, "prompt_tokens")),
             "output_tokens": as_int(get_field(usage, "completion_tokens")),
             "cached_tokens": as_int(get_field(usage, "prompt_tokens_details", "cached_tokens")),
+            "cache_write_tokens": as_int(
+                get_field(usage, "prompt_tokens_details", "cache_write_tokens")
+            ),
         }
     return {
         "input_tokens": as_int(get_field(usage, "input_tokens")),
         "output_tokens": as_int(get_field(usage, "output_tokens")),
         "cached_tokens": as_int(get_field(usage, "input_tokens_details", "cached_tokens")),
+        "cache_write_tokens": as_int(
+            get_field(usage, "input_tokens_details", "cache_write_tokens")
+        ),
     }
 
 

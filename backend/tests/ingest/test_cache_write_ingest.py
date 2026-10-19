@@ -16,7 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.db.models import Span
 from app.db.rls import bypass_rls
 from app.ingest import pipeline
-from app.pricing.prices import EFFECTIVE_FROM, PRICING_VERSION, SNAPSHOT_2026_10_01
+from app.pricing.prices import (
+    EFFECTIVE_FROM,
+    PRICING_VERSION,
+    SNAPSHOT_2026_10_01,
+    SNAPSHOT_2026_10_15,
+)
 from tests.helpers import Workspace, bearer, new_span_id, new_trace_id, span
 
 HAIKU_45 = "claude-haiku-4-5"
@@ -185,7 +190,8 @@ async def test_replay_without_write_fields_keeps_cost(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """A span stored before the migration carries no write fields; replaying it changes nothing."""
-    started = EFFECTIVE_FROM - timedelta(days=4)  # priced by the earlier snapshot, as it was
+    # Priced by the snapshot before write rates existed, as it was.
+    started = SNAPSHOT_2026_10_15.effective_from - timedelta(days=4)
     batch = [
         _haiku_span(
             new_trace_id(),

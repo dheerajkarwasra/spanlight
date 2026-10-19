@@ -19,7 +19,7 @@ A cost is a **known** number or it is **unknown**. There is nothing in between, 
 
 ### The formula
 
-Prices are in US dollars per million tokens. A model has an input rate, an output rate and, for some models, a cached-input rate (what a prompt-cache read costs) and two cache-write rates: one for a write that lives 5 minutes, one for a write that lives 1 hour. Anthropic bills a 5-minute write at 1.25 times the input rate and a 1-hour write at 2 times; OpenAI does not bill cache writes separately.
+Prices are in US dollars per million tokens. A model has an input rate, an output rate and, for some models, a cached-input rate (what a prompt-cache read costs) and two cache-write rates: one for a write that lives 5 minutes, one for a write that lives 1 hour. Anthropic bills a 5-minute write at 1.25 times the input rate and a 1-hour write at 2 times. OpenAI bills a write at 1.25 times the input rate from GPT-5.6 on, with one 30-minute lifetime, so Spanlight prices every OpenAI write at the first of the two rates; earlier OpenAI models bill no cache writes. Some models also bill a long prompt at higher rates for the whole request: Claude Haiku 5.5 over 100,000 input tokens, Gemini Pro over 200,000, and OpenAI's 1.05M-context models over 272,000.
 
 ```text
 reads     = cached_tokens

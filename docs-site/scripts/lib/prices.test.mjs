@@ -150,9 +150,14 @@ test('parses the real price table', () => {
     tiers.some((price) => price.modelPattern === 'claude-haiku-5-5' && price.minPromptTokens === 100001),
     'claude-haiku-5-5 has its over-100,000 tier',
   );
+  // OpenAI bills one cache-write lifetime (GPT-5.6 and later, 1.25x input), kept in the 5-minute
+  // column, and its long-prompt tier starts over 272K tokens.
   for (const price of prices.filter((price) => price.provider === 'openai')) {
-    assert.equal(price.cacheWrite5m, null, `${price.modelPattern}: OpenAI does not bill cache writes`);
-    assert.equal(price.minPromptTokens, 0);
+    assert.equal(price.cacheWrite1h, null, `${price.modelPattern}: OpenAI has no 1-hour writes`);
+    if (price.cacheWrite5m !== null) {
+      assert.equal(Number(price.cacheWrite5m), Number(price.input) * 1.25, price.modelPattern);
+    }
+    assert.ok([0, 272001].includes(price.minPromptTokens), price.modelPattern);
   }
 });
 

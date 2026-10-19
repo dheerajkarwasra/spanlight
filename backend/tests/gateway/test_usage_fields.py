@@ -125,6 +125,19 @@ def test_responses_usage_carries_tier_and_web_search_count() -> None:
     assert usage == Usage(19, 9, 8, service_tier="flex", web_search_requests=3)
 
 
+def test_openai_usage_reads_cache_writes() -> None:
+    """GPT-5.6 and later report cache writes in the details, inside the input count."""
+    details = {"cached_tokens": 12_000, "cache_write_tokens": 3_000}
+    chat = chat_usage(
+        {"prompt_tokens": 15_000, "completion_tokens": 9, "prompt_tokens_details": details}
+    )
+    responses = responses_usage(
+        {"input_tokens": 15_000, "output_tokens": 9, "input_tokens_details": details}
+    )
+
+    assert chat == responses == Usage(15_000, 9, 12_000, 3_000)
+
+
 def test_usage_json_round_trip_with_new_fields_and_old_entries() -> None:
     """The cache stores every field; an entry written before a field existed reads it as unknown."""
     full = Usage(
