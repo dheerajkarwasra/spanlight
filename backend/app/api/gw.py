@@ -33,7 +33,7 @@ import json
 from collections.abc import Mapping
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from starlette.datastructures import Headers
 from starlette.responses import StreamingResponse
 from starlette.types import Receive, Scope, Send
@@ -293,3 +293,14 @@ async def models(request: Request, key: ModelsKey) -> Response:
     )
     GATEWAY_REQUESTS.labels("models", "upstream_error" if answer.upstream_error else "ok").inc()
     return Response(answer.body, status_code=answer.status, headers=answer.headers)
+
+
+# Starlette answers a path that differs from a route only by a trailing slash with a bare 307 to
+# that route; the gateway answers it with its provider-shaped 404, like any other unknown path.
+@router.api_route(
+    "/{path:path}/",
+    methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    include_in_schema=False,
+)
+async def trailing_slash(path: str) -> Response:
+    raise HTTPException(404)

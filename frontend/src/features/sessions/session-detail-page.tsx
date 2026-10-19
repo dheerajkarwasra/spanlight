@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectParams } from "@/features/shell/project-context";
+import { fromPathId } from "@/lib/api";
 
 import { SessionConversation } from "./session-conversation";
 import { BackToSessionsLink, SessionHeader, SessionHeaderSkeleton } from "./session-header";
@@ -21,7 +22,7 @@ const PAGE_CLASSES = "flex flex-col gap-6";
 const BODY_CLASSES = "grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_300px]";
 
 export function SessionDetailPage() {
-  const { sessionId } = sessionRoute.useParams();
+  const sessionId = fromPathId(sessionRoute.useParams().sessionId);
   const tracesQuery = useSessionTracesQuery(sessionId);
 
   if (tracesQuery.isPending) {

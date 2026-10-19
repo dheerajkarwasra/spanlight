@@ -2,10 +2,13 @@ import { Link } from "@tanstack/react-router";
 import { Info } from "lucide-react";
 
 import { ApproxValue } from "@/components/approx-value";
-import { UnknownValue } from "@/components/unknown-value";
+import { Tooltip } from "@/components/ui/tooltip";
+import { UNKNOWN_DASH_CLASS, UnknownValue } from "@/components/unknown-value";
 import { useProjectParams } from "@/features/shell/project-context";
 import type { ModelMetrics } from "@/lib/api";
 import { formatCost, formatDuration } from "@/lib/format";
+import { NO_PROVIDER_REASON } from "@/lib/provider-label";
+import { cn } from "@/lib/utils";
 
 import { isUnpriced } from "./models";
 
@@ -52,5 +55,27 @@ export function ModelName({ model }: { model: string | null }) {
     >
       {model}
     </Link>
+  );
+}
+
+/**
+ * Marks a row with no provider, so a model's gateway cache hits and refusals don't read as a
+ * duplicate of its provider row.
+ */
+export function NoProviderTag({ className }: { className?: string }) {
+  return (
+    <Tooltip content={NO_PROVIDER_REASON}>
+      <span
+        tabIndex={0}
+        aria-label={NO_PROVIDER_REASON}
+        className={cn(
+          "shrink-0 cursor-help rounded-sm text-xs font-medium",
+          UNKNOWN_DASH_CLASS,
+          className,
+        )}
+      >
+        No provider
+      </span>
+    </Tooltip>
   );
 }

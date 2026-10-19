@@ -61,7 +61,7 @@ function kindRows(
         credential?.name ?? <UnknownValue reason="This credential couldn't be found." />,
       ],
       ["Model", <span className="font-mono text-xs">{config.model}</span>],
-      ["Max tokens", String(config.max_tokens ?? 256)],
+      ["Max tokens", String(config.max_tokens ?? 1024)],
       [
         "Temperature",
         config.temperature === null || config.temperature === undefined

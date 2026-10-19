@@ -187,7 +187,7 @@ function configValues(config: EvaluatorConfig): Partial<EvaluatorFormValues> {
     promptVersionId: config.prompt_version_id,
     credentialId: config.credential_id,
     model: config.model,
-    maxTokens: String(config.max_tokens ?? 256),
+    maxTokens: String(config.max_tokens ?? 1024),
     temperature:
       config.temperature === null || config.temperature === undefined
         ? ""

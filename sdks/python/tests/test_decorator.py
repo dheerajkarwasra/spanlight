@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 
 import pytest
@@ -387,6 +388,24 @@ async def test_async_generator_error_and_early_close(tracer, ingest):
     assert ingest.span_named("broken")["status"] == "error"
     assert ingest.span_named("endless")["status"] == "ok"
     assert ingest.span_named("endless")["output"] == [0, 1]
+
+
+def test_async_generator_abandoned_by_break_is_not_an_error(tracer, ingest):
+    @tracer.observe(name="abandoned")
+    async def numbers():
+        for index in range(10):
+            yield index
+
+    async def main() -> None:
+        async for value in numbers():
+            if value == 1:
+                break
+
+    # asyncio closes the abandoned generator by cancelling its `aclose()` at loop shutdown.
+    asyncio.run(main())
+
+    flushed_spans(tracer, ingest)
+    assert ingest.span_named("abandoned")["status"] == "ok"
 
 
 # ---------------------------------------------------------------------- #

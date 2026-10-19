@@ -4,7 +4,7 @@ import { ChevronRight, Info, UserRound } from "lucide-react";
 import { CostValue } from "@/components/cost-value";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectParams } from "@/features/shell/project-context";
-import { toPathUserId, type UserStats } from "@/lib/api";
+import { toPathId, type UserStats } from "@/lib/api";
 import { formatInteger, pluralize } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -18,7 +18,7 @@ function UserLink({ userId }: { userId: string }) {
   return (
     <Link
       to="/$orgId/$projectId/users/$userId"
-      params={{ orgId, projectId, userId: toPathUserId(userId) }}
+      params={{ orgId, projectId, userId: toPathId(userId) }}
       search={keepWindow}
       title={userId}
       className="block truncate font-mono text-code font-semibold text-foreground outline-none after:absolute after:inset-0 after:rounded-input after:outline-offset-2 after:content-[''] hover:underline focus-visible:after:outline-2 focus-visible:after:outline-ring"

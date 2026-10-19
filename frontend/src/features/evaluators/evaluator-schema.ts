@@ -88,7 +88,7 @@ export const EMPTY_EVALUATOR_VALUES: EvaluatorFormValues = {
   promptVersionId: "",
   credentialId: "",
   model: "",
-  maxTokens: "256",
+  maxTokens: "1024",
   temperature: "",
   budget: "",
   channelId: "",

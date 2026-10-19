@@ -22,9 +22,26 @@ export function StatusBanner({ insight }: { insight: Insight }) {
     const at = formatDateTime(insight.resolved_at);
     return (
       <Callout tone="success" title={at === null ? "Resolved" : `Resolved ${at}`}>
-        No recurrence for 24 hours. It reopens if the Doctor sees it again.
+        {resolutionNote(insight)}It reopens if the Doctor sees it again.
       </Callout>
     );
   }
   return null;
+}
+
+/** The Doctor's quiet period (`QUIET_PERIOD` in `app/insights/lifecycle_queries.py`). */
+const QUIET_PERIOD_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Why the insight resolved. The Doctor resolves only after 24 unseen hours, and a re-detection
+ * reopens a resolved insight, so a shorter gap since it was last seen means a member resolved it.
+ */
+function resolutionNote(insight: Insight): string {
+  const gap = Date.parse(insight.resolved_at ?? "") - Date.parse(insight.last_seen_at);
+  if (Number.isNaN(gap)) {
+    return "";
+  }
+  return gap >= QUIET_PERIOD_MS
+    ? "No recurrence for 24 hours. "
+    : "A project member resolved it by hand. ";
 }
