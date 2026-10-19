@@ -38,7 +38,7 @@ Each span is judged on its own, so one bad span does not fail the batch. A refus
 1. **Validate.** The shape is checked: ids are 32 and 16 hexadecimal characters and not all zeros, timestamps are ISO 8601 with a UTC offset or integer Unix nanoseconds, token counts are whole numbers, and text fields have length limits. Fields Spanlight does not know are ignored.
 2. **Check the times.** A span is refused when it ends before it starts, starts more than 90 days ago, ends more than 10 minutes in the future, or names itself as its parent. The 10 minutes are the allowance for clocks that run ahead.
 3. **Check the usage.** `cached_tokens` plus `cache_write_tokens` cannot be larger than `input_tokens`, because input tokens include the cache reads and the cache writes, and `cache_write_1h_tokens` cannot be larger than `cache_write_tokens`, nor be sent without it. [How cost is calculated](/docs/concepts/cost/#the-token-convention) lists the exact reasons.
-4. **Redact.** Secrets are replaced with `[REDACTED]` in the input, the output, the attributes and the status message. See [what is redacted](#what-is-redacted).
+4. **Redact.** Secrets are replaced with `[REDACTED]` in the input, the output, the attributes, the status message, the span name and the trace name. See [what is redacted](#what-is-redacted).
 5. **Truncate.** An input or output of more than 32 KB (after redaction) is replaced by a string holding the first 32 KB of its JSON text, and the span is marked `truncated`. Redaction runs first, so a secret cut in half by the limit cannot survive in part.
 6. **Limit the attributes.** Attributes larger than 64 KB, or more than 256 of them, refuse the span. Attributes are never truncated.
 7. **Drop payloads if asked.** When the project has payload capture off, the input and output are not stored at all. Token counts, cost and everything else still are.
@@ -64,7 +64,7 @@ When a batch is replayed, the one thing that can change is the price. Spans are 
 
 ### What is redacted
 
-Redaction looks at every string in the input, output, attributes and status message, including the names of keys in JSON objects. It replaces:
+Redaction looks at the span and trace names and every string in the input, output, attributes and status message, including the names of keys in JSON objects. It replaces:
 
 - Spanlight credentials of every kind.
 - Anthropic and OpenAI-style API keys.
