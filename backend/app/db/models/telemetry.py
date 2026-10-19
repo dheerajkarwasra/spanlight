@@ -32,6 +32,7 @@ class SpanKind(enum.StrEnum):
     TOOL = "tool"
     RETRIEVAL = "retrieval"
     CHAIN = "chain"
+    AGENT = "agent"
     HTTP = "http"
     OTHER = "other"
 

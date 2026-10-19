@@ -4,6 +4,11 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Added
+
+- **Trace compare.** Select two traces and choose **Compare** to see them step by step: spans are paired by name and order, with the change in duration, tokens and cost, whether the input and output changed, and steps that exist or failed on one side only. Also `GET /api/v1/projects/{project_id}/traces/compare?a=&b=`.
+- **`agent` span kind.** OpenTelemetry GenAI `invoke_agent` and `create_agent`, OpenInference `AGENT` and Traceloop `agent` spans are now `agent` instead of `chain`, with their own colour and icon in the waterfall. Native ingestion accepts `"kind": "agent"`. Spans stored earlier keep `chain`. Migration `1006` adds the enum value; Postgres cannot remove it, so the downgrade sets `agent` spans back to `chain` instead.
+
 ## [0.6.0] - 2026-10-19
 
 The first tagged server release: images on GHCR, and every change recorded under 0.2.0 to 0.5.0 below ships in it.

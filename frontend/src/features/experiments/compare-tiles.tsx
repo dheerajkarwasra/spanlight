@@ -19,7 +19,8 @@ import {
 
 const NO_LATENCY = "Unknown: this run has no item that answered.";
 
-interface Change {
+/** A change shown as a badge; shared with the trace compare page. */
+export interface Change {
   /** `b - a`; null when either side is unknown. */
   delta: number | null;
   /** "+$0.012", "+310 ms", "+2". */
@@ -30,7 +31,7 @@ interface Change {
   certainty?: CostCertainty;
 }
 
-function ChangeBadge({ change }: { change: Change }) {
+export function ChangeBadge({ change }: { change: Change }) {
   const { delta, text, words, certainty = "exact" } = change;
   if (text === null) {
     return <UnknownValue reason="Unknown: one side has no value to compare." />;
@@ -67,7 +68,8 @@ interface TileProps {
   change: Change;
 }
 
-function Tile({ label, before, after, change }: TileProps) {
+/** One "A → B" tile with its change; shared with the trace compare page. */
+export function CompareTile({ label, before, after, change }: TileProps) {
   return (
     <div className="flex min-w-0 flex-col gap-1 rounded-tile border border-border bg-surface p-4">
       <dt className="text-overline text-subtle-foreground uppercase">{label}</dt>
@@ -112,7 +114,7 @@ export function CompareTiles({ pair, comparison }: { pair: SidePair; comparison:
     formatInteger(side.totals?.errors) ?? <UnknownValue reason={sideReason(side, "Unknown.")} />;
   return (
     <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      <Tile
+      <CompareTile
         label="Cost"
         before={cost(a)}
         after={cost(b)}
@@ -126,13 +128,13 @@ export function CompareTiles({ pair, comparison }: { pair: SidePair; comparison:
           ),
         }}
       />
-      <Tile
+      <CompareTile
         label="Latency p50"
         before={latency(a, a.totals?.latency_p50_ms)}
         after={latency(b, b.totals?.latency_p50_ms)}
         change={{ delta: p50, text: formatMsDelta(p50), words: ["slower", "faster"] }}
       />
-      <Tile
+      <CompareTile
         label="Latency p95"
         before={latency(a, a.totals?.latency_p95_ms)}
         after={latency(b, b.totals?.latency_p95_ms)}
@@ -142,7 +144,7 @@ export function CompareTiles({ pair, comparison }: { pair: SidePair; comparison:
           words: ["slower", "faster"],
         }}
       />
-      <Tile
+      <CompareTile
         label="Errors"
         before={errorCount(a)}
         after={errorCount(b)}

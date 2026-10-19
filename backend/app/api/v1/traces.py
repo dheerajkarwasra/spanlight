@@ -17,10 +17,14 @@ from app.api.schemas import (
     Page,
     SessionSummaryOut,
     SpanOut,
+    StepOut,
+    StepSpanOut,
+    TraceCompareOut,
     TraceDetailOut,
     TraceSummaryOut,
 )
 from app.api.schemas.scores import ScoreSummaryOut
+from app.api.schemas.traces import TraceTotalsDeltaOut
 from app.api.window import Window
 from app.core.errors import not_found
 from app.core.pagination import DEFAULT_PAGE_SIZE, PageLimit, decode_cursor, encode_cursor
@@ -30,6 +34,7 @@ from app.explorer import trace_sort
 from app.explorer.filter_values import filter_values
 from app.explorer.metadata_filters import check_metadata_filter
 from app.explorer.score_filters import check_score_filters
+from app.explorer.trace_compare import align, compare_spans, payload_changed
 from app.explorer.trace_filters import apply_filters
 from app.explorer.trace_queries import page_select, summary_select, trace_spans
 from app.explorer.trace_sort import TraceSort
@@ -42,6 +47,7 @@ router = APIRouter(prefix="/projects/{project_id}", tags=["traces"])
 # Also readable by an API key with `traces:read`, for the project it belongs to.
 ProjectReader = Annotated[ReadAccess, Depends(require(Permission.PROJECT_READ, allow_api_key=True))]
 OptionalText = Annotated[str | None, Query(max_length=256)]
+TraceIdQuery = Annotated[str, Query(min_length=1, max_length=256)]
 
 MAX_ERROR_MESSAGE_LENGTH = 500
 
@@ -156,6 +162,65 @@ async def list_traces(
         items=[_summary(*row, scores.get(row[0].trace_id, [])) for row in page],
         next_cursor=next_cursor,
     )
+
+
+@router.get("/traces/compare", response_model=TraceCompareOut)
+async def compare_traces(
+    project_id: uuid.UUID, a: TraceIdQuery, b: TraceIdQuery, access: ProjectReader, db: DbSession
+) -> TraceCompareOut:
+    """Two traces of this project, step by step: B's change against A.
+
+    Registered before `/traces/{trace_id}`, which would otherwise take `compare` as an id. A
+    missing trace is a 404 that does not say which one, as trace detail's.
+    """
+    project = access.require_project()
+    a, b = a.lower(), b.lower()
+    rows = (
+        await db.execute(
+            summary_select().where(Trace.project_id == project.id, Trace.trace_id.in_({a, b}))
+        )
+    ).all()
+    found = {row[0].trace_id: row for row in rows}
+    if a not in found or b not in found:
+        raise not_found()
+    scores = await latest_scores_by_name(db, project.id, list(found))
+    summary_a = _summary(*found[a], scores.get(a, []))
+    summary_b = _summary(*found[b], scores.get(b, []))
+    spans_a, cut_a = await compare_spans(db, project.id, a)
+    spans_b, cut_b = await compare_spans(db, project.id, b)
+
+    unpriced = summary_a.has_unpriced or summary_b.has_unpriced
+    totals = TraceTotalsDeltaOut(
+        duration_ms=summary_b.duration_ms - summary_a.duration_ms,
+        input_tokens=summary_b.input_tokens - summary_a.input_tokens,
+        output_tokens=summary_b.output_tokens - summary_a.output_tokens,
+        cost_usd=None if unpriced else _change(summary_a.cost_usd, summary_b.cost_usd),
+        span_count=summary_b.span_count - summary_a.span_count,
+        error_count=summary_b.error_count - summary_a.error_count,
+    )
+    steps = [
+        StepOut(
+            name=name,
+            occurrence=occurrence,
+            a=None if span_a is None else StepSpanOut.model_validate(span_a, from_attributes=True),
+            b=None if span_b is None else StepSpanOut.model_validate(span_b, from_attributes=True),
+            duration_ms=_change(span_a and span_a.duration_ms, span_b and span_b.duration_ms),
+            input_tokens=_change(span_a and span_a.input_tokens, span_b and span_b.input_tokens),
+            output_tokens=_change(span_a and span_a.output_tokens, span_b and span_b.output_tokens),
+            cost_usd=_change(span_a and span_a.cost_usd, span_b and span_b.cost_usd),
+            input_changed=payload_changed(span_a, span_b, "input_hash"),
+            output_changed=payload_changed(span_a, span_b, "output_hash"),
+        )
+        for (name, occurrence), span_a, span_b in align(spans_a, spans_b)
+    ]
+    return TraceCompareOut(
+        a=summary_a, b=summary_b, totals=totals, steps=steps, truncated=cut_a or cut_b
+    )
+
+
+def _change[T: (int, float, Decimal)](before: T | None, after: T | None) -> T | None:
+    """`after - before`; None when either is unknown."""
+    return None if before is None or after is None else after - before
 
 
 @router.get("/traces/{trace_id}", response_model=TraceDetailOut)

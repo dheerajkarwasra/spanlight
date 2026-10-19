@@ -835,7 +835,7 @@
             "span_id": "07a0e2cdd808446b",
             "parent_span_id": null,
             "convention": "traceloop",
-            "kind": "chain",
+            "kind": "agent",
             "provider": null,
             "model": null,
             "usage": {
