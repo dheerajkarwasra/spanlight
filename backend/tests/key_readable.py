@@ -13,6 +13,8 @@ KEY_READABLE: frozenset[Route] = frozenset(
     {
         ("GET", "/api/v1/projects/{project_id}/traces"),
         ("GET", "/api/v1/projects/{project_id}/traces/{trace_id}"),
+        # Phase 2.1: one span with its payloads, which trace detail leaves out past its budget.
+        ("GET", "/api/v1/projects/{project_id}/traces/{trace_id}/spans/{span_id}"),
         # Phase 2.5: two traces step by step, as readable as each trace on its own.
         ("GET", "/api/v1/projects/{project_id}/traces/compare"),
         # Bet 1: the lines behind one span's cost, as readable as the trace that holds it.

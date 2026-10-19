@@ -29,7 +29,7 @@ Before a span is stored, Spanlight replaces secrets in its input, output, attrib
 - AWS access key ids, and AWS secret access keys that are labelled as such.
 - Card numbers: runs of 13 to 19 digits that pass the Luhn check, when written in groups of four or more digits or unbroken.
 
-Redaction runs before the 32 KB truncation, so a secret cut in half by the limit cannot survive in part.
+Redaction runs before the 1 MB truncation, so a secret cut in half by the limit cannot survive in part.
 
 Redaction is a safety net, not a guarantee. A secret in a shape none of these patterns match is stored as sent, and a card typed in groups of one to three digits is not detected. Identifiers (`user_id`, `session_id`, tags, environment and release) are stored as you send them, so do not put an email address or a secret there. If a payload must never be stored, turn off payload capture instead. [How ingestion works](/docs/concepts/ingestion/#what-is-redacted) has the full pipeline.
 

@@ -167,7 +167,9 @@ The panel has four tabs:
 Two notes explain a missing or cut payload:
 
 - **No input captured** means the SDK did not send one, or payload capture is off in the project settings.
-- **Truncated** marks a payload over 32 KB that was cut at ingestion.
+- **Truncated** marks a payload over 1 MB that was cut at ingestion.
+
+Long texts and large JSON open at their start: a text shows its first 20,000 characters and an object or list its first 200 entries, with **Show all** for the rest. When a trace's payloads add up to more than 8 MB, the spans past that point load their input and output when you open them.
 
 ## Compare two traces
 

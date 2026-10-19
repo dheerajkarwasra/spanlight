@@ -5,7 +5,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 
 import { PAYLOAD_LIMIT_BYTES } from "./payload-format";
 
-const TRUNCATED_REASON = `Payload exceeded ${PAYLOAD_LIMIT_BYTES / 1024} KB and was cut`;
+const TRUNCATED_REASON = `Payload exceeded ${PAYLOAD_LIMIT_BYTES / (1024 * 1024)} MB and was cut`;
 
 /** Figma "Traces/Truncated badge": amber pill with a scissors glyph and an explanation. */
 export function TruncatedBadge() {

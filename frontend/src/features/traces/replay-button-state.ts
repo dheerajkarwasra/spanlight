@@ -27,7 +27,7 @@ const EDITABLE_REFUSALS = new Set(["REPLAY_PAYLOAD_REDACTED", "REPLAY_PAYLOAD_TR
 const REFUSAL_FALLBACKS: Record<string, string> = {
   REPLAY_PAYLOAD_REDACTED:
     "The stored request has redacted parts ([REDACTED] or [MAX_DEPTH]). Remove or replace them before replaying.",
-  REPLAY_PAYLOAD_TRUNCATED: "The stored request was cut at 32 KB, so it cannot be sent as it is.",
+  REPLAY_PAYLOAD_TRUNCATED: "The stored request was cut at 1 MB, so it cannot be sent as it is.",
   REPLAY_NO_PAYLOAD:
     "This span was stored without its request: payload capture was off, or retention removed it.",
   REPLAY_UNSUPPORTED_INPUT:

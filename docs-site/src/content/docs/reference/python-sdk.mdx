@@ -21,7 +21,7 @@ These rules hold for every call on this page.
 - **One call can raise on purpose.** `prompts.get` raises `PromptUnavailableError` when it has nothing to return. Compiling a prompt raises the template errors listed under [Errors](#errors).
 - **Nothing waits on the network.** A finished span is queued in memory and a background thread sends it in batches.
 - **Without an API key the SDK is a no-op.** It logs one warning, spans are not recorded, and every call returns as usual.
-- **Values are converted to JSON.** Anything you record as input, output or an attribute goes through a best-effort conversion: models, dataclasses, enums, dates and UUIDs become plain data, bytes become `<N bytes>`, and other objects use `repr`. Strings longer than 32,000 characters are cut and end in `...[truncated]`. Lists and mappings keep their first 1,000 entries, and nesting deeper than 12 levels is replaced by `[max depth reached]`.
+- **Values are converted to JSON.** Anything you record as input, output or an attribute goes through a best-effort conversion: models, dataclasses, enums, dates and UUIDs become plain data, bytes become `<N bytes>`, and other objects use `repr`. Input and output strings longer than 1,000,000 characters, and attribute strings longer than 32,000, are cut and end in `...[truncated]`, and the span is sent marked `truncated`. Lists and mappings keep their first 1,000 entries, and nesting deeper than 12 levels is replaced by `[max depth reached]`.
 
 ## Configure the client
 

@@ -211,6 +211,10 @@ class Span(Base):
     output: Mapped[Any | None] = mapped_column(JSONB(none_as_null=True))
     attributes: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     truncated: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    # The JSON bytes of `input` + `output` as stored (`app.ingest.normalize`), so byte budgets can
+    # be planned without reading the payloads. NULL on spans stored before migration 1008, read as
+    # `LEGACY_PAYLOAD_BYTES`.
+    payload_bytes: Mapped[int | None] = mapped_column(Integer)
     # 32 hex of what the model was asked (`app.ingest.request_hash`), set even when the payload
     # is not stored. The canonical finish reason (`app.ingest.finish_reason`); the raw one stays
     # in `attributes`. Migration 0401 holds the CHECK on its values.

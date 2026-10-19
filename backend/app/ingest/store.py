@@ -159,6 +159,7 @@ _SPAN_COLUMNS = (
     "output",
     "attributes",
     "truncated",
+    "payload_bytes",
     "request_hash",
     "finish_reason",
     "prompt_version_id",

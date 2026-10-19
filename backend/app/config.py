@@ -134,10 +134,12 @@ class Settings(BaseSettings):
     # few times (`app.gateway.recorder.RECORD_RETRY_DELAYS_S`). At most this many writes run at
     # once (each holds a database connection), and at most `gateway_record_backlog` wait or run;
     # past that a span is dropped and counted, so a burst cannot drain the pool. A waiting span
-    # holds its input and output already cut to 32 KB each (up to 64 KB of JSON per span as
-    # stored; the span's memory in the process is larger, so size the backlog by measuring).
+    # holds its input and output already cut to 1 MiB each, and the waiting spans' payloads
+    # together stay within `gateway_record_backlog_mb` of stored JSON (the process holds more
+    # than that per span, so size both by measuring).
     gateway_record_concurrency: int = Field(default=16, ge=1, le=256)
     gateway_record_backlog: int = Field(default=5000, ge=1, le=100_000)
+    gateway_record_backlog_mb: int = Field(default=128, ge=1, le=65_536)
 
     # Alerts. `alerts_evaluation_enabled` schedules the alert evaluation job (every minute) and
     # `weekly_digest_enabled` the Monday digest email; turn either off to stop it everywhere.
@@ -251,6 +253,7 @@ class Settings(BaseSettings):
         "gateway_allow_insecure_base_urls",
         "gateway_record_concurrency",
         "gateway_record_backlog",
+        "gateway_record_backlog_mb",
         "alerts_evaluation_enabled",
         "weekly_digest_enabled",
         "webhook_allow_private_targets",

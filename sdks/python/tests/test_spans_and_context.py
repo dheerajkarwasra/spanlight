@@ -397,3 +397,17 @@ def test_threads_need_an_explicit_context_copy(tracer, ingest):
         copied.join()
 
     assert seen == {"plain": None, "copied": "main"}
+
+
+def test_a_200_kb_input_is_sent_whole_and_a_cut_attribute_flags_the_span(tracer, ingest):
+    context = "retrieved passage " * 12_000  # about 216 KB, one string
+    with tracer.span("rag", kind="llm") as span:
+        span.set_input({"messages": [{"role": "user", "content": context}]})
+    with tracer.span("long-attribute") as span:
+        span.set_attribute("note", "x" * 40_000)
+
+    by_name = {item["name"]: item for item in flushed_spans(tracer, ingest)}
+    assert by_name["rag"]["input"]["messages"][0]["content"] == context
+    assert "truncated" not in by_name["rag"]
+    assert len(by_name["long-attribute"]["attributes"]["note"]) < 40_000
+    assert by_name["long-attribute"]["truncated"] is True

@@ -18,7 +18,7 @@ from collections.abc import Callable, Mapping
 from typing import Any, Literal, get_args
 
 from ._ids import new_span_id
-from ._serialize import JsonValue, to_jsonable, to_jsonable_cut
+from ._serialize import MAX_ATTRIBUTE_STRING_LENGTH, JsonValue, to_jsonable_cut
 from ._trace_state import TraceState
 from ._usage import SpanUsage
 
@@ -91,9 +91,11 @@ class Span(SpanUsage):
         self.prompt_version_id: str | None = None
         self.input: JsonValue = None
         self.output: JsonValue = None
-        # Whether the SDK cut the input or output to fit its bounds; sent as `truncated`.
+        # Whether the SDK cut the input, output or an attribute to fit its bounds; sent as
+        # `truncated`.
         self._input_cut = False
         self._output_cut = False
+        self._attributes_cut = False
         self.attributes: dict[str, JsonValue] = {}
 
         self._on_end = on_end
@@ -131,9 +133,12 @@ class Span(SpanUsage):
         if not self._mutable:
             return
         try:
-            self.attributes[str(key)] = to_jsonable(value)
+            converted, cut = to_jsonable_cut(value, max_string=MAX_ATTRIBUTE_STRING_LENGTH)
+            self.attributes[str(key)] = converted
         except Exception:
             logger.debug("Ignoring an attribute whose key cannot be turned into text")
+            return
+        self._attributes_cut = self._attributes_cut or cut
 
     def set_attributes(self, attributes: Mapping[str, Any]) -> None:
         """Attach several custom attributes at once."""
@@ -258,7 +263,7 @@ class Span(SpanUsage):
         # Sent only when set, so payloads for servers that predate prompts stay unchanged.
         if self.prompt_version_id is not None:
             payload["prompt_version_id"] = self.prompt_version_id
-        if self._input_cut or self._output_cut:
+        if self._input_cut or self._output_cut or self._attributes_cut:
             payload["truncated"] = True
         return payload
 

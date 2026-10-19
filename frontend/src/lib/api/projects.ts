@@ -14,6 +14,7 @@ import type {
   Project,
   ProjectUpdate,
   SessionSummary,
+  Span,
   TimeseriesPoint,
   TraceComparison,
   TraceDetail,
@@ -109,6 +110,12 @@ export const projectsApi = {
     api.get<TraceDetail>(`${projectPath(projectId)}/traces/${encodeURIComponent(traceId)}`),
   compareTraces: (projectId: string, a: string, b: string): Promise<TraceComparison> =>
     api.get<TraceComparison>(`${projectPath(projectId)}/traces/compare`, { a, b }),
+
+  /** One span with its payloads, for a span trace detail returned without them. */
+  span: (projectId: string, traceId: string, spanId: string): Promise<Span> =>
+    api.get<Span>(
+      `${projectPath(projectId)}/traces/${encodeURIComponent(traceId)}/spans/${encodeURIComponent(spanId)}`,
+    ),
 
   sessions: (projectId: string, query: SessionListQuery): Promise<Page<SessionSummary>> =>
     api.get<Page<SessionSummary>>(`${projectPath(projectId)}/sessions`, { ...query }),

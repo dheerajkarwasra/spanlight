@@ -24,7 +24,8 @@ export function firstLlmSpan(spans: readonly Span[]): Span | null {
 
 /** Whether the span has a stored input: without one the server rejects it, `no payload stored`. */
 export function hasPayload(span: Span): boolean {
-  return span.input !== null && span.input !== undefined;
+  // An omitted payload is stored; trace detail only left it out of the response.
+  return span.payload_omitted || (span.input !== null && span.input !== undefined);
 }
 
 /** "lookup_order · tool span". */

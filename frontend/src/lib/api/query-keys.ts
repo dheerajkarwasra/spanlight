@@ -85,6 +85,9 @@ export const queryKeys = {
       filters: [...all, "filters"] as const,
       traces: (query: Omit<TraceListQuery, "cursor">) => [...all, "traces", query] as const,
       trace: (traceId: string) => [...all, "trace", traceId] as const,
+      /** One span with its payloads; under `trace(traceId)` so invalidating a trace covers it. */
+      span: (traceId: string, spanId: string) =>
+        [...all, "trace", traceId, "span", spanId] as const,
       traceComparison: (a: string, b: string) => [...all, "trace-comparison", a, b] as const,
       /** One span's cost explanation; under `trace(traceId)` so invalidating a trace covers it. */
       costExplanation: (traceId: string, spanId: string) =>

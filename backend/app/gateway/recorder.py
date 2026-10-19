@@ -23,11 +23,13 @@ The background writes are bounded, since each holds a database connection from t
 requests use: at most `GATEWAY_RECORD_CONCURRENCY` tries run at once (a write waiting to retry
 holds no slot), and at most `GATEWAY_RECORD_BACKLOG` spans wait or run. A queued span's input
 and output are already redacted and cut as ingestion stores them (`prepare_span_payloads`, at
-most 32 KB each), so the backlog's memory is bounded however large the requests. A span past
-the backlog is dropped, counted as `reason="overflow"` and logged at most once a minute,
-without its contents. A `low_priority` span (a call the key limiter refused) is dropped the same
-way once half the backlog is taken (at least one place), so a refusal flood leaves admitted calls
-the other half. A span whose payloads cannot be prepared is counted as `reason="error"`.
+most 1 MiB each), and the waiting spans' payloads together stay within
+`GATEWAY_RECORD_BACKLOG_MB` (counted as their stored JSON bytes), so the backlog's memory is
+bounded however large the requests. A span past either bound is dropped, counted as
+`reason="overflow"` and logged at most once a minute, without its contents. A `low_priority`
+span (a call the key limiter refused) is dropped the same way once half of either bound is taken
+(at least one place), so a refusal flood leaves admitted calls the other half. A span whose
+payloads cannot be prepared is counted as `reason="error"`.
 
 Every span lost one of these ways is counted by `app.gateway.span_losses.lose`: in the metric by
 reason, in `spans_lost()`, which `/health/ready` reports as `gateway_spans_lost` (the gateway
@@ -69,7 +71,9 @@ class _Writers:
     loop: asyncio.AbstractEventLoop
     slots: asyncio.Semaphore
     backlog: int
+    backlog_bytes: int
     pending: set["asyncio.Task[None]"] = field(default_factory=set)
+    held_bytes: int = 0  # the stored payload bytes of the pending spans
     dropped: int = 0  # since the last overflow log line
     logged_at: float | None = None
 
@@ -187,9 +191,11 @@ def record_soon(
     if len(writers.pending) >= limit:
         _overflow(writers, context.project_id)
         return
-    # Held until written, so held as stored: redacted and at most 32 KB per payload.
+    # Held until written, so held as stored: redacted and at most 1 MiB per payload.
     try:
-        span, truncated = prepare_span_payloads(span, capture_payloads=context.capture_payloads)
+        span, truncated, size = prepare_span_payloads(
+            span, capture_payloads=context.capture_payloads
+        )
     except Exception as failure:  # noqa: BLE001 - counted and logged, the client was answered
         # Counted like a write that never succeeds. Only the type is logged: the message may
         # quote the payload.
@@ -201,9 +207,20 @@ def record_soon(
             error_type=type(failure).__name__,
         )
         return
+    byte_limit = writers.backlog_bytes // 2 if low_priority else writers.backlog_bytes
+    # The first waiting span is always taken, so one span larger than the budget is not lost.
+    if writers.pending and writers.held_bytes + size > byte_limit:
+        _overflow(writers, context.project_id)
+        return
     task = writers.loop.create_task(_write(writers, context, span, credential_ids, truncated))
     writers.pending.add(task)
-    task.add_done_callback(writers.pending.discard)
+    writers.held_bytes += size
+
+    def _release(done: "asyncio.Task[None]") -> None:
+        writers.pending.discard(done)
+        writers.held_bytes -= size
+
+    task.add_done_callback(_release)
 
 
 def credentials_used(result: GatewayResult) -> tuple[uuid.UUID, ...]:
@@ -270,6 +287,7 @@ def _writers_for(context: GatewayContext) -> _Writers:
             loop=loop,
             slots=asyncio.Semaphore(settings.gateway_record_concurrency),
             backlog=settings.gateway_record_backlog,
+            backlog_bytes=settings.gateway_record_backlog_mb * 1024 * 1024,
         )
     return _writers
 

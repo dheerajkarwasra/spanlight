@@ -43,6 +43,8 @@ TRACE_ROWS = (
     # `require()` to that validation.
     Row("GET", f"{PRJ}/traces/compare", P.PROJECT_READ),
     Row("GET", f"{PRJ}/traces/{{trace_id}}/spans/{{span_id}}/cost-explanation", P.PROJECT_READ),
+    # Phase 2.1: one span with its payloads, for a span trace detail returned without them.
+    Row("GET", f"{PRJ}/traces/{{trace_id}}/spans/{{span_id}}", P.PROJECT_READ),
 )
 
 # Bet 1: the provider accounts an organization reconciles against. Members read them; admins and
