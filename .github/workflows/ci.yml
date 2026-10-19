@@ -61,6 +61,29 @@ jobs:
       - run: uv run mypy src
       - run: uv run pytest -q
 
+  sdk-typescript:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/typescript
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: sdks/typescript/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm pack --dry-run
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
@@ -127,7 +150,7 @@ jobs:
       - run: uv run --no-project --with pyyaml python scripts/check-otlp-matrix-workflow.py
       - run: uv run --no-project --with pyyaml bash scripts/check-repo-files.sh
       - run: scripts/check-template-fixtures.sh
-      - run: scripts/check-links.sh ./*.md backend/README.md frontend/README.md sdks/python/README.md docs/api-deviations.md docs/decisions/*.md docs/deploy/railway.md docs/performance.md backend/load/README.md
+      - run: scripts/check-links.sh ./*.md backend/README.md frontend/README.md sdks/python/README.md sdks/typescript/README.md docs/api-deviations.md docs/decisions/*.md docs/deploy/railway.md docs/performance.md backend/load/README.md
 
   docker:
     runs-on: ubuntu-latest

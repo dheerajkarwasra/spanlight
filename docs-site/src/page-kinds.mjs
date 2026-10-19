@@ -34,6 +34,7 @@ export const PAGE_KINDS = {
   'integrations/pydantic-ai': 'integration',
   'integrations/llamaindex': 'integration',
   'python-sdk': 'how-to',
+  'typescript-sdk': 'how-to',
   otlp: 'how-to',
   'releases-and-users': 'how-to',
   doctor: 'how-to',
