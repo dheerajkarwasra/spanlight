@@ -31,10 +31,10 @@ Open `deploy/.env` and fill in the three secrets it asks for (`POSTGRES_PASSWORD
 python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Then build and start the stack:
+Then start the stack. It pulls the released images named in `deploy/.env` (`SPANLIGHT_IMAGE` and `SPANLIGHT_WEB_IMAGE`):
 
 ```bash
-docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
+docker compose -f deploy/compose.yaml --env-file deploy/.env up -d
 ```
 
 When it is ready, `http://localhost:8080/health/ready` answers `200` with `"status":"ok"` (and `"database":"ok"`, `"migrations":"ok"`, plus the worker's heartbeat age and the notification backlog). Open `http://localhost:8080`, create an account, and follow the setup wizard to create a project and an API key. The key starts with `spl_live_` and is shown once, so copy it now.

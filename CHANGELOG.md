@@ -4,6 +4,10 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Changed
+
+- **The quickstart runs released images.** `deploy/compose.yaml` takes the images from `SPANLIGHT_IMAGE` and `SPANLIGHT_WEB_IMAGE`, which `deploy/.env.example` sets to the GHCR images of the current release, so `docker compose ... up -d` pulls instead of building. Leave both unset to build from the checkout with `--build` (`spanlight:local`, `spanlight-web:local`), as before.
+
 ## [0.6.0] - 2026-10-19
 
 The first tagged server release: images on GHCR, and every change recorded under 0.2.0 to 0.5.0 below ships in it.
