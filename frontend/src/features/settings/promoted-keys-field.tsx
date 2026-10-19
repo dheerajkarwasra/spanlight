@@ -1,7 +1,6 @@
 import { useId } from "react";
 import { Controller, type Control } from "react-hook-form";
 
-import { ReadOnlyLine } from "@/components/read-only-line";
 import { Label } from "@/components/ui/label";
 
 import type { ProjectSettingsValues } from "./project-settings-schema";
@@ -85,7 +84,6 @@ function ReadOnlyKeys({ keys }: { keys: readonly string[] }) {
           </ul>
         )}
       </div>
-      <ReadOnlyLine>Only admins and owners can change promoted keys.</ReadOnlyLine>
     </>
   );
 }

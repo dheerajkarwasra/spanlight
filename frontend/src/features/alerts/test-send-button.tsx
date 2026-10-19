@@ -12,19 +12,14 @@ type TestMutation = ReturnType<typeof useTestChannel>;
 interface TestSendButtonProps {
   test: TestMutation;
   channelName: string;
-  disabled: boolean;
-  /** The read-only reason, when the person can't send tests. */
-  describedBy: string | undefined;
 }
 
 /** The row's "Test" action. The outcome shows under the row (`TestSendResult`). */
-export function TestSendButton({ test, channelName, disabled, describedBy }: TestSendButtonProps) {
+export function TestSendButton({ test, channelName }: TestSendButtonProps) {
   return (
     <RowAction
-      disabled={disabled}
       loading={test.isPending}
       aria-label={`Send a test to ${channelName}`}
-      aria-describedby={describedBy}
       onClick={() => {
         test.mutate();
       }}

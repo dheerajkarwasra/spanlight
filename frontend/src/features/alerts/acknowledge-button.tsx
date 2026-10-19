@@ -16,23 +16,15 @@ interface AcknowledgeButtonProps {
   event: AlertEvent;
   canWrite: boolean;
   now: Date;
-  /** The id of the visible read-only line, set while the button is disabled. */
-  describedBy?: string;
   className?: string;
 }
 
 /**
  * "Acknowledge" on the open event; once someone has, the spec's done line in its place:
- * "Acknowledged by {name} {relative time}". Members see the button disabled, with the page's
- * read-only line as the visible reason.
+ * "Acknowledged by {name} {relative time}". Without `alerts:write` the button is hidden; the done
+ * line still shows.
  */
-export function AcknowledgeButton({
-  event,
-  canWrite,
-  now,
-  describedBy,
-  className,
-}: AcknowledgeButtonProps) {
+export function AcknowledgeButton({ event, canWrite, now, className }: AcknowledgeButtonProps) {
   const acknowledge = useAcknowledgeEvent();
   // Set by a click here: the done line that replaces the button then takes focus (WCAG 2.4.3).
   const focusDoneLine = useRef(false);
@@ -67,12 +59,14 @@ export function AcknowledgeButton({
     );
   }
 
+  if (!canWrite) {
+    return null;
+  }
+
   return (
     <Button
       variant="primary"
       className={className}
-      disabled={!canWrite}
-      aria-describedby={describedBy}
       loading={acknowledge.isPending}
       onClick={() => {
         acknowledge.mutate(event.id, {

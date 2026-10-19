@@ -1,7 +1,6 @@
 import { EllipsisIcon, KeyRound, Trash2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
-import { DisabledReason } from "@/components/disabled-reason";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { ReadOnlyNote } from "@/components/read-only-note";
@@ -14,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { usePermission, useProjectQuery } from "@/features/shell";
+import { viewOnlyCopy } from "@/lib/permissions";
 
 import { GatewayLayout } from "../gateway-layout";
 import {
@@ -24,7 +24,6 @@ import {
 import { CreateKeyDialog } from "./create-key-dialog";
 import { KeyList, KeyListSkeleton } from "./key-list";
 import { PurgeCacheDialog } from "./purge-cache-dialog";
-import { READ_ONLY_REASON } from "./key-actions";
 
 const KEYS_EMPTY_BODY =
   "A gateway key routes calls through Spanlight and sets limits for one app or environment.";
@@ -45,9 +44,7 @@ export function GatewayKeysPage() {
         className="gap-3"
       >
         {canWrite ? null : (
-          <ReadOnlyNote>
-            You can view gateway keys. Only admins and owners can create or change them.
-          </ReadOnlyNote>
+          <ReadOnlyNote>{viewOnlyCopy("gateway keys", "gateway:write")}</ReadOnlyNote>
         )}
         <KeysContent
           query={keysQuery}
@@ -91,7 +88,7 @@ function KeysContent({ query, canWrite, routes, profiles }: KeysContentProps) {
         icon={KeyRound}
         title="No gateway keys"
         description={KEYS_EMPTY_BODY}
-        action={canWrite ? <CreateKeyButton canWrite /> : undefined}
+        action={canWrite ? <CreateKeyButton /> : undefined}
       />
     );
   }
@@ -109,24 +106,15 @@ function KeysContent({ query, canWrite, routes, profiles }: KeysContentProps) {
 }
 
 function HeaderActions({ canWrite }: { canWrite: boolean }): ReactNode {
-  return (
+  return canWrite ? (
     <>
-      <CreateKeyButton canWrite={canWrite} />
-      {canWrite ? <KeysMenu /> : null}
+      <CreateKeyButton />
+      <KeysMenu />
     </>
-  );
+  ) : null;
 }
 
-function CreateKeyButton({ canWrite }: { canWrite: boolean }) {
-  if (!canWrite) {
-    return (
-      <DisabledReason reason={READ_ONLY_REASON}>
-        <Button variant="primary" disabled>
-          Create key
-        </Button>
-      </DisabledReason>
-    );
-  }
+function CreateKeyButton() {
   return <CreateKeyDialog trigger={<Button variant="primary">Create key</Button>} />;
 }
 

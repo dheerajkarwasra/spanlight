@@ -3,12 +3,14 @@ import { useMemo } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
+import { ReadOnlyNote } from "@/components/read-only-note";
 import { SectionCard } from "@/components/section-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePermission } from "@/features/shell";
+import { viewOnlyCopy } from "@/lib/permissions";
 import { useNow } from "@/lib/use-now";
 
-import { AlertsLayout, AlertsReadOnlyLine } from "./alerts-layout";
+import { AlertsLayout } from "./alerts-layout";
 import { useAlertChannelsQuery, useAlertRulesQuery, useOpenEventsQuery } from "./alerts-queries";
 import { CreateRuleButton } from "./create-rule-button";
 import { RuleList, RuleListSkeleton } from "./rule-list";
@@ -27,10 +29,10 @@ export function AlertsPage() {
       <SectionCard
         title="Alert rules"
         description={<CountLine query={rulesQuery} />}
-        actions={<CreateRuleButton canWrite={canWrite} className="max-sm:flex-1" />}
+        actions={canWrite ? <CreateRuleButton className="max-sm:flex-1" /> : null}
         className="gap-3"
       >
-        {canWrite ? null : <AlertsReadOnlyLine />}
+        {canWrite ? null : <ReadOnlyNote>{viewOnlyCopy("alerts", "alerts:write")}</ReadOnlyNote>}
         <RulesContent query={rulesQuery} canWrite={canWrite} />
       </SectionCard>
     </AlertsLayout>
@@ -70,7 +72,7 @@ function RulesContent({ query, canWrite }: { query: RulesQuery; canWrite: boolea
         icon={BellRing}
         title="No alert rules"
         description={EMPTY_BODY}
-        action={canWrite ? <CreateRuleButton canWrite /> : undefined}
+        action={canWrite ? <CreateRuleButton /> : undefined}
         className="rounded-tile bg-surface-muted"
       />
     );

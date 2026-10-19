@@ -45,7 +45,7 @@ export function ProfileList({ canWrite }: ProfileListProps) {
             icon={FlaskConical}
             title="No fault profiles"
             description="Create a profile, then attach it to a staging or development key."
-            action={<NewProfileButton canWrite={canWrite} />}
+            action={canWrite ? <NewProfileButton /> : undefined}
           />
         ) : (
           <Profiles profiles={profiles.data} canWrite={canWrite} />
@@ -78,14 +78,6 @@ function Profiles({ profiles, canWrite }: { profiles: FaultProfile[]; canWrite: 
 }
 
 /** The empty state's own "New fault profile": the page header has the same button. */
-function NewProfileButton({ canWrite }: { canWrite: boolean }) {
-  return (
-    <ProfileDialog
-      trigger={
-        <Button variant="primary" disabled={!canWrite}>
-          New fault profile
-        </Button>
-      }
-    />
-  );
+function NewProfileButton() {
+  return <ProfileDialog trigger={<Button variant="primary">New fault profile</Button>} />;
 }

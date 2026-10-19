@@ -32,7 +32,6 @@ function renderRow() {
           <CredentialRow
             credential={credential}
             canManage
-            ownerReasonId="owner-reason"
             uses={undefined}
             routes={[]}
             onNotConfigured={() => undefined}

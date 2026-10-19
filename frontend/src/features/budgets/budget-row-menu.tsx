@@ -16,12 +16,10 @@ import { useDeleteBudget } from "./budgets-queries";
 
 interface BudgetRowMenuProps {
   budget: Budget;
-  canWrite: boolean;
-  readOnlyId: string;
 }
 
 /** Figma "Budgets — List — row menu": Delete, behind the shared delete confirmation. */
-export function BudgetRowMenu({ budget, canWrite, readOnlyId }: BudgetRowMenuProps) {
+export function BudgetRowMenu({ budget }: BudgetRowMenuProps) {
   const [deleting, setDeleting] = useState(false);
   const deleteBudget = useDeleteBudget();
 
@@ -32,9 +30,7 @@ export function BudgetRowMenu({ budget, canWrite, readOnlyId }: BudgetRowMenuPro
           <Button
             variant="secondary"
             size="icon-sm"
-            disabled={!canWrite}
             aria-label={`More actions for ${budget.name}`}
-            aria-describedby={canWrite ? undefined : readOnlyId}
             className="border-border-strong shadow-none"
           >
             <Ellipsis aria-hidden />

@@ -86,7 +86,7 @@ After each successful backup, the job deletes old ones. It keeps the newest back
 To try backups without a cloud account, add the MinIO file. It starts a local MinIO server, creates the bucket and points the `api` and `worker` at it:
 
 ```bash
-docker compose -f deploy/compose.yaml -f deploy/compose.minio.yaml --env-file deploy/.env up -d --build
+docker compose -f deploy/compose.yaml -f deploy/compose.minio.yaml --env-file deploy/.env up -d
 ```
 
 You still need `BACKUP_DATABASE_URL`. The default MinIO credentials are public, so override `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` in `deploy/.env` if anyone else can reach the host. The ports are bound to `127.0.0.1`. See [Configuration](/docs/configuration/#minio-variables) for the variables. For production, use a real bucket instead.
