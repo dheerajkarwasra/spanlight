@@ -9,7 +9,7 @@ import { ErrorState } from "@/components/error-state";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectParams } from "@/features/shell/project-context";
-import { fromPathUserId, isApiError, type UserDetail } from "@/lib/api";
+import { fromPathId, isApiError, type UserDetail } from "@/lib/api";
 import { formatInteger } from "@/lib/format";
 
 import { ComputedAtChip } from "./computed-at-chip";
@@ -32,7 +32,7 @@ const PAGE_CLASSES = "flex flex-col gap-5";
 
 export function UserDetailPage() {
   const { userId: routeUserId } = userRoute.useParams();
-  const userId = fromPathUserId(routeUserId);
+  const userId = fromPathId(routeUserId);
   const detailQuery = useUserDetailQuery(userId);
 
   if (detailQuery.isPending) {

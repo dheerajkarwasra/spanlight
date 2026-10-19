@@ -227,6 +227,17 @@ original design; everything else is a clarification.
   2026-10-15, and every OTLP span's `cache_write_1h_tokens`).
 - Cost is `null` (never 0) for unknown models or when input/output tokens are missing; such
   LLM spans set the trace's `has_unpriced`.
+- **Implausible token counts are unpriced (2026-10-19, owner decision).** A span whose `input_tokens` or
+  `output_tokens` is over 100,000,000 (`MAX_PRICED_TOKENS`, far above any model's context window) is stored as sent,
+  tokens included, with `cost_usd` and `pricing_version` `null` (a priced web search fee is kept, as for any span
+  whose tokens are not priced), so it sets the trace's `has_unpriced` and counts in `unpriced_calls`. It is not
+  rejected: an agent span that sums its children (a usage rollup) can pass the bound legitimately, and rejecting it
+  would orphan its children. One buggy client (a span claiming 2,000,000,099 tokens in under a millisecond was priced
+  at $40,409) can no longer wreck a project's spend, budgets, projections and alerts; token totals still include
+  the count. The cost explanation reports such a span as `no_price` with its own message, and `unpriced-models`
+  leaves it out (its model has a price). The bound applies on every path (native, OTLP, the gateway) and to the
+  judge and playground costs, which share the price book. Spans priced before the change keep their stored cost
+  until they are sent again.
 - **Deviation — model matching:** a price pattern matches the model exactly, or followed by a
   snapshot suffix (`-YYYYMMDD`, `-YYYY-MM-DD`, `-latest`); longest pattern wins. Plain prefix
   matching (as in the original design) would price e.g. `gpt-4.1-nano` as `gpt-4.1`. Matching is
@@ -354,7 +365,7 @@ card and the trace list. Computed with a correlated subquery on the spans primar
   `traces:read` may read its own project) and takes the usual `from`/`to` window. It groups LLM
   spans started in the window by provider and model, counting those with a model, both token
   counts and a NULL cost: the model matched no price at ingestion. Spans missing a model or a
-  token count are NULL-cost for another reason and are not listed, so the list can be shorter
+  token count, and spans over the implausible token bound, are NULL-cost for another reason and are not listed, so the list can be shorter
   than the overview's `unpriced_calls`. Most-called first, at most 100 models.
 
 ## Price overrides (added 2026-10-09)
@@ -1042,6 +1053,11 @@ the OpenAPI document; on any other route the header is ignored.
 ## Gateway cache (added 2026-10-09)
 
 - **Cache key covers the route.** The key is the SHA-256 of the surface, the route id, the route's saved version and the canonical body, not the surface and body alone as the design listed. Routes carry the model aliases and credentials that decide which model answers, so two routes never share an answer, and saving or reverting a route (a new version) leaves its earlier entries unreachable until they expire. Entries stay scoped by project as well.
+- **Ignored body fields depend on the surface (2026-10-19).** Chat Completions and Responses leave `stream`,
+  `stream_options`, `user` and `metadata` out of the key; Anthropic `/messages` leaves out only `stream` and
+  `metadata`. A field the surface does not accept (`user` or `stream_options` on `/messages`) stays in the key, so a
+  request the provider would reject is never answered from an entry made without it. Changing the set made the
+  earlier `/messages` entries carrying such a field unreachable; they expire.
 - **Answers without usage are not stored.** A `200` whose body reports no token usage (some OpenAI-compatible servers omit it) is never cached: a hit must report the original usage of the answer it replays. Such calls always reach the provider.
 - **Purge.** `POST /api/v1/projects/{id}/gateway/cache/purge` (`gateway:write`, owners and admins) answers `204` and deletes every cache entry of the project, expired or not. Purging an empty cache succeeds. The audit event `gateway_cache.purge` targets the project and records `{"deleted": n}`.
 
@@ -1075,7 +1091,7 @@ the OpenAPI document; on any other route the header is ignored.
 ## Gateway overview (added 2026-10-09)
 
 - **Route.** `GET /api/v1/projects/{id}/gateway/overview?from&to&environment` (`project:read`). The window is at most 7 days, else `422 VALIDATION_ERROR` on field `from`. It is always read from the raw spans of gateway keys (spans with `source_key_id`), never the hourly rollups.
-- **Cache hit rate.** `cache.hit_rate` is `hits / (hits + misses)`, not hits over all requests as the plan's example had it. Calls of keys with the cache off and streams never look in the cache, so they are not in the denominator; when `hits + misses` is zero the rate is `null` (the UI shows "—"), so a project without caching does not read as 0 %.
+- **Cache hit rate.** `cache.hit_rate` is `hits / (hits + misses)`, not hits over all requests as the plan's example had it. Calls of keys with the cache off and streams never look in the cache, so they are not in the denominator; neither is a call answered with anything but a `200` (since 2026-10-19: errors are never stored, so it reports `X-Spanlight-Cache: bypass`, not `miss`, in the header and on its span); when `hits + misses` is zero the rate is `null` (the UI shows "—"), so a project without caching does not read as 0 %.
 - **Errors include Lab faults.** `errors` and `error_rate` count calls failed by a Lab fault; `faults` lists the per-scenario counts so a client can show how many.
 - **Fallbacks and retries are event counts.** `fallbacks` sums the switches to another target and `retries` the repeated tries on one target, over all requests. A request with two fallbacks adds 2.
 - **Targets.** `by_target` groups by the credential name recorded on the span and finds the credential id by organization and name (names are unique and cannot change). `credential_id` is `null` once the credential was deleted. Calls that never chose a target (blocked by a budget, rejected before routing) count in the totals but appear in no target.
@@ -1085,7 +1101,7 @@ the OpenAPI document; on any other route the header is ignored.
 
 Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anthropic for `/messages` and for `/models` with `anthropic-version`), with `X-Request-ID` and `X-Spanlight-Code`, never problem+json. The design's error table covers the gateway's own checks; these cover the HTTP layer around them.
 
-- **Unknown path.** `404`, `spanlight_code: "NOT_FOUND"`, message `Invalid URL (<METHOD> <path>).` with the path cut to 200 characters. OpenAI type `invalid_request_error`, Anthropic type `not_found_error`.
+- **Unknown path.** `404`, `spanlight_code: "NOT_FOUND"`, message `Invalid URL (<METHOD> <path>).` with the path cut to 200 characters. OpenAI type `invalid_request_error`, Anthropic type `not_found_error`. A known path with a trailing slash (`/gw/v1/messages/`) is such an unknown path, not the framework's bare `307` redirect (2026-10-19).
 - **Wrong method.** `405`, `spanlight_code: "METHOD_NOT_ALLOWED"`, with an `Allow` header. Type `invalid_request_error` in both envelopes.
 - **Database too busy.** A pool timeout or a statement timeout while the key is checked is `503`, `spanlight_code: "SERVICE_UNAVAILABLE"`, with `Retry-After: 5`. OpenAI type `server_error`, Anthropic type `overloaded_error`. Both SDKs retry it.
 - **Other HTTP statuses.** Any other status the framework raises is rendered with `spanlight_code: "ERROR"` (type `invalid_request_error` below 500, `server_error` / `api_error` from 500). A dashboard `ProblemError` raised under `/gw/` keeps its own code as the `spanlight_code`. An unexpected exception is `500 INTERNAL_ERROR` with the request id in the message.
@@ -1135,12 +1151,6 @@ Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anth
   that hangs uses the whole budget and is never retried, so it cannot be billed twice that way. Calls Spanlight
   makes for itself (judges, Explain with Claude, the playground, experiment items and the demo traffic job) go
   through a single-target route with one attempt and are never retried.
-- **A stream cut short is priced as reported.** When a provider's stream ends before its final event (the connection
-  breaks, or the stream idles out), the span takes the usage the provider had reported by then. Anthropic's
-  `message_start` carries the input tokens and an output count of 1, and the real output count only comes with
-  `message_delta`, so a cut Anthropic stream is priced with all its input tokens and that first output count, which
-  is lower than what the provider bills. The span is `error` and its cost is not `null`. A stream that ended before
-  any usage was reported has `null` usage and cost.
 - **No CORS.** `/gw/` sends no CORS headers and answers a preflight `OPTIONS` with `405`, so browsers cannot call the gateway from another origin. On purpose: a gateway key is a server-side secret and does not belong in a browser.
 
 ## Alert channels (added 2026-10-10)
@@ -1362,8 +1372,10 @@ Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anth
   A span without a model is the entry with `model: null`.
 - **`error_classes`.** Exact counts of failed spans (any kind) per `error_class`, `null` for failed spans that carry no
   class (ingested before the column existed).
-- **`new_errors`.** Every failed span's status message of the two releases is normalised in the database (UUIDs and hex
-  ids of 12 or more digits become `…`, other digit runs `#`, whitespace collapsed, at most 200 characters). The top 10
+- **`new_errors`.** Every failed span's status message of the two releases is normalised in the database (UUIDs, hex
+  ids of 12 or more digits and runs of 16 or more letters and digits with at least one of each become `…`, so a
+  provider id such as `req_011CgBHmV…` reads `req_…`; other digit runs become `#`; whitespace is collapsed; at most 200
+  characters). The top 10
   messages that at least one failed span of `b` has and no failed span of `a` has are returned, most frequent first,
   with the number of `b` spans as `count` and the id of one `b` trace as `example_trace_id`.
 
@@ -1626,7 +1638,7 @@ members hold `prompts:write`, `datasets:write`, `scores:write`, `annotations:wri
 ### Evaluators
 
 - **Shape.** `config` is a discriminated union on `kind`: `heuristic` (with a `check` holding one `rule`), `llm_judge`
-  (`prompt_version_id`, `credential_id`, `model`, `max_tokens` 1 to 4096 defaulting to 256, `temperature` unset by default)
+  (`prompt_version_id`, `credential_id`, `model`, `max_tokens` 1 to 4096 defaulting to 1024, `temperature` unset by default)
   or `webhook` (`channel_id`). A name follows the score-name rule, because the scores it writes carry it.
   `PATCH` takes `name`, `enabled`, `sampling_rate`, `filters`, `monthly_budget_usd` and a partial `config` that merges
   into the stored one and cannot change `kind`.
@@ -1653,6 +1665,13 @@ members hold `prompts:write`, `datasets:write`, `scores:write`, `annotations:wri
   ≤ the budget; otherwise the run is `failed` with `budget_exceeded` and no request is sent. A `running` run with no heartbeat
   for 10 minutes becomes `failed`, `abandoned`, charged its reservation. `GET …/budget` returns `monthly_budget_usd`,
   `spent_usd`, `reserved_usd`, `remaining_usd` (null without a budget) and `month_start`.
+- **Thinking models (2026-10-19).** Claude models that think by default (generation 5 on, Fable, Mythos) spend
+  thinking tokens out of `max_tokens`; at the old 256 default a Haiku 5.5 judge ran out before answering on every call.
+  The judge now sends `output_config: {"effort": "low"}` to those models only (Haiku 4.5 and Sonnet 4.5 reject
+  `effort`, and older Opus models do not think unasked), and the default `max_tokens` is 1024. Stored judges keep the
+  `max_tokens` they were saved with. A call that stopped on its token limit (`max_tokens` from Anthropic, `length` from
+  OpenAI) without a readable verdict fails with **`judge_truncated`** instead of `judge_no_answer` or
+  `verdict_unparseable`, and is charged like them.
 - **Test.** `POST …/{id}/test` with `{trace_id}` evaluates the trace's last LLM span now and returns `{scores, cost_usd,
   reasoning}` without storing scores. A judge's test reserves like a sampled run. Over budget it is
   **`402 EVALUATOR_BUDGET_EXCEEDED`**; any other failure is **`502 EVALUATOR_FAILED`** with the run's error code in `error`.
@@ -2254,8 +2273,11 @@ Calls made after the full test pass on behaviour the spec left open.
   `spanlight_trace_metadata_dropped_total`.
 - **Redaction.** Metadata values go through the same secret redaction as payloads, after the length check, so the
   256-character limit applies to the value as received; a value redaction replaces is kept under its key as
-  `[REDACTED]`. Keys are not redacted (the key pattern admits no secret shape). `tags`, `user_id` and `session_id`
-  are still stored as sent, unredacted: redacting them would change stored values, and is left to a later decision.
+  `[REDACTED]`. Keys are not redacted (the key pattern admits no secret shape). Since 2026-10-19 (owner decision) the
+  trace `name` and every span `name` go through the same redaction, on every path. `tags`, `user_id`, `session_id`,
+  `environment` and `release` are stored as sent, unredacted: they are identifiers, and redacting them would merge
+  distinct values into one `[REDACTED]` and break session, user and release lookups. Redaction is pattern-based only:
+  a labelled secret without a known shape (`password: "hunter2"`) is not redacted anywhere.
   Email addresses and JWTs are not redacted, in metadata as in payloads. Metadata is stored whether or not the
   project captures payloads.
 - **No index on `metadata`.** The design planned a partial GIN index on `traces.metadata`. It was not built:

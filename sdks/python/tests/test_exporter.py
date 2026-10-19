@@ -331,6 +331,19 @@ def test_unexpected_transport_failure_never_escapes(make_exporter, ingest):
     assert exporter.sent_count == 1
 
 
+def test_an_unencodable_span_loses_only_itself(make_exporter, ingest, caplog):
+    exporter = make_exporter()
+    exporter.export(make_span(1))
+    exporter.export({**make_span(2), "attributes": {"huge": 10**5000}})
+    exporter.export(make_span(3))
+
+    with caplog.at_level(logging.WARNING, logger="spanlight"):
+        assert exporter.flush(timeout=5)
+    assert [span["span_id"] for span in ingest.spans] == [f"{1:016x}", f"{3:016x}"]
+    assert exporter.failed_count == 1
+    assert f"{2:016x}" in caplog.text
+
+
 def test_flush_returns_false_when_the_timeout_expires(make_exporter, ingest):
     release = threading.Event()
 

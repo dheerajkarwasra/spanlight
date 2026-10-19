@@ -36,6 +36,9 @@ def decode_cursor(cursor: str) -> tuple[datetime, str]:
         tiebreaker = payload["t"]
         if not isinstance(tiebreaker, str) or sort_value.tzinfo is None:
             raise ValueError("malformed cursor")
+        # NUL and lone surrogates cannot be bound as text parameters.
+        if len(tiebreaker) > _MAX_TIEBREAKER_LENGTH or not _is_bindable_text(tiebreaker):
+            raise ValueError("malformed tiebreaker")
     except (binascii.Error, ValueError, KeyError, TypeError, RecursionError) as exc:
         raise _invalid_cursor() from exc
     return sort_value, tiebreaker

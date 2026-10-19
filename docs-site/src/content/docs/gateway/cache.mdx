@@ -29,7 +29,7 @@ The cache is an **exact match**. Two calls share an entry only when all of these
 
 - the surface (`chat_completions`, `responses` or `messages`);
 - the route and the route's saved version;
-- the request body, as JSON with sorted keys and no whitespace, ignoring `stream`, `stream_options`, `user` and `metadata`.
+- the request body, as JSON with sorted keys and no whitespace, ignoring `stream`, `stream_options`, `user` and `metadata` (on Anthropic `/messages`, only `stream` and `metadata`, since `user` and `stream_options` are not Anthropic fields).
 
 Everything else in the body counts: the model, messages, temperature, tools, `max_tokens` and so on. A different temperature is a different entry. Entries are also kept apart by project, so identical requests from two projects never meet.
 
@@ -53,13 +53,13 @@ Every model call made with a gateway key carries the header:
 | `hit` | Served from the cache; the provider was not called |
 | `miss` | The key has a TTL and the call could be cached, but no live entry was found; the provider answered and a successful answer is stored |
 | `off` | The key has no TTL |
-| `bypass` | The key has a TTL but this call cannot be cached because it streams |
+| `bypass` | The key has a TTL but this call cannot be cached: it streams, or its answer is not a `200` |
 
 `/gw/v1/models` is never cached and has no such header.
 
 ## What a hit looks like in the dashboard
 
-A hit is recorded as an ordinary span with `spanlight.cache` set to `hit`. Its usage is reported as zero, because nothing was billed, and the tokens of the original answer, prompt-cache reads and writes included, are kept in the `spanlight.cache.original_usage` attribute. Cost for a hit is therefore zero and not unknown. **Gateway, Overview** shows the hit rate: hits divided by hits plus misses, so keys without a cache and streaming calls do not drag it down. With no cacheable traffic the rate is "—", not 0 %.
+A hit is recorded as an ordinary span with `spanlight.cache` set to `hit`. Its usage is reported as zero, because nothing was billed, and the tokens of the original answer, prompt-cache reads and writes included, are kept in the `spanlight.cache.original_usage` attribute. Cost for a hit is therefore zero and not unknown. **Gateway, Overview** shows the hit rate: hits divided by hits plus misses, so keys without a cache, streaming calls and calls answered with an error do not drag it down. With no cacheable traffic the rate is "—", not 0 %.
 
 ## Check it worked
 
@@ -117,7 +117,7 @@ Entries live in the Postgres database Spanlight already uses, so there is nothin
 ## Troubleshooting
 
 - **Every call says `X-Spanlight-Cache: off`.** The key has no TTL. Set **Cache** on the key; see [Turn it on](#turn-it-on).
-- **Every call says `bypass`.** The calls stream. Streaming calls are never cached.
+- **Every call says `bypass`.** The calls stream or fail. Streaming calls and errors are never cached.
 - **The second call says `miss`, not `hit`.** The requests are not identical: the model, messages, temperature, tools or `max_tokens` differ, or the key's route was saved in between (a new route version is a new entry). The first answer may also not have been stored: it was not a `200`, it was over 1 MB, or its body had no token usage. See [What matches](#what-matches) and [What is stored](#what-is-stored).
 - **The Cache hit rate tile on Gateway, Overview shows "—".** There were no requests ("No requests in this window.") or no cache lookups ("No cache lookups in this window.") in the selected time window. Keys without a TTL and streaming calls are not counted.
 - **A hit shows zero tokens in the trace.** By design: nothing was billed. The original answer's usage is in `spanlight.cache.original_usage`. See [What a hit looks like in the dashboard](#what-a-hit-looks-like-in-the-dashboard).

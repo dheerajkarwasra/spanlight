@@ -85,7 +85,7 @@ export function formatCost(value: Maybe<string | number>): string | null {
   } else if (absolute < 1) {
     digits = 4;
   }
-  return `$${amount.toFixed(digits)}`;
+  return `$${amount.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
 }
 
 const dateTimeFormat = new Intl.DateTimeFormat("en-US", {

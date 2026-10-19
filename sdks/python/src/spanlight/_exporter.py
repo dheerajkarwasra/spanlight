@@ -189,6 +189,8 @@ class BatchExporter:
             ``True`` if the queue drained in time, ``False`` otherwise.
         """
         try:
+            # A forked child must not wait on the parent's in-flight batch.
+            self._check_fork()
             self._ensure_worker()
             deadline = None if timeout is None else time.monotonic() + timeout
             with self._condition:

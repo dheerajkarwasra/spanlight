@@ -192,6 +192,38 @@ def test_manual_record_error_with_message(tracer, ingest):
     assert exported["status_message"] == "schema mismatch"
 
 
+def test_exception_whose_str_raises_is_reraised_unchanged(tracer, ingest):
+    class Unprintable(Exception):
+        def __str__(self) -> str:
+            raise RuntimeError("no text")
+
+    with pytest.raises(Unprintable), tracer.span("fails"):
+        raise Unprintable
+
+    exported = flushed_spans(tracer, ingest)[0]
+    assert exported["status"] == "error"
+    assert exported["status_message"] == "Unprintable"
+
+
+def test_setters_never_raise_on_bad_values(tracer, ingest):
+    class NoText:
+        def __str__(self) -> str:
+            raise RuntimeError("no text")
+
+    with tracer.span("bad-values", attributes=[("pairs", "work")]) as span:  # type: ignore[arg-type]
+        span.set_usage(input_tokens="abc", output_tokens=-1, cached_tokens=3)  # type: ignore[arg-type]
+        span.set_usage(web_search_requests=10**6, service_tier=NoText())  # type: ignore[arg-type]
+        span.set_attributes(None)  # type: ignore[arg-type]
+        span.set_attribute(NoText(), 1)  # type: ignore[arg-type]
+        span.record_error(None)
+
+    exported = flushed_spans(tracer, ingest)[0]
+    assert exported["usage"] == {"cached_tokens": 3}
+    assert exported["attributes"] == {"pairs": "work"}
+    assert exported["status"] == "error"
+    assert exported["status_message"] is None
+
+
 def test_setters_after_end_are_ignored(tracer, ingest):
     with tracer.span("done") as span:
         span.set_output("final")
@@ -264,6 +296,28 @@ def test_update_trace_applies_to_all_spans_of_the_trace(tracer, ingest):
         "session_id": "s_1",
         "tags": ["vip", "beta"],
     }
+
+
+def test_trace_fields_are_made_to_fit_the_server_limits(ingest):
+    tracer = spanlight.Spanlight(
+        api_key="spl_live_testprefix_testsecret",
+        host="http://spanlight.test",
+        environment="e" * 65,
+        release="r" * 129,
+        transport=ingest.transport(),
+    )
+    with tracer.span("root"):
+        spanlight.update_trace(name="", user_id="", session_id="s" * 257, tags="beta")
+        spanlight.update_trace(user_id=42, tags=[*map(str, range(25)), "t" * 65, ""])  # type: ignore[arg-type]
+
+    trace = flushed_spans(tracer, ingest)[0]["trace"]
+    tracer.shutdown(timeout=2)
+    assert trace["name"] == "root"
+    assert trace["environment"] == "e" * 64
+    assert trace["release"] == "r" * 128
+    assert trace["user_id"] == "42"
+    assert trace["session_id"] == "s" * 256
+    assert trace["tags"] == ["beta", *map(str, range(19))]
 
 
 def test_update_trace_outside_a_span_is_a_no_op():

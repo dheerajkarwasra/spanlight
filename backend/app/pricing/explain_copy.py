@@ -25,6 +25,9 @@ FEE_ONLY_MESSAGE: Final = "Token cost unknown; only the web search fee is priced
 USAGE_ROLLUP_MESSAGE: Final = (
     "Usage rollup: this span repeats the usage of its child spans and is excluded from totals."
 )
+IMPLAUSIBLE_USAGE_MESSAGE: Final = (
+    "The token counts are over 100,000,000, more than any model call uses, so the cost is unknown."
+)
 CACHE_HIT_MESSAGE: Final = (
     "Gateway cache hit: the response was served from the cache, so the cost is 0."
 )

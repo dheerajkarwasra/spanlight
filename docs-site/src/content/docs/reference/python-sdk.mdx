@@ -262,6 +262,8 @@ spanlight.update_trace(
 
 Sets fields on the trace of the current span. Call it anywhere inside the trace. A field left as `None` stays as it is, tags are added to the existing set without duplicates, and metadata keys are added to the trace's, a later value replacing a key's earlier one. Outside any span the call does nothing.
 
+The server rejects every span of a trace whose fields break its limits, so the SDK makes them fit instead (in the next SDK release; 0.2.0 sends them as given): `""` counts as `None`, a value that is not a string is sent as its text (`42` becomes `"42"`), `name`, `user_id` and `session_id` are cut to 256 characters, a single string passed as `tags` is one tag, a tag is cut to 64 characters and an empty one is skipped, and a trace keeps its first 20 tags. The `environment` and `release` of the client are cut to 64 and 128 characters. Each kind of fix logs one `WARNING` per process.
+
 | Parameter | Meaning |
 | --- | --- |
 | `name` | Trace name shown in the dashboard. It defaults to the name of the root span. |
@@ -323,13 +325,13 @@ A timed unit of work. You receive spans from `span`, `observe`-decorated code th
 | `set_attribute(key, value)` | Attaches one custom attribute. The key is converted to a string. |
 | `set_attributes(attributes)` | Attaches several attributes from a mapping. |
 | `set_model(model, *, provider=None)` | Records the model and, optionally, the provider that served the call. |
-| `set_usage(*, input_tokens=None, output_tokens=None, cached_tokens=None, cache_write_tokens=None, cache_write_1h_tokens=None, service_tier=None, web_search_requests=None)` | Records token usage. A value left as `None` is unchanged. `input_tokens` is the total prompt size: uncached tokens plus prompt-cache reads plus prompt-cache writes. `cached_tokens` is the part read from the provider's prompt cache, `cache_write_tokens` the part written to it, and `cache_write_1h_tokens` the part of those writes made with a 1-hour lifetime (the rest are 5-minute writes). Leave the write fields unset when the provider reports none. The write fields exist since SDK 0.1.2. `service_tier` is the tier the provider billed, in the provider's spelling (`"batch"`, `"flex"`, `"priority_on_demand"`, ...); it is mapped against the provider set by `set_model`, so call `set_model` first. A spelling the SDK does not know is kept in the attribute `usage.service_tier_raw` and the span is priced at the standard rate. `web_search_requests` is the number of server-side web searches the call made; the provider wrappers read it from the answer, so set it only on a span you record yourself. `service_tier` and `web_search_requests` need SDK 0.2.0, the next release. |
+| `set_usage(*, input_tokens=None, output_tokens=None, cached_tokens=None, cache_write_tokens=None, cache_write_1h_tokens=None, service_tier=None, web_search_requests=None)` | Records token usage. A value left as `None` is unchanged. `input_tokens` is the total prompt size: uncached tokens plus prompt-cache reads plus prompt-cache writes. `cached_tokens` is the part read from the provider's prompt cache, `cache_write_tokens` the part written to it, and `cache_write_1h_tokens` the part of those writes made with a 1-hour lifetime (the rest are 5-minute writes). Leave the write fields unset when the provider reports none. The write fields exist since SDK 0.1.2. `service_tier` is the tier the provider billed, in the provider's spelling (`"batch"`, `"flex"`, `"priority_on_demand"`, ...); it is mapped against the provider set by `set_model`, so call `set_model` first. A spelling the SDK does not know is kept in the attribute `usage.service_tier_raw` and the span is priced at the standard rate. `web_search_requests` is the number of server-side web searches the call made; the provider wrappers read it from the answer, so set it only on a span you record yourself. `service_tier` and `web_search_requests` need SDK 0.2.0, the next release. A count that is not a whole number from 0 to 2,000,000,000 (100,000 for `web_search_requests`) is ignored with a `DEBUG` log, because the server would reject the span. |
 | `clear_output_tokens()` | Forgets the output token count, even one recorded earlier, so the span is sent with the count unknown. The wrappers call it for a stream that ended before the provider's final usage event. |
 | `set_finish_reason(reason)` | Records why generation stopped, as the provider reports it. Cut to 64 characters. `None` clears it. |
 | `set_request_hash(value)` | Records the hash that groups identical requests. The provider wrappers set it for you. A value that is not 32 lowercase hex characters is ignored, because the server would reject the whole batch. |
 | `set_prompt_version(version_id)` | Links the span to a prompt version. `CompiledPrompt` does this for you. A value that is not a UUID is ignored; `None` removes the link. |
 | `mark_first_token()` | Records the time to first token as the time since the span started. Only the first call counts. |
-| `record_error(error)` | Marks the span as failed. `error` is an exception or a message. An exception also sets the attribute `error.type` to its class name. The message is cut to 2,000 characters. |
+| `record_error(error)` | Marks the span as failed. `error` is an exception or a message. An exception also sets the attribute `error.type` to its class name; when its `__str__` raises, the class name is the message. Any other value is sent as its text, and `None` marks the span failed without a message. The message is cut to 2,000 characters. |
 | `end()` | Finishes the span and queues it for sending. Calling it again does nothing. A span still `unset` ends as `ok`. |
 
 Read-only attributes of a span include `name`, `kind`, `status`, `status_message`, `span_id`, `parent_span_id`, `trace_id` and `is_ended`.
@@ -374,7 +376,7 @@ spanlight.wrap_openai(
 ) -> ClientT
 ```
 
-Instruments `chat.completions.create` and `responses.create` of an `OpenAI`, `AsyncOpenAI` or Azure client. The SDK's `.stream()` helpers are traced too, because they call `create`.
+Instruments `chat.completions.create` and `responses.create` of an `OpenAI`, `AsyncOpenAI` or Azure client. The SDK's `.stream()` helpers are traced too, because they call `create`. In the next SDK release, the clients that `client.with_options(...)` and `client.copy(...)` return are instrumented too.
 
 | Parameter | Meaning |
 | --- | --- |
@@ -408,7 +410,7 @@ spanlight.wrap_anthropic(
 ) -> ClientT
 ```
 
-Instruments `messages.create` (including `stream=True`) and `messages.stream` of an `Anthropic` or `AsyncAnthropic` client. From SDK 0.2.0, the next release, it also instruments `messages.batches.results`: every result you iterate is recorded as a span, as described under [`record_openai_batch_output`](#record_openai_batch_output). The parameters mean the same as for `wrap_openai`.
+Instruments `messages.create` (including `stream=True`) and `messages.stream` of an `Anthropic` or `AsyncAnthropic` client. From SDK 0.2.0, the next release, it also instruments `messages.batches.results`: every result you iterate is recorded as a span, as described under [`record_openai_batch_output`](#record_openai_batch_output). The parameters mean the same as for `wrap_openai`. In the next SDK release, it also instruments `messages.parse`, the same methods of `client.beta.messages` (fast mode, compaction and the tool runner are beta-only), and the clients that `client.with_options(...)` and `client.copy(...)` return.
 
 ```python
 import spanlight
@@ -647,7 +649,7 @@ The SDK defines these exceptions. All except `PromptUnavailableError` subclass `
 
 ## Delivery
 
-A batch goes out when it reaches `batch_size` spans or after `flush_interval` seconds. Network errors, `429` and `5xx` are retried with jittered exponential backoff, and `Retry-After` is honoured. A `413` splits the batch in two and sends the halves. Other `4xx` responses are not retried; they are logged to the `spanlight` logger, as are spans the server rejects. Ingestion is idempotent by design, so a retried batch does not double-count.
+A batch goes out when it reaches `batch_size` spans or after `flush_interval` seconds. Network errors, `429` and `5xx` are retried with jittered exponential backoff, and `Retry-After` is honoured. A `413` splits the batch in two and sends the halves. Other `4xx` responses are not retried; they are logged to the `spanlight` logger, as are spans the server rejects. Ingestion is idempotent by design, so a retried batch does not double-count. In the next SDK release, a span that cannot be encoded as JSON (an integer over 4,300 digits, say) is dropped on its own, logged and counted in `failed_count`; the rest of its batch is sent.
 
 From SDK 0.2.0, the next release, every batch of spans carries a `client` object beside the spans: `sdk` (`spanlight-python`), `version`, `exporter_id` (32 random hex characters, new in each process and in a forked child, whose counters start again at 0), `dropped_total` and `failed_total`. The totals are cumulative for the exporter's lifetime, so a batch delivered twice reports the same totals and the server counts the increase only once. Batches of scores do not carry it. The server ignores an invalid `client` object without rejecting the batch, and a server older than this release ignores it altogether. See [Telemetry completeness](/docs/concepts/telemetry-completeness/).
 

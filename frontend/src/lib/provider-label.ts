@@ -24,10 +24,14 @@ const PROVIDER_LABELS: Record<string, string> = {
   xai: "xAI",
 };
 
-/** A provider's display name; "Unknown provider" for a call that named none. */
+/** Why a call has no provider: the gateway answered it itself, or the sender named none. */
+export const NO_PROVIDER_REASON =
+  "No provider answered or was reported: a gateway cache hit, a call the gateway refused, or a span sent without a provider.";
+
+/** A provider's display name; "No provider" for a call that named none. */
 export function providerLabel(provider: string | null): string {
   if (provider === null || provider.trim() === "") {
-    return "Unknown provider";
+    return "No provider";
   }
   return PROVIDER_LABELS[provider.toLowerCase()] ?? provider;
 }

@@ -497,6 +497,13 @@
     line-height: var(--text-sm--line-height);
   }
 
+  /* Names and ids are user text: a bidi control in one (U+202E) must not reorder the text around it. */
+  span,
+  a,
+  code {
+    unicode-bidi: isolate;
+  }
+
   /* Keyboard focus: a solid 2px violet ring, 2px outside the control. */
   :focus-visible {
     outline: 2px solid var(--color-ring);

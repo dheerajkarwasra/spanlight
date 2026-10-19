@@ -5,7 +5,7 @@ import type { ModelMetrics } from "@/lib/api";
 import { formatInteger } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-import { ModelCost, ModelLatency, ModelName } from "./model-cells";
+import { ModelCost, ModelLatency, ModelName, NoProviderTag } from "./model-cells";
 import { modelRowKey, unpricedCalls } from "./models";
 
 /** One hairline-divided row per model, shown when the card is narrow. */
@@ -20,6 +20,7 @@ export function ModelTiles({ models }: { models: ModelMetrics[] }) {
               <span className="min-w-0 flex-1 truncate">
                 <ModelName model={model.model} />
               </span>
+              {model.provider === null ? <NoProviderTag /> : null}
               <span className="shrink-0 text-sm font-semibold text-foreground tabular">
                 <ModelCost model={model} />
               </span>
