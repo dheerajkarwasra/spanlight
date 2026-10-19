@@ -15,7 +15,7 @@ You need Python 3.12+ and [uv](https://docs.astral.sh/uv/) (the SDK supports 3.1
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Backend    | `cd backend && cp .env.example .env && uv sync && uv run spanlight migrate && uv run uvicorn app.main:app --reload --port 8000` (needs Postgres 17 and an ordinary database role: see [`backend/README.md`](backend/README.md)) |
 | Frontend   | `cd frontend && npm ci && npm run dev` (proxies `/api` to `:8000`)                                                                                                                                                              |
-| Everything | `cp deploy/.env.example deploy/.env`, fill in the secrets, then `docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build`                                                                                    |
+| Everything | `cp deploy/.env.example deploy/.env`, fill in the secrets, comment out `SPANLIGHT_IMAGE` and `SPANLIGHT_WEB_IMAGE`, then `docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build`                                                                                    |
 
 ## Checks
 

@@ -97,7 +97,7 @@ export function ProjectSettingsForm({ project, canEdit }: ProjectSettingsFormPro
         <div className="grid gap-5 sm:grid-cols-2">
           <FormField
             label="Name"
-            hint={`Up to ${PROJECT_NAME_MAX_LENGTH} characters.`}
+            hint={canEdit ? `Up to ${PROJECT_NAME_MAX_LENGTH} characters.` : undefined}
             error={errors.name?.message}
           >
             <Input
@@ -122,7 +122,7 @@ export function ProjectSettingsForm({ project, canEdit }: ProjectSettingsFormPro
         <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
           <FormField
             label="Retention period (days)"
-            hint={`${RETENTION_MIN_DAYS}–${RETENTION_MAX_DAYS} days`}
+            hint={canEdit ? `${RETENTION_MIN_DAYS}–${RETENTION_MAX_DAYS} days` : undefined}
             error={errors.retention_days?.message}
             className="sm:w-[220px] sm:shrink-0"
           >

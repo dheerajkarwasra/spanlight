@@ -42,8 +42,10 @@ Requirements: Docker with the Compose plugin.
 git clone https://github.com/dheerajkarwasra/spanlight.git
 cd spanlight
 cp deploy/.env.example deploy/.env       # fill in POSTGRES_PASSWORD, APP_DB_PASSWORD and SECRET_KEY
-docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
+docker compose -f deploy/compose.yaml --env-file deploy/.env up -d
 ```
+
+The stack runs the released images named in `deploy/.env`: `SPANLIGHT_IMAGE` (api, worker and the optional gateway) and `SPANLIGHT_WEB_IMAGE` (web), published on GHCR for every release. To build from the checkout instead, comment out both lines and start with `--build`; the images are then tagged `spanlight:local` and `spanlight-web:local`.
 
 The dashboard is at `http://localhost:8080` (change the port with `WEB_PORT`). Confirm that the stack is healthy as described in [Check it worked](#check-it-worked).
 
@@ -56,7 +58,7 @@ Each is switched on by its own variables; see [Configuration](/docs/configuratio
 - **Email** (address verification and password reset): set `EMAIL_PROVIDER` to `resend` or `smtp` and the values it needs.
 - **Sign in with GitHub and Google**: set the client ID and secret of a provider, and register `<APP_BASE_URL>/api/v1/auth/oauth/<provider>/callback` as its callback URL.
 - **Two-factor authentication**: set `CREDENTIALS_KEYS`, and back its value up. Without it, authenticator enrolment answers `409 NOT_CONFIGURED`.
-- **Object storage, backups and exports**: set `S3_BUCKET`, `S3_ACCESS_KEY` and `S3_SECRET_KEY` (and `S3_ENDPOINT` for a store other than AWS). Nightly backups additionally need `BACKUP_DATABASE_URL`. To try this locally without a cloud account, add the MinIO file: `docker compose -f deploy/compose.yaml -f deploy/compose.minio.yaml --env-file deploy/.env up -d --build`. Export downloads are links straight to the store, so the public S3 endpoint (`S3_PUBLIC_ENDPOINT`, or `S3_ENDPOINT` when that is unset) must use https when the dashboard is served over https; otherwise browsers block the download as mixed content.
+- **Object storage, backups and exports**: set `S3_BUCKET`, `S3_ACCESS_KEY` and `S3_SECRET_KEY` (and `S3_ENDPOINT` for a store other than AWS). Nightly backups additionally need `BACKUP_DATABASE_URL`. To try this locally without a cloud account, add the MinIO file: `docker compose -f deploy/compose.yaml -f deploy/compose.minio.yaml --env-file deploy/.env up -d`. Export downloads are links straight to the store, so the public S3 endpoint (`S3_PUBLIC_ENDPOINT`, or `S3_ENDPOINT` when that is unset) must use https when the dashboard is served over https; otherwise browsers block the download as mixed content.
 - **More than one API replica**: rate limits and idempotency state live in Postgres, so replicas share them. `deploy/compose.replicas.yaml` is an example that runs two.
 - **Metrics**: set `METRICS_TOKEN` and scrape `api:8000/metrics` and `worker:9100/metrics` on the internal network with `Authorization: Bearer <token>`. `deploy/prometheus.yml` is an example scrape configuration. `/metrics` is not served through the web port.
 - **Error reporting and self-tracing**: `SENTRY_DSN`, and `OTEL_EXPORTER_OTLP_ENDPOINT` for OpenTelemetry spans about Spanlight's own requests and queries.

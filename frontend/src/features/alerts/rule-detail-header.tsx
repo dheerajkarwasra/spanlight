@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { useId, useState } from "react";
+import { useState } from "react";
 
 import { DisabledReason } from "@/components/disabled-reason";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,6 @@ import { useProjectParams } from "@/features/shell";
 import type { AlertEvent, AlertRule } from "@/lib/api";
 
 import { AcknowledgeButton } from "./acknowledge-button";
-import { AlertsReadOnlyLine } from "./alerts-layout";
 import { MuteButton } from "./mute-button";
 import { RuleActionsMenu } from "./rule-actions-menu";
 import { RuleEditorDialog } from "./rule-editor-dialog";
@@ -42,7 +41,8 @@ interface RuleDetailHeaderProps {
 
 /**
  * Figma "Rule header": back link, name, summary line and the actions: Edit, "…", Mute or
- * Unmute, and Acknowledge while an event is open. Members see them disabled with the lock line.
+ * Unmute, and Acknowledge while an event is open. Without `alerts:write` they are hidden; the
+ * page's banner says why.
  */
 export function RuleDetailHeader({
   rule,
@@ -53,9 +53,6 @@ export function RuleDetailHeader({
 }: RuleDetailHeaderProps) {
   const { projectId } = useProjectParams();
   const [editing, setEditing] = useState(false);
-  const readOnlyId = useId();
-  // Points disabled controls at the visible lock line.
-  const describedBy = canWrite ? undefined : readOnlyId;
 
   return (
     <div className="flex flex-col gap-6">
@@ -64,41 +61,31 @@ export function RuleDetailHeader({
         <div className="flex min-w-0 flex-col gap-2">
           <h1 className="text-h1 [overflow-wrap:anywhere] text-foreground">{rule.name}</h1>
           <p className="text-sm text-muted-foreground">{ruleSummary(rule)}</p>
-          {canWrite ? null : (
-            <div id={readOnlyId} className="pt-2">
-              <AlertsReadOnlyLine />
-            </div>
-          )}
         </div>
         <div className="flex flex-wrap items-center gap-2.5 lg:shrink-0 lg:flex-nowrap">
-          <Button
-            disabled={!canWrite}
-            aria-describedby={describedBy}
-            className="flex-1 sm:flex-none"
-            onClick={() => {
-              setEditing(true);
-            }}
-          >
-            Edit
-          </Button>
-          <RuleActionsMenu rule={rule} canWrite={canWrite} describedBy={describedBy} />
-          <MuteButton
-            rule={rule}
-            canWrite={canWrite}
-            now={now}
-            describedBy={describedBy}
-            className="flex-1 sm:flex-none"
-          />
+          {canWrite ? (
+            <>
+              <Button
+                className="flex-1 sm:flex-none"
+                onClick={() => {
+                  setEditing(true);
+                }}
+              >
+                Edit
+              </Button>
+              <RuleActionsMenu rule={rule} />
+              <MuteButton rule={rule} now={now} className="flex-1 sm:flex-none" />
+            </>
+          ) : null}
           {openEvent ? (
             <AcknowledgeButton
               event={openEvent}
               canWrite={canWrite}
               now={now}
-              describedBy={describedBy}
               className="max-sm:order-first max-sm:w-full"
             />
           ) : null}
-          {openEvent === undefined && eventsFailed && isFiring(rule) ? (
+          {canWrite && openEvent === undefined && eventsFailed && isFiring(rule) ? (
             <span className="max-sm:order-first max-sm:w-full">
               <DisabledReason reason="The rule's events couldn't be loaded, so the open event is unknown. Retry in the Events card.">
                 <Button variant="primary" disabled className="max-sm:w-full">

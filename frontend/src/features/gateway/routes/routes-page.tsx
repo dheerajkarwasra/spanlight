@@ -8,6 +8,7 @@ import { SectionCard } from "@/components/section-card";
 import { TileListSkeleton } from "@/components/tile-list";
 import { Button } from "@/components/ui/button";
 import { usePermission } from "@/features/shell";
+import { viewOnlyCopy } from "@/lib/permissions";
 
 import { GatewayLayout } from "../gateway-layout";
 import { useGatewayRoutesQuery } from "../gateway-queries";
@@ -60,9 +61,7 @@ function RoutesCard({ onCreate }: { onCreate: (name: string) => void }) {
       className="gap-3"
     >
       {canWrite ? null : (
-        <ReadOnlyNote>
-          You can view routes. Only admins and owners can create or change them.
-        </ReadOnlyNote>
+        <ReadOnlyNote>{viewOnlyCopy("gateway routes", "gateway:write")}</ReadOnlyNote>
       )}
       <RoutesContent
         query={routesQuery}

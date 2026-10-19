@@ -49,11 +49,13 @@ export function requirementDescription(
   orgName: string,
   required: boolean,
   canChange: boolean,
+  sayWhoCanChange = true,
 ): string {
   if (!canChange) {
-    return required
-      ? `Everyone in ${orgName} needs two-factor authentication to open it. Only owners can change this.`
-      : "Members can choose whether to use two-factor authentication. Only owners can change this.";
+    const rule = required
+      ? `Everyone in ${orgName} needs two-factor authentication to open it.`
+      : "Members can choose whether to use two-factor authentication.";
+    return sayWhoCanChange ? `${rule} Only owners can change this.` : rule;
   }
   const effect = `without two-factor authentication can't open ${orgName} until they turn it on in Settings › Security.`;
   return required ? `Members ${effect}` : `When it's on, members ${effect}`;

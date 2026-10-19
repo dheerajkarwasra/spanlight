@@ -33,7 +33,9 @@ If you start the stack with extra files, such as `deploy/compose.minio.yaml`, ad
 
 Check out a release tag or a specific commit, and write down which one. Do not follow `main` on a production instance, because a commit on `main` can include a migration you have not read about.
 
-Spanlight images are built on your host from the checkout (`image: spanlight:local`). Nothing in the stack pulls a Spanlight image, so there is nothing else to pin. `docker compose pull --ignore-buildable` refreshes only the images that are pulled, which here is Postgres (`postgres:17-alpine`, which follows the 17 line).
+By default the stack runs the released images named in `deploy/.env`, `SPANLIGHT_IMAGE` and `SPANLIGHT_WEB_IMAGE` (for example `ghcr.io/dheerajkarwasra/spanlight:0.6.0`). Pin both to the same version and change them together; `spl pull` then fetches the new images before `spl up -d`. Postgres (`postgres:17-alpine`) follows the 17 line.
+
+If you build from the checkout instead, comment out both variables: the images are then built on your host (`spanlight:local`, `spanlight-web:local`) and the `--build` steps on this page and in the runbooks apply. Do not build with the variables set, or a local build is tagged with a release version.
 
 The Python SDK has its own version. Upgrade it in your applications with `pip install --upgrade spanlight` when you are ready. It does not need to move in step with the server.
 
