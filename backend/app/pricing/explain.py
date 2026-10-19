@@ -17,7 +17,8 @@ that was in force when the span was priced, and a row that no longer exists is r
 such with the stored figure, never replaced.
 
 Status precedence: `usage_rollup`, then `cache_hit`, `no_usage`, `no_price`,
-`price_version_missing`, `override_deleted`, then `ok` or `mismatch`. A span whose token cost
+`price_version_missing`, `override_deleted`, then `ok` or `mismatch`. Token counts over
+`MAX_PRICED_TOKENS` are `no_price`: ingestion left them unpriced. A span whose token cost
 is unknown still shows its web search fee line when searches were counted and a rate exists:
 unknown is never reported as zero, and a known fee is never dropped.
 """
@@ -28,7 +29,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
 from app.pricing import explain_copy as copy
-from app.pricing.cost import Price
+from app.pricing.cost import MAX_PRICED_TOKENS, Price
 from app.pricing.explain_copy import UNREPORTED_REASON_COPY
 from app.pricing.fees import FEE_QUANTUM, ServerToolFee
 from app.pricing.price_row import token_classes
@@ -149,6 +150,8 @@ def explain_span(
             fee_priced=bool(fee_lines),
         )
         return frame.build("no_usage", fee_lines, None, message)
+    if max(span.input_tokens, span.output_tokens) > MAX_PRICED_TOKENS:
+        return frame.build("no_price", fee_lines, None, copy.IMPLAUSIBLE_USAGE_MESSAGE)
     if price is None or price_lookup_status != "found":
         return frame.build(*_lookup_failure(span, price_lookup_status, fee, fee_lines))
 

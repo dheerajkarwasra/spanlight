@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import type { ProviderHealth } from "@/lib/api";
 import { formatInteger, parseMoney, pluralize } from "@/lib/format";
-import { providerLabel } from "@/lib/provider-label";
+import { NO_PROVIDER_REASON, providerLabel } from "@/lib/provider-label";
 import { rateLimitKindLabel } from "@/lib/rate-limit-kind";
 
 import { dominantKind } from "./error-series";
@@ -36,7 +36,9 @@ export function ProviderCard({ provider }: { provider: ProviderHealth }) {
             <p className="truncate font-mono text-[13px] text-muted-foreground">
               {provider.provider}
             </p>
-          ) : null}
+          ) : (
+            <p className="text-xs text-muted-foreground">{NO_PROVIDER_REASON}</p>
+          )}
         </div>
         {badge ? <Badge variant="warning">{badge}</Badge> : null}
       </div>

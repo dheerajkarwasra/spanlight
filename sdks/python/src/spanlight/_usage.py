@@ -13,6 +13,10 @@ from ._tiers import MAX_RAW_TIER_LENGTH, ServiceTier, normalize_tier
 
 logger = logging.getLogger("spanlight")
 
+# Outside these bounds the server rejects the whole span (token counts are stored as int4).
+_MAX_TOKENS = 2_000_000_000
+_MAX_WEB_SEARCH_REQUESTS = 100_000
+
 
 class SpanUsage:
     """Usage fields and setters of a span; see :meth:`set_usage`."""
@@ -62,23 +66,33 @@ class SpanUsage:
         standard. ``web_search_requests`` is the number of server-side web
         searches the call made; the provider wrappers read it from the
         response.
+
+        A count that is not a whole number from 0 up to the server's limit
+        (2,000,000,000 tokens, 100,000 searches) is ignored with a debug log,
+        because the server would reject the whole span.
         """
         if not self._mutable:
             return
-        if input_tokens is not None:
-            self.input_tokens = int(input_tokens)
-        if output_tokens is not None:
-            self.output_tokens = int(output_tokens)
-        if cached_tokens is not None:
-            self.cached_tokens = int(cached_tokens)
-        if cache_write_tokens is not None:
-            self.cache_write_tokens = int(cache_write_tokens)
-        if cache_write_1h_tokens is not None:
-            self.cache_write_1h_tokens = int(cache_write_1h_tokens)
+        counts = {
+            "input_tokens": (input_tokens, _MAX_TOKENS),
+            "output_tokens": (output_tokens, _MAX_TOKENS),
+            "cached_tokens": (cached_tokens, _MAX_TOKENS),
+            "cache_write_tokens": (cache_write_tokens, _MAX_TOKENS),
+            "cache_write_1h_tokens": (cache_write_1h_tokens, _MAX_TOKENS),
+            "web_search_requests": (web_search_requests, _MAX_WEB_SEARCH_REQUESTS),
+        }
+        for field, (value, limit) in counts.items():
+            if value is not None:
+                count = _count(value, limit)
+                if count is None:
+                    logger.debug("Ignoring %s: not a count the server accepts", field)
+                else:
+                    setattr(self, field, count)
         if service_tier is not None:
-            self._set_service_tier(str(service_tier))
-        if web_search_requests is not None:
-            self.web_search_requests = int(web_search_requests)
+            try:
+                self._set_service_tier(str(service_tier))
+            except Exception:
+                logger.debug("Ignoring a service tier that cannot be turned into text")
 
     def _set_service_tier(self, raw: str) -> None:
         if not raw.strip():
@@ -121,3 +135,12 @@ class SpanUsage:
         if self.web_search_requests is not None:
             usage["server_tool_use"] = {"web_search_requests": self.web_search_requests}
         return usage or None
+
+
+def _count(value: object, limit: int) -> int | None:
+    """``value`` as a count from 0 to ``limit``, or ``None`` when it is not one."""
+    try:
+        count = int(value)  # type: ignore[call-overload]
+    except Exception:
+        return None
+    return count if 0 <= count <= limit else None

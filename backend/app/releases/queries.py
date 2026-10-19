@@ -112,16 +112,20 @@ _ERROR_CLASSES = f"""
 # Failure messages with the parts that differ on every occurrence removed, grouped in the
 # database so the "absent in a" test sees every failed span and not a sample. The patterns are
 # POSIX ARE (`\y` is a word boundary); they are one rule with the wording in
-# docs/api-deviations.md: UUIDs and hex ids of 12 or more digits become `…`, other digit runs `#`.
-# No `(?:` in the patterns: SQLAlchemy would read `:0x` as a bind parameter.
+# docs/api-deviations.md: UUIDs, hex ids of 12 or more digits and letter-and-digit runs of 16 or
+# more characters (provider ids such as `req_011CgB…`, whose prefix is kept) become `…`, other
+# digit runs `#`. No `(?:` in the patterns: SQLAlchemy would read `:0x` as a bind parameter.
 _NEW_ERRORS = r"""
     WITH failed AS (
         SELECT t.release, s.trace_id,
                left(btrim(regexp_replace(regexp_replace(regexp_replace(regexp_replace(
+                   regexp_replace(
                    left(s.status_message, {prefix}),
                    '\y[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\y',
                    '…', 'gi'),
                    '\y(0x)?[0-9a-f]{12,}\y', '…', 'gi'),
+                   '(?<![a-z0-9])(?=[a-z]*[0-9])(?=[0-9]*[a-z])[a-z0-9]{16,}(?![a-z0-9])',
+                   '…', 'gi'),
                    '[0-9]+', '#', 'g'),
                    '\s+', ' ', 'g')), {length}) AS message
         {spans}

@@ -1,9 +1,10 @@
 import { ValueOrUnknown } from "@/components/unknown-value";
+import { NO_PROVIDER_REASON } from "@/lib/provider-label";
 import type { ModelMetrics } from "@/lib/api";
 import { formatCompact, formatInteger, formatPercent } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-import { ModelCost, ModelLatency, ModelName } from "./model-cells";
+import { ModelCost, ModelLatency, ModelName, NoProviderTag } from "./model-cells";
 import { formatProvider, modelErrorRate, modelRowKey } from "./models";
 
 const HEAD_CELL = "py-2.5 text-left text-overline font-semibold text-subtle-foreground uppercase";
@@ -58,11 +59,16 @@ function ModelRow({ model }: { model: ModelMetrics }) {
   const errorRate = modelErrorRate(model);
   return (
     <tr className="h-14 [&:last-child>td]:border-b-0 [&>td]:border-b [&>td]:border-border [&>td+td]:pl-3 [&>td:first-child]:pl-5 [&>td:last-child]:pr-5">
-      <td className="max-w-0 truncate">
-        <ModelName model={model.model} />
+      <td className="max-w-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 truncate">
+            <ModelName model={model.model} />
+          </span>
+          {model.provider === null ? <NoProviderTag className="@5xl:hidden" /> : null}
+        </div>
       </td>
       <td className="hidden text-sm text-muted-foreground @5xl:table-cell">
-        <ValueOrUnknown value={formatProvider(model.provider)} reason="Provider not reported" />
+        <ValueOrUnknown value={formatProvider(model.provider)} reason={NO_PROVIDER_REASON} />
       </td>
       <td className="text-right text-sm font-medium text-foreground tabular">
         {formatInteger(model.calls)}

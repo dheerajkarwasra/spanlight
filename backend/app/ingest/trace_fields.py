@@ -34,7 +34,7 @@ def trace_fields(span: SpanIn) -> TraceFields:
         return TraceFields(None, None, None, None, None, ())
     metadata, _ = clean_metadata(trace.metadata, strict=True)
     return TraceFields(
-        name=trace.name,
+        name=redact_text(trace.name) if trace.name is not None else None,
         environment=trace.environment,
         release=trace.release,
         external_user_id=trace.user_id,

@@ -19,6 +19,7 @@ from structlog.testing import capture_logs
 from app.ingest import pipeline
 from app.ingest.normalize import normalize_span
 from app.ingest.schemas import MAX_TOKEN_COUNT
+from app.pricing.cost import MAX_PRICED_TOKENS
 from tests.helpers import Workspace, bearer, new_trace_id, span
 from tests.ingest.support import ingest_native, stored_spans, telemetry_rows
 
@@ -106,19 +107,27 @@ async def test_every_documented_maximum_is_stored(
     workspace: Workspace,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    # The most expensive seed price at the largest token counts: the largest seed-priced cost.
+    # The most expensive seed price at the largest priced token counts: the largest seed-priced
+    # cost. Counts past that bound are stored and unpriced.
     priced = span(
         trace_id=new_trace_id(),
         provider="anthropic",
         model="claude-opus-4-5",
+        usage={"input_tokens": MAX_PRICED_TOKENS, "output_tokens": MAX_PRICED_TOKENS},
+    )
+    implausible = span(
+        trace_id=new_trace_id(),
+        provider="anthropic",
+        model="claude-opus-4-5-20251101",
         usage={"input_tokens": MAX_TOKEN_COUNT, "output_tokens": MAX_TOKEN_COUNT},
     )
 
-    response = await ingest_native(client, workspace, [_longest_span(), priced])
+    response = await ingest_native(client, workspace, [_longest_span(), priced, implausible])
 
-    assert response.json() == {"accepted": 2, "rejected": []}
+    assert response.json() == {"accepted": 3, "rejected": []}
     costs = {stored.model: stored.cost_usd for stored in await stored_spans(session_factory)}
-    assert str(costs["claude-opus-4-5"]) == "60000.00000000"
+    assert str(costs["claude-opus-4-5"]) == "3000.00000000"
+    assert costs["claude-opus-4-5-20251101"] is None
     assert costs[_FOUR_BYTES * 256] is None  # an unknown model is unpriced
 
 

@@ -104,7 +104,7 @@ describe("judge evaluators", () => {
   it("send a normalised budget and an unset temperature as null", () => {
     const body = toEvaluatorCreate(form({ ...JUDGE, budget: " .5 " }));
     expect(body.monthly_budget_usd).toBe("0.5");
-    expect(body.config).toMatchObject({ temperature: null, max_tokens: 256 });
+    expect(body.config).toMatchObject({ temperature: null, max_tokens: 1024 });
   });
 });
 

@@ -61,6 +61,9 @@ __all__ = [
 _COST_QUANTUM = FEE_QUANTUM  # numeric(14, 8): token costs and fees round alike
 _PER_THOUSAND = Decimal(1000)
 _WEB_SEARCH = "web_search"
+# Far above any model's context window: a call claiming more input or output tokens is a client
+# bug, and its cost is unknown rather than a figure that would wreck spend, budgets and alerts.
+MAX_PRICED_TOKENS = 100_000_000
 
 
 @dataclass(frozen=True)
@@ -128,6 +131,8 @@ class PriceBook:
     ) -> CostResult | None:
         """The span's cost and fee, or None when neither can be priced.
 
+        Token counts over `MAX_PRICED_TOKENS` leave the token cost unknown, as a missing price does.
+
         The fee is priced before the token cost, so a span whose tokens cannot be priced still
         reports a known fee, with `cost_usd` and `pricing_version` None.
         """
@@ -135,6 +140,8 @@ class PriceBook:
         fee_usd = None if fee is None else _quantize(fee)
         unpriced = None if fee_usd is None else CostResult(None, fee_usd, None)
         if model is None or input_tokens is None or output_tokens is None:
+            return unpriced
+        if max(input_tokens, output_tokens) > MAX_PRICED_TOKENS:
             return unpriced
         price = self.find(provider, model, at, prompt_tokens=input_tokens)
         if price is None:

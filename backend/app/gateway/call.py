@@ -137,8 +137,10 @@ class Call:
             "X-Request-ID": self.request.request_id,
             "X-Spanlight-Attempts": str(len(attempts)),
         }
+        # Only a 200 is ever stored, so another answer is not counted as a miss (hit rate).
+        cache: CacheStatus = "bypass" if self.cache == "miss" and status != 200 else self.cache
         if self.context.key is not None:
-            headers["X-Spanlight-Cache"] = self.cache
+            headers["X-Spanlight-Cache"] = cache
         return GatewayResult(
             status=status,
             headers=headers,
@@ -148,7 +150,7 @@ class Call:
             span_id=self.span_id,
             attempts=attempts,
             target_index=loop.target_index if loop is not None else None,
-            cache=self.cache,
+            cache=cache,
             fault=self.fault,
             budget=self.budget,
         )

@@ -130,14 +130,24 @@ class Span(SpanUsage):
 
     def set_attribute(self, key: str, value: Any) -> None:
         """Attach a single custom attribute."""
-        if self._mutable:
+        if not self._mutable:
+            return
+        try:
             converted, cut = to_jsonable_cut(value, max_string=MAX_ATTRIBUTE_STRING_LENGTH)
             self.attributes[str(key)] = converted
-            self._attributes_cut = self._attributes_cut or cut
+        except Exception:
+            logger.debug("Ignoring an attribute whose key cannot be turned into text")
+            return
+        self._attributes_cut = self._attributes_cut or cut
 
     def set_attributes(self, attributes: Mapping[str, Any]) -> None:
         """Attach several custom attributes at once."""
-        for key, value in attributes.items():
+        try:
+            items = dict(attributes).items()
+        except Exception:
+            logger.debug("set_attributes() needs a mapping, got %s", type(attributes).__name__)
+            return
+        for key, value in items:
             self.set_attribute(key, value)
 
     def set_model(self, model: str | None, *, provider: str | None = None) -> None:
@@ -190,7 +200,7 @@ class Span(SpanUsage):
             elapsed_ns = time.perf_counter_ns() - self._start_perf_ns
             self.time_to_first_token_ms = elapsed_ns / 1_000_000
 
-    def record_error(self, error: BaseException | str) -> None:
+    def record_error(self, error: BaseException | str | None) -> None:
         """Mark the span as failed.
 
         Args:
@@ -199,12 +209,17 @@ class Span(SpanUsage):
         if not self._mutable:
             return
         self.status = "error"
-        if isinstance(error, BaseException):
-            message = str(error) or type(error).__name__
-            self.attributes["error.type"] = type(error).__name__
-        else:
-            message = error
-        self.status_message = message[:_MAX_STATUS_MESSAGE]
+        message: str | None = None
+        try:
+            if isinstance(error, BaseException):
+                self.attributes["error.type"] = type(error).__name__
+                message = str(error) or type(error).__name__
+            elif error is not None:
+                message = str(error)
+        except Exception:
+            # The exception's own `__str__` raised; its type is still a useful message.
+            message = type(error).__name__
+        self.status_message = message[:_MAX_STATUS_MESSAGE] if message else None
 
     def end(self) -> None:
         """Finish the span and hand it to the exporter. Idempotent."""
