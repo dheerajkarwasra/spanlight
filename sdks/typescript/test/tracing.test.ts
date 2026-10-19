@@ -11,6 +11,7 @@ import {
   VERSION,
   withSpan,
 } from "../src/index.js";
+import { stripTrailingSlashes } from "../src/client.js";
 import { toJsonable } from "../src/serialize.js";
 import { normalizeTier } from "../src/tiers.js";
 import { captureSpanlight, type Json } from "./support.js";
@@ -102,6 +103,15 @@ describe("observe and withSpan", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledOnce();
     warn.mockRestore();
+  });
+});
+
+describe("host", () => {
+  it("strips trailing slashes in linear time", () => {
+    expect(stripTrailingSlashes("http://h:8000///")).toBe("http://h:8000");
+    expect(stripTrailingSlashes("http://h:8000")).toBe("http://h:8000");
+    expect(stripTrailingSlashes("///")).toBe("");
+    expect(stripTrailingSlashes(`${"/".repeat(100_000)}x`)).toHaveLength(100_001);
   });
 });
 

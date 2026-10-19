@@ -69,6 +69,13 @@ export interface TraceUpdate {
 const DISABLED_VALUES: ReadonlySet<string> = new Set(["false", "0", "no", "off"]);
 const context = new AsyncLocalStorage<Span>();
 
+// A loop rather than `/\/+$/`, which backtracks quadratically on a long run of '/'.
+export function stripTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === "/") end--;
+  return value.slice(0, end);
+}
+
 export class Client {
   readonly exporter: Exporter | undefined;
   private readonly environment: string | undefined;
@@ -89,9 +96,8 @@ export class Client {
       log.warn("No API key: set SPANLIGHT_API_KEY or pass apiKey to init(). Tracing is disabled.");
       return;
     }
-    const host = (options.host ?? (env.SPANLIGHT_HOST || "http://localhost:8000")).replace(
-      /\/+$/,
-      "",
+    const host = stripTrailingSlashes(
+      options.host ?? (env.SPANLIGHT_HOST || "http://localhost:8000"),
     );
     this.exporter = new Exporter({
       url: `${host}/v1/traces`,
