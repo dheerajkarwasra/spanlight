@@ -146,14 +146,14 @@ export function UserSession({
       {userId !== null ? (
         <>
           <span className="sr-only">User </span>
-          {userId}
+          <span>{userId}</span>
         </>
       ) : null}
       {userId !== null && sessionId !== null ? <span aria-hidden> · </span> : null}
       {sessionId !== null ? (
         <>
           <span className="sr-only">{userId !== null ? ", session " : "Session "}</span>
-          {sessionId}
+          <span>{sessionId}</span>
         </>
       ) : null}
     </span>

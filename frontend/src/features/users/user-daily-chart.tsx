@@ -34,7 +34,8 @@ function costCell(point: DailyPoint): string {
 }
 
 function costAxisTick(value: number): string {
-  return formatCost(value) ?? "";
+  // Ticks at $1k+ drop the cents so "$1,000.00" does not clip the 56 px axis.
+  return (Math.abs(value) >= 1000 ? `$${formatCompact(value)}` : formatCost(value)) ?? "";
 }
 
 /**

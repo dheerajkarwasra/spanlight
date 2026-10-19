@@ -12,13 +12,15 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import ModelPrice, PriceOverride, User
+from app.pricing.cost import MAX_PRICED_TOKENS
 
 # Models listed at most; a project cannot make the answer unbounded by sending arbitrary names.
 UNPRICED_MODELS_LIMIT = 100
 
 # An LLM span is unpriced for want of a price when it reports both token counts (so a cost could
 # be computed) and a model, yet its stored cost is NULL: the model matched no price at ingestion.
-# Spans that lack a token count or a model are unpriced for another reason and are not listed.
+# Spans that lack a token count or a model, or whose counts are over `MAX_PRICED_TOKENS`, are
+# unpriced for another reason and are not listed.
 # Runs under the caller's row-level security binding; the `project_id` filter is for the index.
 _UNPRICED_MODELS = text(
     """
@@ -36,6 +38,7 @@ _UNPRICED_MODELS = text(
       AND s.model IS NOT NULL
       AND s.input_tokens IS NOT NULL
       AND s.output_tokens IS NOT NULL
+      AND greatest(s.input_tokens, s.output_tokens) <= :max_priced_tokens
     GROUP BY s.provider, s.model
     ORDER BY llm_calls DESC, s.provider NULLS LAST, s.model
     LIMIT :limit
@@ -71,7 +74,13 @@ async def list_unpriced_models(
     """Models a project called in `[start, end)` that no price covered, most-called first."""
     rows = await db.execute(
         _UNPRICED_MODELS,
-        {"project_id": project_id, "start": start, "end": end, "limit": UNPRICED_MODELS_LIMIT},
+        {
+            "project_id": project_id,
+            "start": start,
+            "end": end,
+            "limit": UNPRICED_MODELS_LIMIT,
+            "max_priced_tokens": MAX_PRICED_TOKENS,
+        },
     )
     return [
         UnpricedModel(

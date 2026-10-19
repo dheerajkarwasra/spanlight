@@ -38,7 +38,7 @@ ENUM_NAMES = {
 }
 
 
-def json_int(value: Any, *, default: int = 0) -> int:
+def json_int(value: Any, *, default: int = 0, enum: bool = False) -> int:
     if value is None:
         return default
     if isinstance(value, bool):
@@ -49,7 +49,7 @@ def json_int(value: Any, *, default: int = 0) -> int:
         if not _INTEGER_TEXT.fullmatch(value):
             raise OtlpDecodeError("expected an integer")
         return int(value)
-    if isinstance(value, str):
+    if isinstance(value, str) and enum:
         # Enum fields may be sent by name, e.g. "SPAN_KIND_CLIENT".
         return ENUM_NAMES.get(value, default)
     raise OtlpDecodeError("expected an integer")
