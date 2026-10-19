@@ -1352,8 +1352,10 @@ Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anth
   A span without a model is the entry with `model: null`.
 - **`error_classes`.** Exact counts of failed spans (any kind) per `error_class`, `null` for failed spans that carry no
   class (ingested before the column existed).
-- **`new_errors`.** Every failed span's status message of the two releases is normalised in the database (UUIDs and hex
-  ids of 12 or more digits become `…`, other digit runs `#`, whitespace collapsed, at most 200 characters). The top 10
+- **`new_errors`.** Every failed span's status message of the two releases is normalised in the database (UUIDs, hex
+  ids of 12 or more digits and runs of 16 or more letters and digits with at least one of each become `…`, so a
+  provider id such as `req_011CgBHmV…` reads `req_…`; other digit runs become `#`; whitespace is collapsed; at most 200
+  characters). The top 10
   messages that at least one failed span of `b` has and no failed span of `a` has are returned, most frequent first,
   with the number of `b` spans as `count` and the id of one `b` trace as `example_trace_id`.
 
