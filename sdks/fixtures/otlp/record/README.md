@@ -56,6 +56,10 @@ accepted), and an exporter at the capture server with
 | `POST /v1/messages` | `anthropic` | `messages` |
 
 - The `x-fixture-scenario` request header overrides the default scenario.
+- A comma-separated header (`chat_tools,chat`) scripts an agent's turns: a chat request gets
+  the entry indexed by the number of `assistant` messages it carries, so the first model call
+  gets `chat_tools` and the call after the tool result gets `chat`. No state is kept between
+  requests; a request past the end of the script gets a 404.
 - A JSON body with `"stream": true` gets `<scenario>.sse` as `text/event-stream`; otherwise
   `<scenario>.json` as `application/json`.
 - A scenario named `error_<status>` answers with that HTTP status and its `.json` body;
@@ -100,7 +104,7 @@ The subprocess gets `PYTHONPATH=python`, `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`,
 `ANTHROPIC_API_KEY=sk-fixture` and `X_FIXTURE_SCENARIO`. `record.py` sets `TMPDIR=/tmp` for itself, the venv and every
 subprocess, so a stack trace in a fixture never shows a per-user temp path (macOS
 `/var/folders/<hash>/T`). Exactly one OTLP export per scenario is
-required: flush once, at the end. A recipe sets its own library flags inside `run()`; the
+required: flush once, at the end (`_otel.configure` turns off the batch processor's timed export). A recipe sets its own library flags inside `run()`; the
 `otel-genai-python` recipe sets `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental` and
 `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY` so prompts and completions land on
 the span (`gen_ai.input.messages` / `gen_ai.output.messages`); the legacy `true` value writes

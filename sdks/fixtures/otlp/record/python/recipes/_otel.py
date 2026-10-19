@@ -30,7 +30,9 @@ class SeededIdGenerator(IdGenerator):
 def configure(scenario: str) -> TracerProvider:
     """Install the global tracer provider for one scenario; call before instrumenting."""
     provider = TracerProvider(id_generator=SeededIdGenerator(zlib.crc32(scenario.encode())))
-    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+    # No timed export: a slow run (first import of a big framework) would split into two exports.
+    processor = BatchSpanProcessor(OTLPSpanExporter(), schedule_delay_millis=600_000)
+    provider.add_span_processor(processor)
     trace.set_tracer_provider(provider)
     return provider
 

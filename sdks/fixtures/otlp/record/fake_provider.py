@@ -4,7 +4,11 @@ Answers `POST /v1/chat/completions`, `/v1/responses`, `/v1/embeddings` and `/v1/
 the bodies under `responses/<provider>/`. The `x-fixture-scenario` request header picks the
 body; a request whose JSON body says `"stream": true` gets `<scenario>.sse` as
 `text/event-stream`, anything else gets `<scenario>.json`. A scenario named `error_<status>`
-answers with that status (and `retry-after: 1` on 429). Any API key is accepted. A scenario
+answers with that status (and `retry-after: 1` on 429). A comma-separated header
+(`chat_tools,chat`) scripts an agent's turns: the body is the entry indexed by the number of
+`assistant` messages in the request, so the first model call gets the first entry and the call
+after the tool result gets the second, with no state kept between requests. Any API key is
+accepted. A scenario
 whose body file is absent answers 404 naming the file, so a recipe can never record against a
 body the owner has not captured yet.
 
@@ -49,7 +53,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._error(404, f"no route {path}; the fake provider serves {sorted(ROUTES)}")
             return
         provider, default = route
-        scenario = self.headers.get(SCENARIO_HEADER, default)
+        scenario = _turn(self.headers.get(SCENARIO_HEADER, default), body)
         if not _SCENARIO.fullmatch(scenario):
             self._error(404, f"invalid scenario name {scenario!r}")
             return
@@ -83,6 +87,19 @@ class _Handler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args: object) -> None:
         """Quiet: the recorder's stdout carries the port and nothing else."""
+
+
+def _turn(header: str, body: bytes) -> str:
+    """The scenario for this request; a scripted list past its end yields an invalid name."""
+    script = header.split(",")
+    if len(script) == 1:
+        return header
+    try:
+        messages = json.loads(body or b"{}").get("messages") or []
+        turn = sum(1 for m in messages if isinstance(m, dict) and m.get("role") == "assistant")
+    except (ValueError, AttributeError):
+        turn = 0
+    return script[turn] if turn < len(script) else header
 
 
 def _wants_stream(body: bytes) -> bool:

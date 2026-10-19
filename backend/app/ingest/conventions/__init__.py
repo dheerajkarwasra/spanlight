@@ -9,6 +9,7 @@ from collections.abc import Mapping
 from dataclasses import fields, replace
 from typing import Any
 
+from app.db.models.telemetry import SpanKind
 from app.ingest.conventions.gen_ai import map_gen_ai
 from app.ingest.conventions.kinds import infer_kind, is_embeddings_operation
 from app.ingest.conventions.openinference import map_openinference
@@ -56,6 +57,8 @@ def map_fields(
     mapped = mapper(attributes)
     if convention is not Convention.GEN_AI and has_prefix(attributes, "gen_ai."):
         mapped = fill_gaps(mapped, map_gen_ai(attributes))
+    if convention is Convention.OPENINFERENCE and _is_prompt_step(attributes, mapped):
+        mapped = replace(mapped, kind=SpanKind.CHAIN, model=None)
     if is_embeddings_operation(convention, mapped.operation, attributes):
         mapped = _imply_embeddings_output(mapped)
     return convention, mapped
@@ -84,6 +87,22 @@ def fill_gaps(primary: MappedFields, fallback: MappedFields) -> MappedFields:
         consumed_keys=primary.consumed_keys | fallback.consumed_keys,
         dropped_messages=primary.dropped_messages + fallback.dropped_messages,
         **changes,
+    )
+
+
+def _is_prompt_step(attributes: Mapping[str, Any], mapped: MappedFields) -> bool:
+    """An OpenInference `LLM` span with only generic input: no messages and no usage.
+
+    LlamaIndex labels its prompt-building step (`OpenAI._prepare_chat_with_tools`) `LLM`. Stored
+    as a model call, its model with no cost would mark a fully priced trace as unpriced.
+    """
+    return (
+        mapped.kind is SpanKind.LLM
+        and mapped.usage.input_tokens is None
+        and mapped.usage.output_tokens is None
+        and first(attributes, "input.value") is not None
+        and not has_prefix(attributes, "llm.input_messages")
+        and not has_prefix(attributes, "llm.output_messages")
     )
 
 
