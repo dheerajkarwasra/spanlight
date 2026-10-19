@@ -1,0 +1,22 @@
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share what you trace with Spanlight. Screenshots are welcome; please blur prompts, keys and customer data first.
+  - type: textarea
+    id: what
+    attributes:
+      label: What you built
+      description: The application, and what Spanlight shows you about it.
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Setup
+      description: Providers and models, how you send traces (SDK, OTLP or gateway) and where you host Spanlight.
+  - type: textarea
+    id: learned
+    attributes:
+      label: What you found
+      description: A bug, a cost surprise or a slow call you caught, or anything that would help others.

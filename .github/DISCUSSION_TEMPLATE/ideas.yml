@@ -1,0 +1,38 @@
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Describe the problem first: it helps more than a finished design.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea
+      description: What should Spanlight do? Describe what you would see, not the implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: workaround
+    attributes:
+      label: How you handle it today
+      description: Other tools or workarounds you use, and why they fall short.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Tracing and sessions
+        - Cost and budgets
+        - Gateway
+        - Doctor and alerts
+        - Prompts and evals
+        - Python SDK or OTLP
+        - Self-hosting and deployment
+        - Other
