@@ -1,7 +1,12 @@
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 
+import { ShowAllButton } from "@/components/show-all-button";
+import { charactersLabel, TEXT_CLAMP_CHARS } from "@/lib/clamp";
 import { cn } from "@/lib/utils";
+
+/** The most entries an open object or array renders before "Show all", for large payloads. */
+const ENTRY_CLAMP = 200;
 
 interface JsonViewerProps {
   value: unknown;
@@ -34,6 +39,7 @@ interface JsonNodeProps {
 
 function JsonNode({ name, value, depth, defaultExpandDepth, isLast = true }: JsonNodeProps) {
   const [expanded, setExpanded] = useState(depth < defaultExpandDepth);
+  const [allEntries, setAllEntries] = useState(false);
   const comma = isLast ? null : <span className="text-subtle-foreground">,</span>;
   const label =
     name === undefined ? null : (
@@ -73,6 +79,8 @@ function JsonNode({ name, value, depth, defaultExpandDepth, isLast = true }: Jso
   }
 
   const summary = isArray ? `${entries.length} items` : `${entries.length} keys`;
+  const clamped = entries.length > ENTRY_CLAMP;
+  const shown = clamped && !allEntries ? entries.slice(0, ENTRY_CLAMP) : entries;
 
   return (
     <div className="relative">
@@ -106,7 +114,7 @@ function JsonNode({ name, value, depth, defaultExpandDepth, isLast = true }: Jso
       {expanded ? (
         <>
           <div className="ml-2 border-l border-border pl-2">
-            {entries.map(([key, child], index) => (
+            {shown.map(([key, child], index) => (
               <JsonNode
                 key={key}
                 name={isArray ? undefined : key}
@@ -116,6 +124,16 @@ function JsonNode({ name, value, depth, defaultExpandDepth, isLast = true }: Jso
                 isLast={index === entries.length - 1}
               />
             ))}
+            {clamped ? (
+              <ShowAllButton
+                expanded={allEntries}
+                onToggle={() => {
+                  setAllEntries((current) => !current);
+                }}
+                label={summary}
+                className="ml-4 font-sans"
+              />
+            ) : null}
           </div>
           <div className="pl-4">
             <span className="text-subtle-foreground">{close}</span>
@@ -132,7 +150,11 @@ function JsonPrimitive({ value }: { value: unknown }) {
     return <span className="text-subtle-foreground">null</span>;
   }
   if (typeof value === "string") {
-    return <span className="text-syntax-string">{JSON.stringify(value)}</span>;
+    return value.length > TEXT_CLAMP_CHARS ? (
+      <LongString value={value} />
+    ) : (
+      <span className="text-syntax-string">{JSON.stringify(value)}</span>
+    );
   }
   if (typeof value === "number") {
     return <span className="text-kind-chain">{value}</span>;
@@ -141,4 +163,24 @@ function JsonPrimitive({ value }: { value: unknown }) {
     return <span className="text-kind-llm">{String(value)}</span>;
   }
   return <span>{JSON.stringify(value)}</span>;
+}
+
+function LongString({ value }: { value: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const shown = expanded
+    ? JSON.stringify(value)
+    : `${JSON.stringify(value.slice(0, TEXT_CLAMP_CHARS))}…`;
+  return (
+    <>
+      <span className="text-syntax-string">{shown}</span>{" "}
+      <ShowAllButton
+        expanded={expanded}
+        onToggle={() => {
+          setExpanded((current) => !current);
+        }}
+        label={charactersLabel(value.length)}
+        className="font-sans"
+      />
+    </>
+  );
 }

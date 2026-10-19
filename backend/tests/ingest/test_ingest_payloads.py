@@ -23,7 +23,9 @@ async def test_input_truncation_keeps_the_output_and_stays_within_the_limit(
 ) -> None:
     output = {"role": "assistant", "content": "short answer"}
     response = await ingest_native(
-        client, workspace, [span(trace_id=new_trace_id(), input="x" * 50_000, output=output)]
+        client,
+        workspace,
+        [span(trace_id=new_trace_id(), input="x" * (MAX_PAYLOAD_BYTES + 50_000), output=output)],
     )
 
     assert response.json() == {"accepted": 1, "rejected": []}
@@ -32,6 +34,30 @@ async def test_input_truncation_keeps_the_output_and_stays_within_the_limit(
     assert isinstance(stored.input, str)
     assert len(stored.input.encode()) <= MAX_PAYLOAD_BYTES
     assert stored.output == output
+
+
+async def test_a_200_kb_rag_context_is_stored_whole_with_its_size(
+    client: httpx.AsyncClient,
+    workspace: Workspace,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    context = "retrieved passage about the refund policy. " * 4_700  # about 200 KB
+    payload = [{"role": "user", "content": context}]
+    output = {"role": "assistant", "content": "short answer"}
+
+    response = await ingest_native(
+        client, workspace, [span(trace_id=new_trace_id(), input=payload, output=output)]
+    )
+
+    assert response.json() == {"accepted": 1, "rejected": []}
+    (stored,) = await stored_spans(session_factory)
+    assert stored.truncated is False
+    assert stored.input == payload
+    compact = {"ensure_ascii": False, "separators": (",", ":")}
+    expected = len(json.dumps(payload, **compact).encode()) + len(
+        json.dumps(output, **compact).encode()
+    )
+    assert stored.payload_bytes == expected
 
 
 async def test_a_secret_under_the_cut_leaves_no_fragment(

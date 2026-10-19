@@ -4,10 +4,10 @@
 import { parseChatPayload, type ChatMessage } from "./chat-messages";
 
 /**
- * The ingestion API replaces an `input`/`output` over 32 KB with a string holding the first
- * 32 KB of its JSON text and flags the span `truncated` (docs/api-deviations.md).
+ * The ingestion API replaces an `input`/`output` over 1 MiB with a string holding the first
+ * 1 MiB of its JSON text and flags the span `truncated` (docs/api-deviations.md).
  */
-export const PAYLOAD_LIMIT_BYTES = 32 * 1024;
+export const PAYLOAD_LIMIT_BYTES = 1024 * 1024;
 
 /** A multi-byte UTF-8 character split by the cut is dropped, losing up to 3 bytes. */
 const MAX_BYTES_LOST_AT_CUT = 3;

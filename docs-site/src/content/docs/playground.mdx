@@ -165,7 +165,7 @@ The **Replay** button says why a span cannot be replayed, and the API answers `4
 | --- | --- | --- |
 | `REPLAY_NOT_LLM` | Is not an LLM call | Replay the LLM span inside it |
 | `REPLAY_NO_PAYLOAD` | Has no stored request: payload capture was off, or retention removed it | Nothing to send. Turn on payload capture for future calls |
-| `REPLAY_PAYLOAD_TRUNCATED` | Was cut at the 32 KB payload limit when it was stored | Edit the request into a complete one |
+| `REPLAY_PAYLOAD_TRUNCATED` | Was cut at the 1 MB payload limit when it was stored | Edit the request into a complete one |
 | `REPLAY_PAYLOAD_REDACTED` | Holds `[REDACTED]` or `[MAX_DEPTH]` where a secret or a too-deep value was removed at ingest | Edit those parts out. **Run replay** stays disabled while a marker remains |
 | `REPLAY_UNSUPPORTED_INPUT` | Is not a provider request (a plain text prompt, a body without a model), or an edit is not one, or an OTLP span has no model and none was picked | Pick a model, or fix the edit |
 | `REPLAY_PROVIDER_MISMATCH` | Needs a credential of the other provider | Pick a credential of the span's provider |

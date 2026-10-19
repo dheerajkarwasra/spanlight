@@ -28,7 +28,11 @@ import { resolveHomeDestination } from "@/features/shell/home-redirect";
 import { reconciliationSearchSchema } from "@/features/billing-sources/reconciliation-search";
 import { auditSearchSchema } from "@/features/settings/audit-search";
 import { securitySearchSchema } from "@/features/settings/security/search";
-import { traceDetailSearchSchema, traceFiltersSchema } from "@/features/traces/search";
+import {
+  traceCompareSearchSchema,
+  traceDetailSearchSchema,
+  traceFiltersSchema,
+} from "@/features/traces/search";
 import { usersSearchSchema } from "@/features/users/search";
 import { projectSearchSchema } from "@/lib/time-range";
 
@@ -257,6 +261,17 @@ const traceDetailRoute = createRoute({
   component: lazyRouteComponent(
     () => import("@/features/traces/trace-detail-page"),
     "TraceDetailPage",
+  ),
+});
+
+const traceCompareRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/traces/compare",
+  validateSearch: traceCompareSearchSchema,
+  head: () => pageTitle("Compare traces"),
+  component: lazyRouteComponent(
+    () => import("@/features/traces/trace-compare-page"),
+    "TraceComparePage",
   ),
 });
 
@@ -732,6 +747,7 @@ const routeTree = rootRoute.addChildren([
       projectIndexRoute,
       overviewRoute,
       tracesRoute,
+      traceCompareRoute,
       traceDetailRoute,
       sessionsRoute,
       sessionDetailRoute,

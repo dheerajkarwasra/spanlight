@@ -47,7 +47,7 @@ export function TraceSearchInput({ value, onCommit }: TraceSearchInputProps) {
       <Input
         type="search"
         aria-label="Search traces"
-        placeholder="Search by name or trace ID"
+        placeholder="Search name, ID, input or output"
         value={draft}
         onChange={(event) => {
           setDraft(event.target.value);

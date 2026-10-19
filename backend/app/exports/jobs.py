@@ -9,9 +9,9 @@ timeout, so one runaway query ends the export (`EXPORT_TIMEOUT`) instead of hang
 
 Memory stays flat. Traces are read in keyset batches, each trace is encoded to its own chunk and
 handed to the store's streaming upload, and the upload sends 8 MiB parts as they fill. A JSONL
-batch holds at most `MAX_SPANS_PER_BATCH` spans (summed over its traces), and a trace with more
-spans than that has them read in keyset chunks, so nothing holds a whole export or a whole
-oversized trace.
+batch holds at most `MAX_SPANS_PER_BATCH` spans and `MAX_PAYLOAD_BYTES_PER_BATCH` of stored
+payloads (summed over its traces), and a trace past either has its spans read in keyset chunks,
+so nothing holds a whole export or a whole oversized trace.
 
 The job runs in the worker's long-job slot, which leaves the lease to the task: a background beat
 extends it every 20 s for as long as the work runs, so a single slow statement cannot let the job
@@ -65,9 +65,13 @@ logger = structlog.get_logger(__name__)
 
 # The most traces a batch reads. A JSONL batch is also cut by `MAX_SPANS_PER_BATCH`.
 BATCH_SIZES: dict[ExportFormat, int] = {ExportFormat.CSV: 1000, ExportFormat.JSONL: 100}
-# Spans carry prompts and completions (up to 32 KB each side), so a batch is sized by spans.
+# Spans carry prompts and completions (up to 1 MiB each side), so a batch is bounded by the
+# payload bytes stored with them (`spans.payload_bytes`) as well as by spans, since attributes take
+# up to 64 KB of each span whatever its payloads. An oversized trace is read in chunks of
+# `SPAN_CHUNK_SIZE` spans: at most 64 MiB of payloads.
 MAX_SPANS_PER_BATCH = 2000
-SPAN_CHUNK_SIZE = 500
+MAX_PAYLOAD_BYTES_PER_BATCH = 64 * 1024 * 1024
+SPAN_CHUNK_SIZE = 32
 # A third of the 60 s lease: two missed beats still leave time before another worker may take over.
 HEARTBEAT_INTERVAL_SECONDS = 20.0
 _QUERY_CANCELED = "57014"
@@ -250,6 +254,7 @@ async def _encoded_batches(
                 after=after,
                 size=size,
                 max_spans=None if csv else MAX_SPANS_PER_BATCH,
+                max_payload_bytes=MAX_PAYLOAD_BYTES_PER_BATCH,
             )
         if not rows:
             return
@@ -261,7 +266,7 @@ async def _encoded_batches(
                 chunk = trace_csv_line(row)
                 tally.size_bytes += len(chunk)
                 yield chunk
-            elif row.span_count > MAX_SPANS_PER_BATCH:
+            elif row.oversized:
                 async for chunk in _oversized_trace_lines(factory, project_id, row):
                     tally.size_bytes += len(chunk)
                     yield chunk

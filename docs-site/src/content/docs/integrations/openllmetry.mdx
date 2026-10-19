@@ -109,7 +109,8 @@ Open **Traces** in the dashboard and pick the project that owns your key. You se
 
 | Span | Kind | What Spanlight stores |
 | --- | --- | --- |
-| `<name>.workflow`, `<name>.task`, `<name>.agent` | `chain` | The function's arguments and return value, from `traceloop.entity.input` and `traceloop.entity.output` |
+| `<name>.workflow`, `<name>.task` | `chain` | The function's arguments and return value, from `traceloop.entity.input` and `traceloop.entity.output` |
+| `<name>.agent` | `agent` | The same |
 | `<name>.tool` | `tool` | The same |
 | `openai.chat` | `llm` | Provider, the billed model snapshot (`gpt-4.1-mini-2025-04-14`), input, output and cached tokens, prompt, answer, finish reason, cost |
 

@@ -258,3 +258,35 @@ async def test_a_span_for_a_deleted_project_is_not_retried(
     assert (failing_writes.writes, failing_writes.waits) == (1, [])
     assert errors.value == 1
     assert recorder.spans_lost() == lost + 1
+
+
+async def test_recorder_backlog_bytes_drop_a_large_span_and_keep_small_ones(
+    gateway_workspace: GatewayWorkspace,
+    fake_provider: FakeProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for _ in range(3):
+        fake_provider.reply_json(_answer())
+    release = asyncio.Event()
+    real_ingest = pipeline.ingest_spans
+
+    async def held_ingest(*args: Any, **kwargs: Any) -> Any:
+        await release.wait()
+        return await real_ingest(*args, **kwargs)
+
+    monkeypatch.setattr(span_write, "ingest_spans", held_ingest)
+    overflow = metric_delta(GATEWAY_RECORD_FAILURES, reason="overflow")
+    large = {**CHAT_BODY, "messages": [{"role": "user", "content": "x" * 200_000}]}
+
+    await gateway_workspace.gw.post(CALL_PATH, json=CHAT_BODY)  # builds the writers, held
+    writers = recorder._writers
+    assert writers is not None
+    writers.backlog, writers.backlog_bytes = 10, 150_000  # room by count, not for 200 KB
+    await gateway_workspace.gw.post(CALL_PATH, json=large)
+    await gateway_workspace.gw.post(CALL_PATH, json=CHAT_BODY)
+
+    assert overflow.value == 1
+    assert len(writers.pending) == 2
+    release.set()
+    await drain_recorder()
+    assert writers.held_bytes == 0

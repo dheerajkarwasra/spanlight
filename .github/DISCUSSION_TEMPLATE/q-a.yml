@@ -1,0 +1,38 @@
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for asking. The [docs](https://spanlight.dev/docs/) cover setup, the SDK, OTLP, the gateway and
+        self-hosting, so a quick search there may answer it. Found a bug? Please
+        [open an issue](https://github.com/dheerajkarwasra/spanlight/issues/new/choose) instead.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What are you trying to do, and where are you stuck?
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you tried
+      description: Commands, code or settings you used, and what happened. Remove API keys and other secrets.
+      render: shell
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Python SDK
+        - OpenTelemetry (OTLP)
+        - Gateway
+        - Web dashboard
+        - Self-hosting and deployment
+        - Other
+  - type: input
+    id: version
+    attributes:
+      label: Spanlight version
+      description: Server version, and SDK version if you use it.
+      placeholder: "server 0.6.0, SDK 0.2.0"

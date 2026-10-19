@@ -95,6 +95,7 @@
   --kind-tool: #ea580c;
   --kind-retrieval: #0d9488;
   --kind-chain: #2563eb;
+  --kind-agent: #c026d3;
   --kind-http: #57534e;
   --kind-other: #78716c;
 
@@ -206,6 +207,7 @@
   --kind-tool: #fb923c;
   --kind-retrieval: #2dd4bf;
   --kind-chain: #60a5fa;
+  --kind-agent: #e879f9;
   --kind-http: #a3a3a3;
   --kind-other: #8f8f8f;
 
@@ -298,6 +300,7 @@
   --color-kind-tool: var(--kind-tool);
   --color-kind-retrieval: var(--kind-retrieval);
   --color-kind-chain: var(--kind-chain);
+  --color-kind-agent: var(--kind-agent);
   --color-kind-http: var(--kind-http);
   --color-kind-other: var(--kind-other);
   --color-chart-1: var(--chart-1);

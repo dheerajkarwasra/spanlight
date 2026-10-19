@@ -17,7 +17,7 @@ from app.ingest.otlp_values import parse_content
 # The provider id names the API family too (`openai.chat`); pricing keys on the vendor.
 _PROVIDER_SUFFIXES = (".chat", ".messages", ".responses", ".completion", ".embedding")
 # Content keys are consumed when present, read or not, so prompt text is stored only under the
-# payload rules (capture toggle, 32 KB cap), never in `attributes` (ruling C-1).
+# payload rules (capture toggle, 1 MiB cap), never in `attributes` (ruling C-1).
 _INPUT_KEYS = ("ai.prompt.messages", "ai.prompt", "ai.toolCall.args", "ai.value", "ai.values")
 _OUTPUT_KEYS = (
     "ai.response.text",

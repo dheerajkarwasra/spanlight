@@ -1,5 +1,11 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Ask a question
+    url: https://github.com/dheerajkarwasra/spanlight/discussions/categories/q-a
+    about: Setup, SDK, OTLP, gateway or self-hosting questions go to Discussions.
+  - name: Share an idea
+    url: https://github.com/dheerajkarwasra/spanlight/discussions/categories/ideas
+    about: Talk through a feature idea in Discussions before opening a request.
   - name: Report a security vulnerability
     url: https://github.com/dheerajkarwasra/spanlight/security/advisories/new
     about: Report it privately here. Do not open a public issue. The policy is in SECURITY.md.

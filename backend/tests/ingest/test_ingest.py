@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.security import PAT_PREFIX, generate_key
 from app.db.models import Span, Trace
 from app.db.rls import bypass_rls
+from app.ingest.normalize import MAX_PAYLOAD_BYTES
 from app.pricing.prices import ALL_SNAPSHOTS
 from tests.helpers import (
     Workspace,
@@ -361,11 +362,12 @@ async def test_large_payloads_are_truncated(
     workspace: Workspace,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    await _ingest(client, workspace, [span(trace_id=new_trace_id(), output={"text": "y" * 50_000})])
+    output = {"text": "y" * (MAX_PAYLOAD_BYTES + 50_000)}
+    await _ingest(client, workspace, [span(trace_id=new_trace_id(), output=output)])
     stored = await _stored_span(session_factory)
     assert stored.truncated is True
     assert isinstance(stored.output, str)
-    assert len(stored.output.encode()) <= 32 * 1024
+    assert len(stored.output.encode()) <= MAX_PAYLOAD_BYTES
     assert isinstance(stored.input, dict)  # the small input is kept intact
 
 

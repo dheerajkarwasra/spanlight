@@ -137,15 +137,21 @@ function spanOptions(firstLlm: Span | null, selected: Span | null): SpanChoiceOp
 }
 
 function SavedPreview({ span }: { span: Span }) {
+  const omitted = "Not previewed: this trace's payloads are too large to load at once.";
   return (
     <div className="flex flex-col gap-3">
-      <PreviewBlock label="Input to be saved" text={valueText(span.input)} />
+      <PreviewBlock
+        label="Input to be saved"
+        text={span.payload_omitted ? omitted : valueText(span.input)}
+      />
       <PreviewBlock
         label="Expected output (recorded output, edit after adding)"
         text={
-          span.output == null
-            ? "No recorded output. Add the expected answer after adding."
-            : valueText(span.output)
+          span.payload_omitted
+            ? omitted
+            : span.output == null
+              ? "No recorded output. Add the expected answer after adding."
+              : valueText(span.output)
         }
       />
       <p className="flex items-start gap-1.5 text-xs font-medium text-muted-foreground">

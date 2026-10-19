@@ -1,4 +1,5 @@
-import { X } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { GitCompareArrows, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { AddToDatasetDialog, AddToQueueDialog } from "@/features/datasets";
@@ -9,7 +10,8 @@ import type { TraceSelection } from "./use-trace-selection";
 
 /**
  * Figma "Traces — Bulk selection": a floating ink bar while rows are ticked, with "Add to
- * dataset", "Add to queue" and "Clear". The table (and so the selection) exists from `md` up.
+ * dataset", "Add to queue", "Compare" (exactly two traces; the earlier one is the baseline) and
+ * "Clear". The table (and so the selection) exists from `md` up.
  */
 export function BulkSelectionBar({ selection }: { selection: TraceSelection }) {
   const canAddToDataset = usePermission("datasets:write");
@@ -27,6 +29,7 @@ export function BulkSelectionBar({ selection }: { selection: TraceSelection }) {
       table.focus();
     }
   };
+  const [a, b] = [...selection.selected].sort((x, y) => x.started_at.localeCompare(y.started_at));
   const traces = selection.selected.map((trace) => ({
     trace_id: trace.trace_id,
     name: trace.name,
@@ -55,6 +58,25 @@ export function BulkSelectionBar({ selection }: { selection: TraceSelection }) {
           onAdded={finish}
           trigger={<Button>Add to queue</Button>}
         />
+      ) : null}
+      {count === 2 && a && b ? (
+        <Button asChild>
+          <Link
+            to="/$orgId/$projectId/traces/compare"
+            from="/$orgId/$projectId/traces"
+            search={(prev) => ({
+              range: prev.range,
+              from: prev.from,
+              to: prev.to,
+              env: prev.env,
+              a: a.trace_id,
+              b: b.trace_id,
+            })}
+          >
+            <GitCompareArrows aria-hidden />
+            Compare
+          </Link>
+        </Button>
       ) : null}
       <Button
         variant="ghost"

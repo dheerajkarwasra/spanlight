@@ -31,7 +31,7 @@ from tests.gateway_support import (
 )
 
 SECRET = "sk-test-" + "a" * 32  # an OpenAI-shaped key, which redaction replaces
-PROMPT_BYTES = 200_000
+PROMPT_BYTES = MAX_PAYLOAD_BYTES + 200_000
 
 
 async def test_a_queued_span_holds_its_payloads_redacted_and_cut(

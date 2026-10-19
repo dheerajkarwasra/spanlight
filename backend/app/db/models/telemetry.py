@@ -32,6 +32,7 @@ class SpanKind(enum.StrEnum):
     TOOL = "tool"
     RETRIEVAL = "retrieval"
     CHAIN = "chain"
+    AGENT = "agent"
     HTTP = "http"
     OTHER = "other"
 
@@ -44,6 +45,16 @@ class SpanStatus(enum.StrEnum):
 
 class Trace(Base):
     __tablename__ = "traces"
+    # Storage parameters; migration 1005 is the source of truth.
+    __table_args__ = (
+        {
+            "postgresql_with": {
+                "fillfactor": "70",
+                "autovacuum_vacuum_scale_factor": "0.02",
+                "autovacuum_analyze_scale_factor": "0.01",
+            }
+        },
+    )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
@@ -86,10 +97,11 @@ class Span(Base):
             ondelete="CASCADE",
         ),
         # The windowed reads (overview, time series, models, rollups) are answered from this index
-        # alone. Migration 0016 creates it; keep the two column lists in step. The migration also
-        # sets the table's autovacuum insert triggers, which the model does not describe.
+        # alone. Migration 1004 creates it (0016 made the first version); keep the two column
+        # lists in step. 0016 also sets the table's autovacuum insert triggers, which the model
+        # does not describe.
         Index(
-            "spans_project_started_cov_idx",
+            "spans_project_started_window_idx",
             "project_id",
             "started_at",
             postgresql_include=[
@@ -104,6 +116,7 @@ class Span(Base):
                 "provider",
                 "model",
                 "time_to_first_token_ms",
+                "usage_rollup",
             ],
         ),
         # Per gateway key reads (budgets, detectors). Partial: natively ingested spans have no key.
@@ -198,6 +211,10 @@ class Span(Base):
     output: Mapped[Any | None] = mapped_column(JSONB(none_as_null=True))
     attributes: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     truncated: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    # The JSON bytes of `input` + `output` as stored (`app.ingest.normalize`), so byte budgets can
+    # be planned without reading the payloads. NULL on spans stored before migration 1008, read as
+    # `LEGACY_PAYLOAD_BYTES`.
+    payload_bytes: Mapped[int | None] = mapped_column(Integer)
     # 32 hex of what the model was asked (`app.ingest.request_hash`), set even when the payload
     # is not stored. The canonical finish reason (`app.ingest.finish_reason`); the raw one stays
     # in `attributes`. Migration 0401 holds the CHECK on its values.

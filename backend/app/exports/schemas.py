@@ -211,3 +211,5 @@ class TraceExportRow:
     tags: Sequence[str]
     metadata: Mapping[str, str]
     spans: Sequence[SpanExportRow] = field(default=())
+    # Too many spans or payload bytes for one batch: `spans` is empty and the job streams them.
+    oversized: bool = False
