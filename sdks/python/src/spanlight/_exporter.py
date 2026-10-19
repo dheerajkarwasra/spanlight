@@ -75,7 +75,7 @@ class BatchExporter:
         batch_size: int = 100,
         flush_interval: float = 2.0,
         max_queue: int = 10_000,
-        gzip_body: bool = False,
+        gzip_body: bool = True,
         timeout: float = 10.0,
         max_retries: int = 5,
         transport: httpx.BaseTransport | None = None,

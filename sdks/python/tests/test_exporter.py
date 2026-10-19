@@ -130,7 +130,8 @@ def test_request_carries_bearer_key_and_json_body(make_exporter, ingest):
     assert request.headers["Authorization"] == "Bearer spl_live_abc_def"
     assert request.headers["Content-Type"] == "application/json"
     assert request.headers["User-Agent"].startswith("spanlight-python/")
-    body = json.loads(request.content)
+    assert request.headers["Content-Encoding"] == "gzip"  # on by default
+    body = json.loads(gzip.decompress(request.content))
     assert body == {
         "spans": [make_span(1)],
         "client": {
@@ -144,14 +145,14 @@ def test_request_carries_bearer_key_and_json_body(make_exporter, ingest):
     assert re.fullmatch(r"[0-9a-f]{32}", body["client"]["exporter_id"])
 
 
-def test_gzip_compresses_the_body(make_exporter, ingest):
-    exporter = make_exporter(gzip_body=True)
+def test_gzip_can_be_turned_off(make_exporter, ingest):
+    exporter = make_exporter(gzip_body=False)
     exporter.export(make_span(1))
     exporter.flush(timeout=5)
 
     request = ingest.requests[0]
-    assert request.headers["Content-Encoding"] == "gzip"
-    assert json.loads(gzip.decompress(request.content))["spans"] == [make_span(1)]
+    assert "Content-Encoding" not in request.headers
+    assert json.loads(request.content)["spans"] == [make_span(1)]
 
 
 # ---------------------------------------------------------------------- #

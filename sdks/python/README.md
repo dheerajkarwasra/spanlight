@@ -414,7 +414,7 @@ options. Use `tracer.observe`, `tracer.span` and
 | `flush_interval`   |                         | `2.0`                   | Seconds a span may wait before it is sent                                |
 | `batch_size`       |                         | `100`                   | Spans per request (max 1000)                                             |
 | `max_queue`        |                         | `10000`                 | Buffered spans. When the buffer is full, the oldest spans are dropped.   |
-| `gzip`             |                         | `False`                 | Gzip-compress request bodies                                             |
+| `gzip`             |                         | `True`                  | Gzip-compress request bodies                                             |
 | `timeout`          |                         | `10.0`                  | HTTP timeout per request, in seconds                                     |
 | `max_retries`      |                         | `5`                     | Retries for network errors, 429 and 5xx                                  |
 | `shutdown_timeout` |                         | `5.0`                   | Time budget for the flush at interpreter exit                            |

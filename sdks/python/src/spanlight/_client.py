@@ -61,7 +61,8 @@ class Spanlight:
         flush_interval: Maximum seconds a span waits before it is sent.
         batch_size: Maximum spans per request (capped at 1000).
         max_queue: Maximum spans buffered in memory; oldest dropped first.
-        gzip: Compress request bodies.
+        gzip: Gzip-compress request bodies (default). Turn it off only for a proxy that
+            cannot forward a compressed body.
         timeout: HTTP timeout per request, in seconds.
         max_retries: Retries per batch for network errors, 429 and 5xx.
         shutdown_timeout: Seconds allowed for the final flush at exit.
@@ -80,7 +81,7 @@ class Spanlight:
         flush_interval: float = 2.0,
         batch_size: int = 100,
         max_queue: int = 10_000,
-        gzip: bool = False,
+        gzip: bool = True,
         timeout: float = 10.0,
         max_retries: int = 5,
         shutdown_timeout: float = 5.0,

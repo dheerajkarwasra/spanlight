@@ -35,7 +35,7 @@ def init(
     flush_interval: float = 2.0,
     batch_size: int = 100,
     max_queue: int = 10_000,
-    gzip: bool = False,
+    gzip: bool = True,
     timeout: float = 10.0,
     max_retries: int = 5,
     shutdown_timeout: float = 5.0,
