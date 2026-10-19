@@ -1,0 +1,141 @@
+---
+title: LlamaIndex
+description: Send LlamaIndex agent traces to Spanlight with the OpenInference LlamaIndex instrumentation, exporting through an OpenTelemetry tracer provider. Shows the tested setup and what Spanlight records from agent workflow steps, tools and model calls.
+---
+
+{/* Sources: sdks/fixtures/otlp/record/python/recipes/openinference_llama_index.py, sdks/fixtures/otlp/record/python/recipes/_otel.py, sdks/fixtures/otlp/record/record.py, sdks/fixtures/otlp/openinference-llama-index/4.6.0.json, backend/app/ingest/conventions/openinference.py, backend/app/ingest/conventions/__init__.py */}
+
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+import Verified from '../../../components/Verified.astro';
+
+The OpenInference LlamaIndex instrumentation (the one Arize Phoenix uses) hooks into LlamaIndex's own instrumentation and writes a span for each agent workflow step, tool call and model call, with `openinference.span.kind` and `llm.*` attributes. Spanlight reads them for the kind, the model, the token counts and the messages. Send them to Spanlight's [OTLP endpoint](/docs/otlp/) with an OpenTelemetry tracer provider.
+
+<Prerequisites
+  items={[
+    'A running Spanlight instance that your application can reach',
+    'A project API key with the ingest:write scope (the default). Creating one needs the member, admin or owner role',
+    'Python 3.13 (the version this page was tested with)',
+  ]}
+/>
+
+<Verified
+  date="2026-10-19"
+  packages={[
+    { name: 'openinference-instrumentation-llama-index', version: '4.6.0' },
+    { name: 'llama-index-core', version: '0.14.25' },
+    { name: 'llama-index-llms-openai', version: '0.8.3' },
+    { name: 'openai', version: '2.54.0' },
+    { name: 'opentelemetry-sdk', version: '1.45.1' },
+    { name: 'opentelemetry-exporter-otlp-proto-http', version: '1.45.1' },
+  ]}
+  note="Recorded with Python 3.13.9 against a local stand-in for the OpenAI Chat Completions API, not against OpenAI itself. The recorded run is a FunctionAgent with one tool and streaming=False."
+/>
+
+## Install
+
+```bash
+pip install "openinference-instrumentation-llama-index==4.6.0" "llama-index-core==0.14.25" "llama-index-llms-openai==0.8.3" "openai==2.54.0" "opentelemetry-sdk==1.45.1" "opentelemetry-exporter-otlp-proto-http==1.45.1"
+```
+
+Point the OpenTelemetry exporter at Spanlight with the standard variables:
+
+```bash
+export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:8080/v1/otlp/traces
+export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20spl_live_..."
+```
+
+Use the traces-specific endpoint variable with the full path. [Configure an exporter](/docs/otlp/#configure-an-exporter) explains why. OpenInference records the messages on the span by default, so no other setting is needed.
+
+## Set up tracing
+
+Create a tracer provider that exports over OTLP, pass it to the instrumentor, then run your agent as before:
+
+```python
+import asyncio
+
+from llama_index.core.agent.workflow import FunctionAgent
+from llama_index.llms.openai import OpenAI
+from openinference.instrumentation.llama_index import LlamaIndexInstrumentor
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+provider = TracerProvider()
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(provider)
+LlamaIndexInstrumentor().instrument(tracer_provider=provider)
+
+
+def get_weather(city: str, unit: str = "celsius") -> str:
+    """Get the current weather for a city."""
+    return "18 degrees and sunny"
+
+
+agent = FunctionAgent(
+    name="weather_agent",
+    tools=[get_weather],
+    llm=OpenAI(model="gpt-4.1-mini"),
+    system_prompt="Answer weather questions with the get_weather tool.",
+    streaming=False,
+)
+asyncio.run(agent.run("What is the weather in Paris and Tokyo? Use the tool."))
+provider.force_flush()
+```
+
+A long-running server does not need `provider.force_flush()`; a short script does, or its last spans are lost.
+
+## Check it worked
+
+Open **Traces** in the dashboard and pick the project that owns your key. The recorded run gives a trace named `FunctionAgent.run` with 18 spans: the agent's workflow steps (`BaseWorkflowAgent.run_agent_step`, `BaseWorkflowAgent.call_tool` and others), an `OpenAI.achat` span for each model call and a `FunctionTool.acall` span for each tool call. Open an `OpenAI.achat` span: it shows the messages, the answer, the token counts and the cost. The trace's token total is the sum of its two model calls.
+
+## What is recorded
+
+| Span in the recorded run | OpenInference span kind | Spanlight kind |
+| --- | --- | --- |
+| `FunctionAgent.run`, `BaseWorkflowAgent.*` steps | `CHAIN` | `chain` |
+| `FunctionTool.acall` | `TOOL` | `tool` |
+| `OpenAI.achat` | `LLM` | `llm` |
+| `OpenAI._prepare_chat_with_tools` | `LLM` | `chain`, with no model |
+
+On each model call:
+
+- **Provider and model** from `llm.system` and `llm.model_name`. LlamaIndex sends the model name the agent asked for, such as `gpt-4.1-mini`, not the snapshot OpenAI billed; Spanlight prices it at that model's price.
+- **Input, output and cached tokens** from `llm.token_count.prompt`, `llm.token_count.completion` and `llm.token_count.prompt_details.cache_read`. Only model calls carry token counts, so each call is counted once and the workflow steps add nothing to the totals.
+- **Messages and answer** from the flattened `llm.input_messages.*` and `llm.output_messages.*` attributes, including the tool calls the model asked for and the tool results sent back.
+- **Finish reason** from `llm.finish_reason`: `tool_calls` on the turn that called the tool, `stop` on the answer.
+- **Cost**, computed by Spanlight from the model and the token counts; see [How cost is calculated](/docs/concepts/cost/).
+
+**The prompt-building step is not a model call.** LlamaIndex labels `OpenAI._prepare_chat_with_tools` an `LLM` span, but it only assembles the request: it has no messages and no token counts. Spanlight stores it as a `chain` with no model, so it is not listed as a model call and does not mark the trace as having an unknown cost. Its model stays in the span's attributes as `llm.model_name`. See [Span kind](/docs/reference/otlp-mapping/#span-kind).
+
+Workflow and tool spans keep `input.value` and `output.value` as their input and output.
+
+Which attribute fills which field is listed in [OpenInference](/docs/reference/otlp-mapping/#openinference).
+
+## What is not recorded
+
+- **Time to first token.** The recorded run did not stream. On a stream, OpenInference sends the first token as a span event, which Spanlight does not read.
+- **The billed model snapshot.** See the model note above.
+- **Cache writes.** The recorded calls went to an OpenAI stand-in, which reports none.
+- **Streaming agents, query engines, retrievers and other LLM integrations.** They were not recorded, so this page makes no claim about them.
+- **Exporter-computed cost.** Spanlight never reads one; it prices every span itself.
+
+[OTLP compatibility](/docs/reference/otlp-compatibility/#openinference-llama-index-460) shows the recorded scenario field by field.
+
+## Troubleshooting
+
+- **No trace arrives.** Call `instrument()` with the tracer provider before you build the agent, and flush the provider before a script exits. Then work through [No trace arrives](/docs/troubleshooting/#no-trace-arrives).
+- **The exporter gets `422 VALIDATION_ERROR`.** It sent to `/v1/traces`. Set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` to the full `/v1/otlp/traces` URL.
+- **An `OpenAI._prepare_chat_with_tools` span shows as a chain.** That is intended; see [What is recorded](#what-is-recorded).
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'OTLP compatibility', href: '/docs/reference/otlp-compatibility/', description: 'What each recorded exporter captures and loses, scenario by scenario.' },
+    { title: 'OpenInference', href: '/docs/integrations/openinference/', description: 'The OpenAI and LangChain instrumentations.' },
+    { title: 'How cost is calculated', href: '/docs/concepts/cost/', description: 'The price table and when a cost is unknown.' },
+  ]}
+/>

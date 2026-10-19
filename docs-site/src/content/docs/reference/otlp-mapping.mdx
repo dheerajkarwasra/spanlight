@@ -199,7 +199,8 @@ The kind comes from the detected convention. No convention has a kind of its own
 | `gen_ai.operation.name` is `retrieval` | `retrieval` |
 | `gen_ai.operation.name` has any other value | `other` |
 | A `gen_ai` span without `gen_ai.operation.name`, or with an empty one | `llm` |
-| `openinference.span.kind` is `LLM` or `EMBEDDING` | `llm` |
+| `openinference.span.kind` is `LLM` or `EMBEDDING` | `llm`, except the case below |
+| `openinference.span.kind` is `LLM`, the span has `input.value` but no `llm.input_messages.*`, no `llm.output_messages.*` and no input or output token count (also after the `gen_ai` fallback) | `chain`, with no model |
 | `openinference.span.kind` is `TOOL` | `tool` |
 | `openinference.span.kind` is `AGENT` | `agent` |
 | `openinference.span.kind` is `CHAIN` | `chain` |
@@ -215,6 +216,8 @@ The kind comes from the detected convention. No convention has a kind of its own
 | No convention: a client span (OTLP kind 3) with an attribute that starts with `http.` or `url.` | `http` |
 | No convention: an attribute that starts with `db.` | `retrieval` |
 | No convention, otherwise | `other` |
+
+The `LLM` exception covers LlamaIndex, which labels its prompt-building step (`OpenAI._prepare_chat_with_tools`) `LLM` although it makes no model call. Stored as a model call, its model with no cost would mark a fully priced trace as unpriced. The span keeps `llm.model_name` in its attributes and `llm` in `spanlight.operation`.
 
 A `gen_ai` span whose operation is `execute_tool` or `invoke_agent` used to be `llm` and is now `tool` or `agent`, so tool executions and agent steps are no longer counted as LLM calls. Agent spans stored by earlier Spanlight versions keep `chain`. The outer step of an agent framework usually repeats the usage of the calls inside it; [Usage counted once](#usage-counted-once) explains how it is kept out of totals.
 

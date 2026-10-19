@@ -42,6 +42,22 @@ Recorded 2026-10-17T20:37:03Z on python 3.13.9 with OpenTelemetry SDK 1.45.1 (ha
 | `chain_llm` | captured | captured | captured | captured | captured | not captured | captured | captured | captured | not sent by the exporter | captured | not captured | captured | captured | captured |
 | `retriever` | captured | captured | captured | captured | captured | not captured | captured | captured | captured | not sent by the exporter | captured | not captured | captured | captured | captured |
 
+### openinference-langgraph 1.2.16
+
+Recorded 2026-10-19T11:03:56Z on python 3.13.9 with OpenTelemetry SDK 1.45.1 (harness `sdks/fixtures/otlp/record@fbcff15`). Fixture: `sdks/fixtures/otlp/openinference-langgraph/1.2.16.json`.
+
+| Scenario | Provider | Model | Input tokens | Output tokens | Cached | Cache writes | Prompt | Completion | Finish reason | TTFT | Kind | Error class | Trace fields | Metadata | Usage rollup |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `agent_tool_llm` | captured | captured | captured | captured | captured | not captured | captured | captured | captured | not sent by the exporter | captured | not captured | captured | captured | captured |
+
+### openinference-llama-index 4.6.0
+
+Recorded 2026-10-19T11:04:39Z on python 3.13.9 with OpenTelemetry SDK 1.45.1 (harness `sdks/fixtures/otlp/record@fbcff15`). Fixture: `sdks/fixtures/otlp/openinference-llama-index/4.6.0.json`.
+
+| Scenario | Provider | Model | Input tokens | Output tokens | Cached | Cache writes | Prompt | Completion | Finish reason | TTFT | Kind | Error class | Trace fields | Metadata | Usage rollup |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `agent_tool_llm` | captured | captured | captured | captured | captured | not captured | captured | captured | captured | not sent by the exporter | captured | not captured | captured | not captured | captured |
+
 ### openinference-openai 0.1.65
 
 Recorded 2026-10-17T20:44:16Z on python 3.13.9 with OpenTelemetry SDK 1.45.1 (harness `sdks/fixtures/otlp/record@e0893b3`). Fixture: `sdks/fixtures/otlp/openinference-openai/0.1.65.json`.
@@ -53,6 +69,14 @@ Recorded 2026-10-17T20:44:16Z on python 3.13.9 with OpenTelemetry SDK 1.45.1 (ha
 | `streaming` | captured | captured | captured | captured | captured | not captured | captured | captured | captured | not read | captured | not captured | captured | not captured | captured |
 | `tool_call` | captured | captured | captured | captured | captured | not captured | captured | captured | captured | not sent by the exporter | captured | not captured | captured | not captured | captured |
 
+### openinference-openai-agents 2.5.3
+
+Recorded 2026-10-19T11:04:10Z on python 3.13.9 with OpenTelemetry SDK 1.45.1 (harness `sdks/fixtures/otlp/record@fbcff15`). Fixture: `sdks/fixtures/otlp/openinference-openai-agents/2.5.3.json`.
+
+| Scenario | Provider | Model | Input tokens | Output tokens | Cached | Cache writes | Prompt | Completion | Finish reason | TTFT | Kind | Error class | Trace fields | Metadata | Usage rollup |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `agent_tool_llm` | captured | captured | captured | captured | not sent by the exporter | not captured | captured | captured | not sent by the exporter | not sent by the exporter | captured | not captured | captured | not captured | captured |
+
 ### otel-genai-python 2.4b0
 
 Recorded 2026-10-17T20:35:37Z on python 3.13.9 with OpenTelemetry SDK 1.45.1 (harness `sdks/fixtures/otlp/record@e0893b3`). Fixture: `sdks/fixtures/otlp/otel-genai-python/2.4b0.json`.
@@ -63,6 +87,15 @@ Recorded 2026-10-17T20:35:37Z on python 3.13.9 with OpenTelemetry SDK 1.45.1 (ha
 | `chat_tool_call` | captured | captured | captured | captured | not sent by the exporter | not captured | captured | captured | captured | not sent by the exporter | captured | not captured | captured | not captured | captured |
 | `error_429` | captured | captured | not sent by the exporter | not sent by the exporter | not sent by the exporter | not sent by the exporter | captured | not sent by the exporter | not captured | not captured | captured | captured | captured | not captured | captured |
 | `streaming` | captured | captured | captured | captured | not sent by the exporter | not captured | captured | captured | not sent by the exporter | not sent by the exporter | captured | not captured | captured | not captured | captured |
+
+### pydantic-ai 2.57.0
+
+Recorded 2026-10-19T11:04:19Z on python 3.13.9 with OpenTelemetry SDK 1.45.1 (harness `sdks/fixtures/otlp/record@fbcff15`). Fixture: `sdks/fixtures/otlp/pydantic-ai/2.57.0.json`.
+
+| Scenario | Provider | Model | Input tokens | Output tokens | Cached | Cache writes | Prompt | Completion | Finish reason | TTFT | Kind | Error class | Trace fields | Metadata | Usage rollup |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `agent_tool_llm` | captured | captured | captured | captured | captured | not captured | captured | captured | captured | not sent by the exporter | captured | not captured | captured | not captured | captured |
+| `agent_tool_llm_plain_usage` | captured | captured | captured | captured | captured | not captured | captured | captured | captured | not sent by the exporter | captured | not captured | captured | not captured | captured |
 
 ### traceloop-openai 0.62.4
 

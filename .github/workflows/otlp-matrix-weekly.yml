@@ -43,6 +43,10 @@ jobs:
           - openinference-openai
           - openinference-anthropic
           - openinference-langchain
+          - openinference-langgraph
+          - openinference-llama-index
+          - openinference-openai-agents
+          - pydantic-ai
           - traceloop-openai
     defaults:
       run:

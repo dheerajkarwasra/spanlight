@@ -118,3 +118,19 @@ def test_primary_metadata_keys_win_over_gen_ai_ones() -> None:
     assert fields.metadata == {"env": "prod"}
     assert "ai.telemetry.metadata.env" in fields.consumed_keys
     assert "gen_ai.prompt.0.role" in fields.consumed_keys
+
+
+def test_openinference_llm_span_with_only_generic_input_is_a_chain() -> None:
+    # LlamaIndex 0.14's `OpenAI._prepare_chat_with_tools` step, as recorded.
+    prepare = {
+        "openinference.span.kind": "LLM",
+        "llm.model_name": "gpt-4.1-mini",
+        "input.value": '{"tools": []}',
+        "input.mime_type": "application/json",
+    }
+    _, fields = map_fields(prepare, client_span=False)
+    assert (fields.kind, fields.model) == (SpanKind.CHAIN, None)
+    failed_call = {**prepare, "llm.input_messages.0.message.role": "user"}
+    assert map_fields(failed_call, client_span=False)[1].kind is SpanKind.LLM
+    counted = {**prepare, "gen_ai.usage.input_tokens": 5}
+    assert map_fields(counted, client_span=False)[1].kind is SpanKind.LLM

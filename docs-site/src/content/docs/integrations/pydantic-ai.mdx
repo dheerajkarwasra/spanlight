@@ -1,0 +1,135 @@
+---
+title: Pydantic AI
+description: Send Pydantic AI agent traces to Spanlight with Pydantic AI's built-in OpenTelemetry instrumentation, no Logfire needed. Shows the tested setup and what Spanlight records from agent runs, tool calls and model calls.
+---
+
+{/* Sources: sdks/fixtures/otlp/record/python/recipes/pydantic_ai.py, sdks/fixtures/otlp/record/python/recipes/_otel.py, sdks/fixtures/otlp/record/record.py, sdks/fixtures/otlp/pydantic-ai/2.57.0.json, backend/app/ingest/conventions/gen_ai.py, backend/app/ingest/conventions/kinds.py, backend/app/ingest/usage_rollup.py */}
+
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+import Verified from '../../../components/Verified.astro';
+
+Pydantic AI writes OpenTelemetry spans itself, in the OpenTelemetry GenAI vocabulary (`gen_ai.*`): an `invoke_agent` span for the run, a `chat` span for each model call and an `execute_tool` span for each tool call. Spanlight reads them for the kind, the model, the token counts and the messages. Logfire is not needed: hand Pydantic AI an OpenTelemetry tracer provider that exports to Spanlight's [OTLP endpoint](/docs/otlp/).
+
+<Prerequisites
+  items={[
+    'A running Spanlight instance that your application can reach',
+    'A project API key with the ingest:write scope (the default). Creating one needs the member, admin or owner role',
+    'Python 3.13 (the version this page was tested with)',
+  ]}
+/>
+
+<Verified
+  date="2026-10-19"
+  packages={[
+    { name: 'pydantic-ai-slim', version: '2.57.0' },
+    { name: 'openai', version: '3.35.1' },
+    { name: 'opentelemetry-sdk', version: '1.45.1' },
+    { name: 'opentelemetry-exporter-otlp-proto-http', version: '1.45.1' },
+  ]}
+  note="Recorded with Python 3.13.9 against a local stand-in for the OpenAI Chat Completions API, not against OpenAI itself, through Pydantic AI's OpenAIChatModel. Two runs were recorded: one with the default instrumentation settings and one with use_aggregated_usage_attribute_names=False."
+/>
+
+## Install
+
+```bash
+pip install "pydantic-ai-slim[openai]==2.57.0" "openai==3.35.1" "opentelemetry-sdk==1.45.1" "opentelemetry-exporter-otlp-proto-http==1.45.1"
+```
+
+Point the OpenTelemetry exporter at Spanlight with the standard variables:
+
+```bash
+export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:8080/v1/otlp/traces
+export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20spl_live_..."
+```
+
+Use the traces-specific endpoint variable with the full path. [Configure an exporter](/docs/otlp/#configure-an-exporter) explains why. Pydantic AI records the messages on the span by default, so no other setting is needed.
+
+## Set up tracing
+
+Create a tracer provider that exports over OTLP and turn on instrumentation for every agent with `Agent.instrument_all`:
+
+```python
+from openai import AsyncOpenAI
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from pydantic_ai import Agent, InstrumentationSettings
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
+
+provider = TracerProvider()
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(provider)
+Agent.instrument_all(InstrumentationSettings(tracer_provider=provider))
+
+agent = Agent(
+    OpenAIChatModel("gpt-4.1-mini", provider=OpenAIProvider(openai_client=AsyncOpenAI())),
+    name="weather_agent",
+    instructions="Answer weather questions with the get_weather tool.",
+)
+
+
+@agent.tool_plain
+def get_weather(city: str, unit: str = "celsius") -> str:
+    """Get the current weather for a city."""
+    return "18 degrees and sunny"
+
+
+agent.run_sync("What is the weather in Paris and Tokyo? Use the tool.")
+provider.force_flush()
+```
+
+A long-running server does not need `provider.force_flush()`; a short script does, or its last spans are lost.
+
+## Check it worked
+
+Open **Traces** in the dashboard and pick the project that owns your key. The recorded run gives a trace named `invoke_agent weather_agent` with 5 spans: the agent run, two `chat gpt-4.1-mini` model calls and two `execute_tool get_weather` tool calls. Open a `chat` span: it shows the messages, the answer, the token counts and the cost. The trace's token total is the sum of its two model calls.
+
+## What is recorded
+
+| Span in the recorded run | `gen_ai.operation.name` | Spanlight kind |
+| --- | --- | --- |
+| `invoke_agent weather_agent` | `invoke_agent` | `agent` |
+| `chat gpt-4.1-mini` | `chat` | `llm` |
+| `execute_tool get_weather` | `execute_tool` | `tool` |
+
+On each model call:
+
+- **Provider and model** from `gen_ai.provider.name` and `gen_ai.response.model`, the billed snapshot such as `gpt-4.1-mini-2025-04-14`.
+- **Input, output and cached tokens** from `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` and `gen_ai.usage.cache_read.input_tokens`.
+- **Messages and answer** from `gen_ai.input.messages` and `gen_ai.output.messages`, including the tool calls the model asked for and the tool results sent back.
+- **Finish reason** from `gen_ai.response.finish_reasons`. Pydantic AI writes `tool_call`, which Spanlight stores as `tool_calls`, and `stop` on the answer.
+- **Cost**, computed by Spanlight from the model and the token counts; see [How cost is calculated](/docs/concepts/cost/).
+
+**The run total is counted once.** With the default settings, Pydantic AI puts the run's total usage on the `invoke_agent` span under `gen_ai.aggregated_usage.*`, which Spanlight does not read as usage, so only the `chat` spans are counted. With `use_aggregated_usage_attribute_names=False` (the second recorded run) the agent span repeats the total under `gen_ai.usage.*`. Spanlight then marks it a usage rollup, shown as "Counted on child spans", and still counts only the `chat` spans: both runs store the same trace totals. See [Usage counted once](/docs/reference/otlp-mapping/#usage-counted-once).
+
+Which attribute fills which field is listed in [OpenTelemetry GenAI](/docs/reference/otlp-mapping/#opentelemetry-genai-gen_ai).
+
+## What is not recorded
+
+- **Time to first token.** The recorded runs did not stream.
+- **Cache writes.** The recorded calls went to an OpenAI stand-in, which reports none.
+- **The session.** Pydantic AI's `gen_ai.conversation.id` is not read as the trace's session; set `session.id` on the spans if you need one (see [Trace fields](/docs/reference/otlp-mapping/#trace-fields)).
+- **Exporter-computed cost.** Pydantic AI sends `operation.cost` on each `chat` span; Spanlight never reads it and prices every span itself.
+- **Other providers, streaming, structured output and Logfire.** They were not recorded, so this page makes no claim about them.
+
+[OTLP compatibility](/docs/reference/otlp-compatibility/#pydantic-ai-2570) shows both recorded runs field by field.
+
+## Troubleshooting
+
+- **No trace arrives.** Call `Agent.instrument_all` with the tracer provider before the first run, and flush the provider before a script exits. Then work through [No trace arrives](/docs/troubleshooting/#no-trace-arrives).
+- **The exporter gets `422 VALIDATION_ERROR`.** It sent to `/v1/traces`. Set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` to the full `/v1/otlp/traces` URL.
+- **The agent span shows tokens but says "Counted on child spans".** It is a usage rollup, so its tokens are not added to the trace a second time; see [What is recorded](#what-is-recorded).
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'OTLP compatibility', href: '/docs/reference/otlp-compatibility/', description: 'What each recorded exporter captures and loses, scenario by scenario.' },
+    { title: 'Usage counted once', href: '/docs/reference/otlp-mapping/#usage-counted-once', description: 'How a span that repeats its children\'s usage is kept out of totals.' },
+    { title: 'How cost is calculated', href: '/docs/concepts/cost/', description: 'The price table and when a cost is unknown.' },
+  ]}
+/>

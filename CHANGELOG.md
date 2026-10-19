@@ -6,6 +6,7 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 ### Added
 
+- **Agent framework guides with recorded fixtures.** New integration pages for the OpenAI Agents SDK, LangGraph, Pydantic AI and LlamaIndex, each backed by a recorded OTLP fixture of a small agent run (one tool round trip, two model calls) through the framework's own OpenTelemetry instrumentation: `openinference-openai-agents` 2.5.3, `openinference-langgraph` (LangGraph 1.2.16), `pydantic-ai` 2.57.0 and `openinference-llama-index` 4.6.0. The fixtures are on the OTLP compatibility page and in the weekly matrix.
 - **Search what the model said.** The Traces search box (and `q` on `GET /api/v1/projects/{id}/traces` and exports) now also matches span content: with three or more characters it searches the end of each span's input and the start of its output (2,000 characters of each) for spans in the selected time range. A `pg_trgm` index (migration 1007, built concurrently) answers it.
 - **Trace compare.** Select two traces and choose **Compare** to see them step by step: spans are paired by name and order, with the change in duration, tokens and cost, whether the input and output changed, and steps that exist or failed on one side only. Also `GET /api/v1/projects/{project_id}/traces/compare?a=&b=`.
 - **`agent` span kind.** OpenTelemetry GenAI `invoke_agent` and `create_agent`, OpenInference `AGENT` and Traceloop `agent` spans are now `agent` instead of `chain`, with their own colour and icon in the waterfall. Native ingestion accepts `"kind": "agent"`. Spans stored earlier keep `chain`. Migration `1006` adds the enum value; Postgres cannot remove it, so the downgrade sets `agent` spans back to `chain` instead.
@@ -19,6 +20,10 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 - **Trace detail returns at most 8 MB of payloads.** Spans past that point in a very large trace come back with `payload_omitted: true` and no input or output; the new `GET /api/v1/projects/{project_id}/traces/{trace_id}/spans/{span_id}` returns one span whole, and the dashboard loads it when the span is opened. Long texts open at their first 20,000 characters and large JSON at its first 200 entries, with **Show all**.
 - **Memory stays bounded with larger payloads.** The gateway's write backlog is also bounded by payload bytes (`GATEWAY_RECORD_BACKLOG_MB`, default 128), and JSONL exports cut a batch at 64 MiB of payloads as well as at 2,000 spans.
 - **The quickstart runs released images.** `deploy/compose.yaml` takes the images from `SPANLIGHT_IMAGE` and `SPANLIGHT_WEB_IMAGE`, which `deploy/.env.example` sets to the GHCR images of the current release, so `docker compose ... up -d` pulls instead of building. Leave both unset to build from the checkout with `--build` (`spanlight:local`, `spanlight-web:local`), as before.
+
+### Fixed
+
+- **LlamaIndex prompt-building spans no longer mark a trace as unpriced.** LlamaIndex labels `OpenAI._prepare_chat_with_tools` an OpenInference `LLM` span although it makes no model call. An OpenInference `LLM` span with only `input.value` (no messages and no token counts) is now stored as a `chain` with no model.
 
 ## [0.6.0] - 2026-10-19
 

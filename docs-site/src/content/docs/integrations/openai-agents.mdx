@@ -1,0 +1,138 @@
+---
+title: OpenAI Agents SDK
+description: Send OpenAI Agents SDK traces to Spanlight with the OpenInference instrumentation, exporting through an OpenTelemetry tracer provider. Shows the tested setup and what Spanlight records from agents, turns, tools and model calls.
+---
+
+{/* Sources: sdks/fixtures/otlp/record/python/recipes/openinference_openai_agents.py, sdks/fixtures/otlp/record/python/recipes/_otel.py, sdks/fixtures/otlp/record/record.py, sdks/fixtures/otlp/openinference-openai-agents/2.5.3.json, backend/app/ingest/conventions/openinference.py */}
+
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+import Verified from '../../../components/Verified.astro';
+
+The OpenAI Agents SDK traces its runs with its own tracing API. The OpenInference instrumentation for it turns those traces into OpenTelemetry spans with `openinference.span.kind` and `llm.*` attributes, which Spanlight reads for the kind, the model, the token counts and the messages. Send them to Spanlight's [OTLP endpoint](/docs/otlp/) with an OpenTelemetry tracer provider.
+
+<Prerequisites
+  items={[
+    'A running Spanlight instance that your application can reach',
+    'A project API key with the ingest:write scope (the default). Creating one needs the member, admin or owner role',
+    'Python 3.13 (the version this page was tested with)',
+  ]}
+/>
+
+<Verified
+  date="2026-10-19"
+  packages={[
+    { name: 'openinference-instrumentation-openai-agents', version: '2.5.3' },
+    { name: 'openai-agents', version: '0.24.0' },
+    { name: 'openai', version: '3.35.1' },
+    { name: 'opentelemetry-sdk', version: '1.45.1' },
+    { name: 'opentelemetry-exporter-otlp-proto-http', version: '1.45.1' },
+  ]}
+  note="Recorded with Python 3.13.9 against a local stand-in for the OpenAI Chat Completions API, not against OpenAI itself. The agent used the SDK's Chat Completions model; the default Responses API model was not recorded."
+/>
+
+## Install
+
+```bash
+pip install "openinference-instrumentation-openai-agents==2.5.3" "openai-agents==0.24.0" "openai==3.35.1" "opentelemetry-sdk==1.45.1" "opentelemetry-exporter-otlp-proto-http==1.45.1"
+```
+
+Point the OpenTelemetry exporter at Spanlight with the standard variables:
+
+```bash
+export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:8080/v1/otlp/traces
+export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20spl_live_..."
+```
+
+Use the traces-specific endpoint variable with the full path. [Configure an exporter](/docs/otlp/#configure-an-exporter) explains why.
+
+## Set up tracing
+
+Create a tracer provider that exports over OTLP and pass it to the instrumentor before you run an agent. The recorded agent used the Chat Completions model:
+
+```python
+import asyncio
+
+from agents import Agent, OpenAIChatCompletionsModel, Runner, function_tool
+from openai import AsyncOpenAI
+from openinference.instrumentation.openai_agents import OpenAIAgentsInstrumentor
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+provider = TracerProvider()
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(provider)
+OpenAIAgentsInstrumentor().instrument(tracer_provider=provider)
+
+
+@function_tool
+def get_weather(city: str, unit: str = "celsius") -> str:
+    """Get the current weather for a city."""
+    return "18 degrees and sunny"
+
+
+agent = Agent(
+    name="weather_agent",
+    instructions="Answer weather questions with the get_weather tool.",
+    model=OpenAIChatCompletionsModel(model="gpt-4.1-mini", openai_client=AsyncOpenAI()),
+    tools=[get_weather],
+)
+asyncio.run(Runner.run(agent, "What is the weather in Paris and Tokyo? Use the tool."))
+provider.force_flush()
+```
+
+By default the instrumentor replaces the SDK's trace processors with its own, so the run is no longer sent to OpenAI's trace dashboard. A long-running server does not need `provider.force_flush()`; a short script does, or its last spans are lost.
+
+## Check it worked
+
+Open **Traces** in the dashboard and pick the project that owns your key. The recorded run gives a trace named `Agent workflow` with 9 spans: the workflow, the `weather_agent` agent, one `turn` per model turn, a `generation` span for each model call and a `get_weather` span for each tool call. Open a `generation` span: it shows the messages, the answer, the token counts and the cost. The trace's token total is the sum of its two model calls.
+
+## What is recorded
+
+| Span in the recorded run | OpenInference span kind | Spanlight kind |
+| --- | --- | --- |
+| `Agent workflow` (the root), `weather_agent` | `AGENT` | `agent` |
+| The inner `Agent workflow` span, `turn` | `CHAIN` | `chain` |
+| `get_weather` | `TOOL` | `tool` |
+| `generation` | `LLM` | `llm` |
+
+On each model call:
+
+- **Provider and model** from `llm.system` and `llm.model_name`. The instrumentation sends the model name the agent asked for, such as `gpt-4.1-mini`, not the snapshot OpenAI billed; Spanlight prices it at that model's price.
+- **Input and output tokens** from `llm.token_count.prompt` and `llm.token_count.completion`. Only model calls carry token counts, so each call is counted once and the agent and turn spans add nothing to the totals.
+- **Messages and answer** from the flattened `llm.input_messages.*` and `llm.output_messages.*` attributes, including the tool calls the model asked for and the tool results sent back.
+- **Cost**, computed by Spanlight from the model and the token counts; see [How cost is calculated](/docs/concepts/cost/).
+
+Tool spans keep the tool's arguments and result (`input.value` and `output.value`) as their input and output; the recorded agent and turn spans carry neither.
+
+Which attribute fills which field is listed in [OpenInference](/docs/reference/otlp-mapping/#openinference).
+
+## What is not recorded
+
+- **Cached tokens.** Version 2.5.3 sends only the prompt and completion counts on `generation` spans, so cached input is priced at the full input rate.
+- **Finish reason.** The `generation` spans carry no `llm.finish_reason`.
+- **Time to first token.** The recorded run did not stream.
+- **The billed model snapshot.** See the model note above.
+- **The Responses API model, streaming, handoffs, guardrails and the realtime API.** They were not recorded, so this page makes no claim about them.
+- **Exporter-computed cost.** Spanlight never reads one; it prices every span itself.
+
+[OTLP compatibility](/docs/reference/otlp-compatibility/#openinference-openai-agents-253) shows the recorded scenario field by field.
+
+## Troubleshooting
+
+- **No trace arrives.** Call `instrument()` before the first `Runner.run`, pass it the tracer provider, and flush the provider before a script exits. Then work through [No trace arrives](/docs/troubleshooting/#no-trace-arrives).
+- **The exporter gets `422 VALIDATION_ERROR`.** It sent to `/v1/traces`. Set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` to the full `/v1/otlp/traces` URL.
+- **Runs stopped showing in OpenAI's trace dashboard.** That is the instrumentor's default; see [Set up tracing](#set-up-tracing).
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'OTLP compatibility', href: '/docs/reference/otlp-compatibility/', description: 'What each recorded exporter captures and loses, scenario by scenario.' },
+    { title: 'OTLP ingestion', href: '/docs/otlp/', description: 'The endpoint, the limits and trace metadata.' },
+    { title: 'How cost is calculated', href: '/docs/concepts/cost/', description: 'The price table and when a cost is unknown.' },
+  ]}
+/>
