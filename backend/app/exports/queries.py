@@ -13,13 +13,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.db.models import Span, Trace
-from app.explorer.content_search import text_search
+from app.explorer.content_search import content_start, text_search
 from app.explorer.metadata_filters import metadata_conditions
 from app.exports.schemas import ExportFilters, SpanExportRow, TraceExportRow
 
 
-def trace_conditions(project_id: uuid.UUID, filters: ExportFilters) -> list[ColumnElement[bool]]:
-    """The conditions of the trace list for `filters`, with the same meaning for each filter."""
+def trace_conditions(
+    project_id: uuid.UUID, filters: ExportFilters, content_from: datetime
+) -> list[ColumnElement[bool]]:
+    """The conditions of the trace list for `filters`, with the same meaning for each filter.
+
+    `content_from` is where `q` searches span content (`content_search.content_start`).
+    """
     conditions: list[ColumnElement[bool]] = [
         Trace.project_id == project_id,
         Trace.started_at >= filters.from_,
@@ -57,7 +62,7 @@ def trace_conditions(project_id: uuid.UUID, filters: ExportFilters) -> list[Colu
             )
         )
     if filters.q:
-        conditions.append(text_search(filters.q, project_id, filters.from_, filters.to))
+        conditions.append(text_search(filters.q, project_id, content_from, filters.to))
     return conditions
 
 
@@ -69,7 +74,9 @@ async def count_traces_up_to(
     A project can hold millions of traces in a 90-day window; the caller only needs to know
     whether the count passes `cap`, so the scan stops once it has seen one more than that.
     """
-    limited = select(Trace.trace_id).where(*trace_conditions(project_id, filters)).limit(cap + 1)
+    content_from = await content_start(db, filters.from_, filters.to)
+    conditions = trace_conditions(project_id, filters, content_from)
+    limited = select(Trace.trace_id).where(*conditions).limit(cap + 1)
     return int(await db.scalar(select(func.count()).select_from(limited.subquery())) or 0)
 
 
@@ -77,12 +84,16 @@ type Cursor = tuple[datetime, str]
 
 
 def _batch_query(
-    project_id: uuid.UUID, filters: ExportFilters, after: Cursor | None, size: int
+    project_id: uuid.UUID,
+    filters: ExportFilters,
+    content_from: datetime,
+    after: Cursor | None,
+    size: int,
 ) -> Select[Trace]:
     """Traces newest first, in the order of the trace list, after the cursor."""
     query = (
         select(Trace)
-        .where(*trace_conditions(project_id, filters))
+        .where(*trace_conditions(project_id, filters, content_from))
         .order_by(Trace.started_at.desc(), Trace.trace_id.desc())
         .limit(size)
     )
@@ -114,7 +125,9 @@ async def fetch_trace_batch(
     cursor is the last trace returned. A trace with more than `max_spans` spans comes back
     alone and without spans: the caller streams them with `fetch_span_chunk`.
     """
-    traces = list((await db.scalars(_batch_query(project_id, filters, after, size))).all())
+    content_from = await content_start(db, filters.from_, filters.to)
+    query = _batch_query(project_id, filters, content_from, after, size)
+    traces = list((await db.scalars(query)).all())
     if max_spans is None:
         return [_trace_row(trace, []) for trace in traces]
 

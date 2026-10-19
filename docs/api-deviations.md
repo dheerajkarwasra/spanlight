@@ -193,7 +193,8 @@ original design; everything else is a clarification.
   is answered `503 SERVICE_UNAVAILABLE` with `Retry-After`; narrow the window or the text. Exports apply
   the same `q`. The search index is only usable under row-level security when the migrations (and
   `spanlight ensure-app-role`) run as a superuser, which marks the search functions LEAKPROOF (migration
-  1006 explains why that is safe); otherwise content search is correct but scans the window.
+  1006 explains why that is safe). Otherwise content search covers only the spans that started in the last
+  hour of the window (name and id matches still cover the whole window), so it stays well under the timeout.
 - Money is a decimal string with up to 8 fractional digits, e.g. `"0.00021000"`.
 
 ## Ingestion (`POST /v1/traces`)

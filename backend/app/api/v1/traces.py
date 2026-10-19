@@ -27,7 +27,7 @@ from app.core.pagination import DEFAULT_PAGE_SIZE, PageLimit, decode_cursor, enc
 from app.core.permissions import Permission
 from app.db.models import Trace
 from app.explorer import trace_sort
-from app.explorer.content_search import text_search
+from app.explorer.content_search import content_start, text_search
 from app.explorer.filter_values import filter_values
 from app.explorer.metadata_filters import check_metadata_filter
 from app.explorer.score_filters import check_score_filters
@@ -152,7 +152,8 @@ async def list_traces(
         has_retries=has_retries,
     )
     if q:
-        page_query = page_query.where(text_search(q, project.id, window.start, window.end))
+        content_from = await content_start(db, window.start, window.end)
+        page_query = page_query.where(text_search(q, project.id, content_from, window.end))
     page_query = trace_sort.apply(page_query, sort=sort, cursor=cursor).limit(limit + 1)
     paged, query = page_select(page_query)
     query = query.order_by(*trace_sort.ordering(sort, paged))

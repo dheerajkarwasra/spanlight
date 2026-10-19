@@ -4,12 +4,17 @@
 of its spans in the window carries `q` in a preview of its input or output. The preview is the
 last 2,000 characters of the input and the first 2,000 of the output as JSON text, indexed with
 `pg_trgm` by migration 1006 (which also explains why the search functions are LEAKPROOF).
+
+Row-level security lets Postgres use that index only when both search functions are marked
+LEAKPROOF, which needs a superuser at migration time. Without the marks every search would scan
+the spans of the whole window, so content is then searched in the window's last hour only.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from sqlalchemy import Text, func, or_, select
+from sqlalchemy import Text, func, or_, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.db.models import Span, Trace
@@ -20,12 +25,37 @@ from app.explorer.trace_queries import escape_like
 SEARCH_TEXT = func.spanlight_search_text(Span.input, Span.output, type_=Text)
 # A trigram index needs three characters to narrow anything; shorter text searches names only.
 MIN_CONTENT_QUERY = 3
+# Whether the planner may use the index under row-level security: both search functions are
+# marked LEAKPROOF. Read from the catalog for every search, so a restored database that lost the
+# mark (`spanlight ensure-app-role` sets it again) is never taken for an indexed one.
+INDEX_USABLE = text(
+    "SELECT coalesce(bool_and(proleakproof), false) FROM pg_catalog.pg_proc WHERE oid IN ("
+    "'pg_catalog.texticlike(text, text)'::regprocedure, "
+    "to_regprocedure('spanlight_search_text(jsonb, jsonb)'))"
+)
+# How far back content is searched when the index cannot be used.
+UNINDEXED_SPAN = timedelta(hours=1)
+
+
+async def content_start(db: AsyncSession, start: datetime, end: datetime) -> datetime:
+    """Where content search starts for the window `[start, end)`.
+
+    `start`, or the window's last hour when the index cannot be used. A plain timestamp, not a
+    condition in the query, so the planner bounds the span scan with the time index.
+    """
+    usable = await db.scalar(INDEX_USABLE)
+    return start if usable else max(start, end - UNINDEXED_SPAN)
 
 
 def text_search(
-    q: str, project_id: uuid.UUID, start: datetime, end: datetime
+    q: str, project_id: uuid.UUID, content_from: datetime, end: datetime
 ) -> ColumnElement[bool]:
-    """The traces (started in `[start, end)`) whose name, id or span content matches `q`."""
+    """The traces whose name, id or content of a span started in `[content_from, end)` match `q`.
+
+    The caller limits the traces to its window; `content_from` comes from `content_start`.
+    """
+    # Always ends with `%`, never with an escape character: the LEAKPROOF mark on `texticlike`
+    # (migration 1006) relies on the app never sending a pattern that can fail on row data.
     pattern = f"%{escape_like(q)}%"
     matches = [Trace.name.ilike(pattern, escape="\\"), Trace.trace_id == q.lower()]
     if len(q) >= MIN_CONTENT_QUERY:
@@ -33,7 +63,7 @@ def text_search(
         # searched, which keeps the scan inside the window.
         matching_spans = select(Span.trace_id).where(
             Span.project_id == project_id,
-            Span.started_at >= start,
+            Span.started_at >= content_from,
             Span.started_at < end,
             SEARCH_TEXT.ilike(pattern, escape="\\"),
         )

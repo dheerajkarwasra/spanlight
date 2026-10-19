@@ -34,7 +34,7 @@ The list shows the newest traces first, 50 at a time. Choose **Load more** under
 
 ### Search
 
-The search box matches the trace name (any part, ignoring case), a full trace ID, or what a span sent and got back: with three or more characters it also searches the end of each span's input (where the latest chat message is) and the start of its output, up to 2,000 characters of each. Only spans that started inside the selected time range are searched. It applies about 0.3 seconds after you stop typing. Press **Enter** to apply it at once and **Esc** to clear it.
+The search box matches the trace name (any part, ignoring case), a full trace ID, or what a span sent and got back: with three or more characters it also searches the end of each span's input (where the latest chat message is) and the start of its output, up to 2,000 characters of each. Only spans that started inside the selected time range are searched. On a server whose database migrations do not run as a Postgres superuser, the content search covers the last hour of the range only (see [Upgrades](/docs/self-hosting/upgrades/)). It applies about 0.3 seconds after you stop typing. Press **Enter** to apply it at once and **Esc** to clear it.
 
 To jump straight to one trace, paste its 32-character ID into the command palette instead (see below).
 

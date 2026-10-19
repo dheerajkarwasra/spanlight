@@ -14,13 +14,15 @@ output, as JSON text. A GIN index with `pg_trgm`'s `gin_trgm_ops` over that func
 Row-level security: `spans` forces its policy, and Postgres only uses a condition as an index
 condition ahead of the policy when every function in it that reads a column is LEAKPROOF (it
 reveals nothing about its arguments except through its result). Without that the index is never
-used and a search scans the whole window (21-23 s on a 4.2 M-span project). Both functions are
-leakproof in fact: `spanlight_search_text` only slices and concatenates text and cannot fail on
-stored data, and `texticlike` (the function behind `ILIKE`) can only fail on a malformed pattern,
-which is the searcher's own input, never a stored row. Marking them is not a bypass: the policy
-still filters every row. Only a superuser can mark a function LEAKPROOF, so the marks are applied
-when the migration runs as one (Compose and Railway do) and skipped otherwise: search is then
-correct but slow. `texticlike` is a catalog function, so `pg_dump` does not keep its mark;
+used and a search scans the whole window (21-23 s on a 4.2 M-span project).
+`spanlight_search_text` only slices and joins text and cannot fail on any stored value.
+`texticlike` (the function behind `ILIKE`) raises an error only for a pattern that ends in a lone
+escape character, and whether it does then depends on the row's text; the app never sends such a
+pattern (`app.explorer.content_search` always ends it with `%`), so for the app it reveals nothing
+but its result. Marking them is not a bypass: the policy still filters every row. Only a superuser
+can mark a function LEAKPROOF, so the marks are applied when the migration runs as one (Compose
+and Railway do) and skipped otherwise; content search then covers only the window's last hour.
+`texticlike` is a catalog function, so `pg_dump` does not keep its mark;
 `spanlight ensure-app-role`, which runs after every restore and on every Compose deploy, sets it
 again (`app.db.roles`).
 
