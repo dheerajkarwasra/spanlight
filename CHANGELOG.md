@@ -2,7 +2,12 @@
 
 All notable changes to Spanlight are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project is pre-1.0, so minor versions may change behaviour; breaking changes are called out.
 
-## [0.6.0] - Unreleased
+## [Unreleased]
+
+## [0.6.0] - 2026-10-19
+
+The first tagged server release: images on GHCR, and every change recorded under 0.2.0 to 0.5.0 below ships in it.
+
 
 Prompts, datasets and evals: manage prompts as versions, score traces by hand or automatically, and compare a change on your own test cases before it ships.
 
@@ -161,7 +166,7 @@ Prompts, datasets and evals: manage prompts as versions, score traces by hand or
 
 Run `spanlight migrate` and then `spanlight ensure-app-role` (or restart the stack) after upgrading. Migrations 0500 to 0506 add prompts, versions and labels, the span-to-version link, scores and score configs, datasets, annotation queues, evaluators and their runs, and experiments, runs and items. Migration 0507 adds `explain_month_to_date_cost`, the function the explain budget sums with; `ensure-app-role` grants the app role permission to call it. Migrations 0501 and 0502 build their indexes on `spans` and `traces` `CONCURRENTLY`: writes continue, and on a large table the build takes a few minutes and extra disk. 0502 also adds `traces.has_scores`; a retry of a failed `CONCURRENTLY` build drops its half-built index first. Migration 0600 adds `spans.service_tier`, `spans.web_search_requests` and `spans.fee_usd` (empty on older spans, with no backfill) and the `server_tool_fees` table; 0601 adds billing sources, their project mappings, fetch runs and provider cost lines; 0602 adds the daily cost rollups and `user_stats_daily.computed_at`. Run `spanlight sync-prices` (the api and worker do it when they start) to load the `2026-10-16` prices and fees. Migrations 0700 to 0705 add the provider error columns to `spans` and the retry columns to `traces` (empty on older rows; the new checks are validated without blocking writes), the hourly error rollup, the provider incident tables, the telemetry loss tables, the insight feedback table and the `error_calls` alert metric. The error rollup is backfilled over each project's retention by the rollup job. Rolling back below 0700 deletes the spans of class `gateway`, which the older check does not allow. Migrations 0800 to 0804 add `traces.metadata` (empty on older traces, with no backfill) and the `merge_trace_metadata` function (callable by every role: no `ensure-app-role` step is needed for it), `projects.promoted_metadata_keys`, the `attribution_rollups_daily` table, the `attribution` export kind and the `metadata` and `trace_name` budget scopes with a 400-character `scope_id`. They take short locks only. Rolling back below 0804 deletes the budgets of the two new scopes and any budget whose `scope_id` is longer than 200 characters; below 0803, the attribution exports (their files stay in the bucket); below 0800, all trace metadata. Migration 0900 adds `spans.usage_rollup` (`false` on older spans, with no backfill: run `spanlight recompute-usage-rollups --since 30d` to flag older traces); it changes the catalog only and takes a short lock. Rolling back below it drops the column. Migration 1000 adds `reason` (`manual` on every existing item) and `reason_detail` to `annotation_queue_items`, with an index built `CONCURRENTLY`; 1001 adds `review_policies` and `review_selections` and the review and replay audit actions; 1002 adds `replay_runs`; 1003 allows the job outcome `already_selected`. The three new tables use forced row-level security. Rolling back below 1000 drops the reasons; below 1003, the jobs that ended `already_selected` lose their outcome.
 
-## [0.5.0] - Unreleased
+## [0.5.0] - Not tagged; included in 0.6.0
 
 The Doctor: Spanlight reads your traces, opens findings about how your application calls LLMs, and shows what changed between releases and who drives cost.
 
@@ -202,7 +207,7 @@ The Doctor: Spanlight reads your traces, opens findings about how your applicati
 
 Run `spanlight migrate` (or restart the stack) after upgrading. Migrations 0400 to 0405 add the error class, request hash and finish reason columns on spans, the insights, detector runs and insight explanations tables, the project's insight channel list, the per-user daily statistics table and a release index on traces. Migrations 0400, 0401 and 0405 build their indexes `CONCURRENTLY`: writes continue, and on a large table the build takes a few minutes and extra disk.
 
-## [0.4.0] - Unreleased
+## [0.4.0] - Not tagged; included in 0.6.0
 
 Alerts and budgets: get told when error rate, latency, volume or cost crosses a line, and stop runaway spend at the gateway.
 
@@ -249,7 +254,7 @@ Alerts and budgets: get told when error rate, latency, volume or cost crosses a 
 
 Run `spanlight migrate` (or restart the stack) after upgrading. Migrations 0300 to 0307 add the outbox lease columns, the alert channel, rule, state, event and budget tables, the weekly digest switch on projects, and three indexes. Migrations 0302 (end-user traces), 0306 (a channel's deliveries) and 0307 (weekly digest lookups) build their indexes `CONCURRENTLY`: writes continue, and on a large table the build takes a few minutes and extra disk.
 
-## [0.3.0] - Unreleased
+## [0.3.0] - Not tagged; included in 0.6.0
 
 The LLM gateway and the Integration Lab: point the official OpenAI or Anthropic client at Spanlight with one base URL and every call is traced, priced, limited and, if you configure it, routed, retried, cached and fault-injected.
 
@@ -281,7 +286,7 @@ The LLM gateway and the Integration Lab: point the official OpenAI or Anthropic 
 - The gateway never forwards the client's `Authorization`, `x-api-key`, cookies or `x-spanlight-*` headers to a provider, does not follow redirects, and sends no CORS headers.
 - Fault injection cannot run on a key whose environment is `production`, checked when a profile is attached and again on every call.
 
-## [0.2.0] - Unreleased
+## [0.2.0] - Not tagged; included in 0.6.0
 
 Production hardening: accounts and access control, a versioned API, durable background work, backups and exports, observability of Spanlight itself, and documentation.
 
