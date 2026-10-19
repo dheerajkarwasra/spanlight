@@ -22,14 +22,14 @@ Spanlight records every LLM call your application makes: prompts and completions
 
 ## Features
 
-- **Trace explorer and sessions.** Search traces, read a span waterfall, and replay multi-turn conversations as chat with cost and latency per turn.
+- **Trace explorer and sessions.** Search traces by name or by what the model was sent and said, read a span waterfall with agent, tool and model steps, compare two traces step by step, and replay multi-turn conversations as chat with cost and latency per turn. Inputs and outputs are kept up to 1 MB each, so long RAG contexts stay readable.
 - **Cost you can audit.** Prices come from a versioned table that covers cache writes, long-prompt tiers, batch, flex and priority rates, and web search fees. Every call has a line-by-line cost breakdown. A cost that cannot be known shows as _unknown_ with the reason, never as $0.
 - **Checked against the bill.** Connect an Anthropic or OpenAI admin key, or upload a CSV, and Spanlight compares traced spend with what the provider billed, every day.
 - **Attribution and budgets.** Tag traces with up to 32 metadata pairs (customer, feature, team) and see spend, calls and errors per value. Budgets can alert on, or block, spend per project, gateway key, user, model, metadata pair or trace name.
 - **The Doctor and provider health.** Fifteen deterministic detectors flag known failure patterns (retry storms, ignored `Retry-After`, truncated outputs, tool loops, cost and latency spikes and more), each with its evidence and a suggested fix. Provider health tells a provider outage or rate limit apart from your own bug, with the provider's status page incidents alongside.
 - **A gateway for OpenAI and Anthropic.** The official SDKs work against it unchanged, streaming and tool calls included. It adds sealed provider credentials, routes with retries and fallbacks, per-key rate limits, an exact-match cache, and an Integration Lab that injects real provider failures on non-production keys.
 - **Prompts, evals and a daily review.** Versioned prompts with labels, a playground, exact replay of any recorded call, datasets, experiments with 95% confidence intervals on pass rates, and a nightly queue of the traces worth reading.
-- **OpenTelemetry native.** `POST /v1/otlp/traces` reads the GenAI conventions (`gen_ai.*`, also written by LiteLLM), OpenInference, OpenLLMetry (Traceloop) and the Vercel AI SDK, and counts usage once across nested spans.
+- **OpenTelemetry native.** `POST /v1/otlp/traces` reads the GenAI conventions (`gen_ai.*`, also written by LiteLLM), OpenInference, OpenLLMetry (Traceloop) and the Vercel AI SDK, and counts usage once across nested spans. Recorded fixtures cover LangChain, LangGraph, LlamaIndex, Pydantic AI and the OpenAI Agents SDK. A Python SDK is on PyPI; a TypeScript SDK for Node.js is in [`sdks/typescript/`](sdks/typescript/) (not on npm yet).
 - **Built for teams, private by design.** Organizations, projects, roles, scoped API keys and an audit log. Postgres row-level security isolates every project's data, and secrets are redacted from payloads before storage.
 - **Self-hosted on one database.** Postgres is the only datastore, the job queue included. The core is MIT licensed.
 
@@ -113,15 +113,73 @@ The wizard shows your first trace live. From there you have the overview dashboa
 
 ## How it works
 
-```
- your app ──SDK / OTLP──▶ web (Caddy) ──▶ api (FastAPI) ──▶ Postgres ◀── worker
-          ──/gw/v1──────▶  SPA, /docs      auth, ingest,     traces, spans,   rollups, reconciliation,
-                                           queries, gateway  rollups, jobs    review, email, retention
-                                               │
-                                               └──▶ OpenAI / Anthropic / OpenAI-compatible
+**In one sentence:** your app sends a record of every LLM call to Spanlight, Spanlight prices it, stores it in Postgres and checks it for problems, and you read the results in the dashboard.
+
+```mermaid
+flowchart LR
+    app["Your app"]
+    subgraph spanlight["Spanlight (one Docker image)"]
+        web["web<br/>dashboard and docs"]
+        api["api<br/>receives calls, prices them,<br/>answers the dashboard"]
+        gw["gateway<br/>optional proxy to providers"]
+        worker["worker<br/>background jobs"]
+        pg[("Postgres<br/>the only database")]
+    end
+    llm["OpenAI / Anthropic /<br/>OpenAI-compatible"]
+
+    app -- "SDK or OpenTelemetry" --> api
+    app -- "or change base_url" --> gw
+    gw --> llm
+    gw --> api
+    web --> api
+    api --> pg
+    worker --> pg
 ```
 
-One Docker image runs three roles: `api`, `worker` and `web`. Ingestion is synchronous and idempotent, so a replayed batch upserts the same rows and SDK retries never double-count. The gateway runs inside the api by default and can run on its own with `GATEWAY_MODE=standalone`. The reasons behind each choice are in the [decision records](docs/decisions/).
+### 1. Your app sends each LLM call
+
+Pick one of three ways in. They all end up in the same place:
+
+| Way in | What you change | Good for |
+| --- | --- | --- |
+| **Python SDK** | `spanlight.init()` and wrap your OpenAI or Anthropic client | Python apps; adds your own steps with `@observe` |
+| **OpenTelemetry** | Point any OTLP exporter at `/v1/otlp/traces` | Any language or framework (LangChain, LlamaIndex, Vercel AI SDK, …) |
+| **Gateway** | Change your client's `base_url` to Spanlight | No code changes; also adds retries, fallbacks, caching and budgets |
+
+The SDK sends calls in the background, compressed and in batches, and never throws an error into your code.
+
+### 2. Spanlight processes each call
+
+When a batch arrives, the api does five things, in one database transaction:
+
+1. **Checks** the data and rejects anything malformed, with a reason.
+2. **Cleans** it: removes secrets such as API keys from prompts and outputs, and keeps each input and output up to 1 MB.
+3. **Prices** it from a versioned price table: cached tokens, cache writes, long-prompt rates, batch discounts and web-search fees. If a price can't be known, the cost is stored as *unknown*, never as $0.
+4. **Stores** it in Postgres. Sending the same batch twice changes nothing, so SDK retries never double-count.
+5. **Totals** each trace (all the calls of one request) so the dashboard reads fast.
+
+### 3. Background jobs keep looking
+
+The worker runs on its own schedule, so the dashboard stays fast:
+
+| Every | Job |
+| --- | --- |
+| 30 seconds | send alert and notification emails, Slack and webhook messages |
+| minute | evaluate alert rules; pick traces for automatic evaluation |
+| 5 minutes | hourly rollups for charts; read provider status pages |
+| 15 minutes | the Doctor's 15 detectors (retry storms, truncated outputs, cost spikes, …); spend by customer or feature; daily cost totals |
+| hour | delete traces past the project's retention; clean expired sessions and gateway cache |
+| day | fetch the provider's bill and compare it with traced spend; queue yesterday's traces worth reviewing |
+
+### 4. You read the results
+
+The dashboard shows traces, sessions, costs, Doctor findings, alerts, evals and the gateway, for your projects only. Every project's data is isolated by Postgres row-level security, so even a bug in a query cannot show one team another team's traces.
+
+### Why one Postgres
+
+Everything above, the job queue included, runs on a single Postgres database. There is no ClickHouse, Redis or separate queue to install, back up or upgrade. The trade-off is scale: one api process handles about 2,000 spans per second on a laptop, which covers most teams; the [decision records](docs/decisions/) explain each choice.
+
+### Where the code lives
 
 | Path                           | What it is                                                                    |
 | ------------------------------ | ----------------------------------------------------------------------------- |
@@ -132,6 +190,7 @@ One Docker image runs three roles: `api`, `worker` and `web`. Ingestion is synch
 | [`deploy/`](deploy/)           | Dockerfile, Caddyfile, Compose file, Prometheus example and Grafana dashboard |
 | [`docs-site/`](docs-site/)     | The documentation site, served by every instance at `/docs/`                  |
 | [`docs/`](docs/)               | Decision records, runbooks, security documents and API notes                  |
+
 
 ## Resources
 
