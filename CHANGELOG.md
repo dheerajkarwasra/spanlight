@@ -8,6 +8,10 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 - **Search what the model said.** The Traces search box (and `q` on `GET /api/v1/projects/{id}/traces` and exports) now also matches span content: with three or more characters it searches the end of each span's input and the start of its output (2,000 characters of each) for spans in the selected time range. A `pg_trgm` index (migration 1006, built concurrently) answers it.
 
+### Changed
+
+- **The quickstart runs released images.** `deploy/compose.yaml` takes the images from `SPANLIGHT_IMAGE` and `SPANLIGHT_WEB_IMAGE`, which `deploy/.env.example` sets to the GHCR images of the current release, so `docker compose ... up -d` pulls instead of building. Leave both unset to build from the checkout with `--build` (`spanlight:local`, `spanlight-web:local`), as before.
+
 ## [0.6.0] - 2026-10-19
 
 The first tagged server release: images on GHCR, and every change recorded under 0.2.0 to 0.5.0 below ships in it.
@@ -129,6 +133,7 @@ Prompts, datasets and evals: manage prompts as versions, score traces by hand or
 
 ### Security
 
+- **The web image's Caddy is rebuilt** from Caddy 2.11.7 with Go 1.27.2 and `golang.org/x/net` 0.60.0: the official `caddy:2.11-alpine` binary (Go 1.26.8, x/net 0.59.0) carries CVE-2026-78667, CVE-2026-78669 and CVE-2026-97031, which failed the release scan.
 - A judge's input is passed as marked data and the model is told to treat it as data, which reduces and does not remove prompt injection. Scores are advice, not proof; this is stated in the documentation.
 - Judge spend is bounded by a reservation per evaluator rather than a check after the fact, and an unpriced model never runs.
 - Webhook evaluators use the same vetted client as alert webhooks (https only, no private addresses unless `WEBHOOK_ALLOW_PRIVATE_TARGETS`, no redirects), are signed with the channel's secret, make one attempt with a 30 second limit, and never put the URL or the secret in a run's error or a log line.
