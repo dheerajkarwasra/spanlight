@@ -1,4 +1,6 @@
-"""Trace-list filters: trace columns, spans the trace contains, scores, retries and text search.
+"""Trace-list filters: trace columns, spans the trace contains, scores and retries.
+
+Text search (`q`) needs the project and window: `app.explorer.content_search`.
 
 Every filter is optional; a trace passes when it matches all the given ones.
 """
@@ -7,13 +9,13 @@ import uuid
 from decimal import Decimal
 from typing import Literal
 
-from sqlalchemy import Select, or_
+from sqlalchemy import Select
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.db.models import Span, Trace
 from app.explorer.metadata_filters import metadata_conditions
 from app.explorer.score_filters import score_conditions
-from app.explorer.trace_queries import escape_like, has_span
+from app.explorer.trace_queries import has_span
 from app.ingest.error_class import ErrorClass
 
 
@@ -38,7 +40,6 @@ def apply_filters[*Ts](
     score_value: str | None = None,
     has_scores: bool | None = None,
     has_retries: bool | None = None,
-    q: str | None = None,
 ) -> Select[*Ts]:
     """`query` (over `Trace`) narrowed to the traces that match every given filter."""
     equal = (
@@ -57,10 +58,6 @@ def apply_filters[*Ts](
         has_span(condition) for condition in _span_conditions(model, error_class, prompt_version_id)
     ]
     conditions += score_conditions(score_name, score_min, score_max, score_value, has_scores)
-    if q:
-        conditions.append(
-            or_(Trace.name.ilike(f"%{escape_like(q)}%", escape="\\"), Trace.trace_id == q.lower())
-        )
     return query.where(*conditions)
 
 

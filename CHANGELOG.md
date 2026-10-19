@@ -4,6 +4,10 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Added
+
+- **Search what the model said.** The Traces search box (and `q` on `GET /api/v1/projects/{id}/traces` and exports) now also matches span content: with three or more characters it searches the end of each span's input and the start of its output (2,000 characters of each) for spans in the selected time range. A `pg_trgm` index (migration 1006, built concurrently) answers it.
+
 ## [0.6.0] - 2026-10-19
 
 The first tagged server release: images on GHCR, and every change recorded under 0.2.0 to 0.5.0 below ships in it.

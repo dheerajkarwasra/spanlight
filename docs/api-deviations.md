@@ -185,7 +185,15 @@ original design; everything else is a clarification.
   top-level `approximate: bool`; `timeseries` and `models` stay plain lists (an envelope would break
   clients), so each item carries the same `approximate: bool`. Rollup reads can lag up to 5 minutes.
 - Trace `status=ok|error` filters on `error_count = 0 | > 0`. `q` matches the trace name
-  (case-insensitive substring) or an exact trace id.
+  (case-insensitive substring), an exact trace id, or (2026-10-19, `q` of 3+ characters) span content:
+  a case-insensitive substring of a preview of a span's input and output (the last 2,000 characters of
+  the input and the first 2,000 of the output, as JSON text, so newlines and quotes inside strings appear
+  as `\n` and `\"`). Only spans that started inside `[from, to)` are searched, so a span that starts
+  after `to` does not make its trace match. A search too broad to finish within the API statement timeout
+  is answered `503 SERVICE_UNAVAILABLE` with `Retry-After`; narrow the window or the text. Exports apply
+  the same `q`. The search index is only usable under row-level security when the migrations (and
+  `spanlight ensure-app-role`) run as a superuser, which marks the search functions LEAKPROOF (migration
+  1006 explains why that is safe); otherwise content search is correct but scans the window.
 - Money is a decimal string with up to 8 fractional digits, e.g. `"0.00021000"`.
 
 ## Ingestion (`POST /v1/traces`)

@@ -13,12 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.db.models import Span, Trace
+from app.explorer.content_search import text_search
 from app.explorer.metadata_filters import metadata_conditions
 from app.exports.schemas import ExportFilters, SpanExportRow, TraceExportRow
-
-
-def _escape_like(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def trace_conditions(project_id: uuid.UUID, filters: ExportFilters) -> list[ColumnElement[bool]]:
@@ -60,12 +57,7 @@ def trace_conditions(project_id: uuid.UUID, filters: ExportFilters) -> list[Colu
             )
         )
     if filters.q:
-        conditions.append(
-            or_(
-                Trace.name.ilike(f"%{_escape_like(filters.q)}%", escape="\\"),
-                Trace.trace_id == filters.q.lower(),
-            )
-        )
+        conditions.append(text_search(filters.q, project_id, filters.from_, filters.to))
     return conditions
 
 

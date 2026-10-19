@@ -27,6 +27,7 @@ from app.core.pagination import DEFAULT_PAGE_SIZE, PageLimit, decode_cursor, enc
 from app.core.permissions import Permission
 from app.db.models import Trace
 from app.explorer import trace_sort
+from app.explorer.content_search import text_search
 from app.explorer.filter_values import filter_values
 from app.explorer.metadata_filters import check_metadata_filter
 from app.explorer.score_filters import check_score_filters
@@ -105,7 +106,16 @@ async def list_traces(
     tag: OptionalText = None,
     metadata_key: Annotated[MetadataKey | None, Query()] = None,
     metadata_value: OptionalText = None,
-    q: OptionalText = None,
+    q: Annotated[
+        str | None,
+        Query(
+            max_length=256,
+            description=(
+                "Matches the trace name (substring, ignoring case), an exact trace id, or, with 3+ "
+                "characters, a preview of the input and output of a span started in the window."
+            ),
+        ),
+    ] = None,
     sort: TraceSort = "started_at",
     limit: PageLimit = DEFAULT_PAGE_SIZE,
     cursor: Annotated[str | None, Query()] = None,
@@ -140,8 +150,9 @@ async def list_traces(
         score_value=score_value,
         has_scores=has_scores,
         has_retries=has_retries,
-        q=q,
     )
+    if q:
+        page_query = page_query.where(text_search(q, project.id, window.start, window.end))
     page_query = trace_sort.apply(page_query, sort=sort, cursor=cursor).limit(limit + 1)
     paged, query = page_select(page_query)
     query = query.order_by(*trace_sort.ordering(sort, paged))

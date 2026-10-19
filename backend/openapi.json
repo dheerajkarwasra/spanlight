@@ -29131,6 +29131,7 @@
             }
           },
           {
+            "description": "Matches the trace name (substring, ignoring case), an exact trace id, or, with 3+ characters, a preview of the input and output of a span started in the window.",
             "in": "query",
             "name": "q",
             "required": false,
@@ -29144,6 +29145,7 @@
                   "type": "null"
                 }
               ],
+              "description": "Matches the trace name (substring, ignoring case), an exact trace id, or, with 3+ characters, a preview of the input and output of a span started in the window.",
               "title": "Q"
             }
           },
