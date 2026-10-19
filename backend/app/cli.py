@@ -4,6 +4,7 @@ spanlight create-user --email ada@example.com --name "Ada" [--org acme --role ow
 spanlight reset-password --email ada@example.com
 spanlight reset-2fa --email ada@example.com
 spanlight sync-prices
+spanlight prices diff [--source <url or path>]   # review aid against LiteLLM's price file
 spanlight reseal-credentials
 spanlight migrate
 spanlight license-status
@@ -38,6 +39,7 @@ from app.cli_alerts import alerts_app
 from app.cli_attribution import attribution_app
 from app.cli_demo import demo_app
 from app.cli_doctor import doctor_app
+from app.cli_prices import prices_app
 from app.config import get_settings
 from app.core.crypto import CryptoNotConfigured
 from app.core.security import MIN_PASSWORD_LENGTH, hash_password
@@ -61,6 +63,7 @@ rollups_app = typer.Typer(help="Hourly metric rollups.", no_args_is_help=True)
 app.add_typer(rollups_app, name="rollups")
 app.add_typer(alerts_app, name="alerts")
 app.add_typer(demo_app, name="demo")
+app.add_typer(prices_app, name="prices")
 app.add_typer(doctor_app, name="doctor")
 app.add_typer(attribution_app, name="attribution")
 backup_app = typer.Typer(help="Database backups in object storage.", no_args_is_help=True)

@@ -30,6 +30,7 @@ Every command takes `--help`. Two kinds of failure exit with a non-zero status:
 | [`reset-password`](#reset-password) | Sets a new password and signs the user out everywhere. |
 | [`reset-2fa`](#reset-2fa) | Turns two-factor authentication off for a user. |
 | [`sync-prices`](#sync-prices) | Inserts the bundled model price snapshot. |
+| [`prices diff`](#prices-diff) | Compares the bundled price snapshot with LiteLLM's public price file. |
 | [`reseal-credentials`](#reseal-credentials) | Re-seals provider credentials and billing source admin keys under the first encryption key. |
 | [`license-status`](#license-status) | Shows the edition and what the enterprise license key grants. |
 | [`migrate`](#migrate) | Applies database migrations. |
@@ -144,6 +145,14 @@ spanlight sync-prices
 ```
 
 Inserts the model price snapshots bundled with the server, the current one and the historical ones, into the price table. Rows that already exist are kept. It prints `Inserted <n> price rows (snapshots up to <version>).`, `<version>` being the current snapshot. The `api` and `worker` run the same seeding when they start. See [Cost](/docs/concepts/cost/).
+
+### `prices diff`
+
+```text
+spanlight prices diff [--source URL_OR_PATH]
+```
+
+Compares the current price snapshot with LiteLLM's public `model_prices_and_context_window.json` (the default `--source`; a local copy of the file works too) and prints three lists: rates that differ, models priced here that the file does not list, and chat models the file prices that Spanlight does not, each with a proposed price row. It is a review aid for maintainers, not a price source: it changes nothing, and every figure must be checked against the provider's own pricing page before it goes into a new snapshot. It needs network access to fetch the default source and no database. It exits with status `1` when a rate differs or a model is missing, so it can run as a scheduled check.
 
 ### `license-status`
 
