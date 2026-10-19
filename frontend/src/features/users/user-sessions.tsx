@@ -7,7 +7,7 @@ import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { dayLabel, formatClock } from "@/features/sessions/session-format";
 import { useProjectParams } from "@/features/shell/project-context";
-import type { SessionSummary } from "@/lib/api";
+import { toPathId, type SessionSummary } from "@/lib/api";
 import { formatInteger, pluralize } from "@/lib/format";
 
 /** The user's most recent sessions (the API returns the last 20 by activity). */
@@ -63,7 +63,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <Link
           to="/$orgId/$projectId/sessions/$sessionId"
-          params={{ orgId, projectId, sessionId: session.session_id }}
+          params={{ orgId, projectId, sessionId: toPathId(session.session_id) }}
           title={session.session_id}
           className="block truncate font-mono text-code text-foreground outline-none after:absolute after:inset-0 after:rounded-tile after:outline-offset-2 after:content-[''] focus-visible:after:outline-2 focus-visible:after:outline-ring"
         >

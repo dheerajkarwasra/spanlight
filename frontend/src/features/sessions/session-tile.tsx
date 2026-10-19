@@ -5,7 +5,7 @@ import { CostValue } from "@/components/cost-value";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectParams } from "@/features/shell/project-context";
-import type { SessionSummary } from "@/lib/api";
+import { toPathId, type SessionSummary } from "@/lib/api";
 import { formatInteger, formatTimestamp, pluralize } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -55,7 +55,7 @@ export function SessionTile({ session }: { session: SessionSummary }) {
         <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
           <Link
             to="/$orgId/$projectId/sessions/$sessionId"
-            params={{ orgId, projectId, sessionId: session.session_id }}
+            params={{ orgId, projectId, sessionId: toPathId(session.session_id) }}
             title={session.session_id}
             className="truncate font-mono text-code text-foreground outline-none after:absolute after:inset-0 after:rounded-tile after:outline-offset-2 after:content-[''] focus-visible:after:outline-2 focus-visible:after:outline-ring"
           >
