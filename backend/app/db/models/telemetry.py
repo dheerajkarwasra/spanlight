@@ -44,6 +44,16 @@ class SpanStatus(enum.StrEnum):
 
 class Trace(Base):
     __tablename__ = "traces"
+    # Storage parameters; migration 1005 is the source of truth.
+    __table_args__ = (
+        {
+            "postgresql_with": {
+                "fillfactor": "70",
+                "autovacuum_vacuum_scale_factor": "0.02",
+                "autovacuum_analyze_scale_factor": "0.01",
+            }
+        },
+    )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
@@ -86,10 +96,11 @@ class Span(Base):
             ondelete="CASCADE",
         ),
         # The windowed reads (overview, time series, models, rollups) are answered from this index
-        # alone. Migration 0016 creates it; keep the two column lists in step. The migration also
-        # sets the table's autovacuum insert triggers, which the model does not describe.
+        # alone. Migration 1004 creates it (0016 made the first version); keep the two column
+        # lists in step. 0016 also sets the table's autovacuum insert triggers, which the model
+        # does not describe.
         Index(
-            "spans_project_started_cov_idx",
+            "spans_project_started_window_idx",
             "project_id",
             "started_at",
             postgresql_include=[
@@ -104,6 +115,7 @@ class Span(Base):
                 "provider",
                 "model",
                 "time_to_first_token_ms",
+                "usage_rollup",
             ],
         ),
         # Per gateway key reads (budgets, detectors). Partial: natively ingested spans have no key.
