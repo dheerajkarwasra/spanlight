@@ -53,6 +53,7 @@ def ensure_app_role(admin_url: str, role: str, password: str) -> None:
                 sql.SQL(statement).format(database=sql.Identifier(database), role=role_id)
             )
         _grant_app_functions(connection, role_id)
+        _mark_search_leakproof(connection)
 
 
 def _grant_app_functions(connection: psycopg.Connection[Any], role_id: sql.Identifier) -> None:
@@ -69,3 +70,18 @@ def _grant_app_functions(connection: psycopg.Connection[Any], role_id: sql.Ident
                     function=sql.SQL(signature), role=role_id
                 )
             )
+
+
+def _mark_search_leakproof(connection: psycopg.Connection[Any]) -> None:
+    """Mark `texticlike` LEAKPROOF again, so content search can use its index under RLS.
+
+    Migration 1007 sets the mark and says why it is safe; `pg_dump` does not keep it on a catalog
+    function, so a restored database loses it, and this step (which runs after every restore and
+    deploy) restores it. Only a superuser can set it; anyone else leaves search correct but slow.
+    """
+    row = connection.execute(
+        "SELECT current_setting('is_superuser') = 'on', "
+        "to_regprocedure('spanlight_search_text(jsonb, jsonb)') IS NOT NULL"
+    ).fetchone()
+    if row is not None and row[0] and row[1]:
+        connection.execute("ALTER FUNCTION pg_catalog.texticlike(text, text) LEAKPROOF")

@@ -129,6 +129,8 @@ Do not use `deploy/smoke.sh` to check a production upgrade. It builds its own st
 
 You do not run migrations yourself. The `migrate` service in `deploy/compose.yaml` runs `spanlight migrate && spanlight ensure-app-role --role spanlight_app` as the database owner on every `up`. On a database that is already current, it changes nothing and prints the same two lines.
 
+Run both as a Postgres superuser (the bundled `postgres` user is one). Content search on the Traces page uses an index that row-level security only allows when two text functions are marked `LEAKPROOF`, and only a superuser can mark them. As another role, the migration prints `content search: not a superuser, functions not marked LEAKPROOF` and search then looks at span content from the last hour of the selected range only. `spanlight ensure-app-role` sets one of the marks again after a restore, because a database dump does not keep it.
+
 Migrations are forward changes to a live database. The readiness check compares the database's revision with the one the code expects, and answers `503` with `"migrations":"pending"` when they differ in either direction. That is what stops an old build from running on a newer schema.
 
 ## Go back

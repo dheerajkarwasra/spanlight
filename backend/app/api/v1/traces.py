@@ -10,6 +10,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select, tuple_
+from sqlalchemy.exc import OperationalError
 
 from app.api.deps import DbSession, ReadAccess, require
 from app.api.schemas import (
@@ -26,11 +27,19 @@ from app.api.schemas import (
 from app.api.schemas.scores import ScoreSummaryOut
 from app.api.schemas.traces import TraceTotalsDeltaOut
 from app.api.window import Window
+from app.core.db_errors import is_statement_timeout
 from app.core.errors import not_found
 from app.core.pagination import DEFAULT_PAGE_SIZE, PageLimit, decode_cursor, encode_cursor
 from app.core.permissions import Permission
 from app.db.models import Trace
+from app.db.timeouts import set_statement_limit
 from app.explorer import trace_sort
+from app.explorer.content_search import (
+    SEARCH_TIMEOUT_MS,
+    content_start,
+    search_too_broad,
+    text_search,
+)
 from app.explorer.filter_values import filter_values
 from app.explorer.metadata_filters import check_metadata_filter
 from app.explorer.score_filters import check_score_filters
@@ -87,7 +96,16 @@ def _summary(
     )
 
 
-@router.get("/traces", response_model=Page[TraceSummaryOut])
+@router.get(
+    "/traces",
+    response_model=Page[TraceSummaryOut],
+    responses={
+        422: {
+            "description": "A parameter is invalid (`VALIDATION_ERROR`), or a `q` search matched "
+            "too much to finish (`SEARCH_TOO_BROAD`)."
+        }
+    },
+)
 async def list_traces(
     project_id: uuid.UUID,
     access: ProjectReader,
@@ -111,7 +129,16 @@ async def list_traces(
     tag: OptionalText = None,
     metadata_key: Annotated[MetadataKey | None, Query()] = None,
     metadata_value: OptionalText = None,
-    q: OptionalText = None,
+    q: Annotated[
+        str | None,
+        Query(
+            max_length=256,
+            description=(
+                "Matches the trace name (substring, ignoring case), an exact trace id, or, with 3+ "
+                "characters, a preview of the input and output of a span started in the window."
+            ),
+        ),
+    ] = None,
     sort: TraceSort = "started_at",
     limit: PageLimit = DEFAULT_PAGE_SIZE,
     cursor: Annotated[str | None, Query()] = None,
@@ -146,13 +173,21 @@ async def list_traces(
         score_value=score_value,
         has_scores=has_scores,
         has_retries=has_retries,
-        q=q,
     )
+    if q:
+        await set_statement_limit(db, SEARCH_TIMEOUT_MS)
+        content_from = await content_start(db, window.start, window.end)
+        page_query = page_query.where(text_search(q, project.id, content_from, window.end))
     page_query = trace_sort.apply(page_query, sort=sort, cursor=cursor).limit(limit + 1)
     paged, query = page_select(page_query)
     query = query.order_by(*trace_sort.ordering(sort, paged))
 
-    rows = (await db.execute(query)).all()
+    try:
+        rows = (await db.execute(query)).all()
+    except OperationalError as error:
+        if q and is_statement_timeout(error.orig):
+            raise search_too_broad() from None
+        raise
     page = rows[:limit]
     next_cursor = None
     if len(rows) > limit:

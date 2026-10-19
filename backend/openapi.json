@@ -29399,6 +29399,7 @@
             }
           },
           {
+            "description": "Matches the trace name (substring, ignoring case), an exact trace id, or, with 3+ characters, a preview of the input and output of a span started in the window.",
             "in": "query",
             "name": "q",
             "required": false,
@@ -29412,6 +29413,7 @@
                   "type": "null"
                 }
               ],
+              "description": "Matches the trace name (substring, ignoring case), an exact trace id, or, with 3+ characters, a preview of the input and output of a span started in the window.",
               "title": "Q"
             }
           },
@@ -29504,14 +29506,7 @@
             "description": "Successful Response"
           },
           "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
+            "description": "A parameter is invalid (`VALIDATION_ERROR`), or a `q` search matched too much to finish (`SEARCH_TOO_BROAD`)."
           }
         },
         "summary": "List Traces",
