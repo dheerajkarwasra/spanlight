@@ -30,7 +30,7 @@ export const TOPICS = [
     link: '/python-sdk/',
     icon: 'open-book',
     items: [
-      { label: 'Instrument', items: ['python-sdk', 'otlp', 'releases-and-users'] },
+      { label: 'Instrument', items: ['python-sdk', 'typescript-sdk', 'otlp', 'releases-and-users'] },
       { label: 'Debug', items: ['guides/traces', 'guides/overview', 'doctor', 'guides/provider-health'] },
       {
         label: 'Evaluate',

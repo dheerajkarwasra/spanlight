@@ -30,6 +30,7 @@ export const PAGE_KINDS = {
   'integrations/openllmetry': 'integration',
   'integrations/openinference': 'integration',
   'python-sdk': 'how-to',
+  'typescript-sdk': 'how-to',
   otlp: 'how-to',
   'releases-and-users': 'how-to',
   doctor: 'how-to',

@@ -15,7 +15,7 @@
 
 </div>
 
-Spanlight records every LLM call your application makes: prompts and completions, latency, time to first token, tokens, cost and errors, grouped into traces and user sessions. Send traces with the Python SDK, any OpenTelemetry exporter, or by changing one `base_url` to the built-in gateway. Then go past tracing: audit what each call cost, check it against the provider's bill, find out why calls fail, and review yesterday's traffic every morning.
+Spanlight records every LLM call your application makes: prompts and completions, latency, time to first token, tokens, cost and errors, grouped into traces and user sessions. Send traces with the Python or TypeScript SDK, any OpenTelemetry exporter, or by changing one `base_url` to the built-in gateway. Then go past tracing: audit what each call cost, check it against the provider's bill, find out why calls fail, and review yesterday's traffic every morning.
 
 > [!TIP]
 > Want to look before you install? The [live demo](https://spanlight.dev) runs on real Claude calls under a small monthly budget.
@@ -126,6 +126,7 @@ One Docker image runs three roles: `api`, `worker` and `web`. Ingestion is synch
 | [`backend/`](backend/)         | FastAPI, SQLAlchemy 2 (async), Alembic, the Postgres job queue and the CLI    |
 | [`frontend/`](frontend/)       | React 19, TypeScript, TanStack Router and Query, Tailwind v4, Radix, Recharts |
 | [`sdks/python/`](sdks/python/) | The `spanlight` SDK: `@observe`, spans, and the OpenAI and Anthropic wrappers |
+| [`sdks/typescript/`](sdks/typescript/) | The `spanlight` npm package for Node.js: `observe`, `withSpan`, and the OpenAI and Anthropic wrappers |
 | [`deploy/`](deploy/)           | Dockerfile, Caddyfile, Compose file, Prometheus example and Grafana dashboard |
 | [`docs-site/`](docs-site/)     | The documentation site, served by every instance at `/docs/`                  |
 | [`docs/`](docs/)               | Decision records, runbooks, security documents and API notes                  |
@@ -134,6 +135,7 @@ One Docker image runs three roles: `api`, `worker` and `web`. Ingestion is synch
 
 - [Documentation](https://spanlight.dev/docs/): quickstart, SDK, OTLP, gateway, cost, self-hosting, configuration and the API reference. Every instance also serves it at `/docs/`.
 - [Python SDK](sdks/python/README.md): the `@observe` and `span` API, the wrappers and delivery guarantees.
+- [TypeScript SDK](sdks/typescript/README.md): the Node.js wrappers, `observe` and `withSpan`, and delivery guarantees.
 - [API notes](docs/api-deviations.md): error codes, ingestion rules and metric definitions as implemented.
 - [Runbooks](docs/runbooks/) and [security](docs/security/): operating, restoring and securing an instance.
 - [Backend](backend/README.md) and [contributor](CONTRIBUTING.md) guides: local setup, the test database and the checks CI runs.

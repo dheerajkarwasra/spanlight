@@ -4,6 +4,10 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Added
+
+- **TypeScript SDK** (`sdks/typescript`, package `spanlight`, not yet on npm). `wrapOpenAI` traces `chat.completions.create` and `responses.create` and `wrapAnthropic` traces `messages.create`, plain and streamed, including the providers' `.stream()` helpers; `observe`, `withSpan` and `updateTrace` trace your own code, with the current span kept in `AsyncLocalStorage`. Spans go to `POST /v1/traces` with the Python SDK's guarantees: background batching, gzip by default, retries with `Retry-After`, a bounded queue with loss counters, and errors from your code and the providers reaching it unchanged. Usage is recorded as the Python SDK records it: `input_tokens` includes cache reads and writes, OpenAI `cache_write_tokens` and Anthropic `cache_creation_input_tokens` (with the 1-hour part) are kept, the service tier is normalized with the shared table, and a stream without its usage leaves the output count unknown. Node.js 22 or newer.
+
 ## [0.6.0] - 2026-10-19
 
 The first tagged server release: images on GHCR, and every change recorded under 0.2.0 to 0.5.0 below ships in it.

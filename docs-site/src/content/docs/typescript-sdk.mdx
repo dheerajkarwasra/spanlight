@@ -1,0 +1,154 @@
+---
+title: TypeScript SDK
+description: Trace OpenAI and Anthropic calls and your own functions from Node.js, and understand what is recorded and how spans are delivered.
+sidebar:
+  order: 3
+---
+
+{/* Sources: sdks/typescript/src/client.ts, sdks/typescript/src/span.ts, sdks/typescript/src/exporter.ts, sdks/typescript/src/providers/common.ts, sdks/typescript/src/providers/openai.ts, sdks/typescript/src/providers/anthropic.ts, sdks/typescript/README.md */}
+
+import NextSteps from '../../components/NextSteps.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+
+The `spanlight` package traces Node.js LLM applications. It wraps the official `openai` and `@anthropic-ai/sdk` clients and traces your own functions, and sends spans to the same `POST /v1/traces` endpoint as the [Python SDK](/docs/python-sdk/), with the same fields.
+
+- **Low overhead.** Spans are queued in memory and sent in batches in the background; tracing never waits on the network.
+- **Tracing never breaks your app.** SDK failures are logged and swallowed. Errors from your code and from the providers are recorded and reach your code as the same object.
+- **No runtime dependencies.** `openai` and `@anthropic-ai/sdk` are optional peer dependencies.
+
+<Prerequisites
+  items={[
+    'Node.js 22 or newer',
+    'A running Spanlight instance that your application can reach',
+    'A project API key with the ingest:write scope, from Settings, Project, API keys',
+  ]}
+/>
+
+## Install
+
+The package is not published to npm yet. Build it from the repository and install the tarball:
+
+```bash
+git clone https://github.com/dheerajkarwasra/spanlight
+cd spanlight/sdks/typescript
+npm ci
+npm pack                                   # writes spanlight-0.1.0.tgz
+cd /path/to/your/app
+npm install /path/to/spanlight-0.1.0.tgz
+```
+
+The wrappers are tested with `openai` 7.39 and `@anthropic-ai/sdk` 0.135.
+
+## Configure
+
+```bash
+export SPANLIGHT_API_KEY=spl_live_...
+export SPANLIGHT_HOST=http://localhost:8000   # the API; the Compose stack serves on 8080
+```
+
+`init()` reads `SPANLIGHT_API_KEY`, `SPANLIGHT_HOST`, `SPANLIGHT_ENVIRONMENT`, `SPANLIGHT_RELEASE` and `SPANLIGHT_ENABLED`, and takes the same values as options (`apiKey`, `host`, `environment`, `release`, `enabled`). The delivery options are `flushIntervalMs` (2000), `batchSize` (100, at most 1000), `maxQueue` (10000), `gzip` (true), `timeoutMs` (10000), `maxRetries` (5), `shutdownTimeoutMs` (5000) and `fetch`. Without an API key the SDK logs one warning and does nothing.
+
+## Trace OpenAI calls
+
+```ts
+import OpenAI from 'openai';
+import { init, wrapOpenAI } from 'spanlight';
+
+init();
+const openai = wrapOpenAI(new OpenAI());
+
+const completion = await openai.chat.completions.create({
+  model: 'gpt-4o-mini',
+  messages: [{ role: 'user', content: 'How do refunds work?' }],
+});
+```
+
+`wrapOpenAI` instruments `chat.completions.create` and `responses.create` on the client you pass, including `stream: true`. The SDK's `chat.completions.stream()`, `responses.stream()` and `.parse()` helpers call `create`, so they are traced too. The promise and stream you get back are the provider's own objects, so `.withResponse()`, `tee()` and `controller.abort()` keep working. An `AzureOpenAI` client is recorded as `azure_openai`; for another compatible API pass `wrapOpenAI(client, { provider: 'openrouter' })`.
+
+A Chat Completions stream reports usage only with `stream_options: { include_usage: true }`. Without it, the span's output count is unknown and `usage.unreported_reason` is `include_usage_not_set`.
+
+## Trace Anthropic calls
+
+```ts
+import Anthropic from '@anthropic-ai/sdk';
+import { init, wrapAnthropic } from 'spanlight';
+
+init();
+const anthropic = wrapAnthropic(new Anthropic());
+
+const message = await anthropic.messages.create({
+  model: 'claude-haiku-4-5',
+  max_tokens: 512,
+  messages: [{ role: 'user', content: 'Summarize our refund policy.' }],
+});
+```
+
+`wrapAnthropic` instruments `messages.create`, plain and `stream: true`. `messages.stream()` calls `create`, so it is traced as well.
+
+## Trace your own code
+
+```ts
+import { init, observe, updateTrace, withSpan } from 'spanlight';
+
+init({ environment: 'production', release: '2026.10.19' });
+
+const searchDocs = observe(async (query: string) => ['Refunds take 5-7 business days.'], {
+  name: 'search-docs',
+  kind: 'retrieval',
+});
+
+const handle = observe(
+  async (question: string, userId: string) => {
+    updateTrace({ userId, sessionId: 'chat-123', tags: ['beta'] });
+    const docs = await searchDocs(question);
+    return withSpan('format-answer', (span) => {
+      const answer = `From our docs: ${docs[0]}`;
+      span.setOutput(answer);
+      return answer;
+    });
+  },
+  { name: 'support-request' },
+);
+```
+
+`observe(fn, options)` returns a function that traces every call: the arguments are the span input, the return value (or the value a returned promise resolves to) the output. `withSpan(name, callback, options)` runs the callback in a new span. A thrown error or a rejected promise marks the span failed and is re-thrown unchanged. The current span lives in an `AsyncLocalStorage`, so wrapped provider calls made inside `handle` are its children. `getCurrentTraceId()` returns the current trace id for your logs.
+
+## What is recorded
+
+Each provider call is an `llm` span named after the operation and the requested model (`chat gpt-4o-mini`, `responses gpt-4.1`, `chat claude-haiku-4-5`), with:
+
+- `model` from the response, `provider`, the request body as `input` and the assistant message (with tool calls) as `output`;
+- `usage.input_tokens` as the whole prompt, cache reads and writes included (for Anthropic, `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`), `usage.cached_tokens`, `usage.cache_write_tokens` (OpenAI `cache_write_tokens`, Anthropic `cache_creation_input_tokens`) and `usage.cache_write_1h_tokens` (Anthropic's 1-hour writes);
+- `usage.service_tier` (`standard`, `batch`, `priority` or `flex`; an unknown spelling is kept in `usage.service_tier_raw` and priced as standard), web search counts, and `usage.pricing_modifier_unknown` or `usage.fee_unknown` where the price is not modelled, as the Python SDK records them;
+- `time_to_first_token_ms` for streams, and `usage.unreported_reason` when a stream ended without its usage;
+- on failure, `status: error`, the provider's message, `error.type`, `http.status_code` and `provider.request_id`.
+
+Not recorded by this SDK yet: prompts, scores, trace metadata, batch results, and the rate-limit headers the Python SDK keeps on error spans. A call read only through `.asResponse()` is not recorded.
+
+## Delivery
+
+A batch is sent when it reaches `batchSize` spans or after `flushIntervalMs`, gzip-compressed. Network errors, `429` and `5xx` are retried with jittered exponential backoff, honoring `Retry-After`; a `413` splits the batch; other `4xx` are logged and not retried. When the queue is full the oldest spans are dropped. Every batch carries the exporter's loss counters, shown under [telemetry completeness](/docs/concepts/telemetry-completeness/).
+
+The background timer never keeps the process alive. When the event loop empties, the SDK flushes on `beforeExit` within `shutdownTimeoutMs`. That event does not fire on `process.exit()` or a signal, so scripts and serverless handlers should `await flush()` before they return, and `await shutdown()` before `process.exit()`.
+
+## Check it worked
+
+Run `handle('How long do refunds take?', 'u_42')` from [Trace your own code](#trace-your-own-code), then `await flush()`; it resolves `true` once the spans are delivered. Open **Traces**: the list has a trace named `support-request`. The header shows the User `u_42`, the Session `chat-123` and the tag `beta`, and the waterfall shows `support-request` with `search-docs` and `format-answer` under it.
+
+## Troubleshooting
+
+- **The console says "No API key" and nothing is sent.** Set `SPANLIGHT_API_KEY` or pass `apiKey` to `init()`. See [The SDK has no API key, or is switched off](/docs/troubleshooting/#the-sdk-has-no-api-key-or-is-switched-off).
+- **The console says "Dropping N spans after 6 attempts".** Every attempt failed with a network error, `429` or `5xx`. A wrong `host` is the usual cause. See [The SDK points at the wrong host](/docs/troubleshooting/#the-sdk-points-at-the-wrong-host).
+- **A script ends and its trace is missing.** The process exited before the batch was sent: `await flush()` at the end, or `await shutdown()` before `process.exit()`.
+- **A streamed call has no span.** The span ends when the stream is read to the end, broken out of or fails. A stream that is never read is never sent.
+- **To see what the SDK is doing,** set `SPANLIGHT_DEBUG=1`.
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Python SDK', href: '/docs/python-sdk/', description: 'The same tracing for Python, with prompts, scores and batch results.' },
+    { title: 'OTLP', href: '/docs/otlp/', description: 'Send traces from any OpenTelemetry instrumentation instead.' },
+    { title: 'How ingestion works', href: '/docs/concepts/ingestion/', description: 'Validation, pricing and idempotent upserts on the server.' },
+  ]}
+/>
