@@ -746,7 +746,7 @@ async def test_last_used_is_written_at_most_once_a_minute(
     [
         ("GET", TOKENS),
         ("POST", TOKENS),
-        ("DELETE", f"{TOKENS}/{uuid.uuid4()}"),
+        ("DELETE", f"{TOKENS}/00000000-0000-4000-8000-000000000000"),
         ("POST", "/api/v1/auth/logout"),
         ("GET", "/api/v1/auth/sessions"),
         ("DELETE", "/api/v1/auth/sessions"),

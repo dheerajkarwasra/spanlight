@@ -68,7 +68,7 @@ async def test_traces_read_key_gets_404_for_other_project(
     assert (await world.owner.get(path)).status_code == 200
 
 
-@pytest.mark.parametrize("project", [str(uuid.uuid4()), "not-a-uuid"])
+@pytest.mark.parametrize("project", ["00000000-0000-4000-8000-000000000000", "not-a-uuid"])
 async def test_a_read_key_gets_the_same_404_for_a_project_that_does_not_exist(
     client: httpx.AsyncClient, world: World, project: str
 ) -> None:

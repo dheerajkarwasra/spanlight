@@ -83,14 +83,17 @@ codes; it leaves the password and the sessions alone.
 
 Tests run against a real Postgres. The suite rebuilds the `public` schema, creates an unprivileged
 `spanlight_app_test` role, migrates as that role and connects the app as it (so RLS is really
-enforced).
+enforced). `TEST_DATABASE_URL` must name a superuser, which creates that role and empties the
+tables between tests. With `-n auto` (pytest-xdist) each worker builds its own database next to
+the configured one (`spanlight_test_gw0`, `spanlight_test_gw1`, ...).
 
 ```bash
 docker run -d --name spanlight-test-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=spanlight_test \
   -p 55432:5432 postgres:17
 export TEST_DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:55432/spanlight_test  # default
 
-uv run pytest
+uv run pytest -n auto                                     # the suite, one worker per CPU
+uv run pytest tests/ingest/test_ingest.py -k idempotent   # a few tests need no workers
 uv run ruff check && uv run ruff format --check
 uv run mypy app
 ```
