@@ -101,8 +101,8 @@ def _is_prompt_step(attributes: Mapping[str, Any], mapped: MappedFields) -> bool
         and mapped.usage.input_tokens is None
         and mapped.usage.output_tokens is None
         and first(attributes, "input.value") is not None
-        and not has_prefix(attributes, "llm.input_messages")
-        and not has_prefix(attributes, "llm.output_messages")
+        and not has_prefix(attributes, "llm.input_messages.")
+        and not has_prefix(attributes, "llm.output_messages.")
     )
 
 
