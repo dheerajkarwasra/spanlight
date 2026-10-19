@@ -31,7 +31,8 @@ describe("PromotedKeysField", () => {
     );
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.queryByRole("combobox")).toBeNull();
-    expect(screen.getByText("Only admins and owners can change promoted keys.")).toBeTruthy();
+    // The page-level view-only banner explains it; the field adds no line of its own.
+    expect(screen.queryByText(/Only admins and owners/)).toBeNull();
     expect(screen.getByText("2 of 5")).toBeTruthy();
   });
 

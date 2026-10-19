@@ -3,9 +3,11 @@ import { CircleAlert } from "lucide-react";
 import { useMemo } from "react";
 
 import { Callout } from "@/components/callout";
+import { ReadOnlyNote } from "@/components/read-only-note";
 import { Button } from "@/components/ui/button";
 import { usePermission, useProjectParams } from "@/features/shell";
 import type { AlertRule } from "@/lib/api";
+import { viewOnlyCopy } from "@/lib/permissions";
 import { useNow } from "@/lib/use-now";
 
 import { useAlertChannelsQuery, useAlertRuleQuery, useRuleEventsQuery } from "./alerts-queries";
@@ -68,6 +70,7 @@ function RuleDetail({ rule }: { rule: AlertRule }) {
         canWrite={canWrite}
         now={now}
       />
+      {canWrite ? null : <ReadOnlyNote>{viewOnlyCopy("alerts", "alerts:write")}</ReadOnlyNote>}
       {until === null ? null : (
         <Callout tone="warning" title={mutedLabel(until, now)}>
           {MUTE_BODY}

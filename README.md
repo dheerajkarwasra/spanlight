@@ -50,8 +50,10 @@ Spanlight records every LLM call your application makes: prompts and completions
 git clone https://github.com/dheerajkarwasra/spanlight.git
 cd spanlight
 cp deploy/.env.example deploy/.env    # fill in POSTGRES_PASSWORD, APP_DB_PASSWORD and SECRET_KEY
-docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
+docker compose -f deploy/compose.yaml --env-file deploy/.env up -d
 ```
+
+This pulls the released images named in `deploy/.env` (`SPANLIGHT_IMAGE` and `SPANLIGHT_WEB_IMAGE`). To build from the checkout instead, comment out those two lines and add `--build`.
 
 Open http://localhost:8080, create an account, and follow the setup wizard to create a project and an API key.
 

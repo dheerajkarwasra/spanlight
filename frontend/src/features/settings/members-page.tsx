@@ -8,6 +8,7 @@ import { TileListSkeleton } from "@/components/tile-list";
 import { Badge } from "@/components/ui/badge";
 import { useMe } from "@/features/auth";
 import { useCurrentOrg, usePermission } from "@/features/shell";
+import { viewOnlyCopy } from "@/lib/permissions";
 
 import { InviteSection } from "./invite-section";
 import { MemberList } from "./member-list";
@@ -21,7 +22,7 @@ export function MembersPage() {
   return (
     <div className="flex flex-col gap-5">
       {canManage ? null : (
-        <ReadOnlyNote>Only admins and owners can invite people or change roles.</ReadOnlyNote>
+        <ReadOnlyNote>{viewOnlyCopy("members and invitations", "member:manage")}</ReadOnlyNote>
       )}
       <MembersSection canManage={canManage} />
       {canManage ? (

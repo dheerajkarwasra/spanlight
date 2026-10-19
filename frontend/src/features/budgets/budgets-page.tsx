@@ -1,14 +1,15 @@
 import { Info, Plus, Wallet } from "lucide-react";
-import { useId, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { PageHeader } from "@/components/page-header";
+import { ReadOnlyNote } from "@/components/read-only-note";
 import { SectionCard } from "@/components/section-card";
 import { TileListSkeleton } from "@/components/tile-list";
 import { Button } from "@/components/ui/button";
-import { AlertsReadOnlyLine } from "@/features/alerts";
 import { usePermission, useProjectQuery } from "@/features/shell";
+import { viewOnlyCopy } from "@/lib/permissions";
 
 import { BudgetDialog } from "./budget-dialog";
 import { softLimitNote } from "./budget-enforcement";
@@ -21,24 +22,19 @@ import { useBudgetsQuery, useGatewayKeysQuery } from "./budgets-queries";
  */
 export function BudgetsPage() {
   const canWrite = usePermission("alerts:write");
-  const readOnlyId = useId();
   const query = useBudgetsQuery();
 
-  const createButton = (
+  const createButton = canWrite ? (
     <BudgetDialog
       budget={null}
       trigger={
-        <Button
-          variant="primary"
-          disabled={!canWrite}
-          aria-describedby={canWrite ? undefined : readOnlyId}
-        >
+        <Button variant="primary">
           <Plus aria-hidden />
           Create budget
         </Button>
       }
     />
-  );
+  ) : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -50,23 +46,10 @@ export function BudgetsPage() {
         title="Budgets"
         description="Spend resets at the start of each period, in UTC."
         className="gap-4"
-        actions={
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            {canWrite ? null : (
-              <div id={readOnlyId}>
-                <AlertsReadOnlyLine />
-              </div>
-            )}
-            {createButton}
-          </div>
-        }
+        actions={createButton}
       >
-        <BudgetsContent
-          query={query}
-          canWrite={canWrite}
-          readOnlyId={readOnlyId}
-          createButton={createButton}
-        />
+        {canWrite ? null : <ReadOnlyNote>{viewOnlyCopy("budgets", "alerts:write")}</ReadOnlyNote>}
+        <BudgetsContent query={query} canWrite={canWrite} createButton={createButton} />
         <p className="flex items-center gap-2 px-1 pt-2 text-xs font-medium text-muted-foreground">
           <Info aria-hidden className="size-3.5 shrink-0" />
           {softLimitNote()}
@@ -79,11 +62,10 @@ export function BudgetsPage() {
 interface BudgetsContentProps {
   query: ReturnType<typeof useBudgetsQuery>;
   canWrite: boolean;
-  readOnlyId: string;
   createButton: ReactNode;
 }
 
-function BudgetsContent({ query, canWrite, readOnlyId, createButton }: BudgetsContentProps) {
+function BudgetsContent({ query, canWrite, createButton }: BudgetsContentProps) {
   const project = useProjectQuery();
   const keys = useGatewayKeysQuery();
 
@@ -109,7 +91,7 @@ function BudgetsContent({ query, canWrite, readOnlyId, createButton }: BudgetsCo
         icon={Wallet}
         title="No budgets"
         description={`Set spend limits per project, gateway key, end user, model, metadata or trace name. ${softLimitNote()}`}
-        action={canWrite ? createButton : undefined}
+        action={createButton ?? undefined}
         className="rounded-tile bg-surface-muted"
       />
     );
@@ -120,7 +102,6 @@ function BudgetsContent({ query, canWrite, readOnlyId, createButton }: BudgetsCo
       gatewayKeys={keys.data}
       projectName={project.data?.name ?? null}
       canWrite={canWrite}
-      readOnlyId={readOnlyId}
     />
   );
 }

@@ -26,9 +26,6 @@ interface OrganizationFormProps {
   canSecure: boolean;
 }
 
-const READ_ONLY_NAME =
-  "border-border bg-surface-muted text-muted-foreground focus-visible:border-border";
-
 /**
  * The "General" card and the page-level save bar under it (Figma "Settings — Organization"): the
  * name is editable, the slug is not. The two-factor switch is a separate card with its own save,
@@ -67,23 +64,24 @@ export function OrganizationForm({ org, canEdit, canSecure }: OrganizationFormPr
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
       <SectionCard title="General" description="How your organization appears to its members.">
         <div className="grid gap-5 sm:grid-cols-2">
-          <FormField
-            label="Name"
-            hint={
-              canEdit
-                ? `Up to ${ORG_NAME_MAX_LENGTH} characters.`
-                : "Only admins and owners can rename the organization."
-            }
-            error={errors.name?.message}
-          >
-            <Input
-              autoComplete="off"
-              maxLength={ORG_NAME_MAX_LENGTH}
-              readOnly={!canEdit}
-              className={canEdit ? undefined : READ_ONLY_NAME}
-              {...form.register("name")}
-            />
-          </FormField>
+          {canEdit ? (
+            <FormField
+              label="Name"
+              hint={`Up to ${ORG_NAME_MAX_LENGTH} characters.`}
+              error={errors.name?.message}
+            >
+              <Input
+                autoComplete="off"
+                maxLength={ORG_NAME_MAX_LENGTH}
+                {...form.register("name")}
+              />
+            </FormField>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <p className="text-[13px] font-semibold text-foreground">Name</p>
+              <p className="text-sm font-medium text-foreground">{org.name}</p>
+            </div>
+          )}
           <ReadOnlySlugField slug={org.slug} hint="Read-only. Used in URLs and can't be changed." />
         </div>
       </SectionCard>

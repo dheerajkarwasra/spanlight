@@ -1,12 +1,8 @@
 import type { ReactNode } from "react";
 
 import { PageHeader } from "@/components/page-header";
-import { ReadOnlyLine } from "@/components/read-only-line";
 
 import { AlertsHeaderTabs } from "./alerts-header-tabs";
-
-/** Spec copy for every disabled alerts control a member or viewer sees. */
-export const ALERTS_READ_ONLY_REASON = "Only admins and owners can change alerts";
 
 /**
  * The frame the Rules and Channels tabs render inside (Figma "Alerts/Page header" and
@@ -24,9 +20,4 @@ export function AlertsLayout({ children }: { children: ReactNode }) {
       <div className="min-w-0">{children}</div>
     </div>
   );
-}
-
-/** Figma read-only line: a lock and "Only admins and owners can change alerts", visible text. */
-export function AlertsReadOnlyLine() {
-  return <ReadOnlyLine>{ALERTS_READ_ONLY_REASON}</ReadOnlyLine>;
 }

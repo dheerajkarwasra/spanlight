@@ -100,5 +100,3 @@ export function routeNamedIn(message: string, routes: readonly Route[]): Route |
 
 export const NOT_CONFIGURED_COPY =
   "Provider credentials are encrypted with a server key that isn't set. Ask your administrator to set CREDENTIALS_KEYS.";
-
-export const OWNER_ONLY_REASON = "Only organization owners can manage credentials";

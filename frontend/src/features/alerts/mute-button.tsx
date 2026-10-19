@@ -10,15 +10,12 @@ import { mutedUntil } from "./rule-state";
 
 interface MuteButtonProps {
   rule: AlertRule;
-  canWrite: boolean;
   now: Date;
-  /** The id of the visible read-only line, set while the control is disabled. */
-  describedBy?: string;
   className?: string;
 }
 
 /** "Mute" opens the mute dialog; on a muted rule, "Unmute" ends the mute right away. */
-export function MuteButton({ rule, canWrite, now, describedBy, className }: MuteButtonProps) {
+export function MuteButton({ rule, now, className }: MuteButtonProps) {
   const [open, setOpen] = useState(false);
   const mute = useMuteRule();
 
@@ -29,8 +26,6 @@ export function MuteButton({ rule, canWrite, now, describedBy, className }: Mute
       {muted ? (
         <Button
           className={className}
-          disabled={!canWrite}
-          aria-describedby={describedBy}
           loading={mute.isPending}
           onClick={() => {
             mute.mutate(
@@ -47,8 +42,6 @@ export function MuteButton({ rule, canWrite, now, describedBy, className }: Mute
       ) : (
         <Button
           className={className}
-          disabled={!canWrite}
-          aria-describedby={describedBy}
           onClick={() => {
             setOpen(true);
           }}

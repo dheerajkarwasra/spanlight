@@ -94,14 +94,16 @@ export function ProfileRow({ profile, canWrite }: ProfileRowProps) {
             {profile.enabled ? "On" : "Off"}
           </span>
         </div>
-        <ProfileDialog
-          profile={profile}
-          trigger={
-            <Button size="sm" disabled={!canWrite} aria-label={`Edit ${profile.name}`}>
-              Edit
-            </Button>
-          }
-        />
+        {canWrite ? (
+          <ProfileDialog
+            profile={profile}
+            trigger={
+              <Button size="sm" aria-label={`Edit ${profile.name}`}>
+                Edit
+              </Button>
+            }
+          />
+        ) : null}
       </div>
     </li>
   );

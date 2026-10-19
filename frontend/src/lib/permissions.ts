@@ -95,3 +95,30 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
 export function roleBlockedCopy(action: string): string {
   return `Your role can't ${action}. Ask an admin or the owner for member access.`;
 }
+
+const ROLE_PLURALS: Record<Role, string> = {
+  viewer: "viewers",
+  member: "members",
+  admin: "admins",
+  owner: "owners",
+};
+
+/** The roles that hold `permission`, lowest first, as prose: "admins and owners". */
+export function rolesWith(permission: Permission): string {
+  const names = [...ROLES]
+    .reverse()
+    .filter((role) => can(role, permission))
+    .map((role) => ROLE_PLURALS[role]);
+  return names.length > 1
+    ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
+    : (names[0] ?? "");
+}
+
+/**
+ * The one banner of a page the role can read but not change (Figma "Settings v4 — Access
+ * states"): "You have view-only access. Admins and owners can change organization settings."
+ */
+export function viewOnlyCopy(what: string, permission: Permission): string {
+  const who = rolesWith(permission);
+  return `You have view-only access. ${who.charAt(0).toUpperCase()}${who.slice(1)} can change ${what}.`;
+}

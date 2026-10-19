@@ -1,14 +1,16 @@
 import { BellRing, Info, Plus } from "lucide-react";
-import { useId, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
+import { ReadOnlyNote } from "@/components/read-only-note";
 import { SectionCard } from "@/components/section-card";
 import { TileListSkeleton } from "@/components/tile-list";
 import { Button } from "@/components/ui/button";
 import { useCurrentOrg, usePermission } from "@/features/shell";
+import { viewOnlyCopy } from "@/lib/permissions";
 
-import { AlertsLayout, AlertsReadOnlyLine } from "./alerts-layout";
+import { AlertsLayout } from "./alerts-layout";
 import { ChannelDialog } from "./channel-dialog";
 import { CHANNEL_COPY } from "./channel-kinds";
 import { ChannelList } from "./channel-list";
@@ -22,24 +24,19 @@ import { useAlertChannelsQuery } from "./alerts-queries";
 export function AlertChannelsPage() {
   const orgName = useCurrentOrg()?.name ?? "your organization";
   const canWrite = usePermission("alerts:write");
-  const readOnlyId = useId();
   const query = useAlertChannelsQuery();
 
-  const addButton = (
+  const addButton = canWrite ? (
     <ChannelDialog
       channel={null}
       trigger={
-        <Button
-          variant="primary"
-          disabled={!canWrite}
-          aria-describedby={canWrite ? undefined : readOnlyId}
-        >
+        <Button variant="primary">
           <Plus aria-hidden />
           Add channel
         </Button>
       }
     />
-  );
+  ) : null;
 
   return (
     <AlertsLayout>
@@ -47,23 +44,12 @@ export function AlertChannelsPage() {
         title="Channels"
         description={`Shared by every project in ${orgName}. Test a channel to check it works.`}
         className="gap-4"
-        actions={
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            {canWrite ? null : (
-              <div id={readOnlyId}>
-                <AlertsReadOnlyLine />
-              </div>
-            )}
-            {addButton}
-          </div>
-        }
+        actions={addButton}
       >
-        <ChannelsContent
-          query={query}
-          canWrite={canWrite}
-          readOnlyId={readOnlyId}
-          addButton={addButton}
-        />
+        {canWrite ? null : (
+          <ReadOnlyNote>{viewOnlyCopy("alert channels", "alerts:write")}</ReadOnlyNote>
+        )}
+        <ChannelsContent query={query} canWrite={canWrite} addButton={addButton} />
         <p className="flex items-center gap-2 px-1 pt-2 text-xs font-medium text-muted-foreground">
           <Info aria-hidden className="size-3.5 shrink-0" />
           {CHANNEL_COPY.footnote}
@@ -76,11 +62,10 @@ export function AlertChannelsPage() {
 interface ChannelsContentProps {
   query: ReturnType<typeof useAlertChannelsQuery>;
   canWrite: boolean;
-  readOnlyId: string;
   addButton: ReactNode;
 }
 
-function ChannelsContent({ query, canWrite, readOnlyId, addButton }: ChannelsContentProps) {
+function ChannelsContent({ query, canWrite, addButton }: ChannelsContentProps) {
   if (query.isPending) {
     return <TileListSkeleton label="Loading channels" rows={4} className="h-[56px]" />;
   }
@@ -103,10 +88,10 @@ function ChannelsContent({ query, canWrite, readOnlyId, addButton }: ChannelsCon
         icon={BellRing}
         title="No channels"
         description="Channels are where alerts go: email, Slack, a signed webhook or PagerDuty."
-        action={canWrite ? addButton : undefined}
+        action={addButton ?? undefined}
         className="rounded-tile bg-surface-muted"
       />
     );
   }
-  return <ChannelList channels={query.data} canWrite={canWrite} readOnlyId={readOnlyId} />;
+  return <ChannelList channels={query.data} canWrite={canWrite} />;
 }
