@@ -125,6 +125,7 @@ Prompts, datasets and evals: manage prompts as versions, score traces by hand or
 
 ### Security
 
+- **The web image's Caddy is rebuilt** from Caddy 2.11.7 with Go 1.27.2 and `golang.org/x/net` 0.60.0: the official `caddy:2.11-alpine` binary (Go 1.26.8, x/net 0.59.0) carries CVE-2026-78667, CVE-2026-78669 and CVE-2026-97031, which failed the release scan.
 - A judge's input is passed as marked data and the model is told to treat it as data, which reduces and does not remove prompt injection. Scores are advice, not proof; this is stated in the documentation.
 - Judge spend is bounded by a reservation per evaluator rather than a check after the fact, and an unpriced model never runs.
 - Webhook evaluators use the same vetted client as alert webhooks (https only, no private addresses unless `WEBHOOK_ALLOW_PRIVATE_TARGETS`, no redirects), are signed with the channel's secret, make one attempt with a 30 second limit, and never put the URL or the secret in a run's error or a log line.

@@ -88,10 +88,27 @@ HEALTHCHECK --interval=10s --timeout=3s --retries=5 \
 # and exec makes uvicorn PID 1 so it gets SIGTERM and shuts down gracefully.
 CMD ["sh", "-c", "unset MIGRATION_DATABASE_URL; exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"]
 
+# ---------- Caddy binary ----------
+# The official caddy:2.11-alpine image (Caddy 2.11.7) ships a binary built with Go 1.26.8 and
+# golang.org/x/net 0.59.0, which failed the 0.6.0 release scan (CVE-2026-78667, CVE-2026-78669,
+# CVE-2026-97031). The same Caddy release is rebuilt here with a patched toolchain and x/net.
+# shortcut: pinned by hand, drop this stage once the official image ships Go >= 1.27.2.
+FROM golang:1.27.2-alpine AS caddy-build
+WORKDIR /src
+RUN printf '%s\n' 'package main' \
+      'import (' \
+      '	caddycmd "github.com/caddyserver/caddy/v2/cmd"' \
+      '	_ "github.com/caddyserver/caddy/v2/modules/standard"' \
+      ')' \
+      'func main() { caddycmd.Main() }' > main.go \
+    && go mod init spanlight/caddy \
+    && go get github.com/caddyserver/caddy/v2@v2.11.7 golang.org/x/net@v0.60.0 \
+    && go mod tidy \
+    && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /caddy .
+
 # ---------- Web (Caddy serving the SPA, proxying API) ----------
-# 2.11 is built with a patched Go toolchain (1.26.x) and patched quic-go, x/net, x/crypto and
-# grpc modules; 2.10.2 (Go 1.25.0) failed the release scan with 59 fixable HIGH/CRITICAL findings.
 FROM caddy:2.11-alpine AS web
+COPY --from=caddy-build /caddy /usr/bin/caddy
 COPY deploy/Caddyfile /etc/caddy/Caddyfile
 COPY --from=frontend-build /src/frontend/dist /srv
 COPY --from=docs-build /src/docs-site/dist /srv/docs
