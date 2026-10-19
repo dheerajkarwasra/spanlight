@@ -66,7 +66,7 @@ def test_redact_json_walks_nested_values_and_keys() -> None:
     }
 
 
-@pytest.mark.parametrize("credential", CREDENTIALS)
+@pytest.mark.parametrize("credential", CREDENTIALS, ids=KEY_PREFIXES)
 def test_every_kind_of_spanlight_credential_is_redacted(credential: str) -> None:
     assert redact_text(f"token: {credential}.") == f"token: {REDACTED}."
 

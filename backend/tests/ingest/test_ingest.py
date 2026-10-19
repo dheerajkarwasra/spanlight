@@ -255,24 +255,35 @@ async def test_missing_or_malformed_key_is_401(client: httpx.AsyncClient) -> Non
     assert malformed.status_code == 401
 
 
-async def test_rate_limit_returns_429_with_retry_after(
-    client: httpx.AsyncClient, workspace: Workspace
+async def _set_ingest_refill_clock(
+    session_factory: async_sessionmaker[AsyncSession], updated_at: str
 ) -> None:
-    # The bucket refills on the real database clock while the requests run, so the 429 can come a
-    # little after the 101st request; send until the first one.
-    limited: httpx.Response | None = None
-    statuses: list[int] = []
-    for _ in range(1000):
-        response = await _ingest(client, workspace, [])
-        statuses.append(response.status_code)
-        if response.status_code == 429:
-            limited = response
-            break
-    assert limited is not None, "ingest was never rate limited"
-    assert statuses[:100] == [200] * 100  # the full burst is allowed
+    async with session_factory() as db, db.begin():
+        moved = await db.execute(
+            text(
+                f"UPDATE rate_limit_buckets SET updated_at = {updated_at} WHERE key LIKE 'ingest:%'"
+            )
+        )
+    assert getattr(moved, "rowcount", 0) == 1
+
+
+async def test_rate_limit_returns_429_with_retry_after(
+    client: httpx.AsyncClient,
+    workspace: Workspace,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    assert (await _ingest(client, workspace, [])).status_code == 200
+    # Hold the key's refill clock an hour ahead, so exactly the burst of 100 is allowed however
+    # slowly the requests run (the key refills 50 tokens a second).
+    await _set_ingest_refill_clock(session_factory, "now() + interval '1 hour'")
+    statuses = [(await _ingest(client, workspace, [])).status_code for _ in range(99)]
+    assert statuses == [200] * 99  # the rest of the burst
+    limited = await _ingest(client, workspace, [])
+    assert limited.status_code == 429
     assert limited.json()["code"] == "RATE_LIMITED"
     assert int(limited.headers["retry-after"]) >= 1
 
+    await _set_ingest_refill_clock(session_factory, "now()")
     await asyncio.sleep(0.05)  # one token refills every 1/50 s
     assert (await _ingest(client, workspace, [])).status_code == 200
 

@@ -1,9 +1,13 @@
 """Test fixtures: a real Postgres, migrated once, used through a non-superuser role.
 
-TEST_DATABASE_URL must point at a database where the given user can create
-roles (the stock postgres image's superuser does). The schema is rebuilt and
-migrated as the unprivileged `spanlight_app_test` role, and the app connects as that
-role too, because superusers bypass row-level security even when FORCEd.
+TEST_DATABASE_URL must point at a database as a superuser (the stock postgres
+image's `postgres` is one), which creates the role and empties the tables between
+tests. The schema is rebuilt and migrated as the unprivileged `spanlight_app_test`
+role, and the app connects as that role too, because superusers bypass row-level
+security even when FORCEd.
+
+Under pytest-xdist (`pytest -n auto`) each worker builds and uses its own database,
+the TEST_DATABASE_URL one with the worker's name appended (`spanlight_test_gw0`, ...).
 """
 
 import os
@@ -16,7 +20,6 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 import psycopg
 import pytest
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.config import Settings
@@ -35,7 +38,9 @@ TEST_ORIGIN = "http://testserver"
 # (pinned app clock, budget world) for every test directory.
 pytest_plugins = ["tests.gateway_fixtures", "tests.budget_fixtures"]
 
-_TABLES_TO_TRUNCATE = (
+# The tables emptied before every test, and with them every table that has a foreign key to one of
+# them, as `TRUNCATE ... CASCADE` would reach.
+_TABLES_TO_EMPTY = (
     "exports",
     "span_rollups_hourly",
     "trace_rollups_hourly",
@@ -63,15 +68,47 @@ _TABLES_TO_TRUNCATE = (
     "provider_incidents",
 )
 # The status feed rows are seeded by migration 0702: reset their poll state instead of deleting.
-_RESET_STATUS_SOURCES = text(
+_RESET_STATUS_SOURCES = (
     "UPDATE provider_status_sources SET etag = NULL, last_modified = NULL, "
     "last_polled_at = NULL, last_success_at = NULL, last_outcome = NULL, "
     "consecutive_failures = 0, last_error_type = NULL"
 )
+# `_TABLES_TO_EMPTY` and the tables that reference them, transitively, and the sequences they own.
+_EMPTIED_RELATIONS = """
+WITH RECURSIVE emptied(oid) AS (
+    SELECT unnest(%s::regclass[])::oid
+    UNION
+    SELECT c.conrelid FROM pg_constraint c JOIN emptied ON c.confrelid = emptied.oid
+    WHERE c.contype = 'f'
+)
+SELECT
+    array(SELECT oid::regclass::text FROM emptied),
+    array(
+        SELECT d.objid::regclass::text
+        FROM pg_depend d
+        JOIN emptied ON d.refobjid = emptied.oid
+        JOIN pg_class s ON s.oid = d.objid AND s.relkind = 'S'
+        WHERE d.classid = 'pg_class'::regclass AND d.deptype IN ('a', 'i')
+    )
+"""
+
+
+def _base_database_url() -> str:
+    return os.environ.get("TEST_DATABASE_URL", DEFAULT_TEST_DATABASE_URL)
 
 
 def admin_database_url() -> str:
-    return os.environ.get("TEST_DATABASE_URL", DEFAULT_TEST_DATABASE_URL)
+    """The test database as the admin user: under pytest-xdist, this worker's own database."""
+    url = _base_database_url()
+    worker = os.environ.get("PYTEST_XDIST_WORKER")
+    if worker is None:
+        return url
+    parts = urlsplit(url)
+    return urlunsplit(parts._replace(path=f"{parts.path}_{worker}"))
+
+
+def _libpq(url: str) -> str:
+    return url.replace("postgresql+psycopg://", "postgresql://")
 
 
 def _with_credentials(url: str, user: str, password: str) -> str:
@@ -84,8 +121,11 @@ def _with_credentials(url: str, user: str, password: str) -> str:
 @pytest.fixture(scope="session")
 def app_database_url() -> str:
     admin_url = admin_database_url()
-    libpq_url = admin_url.replace("postgresql+psycopg://", "postgresql://")
-    with psycopg.connect(libpq_url, autocommit=True) as connection:
+    libpq_url = _libpq(admin_url)
+    with psycopg.connect(_libpq(_base_database_url()), autocommit=True) as connection:
+        # The role and the databases are cluster-wide and xdist workers start together, so they
+        # take turns here. Advisory locks are per database: every worker takes it in the base one.
+        connection.execute("SELECT pg_advisory_lock(hashtext(%s))", (APP_ROLE,))
         exists = connection.execute(
             "SELECT 1 FROM pg_roles WHERE rolname = %s", (APP_ROLE,)
         ).fetchone()
@@ -94,6 +134,11 @@ def app_database_url() -> str:
                 f"CREATE ROLE {APP_ROLE} LOGIN PASSWORD '{APP_PASSWORD}' "
                 "NOSUPERUSER NOBYPASSRLS NOCREATEROLE"
             )
+        if admin_url != _base_database_url():
+            worker_database = urlsplit(libpq_url).path.lstrip("/")
+            connection.execute(f'DROP DATABASE IF EXISTS "{worker_database}" WITH (FORCE)')
+            connection.execute(f'CREATE DATABASE "{worker_database}"')
+    with psycopg.connect(libpq_url, autocommit=True) as connection:
         connection.execute("DROP SCHEMA IF EXISTS public CASCADE")
         connection.execute(f"CREATE SCHEMA public AUTHORIZATION {APP_ROLE}")
         database = urlsplit(libpq_url).path.lstrip("/")
@@ -135,13 +180,40 @@ def session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     return create_session_factory(engine)
 
 
-@pytest.fixture(autouse=True)
-async def clean_database(engine: AsyncEngine) -> None:
-    async with engine.begin() as connection:
-        await connection.execute(
-            text(f"TRUNCATE {', '.join(_TABLES_TO_TRUNCATE)} RESTART IDENTITY CASCADE")
+@pytest.fixture(scope="session")
+async def _empty_tables(
+    app_database_url: str,
+) -> AsyncIterator[Callable[[], Awaitable[None]]]:
+    """Empty the test tables and restart their sequences, as `TRUNCATE ... RESTART IDENTITY`.
+
+    A TRUNCATE of 69 mostly empty tables cost ~140 ms a test, half the suite's time, so this
+    deletes their rows instead, in one round trip. It runs as the admin user, which sees every
+    row past RLS, with foreign key checks off (`session_replication_role`), so no order matters.
+    """
+    async with await psycopg.AsyncConnection.connect(_libpq(admin_database_url())) as admin:
+        cursor = await admin.execute(_EMPTIED_RELATIONS, (list(_TABLES_TO_EMPTY),))
+        row = await cursor.fetchone()
+        assert row is not None
+        tables, sequences = row
+        await admin.commit()
+        statements = (
+            "SET LOCAL session_replication_role = replica; "
+            + "".join(f"DELETE FROM {table}; " for table in tables)
+            + "SELECT setval(seqrelid, seqstart, false) FROM pg_sequence "
+            + f"WHERE seqrelid = ANY('{{{','.join(sequences)}}}'::regclass[]); "
+            + _RESET_STATUS_SOURCES
         )
-        await connection.execute(_RESET_STATUS_SOURCES)
+
+        async def empty() -> None:
+            async with admin.transaction():
+                await admin.execute(statements)
+
+        yield empty
+
+
+@pytest.fixture(autouse=True)
+async def clean_database(engine: AsyncEngine, _empty_tables: Callable[[], Awaitable[None]]) -> None:
+    await _empty_tables()
 
 
 @pytest.fixture

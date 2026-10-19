@@ -106,14 +106,15 @@ def test_redacting_a_body_sized_run_of_digit_groups_stays_cheap(unit: str) -> No
     # as this process's CPU time, not wall time, so other work on a busy machine does not count;
     # an absolute bound rather than a 1 MiB / 4 MiB scaling ratio, because a ratio of two short
     # timings swings more under load than one long one. These shapes cost up to about 0.8 s on a
-    # laptop; the bound leaves room for a slower CI machine and still fails the 6 s that a window
-    # search over single-digit groups cost.
+    # laptop, and nearly 4 s on an efficiency core when pytest-xdist fills every core; the bound
+    # leaves room for that and still fails the 6 s that a window search over single-digit groups
+    # cost.
     text = unit * (MAX_BODY_BYTES // len(unit))
 
     started = time.process_time()
     redact_text(text)
 
-    assert time.process_time() - started < 3.0
+    assert time.process_time() - started < 5.0
 
 
 @skip_when_traced
@@ -126,4 +127,4 @@ def test_redacting_a_body_of_random_digit_groups_stays_cheap() -> None:
     started = time.process_time()
     redact_text(text)
 
-    assert time.process_time() - started < 3.0
+    assert time.process_time() - started < 5.0

@@ -194,6 +194,7 @@ async def test_a_null_expiry_means_no_expiry(workspace: Workspace) -> None:
         (datetime.now(UTC) - timedelta(days=365)).isoformat(),
         "2000-01-01T00:00:00",
     ],
+    ids=["a-minute-ago", "a-year-ago", "naive-2000"],
 )
 async def test_an_expiry_in_the_past_is_a_validation_error(
     workspace: Workspace, expires_at: str

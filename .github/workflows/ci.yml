@@ -40,7 +40,8 @@ jobs:
       - run: uv run ruff check
       - run: uv run ruff format --check
       - run: uv run mypy app load accuracy
-      - run: uv run pytest -q
+      # One worker per runner CPU, each with its own database (see backend/tests/conftest.py).
+      - run: uv run pytest -q -n auto
 
   sdk-python:
     runs-on: ubuntu-latest

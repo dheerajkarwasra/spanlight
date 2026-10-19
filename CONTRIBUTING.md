@@ -24,7 +24,7 @@ Run the checks for what you touched before you open a pull request. CI runs all 
 ```bash
 # Backend, which needs Postgres. See Test database below
 cd backend && uv sync --frozen
-uv run ruff check && uv run ruff format --check && uv run mypy app && uv run pytest
+uv run ruff check && uv run ruff format --check && uv run mypy app && uv run pytest -n auto
 
 # Frontend
 cd frontend && npm ci

@@ -1,5 +1,6 @@
 """`ensure_app_role` provisions the non-superuser role the app connects as."""
 
+import os
 from collections.abc import Iterator
 
 import psycopg
@@ -8,7 +9,8 @@ import pytest
 from app.db.roles import ensure_app_role
 from tests.conftest import admin_database_url
 
-PROBE_ROLE = "spanlight_role_probe"
+# Roles are cluster-wide, so each xdist worker probes with its own.
+PROBE_ROLE = f"spanlight_role_probe_{os.environ.get('PYTEST_XDIST_WORKER', 'main')}"
 
 
 def _plain_url(url: str) -> str:

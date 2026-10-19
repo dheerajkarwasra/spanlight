@@ -48,24 +48,20 @@ FIGURES = (
 
 # `count` traces started at `:started_at`, each with one LLM span. Trace `n` (1-based) carries
 # `customer = c<n, five digits>` and costs `n * :unit` (NULL when `:unit` is NULL).
-_SEED_VALUES = """
-    WITH ids AS (
-        SELECT n,
-               md5(random()::text || n::text) AS trace_id,
-               left(md5(random()::text || n::text), 16) AS span_id
-        FROM generate_series(1, :count) AS n
-    ), new_traces AS (
-        INSERT INTO traces (project_id, trace_id, environment, metadata, started_at, ended_at)
-        SELECT CAST(:project_id AS uuid), trace_id, 'prod',
-               jsonb_build_object('customer', 'c' || lpad(n::text, 5, '0')),
-               :started_at, :started_at
-        FROM ids
-    )
+_SEED_TRACES = """
+    INSERT INTO traces (project_id, trace_id, environment, metadata, started_at, ended_at)
+    SELECT CAST(:project_id AS uuid), md5(CAST(:project_id AS text) || n::text), 'prod',
+           jsonb_build_object('customer', 'c' || lpad(n::text, 5, '0')),
+           :started_at, :started_at
+    FROM generate_series(1, :count) AS n
+"""
+_SEED_SPANS = """
     INSERT INTO spans (project_id, trace_id, span_id, kind, name, status, started_at, ended_at,
                        provider, model, input_tokens, output_tokens, cost_usd)
-    SELECT CAST(:project_id AS uuid), trace_id, span_id, 'llm', 'call', 'ok', :started_at,
+    SELECT CAST(:project_id AS uuid), md5(CAST(:project_id AS text) || n::text),
+           left(md5(n::text), 16), 'llm', 'call', 'ok', :started_at,
            :started_at, 'openai', 'model-a', 10, 5, CAST(:unit AS numeric) * n
-    FROM ids
+    FROM generate_series(1, :count) AS n
 """
 
 _ROWS = """
@@ -93,11 +89,13 @@ async def _seed(
 async def _seed_values(
     session_factory: SessionFactory, project_id: uuid.UUID, count: int, unit: str | None
 ) -> None:
-    await execute(
-        session_factory,
-        _SEED_VALUES,
-        {"project_id": project_id, "count": count, "started_at": at(0, 12), "unit": unit},
-    )
+    params = {"project_id": project_id, "count": count, "started_at": at(0, 12), "unit": unit}
+    await execute(session_factory, _SEED_TRACES, params)
+    # Fresh statistics, so the foreign key check of each span looks its trace up by primary key.
+    # With the stale ones of an almost empty table it can pick the (project_id, started_at) index
+    # and scan every trace of the project per span: minutes for 50,000 spans.
+    await execute(session_factory, "ANALYZE traces")
+    await execute(session_factory, _SEED_SPANS, params)
 
 
 async def _refresh_group(
