@@ -14,24 +14,17 @@ import { DeleteRuleDialog } from "./delete-rule-dialog";
 
 interface RuleActionsMenuProps {
   rule: AlertRule;
-  canWrite: boolean;
-  /** The id of the visible read-only line, set while the control is disabled. */
-  describedBy?: string;
 }
 
 /** Figma "More rule actions": the "…" after Edit, with "Delete rule" behind a confirm. */
-export function RuleActionsMenu({ rule, canWrite, describedBy }: RuleActionsMenuProps) {
+export function RuleActionsMenu({ rule }: RuleActionsMenuProps) {
   const [deleting, setDeleting] = useState(false);
 
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger asChild disabled={!canWrite}>
-          <Button
-            size="icon"
-            aria-label={`More actions for ${rule.name}`}
-            aria-describedby={describedBy}
-          >
+        <DropdownMenuTrigger asChild>
+          <Button size="icon" aria-label={`More actions for ${rule.name}`}>
             <Ellipsis aria-hidden />
           </Button>
         </DropdownMenuTrigger>

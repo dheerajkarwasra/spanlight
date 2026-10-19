@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { usePermission, useProjectParams } from "@/features/shell";
 import type { Route } from "@/lib/api";
 import { formatTimestamp } from "@/lib/format";
+import { viewOnlyCopy } from "@/lib/permissions";
 
 import { RouteActionsMenu } from "./route-actions-menu";
 import { RouteEditorForm } from "./route-editor-form";
@@ -101,7 +102,7 @@ export function ExistingRouteEditor({ route, lookups }: ExistingRouteEditorProps
         }
       />
       {canWrite ? null : (
-        <ReadOnlyNote>You can view this route. Only admins and owners can change it.</ReadOnlyNote>
+        <ReadOnlyNote>{viewOnlyCopy("gateway routes", "gateway:write")}</ReadOnlyNote>
       )}
       {save.conflictVersion === null ? null : (
         <VersionConflictCallout

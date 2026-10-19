@@ -9,12 +9,10 @@ import { ChannelRow } from "./channel-row";
 interface ChannelListProps {
   channels: readonly AlertChannel[];
   canWrite: boolean;
-  /** The id of the page's read-only reason, for disabled controls to point at. */
-  readOnlyId: string;
 }
 
 /** Figma "Alerts — Channels": the channels grouped by kind under "Alerts/Group heading". */
-export function ChannelList({ channels, canWrite, readOnlyId }: ChannelListProps) {
+export function ChannelList({ channels, canWrite }: ChannelListProps) {
   return (
     <div className="@container flex flex-col gap-4">
       {groupByKind(channels).map((group) => (
@@ -23,7 +21,6 @@ export function ChannelList({ channels, canWrite, readOnlyId }: ChannelListProps
           kind={group.kind}
           channels={group.channels}
           canWrite={canWrite}
-          readOnlyId={readOnlyId}
         />
       ))}
     </div>
@@ -34,7 +31,7 @@ interface ChannelGroupProps extends ChannelListProps {
   kind: AlertChannelKind;
 }
 
-function ChannelGroup({ kind, channels, canWrite, readOnlyId }: ChannelGroupProps) {
+function ChannelGroup({ kind, channels, canWrite }: ChannelGroupProps) {
   const headingId = useId();
   const Icon = KIND_ICONS[kind];
   return (
@@ -51,12 +48,7 @@ function ChannelGroup({ kind, channels, canWrite, readOnlyId }: ChannelGroupProp
       </div>
       <ul aria-labelledby={headingId} className="flex flex-col gap-1.5">
         {channels.map((channel) => (
-          <ChannelRow
-            key={channel.id}
-            channel={channel}
-            canWrite={canWrite}
-            readOnlyId={readOnlyId}
-          />
+          <ChannelRow key={channel.id} channel={channel} canWrite={canWrite} />
         ))}
       </ul>
     </section>

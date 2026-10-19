@@ -2,10 +2,11 @@ import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 
 import { ErrorState } from "@/components/error-state";
+import { NoAccess } from "@/components/no-access";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ReasonBanner, SaveFromReviewDialog } from "@/features/review";
 import { FAILURE_CATEGORY_SCORE } from "@/features/scores";
-import { useProjectParams } from "@/features/shell";
+import { usePermission, useProjectParams } from "@/features/shell";
 
 import { useQueueQuery, useScoreConfigsQuery } from "./annotation-queries";
 import { queueConfigs } from "./queue-format";
@@ -28,9 +29,21 @@ const annotateRoute = getRouteApi("/_authed/$orgId/$projectId/annotate/$queueId"
 /**
  * Figma "Annotate — work mode": a focus screen without the rail or top bar. The reviewer claims
  * one item at a time, scores it from the keyboard or the mouse, and moves on; leaving releases the
- * item they hold.
+ * item they hold. A role without `annotations:write` gets the no-access page before anything is
+ * claimed: the work session claims on mount.
  */
 export function AnnotatePage() {
+  if (!usePermission("annotations:write")) {
+    return (
+      <main id="main" className="min-h-dvh bg-background px-4 pt-5 lg:px-10 lg:pt-10">
+        <NoAccess page="Annotation review" permission="annotations:write" />
+      </main>
+    );
+  }
+  return <AnnotateWork />;
+}
+
+function AnnotateWork() {
   const { queueId } = annotateRoute.useParams();
   const { orgId, projectId } = useProjectParams();
   const navigate = useNavigate();

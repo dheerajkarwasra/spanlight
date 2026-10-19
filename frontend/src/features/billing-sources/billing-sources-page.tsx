@@ -10,6 +10,7 @@ import { TileListSkeleton } from "@/components/tile-list";
 import { Button } from "@/components/ui/button";
 import { useCurrentOrg, usePermission } from "@/features/shell";
 import { docsLink } from "@/lib/docs-links";
+import { viewOnlyCopy } from "@/lib/permissions";
 
 import { useBillingSourcesQuery } from "./billing-sources-queries";
 import { CreateSourceDialog } from "./create-source-dialog";
@@ -40,9 +41,7 @@ export function BillingSourcesPage() {
   return (
     <div className="flex flex-col gap-5">
       {canManage ? null : (
-        <ReadOnlyNote>
-          Only admins and owners can add, refresh, edit or delete billing sources.
-        </ReadOnlyNote>
+        <ReadOnlyNote>{viewOnlyCopy("billing sources", "billing_sources:manage")}</ReadOnlyNote>
       )}
       <SectionCard
         title="Billing sources"

@@ -13,18 +13,16 @@ import { TestSendButton, TestSendResult } from "./test-send-button";
 interface ChannelRowProps {
   channel: AlertChannel;
   canWrite: boolean;
-  readOnlyId: string;
 }
 
 /**
  * Figma "Alerts/Channel row" (kind tile, name, target, verified state, Test, Deliveries, more) and
  * its 375 px tile, which stacks the same parts. The last test's outcome shows under the row.
  */
-export function ChannelRow({ channel, canWrite, readOnlyId }: ChannelRowProps) {
+export function ChannelRow({ channel, canWrite }: ChannelRowProps) {
   const test = useTestChannel(channel.id);
   const target = channelTarget(channel);
   const Icon = KIND_ICONS[channel.kind];
-  const describedBy = canWrite ? undefined : readOnlyId;
 
   return (
     <li className="flex flex-col gap-1.5">
@@ -67,14 +65,9 @@ export function ChannelRow({ channel, canWrite, readOnlyId }: ChannelRowProps) {
           <VerifiedBadge channel={channel} />
         </div>
         <div className="flex items-center gap-1.5 @[48rem]:justify-end @max-[48rem]:[&>button:not(:last-child)]:h-11 @max-[48rem]:[&>button:not(:last-child)]:flex-1">
-          <TestSendButton
-            test={test}
-            channelName={channel.name}
-            disabled={!canWrite}
-            describedBy={describedBy}
-          />
+          {canWrite ? <TestSendButton test={test} channelName={channel.name} /> : null}
           <DeliveryLogSheet channel={channel} canWrite={canWrite} />
-          <ChannelRowMenu channel={channel} canWrite={canWrite} readOnlyId={readOnlyId} />
+          {canWrite ? <ChannelRowMenu channel={channel} /> : null}
         </div>
       </div>
       <TestSendResult test={test} />
