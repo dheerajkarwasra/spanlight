@@ -11,7 +11,7 @@
 [![PyPI](https://img.shields.io/pypi/v/spanlight.svg)](https://pypi.org/project/spanlight/)
 [![License: MIT core](https://img.shields.io/badge/license-MIT%20core-blue.svg)](LICENSE)
 
-[Live demo](https://spanlight.dev) · [Docs](https://spanlight.dev/docs/) · [Features](#features) · [Getting started](#getting-started) · [How it works](#how-it-works)
+[Live demo](https://spanlight.dev) · [Docs](https://spanlight.dev/docs/) · [Features](#features) · [Getting started](#getting-started) · [How it works](#how-it-works) · [Discussions](https://github.com/dheerajkarwasra/spanlight/discussions)
 
 </div>
 
@@ -140,4 +140,4 @@ One Docker image runs three roles: `api`, `worker` and `web`. Ingestion is synch
 - [Runbooks](docs/runbooks/) and [security](docs/security/): operating, restoring and securing an instance.
 - [Backend](backend/README.md) and [contributor](CONTRIBUTING.md) guides: local setup, the test database and the checks CI runs.
 
-Found a bug or have an idea? [Open an issue](https://github.com/dheerajkarwasra/spanlight/issues).
+Have a question or an idea? Start a thread in [Discussions](https://github.com/dheerajkarwasra/spanlight/discussions). Found a bug? [Open an issue](https://github.com/dheerajkarwasra/spanlight/issues/new/choose).
