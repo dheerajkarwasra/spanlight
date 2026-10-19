@@ -89,10 +89,9 @@ export class Client {
       log.warn("No API key: set SPANLIGHT_API_KEY or pass apiKey to init(). Tracing is disabled.");
       return;
     }
-    const host = (options.host ?? (env.SPANLIGHT_HOST || "http://localhost:8000")).replace(
-      /\/+$/,
-      "",
-    );
+    let host = options.host ?? (env.SPANLIGHT_HOST || "http://localhost:8000");
+    // A loop, not /\/+$/: that pattern backtracks quadratically on a long run of slashes.
+    while (host.endsWith("/")) host = host.slice(0, -1);
     this.exporter = new Exporter({
       url: `${host}/v1/traces`,
       apiKey,
