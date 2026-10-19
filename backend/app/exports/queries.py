@@ -4,6 +4,7 @@ Every query is also bound to the project by row-level security (the caller binds
 the explicit `project_id` condition keeps index use obvious.
 """
 
+import sys
 import uuid
 from collections import defaultdict
 from datetime import datetime
@@ -15,6 +16,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from app.db.models import Span, Trace
 from app.explorer.metadata_filters import metadata_conditions
 from app.exports.schemas import ExportFilters, SpanExportRow, TraceExportRow
+from app.ingest.normalize import LEGACY_PAYLOAD_BYTES
 
 
 def _escape_like(value: str) -> str:
@@ -113,29 +115,42 @@ async def fetch_trace_batch(
     after: Cursor | None,
     size: int,
     max_spans: int | None = None,
+    max_payload_bytes: int = sys.maxsize,
 ) -> list[TraceExportRow]:
     """Up to `size` traces after the cursor, with their spans when `max_spans` is given.
 
-    With `max_spans`, the batch is cut after the trace that would take the summed
-    `span_count` past it (always keeping at least one trace), so memory is bounded by the span
-    payloads of `max_spans` spans. The cut-off traces are read again by the next batch, whose
-    cursor is the last trace returned. A trace with more than `max_spans` spans comes back
-    alone and without spans: the caller streams them with `fetch_span_chunk`.
+    With `max_spans` (and `max_payload_bytes`), the batch is cut after the
+    trace that would take the summed `span_count`, or the summed stored payload bytes, past
+    them (always keeping at least one trace), so memory is bounded by both. The cut-off traces
+    are read again by the next batch, whose cursor is the last trace returned. A trace past
+    either bound on its own comes back alone and without spans: the caller streams them with
+    `fetch_span_chunk` (`oversized`).
     """
     traces = list((await db.scalars(_batch_query(project_id, filters, after, size))).all())
     if max_spans is None:
         return [_trace_row(trace, []) for trace in traces]
+    payload_bytes = await _payload_bytes(db, project_id, [trace.trace_id for trace in traces])
+
+    def oversized(trace: Trace) -> bool:
+        return (
+            trace.span_count > max_spans or payload_bytes.get(trace.trace_id, 0) > max_payload_bytes
+        )
 
     kept: list[Trace] = []
-    budget = 0
+    spans_budget = bytes_budget = 0
     for trace in traces:
-        if kept and budget + trace.span_count > max_spans:
+        trace_bytes = payload_bytes.get(trace.trace_id, 0)
+        if kept and (
+            spans_budget + trace.span_count > max_spans
+            or bytes_budget + trace_bytes > max_payload_bytes
+        ):
             break
         kept.append(trace)
-        budget += trace.span_count
+        spans_budget += trace.span_count
+        bytes_budget += trace_bytes
 
     spans_by_trace: dict[str, list[SpanExportRow]] = defaultdict(list)
-    loadable = [trace.trace_id for trace in kept if trace.span_count <= max_spans]
+    loadable = [trace.trace_id for trace in kept if not oversized(trace)]
     if loadable:
         spans = await db.scalars(
             select(Span)
@@ -144,7 +159,27 @@ async def fetch_trace_batch(
         )
         for span in spans:
             spans_by_trace[span.trace_id].append(_span_row(span))
-    return [_trace_row(trace, spans_by_trace.get(trace.trace_id, [])) for trace in kept]
+    return [
+        _trace_row(trace, spans_by_trace.get(trace.trace_id, []), oversized=oversized(trace))
+        for trace in kept
+    ]
+
+
+async def _payload_bytes(
+    db: AsyncSession, project_id: uuid.UUID, trace_ids: list[str]
+) -> dict[str, int]:
+    """Each trace's stored payload bytes, summed from `payload_bytes` without reading a payload."""
+    if not trace_ids:
+        return {}
+    rows = await db.execute(
+        select(
+            Span.trace_id,
+            func.sum(func.coalesce(Span.payload_bytes, LEGACY_PAYLOAD_BYTES)),
+        )
+        .where(Span.project_id == project_id, Span.trace_id.in_(trace_ids))
+        .group_by(Span.trace_id)
+    )
+    return {trace_id: int(total) for trace_id, total in rows}
 
 
 async def fetch_span_chunk(
@@ -173,7 +208,9 @@ async def fetch_span_chunk(
     return [_span_row(span) for span in (await db.scalars(query)).all()]
 
 
-def _trace_row(trace: Trace, spans: list[SpanExportRow]) -> TraceExportRow:
+def _trace_row(
+    trace: Trace, spans: list[SpanExportRow], *, oversized: bool = False
+) -> TraceExportRow:
     return TraceExportRow(
         trace_id=trace.trace_id,
         name=trace.name,
@@ -194,6 +231,7 @@ def _trace_row(trace: Trace, spans: list[SpanExportRow]) -> TraceExportRow:
         tags=list(trace.tags),
         metadata=dict(trace.metadata_),
         spans=spans,
+        oversized=oversized,
     )
 
 

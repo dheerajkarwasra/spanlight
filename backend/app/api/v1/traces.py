@@ -31,7 +31,7 @@ from app.explorer.filter_values import filter_values
 from app.explorer.metadata_filters import check_metadata_filter
 from app.explorer.score_filters import check_score_filters
 from app.explorer.trace_filters import apply_filters
-from app.explorer.trace_queries import page_select, summary_select, trace_spans
+from app.explorer.trace_queries import page_select, summary_select, trace_span, trace_spans
 from app.explorer.trace_sort import TraceSort
 from app.ingest.error_class import ErrorClass
 from app.ingest.metadata import MetadataKey
@@ -177,8 +177,25 @@ async def get_trace(
     spans = await trace_spans(db, project.id, summary.trace_id)
     return TraceDetailOut(
         **summary.model_dump(),
-        spans=[SpanOut.model_validate(span, from_attributes=True) for span in spans],
+        spans=[
+            SpanOut.model_validate(span, from_attributes=True).model_copy(
+                update={"payload_omitted": omitted}
+            )
+            for span, omitted in spans
+        ],
     )
+
+
+@router.get("/traces/{trace_id}/spans/{span_id}", response_model=SpanOut)
+async def get_span(
+    project_id: uuid.UUID, trace_id: str, span_id: str, access: ProjectReader, db: DbSession
+) -> SpanOut:
+    """One span with its payloads: what trace detail leaves out past its payload budget."""
+    project = access.require_project()
+    span = await trace_span(db, project.id, trace_id.lower(), span_id.lower())
+    if span is None:
+        raise not_found()
+    return SpanOut.model_validate(span, from_attributes=True)
 
 
 @router.get("/sessions", response_model=Page[SessionSummaryOut])

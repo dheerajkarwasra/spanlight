@@ -15,7 +15,6 @@ from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from .._request_hash import request_hash
-from .._serialize import to_jsonable
 from .._span import Span
 from ._modifiers import SENTINEL_TYPE_NAMES, pricing_modifier_unknown
 from ._provider_errors import provider_request_id, record_response_details
@@ -93,17 +92,14 @@ def client_getter(spanlight: Spanlight | None) -> ClientGetter:
 def sanitize_request(kwargs: Mapping[str, Any]) -> dict[str, Any]:
     """Return the request parameters worth recording as span input.
 
-    Drops transport/auth options and the SDKs' "not given" sentinels, then
-    converts everything to JSON-compatible values.
+    Drops transport/auth options and the SDKs' "not given" sentinels. The values are
+    converted by ``Span.set_input``, which also records whether anything was cut.
     """
-    cleaned: dict[str, Any] = {}
-    for key, value in kwargs.items():
-        if key in _EXCLUDED_REQUEST_KEYS:
-            continue
-        if type(value).__name__ in SENTINEL_TYPE_NAMES:
-            continue
-        cleaned[key] = to_jsonable(value)
-    return cleaned
+    return {
+        key: value
+        for key, value in kwargs.items()
+        if key not in _EXCLUDED_REQUEST_KEYS and type(value).__name__ not in SENTINEL_TYPE_NAMES
+    }
 
 
 def is_raw_response_call(kwargs: Mapping[str, Any]) -> bool:
@@ -189,9 +185,9 @@ def start_llm_span(
         span = client.start_span(endpoint.span_name(kwargs), kind="llm")
         model = kwargs.get("model")
         span.set_model(model if isinstance(model, str) else None, provider=endpoint.provider)
-        request = sanitize_request(kwargs)
-        span.set_request_hash(_request_hash_or_none(model, request))
-        span.set_input(request)
+        span.set_input(sanitize_request(kwargs))
+        # From the request as recorded, the same JSON values the server hashes.
+        span.set_request_hash(_request_hash_or_none(model, span.input))
         if kwargs.get("stream") is True:
             span.set_attribute("request.stream", True)
         modifier = pricing_modifier_unknown(kwargs)

@@ -212,7 +212,7 @@ spl exec api date -u
 
 Fix the time on the host that is off, for example with NTP. A containerised application uses the clock of its host.
 
-**Large inputs and outputs are not an error.** A prompt or completion over 32 KB is cut to its first 32 KB and the span is marked `truncated`. It is stored, not rejected.
+**Large inputs and outputs are not an error.** A prompt or completion over 1 MB is cut to its first 1 MB and the span is marked `truncated`. It is stored, not rejected.
 
 ### The whole request is refused
 

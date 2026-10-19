@@ -14877,6 +14877,11 @@
             ],
             "title": "Parent Span Id"
           },
+          "payload_omitted": {
+            "default": false,
+            "title": "Payload Omitted",
+            "type": "boolean"
+          },
           "pricing_version": {
             "anyOf": [
               {
@@ -29419,6 +29424,68 @@
         "summary": "Score a trace",
         "tags": [
           "scores"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/traces/{trace_id}/spans/{span_id}": {
+      "get": {
+        "description": "One span with its payloads: what trace detail leaves out past its payload budget.",
+        "operationId": "get_span_api_v1_projects__project_id__traces__trace_id__spans__span_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "trace_id",
+            "required": true,
+            "schema": {
+              "title": "Trace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "span_id",
+            "required": true,
+            "schema": {
+              "title": "Span Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Span",
+        "tags": [
+          "traces"
         ]
       }
     },

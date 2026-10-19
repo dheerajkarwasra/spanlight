@@ -188,6 +188,11 @@ export interface Span {
   output: unknown;
   attributes: Record<string, unknown>;
   truncated: boolean;
+  /**
+   * True when trace detail left `input` and `output` out (null) because the trace's payloads
+   * passed its 8 MiB budget; `projectsApi.span` returns the span with them.
+   */
+  payload_omitted: boolean;
   /** Canonical finish reason; the raw value is in `attributes`. Null when unknown. */
   finish_reason: FinishReason | null;
   /** The prompt version that produced this call; null when it was not linked to one. */

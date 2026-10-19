@@ -4,6 +4,12 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Changed
+
+- **Inputs and outputs are kept up to 1 MB each (was 32 KB).** Long RAG contexts and agent histories are stored and shown whole; only a payload over 1 MiB of JSON (after redaction) is still cut to its first 1 MiB and marked `truncated`. The Python SDK keeps input and output strings up to 1,000,000 characters (was 32,000); attribute strings stay at 32,000, and a cut attribute now marks the span `truncated` too. Request limits are unchanged (5 MB per body, 1,000 spans per batch). Migration `1007` adds `spans.payload_bytes`, the stored size of a span's payloads.
+- **Trace detail returns at most 8 MB of payloads.** Spans past that point in a very large trace come back with `payload_omitted: true` and no input or output; the new `GET /api/v1/projects/{project_id}/traces/{trace_id}/spans/{span_id}` returns one span whole, and the dashboard loads it when the span is opened. Long texts open at their first 20,000 characters and large JSON at its first 200 entries, with **Show all**.
+- **Memory stays bounded with larger payloads.** The gateway's write backlog is also bounded by payload bytes (`GATEWAY_RECORD_BACKLOG_MB`, default 128), and JSONL exports cut a batch at 64 MiB of payloads as well as at 2,000 spans.
+
 ## [0.6.0] - 2026-10-19
 
 The first tagged server release: images on GHCR, and every change recorded under 0.2.0 to 0.5.0 below ships in it.

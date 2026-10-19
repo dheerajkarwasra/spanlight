@@ -28,7 +28,12 @@ from app.core.observability import SPAN_NORMALIZATION_FAILURES, feature_used
 from app.core.text import clean_json
 from app.db.rls import bind_project
 from app.ingest.jsondepth import MAX_JSON_DEPTH, exceeds_depth
-from app.ingest.normalize import NormalizedSpan, SpanRejectedError, normalize_span
+from app.ingest.normalize import (
+    NormalizedSpan,
+    SpanRejectedError,
+    normalize_span,
+    stored_payload_bytes,
+)
 from app.ingest.schemas import RejectedSpan, SpanIn
 from app.ingest.store import write_spans
 from app.pricing.cost import PriceBook, load_price_book
@@ -177,7 +182,11 @@ def _prepare(
         if capture and prepared is not None:
             # Already redacted and cut by `prepare_span_payloads`: stored as they are.
             normalized = replace(
-                normalized, input=validated.input, output=validated.output, truncated=prepared
+                normalized,
+                input=validated.input,
+                output=validated.output,
+                truncated=prepared,
+                payload_bytes=stored_payload_bytes(validated.input, validated.output),
             )
         return normalized
     except ValidationError as exc:

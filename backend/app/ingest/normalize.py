@@ -24,7 +24,10 @@ from app.ingest.schemas import SpanIn
 from app.ingest.trace_fields import TraceFields, trace_fields
 from app.pricing.cost import PriceBook
 
-MAX_PAYLOAD_BYTES = 32 * 1024
+MAX_PAYLOAD_BYTES = 1024 * 1024
+# The most two payloads held under the old 32 KB cap: the size read for a span stored before
+# `spans.payload_bytes` existed (migration 1007), so byte budgets stay safe on old rows.
+LEGACY_PAYLOAD_BYTES = 2 * 32 * 1024
 MAX_ATTRIBUTES_BYTES = 64 * 1024
 MAX_SPAN_AGE = timedelta(days=90)  # the longest retention a project can configure
 MAX_CLOCK_SKEW = timedelta(minutes=10)
@@ -68,6 +71,8 @@ class NormalizedSpan:
     output: Any
     attributes: dict[str, Any]
     truncated: bool
+    # The JSON bytes of `input` and `output` as stored, 0 when neither is (`spans.payload_bytes`).
+    payload_bytes: int
     request_hash: str | None
     finish_reason: str | None
     prompt_version_id: uuid.UUID | None
@@ -84,7 +89,7 @@ def normalize_span(
         raise SpanRejectedError(str(exc)) from None
     usage = _usage(span)
     attributes = _attributes(span)
-    stored_input, stored_output, truncated = _payloads(span, capture_payloads)
+    stored_input, stored_output, truncated, payload_bytes = _payloads(span, capture_payloads)
     cost_usd, fee_usd, pricing_version = _cost(span, prices, usage)
     status_message = redact_text(span.status_message) if span.status_message else None
     error_class = classify_error(span.status, status_message, attributes)
@@ -119,6 +124,7 @@ def normalize_span(
         output=stored_output,
         attributes=attributes,
         truncated=truncated,
+        payload_bytes=payload_bytes,
         # From the input as received, before the payload capture setting drops it.
         request_hash=span.request_hash or request_hash(span.model, span.input),
         finish_reason=canonical_finish_reason(raw_finish_reason(span.finish_reason, attributes)),
@@ -206,19 +212,21 @@ def _cost(
     return cost.cost_usd, cost.fee_usd, cost.pricing_version
 
 
-def _payloads(span: SpanIn, capture_payloads: bool) -> tuple[Any, Any, bool]:
-    """The input and output to store, and whether either was truncated."""
+def _payloads(span: SpanIn, capture_payloads: bool) -> tuple[Any, Any, bool, int]:
+    """The input and output to store, whether either was truncated, and their stored bytes."""
     if not capture_payloads:
-        return None, None, False
-    stored_input, input_truncated = _prepare_payload(span.input)
-    stored_output, output_truncated = _prepare_payload(span.output)
-    return stored_input, stored_output, input_truncated or output_truncated or span.truncated
+        return None, None, False, 0
+    stored_input, input_truncated, input_bytes = _prepare_payload(span.input)
+    stored_output, output_truncated, output_bytes = _prepare_payload(span.output)
+    truncated = input_truncated or output_truncated or span.truncated
+    return stored_input, stored_output, truncated, input_bytes + output_bytes
 
 
 def prepare_span_payloads(
     span: dict[str, Any], *, capture_payloads: bool
-) -> tuple[dict[str, Any], bool]:
-    """A raw span with `input` and `output` already as they will be stored, and the flag.
+) -> tuple[dict[str, Any], bool, int]:
+    """A raw span with `input` and `output` already as they will be stored, the flag, and the
+    payloads' stored bytes.
 
     For a caller that holds spans before writing them (the gateway recorder's queue): what it
     holds is then bounded by `MAX_PAYLOAD_BYTES` per payload and already redacted. Without
@@ -226,11 +234,16 @@ def prepare_span_payloads(
     ingestion stores the payloads as they are instead of preparing them a second time.
     """
     if not capture_payloads:
-        return {**span, "input": None, "output": None}, False
-    stored_input, input_truncated = _prepare_payload(span.get("input"))
-    stored_output, output_truncated = _prepare_payload(span.get("output"))
+        return {**span, "input": None, "output": None}, False, 0
+    stored_input, input_truncated, input_bytes = _prepare_payload(span.get("input"))
+    stored_output, output_truncated, output_bytes = _prepare_payload(span.get("output"))
     prepared = {**span, "input": stored_input, "output": stored_output}
-    return prepared, input_truncated or output_truncated
+    return prepared, input_truncated or output_truncated, input_bytes + output_bytes
+
+
+def stored_payload_bytes(*payloads: Any) -> int:
+    """The JSON bytes of payloads already prepared for storage; a missing one counts 0."""
+    return sum(_json_size(payload) for payload in payloads if payload is not None)
 
 
 def _attributes(span: SpanIn) -> dict[str, Any]:
@@ -263,19 +276,20 @@ def _json_size(value: Any) -> int:
     return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode())
 
 
-def _prepare_payload(value: Any) -> tuple[Any, bool]:
-    """Redact, then truncate to MAX_PAYLOAD_BYTES.
+def _prepare_payload(value: Any) -> tuple[Any, bool, int]:
+    """Redact, then truncate to MAX_PAYLOAD_BYTES; also the stored size in bytes.
 
     Redaction runs first so a secret straddling the cut can never survive in
     partial form. An oversized payload is replaced by a string holding the
     start of its JSON text, and the span is flagged `truncated`.
     """
     if value is None:
-        return None, False
+        return None, False, 0
     redacted = redact_json(value)
     serialized = json.dumps(redacted, ensure_ascii=False, separators=(",", ":"))
     encoded = serialized.encode()
     if len(encoded) <= MAX_PAYLOAD_BYTES:
-        return redacted, False
+        return redacted, False, len(encoded)
     preview = encoded[:MAX_PAYLOAD_BYTES].decode(errors="ignore")
-    return preview, True
+    # Counted as its text, not its JSON-escaped form: the budgets bound memory held as strings.
+    return preview, True, len(preview.encode())

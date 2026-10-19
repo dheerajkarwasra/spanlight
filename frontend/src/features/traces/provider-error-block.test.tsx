@@ -73,6 +73,7 @@ const failed: Span = {
     ],
   },
   truncated: false,
+  payload_omitted: false,
   finish_reason: null,
   prompt_version_id: null,
   usage_rollup: false,

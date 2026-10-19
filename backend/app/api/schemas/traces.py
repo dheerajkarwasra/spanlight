@@ -101,6 +101,10 @@ class SpanOut(BaseModel):
     output: Any
     attributes: dict[str, Any]
     truncated: bool
+    payload_omitted: bool = False
+    """True when trace detail left `input` and `output` out (null) because the trace's payloads
+    passed the response's 8 MiB budget; `GET .../traces/{trace_id}/spans/{span_id}` returns
+    them. Always false on that endpoint."""
     finish_reason: str | None
     """Canonical: `stop`, `length`, `tool_calls`, `content_filter` or `other`; the raw value is
     the `finish_reason` attribute (or the provider's own attribute)."""
