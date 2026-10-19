@@ -159,7 +159,7 @@ Each `generateText`, `streamText` or `generateObject` call is one trace.
 | Span | Kind | What Spanlight stores |
 | --- | --- | --- |
 | The provider call (`chat <model>`, or `ai.generateText.doGenerate` and the other `do…` spans) | `llm` | Provider, the billed model snapshot (`gpt-4.1-mini-2025-04-14`), input, output and cached tokens, prompt, answer, finish reason, cost |
-| The outer call (`invoke_agent <model>`, or `ai.generateText`) | `chain` | The same usage again, marked as a [usage rollup](/docs/reference/otlp-mapping/#usage-counted-once) so the call is counted once |
+| The outer call: `invoke_agent <model>` (GenAI mode) or `ai.generateText` (legacy mode) | `agent` in GenAI mode, `chain` in legacy mode | The same usage again, marked as a [usage rollup](/docs/reference/otlp-mapping/#usage-counted-once) so the call is counted once |
 | Each tool call (`execute_tool <name>`, or `ai.toolCall`) | `tool` | The tool's span, with no usage |
 | `step 1` (GenAI mode only) | `other` | Timing only |
 

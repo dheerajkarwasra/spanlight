@@ -78,7 +78,7 @@ _LLM_SPANS = text(
     """
 )
 
-# The input is hashed in the database so the stored inputs (up to 32 KB each) never cross the
+# The input is hashed in the database so the stored inputs (up to 1 MiB each) never cross the
 # wire: SHA-256 of the jsonb text form, whose key order and whitespace jsonb already normalises.
 # This is not byte-identical to the Python canonical JSON of `app.ingest.request_hash`, and it
 # need not be: tool-span input hashes are only ever compared with each other. A missing input or

@@ -60,7 +60,16 @@ export const TOPICS = [
       { label: 'Providers', items: ['integrations/openai', 'integrations/anthropic'] },
       {
         label: 'OpenTelemetry exporters',
-        items: ['integrations/vercel-ai', 'integrations/litellm', 'integrations/openllmetry', 'integrations/openinference'],
+        items: [
+          'integrations/vercel-ai',
+          'integrations/litellm',
+          'integrations/openllmetry',
+          'integrations/openinference',
+          'integrations/openai-agents',
+          'integrations/langgraph',
+          'integrations/pydantic-ai',
+          'integrations/llamaindex',
+        ],
       },
       { label: 'CI', items: ['integrations/github-action'] },
     ],

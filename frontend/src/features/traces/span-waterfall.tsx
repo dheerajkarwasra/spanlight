@@ -11,7 +11,7 @@ import { useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
 
 import { SpanKindIcon } from "./span-kind";
-import { SPAN_KIND_META } from "./span-kind-meta";
+import { kindMeta } from "./span-kind-meta";
 import {
   ancestorIds,
   barLayout,
@@ -307,7 +307,7 @@ function WaterfallRow({
         </span>
         {isError ? <CircleAlert aria-hidden className="size-3.5 shrink-0 text-danger" /> : null}
         <span className="sr-only">
-          , {SPAN_KIND_META[span.kind].label} span{isError ? ", failed" : ""}
+          , {kindMeta(span.kind).label} span{isError ? ", failed" : ""}
           {ttft ? `, first token after ${ttft}` : ""},
         </span>
       </div>
@@ -325,7 +325,7 @@ function WaterfallRow({
           style={{ left: `${layout.offsetPercent}%`, width: `${layout.widthPercent}%` }}
           className={cn(
             "absolute top-1/2 h-2.5 min-w-1 -translate-y-1/2 rounded-full",
-            isError ? cn("bg-danger", ERROR_BAR_GLOW) : SPAN_KIND_META[span.kind].barClass,
+            isError ? cn("bg-danger", ERROR_BAR_GLOW) : kindMeta(span.kind).barClass,
           )}
         >
           {ttftPercent !== null ? (
@@ -356,7 +356,7 @@ function WaterfallLegend({ spans }: { spans: Span[] }) {
       {kinds.map((kind) => (
         <li key={kind} className="flex items-center gap-1.5">
           <SpanKindIcon kind={kind} />
-          {SPAN_KIND_META[kind].label}
+          {kindMeta(kind).label}
         </li>
       ))}
       {showsTtft ? (

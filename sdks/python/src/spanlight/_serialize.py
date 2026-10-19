@@ -18,7 +18,10 @@ from collections.abc import Mapping
 from typing import Any
 
 MAX_DEPTH = 12
-MAX_STRING_LENGTH = 32_000
+# Input and output strings: long enough that the server's 1 MiB payload cap is the one that
+# applies. Attribute strings stay short: the server refuses a span whose attributes pass 64 KB.
+MAX_STRING_LENGTH = 1_000_000
+MAX_ATTRIBUTE_STRING_LENGTH = 32_000
 MAX_ITEMS = 1_000
 
 _TRUNCATION_MARKER = "...[truncated]"
@@ -27,30 +30,41 @@ JsonValue = Any
 """Alias documenting that a value is JSON-compatible (recursive types are awkward)."""
 
 
-def to_jsonable(value: Any) -> JsonValue:
+def to_jsonable(value: Any, *, max_string: int = MAX_STRING_LENGTH) -> JsonValue:
     """Convert ``value`` into a JSON-compatible structure.
 
     Args:
         value: Any Python object.
+        max_string: The longest string kept whole, in characters.
 
     Returns:
         A value composed only of ``dict``, ``list``, ``str``, ``int``,
         ``float``, ``bool`` and ``None``. Unknown objects are rendered with
         ``repr``. Oversized strings and collections are truncated.
     """
-    return to_jsonable_cut(value)[0]
+    return to_jsonable_cut(value, max_string=max_string)[0]
 
 
-def to_jsonable_cut(value: Any) -> tuple[JsonValue, bool]:
+def to_jsonable_cut(value: Any, *, max_string: int = MAX_STRING_LENGTH) -> tuple[JsonValue, bool]:
     """Like :func:`to_jsonable`, plus whether anything was cut to fit the bounds."""
-    cut: list[bool] = []
+    cut = _Cut(max_string)
     try:
-        return _convert(value, 0, cut), bool(cut)
+        return _convert(value, 0, cut), cut.happened
     except Exception:
-        return _truncate_string(_safe_repr(value), cut), bool(cut)
+        return _truncate_string(_safe_repr(value), cut), cut.happened
 
 
-def _convert(value: Any, depth: int, cut: list[bool]) -> JsonValue:
+class _Cut:
+    """The string bound of one conversion, and whether anything was cut to fit the bounds."""
+
+    __slots__ = ("happened", "max_string")
+
+    def __init__(self, max_string: int) -> None:
+        self.max_string = max_string
+        self.happened = False
+
+
+def _convert(value: Any, depth: int, cut: _Cut) -> JsonValue:
     if value is None or isinstance(value, bool | int):
         return value
     if isinstance(value, float):
@@ -58,7 +72,7 @@ def _convert(value: Any, depth: int, cut: list[bool]) -> JsonValue:
     if isinstance(value, str):
         return _truncate_string(value, cut)
     if depth >= MAX_DEPTH:
-        cut.append(True)
+        cut.happened = True
         return "[max depth reached]"
 
     if isinstance(value, Mapping):
@@ -86,22 +100,22 @@ def _convert(value: Any, depth: int, cut: list[bool]) -> JsonValue:
     return _truncate_string(_safe_repr(value), cut)
 
 
-def _convert_mapping(value: Mapping[Any, Any], depth: int, cut: list[bool]) -> dict[str, JsonValue]:
+def _convert_mapping(value: Mapping[Any, Any], depth: int, cut: _Cut) -> dict[str, JsonValue]:
     result: dict[str, JsonValue] = {}
     for index, (key, item) in enumerate(value.items()):
         if index >= MAX_ITEMS:
             result["..."] = f"{len(value) - MAX_ITEMS} more keys truncated"
-            cut.append(True)
+            cut.happened = True
             break
         result[str(key)] = _convert(item, depth + 1, cut)
     return result
 
 
-def _convert_sequence(items: list[Any], depth: int, cut: list[bool]) -> list[JsonValue]:
+def _convert_sequence(items: list[Any], depth: int, cut: _Cut) -> list[JsonValue]:
     converted = [_convert(item, depth + 1, cut) for item in items[:MAX_ITEMS]]
     if len(items) > MAX_ITEMS:
         converted.append(f"... {len(items) - MAX_ITEMS} more items truncated")
-        cut.append(True)
+        cut.happened = True
     return converted
 
 
@@ -122,11 +136,11 @@ def _dump_model(value: Any) -> Any | None:
     return None
 
 
-def _truncate_string(value: str, cut: list[bool]) -> str:
-    if len(value) <= MAX_STRING_LENGTH:
+def _truncate_string(value: str, cut: _Cut) -> str:
+    if len(value) <= cut.max_string:
         return value
-    cut.append(True)
-    return value[:MAX_STRING_LENGTH] + _TRUNCATION_MARKER
+    cut.happened = True
+    return value[: cut.max_string] + _TRUNCATION_MARKER
 
 
 def _safe_repr(value: Any) -> str:

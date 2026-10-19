@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScoresPanel } from "@/features/scores";
 import { useProjectParams } from "@/features/shell/project-context";
-import { isApiError, type TraceDetail } from "@/lib/api";
+import { isApiError, type Span, type TraceDetail } from "@/lib/api";
 
 import { hasModelCall } from "./cost-explanation";
 import { recallTracesSearch, rememberOpenedTrace } from "./last-traces-search";
@@ -17,7 +17,7 @@ import { buildSpanTree } from "./span-tree";
 import { SpanCostCard } from "./span-cost-card";
 import { SpanUsageCard, SpanUsageSkeleton } from "./span-usage-card";
 import { SpanWaterfall, SpanWaterfallSkeleton } from "./span-waterfall";
-import { useTraceQuery } from "./trace-queries";
+import { useSpanQuery, useTraceQuery } from "./trace-queries";
 import { BackToTracesLink, TraceHeader, TraceHeaderSkeleton } from "./trace-header";
 
 const traceRoute = getRouteApi("/_authed/$orgId/$projectId/traces/$traceId");
@@ -133,16 +133,58 @@ function TraceBody({ trace }: { trace: TraceDetail }) {
       }
       right={
         selectedSpan ? (
-          <SpanDetailPanel
+          <SelectedSpanDetail
             key={selectedSpan.span_id}
             span={selectedSpan}
             tab={tab}
             onTabChange={setTab}
             traceId={trace.trace_id}
-            className={DETAIL_VIEWPORT_HEIGHT}
           />
         ) : null
       }
+    />
+  );
+}
+
+/**
+ * The selected span's detail. A span trace detail returned without its payloads (the trace's
+ * payloads passed the response budget) is fetched whole first.
+ */
+function SelectedSpanDetail({
+  span,
+  tab,
+  onTabChange,
+  traceId,
+}: {
+  span: Span;
+  tab: SpanDetailTab;
+  onTabChange: (tab: SpanDetailTab) => void;
+  traceId: string;
+}) {
+  const fullSpan = useSpanQuery(traceId, span);
+  if (span.payload_omitted && fullSpan.isPending) {
+    return <SpanDetailSkeleton className={DETAIL_VIEWPORT_HEIGHT} />;
+  }
+  if (span.payload_omitted && fullSpan.isError) {
+    return (
+      <Card className={DETAIL_VIEWPORT_HEIGHT}>
+        <ErrorState
+          error={fullSpan.error}
+          title="Couldn't load this span"
+          onRetry={() => {
+            void fullSpan.refetch();
+          }}
+        />
+      </Card>
+    );
+  }
+  return (
+    <SpanDetailPanel
+      span={fullSpan.data ?? span}
+      tab={tab}
+      onTabChange={onTabChange}
+      traceId={traceId}
+      className={DETAIL_VIEWPORT_HEIGHT}
     />
   );
 }

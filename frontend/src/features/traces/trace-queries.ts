@@ -1,7 +1,13 @@
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
 import { useProjectFilters, useProjectParams } from "@/features/shell/project-context";
-import { projectsApi, queryKeys, type MetricsQuery, type TraceListQuery } from "@/lib/api";
+import {
+  projectsApi,
+  queryKeys,
+  type MetricsQuery,
+  type Span,
+  type TraceListQuery,
+} from "@/lib/api";
 
 import type { TraceFilters } from "./search";
 
@@ -72,6 +78,31 @@ export function useTraceCountQuery() {
     queryKey: queryKeys.project(projectId).overview(metricsWindow),
     queryFn: () => projectsApi.overview(projectId, metricsWindow),
     select: (overview) => overview.current.traces,
+  });
+}
+
+/**
+ * One span with its payloads: trace detail leaves them out (`payload_omitted`) once a trace's
+ * payloads pass its budget. Runs only for such a span.
+ */
+export function useSpanQuery(traceId: string, span: Span) {
+  const { projectId } = useProjectParams();
+  return useQuery({
+    queryKey: queryKeys.project(projectId).span(traceId, span.span_id),
+    queryFn: () => projectsApi.span(projectId, traceId, span.span_id),
+    staleTime: 60_000,
+    enabled: span.payload_omitted,
+  });
+}
+
+/** Two traces step by step; `enabled` once both ids are known and differ. */
+export function useTraceComparisonQuery(a: string | undefined, b: string | undefined) {
+  const { projectId } = useProjectParams();
+  return useQuery({
+    queryKey: queryKeys.project(projectId).traceComparison(a ?? "", b ?? ""),
+    queryFn: () => projectsApi.compareTraces(projectId, a ?? "", b ?? ""),
+    staleTime: 60_000,
+    enabled: a !== undefined && b !== undefined && a !== b,
   });
 }
 

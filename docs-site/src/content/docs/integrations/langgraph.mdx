@@ -1,0 +1,135 @@
+---
+title: LangGraph
+description: Send LangGraph agent traces to Spanlight with the OpenInference LangChain instrumentation, exporting through an OpenTelemetry tracer provider. Shows the tested setup and what Spanlight records from graph nodes, tools and model calls.
+---
+
+{/* Sources: sdks/fixtures/otlp/record/python/recipes/openinference_langgraph.py, sdks/fixtures/otlp/record/python/recipes/_otel.py, sdks/fixtures/otlp/record/record.py, sdks/fixtures/otlp/openinference-langgraph/1.2.16.json, backend/app/ingest/conventions/openinference.py, backend/app/ingest/conventions/__init__.py, backend/app/ingest/otlp_metadata.py */}
+
+import NextSteps from '../../../components/NextSteps.astro';
+import Prerequisites from '../../../components/Prerequisites.astro';
+import Verified from '../../../components/Verified.astro';
+
+LangGraph runs on LangChain's callbacks, so the OpenInference LangChain instrumentation (the one Arize Phoenix uses) traces a LangGraph agent with no LangGraph-specific package: every graph node, tool and model call becomes a span. Spanlight reads the spans' `openinference.span.kind` and `llm.*` attributes for the kind, the model, the token counts and the messages. Send them to Spanlight's [OTLP endpoint](/docs/otlp/) with an OpenTelemetry tracer provider.
+
+<Prerequisites
+  items={[
+    'A running Spanlight instance that your application can reach',
+    'A project API key with the ingest:write scope (the default). Creating one needs the member, admin or owner role',
+    'Python 3.13 (the version this page was tested with)',
+  ]}
+/>
+
+<Verified
+  date="2026-10-19"
+  packages={[
+    { name: 'langgraph', version: '1.2.16' },
+    { name: 'openinference-instrumentation-langchain', version: '0.1.79' },
+    { name: 'langchain-core', version: '1.6.12' },
+    { name: 'langchain-openai', version: '1.7.2' },
+    { name: 'openai', version: '3.35.1' },
+    { name: 'opentelemetry-sdk', version: '1.45.1' },
+    { name: 'opentelemetry-exporter-otlp-proto-http', version: '1.45.1' },
+  ]}
+  note="Recorded with Python 3.13.9 against a local stand-in for the OpenAI Chat Completions API, not against OpenAI itself. The recorded run is LangGraph's prebuilt ReAct agent with one tool, answered without streaming."
+/>
+
+## Install
+
+```bash
+pip install "langgraph==1.2.16" "openinference-instrumentation-langchain==0.1.79" "langchain-core==1.6.12" "langchain-openai==1.7.2" "openai==3.35.1" "opentelemetry-sdk==1.45.1" "opentelemetry-exporter-otlp-proto-http==1.45.1"
+```
+
+Point the OpenTelemetry exporter at Spanlight with the standard variables:
+
+```bash
+export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:8080/v1/otlp/traces
+export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20spl_live_..."
+```
+
+Use the traces-specific endpoint variable with the full path. [Configure an exporter](/docs/otlp/#configure-an-exporter) explains why. OpenInference records the messages on the span by default, so no other setting is needed.
+
+## Set up tracing
+
+Create a tracer provider that exports over OTLP, pass it to the LangChain instrumentor, then build and run the graph as before:
+
+```python
+from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+from openinference.instrumentation.langchain import LangChainInstrumentor
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+provider = TracerProvider()
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(provider)
+LangChainInstrumentor().instrument(tracer_provider=provider)
+
+
+@tool
+def get_weather(city: str, unit: str = "celsius") -> str:
+    """Get the current weather for a city."""
+    return "18 degrees and sunny"
+
+
+agent = create_react_agent(ChatOpenAI(model="gpt-4.1-mini"), [get_weather], name="weather_agent")
+agent.invoke({"messages": [("user", "What is the weather in Paris and Tokyo? Use the tool.")]})
+provider.force_flush()
+```
+
+A long-running server does not need `provider.force_flush()`; a short script does, or its last spans are lost.
+
+## Check it worked
+
+Open **Traces** in the dashboard and pick the project that owns your key. The recorded run gives a trace named after the graph, `weather_agent`, with 17 spans: an `agent` step for each model turn, a `tools` step for each tool call, the `ChatOpenAI` model calls and the `get_weather` tool calls. Open a `ChatOpenAI` span: it shows the messages, the answer, the token counts and the cost. The trace's token total is the sum of its two model calls.
+
+## What is recorded
+
+| Span in the recorded run | OpenInference span kind | Spanlight kind |
+| --- | --- | --- |
+| The graph (`weather_agent`) and each `agent` node step | `AGENT` | `chain` |
+| `tools` node steps, `RunnableSequence`, `call_model`, `should_continue`, `Prompt` | `CHAIN` | `chain` |
+| `get_weather` | `TOOL` | `tool` |
+| `ChatOpenAI` | `LLM` | `llm` |
+
+On each model call:
+
+- **Provider and model** from `llm.system` and `llm.model_name`, the billed snapshot such as `gpt-4.1-mini-2025-04-14`.
+- **Input, output and cached tokens** from `llm.token_count.prompt`, `llm.token_count.completion` and `llm.token_count.prompt_details.cache_read`. Only model calls carry token counts, so each call is counted once and the graph and node spans add nothing to the totals.
+- **Messages and answer** from the flattened `llm.input_messages.*` and `llm.output_messages.*` attributes, including the tool calls the model asked for and the tool results sent back.
+- **Finish reason** from `llm.finish_reason`: `tool_calls` on the turn that called the tool, `stop` on the answer.
+- **Cost**, computed by Spanlight from the model and the token counts; see [How cost is calculated](/docs/concepts/cost/).
+
+Node, tool and chain spans keep `input.value` and `output.value` as their input and output.
+
+LangGraph and LangChain add run metadata to the `metadata` attribute of each span, and Spanlight puts it in the trace metadata. The recorded trace gets `langgraph_node`, `langgraph_step`, `langgraph_checkpoint_ns`, `checkpoint_ns` and `ls_integration` from the graph steps, and `ls_provider`, `ls_model_name` and `ls_model_type` from the model calls. They count towards the trace's 32 metadata keys.
+
+Which attribute fills which field is listed in [OpenInference](/docs/reference/otlp-mapping/#openinference).
+
+## What is not recorded
+
+- **Time to first token.** The recorded run did not stream. On a stream, OpenInference sends the first token as a span event, which Spanlight does not read.
+- **Cache writes.** The recorded calls went to an OpenAI stand-in, which reports none.
+- **Streaming, subgraphs, checkpointers and the LangGraph Platform.** Only a prebuilt ReAct agent run with `invoke()` was recorded, so this page makes no claim about the others.
+- **Exporter-computed cost.** Spanlight never reads one; it prices every span itself.
+
+[OTLP compatibility](/docs/reference/otlp-compatibility/#openinference-langgraph-1216) shows the recorded scenario field by field.
+
+## Troubleshooting
+
+- **No trace arrives.** Instrument LangChain before you build the graph, pass the tracer provider to `instrument()`, and flush it before a script exits. Then work through [No trace arrives](/docs/troubleshooting/#no-trace-arrives).
+- **The exporter gets `422 VALIDATION_ERROR`.** It sent to `/v1/traces`. Set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` to the full `/v1/otlp/traces` URL.
+- **A trace has more metadata keys than you set.** They are LangGraph's `langgraph_*` and LangChain's `ls_*` keys. If they push the trace past 32 keys, the keys after the 32nd are dropped and counted.
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'OpenInference', href: '/docs/integrations/openinference/', description: 'The OpenAI and LangChain instrumentations on their own.' },
+    { title: 'OTLP compatibility', href: '/docs/reference/otlp-compatibility/', description: 'What each recorded exporter captures and loses, scenario by scenario.' },
+    { title: 'How cost is calculated', href: '/docs/concepts/cost/', description: 'The price table and when a cost is unknown.' },
+  ]}
+/>

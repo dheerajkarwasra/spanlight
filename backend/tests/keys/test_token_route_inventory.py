@@ -306,7 +306,7 @@ async def test_a_token_reads_everything_a_read_key_can_and_more(
         ):
             path = _fill(template, world, project_id=project_id, trace_id=trace_id)
             response = await bare_client.request(
-                method, path, params=_params(path), headers=bearer(tokens.read)
+                method, path, params=_params(path, trace_id), headers=bearer(tokens.read)
             )
             assert response.status_code == 200, (path, response.text)
 

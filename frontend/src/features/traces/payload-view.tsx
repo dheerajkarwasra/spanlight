@@ -1,7 +1,10 @@
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 
 import { CopyButton } from "@/components/copy-button";
 import { JsonViewer } from "@/components/json-viewer";
+import { ShowAllButton } from "@/components/show-all-button";
+import { charactersLabel, TEXT_CLAMP_CHARS } from "@/lib/clamp";
 import { useProjectParams } from "@/features/shell/project-context";
 
 import { ChatMessageList } from "./chat-message-list";
@@ -45,15 +48,36 @@ export function PayloadView({ label, value, spanTruncated }: PayloadViewProps) {
           tabIndex={0}
           className="max-h-[32rem] overflow-auto rounded-input border border-border bg-surface-muted px-3 py-3.5"
         >
-          <pre className="text-label leading-normal break-words whitespace-pre-wrap text-foreground">
-            {content.text}
-          </pre>
+          <ClampedPre text={content.text} />
         </div>
       ) : null}
       {content.format === "json" ? (
         <JsonViewer value={content.value} className="rounded-input px-3 py-3.5" />
       ) : null}
     </section>
+  );
+}
+
+/** Plain text, its first `TEXT_CLAMP_CHARS` until "Show all", so a 1 MiB text stays responsive. */
+function ClampedPre({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = text.length > TEXT_CLAMP_CHARS;
+  return (
+    <>
+      <pre className="text-label leading-normal break-words whitespace-pre-wrap text-foreground">
+        {isLong && !expanded ? `${text.slice(0, TEXT_CLAMP_CHARS)}…` : text}
+      </pre>
+      {isLong ? (
+        <ShowAllButton
+          expanded={expanded}
+          onToggle={() => {
+            setExpanded((current) => !current);
+          }}
+          label={charactersLabel(text.length)}
+          className="mt-2"
+        />
+      ) : null}
+    </>
   );
 }
 

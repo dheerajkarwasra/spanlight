@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 import pytest
 
+from app.explorer import trace_queries
 from tests.helpers import (
     Browser,
     Workspace,
@@ -351,3 +352,30 @@ async def test_onboarding_flips_after_first_trace(
     await _ingest(client, workspace, [span(trace_id=new_trace_id(), span_id=new_span_id())])
     status = (await workspace.owner.get(url)).json()
     assert status["has_traces"] is True and status["first_trace_at"]
+
+
+async def test_trace_detail_leaves_out_payloads_past_its_budget(
+    client: httpx.AsyncClient, workspace: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Three spans of about 10 KB of payloads each, against a budget that holds two of them.
+    monkeypatch.setattr(trace_queries, "TRACE_PAYLOAD_BUDGET_BYTES", 25_000)
+    trace_id = new_trace_id()
+    contexts = [f"context {index} " + "x" * 10_000 for index in range(3)]
+    spans = [
+        _llm(trace_id, WINDOW_START + timedelta(seconds=index), 10, input=text, output=None)
+        for index, text in enumerate(contexts)
+    ]
+    await _ingest(client, workspace, spans)
+    base = f"/api/v1/projects/{workspace.project_id}/traces/{trace_id}"
+
+    detail = (await workspace.owner.get(base)).json()
+
+    assert [s["payload_omitted"] for s in detail["spans"]] == [False, False, True]
+    assert [s["input"] for s in detail["spans"]] == [contexts[0], contexts[1], None]
+    omitted = detail["spans"][2]
+    response = await workspace.owner.get(f"{base}/spans/{omitted['span_id']}")
+    assert response.status_code == 200
+    assert response.json()["input"] == contexts[2]
+    assert response.json()["payload_omitted"] is False
+    missing = await workspace.owner.get(f"{base}/spans/{new_span_id()}")
+    assert missing.status_code == 404

@@ -199,7 +199,7 @@ test('pythonConstant reads the right-hand side of a module-level assignment', ()
 
 test('ingest limits in the code still have the documented values', () => {
   const normalize = readRepo('backend/app/ingest/normalize.py');
-  assert.equal(pythonConstant(normalize, 'MAX_PAYLOAD_BYTES'), '32 * 1024');
+  assert.equal(pythonConstant(normalize, 'MAX_PAYLOAD_BYTES'), '1024 * 1024');
   assert.equal(pythonConstant(normalize, 'MAX_ATTRIBUTES_BYTES'), '64 * 1024');
   assert.ok(pythonConstant(normalize, 'MAX_SPAN_AGE')?.startsWith('timedelta(days=90)'));
   assert.ok(pythonConstant(normalize, 'MAX_CLOCK_SKEW')?.startsWith('timedelta(minutes=10)'));
@@ -210,7 +210,7 @@ test('ingest limits in the code still have the documented values', () => {
 
 test('the limits page states each of those values', () => {
   const page = readPage('reference/limits.mdx');
-  for (const value of ['32 KB', '64 KB', '90 days', '10 minutes', '1,000 spans', '5 MB']) {
+  for (const value of ['1 MB (1 MiB)', '64 KB', '90 days', '10 minutes', '1,000 spans', '5 MB']) {
     assert.ok(page.includes(value), `limits page does not state ${value}`);
   }
 });

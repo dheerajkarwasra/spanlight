@@ -45,6 +45,20 @@ def test_scenario_header_picks_the_body(provider: ServerHandle) -> None:
     assert response.json()["choices"][0]["finish_reason"] == "tool_calls"
 
 
+def test_scripted_header_picks_the_body_by_assistant_turn(provider: ServerHandle) -> None:
+    user = {"role": "user", "content": "weather?"}
+    assistant = {"role": "assistant", "tool_calls": []}
+    tool = {"role": "tool", "tool_call_id": "call_1", "content": "sunny"}
+
+    def reasons(*messages: object) -> object:
+        response = _post(provider, "/v1/chat/completions", "chat_tools,chat", messages=messages)
+        return response.status_code, response.json().get("choices", [{}])[0].get("finish_reason")
+
+    assert reasons(user) == (200, "tool_calls")
+    assert reasons(user, assistant, tool) == (200, "stop")
+    assert reasons(user, assistant, tool, assistant, tool)[0] == 404
+
+
 def test_stream_scenario_is_sse(provider: ServerHandle) -> None:
     response = _post(provider, "/v1/chat/completions", "chat_stream", stream=True)
 

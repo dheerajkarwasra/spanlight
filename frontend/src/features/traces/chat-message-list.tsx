@@ -3,7 +3,8 @@ import { useState } from "react";
 
 import { CopyButton } from "@/components/copy-button";
 import { JsonViewer } from "@/components/json-viewer";
-import { Button } from "@/components/ui/button";
+import { ShowAllButton } from "@/components/show-all-button";
+import { charactersLabel } from "@/lib/clamp";
 import { cn } from "@/lib/utils";
 
 import {
@@ -201,17 +202,14 @@ function ClampedText({ text, onInk }: { text: string; onInk: boolean }) {
     <div className="flex flex-col items-start gap-1">
       <p className="w-full break-words whitespace-pre-wrap">{shown}</p>
       {isLong ? (
-        <Button
-          variant="link"
-          size="sm"
-          aria-expanded={expanded}
-          onClick={() => {
+        <ShowAllButton
+          expanded={expanded}
+          onToggle={() => {
             setExpanded((current) => !current);
           }}
+          label={charactersLabel(text.length)}
           className={cn(onInk && "text-lime")}
-        >
-          {expanded ? "Show less" : `Show all ${text.length.toLocaleString("en-US")} characters`}
-        </Button>
+        />
       ) : null}
     </div>
   );
