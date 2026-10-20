@@ -37,8 +37,16 @@ export function oauthStartUrl(provider: OAuthProvider, options: OAuthStartOption
 
 export const securityApi = {
   totpStatus: (): Promise<TotpStatus> => api.get<TotpStatus>(`${API_PREFIX}/auth/totp`),
-  /** Makes a secret for an authenticator app, replacing one from an earlier unconfirmed setup. */
-  totpSetup: (): Promise<TotpSetup> => api.post<TotpSetup>(`${API_PREFIX}/auth/totp/setup`),
+  /**
+   * Makes a secret for an authenticator app, replacing one from an earlier unconfirmed setup.
+   * Needs the current password (`422 INVALID_PASSWORD`); an account without one must have signed
+   * in within 10 minutes instead (`403 REAUTH_REQUIRED`).
+   */
+  totpSetup: (password?: string): Promise<TotpSetup> =>
+    api.post<TotpSetup>(
+      `${API_PREFIX}/auth/totp/setup`,
+      password === undefined ? {} : { password },
+    ),
   /** Turns it on with a code from the app. The recovery codes in the answer are shown once. */
   totpEnable: (code: string): Promise<TotpEnabled> =>
     api.post<TotpEnabled>(`${API_PREFIX}/auth/totp/enable`, { code }),

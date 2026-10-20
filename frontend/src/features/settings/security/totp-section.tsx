@@ -12,6 +12,7 @@ import { useUncachedAction } from "@/lib/use-uncached-action";
 import { useTotpStatusQuery } from "./security-queries";
 import { TotpDisableDialog } from "./totp-disable-dialog";
 import { classifyTotpError } from "./totp-flow";
+import { TotpPasswordDialog } from "./totp-password-dialog";
 import { TotpSetupDialog } from "./totp-setup-dialog";
 import { TwoFactorCard, type TwoFactorCardState } from "./two-factor-card";
 
@@ -21,16 +22,26 @@ import { TwoFactorCard, type TwoFactorCardState } from "./two-factor-card";
  * closes. It never goes into the query cache, storage or a log.
  */
 export function TotpSection() {
-  const { user, email_verification_required: unverified } = useMe();
+  const { user, has_password: hasPassword, email_verification_required: unverified } = useMe();
   const queryClient = useQueryClient();
   const status = useTotpStatusQuery();
   const start = useUncachedAction(securityApi.totpSetup);
   const [setup, setSetup] = useState<TotpSetup | null>(null);
   const [notAvailable, setNotAvailable] = useState(false);
   const [turnOffOpen, setTurnOffOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+
+  function alreadyEnabled() {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.totp });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.me });
+  }
 
   async function turnOn() {
     setNotAvailable(false);
+    if (hasPassword) {
+      setPasswordOpen(true);
+      return;
+    }
     const result = await start.run();
     if (result.ok) {
       setSetup(result.value);
@@ -40,8 +51,7 @@ export function TotpSection() {
     if (failure.kind === "not-configured") {
       setNotAvailable(true);
     } else if (failure.kind === "already-enabled") {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.totp });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.me });
+      alreadyEnabled();
     } else {
       toast.error(failure.kind === "other" ? failure.message : "That didn't work. Try again.");
     }
@@ -90,6 +100,12 @@ export function TotpSection() {
           }}
         />
       ) : null}
+      <TotpPasswordDialog
+        open={passwordOpen}
+        onOpenChange={setPasswordOpen}
+        onSetup={setSetup}
+        onAlreadyEnabled={alreadyEnabled}
+      />
       <TotpDisableDialog open={turnOffOpen} onOpenChange={setTurnOffOpen} />
     </>
   );

@@ -5,6 +5,7 @@ import { RECOVERY_CODE_TOTAL } from "./recovery-codes";
 /** What a failed two-factor call means for the screen that made it. */
 export type TotpFailure =
   | { kind: "invalid-code" }
+  | { kind: "invalid-password" }
   | { kind: "not-configured"; message: string }
   | { kind: "email-unverified" }
   | { kind: "already-enabled" }
@@ -16,6 +17,9 @@ export function classifyTotpError(error: unknown): TotpFailure {
   if (isApiError(error)) {
     if (error.status === 422 && error.code === "INVALID_TOTP_CODE") {
       return { kind: "invalid-code" };
+    }
+    if (error.status === 422 && error.code === "INVALID_PASSWORD") {
+      return { kind: "invalid-password" };
     }
     if (error.status === 429) {
       return { kind: "rate-limited" };

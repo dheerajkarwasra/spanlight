@@ -500,7 +500,7 @@ async def test_reset_is_audited_in_each_org_the_user_belongs_to(
         assert event.target_type == "user"
         assert event.target_id == ada.user["id"]
         assert str(event.actor_user_id) == ada.user["id"]
-        assert event.metadata_ == {"via": "email"}
+        assert event.metadata_ == {"via": "email", "tokens_revoked": 0}
 
 
 async def test_reset_for_a_user_in_no_org_writes_no_audit_event(

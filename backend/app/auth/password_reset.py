@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.email_tokens import consume_token, issue_token, retire_unused_tokens
 from app.auth.oauth_service import drop_identities
+from app.auth.tokens import revoke_all_tokens
 from app.config import Settings
 from app.core.security import hash_password_async
 from app.core.throttle import check_and_record
@@ -97,11 +98,12 @@ async def complete_password_reset(
         await drop_identities(db, user.id, reason="password_reset", ip=ip)
     await replace_password(db, user, await hash_password_async(new_password))
     await retire_unused_tokens(db, user.id, EmailTokenKind.RESET)
+    tokens_revoked = await revoke_all_tokens(db, user.id, now=datetime.now(UTC))
     await record_user_audit_in_each_org(
         db,
         user_id=user.id,
         action=AuditAction.USER_PASSWORD_RESET,
         ip=ip,
-        metadata={"via": "email"},
+        metadata={"via": "email", "tokens_revoked": tokens_revoked},
     )
     return True

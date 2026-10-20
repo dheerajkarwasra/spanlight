@@ -33,6 +33,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import totp_service
+from app.auth.tokens import revoke_all_tokens
 from app.backups.retention import BACKUP_PREFIX
 from app.backups.service import BackupError, RestoreError, restore_backup, run_backup
 from app.cli_alerts import alerts_app
@@ -156,6 +157,7 @@ def reset_password(email: EmailOption) -> None:
             raise typer.BadParameter(f"no user with email {email!r}", param_hint="--email")
 
         await replace_password(db, user, hash_password(password))
+        tokens_revoked = await revoke_all_tokens(db, user.id, now=datetime.now(UTC))
         org_ids = (
             await db.scalars(select(Membership.org_id).where(Membership.user_id == user.id))
         ).all()
@@ -168,10 +170,12 @@ def reset_password(email: EmailOption) -> None:
                 action=AuditAction.USER_PASSWORD_RESET,
                 target_type="user",
                 target_id=user.id,
-                metadata={"via": "cli"},
+                metadata={"via": "cli", "tokens_revoked": tokens_revoked},
             )
         await db.commit()
-        typer.echo(f"Password reset for <{email}>; all sessions revoked.")
+        typer.echo(
+            f"Password reset for <{email}>: sessions ended, {tokens_revoked} access tokens revoked."
+        )
 
     _run(operation)
 

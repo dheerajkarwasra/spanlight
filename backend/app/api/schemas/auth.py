@@ -93,6 +93,11 @@ class TotpCodeIn(BaseModel):
     code: TotpCode
 
 
+class TotpSetupIn(BaseModel):
+    # Required when the account has a password; an account without one re-signs in instead.
+    password: Annotated[str, StringConstraints(min_length=1, max_length=256)] | None = None
+
+
 class TotpVerifyIn(BaseModel):
     # No minimum: an empty challenge is as invalid as a forged one and gets the same answer.
     challenge: Annotated[str, StringConstraints(max_length=1024)]

@@ -53,7 +53,7 @@ RECOVERY_SHAPE = re.compile(r"^[a-z2-7]{5}-[a-z2-7]{5}$")
 
 async def enroll(browser: Browser, clock: FakeClock) -> tuple[str, list[str]]:
     """Set up and enable 2FA for a signed-in browser. Returns the secret and recovery codes."""
-    setup = await browser.post(SETUP)
+    setup = await browser.post(SETUP, json={"password": PASSWORD})
     assert setup.status_code == 200, setup.text
     secret: str = setup.json()["secret"]
     enable = await browser.post(ENABLE, json={"code": clock.code_for(secret)})
@@ -118,7 +118,7 @@ async def test_setup_returns_a_secret_and_an_otpauth_url_for_the_account(
 ) -> None:
     ada = await totp_browser_factory("ada@example.com")
 
-    response = await ada.post(SETUP)
+    response = await ada.post(SETUP, json={"password": PASSWORD})
 
     assert response.status_code == 200
     body = response.json()
@@ -135,8 +135,8 @@ async def test_setup_again_replaces_the_pending_secret(
     totp_browser_factory: BrowserFactory, clock: FakeClock
 ) -> None:
     ada = await totp_browser_factory("ada@example.com")
-    first = (await ada.post(SETUP)).json()["secret"]
-    second = (await ada.post(SETUP)).json()["secret"]
+    first = (await ada.post(SETUP, json={"password": PASSWORD})).json()["secret"]
+    second = (await ada.post(SETUP, json={"password": PASSWORD})).json()["secret"]
 
     stale = await ada.post(ENABLE, json={"code": clock.code_for(first)})
     fresh = await ada.post(ENABLE, json={"code": clock.code_for(second)})
@@ -150,7 +150,7 @@ async def test_setup_then_enable_with_a_valid_code_returns_ten_recovery_codes(
     totp_browser_factory: BrowserFactory, clock: FakeClock
 ) -> None:
     ada = await totp_browser_factory("ada@example.com")
-    secret = (await ada.post(SETUP)).json()["secret"]
+    secret = (await ada.post(SETUP, json={"password": PASSWORD})).json()["secret"]
 
     response = await ada.post(ENABLE, json={"code": clock.code_for(secret)})
 
@@ -195,7 +195,7 @@ async def test_enable_with_a_wrong_code_is_422_and_enables_nothing(
     totp_browser_factory: BrowserFactory, clock: FakeClock
 ) -> None:
     ada = await totp_browser_factory("ada@example.com")
-    secret = (await ada.post(SETUP)).json()["secret"]
+    secret = (await ada.post(SETUP, json={"password": PASSWORD})).json()["secret"]
     right = clock.code_for(secret)
     wrong = f"{(int(right) + 1) % 1_000_000:06d}"
 
@@ -223,7 +223,7 @@ async def test_setup_when_enabled_is_409(
     ada = await totp_browser_factory("ada@example.com")
     secret, _ = await enroll(ada, clock)
 
-    response = await ada.post(SETUP)
+    response = await ada.post(SETUP, json={"password": PASSWORD})
 
     assert response.status_code == 409
     assert response.json()["code"] == "TOTP_ALREADY_ENABLED"
@@ -259,7 +259,7 @@ async def test_setup_without_credentials_keys_is_409_not_configured(
 ) -> None:
     ada = await browser_factory("ada@example.com")
 
-    response = await ada.post(SETUP)
+    response = await ada.post(SETUP, json={"password": PASSWORD})
 
     assert response.status_code == 409
     assert response.json()["code"] == "NOT_CONFIGURED"
@@ -273,7 +273,7 @@ async def test_enable_with_an_unverified_email_is_409_while_email_is_configured(
     clock: FakeClock,
 ) -> None:
     ada = await totp_email_browser_factory("ada@example.com")
-    secret = (await ada.post(SETUP)).json()["secret"]
+    secret = (await ada.post(SETUP, json={"password": PASSWORD})).json()["secret"]
 
     refused = await ada.post(ENABLE, json={"code": clock.code_for(secret)})
     await verify_email(session_factory, "ada@example.com")
@@ -465,7 +465,7 @@ async def test_a_failed_enable_or_disable_writes_no_audit_event(
 ) -> None:
     ada = await totp_browser_factory("ada@example.com")
     await create_workspace(ada)
-    await ada.post(SETUP)
+    await ada.post(SETUP, json={"password": PASSWORD})
 
     await ada.post(ENABLE, json={"code": "000000"})
     await ada.post(DISABLE, json={"code": "000000"})

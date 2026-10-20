@@ -24,6 +24,7 @@ from app.api.schemas import (
     LoginSignedInOut,
     TotpCodeIn,
     TotpEnabledOut,
+    TotpSetupIn,
     TotpSetupOut,
     TotpStatusOut,
     TotpVerifyIn,
@@ -42,7 +43,7 @@ from app.core.errors import (
     not_configured,
     too_many_requests,
 )
-from app.core.security import mark_uncacheable
+from app.core.security import mark_uncacheable, verify_password_async
 from app.core.throttle import check_and_record
 from app.db.models import AuditAction, LoginAttempt, User
 from app.services.audit import record_user_audit_in_each_org
@@ -62,6 +63,10 @@ NEEDS_KEYS = (
 DISABLE_SCOPE = "totp_disable"
 MAX_DISABLE_ATTEMPTS = 5
 DISABLE_WINDOW = timedelta(minutes=15)
+# Setup proves it is the account's owner, not just a holder of its cookie: the current password,
+# or for an account without one, a sign-in this recent. Password guesses are limited like codes.
+SETUP_REAUTH_SCOPE = "totp_setup_reauth"
+REAUTH_WINDOW = timedelta(minutes=10)
 
 
 def _require_crypto(settings: Settings) -> None:
@@ -98,14 +103,45 @@ async def totp_status(auth: CurrentSession, db: DbSession) -> TotpStatusOut:
     )
 
 
+async def _confirm_owner(db: DbSession, auth: CurrentSession, password: str | None) -> None:
+    """Refuse unless the caller re-proves the account: a stolen session cookie alone must not
+    be able to put a second factor between the owner and their account."""
+    user = auth.user
+    if user.password_hash is None:
+        if utcnow() - auth.session.created_at > REAUTH_WINDOW:
+            raise ProblemError(
+                403,
+                "REAUTH_REQUIRED",
+                "Sign in again, then turn on two-factor authentication within 10 minutes.",
+            )
+        return
+    retry_after = await check_and_record(
+        db, SETUP_REAUTH_SCOPE, str(user.id), MAX_DISABLE_ATTEMPTS, DISABLE_WINDOW
+    )
+    if retry_after is not None:
+        raise too_many_requests(math.ceil(retry_after), "Too many password attempts.")
+    if password is None or not await verify_password_async(user.password_hash, password):
+        # The attempt must stay counted even though the request fails.
+        await db.commit()
+        raise ProblemError(422, "INVALID_PASSWORD", "That password is not correct.")
+
+
 @router.post("/setup", response_model=TotpSetupOut)
 async def totp_setup(
-    response: Response, auth: CurrentSession, db: DbSession, settings: SettingsDep
+    response: Response,
+    auth: CurrentSession,
+    db: DbSession,
+    settings: SettingsDep,
+    body: TotpSetupIn | None = None,
 ) -> TotpSetupOut:
-    """Make a secret for an authenticator app. Replaces one from an earlier, unconfirmed setup."""
+    """Make a secret for an authenticator app. Replaces one from an earlier, unconfirmed setup.
+
+    Needs the current password, or a sign-in in the last 10 minutes for an account without one.
+    """
     # Not configured first: it is the operator's state, not something about the user.
     _require_crypto(settings)
     _refuse_demo(auth.user)
+    await _confirm_owner(db, auth, body.password if body else None)
     try:
         info = await totp_service.begin_setup(db, settings, auth.user)
     except totp_service.TotpAlreadyEnabledError:

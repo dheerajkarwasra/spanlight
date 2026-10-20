@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import { Logo } from "@/components/logo";
@@ -10,7 +11,9 @@ import { AuthShowcase } from "./auth-showcase";
 function AuthHeader({ className }: { className?: string }) {
   return (
     <header className={cn("relative flex items-center justify-between", className)}>
-      <Logo />
+      <Link to="/" aria-label="Spanlight home" className="rounded-md">
+        <Logo />
+      </Link>
       <ThemeToggle />
     </header>
   );

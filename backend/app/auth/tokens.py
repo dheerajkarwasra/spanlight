@@ -142,3 +142,22 @@ async def find_presented_token(db: AsyncSession, parsed: ParsedKey) -> Presented
     if not key_secret_matches(parsed.secret, token.secret_hash):
         return None
     return PresentedToken(token=token, user=user)
+
+
+async def revoke_all_tokens(db: AsyncSession, user_id: uuid.UUID, *, now: datetime) -> int:
+    """Revoke every token of the user's that still works; how many that was.
+
+    A password reset calls this: a token minted from a stolen session must not outlive it.
+    """
+    revoked = await db.execute(
+        update(PersonalAccessToken)
+        .where(
+            PersonalAccessToken.user_id == user_id,
+            PersonalAccessToken.revoked_at.is_(None),
+            or_(PersonalAccessToken.expires_at.is_(None), PersonalAccessToken.expires_at > now),
+        )
+        .values(revoked_at=now)
+        .returning(PersonalAccessToken.id)
+        .execution_options(synchronize_session=False)
+    )
+    return len(revoked.all())
