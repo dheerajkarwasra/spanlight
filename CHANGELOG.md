@@ -4,6 +4,25 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Added
+
+- **Locked datasets.** Admins and owners can lock a dataset that must not change, such as a holdout set: `POST /api/v1/projects/{project_id}/datasets/{dataset_id}/lock` and `.../unlock`, under the new `datasets:lock` permission (read-scoped tokens are refused). While a dataset is locked, adding items (as JSON, from a file or from traces), editing or deleting an item and deleting the dataset answer `409 DATASET_LOCKED`; reading it, changing its description and running experiments on it still work. Both routes are idempotent, `DatasetOut` carries `locked_at`, and each change is audited as `dataset.lock` or `dataset.unlock`.
+- **Runs keep a copy of every item they score.** Each experiment item stores the dataset item's `input`, `expected_output` and metadata as the run read them, error items included, and the run items API returns them as `input`, `expected_output` and `item_metadata`, with `position`, the item's number within the run. Editing or deleting a dataset item no longer changes what an earlier run shows it was measured against. Items of runs made before this release return `null` for the copy; they are not filled in from the live dataset.
+- **Repeated traces are caught when adding from traces.** A trace whose span is already an item of the dataset is rejected as `already in this dataset` instead of being added twice, and the answer's new `also_in` lists the other datasets of the project that already hold each added trace, so the same conversation reaching a tuning set and a holdout set is visible.
+
+### Changed
+
+- **A run scores a fixed set of items.** It takes the ids of the dataset's first `max_items` items when it starts: items added while it runs are not scored, and items deleted while it runs are skipped. Before, a run read the dataset page by page and could pick up items added mid-run.
+- **Compare leaves out items edited between the runs.** When both runs kept a copy and an item's `input` or `expected_output` differs, the item gets `changed: true` and no deltas, and is left out of the improved, regressed and unchanged counts and of the significance test; the comparison's new `changed_items` counts them. Each run's means, intervals, cost and latency still cover all of its items. Compared items also carry `input`, `expected_output` and `position` from the runs' copies. Item metadata is not compared.
+
+### Fixed
+
+- **Item metadata is kept when adding items as JSON or uploading a file.** Both paths stored `{}` instead of the metadata sent; editing an item's metadata afterwards already worked.
+
+### Upgrading
+
+Run `spanlight migrate` after upgrading. 1010 adds the copy columns to `experiment_items` and a CHECK on them (catalog only; the CHECK is then validated with one scan of the table that does not block writes); its downgrade drops the columns and loses every stored copy. 1011 adds `datasets.locked_at` (nullable, catalog only) and the `dataset.lock` and `dataset.unlock` audit actions; its downgrade deletes those audit events and forgets which datasets were locked. 1012 builds the partial index `dataset_items_source_trace_idx` `CONCURRENTLY`, which does not block reads or writes but waits for transactions already open on the table to finish; if the build is interrupted, running `spanlight migrate` again recovers (it drops the invalid leftover first). During a rolling deploy, a run finished by an older worker stores no copy and shows as an older run, and an older api replica can miss a new lock for the seconds both versions run.
+
 ## [0.7.0] - 2026-10-20
 
 Agent traces and long payloads: compare two traces step by step, search what the model was sent and said, keep inputs and outputs up to 1 MB, and trace Node.js apps with a TypeScript SDK. Dashboards load faster on large projects, and an overloaded api process answers quickly instead of stalling.

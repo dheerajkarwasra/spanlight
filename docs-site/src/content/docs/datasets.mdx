@@ -5,14 +5,14 @@ sidebar:
   order: 1
 ---
 
-{/* Sources: backend/app/api/dataset_problems.py, backend/app/api/v1/dataset_items.py, backend/app/datasets/schemas.py, frontend/src/features/datasets/dataset-errors.ts, frontend/src/features/datasets/use-upload-file.ts, frontend/src/features/datasets/upload-preview.ts, frontend/src/features/datasets/upload-result.tsx, frontend/src/features/datasets/items-card.tsx, frontend/src/features/datasets/datasets-page.tsx */}
+{/* Sources: backend/app/api/dataset_problems.py, backend/app/api/v1/dataset_items.py, backend/app/datasets/schemas.py, frontend/src/features/datasets/dataset-errors.ts, frontend/src/features/datasets/use-upload-file.ts, frontend/src/features/datasets/upload-preview.ts, frontend/src/features/datasets/upload-result.tsx, frontend/src/features/datasets/items-card.tsx, frontend/src/features/datasets/datasets-page.tsx, backend/app/datasets/service.py, backend/app/datasets/locking.py, backend/app/api/v1/datasets.py */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
 
 A **dataset** is a named list of test cases that you replay through a prompt in an [experiment](/docs/experiments/). Each **item** has an `input`, an optional `expected_output` and some `metadata`. Build one from real traces that went wrong or went well, or upload a file.
 
-Anyone who can see the project can read datasets. **Members**, **admins** and **owners** can create, edit and delete datasets and their items. Datasets live under **Datasets** in the project.
+Anyone who can see the project can read datasets. **Members**, **admins** and **owners** can create, edit and delete datasets and their items, and **admins** and **owners** can [lock a dataset](#lock-a-dataset) so nobody changes it. Datasets live under **Datasets** in the project.
 
 <Prerequisites
   items={[
@@ -33,7 +33,7 @@ Anyone who can see the project can read datasets. **Members**, **admins** and **
 
 You can change an item's `expected_output` (send `null` to clear it) and replace its `metadata` as a whole. The `input` of an item cannot be changed; delete the item and add a new one.
 
-**Deleting a dataset** removes its items. It is refused with `409 DATASET_IN_USE` while an experiment uses it.
+**Deleting a dataset** removes its items. It is refused with `409 DATASET_IN_USE` while an experiment uses it, and with `409 DATASET_LOCKED` while the dataset is locked.
 
 ## Add items from traces
 
@@ -55,8 +55,31 @@ A trace that gives no item is listed in `rejected` with a reason and does not st
 | `no llm span` | The trace has no LLM span to copy |
 | `span not found` | You named a span the trace does not have |
 | `no payload stored` | The span has no stored input, because the project does not capture payloads |
+| `already in this dataset` | The dataset already has an item copied from this span of this trace. A second copy would count the same case twice in every run |
 
 You can add up to 200 traces in one request. The copied text is what was stored at ingestion, with secrets already redacted.
+
+The same trace with a different span is a different case, so it is added. Items added as JSON or from a file have no source trace and are not checked for repeats.
+
+### Traces already in another dataset
+
+A trace can reach two datasets of the project, for example a tuning set and a holdout set, which makes the holdout score look better than it is. Spanlight adds the item, and the answer says where else the trace already is: `also_in` has one entry per added trace that already has an item (from any span) in another dataset of the project.
+
+```json
+{
+  "accepted": 2,
+  "rejected": [],
+  "item_ids": ["<item id>", "<item id>"],
+  "also_in": [
+    {
+      "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+      "datasets": [{ "id": "<dataset id>", "name": "support-holdout" }]
+    }
+  ]
+}
+```
+
+`also_in` is `[]` when no added trace is in another dataset. If the item should not be in this dataset, delete it. Only datasets of the same project are checked.
 
 ## Upload a file
 
@@ -100,8 +123,21 @@ A cell in `input` or `expected_output` that holds a JSON **object or array** is 
 | `GET`, `PATCH`, `DELETE /datasets/{dataset_id}` | read, `datasets:write` | Read, change the description, delete |
 | `GET /datasets/{dataset_id}/items` | `project:read` | Items by id, oldest first |
 | `PATCH`, `DELETE /datasets/{dataset_id}/items/{item_id}` | `datasets:write` | Edit `expected_output` and `metadata`, or delete an item |
+| `POST /datasets/{dataset_id}/lock`, `POST /datasets/{dataset_id}/unlock` | `datasets:lock` | Lock or unlock the dataset (see [Lock a dataset](#lock-a-dataset)) |
 
 The dataset's **name** is its handle in the command line and in the [eval gate](/docs/eval-gate/): they look it up with `GET /datasets?name=...`.
+
+## Lock a dataset
+
+Lock a dataset that must not change, such as a holdout set you report scores on. While it is locked, every change to its items is refused with `409 DATASET_LOCKED` and the message "This dataset is locked. An admin can unlock it.":
+
+- adding items as JSON, from a file or from traces;
+- editing or deleting an item;
+- deleting the dataset.
+
+Reading the dataset and its items, changing its description, and running experiments on it still work. A locked dataset cannot change while a run is reading it.
+
+Only **admins** and **owners** can lock and unlock (the `datasets:lock` permission), so a member cannot undo the lock. `POST /api/v1/projects/{project_id}/datasets/{dataset_id}/lock` and `.../unlock` both answer `200` with the dataset, whose `locked_at` is the time it was locked, or `null` when it is unlocked. Both are safe to repeat: locking a locked dataset keeps its first `locked_at`. A personal access token with only the read scope cannot use them. Each lock and unlock is recorded in the audit log as `dataset.lock` or `dataset.unlock`.
 
 ## Check it worked
 
@@ -116,6 +152,7 @@ After an upload, the dialog "Upload finished" shows two counts, **Accepted** and
 - **"This dataset is full."** A dataset holds up to 10,000 items (`422 DATASET_FULL`), and the whole request is refused. Delete items you no longer need, or start a new dataset.
 - **The Rejected tile is not zero.** Each rejected line is listed with its line number and a reason, such as "input is required". Fix those lines and upload them again. The rest was accepted.
 - **A trace is missing after "Add to dataset".** The trace is in `rejected` with a reason such as "No stored payload". See the reasons in [Add items from traces](#add-items-from-traces).
+- **`409 DATASET_LOCKED` when you add, edit or delete.** The dataset is locked. Ask an admin or owner to unlock it, or add the items to another dataset. See [Lock a dataset](#lock-a-dataset).
 
 ## Next steps
 

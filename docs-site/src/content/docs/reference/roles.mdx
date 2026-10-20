@@ -3,7 +3,7 @@ title: Roles and permissions reference
 description: What the viewer, member, admin and owner roles can do in Spanlight, one row per permission, plus API key scopes, personal access token scopes and who can assign the owner role.
 ---
 
-{/* Sources: backend/app/core/permissions.py, backend/app/core/scopes.py, backend/app/api/deps.py, backend/app/api/v1/orgs.py, backend/app/api/v1/projects.py, backend/app/api/v1/keys.py, backend/app/api/v1/exports.py, backend/app/api/v1/alerts.py, backend/app/api/v1/budgets.py, backend/app/api/v1/insights.py, backend/app/api/v1/insight_feedback.py, backend/app/api/v1/gateway.py, backend/app/api/v1/gateway_credentials.py, backend/app/api/v1/billing_sources.py, backend/app/api/v1/experiments.py, backend/app/api/v1/playground.py, backend/app/api/v1/annotations.py, backend/app/api/v1/evaluators.py, backend/app/api/v1/scores.py, backend/app/api/ingest.py, backend/app/api/scores_ingest.py, backend/app/api/v1/prompts_read.py, docs/api-deviations.md */}
+{/* Sources: backend/app/core/permissions.py, backend/app/core/scopes.py, backend/app/api/deps.py, backend/app/api/v1/orgs.py, backend/app/api/v1/projects.py, backend/app/api/v1/keys.py, backend/app/api/v1/exports.py, backend/app/api/v1/alerts.py, backend/app/api/v1/budgets.py, backend/app/api/v1/insights.py, backend/app/api/v1/insight_feedback.py, backend/app/api/v1/gateway.py, backend/app/api/v1/gateway_credentials.py, backend/app/api/v1/billing_sources.py, backend/app/api/v1/experiments.py, backend/app/api/v1/playground.py, backend/app/api/v1/annotations.py, backend/app/api/v1/evaluators.py, backend/app/api/v1/datasets.py, backend/app/api/v1/scores.py, backend/app/api/ingest.py, backend/app/api/scores_ingest.py, backend/app/api/v1/prompts_read.py, docs/api-deviations.md */}
 
 A person has one role in each organization: viewer, member, admin or owner. The role decides which permissions the person holds. This page lists every permission and the roles that hold it. It also covers the scopes of API keys and personal access tokens.
 
@@ -36,6 +36,7 @@ A role that holds a permission shows **Yes**.
 | `alerts:write` | Managing alert channels, rules and budgets | No | No | Yes | Yes |
 | `insights:manage` | Managing the Doctor's insights | No | No | Yes | Yes |
 | `evaluators:write` | Creating and running evaluators | No | No | Yes | Yes |
+| `datasets:lock` | Locking and unlocking a dataset. A locked dataset refuses every change to its items | No | No | Yes | Yes |
 | `billing_sources:manage` | Adding, editing, re-keying and deleting billing sources: provider accounts connected with an admin key or as CSV uploads. Any member can read them | No | No | Yes | Yes |
 | `org:delete` | Deleting the organization | No | No | No | Yes |
 | `org:security` | Requiring two-factor authentication for the organization | No | No | No | Yes |

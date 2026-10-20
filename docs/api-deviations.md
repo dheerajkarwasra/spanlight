@@ -2892,3 +2892,47 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
   at ingest. Parallel spans of one name that start at the same instant are ordered by span id and may pair
   crosswise. At most 2,000 spans of each trace are compared (`truncated: true` when one has more); `totals` always
   cover the whole traces.
+
+## Dataset reproducibility: run copies, locked datasets, repeated traces (added 2026-10-20)
+
+- **Runs keep a copy of each item.** Every `experiment_items` row stores the `input`, `expected_output` and `metadata`
+  of the dataset item exactly as the run read it (migration `1010`, columns `input`, `expected_output`,
+  `item_metadata`), on error rows as well (`missing_variables`, `BUDGET_EXCEEDED`, `cancelled`, `internal_error`). A
+  CHECK (`experiment_items_copy_check`) keeps the copy whole: `input` and `item_metadata` are both set, or all three
+  are `NULL`; `expected_output` alone may be `NULL`. A JSON `null` input is stored as the JSONB value `null`, so a
+  `NULL` input always means "no copy".
+- **Run items.** `GET …/runs/{run_id}/items` (`ExperimentItemOut`) gains `input`, `expected_output` and
+  `item_metadata`, all `null` on a row stored before this release; such rows are not filled from the live dataset,
+  whose items may have changed since. It also gains `position`, the item's 1-based rank by dataset item id within
+  that run, so deleting or adding dataset items never renumbers an old run.
+- **A run scores a fixed item set.** When a run starts it takes the ids of the dataset's first `max_items` items in
+  id order, in the same transaction that moves it to `running`, and then reads their content page by page by those
+  ids. An item added during the run is not scored; an item deleted during the run is skipped; an item edited during
+  the run is scored on the content its page read returned, and the copy records exactly that.
+- **Locked datasets.** `POST /api/v1/projects/{project_id}/datasets/{dataset_id}/lock` and `…/unlock` answer
+  `200` with `DatasetOut`, which gains `locked_at` (`null` when unlocked). Both need the new permission
+  **`datasets:lock`** (class `write`: admins and owners; members and viewers get `403`, non-members `404`, and
+  an admin's or owner's read-scoped personal access token gets `403 TOKEN_SCOPE`). Both are idempotent: locking a locked dataset keeps its first `locked_at` and
+  writes no audit event, and unlocking an unlocked one changes nothing. A change is audited as `dataset.lock` or
+  `dataset.unlock` with the dataset's name (migration `1011` adds the actions).
+- **`409 DATASET_LOCKED`.** On a locked dataset, adding items (`POST …/items`), uploading a file
+  (`POST …/items/upload`; the file is checked first, so a wrong type or an oversized file still gets its `415` or `413`), adding from traces
+  (`POST …/items/from-traces`), editing an item (`PATCH …/items/{item_id}`), deleting an item and deleting the
+  dataset answer `409 DATASET_LOCKED`, "This dataset is locked. An admin can unlock it." The check runs under the
+  dataset's row lock, so a write either commits before the lock or is refused. Reading the dataset and its items,
+  changing its description (`PATCH /datasets/{dataset_id}`), locking, unlocking and running experiments on it still
+  work.
+- **Repeated traces.** In `POST …/items/from-traces`, a trace whose chosen span is already an item of this dataset
+  (the same `source_trace_id` and `source_span_id`) is not added and is listed in `rejected` with the reason
+  `already in this dataset`. The same trace with another span is a different case and is added. `TraceAddedOut`
+  gains `also_in: [{trace_id, datasets: [{id, name}]}]`, one entry per added trace that already has an item (from
+  any span) in another dataset of the project; it is `[]` when there is none. Row-level security keeps the lookup
+  inside the project. Items added as JSON or by upload carry no source trace and are not checked. Migration `1012`
+  adds the partial index `dataset_items_source_trace_idx` that serves both lookups.
+- **Compare.** `ItemDeltaOut` gains `input` and `expected_output` (run A's copy, else run B's, else `null`),
+  `position` (run A's rank, else run B's) and `changed`: `true` when both rows have a copy and their `input` or
+  `expected_output` differ (JSON equality), `false` when both match, `null` when the item is in one run only or either row was stored before this
+  release. Item metadata is not compared, because evaluators never see it. A changed pair has `null` deltas and is
+  left out of `improved`, `regressed`, `unchanged` and the paired test, since its two scores were measured against
+  different references; `ComparisonOut.changed_items` counts such pairs. Each run's means, intervals, cost and
+  latency still cover all of its items.

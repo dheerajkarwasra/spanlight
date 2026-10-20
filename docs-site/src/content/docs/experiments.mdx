@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-{/* Sources: backend/app/evals/experiments.py, backend/app/api/experiment_problems.py, frontend/src/features/experiments/run-label.ts, frontend/src/features/experiments/start-run.tsx, frontend/src/features/experiments/run-list.tsx, frontend/src/features/experiments/run-scores.tsx, backend/app/evals/stats.py, backend/app/evals/compare.py, backend/app/evals/experiment_totals.py, sdks/python/src/spanlight/_experiments_report.py, docs/api-deviations.md */}
+{/* Sources: backend/app/evals/experiments.py, backend/app/api/experiment_problems.py, frontend/src/features/experiments/run-label.ts, frontend/src/features/experiments/start-run.tsx, frontend/src/features/experiments/run-list.tsx, frontend/src/features/experiments/run-scores.tsx, backend/app/evals/stats.py, backend/app/evals/compare.py, backend/app/evals/experiment_totals.py, backend/app/evals/experiment_prepare.py, backend/app/evals/experiment_run.py, backend/app/evals/experiment_compare.py, sdks/python/src/spanlight/_experiments_report.py, docs/api-deviations.md */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
@@ -195,10 +195,18 @@ Poll `GET /api/v1/projects/$PROJECT/experiments/$EXPERIMENT/runs/$RUN` until `st
 
 ## What a run does
 
-1. Reads the dataset's items in order, up to `max_items`, with **four calls in flight** at a time.
+1. Takes the ids of the dataset's first `max_items` items (oldest first) when it starts, and reads those items, with **four calls in flight** at a time.
 2. Sends each item to the target. Each call is a trace in environment `experiments`, named `experiment:<experiment name>` and tagged `spanlight:experiment:<run id>`. A prompt target links the span to its prompt version.
 3. Scores the answer with each attached evaluator. A heuristic evaluator and a judge receive the item's `expected_output`, if it has one. Each score is stored on the item and also written on the item's trace (source `eval`), under the evaluator's name.
-4. Stores the item: the answer (`text` and `finish_reason`), the duration, the cost, the scores, and an error if there was one.
+4. Stores the item: the answer (`text` and `finish_reason`), the duration, the cost, the scores, an error if there was one, and a copy of the dataset item it answered.
+
+### What a run keeps of the dataset
+
+A run scores the items that exist when it starts. An item added to the dataset while the run is going is not scored, and an item deleted while it is going is skipped. An item edited while it is going is scored on the version the run read. To rule out changes completely, [lock the dataset](/docs/datasets/#lock-a-dataset).
+
+Every stored item keeps a **copy** of the dataset item it was scored against: its `input`, `expected_output` and `metadata` exactly as the run read them, on items that ended in an error too. The run's items (`GET .../runs/{run_id}/items`) return the copy as `input`, `expected_output` and `item_metadata`, with `position`, the item's number within the run (1, 2, 3 in dataset order). Editing or deleting a dataset item later does not change what an earlier run shows it was measured against, and does not renumber its items.
+
+Items of a run made before runs kept a copy have `input`, `expected_output` and `item_metadata` set to `null`. They are not filled in from the dataset, because its items may have changed since. Run the experiment again to get a run with copies.
 
 When the run ends, its **totals** are worked out from the stored items:
 
@@ -241,6 +249,7 @@ Choose two runs of an experiment and open **Compare**. Both must have finished; 
 - **Higher is better.** Every score Spanlight produces, built-in judges included, is higher-is-better, so a positive delta is **improved** and a negative one **regressed**. A score where lower is better is not supported; the page says so. Improved and regressed always carry an icon and a word as well as a colour.
 - **Categories** have no delta: equal values are unchanged, different ones count as neither improved nor regressed.
 - **Items match on the dataset item.** Items present in both runs come first; items that only one run has are listed after them with the other side empty and no deltas.
+- **Items edited between the runs are left out.** When both runs kept a copy of an item and its `input` or `expected_output` differs between them, the two scores were measured against different cases, so they are not compared. Such an item has `changed: true` and no deltas, and it is left out of the improved, regressed and unchanged counts and of the significance test; `changed_items` says how many there are. Each run's own means, intervals, cost and latency still cover all of its items. Item `metadata` is not compared, because evaluators never see it. When the item is in one run only, or either run was made before runs kept a copy, `changed` is `null`; such an item is handled as before.
 - **Cost and p95 duration** show the difference between the runs. When either side's cost is unknown, the cost difference is "—" rather than a guess.
 
 The page also states the trade-off in a sentence built from the differences, for example "B scores +0.08 on relevance, costs +$0.012, p95 latency +310 ms."
@@ -254,7 +263,7 @@ Fifty items is a small sample. A pass rate of 78 % on 50 items could well be 65 
 - **What "significant" means.** A difference is called significant when `p` is below 0.05: if the two runs truly behaved the same, a difference this large would happen by chance less than one time in twenty. "Not significant" does not mean the runs are the same; it means this sample cannot tell them apart. Add items, or treat the change as unproven. Both sentences use a neutral colour, never red or green.
 - **When there is nothing to test.** When every paired item gave the same answer in both runs the comparison says "No items changed" (`p = 1`). When no item is scored in both runs it says "Nothing to compare: no item is scored in both runs."
 
-Both tests are exact (no approximation and no continuity correction), and 0.05 is not a setting. A yes/no score stored as the numbers 0 and 1, as an old SDK does, is treated as yes/no when its score config says so. In the API, a run's `totals.scores.<name>` gains `passed`, `ci_low` and `ci_high`, and each score of a comparison gains `ci_a`, `ci_b` and `test` (`kind` `mcnemar` or `sign`, `n`, `improved`, `regressed`, `unchanged`, `p_value`, `significant`); a value that does not apply is `null`.
+Both tests are exact (no approximation and no continuity correction), and 0.05 is not a setting. A yes/no score stored as the numbers 0 and 1, as an old SDK does, is treated as yes/no when its score config says so. In the API, a run's `totals.scores.<name>` gains `passed`, `ci_low` and `ci_high`, and each score of a comparison gains `ci_a`, `ci_b` and `test` (`kind` `mcnemar` or `sign`, `n`, `improved`, `regressed`, `unchanged`, `p_value`, `significant`); a value that does not apply is `null`. Each compared item carries `input` and `expected_output` (run A's copy, else run B's), `position` (its number in run A, else in run B) and `changed`, and the comparison carries `changed_items`.
 
 ## The demo seed
 
@@ -278,7 +287,7 @@ Under `/api/v1/projects/{project_id}/experiments`.
 | `POST /{experiment_id}/runs` | `experiments:run` | Start a run |
 | `GET /{experiment_id}/runs` | `project:read` | Runs, newest first, with the totals stored when each ended |
 | `GET /{experiment_id}/runs/{run_id}` | `project:read` | One run; totals are computed live while it runs |
-| `GET /{experiment_id}/runs/{run_id}/items` | `project:read` | The run's items in dataset order |
+| `GET /{experiment_id}/runs/{run_id}/items` | `project:read` | The run's items in dataset order, each with its copy of the dataset item |
 | `GET /{experiment_id}/runs/{run_a}/compare/{run_b}` | `project:read` | The comparison, B minus A |
 
 A create body is `{"name", "dataset_id", "config": {"target", "max_cost_usd"?, "max_items"?}, "evaluator_ids"?}`. A `404` means the dataset, an evaluator or the prompt version is not in the project, or the credential is not in the organization.
