@@ -34,7 +34,7 @@ Spanlight records every LLM call your application makes: prompts and completions
 - **Self-hosted on one database.** Postgres is the only datastore, the job queue included. The core is MIT licensed.
 
 > [!NOTE]
-> Spanlight is pre-1.0. The current server release is 0.6.0 ([changelog](CHANGELOG.md)), and the Python SDK on PyPI is 0.2.0.
+> Spanlight is pre-1.0. The current server release is 0.7.0 ([changelog](CHANGELOG.md)), and the Python SDK on PyPI is 0.2.1.
 
 ## Getting started
 
