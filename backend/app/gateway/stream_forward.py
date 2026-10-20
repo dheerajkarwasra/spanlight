@@ -39,7 +39,12 @@ from app.gateway.sse import StreamObserver
 from app.gateway.stream_observers import AnthropicMessagesObserver, OpenAiChatObserver
 from app.gateway.streaming import observe_stream
 from app.gateway.tracing import build_span
-from app.gateway.upstream_io import STREAM_IDLE_TIMEOUT_S, close_quietly
+from app.gateway.upstream_io import (
+    STREAM_IDLE_TIMEOUT_S,
+    STREAM_TOTAL_TIMEOUT_S,
+    StreamTooLong,
+    close_quietly,
+)
 from app.gateway.usage_chunk import UsageChunkFilter, injects_usage
 
 logger = structlog.get_logger(__name__)
@@ -131,6 +136,8 @@ async def _forward(
                 result.cut_by_fault = True  # the client's stream ends here, cleanly
         if hidden is not None and (rest := hidden.flush()):
             yield rest
+    except StreamTooLong:
+        result.stream_error = f"the stream ran past {STREAM_TOTAL_TIMEOUT_S:g} s"
     except TimeoutError:
         result.stream_error = f"the provider sent nothing for {STREAM_IDLE_TIMEOUT_S:g} s"
     except httpx.TransportError as error:

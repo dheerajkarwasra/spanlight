@@ -29,6 +29,7 @@ None of the dashboard's middleware touches these paths: no cookies, CSRF or Orig
 are scoped to `/api/`), and the 1 MiB body limit is `/api/v1` only.
 """
 
+import asyncio
 import json
 from collections.abc import Mapping
 from typing import Annotated, Any
@@ -74,6 +75,8 @@ router = APIRouter(prefix="/gw/v1", tags=["gateway"])
 # "10 MB" in the error message. Caddy allows a little more (11 MiB), so this limit answers with
 # the provider-shaped 413 rather than Caddy's plain one.
 MAX_REQUEST_BYTES = 10 * 1024 * 1024
+# A client that trickles its body would otherwise hold a request slot for as long as it likes.
+BODY_READ_TIMEOUT_S = 30.0
 # Compared against when the presented prefix matches no key, so an unknown key costs the same
 # hash comparison as a known one with the wrong secret.
 _DUMMY_SECRET_HASH = bytes(32)
@@ -192,7 +195,10 @@ ModelsKey = Annotated[KeyContext, Depends(authenticate_models_key)]
 async def read_model_call(request: Request) -> dict[str, Any]:
     """The body as a JSON object with a string `model`, at most `MAX_REQUEST_BYTES`."""
     try:
-        raw = await read_bounded_body(request, MAX_REQUEST_BYTES)
+        async with asyncio.timeout(BODY_READ_TIMEOUT_S):
+            raw = await read_bounded_body(request, MAX_REQUEST_BYTES)
+    except TimeoutError:
+        raise invalid_request("Request body was not sent in time.", param=None) from None
     except BodyTooLarge:
         raise request_too_large() from None
     except (UnsupportedEncoding, UndecodableBody):

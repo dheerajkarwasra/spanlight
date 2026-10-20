@@ -25,6 +25,10 @@ from app.gateway.fault_apply import MAX_BUFFERED_BYTES
 from app.gateway.response_summary import upstream_error_detail
 
 STREAM_IDLE_TIMEOUT_S = 60.0
+# A stream's whole life after its first chunk. Without it a provider (or a server posing as one)
+# that sends a keep-alive line now and then holds a pooled connection forever. 600 s is the
+# official OpenAI client's own default request timeout.
+STREAM_TOTAL_TIMEOUT_S = 600.0
 MAX_RESPONSE_BYTES = MAX_BUFFERED_BYTES
 """The largest non-streaming answer the gateway reads (10 MB); a longer one fails the attempt."""
 
@@ -36,6 +40,10 @@ _INSECURE_URL_MESSAGE = "The provider URL must use https:// on this server."
 _TOO_LARGE_MESSAGE = "The provider's answer exceeds the gateway's 10 MB limit."
 
 FailureKind = Literal["status", "timeout", "connection_error", "blocked"]
+
+
+class StreamTooLong(TimeoutError):  # noqa: N818 - reads as the condition
+    """The stream was still going `STREAM_TOTAL_TIMEOUT_S` after its first chunk."""
 
 
 class ResponseTooLarge(Exception):  # noqa: N818 - reads as the condition, like the egress errors
@@ -138,20 +146,27 @@ async def read_all(response: UpstreamResponse) -> bytes:
 async def idle_bounded(
     first: bytes | None, rest: AsyncIterator[bytes], response: UpstreamResponse
 ) -> AsyncIterator[bytes]:
-    """The stream from its first chunk on; a gap over `STREAM_IDLE_TIMEOUT_S` raises TimeoutError.
+    """The stream from its first chunk on; a gap over `STREAM_IDLE_TIMEOUT_S` raises TimeoutError,
+    a stream still going `STREAM_TOTAL_TIMEOUT_S` after its first chunk `StreamTooLong`.
 
     Closes the upstream response however the stream ends.
     """
     try:
         if first is None:
             return
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + STREAM_TOTAL_TIMEOUT_S
         yield first
         while True:
             try:
-                async with asyncio.timeout(STREAM_IDLE_TIMEOUT_S):
+                async with asyncio.timeout_at(min(deadline, loop.time() + STREAM_IDLE_TIMEOUT_S)):
                     chunk = await anext(rest)
             except StopAsyncIteration:
                 return
+            except TimeoutError:
+                if loop.time() >= deadline:
+                    raise StreamTooLong from None
+                raise
             yield chunk
     finally:
         await close_quietly(response)
