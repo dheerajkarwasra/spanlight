@@ -525,6 +525,27 @@
         "title": "AlertRuleStateOut",
         "type": "object"
       },
+      "AlsoInOut": {
+        "properties": {
+          "datasets": {
+            "items": {
+              "$ref": "#/components/schemas/DatasetRefOut"
+            },
+            "title": "Datasets",
+            "type": "array"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trace_id",
+          "datasets"
+        ],
+        "title": "AlsoInOut",
+        "type": "object"
+      },
       "ApiKeyCreateIn": {
         "properties": {
           "expires_at": {
@@ -2415,6 +2436,10 @@
             "title": "Aggregate",
             "type": "object"
           },
+          "changed_items": {
+            "title": "Changed Items",
+            "type": "integer"
+          },
           "cost_delta_usd": {
             "anyOf": [
               {
@@ -2449,7 +2474,8 @@
           "items",
           "aggregate",
           "cost_delta_usd",
-          "latency_p95_delta_ms"
+          "latency_p95_delta_ms",
+          "changed_items"
         ],
         "title": "ComparisonOut",
         "type": "object"
@@ -3332,6 +3358,18 @@
             "title": "Item Count",
             "type": "integer"
           },
+          "locked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked At"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -3347,6 +3385,7 @@
           "name",
           "description",
           "item_count",
+          "locked_at",
           "created_at",
           "updated_at"
         ],
@@ -3371,6 +3410,25 @@
           }
         },
         "title": "DatasetPatch",
+        "type": "object"
+      },
+      "DatasetRefOut": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "DatasetRefOut",
         "type": "object"
       },
       "DatasetSpec": {
@@ -4797,6 +4855,33 @@
             ],
             "title": "Evaluator Error"
           },
+          "expected_output": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Output"
+          },
+          "input": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input"
+          },
+          "item_metadata": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Metadata"
+          },
           "latency_ms": {
             "anyOf": [
               {
@@ -4820,6 +4905,10 @@
             ],
             "title": "Output"
           },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
           "scores": {
             "additionalProperties": true,
             "title": "Scores",
@@ -4839,6 +4928,10 @@
         },
         "required": [
           "dataset_item_id",
+          "position",
+          "input",
+          "expected_output",
+          "item_metadata",
           "trace_id",
           "output",
           "scores",
@@ -7832,6 +7925,17 @@
               }
             ]
           },
+          "changed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed"
+          },
           "dataset_item_id": {
             "format": "uuid",
             "title": "Dataset Item Id",
@@ -7850,10 +7954,36 @@
             },
             "title": "Deltas",
             "type": "object"
+          },
+          "expected_output": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Output"
+          },
+          "input": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
           }
         },
         "required": [
           "dataset_item_id",
+          "position",
+          "input",
+          "expected_output",
+          "changed",
           "a",
           "b",
           "deltas"
@@ -15671,6 +15801,13 @@
             "title": "Accepted",
             "type": "integer"
           },
+          "also_in": {
+            "items": {
+              "$ref": "#/components/schemas/AlsoInOut"
+            },
+            "title": "Also In",
+            "type": "array"
+          },
           "item_ids": {
             "items": {
               "format": "uuid",
@@ -15690,7 +15827,8 @@
         "required": [
           "accepted",
           "rejected",
-          "item_ids"
+          "item_ids",
+          "also_in"
         ],
         "title": "TraceAddedOut",
         "type": "object"
@@ -22519,7 +22657,7 @@
     },
     "/api/v1/projects/{project_id}/datasets/{dataset_id}/items/from-traces": {
       "post": {
-        "description": "Copy one item from each of up to 200 traces: the span `span_id`, else the trace's first\n`llm` span. A trace that gives no item is listed in `rejected` with the reason (`trace not\nfound`, `no llm span`, `no payload stored`). The recorded output is only a starting point for\nthe expected output.",
+        "description": "Copy one item from each of up to 200 traces: the span `span_id`, else the trace's first\n`llm` span. A trace that gives no item is listed in `rejected` with the reason (`trace not\nfound`, `no llm span`, `span not found`, `no payload stored`, `already in this dataset` when\nthis dataset already holds that trace and span). An added trace that already has an item in\nanother dataset of the project is listed in `also_in`. The recorded output is only a starting\npoint for the expected output.",
         "operationId": "add_items_from_traces_api_v1_projects__project_id__datasets__dataset_id__items_from_traces_post",
         "parameters": [
           {
@@ -22768,6 +22906,114 @@
           }
         },
         "summary": "Edit an item",
+        "tags": [
+          "datasets"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/datasets/{dataset_id}/lock": {
+      "post": {
+        "description": "Refuse item writes and the delete with `409 DATASET_LOCKED` until the dataset is unlocked.\nReads, description edits and experiment runs still work. Locking a locked dataset keeps its\n`locked_at`.",
+        "operationId": "lock_dataset_api_v1_projects__project_id__datasets__dataset_id__lock_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Lock a dataset",
+        "tags": [
+          "datasets"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/datasets/{dataset_id}/unlock": {
+      "post": {
+        "description": "Allow item writes and the delete again. Unlocking an unlocked dataset changes nothing.",
+        "operationId": "unlock_dataset_api_v1_projects__project_id__datasets__dataset_id__unlock_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unlock a dataset",
         "tags": [
           "datasets"
         ]

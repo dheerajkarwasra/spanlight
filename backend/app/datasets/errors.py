@@ -18,6 +18,10 @@ class DatasetInUseError(Exception):
     """An experiment uses the dataset, so it cannot be deleted."""
 
 
+class DatasetLockedError(Exception):
+    """The dataset is locked, so its items cannot change and it cannot be deleted."""
+
+
 class DatasetFullError(Exception):
     """Adding the items would take the dataset past its limit."""
 

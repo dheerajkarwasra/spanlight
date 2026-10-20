@@ -17,8 +17,10 @@ from app.db.models import Dataset, DatasetItem
 from app.ingest.schemas import TraceId
 
 __all__ = [
+    "AlsoInOut",
     "DatasetOut",
     "DatasetPatch",
+    "DatasetRefOut",
     "DatasetSpec",
     "ItemAddIn",
     "ItemAddedOut",
@@ -37,6 +39,7 @@ class DatasetOut(ApiModel):
     name: str
     description: str | None
     item_count: int
+    locked_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -47,6 +50,7 @@ class DatasetOut(ApiModel):
             name=dataset.name,
             description=dataset.description,
             item_count=item_count,
+            locked_at=dataset.locked_at,
             created_at=dataset.created_at,
             updated_at=dataset.updated_at,
         )
@@ -85,11 +89,23 @@ class TraceRejectedOut(ApiModel):
     reason: str
 
 
+class DatasetRefOut(ApiModel):
+    id: uuid.UUID
+    name: str
+
+
+class AlsoInOut(ApiModel):
+    trace_id: str
+    datasets: list[DatasetRefOut]
+
+
 class TraceAddedOut(ApiModel):
     accepted: int
     rejected: list[TraceRejectedOut]
     # The new items' ids, so a caller can patch the copy (the annotate screen's `metadata.review`).
     item_ids: list[uuid.UUID]
+    # Added traces that already have an item in another dataset of the project; empty when none.
+    also_in: list[AlsoInOut]
 
 
 class UploadRejectedOut(ApiModel):

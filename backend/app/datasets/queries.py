@@ -5,6 +5,7 @@ import uuid
 from collections.abc import Sequence
 
 from sqlalchemy import delete, exists, func, insert, select
+from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ids import new_id
@@ -83,6 +84,29 @@ async def list_items(
     return list((await db.scalars(query)).all())
 
 
+async def item_ids(db: AsyncSession, dataset_id: uuid.UUID, *, limit: int) -> list[uuid.UUID]:
+    """The first `limit` item ids, by id ascending."""
+    query = (
+        select(DatasetItem.id)
+        .where(DatasetItem.dataset_id == dataset_id)
+        .order_by(DatasetItem.id)
+        .limit(limit)
+    )
+    return list((await db.scalars(query)).all())
+
+
+async def items_by_ids(
+    db: AsyncSession, dataset_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> list[DatasetItem]:
+    """The dataset's items with these ids, by id ascending; an id no longer there is skipped."""
+    query = (
+        select(DatasetItem)
+        .where(DatasetItem.dataset_id == dataset_id, DatasetItem.id.in_(list(ids)))
+        .order_by(DatasetItem.id)
+    )
+    return list((await db.scalars(query)).all())
+
+
 async def get_item(
     db: AsyncSession, dataset_id: uuid.UUID, item_id: uuid.UUID
 ) -> DatasetItem | None:
@@ -124,6 +148,42 @@ async def delete_item(db: AsyncSession, dataset_id: uuid.UUID, item_id: uuid.UUI
     return bool(result.rowcount)  # type: ignore[attr-defined]
 
 
+async def existing_sources(
+    db: AsyncSession, dataset_id: uuid.UUID, trace_ids: Sequence[str]
+) -> set[tuple[str, str | None]]:
+    """The `(source_trace_id, source_span_id)` pairs among `trace_ids` already in the dataset."""
+    rows = await db.execute(
+        select(DatasetItem.source_trace_id, DatasetItem.source_span_id).where(
+            DatasetItem.dataset_id == dataset_id, DatasetItem.source_trace_id.in_(trace_ids)
+        )
+    )
+    return {(trace_id, span_id) for trace_id, span_id in rows if trace_id is not None}
+
+
+async def other_datasets_with(
+    db: AsyncSession, dataset_id: uuid.UUID, trace_ids: Sequence[str]
+) -> dict[str, list[tuple[uuid.UUID, str]]]:
+    """For each of `trace_ids`, the project's other datasets that hold an item copied from it
+    (any span), as `(id, name)` ordered by name. Traces in no other dataset are absent."""
+    project_id = select(Dataset.project_id).where(Dataset.id == dataset_id).scalar_subquery()
+    rows = await db.execute(
+        select(DatasetItem.source_trace_id, Dataset.id, Dataset.name)
+        .join(Dataset, Dataset.id == DatasetItem.dataset_id)
+        .where(
+            DatasetItem.source_trace_id.in_(trace_ids),
+            Dataset.id != dataset_id,
+            Dataset.project_id == project_id,
+        )
+        .distinct()
+        .order_by(DatasetItem.source_trace_id, Dataset.name)
+    )
+    found: dict[str, list[tuple[uuid.UUID, str]]] = {}
+    for trace_id, other_id, name in rows:
+        if trace_id is not None:
+            found.setdefault(trace_id, []).append((other_id, name))
+    return found
+
+
 async def load_traces(
     db: AsyncSession,
     project_id: uuid.UUID,
@@ -151,7 +211,7 @@ async def load_traces(
             Span.output,
         )
         .where(Span.project_id == project_id, Span.trace_id.in_(list(environments)))
-        .distinct(Span.trace_id)
+        .ext(distinct_on(Span.trace_id))
         .order_by(Span.trace_id, Span.started_at, Span.span_id)
     )
     query = (

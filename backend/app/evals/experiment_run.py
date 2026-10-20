@@ -1,8 +1,9 @@
 """The `run_experiment` job: replay a dataset through an experiment's target and score it.
 
 Paid, one attempt, in the worker's long-job slot. The run starts (`experiment_prepare.start`),
-then its items are read in id order, a page at a time, up to `max_items`, with four calls in
-flight. Before each call is dispatched the cost cap must hold:
+which fixes the item ids it scores; their content is then read in id order, a page of ids at a
+time (an item deleted since the start is skipped), with four calls in flight. Before each call
+is dispatched the cost cap must hold:
 
     accumulated cost + the estimates of the calls in flight + this call's estimate ≤ max_cost_usd
 
@@ -91,7 +92,7 @@ async def execute_run(deps: RunnerDeps, run_id: uuid.UUID, project_id: uuid.UUID
     plan = started.plan
     ticker = asyncio.create_task(_tick(deps, plan), name=f"experiment-heartbeat-{run_id}")
     try:
-        error = await _dispatch(deps, plan, started.dataset_id, started.max_items)
+        error = await _dispatch(deps, plan, started.dataset_id, started.item_ids)
     except BaseException as failure:
         await shielded(_finish(deps, plan, _failure_code(failure)))
         raise
@@ -155,12 +156,12 @@ class _Ledger:
 
 
 async def _dispatch(
-    deps: RunnerDeps, plan: RunPlan, dataset_id: uuid.UUID, max_items: int
+    deps: RunnerDeps, plan: RunPlan, dataset_id: uuid.UUID, item_ids: tuple[uuid.UUID, ...]
 ) -> str | None:
     """Run the items under the cost cap; returns the run's error, None when every item ran."""
     ledger = _Ledger(plan.max_cost_usd)
     try:
-        async for item in _items(deps, plan, dataset_id, max_items):
+        async for item in _items(deps, plan, dataset_id, item_ids):
             error = await _dispatch_one(deps, plan, ledger, item)
             if error is not None:
                 await ledger.drain(below=1)
@@ -201,29 +202,20 @@ async def _dispatch_one(
 
 
 async def _items(
-    deps: RunnerDeps, plan: RunPlan, dataset_id: uuid.UUID, max_items: int
+    deps: RunnerDeps, plan: RunPlan, dataset_id: uuid.UUID, item_ids: tuple[uuid.UUID, ...]
 ) -> AsyncIterator[DatasetItem]:
-    """The dataset's first `max_items` items in id order, read a page at a time."""
-    read, after = 0, None
-    while read < max_items:
-        page = await _page(deps, plan, dataset_id, after, min(PAGE_SIZE, max_items - read))
-        if not page:
-            return
-        for item in page:
-            read, after = read + 1, item.id
+    """The run's items in id order, read a page of ids at a time; deleted ones are skipped."""
+    for first in range(0, len(item_ids), PAGE_SIZE):
+        for item in await _page(deps, plan, dataset_id, item_ids[first : first + PAGE_SIZE]):
             yield item
 
 
 async def _page(
-    deps: RunnerDeps,
-    plan: RunPlan,
-    dataset_id: uuid.UUID,
-    after: uuid.UUID | None,
-    limit: int,
+    deps: RunnerDeps, plan: RunPlan, dataset_id: uuid.UUID, ids: tuple[uuid.UUID, ...]
 ) -> list[DatasetItem]:
     async with deps.sessions() as db, db.begin():
         await bind_project(db, plan.project.id)
-        return await datasets.item_page(db, dataset_id, after=after, limit=limit)
+        return await datasets.items_by_ids(db, dataset_id, ids)
 
 
 async def _beat(deps: RunnerDeps, plan: RunPlan) -> None:

@@ -13,7 +13,10 @@ from app.db.models.base import Base
 
 
 class Dataset(Base):
-    """A named set of items in a project; the name is unique there. Row-level security applies."""
+    """A named set of items in a project; the name is unique there. Row-level security applies.
+
+    `locked_at` is None while the items can be changed, and the time an admin locked it otherwise.
+    """
 
     __tablename__ = "datasets"
 
@@ -24,6 +27,7 @@ class Dataset(Base):
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

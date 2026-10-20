@@ -1,8 +1,9 @@
 """Datasets: named sets of evaluation items.
 
 Members list and read datasets (`project:read`); members create, edit and delete them
-(`datasets:write`). Their items are in `dataset_items`. Responses are built before the commit,
-which ends the project binding that row-level security needs.
+(`datasets:write`); admins and owners lock and unlock them (`datasets:lock`). Their items are
+in `dataset_items`. Responses are built before the commit, which ends the project binding that
+row-level security needs.
 """
 
 import uuid
@@ -12,6 +13,7 @@ from fastapi import APIRouter, Query, Request, status
 
 from app.api.dataset_deps import (
     DEFAULT_PAGE,
+    DatasetLocker,
     DatasetReader,
     DatasetWriter,
     log_dataset_event,
@@ -28,7 +30,7 @@ from app.api.schemas import (
 )
 from app.core.errors import not_found
 from app.core.pagination import PageLimit, decode_uuid_cursor, encode_cursor
-from app.datasets import queries, service
+from app.datasets import locking, queries, service
 
 router = APIRouter(prefix="/projects/{project_id}/datasets", tags=["datasets"])
 
@@ -140,3 +142,63 @@ async def delete_dataset(
         raise dataset_problem(error) from None
     await db.commit()
     log_dataset_event("dataset_deleted", access, dataset_id)
+
+
+@router.post("/{dataset_id}/lock", response_model=DatasetOut, summary="Lock a dataset")
+async def lock_dataset(
+    project_id: uuid.UUID,
+    dataset_id: uuid.UUID,
+    request: Request,
+    access: DatasetLocker,
+    db: DbSession,
+    clock: ClockDep,
+) -> DatasetOut:
+    """Refuse item writes and the delete with `409 DATASET_LOCKED` until the dataset is unlocked.
+    Reads, description edits and experiment runs still work. Locking a locked dataset keeps its
+    `locked_at`."""
+    locked_project_id = await lock_project_of(access, db)
+    try:
+        dataset = await locking.lock_dataset(
+            db,
+            access.org.id,
+            locked_project_id,
+            dataset_id,
+            access.user_id,
+            now=clock(),
+            ip=client_ip(request),
+        )
+    except DATASET_ERRORS as error:
+        raise dataset_problem(error) from None
+    locked = DatasetOut.of(dataset, await queries.count_items(db, dataset.id))
+    await db.commit()
+    log_dataset_event("dataset_locked", access, dataset.id, name=dataset.name)
+    return locked
+
+
+@router.post("/{dataset_id}/unlock", response_model=DatasetOut, summary="Unlock a dataset")
+async def unlock_dataset(
+    project_id: uuid.UUID,
+    dataset_id: uuid.UUID,
+    request: Request,
+    access: DatasetLocker,
+    db: DbSession,
+    clock: ClockDep,
+) -> DatasetOut:
+    """Allow item writes and the delete again. Unlocking an unlocked dataset changes nothing."""
+    locked_project_id = await lock_project_of(access, db)
+    try:
+        dataset = await locking.unlock_dataset(
+            db,
+            access.org.id,
+            locked_project_id,
+            dataset_id,
+            access.user_id,
+            now=clock(),
+            ip=client_ip(request),
+        )
+    except DATASET_ERRORS as error:
+        raise dataset_problem(error) from None
+    unlocked = DatasetOut.of(dataset, await queries.count_items(db, dataset.id))
+    await db.commit()
+    log_dataset_event("dataset_unlocked", access, dataset.id, name=dataset.name)
+    return unlocked

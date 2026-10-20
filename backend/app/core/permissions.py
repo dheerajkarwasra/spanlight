@@ -37,6 +37,7 @@ class Permission(enum.StrEnum):
     ANNOTATIONS_WRITE = "annotations:write"
     PROMPTS_WRITE = "prompts:write"
     DATASETS_WRITE = "datasets:write"
+    DATASETS_LOCK = "datasets:lock"
     EXPERIMENTS_RUN = "experiments:run"
     EVALUATORS_WRITE = "evaluators:write"
     BILLING_SOURCES_MANAGE = "billing_sources:manage"
@@ -71,6 +72,7 @@ PERMISSION_CLASSES: dict[Permission, PermissionClass] = {
     Permission.ANNOTATIONS_WRITE: "write",
     Permission.PROMPTS_WRITE: "write",
     Permission.DATASETS_WRITE: "write",
+    Permission.DATASETS_LOCK: "write",
     Permission.EXPERIMENTS_RUN: "write",
     Permission.EVALUATORS_WRITE: "write",
     Permission.BILLING_SOURCES_MANAGE: "write",
@@ -105,6 +107,7 @@ _ADMIN = _MEMBER | {
     Permission.INSIGHTS_MANAGE,
     Permission.EVALUATORS_WRITE,
     Permission.BILLING_SOURCES_MANAGE,
+    Permission.DATASETS_LOCK,
 }
 _OWNER = _ADMIN | {Permission.ORG_DELETE, Permission.ORG_SECURITY, Permission.CREDENTIALS_MANAGE}
 

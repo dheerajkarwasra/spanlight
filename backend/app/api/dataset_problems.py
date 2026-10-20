@@ -5,6 +5,7 @@ from app.datasets.errors import (
     DatasetFullError,
     DatasetInUseError,
     DatasetItemNotFoundError,
+    DatasetLockedError,
     DatasetNameTakenError,
     DatasetNotFoundError,
     UnsupportedFileError,
@@ -15,6 +16,7 @@ DATASET_ERRORS = (
     DatasetItemNotFoundError,
     DatasetNameTakenError,
     DatasetInUseError,
+    DatasetLockedError,
     DatasetFullError,
     UnsupportedFileError,
 )
@@ -30,6 +32,8 @@ def dataset_problem(error: Exception) -> ProblemError:
         return conflict(
             "DATASET_IN_USE", "An experiment uses this dataset; it cannot be deleted while it does."
         )
+    if isinstance(error, DatasetLockedError):
+        return conflict("DATASET_LOCKED", "This dataset is locked. An admin can unlock it.")
     if isinstance(error, DatasetFullError):
         return ProblemError(422, "DATASET_FULL", f"A dataset can have at most {error.limit} items.")
     if isinstance(error, UnsupportedFileError):

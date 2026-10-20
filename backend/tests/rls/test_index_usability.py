@@ -77,3 +77,20 @@ async def test_rls_tables_have_no_index_the_app_role_cannot_use(
     async with session_factory() as db:
         rows = (await db.execute(_UNUSABLE_INDEXES, {"methods": list(_NON_BTREE_METHODS)})).all()
     assert [tuple(row) for row in rows] == []
+
+
+async def test_dataset_items_source_trace_index_is_used_by_the_app_role(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """`texteq` is leakproof, so the source-trace lookup reaches its index under RLS."""
+    async with session_factory() as db:
+        await bind_project(db, uuid.uuid4())
+        await db.execute(text("SET LOCAL enable_seqscan = off"))
+        plan = await _plan(
+            db,
+            "SELECT dataset_id FROM dataset_items "
+            "WHERE source_trace_id = ANY (ARRAY['trace-a', 'trace-b'])",
+        )
+        await db.rollback()
+
+    assert "dataset_items_source_trace_idx" in plan, plan

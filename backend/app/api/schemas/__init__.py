@@ -71,8 +71,10 @@ from app.api.schemas.cost_explanation import (
     OutputBreakdownOut,
 )
 from app.api.schemas.datasets import (
+    AlsoInOut,
     DatasetOut,
     DatasetPatch,
+    DatasetRefOut,
     DatasetSpec,
     ItemAddedOut,
     ItemAddIn,
@@ -188,6 +190,7 @@ __all__ = [
     "AlertEventOut",
     "AlertRuleOut",
     "AlertRuleStateOut",
+    "AlsoInOut",
     "ApiKeyCreateIn",
     "ApiKeyCreatedOut",
     "ApiKeyOut",
@@ -221,6 +224,7 @@ __all__ = [
     "CredentialRotateIn",
     "DatasetOut",
     "DatasetPatch",
+    "DatasetRefOut",
     "DatasetSpec",
     "DayStats",
     "DeliveryOut",

@@ -11,7 +11,9 @@ evaluator's own monthly budget; the runner also writes the scores on the item's 
 `eval`). An evaluator that fails or is over budget leaves its score out; if scoring itself breaks,
 the item keeps its answer and cost and records `evaluator_error`.
 
-The item row stores `{text, finish_reason}`, the latency, the cost from the price book (None when
+Every item row, error rows included, stores a copy of the dataset item as the run read it
+(`copy_of`), so a later edit to the item never changes what the run scored. The row stores
+`{text, finish_reason}`, the latency, the cost from the price book (None when
 unknown) and the scores as `{name: value}`. A call that was cancelled, or that broke on our side,
 may still have been billed: its row is stored with the call's estimate as its cost (the rule of a
 judge call, ADR 0015). Errors are cut to 500 characters and NUL is removed from stored text, so no
@@ -33,7 +35,7 @@ from app.db.models import DatasetItem, Evaluator, Project, PromptVersion, Provid
 from app.db.rls import bind_project
 from app.evals import runner
 from app.evals.experiment_config import AdHocTarget, PromptVersionTarget
-from app.evals.experiment_item_row import json_score, storable_row
+from app.evals.experiment_item_row import copy_of, json_score, storable_row
 from app.evals.experiment_queries import insert_item
 from app.evals.experiment_request import ItemRequest
 from app.evals.runner_build import RunnerDeps
@@ -105,7 +107,7 @@ async def run_item(
     deps: RunnerDeps, plan: RunPlan, item: DatasetItem, prepared: ItemRequest, *, at: datetime
 ) -> ItemDone:
     """Run one item and store its row. Raises only when cancelled (its row is stored first)."""
-    values: dict[str, Any] = {"run_id": plan.run_id, "dataset_item_id": item.id}
+    values: dict[str, Any] = {}
     if prepared.request is None:
         values["error"] = prepared.error
     else:
@@ -116,10 +118,10 @@ async def run_item(
                 values.update(await _scored(deps, plan, item, call))
             except asyncio.CancelledError:
                 # The answer was paid for: its row is stored without scores before re-raising.
-                await shielded(_store(deps, plan, values))
+                await shielded(_store(deps, plan, item, values))
                 raise
     # Shielded: a cancellation now still lands the row, so the run's totals count the call.
-    await shielded(_store(deps, plan, values))
+    await shielded(_store(deps, plan, item, values))
     return ItemDone(cost_usd=values.get("cost_usd"), error=values.get("error"))
 
 
@@ -176,8 +178,7 @@ async def _with_span(
         # An answered call always leaves a span; none means it could not be built.
         stored = await shielded(spans.write(context, require_span=True))
     except asyncio.CancelledError:
-        row = {"run_id": plan.run_id, "dataset_item_id": item.id, **_unlinked(answered).columns}
-        await shielded(_store(deps, plan, row))
+        await shielded(_store(deps, plan, item, _unlinked(answered).columns))
         raise
     return answered if stored else _unlinked(answered)
 
@@ -233,7 +234,7 @@ async def _store_after(
 ) -> None:
     """Write the call's spans, then the item row of a call that did not answer."""
     await spans.write(context)
-    await _store(deps, plan, {"run_id": plan.run_id, "dataset_item_id": item.id, **columns})
+    await _store(deps, plan, item, columns)
 
 
 async def _scored(
@@ -275,8 +276,11 @@ async def _scores(
     return scores
 
 
-async def _store(deps: RunnerDeps, plan: RunPlan, values: dict[str, Any]) -> None:
-    values = storable_row(values)
+async def _store(
+    deps: RunnerDeps, plan: RunPlan, item: DatasetItem, columns: dict[str, Any]
+) -> None:
+    row = {"run_id": plan.run_id, "dataset_item_id": item.id, **copy_of(item), **columns}
+    values = storable_row(row)
     async with deps.sessions() as db, db.begin():
         await bind_project(db, plan.project.id)
         await insert_item(db, values)

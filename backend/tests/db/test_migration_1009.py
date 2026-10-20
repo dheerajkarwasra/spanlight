@@ -8,7 +8,7 @@ conditions for the app role (see `tests/rls/test_index_usability.py`). Downgrade
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 
-from app.db.migrations import alembic_config, downgrade_to, head_revision, upgrade_to_head
+from app.db.migrations import alembic_config, downgrade_to, upgrade_to_head
 
 REVISION = "1009"
 EXPECTED_DEFINITIONS = {
@@ -46,7 +46,6 @@ def _down_revision() -> str:
 
 
 def test_1009_indexes_are_gone_at_head(app_database_url: str) -> None:
-    assert head_revision() == REVISION
     assert _indexes(app_database_url) == {}
 
 

@@ -79,6 +79,8 @@ DATASET_ROWS = (
     Row("POST", f"{PRJ}/datasets/{{dataset_id}}/items/upload", P.DATASETS_WRITE),
     Row("PATCH", f"{PRJ}/datasets/{{dataset_id}}/items/{{item_id}}", P.DATASETS_WRITE),
     Row("DELETE", f"{PRJ}/datasets/{{dataset_id}}/items/{{item_id}}", P.DATASETS_WRITE),
+    Row("POST", f"{PRJ}/datasets/{{dataset_id}}/lock", P.DATASETS_LOCK),
+    Row("POST", f"{PRJ}/datasets/{{dataset_id}}/unlock", P.DATASETS_LOCK),
 )
 
 QUEUE = f"{PRJ}/annotation-queues/{{queue_id}}"

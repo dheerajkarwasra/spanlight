@@ -223,11 +223,11 @@ async def list_run_items(
     except EXPERIMENT_ERRORS as error:
         raise experiment_problem(error) from None
     after = decode_uuid_cursor(cursor)[1] if cursor else None
-    rows = await queries.list_items(db, run.id, after=after, limit=limit)
+    first, rows = await queries.list_items(db, run.id, after=after, limit=limit)
     shown, more = rows[:limit], len(rows) > limit
     last = shown[-1] if shown else None
     return Page(
-        items=[ExperimentItemOut.of(item) for item in shown],
+        items=[ExperimentItemOut.of(item, first + i) for i, item in enumerate(shown)],
         next_cursor=(
             encode_cursor(last.created_at, str(last.dataset_item_id)) if more and last else None
         ),

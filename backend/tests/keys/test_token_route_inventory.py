@@ -113,6 +113,8 @@ WRITE_GUARDED: set[Route] = {
     ("POST", "/api/v1/projects/{project_id}/datasets/{dataset_id}/items"),
     ("POST", "/api/v1/projects/{project_id}/datasets/{dataset_id}/items/from-traces"),
     ("POST", "/api/v1/projects/{project_id}/datasets/{dataset_id}/items/upload"),
+    ("POST", "/api/v1/projects/{project_id}/datasets/{dataset_id}/lock"),
+    ("POST", "/api/v1/projects/{project_id}/datasets/{dataset_id}/unlock"),
     ("POST", "/api/v1/projects/{project_id}/evaluators"),
     ("POST", "/api/v1/projects/{project_id}/evaluators/{evaluator_id}/test"),
     ("POST", "/api/v1/projects/{project_id}/experiments"),

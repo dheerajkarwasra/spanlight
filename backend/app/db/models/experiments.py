@@ -78,6 +78,10 @@ class ExperimentItem(Base):
     `dataset_item_id` and `trace_id` are plain values: the item and the trace may be deleted while
     this record stays. `output` is `{text, finish_reason}`; `scores` is `{name: value}`.
     `cost_usd` is None when unknown, never 0.
+
+    `input`, `expected_output` and `item_metadata` copy the dataset item as it was when this run
+    scored it, so later edits to the item never change what the run means. `input` None means the
+    row predates copies (a legacy row); otherwise `input` and `item_metadata` are both set.
     """
 
     __tablename__ = "experiment_items"
@@ -88,6 +92,9 @@ class ExperimentItem(Base):
     dataset_item_id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True)
     trace_id: Mapped[str | None] = mapped_column(Text)
     output: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    input: Mapped[Any | None] = mapped_column(JSONB(none_as_null=True))
+    expected_output: Mapped[Any | None] = mapped_column(JSONB(none_as_null=True))
+    item_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     scores: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     latency_ms: Mapped[float | None] = mapped_column(Float)
     cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 8))

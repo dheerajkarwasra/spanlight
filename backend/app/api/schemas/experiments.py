@@ -191,6 +191,12 @@ class ExperimentOut(ApiModel):
 
 class ExperimentItemOut(ApiModel):
     dataset_item_id: uuid.UUID
+    # The item's 1-based rank by `dataset_item_id` within this run.
+    position: int
+    # The item as this run saw it; all three are null on a run made before runs kept a copy.
+    input: Any | None
+    expected_output: Any | None
+    item_metadata: Any | None
     # Null when the call never reached the gateway or its span was not stored.
     trace_id: str | None
     # `{text, finish_reason}`; null when the item failed.
@@ -206,9 +212,13 @@ class ExperimentItemOut(ApiModel):
     created_at: datetime
 
     @classmethod
-    def of(cls, item: ExperimentItem) -> "ExperimentItemOut":
+    def of(cls, item: ExperimentItem, position: int) -> "ExperimentItemOut":
         return cls(
             dataset_item_id=item.dataset_item_id,
+            position=position,
+            input=item.input,
+            expected_output=item.expected_output,
+            item_metadata=item.item_metadata,
             trace_id=item.trace_id,
             output=item.output,
             scores=item.scores or {},

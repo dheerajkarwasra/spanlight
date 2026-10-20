@@ -172,3 +172,5 @@ class TraceItems:
     rejected: list[TraceRejection] = field(default_factory=list)
     # The stored items' ids, in the order of `items`; empty until they are stored.
     item_ids: list[uuid.UUID] = field(default_factory=list)
+    # Trace id -> `(id, name)` of the project's other datasets that already hold it, by name.
+    also_in: dict[str, list[tuple[uuid.UUID, str]]] = field(default_factory=dict)

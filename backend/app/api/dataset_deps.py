@@ -13,6 +13,7 @@ logger = structlog.get_logger("app.api.v1.datasets")
 
 DatasetReader = Annotated[Access, Depends(require(Permission.PROJECT_READ))]
 DatasetWriter = Annotated[Access, Depends(require(Permission.DATASETS_WRITE))]
+DatasetLocker = Annotated[Access, Depends(require(Permission.DATASETS_LOCK))]
 
 DEFAULT_PAGE = 50
 

@@ -84,6 +84,8 @@ class AuditAction(enum.StrEnum):
     SCORE_CONFIG_DELETE = "score_config.delete"
     DATASET_CREATE = "dataset.create"
     DATASET_DELETE = "dataset.delete"
+    DATASET_LOCK = "dataset.lock"
+    DATASET_UNLOCK = "dataset.unlock"
     ANNOTATION_QUEUE_CREATE = "annotation_queue.create"
     ANNOTATION_QUEUE_DELETE = "annotation_queue.delete"
     EVALUATOR_CREATE = "evaluator.create"

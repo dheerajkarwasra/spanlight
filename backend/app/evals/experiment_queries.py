@@ -154,17 +154,24 @@ async def list_runs(
 
 async def list_items(
     db: AsyncSession, run_id: uuid.UUID, *, after: uuid.UUID | None, limit: int
-) -> list[ExperimentItem]:
-    """The run's items in dataset item order, up to `limit + 1` rows."""
+) -> tuple[int, list[ExperimentItem]]:
+    """The run's items in dataset item order, up to `limit + 1` rows, with the 1-based position
+    of the first one in the run (one count on the `(run_id, dataset_item_id)` key after page 1)."""
     query = (
         select(ExperimentItem)
         .where(ExperimentItem.run_id == run_id)
         .order_by(ExperimentItem.dataset_item_id)
         .limit(limit + 1)
     )
-    if after is not None:
-        query = query.where(ExperimentItem.dataset_item_id > after)
-    return list(await db.scalars(query))
+    if after is None:
+        return 1, list(await db.scalars(query))
+    before = await db.scalar(
+        select(func.count()).where(
+            ExperimentItem.run_id == run_id, ExperimentItem.dataset_item_id <= after
+        )
+    )
+    rows = await db.scalars(query.where(ExperimentItem.dataset_item_id > after))
+    return 1 + int(before or 0), list(rows)
 
 
 async def list_run_items(

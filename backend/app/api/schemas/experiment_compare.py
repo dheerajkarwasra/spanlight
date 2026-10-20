@@ -2,6 +2,7 @@
 decimal string; an unknown value is `null`, never zero."""
 
 import uuid
+from collections.abc import Iterable
 from decimal import Decimal
 from typing import Any
 
@@ -38,6 +39,14 @@ class CompareItemOut(ApiModel):
 
 class ItemDeltaOut(ApiModel):
     dataset_item_id: uuid.UUID
+    # The item's 1-based rank by `dataset_item_id` in run a, else in run b.
+    position: int
+    # Run a's copy of the item, else run b's; null when neither run kept one.
+    input: Any | None
+    expected_output: Any | None
+    # True when both runs kept a copy and its input or expected output differs (the pair is then
+    # left out of the aggregate's counts and test); null when either run has no copy.
+    changed: bool | None
     # Null when the item is not in run a (or b).
     a: CompareItemOut | None
     b: CompareItemOut | None
@@ -45,9 +54,14 @@ class ItemDeltaOut(ApiModel):
     deltas: dict[str, float | None]
 
     @classmethod
-    def of(cls, item: ItemDelta) -> "ItemDeltaOut":
+    def of(cls, item: ItemDelta, position: int) -> "ItemDeltaOut":
+        copy = next((row for row in (item.a, item.b) if row is not None and row.has_copy), None)
         return cls(
             dataset_item_id=item.dataset_item_id,
+            position=position,
+            input=copy.input if copy else None,
+            expected_output=copy.expected_output if copy else None,
+            changed=item.changed,
             a=CompareItemOut.of(item.a) if item.a else None,
             b=CompareItemOut.of(item.b) if item.b else None,
             deltas={name: _number(delta) for name, delta in item.deltas.items()},
@@ -130,12 +144,28 @@ class ComparisonOut(ApiModel):
     # `b - a` of the runs' total cost and p95 latency; null when either side is unknown.
     cost_delta_usd: Money | None
     latency_p95_delta_ms: float | None
+    # Pairs whose item was edited between the runs; they are left out of the aggregate's counts.
+    changed_items: int
 
     @classmethod
     def of(cls, comparison: Comparison) -> "ComparisonOut":
+        items = comparison.items
+        rank_a = _ranks(item.dataset_item_id for item in items if item.a is not None)
+        rank_b = _ranks(item.dataset_item_id for item in items if item.b is not None)
         return cls(
-            items=[ItemDeltaOut.of(item) for item in comparison.items],
+            items=[
+                ItemDeltaOut.of(
+                    item, rank_a.get(item.dataset_item_id) or rank_b[item.dataset_item_id]
+                )
+                for item in items
+            ],
             aggregate={n: ScoreDeltaOut.of(s) for n, s in comparison.aggregate.items()},
             cost_delta_usd=comparison.cost_delta_usd,
             latency_p95_delta_ms=comparison.latency_p95_delta_ms,
+            changed_items=comparison.changed_items,
         )
+
+
+def _ranks(ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, int]:
+    """Each id's 1-based rank in id order."""
+    return {key: rank for rank, key in enumerate(sorted(ids), start=1)}

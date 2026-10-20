@@ -1,8 +1,10 @@
 """Start an experiment run: load what its items share and move it from `queued` to `running`.
 
 One transaction bound to the project, holding the run's row lock. A run that is no longer
-`queued` (the reaper failed it, or this job ran before) is left alone. A run that cannot start
-fails at once, with no provider call, with one of these errors:
+`queued` (the reaper failed it, or this job ran before) is left alone. A run that starts reads,
+in the same transaction, the dataset's first `max_items` item ids in id order: it scores those
+items and no others, so an item added mid-run is never read and one deleted mid-run is skipped.
+A run that cannot start fails at once, with no provider call, with one of these errors:
 
 * `experiment_config_invalid`: the stored config or the run's target no longer parses;
 * `credentials_not_configured`: `CREDENTIALS_KEYS` is unset, so no credential can be opened;
@@ -22,6 +24,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.datasets import service as datasets
 from app.db.models import Experiment, ExperimentRun, ExperimentRunStatus, Project, PromptVersion
 from app.db.rls import bind_project
 from app.evals import experiment_queries as queries
@@ -45,7 +48,7 @@ _START_HINTS = {"credentials_not_configured": "set CREDENTIALS_KEYS on the worke
 class Started:
     plan: RunPlan
     dataset_id: uuid.UUID
-    max_items: int
+    item_ids: tuple[uuid.UUID, ...]
 
 
 async def start(deps: RunnerDeps, run_id: uuid.UUID, project_id: uuid.UUID) -> Started | None:
@@ -84,7 +87,8 @@ async def start(deps: RunnerDeps, run_id: uuid.UUID, project_id: uuid.UUID) -> S
         run.heartbeat_at = now
         config = ExperimentConfig.model_validate(experiment.config)
         max_items = min(config.max_items, deps.settings.experiment_max_items)
-        return Started(loaded, experiment.dataset_id, max_items)
+        item_ids = await datasets.item_ids(db, experiment.dataset_id, limit=max_items)
+        return Started(loaded, experiment.dataset_id, tuple(item_ids))
 
 
 async def _plan(

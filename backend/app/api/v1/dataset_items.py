@@ -20,6 +20,8 @@ from app.api.dataset_deps import (
 from app.api.dataset_problems import DATASET_ERRORS, dataset_problem
 from app.api.deps import ClockDep, DbSession
 from app.api.schemas import (
+    AlsoInOut,
+    DatasetRefOut,
     ItemAddedOut,
     ItemAddIn,
     ItemFromTracesIn,
@@ -108,8 +110,10 @@ async def add_items_from_traces(
 ) -> TraceAddedOut:
     """Copy one item from each of up to 200 traces: the span `span_id`, else the trace's first
     `llm` span. A trace that gives no item is listed in `rejected` with the reason (`trace not
-    found`, `no llm span`, `no payload stored`). The recorded output is only a starting point for
-    the expected output."""
+    found`, `no llm span`, `span not found`, `no payload stored`, `already in this dataset` when
+    this dataset already holds that trace and span). An added trace that already has an item in
+    another dataset of the project is listed in `also_in`. The recorded output is only a starting
+    point for the expected output."""
     try:
         result = await service.add_from_traces(
             db,
@@ -127,6 +131,13 @@ async def add_items_from_traces(
         accepted=len(result.items),
         rejected=[TraceRejectedOut(trace_id=r.trace_id, reason=r.reason) for r in result.rejected],
         item_ids=result.item_ids,
+        also_in=[
+            AlsoInOut(
+                trace_id=trace_id,
+                datasets=[DatasetRefOut(id=ref_id, name=name) for ref_id, name in refs],
+            )
+            for trace_id, refs in result.also_in.items()
+        ],
     )
 
 

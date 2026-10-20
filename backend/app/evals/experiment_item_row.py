@@ -1,9 +1,14 @@
 """The stored form of an experiment item row. Pure: no database, no I/O."""
 
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from sqlalchemy import JSON
 
 from app.core.text import clean_text
+
+if TYPE_CHECKING:
+    from app.db.models import DatasetItem
 
 MAX_ERROR_CHARS = 500
 
@@ -18,6 +23,16 @@ def storable_row(values: dict[str, Any]) -> dict[str, Any]:
     if isinstance(output, dict):
         clean["output"] = {k: clean_text(v) if isinstance(v, str) else v for k, v in output.items()}
     return clean
+
+
+def copy_of(item: "DatasetItem") -> dict[str, Any]:
+    """The dataset item as the run read it, for its row. A JSON null input stays JSON null,
+    because a NULL `input` marks a row stored before copies."""
+    return {
+        "input": JSON.NULL if item.input is None else item.input,
+        "expected_output": item.expected_output,
+        "item_metadata": item.metadata_,
+    }
 
 
 def json_score(value: bool | Decimal | None, string_value: str | None) -> Any:
