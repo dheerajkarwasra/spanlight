@@ -21,6 +21,10 @@ class OtlpDecodeError(ValueError):
     pass
 
 
+class TooManySpansError(ValueError):
+    """The request holds more spans than one batch may; found before any span is decoded."""
+
+
 # A decimal integer as OTLP/JSON writes an int64 or uint64: ASCII digits only, at most 20 of them.
 # `str.isdigit` alone also accepts "²", which `int` refuses.
 _INTEGER_TEXT = re.compile(r"-?[0-9]{1,20}")

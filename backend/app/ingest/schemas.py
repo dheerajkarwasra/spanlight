@@ -28,6 +28,9 @@ from app.pricing.tiers import ServiceTier
 
 MAX_SPANS_PER_BATCH = 1000
 MAX_BODY_BYTES = 5 * 1024 * 1024
+# How far a gzip or deflate body may inflate (past 1 MiB). Real batches stay well under it (a
+# batch repeating one long prompt in every span is about 45:1); a body of empty spans is ~1000:1.
+MAX_COMPRESSION_RATIO = 100
 MAX_TOKEN_COUNT = 2_000_000_000  # spans store token counts as int4
 MAX_WEB_SEARCH_REQUESTS = 100_000
 

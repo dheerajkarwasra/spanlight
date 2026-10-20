@@ -11,6 +11,7 @@ from typing import Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Depends, Request
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import text
 
@@ -98,6 +99,11 @@ def _batch(document: Any) -> ScoreBatchIn:
         ) from None
 
 
+def _decode(body: bytes) -> tuple[list[tuple[int, ScoreIn]], list[RejectedScoreOut]]:
+    """Parse and validate the body. CPU-bound, so it runs in a worker thread."""
+    return _parse(_batch(parse_ingest_json(body)).scores)
+
+
 @router.post(
     "/v1/scores",
     response_model=ScoreIngestResponse,
@@ -115,8 +121,7 @@ async def ingest_scores(
 ) -> ScoreIngestResponse:
     """Store a batch of 1 to 1000 scores. The body is read after the key is checked, bounded
     like span ingestion and may be gzip or deflate encoded."""
-    body = _batch(parse_ingest_json(await read_ingest_body(request)))
-    valid, rejected = _parse(body.scores)
+    valid, rejected = await run_in_threadpool(_decode, await read_ingest_body(request))
     await bind_project(db, key.project_id)
     project = await db.execute(_KEY_SHARE_PROJECT, {"project_id": key.project_id})
     if project.scalar_one_or_none() is None:  # deleted after the key was checked

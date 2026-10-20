@@ -5,11 +5,13 @@ Authenticated with a project API key (`Authorization: Bearer spl_live_…`) that
 """
 
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Depends, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
@@ -18,6 +20,7 @@ from app.api.principals import ApiKeyPrincipal
 from app.core.body import (
     BodyTooLarge,
     ClientDisconnected,
+    CompressionRatioTooHigh,
     UndecodableBody,
     UnsupportedEncoding,
     read_bounded_body,
@@ -28,7 +31,8 @@ from app.core.ratelimit import INGEST_LIMITER, enforce_rate_limit
 from app.core.scopes import KeyScope
 from app.db.models import Project
 from app.ingest import otlp
-from app.ingest.otlp_values import OtlpDecodeError
+from app.ingest.otlp import OtlpSpan
+from app.ingest.otlp_values import OtlpDecodeError, TooManySpansError
 from app.ingest.pipeline import (
     IngestOutcome,
     IngestTarget,
@@ -39,6 +43,7 @@ from app.ingest.pipeline import (
 )
 from app.ingest.schemas import (
     MAX_BODY_BYTES,
+    MAX_COMPRESSION_RATIO,
     MAX_SPANS_PER_BATCH,
     ClientCountersIn,
     IngestBatchIn,
@@ -86,7 +91,13 @@ def _payload_too_large() -> ProblemError:
 async def read_ingest_body(request: Request) -> bytes:
     """The body (decompressed), at most MAX_BODY_BYTES, with failures as problem+json."""
     try:
-        return await read_bounded_body(request, MAX_BODY_BYTES)
+        return await read_bounded_body(request, MAX_BODY_BYTES, max_ratio=MAX_COMPRESSION_RATIO)
+    except CompressionRatioTooHigh as exc:
+        raise ProblemError(
+            413,
+            "PAYLOAD_TOO_LARGE",
+            f"A compressed body may inflate at most {MAX_COMPRESSION_RATIO}-fold.",
+        ) from exc
     except BodyTooLarge as exc:
         raise _payload_too_large() from exc
     except UnsupportedEncoding as exc:
@@ -102,19 +113,19 @@ async def read_ingest_body(request: Request) -> bytes:
         raise ProblemError(400, "BAD_REQUEST", "The request body was not fully sent.") from exc
 
 
-def _check_span_count(count: int) -> None:
-    if count > MAX_SPANS_PER_BATCH:
-        raise ProblemError(
-            413,
-            "PAYLOAD_TOO_LARGE",
-            f"A batch may contain at most {MAX_SPANS_PER_BATCH} spans.",
-        )
+def _too_many_spans() -> ProblemError:
+    return ProblemError(
+        413, "PAYLOAD_TOO_LARGE", f"A batch may contain at most {MAX_SPANS_PER_BATCH} spans."
+    )
 
 
-def parse_ingest_json(body: bytes) -> Any:
-    """The body parsed strictly as JSON, with a parse failure as `400 INVALID_JSON`."""
+def parse_ingest_json(body: bytes, check: Callable[[Any], None] | None = None) -> Any:
+    """The body parsed strictly as JSON, with a parse failure as `400 INVALID_JSON`.
+
+    `check` runs on the parsed document before it is walked (see `parse_json_body`).
+    """
     try:
-        return parse_json_body(body)
+        return parse_json_body(body, check=check)
     except InvalidJsonError as exc:
         raise ProblemError(400, "INVALID_JSON", str(exc)) from exc
 
@@ -177,17 +188,43 @@ async def _store(
     return outcome
 
 
-@router.post("/v1/traces", response_model=IngestResponse)
-async def ingest_native(request: Request, key: AuthenticatedKey, db: DbSession) -> IngestResponse:
-    document = parse_ingest_json(await read_ingest_body(request))
+def _check_native_count(document: Any) -> None:
+    spans = document.get("spans") if isinstance(document, dict) else None
+    if isinstance(spans, list) and len(spans) > MAX_SPANS_PER_BATCH:
+        raise _too_many_spans()
+
+
+def _check_otlp_json_count(document: Any) -> None:
+    if otlp.json_span_count(document) > MAX_SPANS_PER_BATCH:
+        raise _too_many_spans()
+
+
+def _native_batch(body: bytes) -> IngestBatchIn:
+    """The parsed envelope, its span count checked first. CPU-bound: runs in a worker thread."""
+    document = parse_ingest_json(body, check=_check_native_count)
     try:
-        batch = IngestBatchIn.model_validate(document)
+        return IngestBatchIn.model_validate(document)
     except ValueError as exc:
         raise ProblemError(
             422, "VALIDATION_ERROR", "The body must be an object with a `spans` array."
         ) from exc
-    _check_span_count(len(batch.spans))
 
+
+def _decode_otlp(body: bytes, *, protobuf: bool) -> list[OtlpSpan]:
+    """The request's spans, their count checked before any is decoded. Runs in a worker thread."""
+    try:
+        if protobuf:
+            return otlp.decode_protobuf(body, max_spans=MAX_SPANS_PER_BATCH)
+        return otlp.decode_json(parse_ingest_json(body, check=_check_otlp_json_count))
+    except TooManySpansError:
+        raise _too_many_spans() from None
+    except OtlpDecodeError as exc:
+        raise ProblemError(400, "INVALID_OTLP", str(exc)) from exc
+
+
+@router.post("/v1/traces", response_model=IngestResponse)
+async def ingest_native(request: Request, key: AuthenticatedKey, db: DbSession) -> IngestResponse:
+    batch = await run_in_threadpool(_native_batch, await read_ingest_body(request))
     outcome = await _store(db, key, batch.spans, source="native", client=batch.client)
     return IngestResponse(accepted=outcome.accepted, rejected=outcome.rejected)
 
@@ -197,22 +234,14 @@ async def ingest_otlp(request: Request, key: AuthenticatedKey, db: DbSession) ->
     content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
     body = await read_ingest_body(request)
 
-    try:
-        if content_type == PROTOBUF_CONTENT_TYPE:
-            spans = otlp.decode_protobuf(body)
-        elif content_type == "application/json":
-            spans = otlp.decode_json(parse_ingest_json(body))
-        else:
-            raise ProblemError(
-                415,
-                "UNSUPPORTED_MEDIA_TYPE",
-                "Use application/json or application/x-protobuf.",
-            )
-    except OtlpDecodeError as exc:
-        raise ProblemError(400, "INVALID_OTLP", str(exc)) from exc
-    _check_span_count(len(spans))
-
-    native_spans, dropped = otlp.to_native_spans(spans)
+    if content_type not in {PROTOBUF_CONTENT_TYPE, "application/json"}:
+        raise ProblemError(
+            415, "UNSUPPORTED_MEDIA_TYPE", "Use application/json or application/x-protobuf."
+        )
+    spans = await run_in_threadpool(
+        _decode_otlp, body, protobuf=content_type == PROTOBUF_CONTENT_TYPE
+    )
+    native_spans, dropped = await run_in_threadpool(otlp.to_native_spans, spans)
     if dropped.total:
         # Counts only: the values themselves may be long and are the client's data.
         logger.warning(

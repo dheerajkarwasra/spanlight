@@ -21,6 +21,10 @@ class BodyTooLarge(Exception):  # noqa: N818 - reads as the condition, like the 
     """The body, or its decompressed form, is longer than the limit."""
 
 
+class CompressionRatioTooHigh(BodyTooLarge):
+    """The body inflates by more than the allowed ratio: cheap to send, costly to parse."""
+
+
 class UnsupportedEncoding(Exception):  # noqa: N818 - reads as the condition
     """The body's `Content-Encoding` is neither identity, gzip nor deflate."""
 
@@ -37,8 +41,16 @@ class ClientDisconnected(Exception):  # noqa: N818 - reads as the condition
     """The client went away before it had sent the whole body."""
 
 
-async def read_bounded_body(request: Request, limit: int) -> bytes:
+# Below this decompressed size the ratio is not checked: parsing a megabyte is cheap anyway.
+RATIO_CHECK_FLOOR = 1024 * 1024
+
+
+async def read_bounded_body(request: Request, limit: int, *, max_ratio: int | None = None) -> bytes:
     """The request body, decompressed, refusing to buffer more than `limit` bytes.
+
+    With `max_ratio`, a compressed body that inflates past `RATIO_CHECK_FLOOR` and by more than
+    that ratio is refused (`CompressionRatioTooHigh`): a few kilobytes of gzip must not buy
+    seconds of parsing.
 
     Raises `BodyTooLarge`, `UnsupportedEncoding`, `UndecodableBody` and `ClientDisconnected`.
     """
@@ -62,7 +74,10 @@ async def read_bounded_body(request: Request, limit: int) -> bytes:
     if encoding in {"", "identity"}:
         return body
     if encoding in {"gzip", "deflate"}:
-        return _decompress(body, limit, gzip_wrapped=encoding == "gzip")
+        output = _decompress(body, limit, gzip_wrapped=encoding == "gzip")
+        if max_ratio and len(output) > RATIO_CHECK_FLOOR and len(output) > max_ratio * len(body):
+            raise CompressionRatioTooHigh
+        return output
     raise UnsupportedEncoding(encoding)
 
 

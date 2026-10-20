@@ -14,7 +14,7 @@ order so batches touching several traces cannot deadlock each other.
 import json
 import math
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
@@ -23,6 +23,7 @@ import structlog
 from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.core.observability import SPAN_NORMALIZATION_FAILURES, feature_used
 from app.core.text import clean_json
@@ -84,11 +85,13 @@ _KEY_SHARE_PROJECT = text(
 )
 
 
-def parse_json_body(body: bytes) -> Any:
+def parse_json_body(body: bytes, *, check: Callable[[Any], None] | None = None) -> Any:
     """Parse JSON strictly (no NaN/Infinity), stripping NUL and replacing lone surrogates.
 
     Postgres rejects NUL in jsonb and text columns, and a lone surrogate (a `\\ud800` escape)
-    cannot be encoded as UTF-8; either would otherwise fail the whole batch.
+    cannot be encoded as UTF-8; either would otherwise fail the whole batch. `check` sees the
+    parsed document before the depth check and the cleaning walk every node: a cheap refusal
+    there (too many spans) spares that walk.
     """
 
     def reject_constant(name: str) -> Any:
@@ -108,6 +111,8 @@ def parse_json_body(body: bytes) -> Any:
         raise InvalidJsonError("request body is not valid JSON") from exc
     except RecursionError as exc:  # nested deeper than the parser can follow
         raise InvalidJsonError(_TOO_DEEP) from exc
+    if check is not None:
+        check(parsed)
     if exceeds_depth(parsed):
         raise InvalidJsonError(_TOO_DEEP)
     return clean_json(parsed)
@@ -133,7 +138,21 @@ async def ingest_spans(
     if project.scalar_one_or_none() is None:
         raise ProjectGoneError(str(target.project_id))
     prices = await load_price_book(session, target.org_id)
+    # Validation, redaction and truncation are CPU-bound: off the event loop.
+    outcome, spans = await run_in_threadpool(_prepare_batch, raw_spans, target, prices, now)
+    if spans:
+        await write_spans(session, target.project_id, spans, target.source_key_id)
+        if any(span.trace.metadata for span in spans):
+            feature_used("metadata_set")
+    outcome.accepted = len(spans)
+    return outcome
 
+
+def _prepare_batch(
+    raw_spans: Sequence[Any], target: IngestTarget, prices: PriceBook, now: datetime
+) -> tuple[IngestOutcome, list[NormalizedSpan]]:
+    """The spans to store, in batch order with the last of each duplicate kept, and the
+    rejections sorted by index."""
     outcome = IngestOutcome()
     accepted: dict[tuple[str, str], tuple[int, NormalizedSpan]] = {}
 
@@ -158,13 +177,8 @@ async def ingest_spans(
         accepted[key] = (index, normalized)
 
     spans = [span for _, span in sorted(accepted.values(), key=lambda item: item[0])]
-    if spans:
-        await write_spans(session, target.project_id, spans, target.source_key_id)
-        if any(span.trace.metadata for span in spans):
-            feature_used("metadata_set")
-    outcome.accepted = len(spans)
     outcome.rejected.sort(key=lambda rejection: rejection.index)
-    return outcome
+    return outcome, spans
 
 
 def _prepare(
