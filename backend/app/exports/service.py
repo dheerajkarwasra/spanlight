@@ -3,13 +3,13 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.window import TimeWindow
 from app.attribution.service import check_request
 from app.config import Settings
-from app.core.errors import not_configured
+from app.core.errors import conflict, not_configured
 from app.core.observability import feature_used
 from app.core.pagination import decode_uuid_cursor, encode_cursor
 from app.db.models import Export, ExportFormat, ExportKind, ExportStatus, Project
@@ -33,6 +33,9 @@ DOWNLOAD_URL_LIFETIME_SECONDS = 3600
 # attempt writes the file again under a key of its own (see `storage_key`), so two attempts that
 # overlap never touch each other's file.
 EXPORT_JOB_ATTEMPTS = 3
+# Exports one project may have queued or running at once. Each can read 100,000 traces and
+# write a file to object storage, so an unbounded loop of requests would flood both.
+MAX_EXPORTS_IN_PROGRESS = 5
 
 FORMAT_EXTENSIONS: dict[ExportFormat, str] = {ExportFormat.JSONL: "jsonl", ExportFormat.CSV: "csv"}
 CONTENT_TYPES: dict[ExportFormat, str] = {
@@ -76,14 +79,34 @@ async def create_export(
     """Insert a queued export and its job in one transaction. The caller commits.
 
     An attribution request is checked as the attribution read would check it (422 before
-    anything is queued). The session must already be bound to the project (row-level security
-    checks the insert).
+    anything is queued). A project with `MAX_EXPORTS_IN_PROGRESS` exports queued or running is
+    refused with 409 `TOO_MANY_EXPORTS`. The session must already be bound to the project
+    (row-level security checks the insert).
     """
     project_id = project.id
     if isinstance(body, AttributionExportIn):
         window = TimeWindow(body.filters.from_, body.filters.to)
         check_request(body.group_by, body.key, window, project.promoted_metadata_keys)
         feature_used("attribution_export")
+    # Serializes concurrent requests for the project, so the count below cannot be raced past.
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": f"exports:{project_id}"},
+    )
+    in_progress = await db.scalar(
+        select(func.count())
+        .select_from(Export)
+        .where(
+            Export.project_id == project_id,
+            Export.status.in_((ExportStatus.QUEUED, ExportStatus.RUNNING)),
+        )
+    )
+    if in_progress is not None and in_progress >= MAX_EXPORTS_IN_PROGRESS:
+        raise conflict(
+            "TOO_MANY_EXPORTS",
+            f"This project already has {MAX_EXPORTS_IN_PROGRESS} exports in progress. "
+            "Wait for one to finish, then try again.",
+        )
     export = Export(
         project_id=project_id,
         kind=body.kind,
