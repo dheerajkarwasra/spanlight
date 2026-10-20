@@ -107,7 +107,7 @@ async def insert_items(
                 "dataset_id": dataset_id,
                 "input": item.input,
                 "expected_output": item.expected_output,
-                "metadata": item.metadata,
+                "metadata_": item.metadata,
                 "source_trace_id": item.source_trace_id,
                 "source_span_id": item.source_span_id,
             }
