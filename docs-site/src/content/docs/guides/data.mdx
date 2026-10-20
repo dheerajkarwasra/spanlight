@@ -23,14 +23,11 @@ How Spanlight treats your data at scale and how to operate it. Settings are list
 
 ## Metrics over long windows are approximate
 
-The overview, time series and per-model views aggregate spans.
+The overview, time series and per-model views aggregate spans. Whole hours that are already rolled up come from hourly rollups: one row per project, hour, environment, provider, model and span kind, with counts, tokens, cost and a bucketed histogram of latencies. The rest of the window, the partial hours at its edges and the most recent hour or so, is read from the spans themselves. This keeps a 24-hour or 30-day chart fast with millions of spans.
 
-- A window of **24 hours or less** reads the spans themselves, and percentiles are exact.
-- A window **longer than 24 hours** reads hourly rollups: one row per project, hour, environment, provider, model and span kind, with counts, tokens, cost and a bucketed histogram of latencies. This keeps a 30-day chart fast with millions of spans. The API marks these responses `"approximate": true` and the dashboard says so.
+Counts, errors, tokens and cost are exact either way, because the two parts never overlap. Latency percentiles are exact only when the window reads no rollup hour, which in practice means the last hour. Otherwise they are estimated from the histograms: each bucket is about 1.5 times wider than the one before, so an estimate can be off by roughly 25 %, and a latency above 300 seconds is reported as 300 seconds. The API marks those responses `"approximate": true` and the dashboard says so. Cost stays unknown, never zero, when no call in the group has a known price; `GET /api/v1/projects/{project_id}/unpriced-models` shows which models in your traffic are missing from the price table.
 
-A rollup-backed read widens the window to whole UTC hours, so its first and last hour count in full. Counts, errors, tokens and cost can therefore include up to about an hour of spans before the start of the range (and the comparison with the previous period is widened the same way). On top of that, latency percentiles are estimated: each histogram bucket is about 1.5 times wider than the one before, so an estimate can be off by roughly 25 %, and a latency above 300 seconds is reported as 300 seconds. Cost stays unknown, never zero, when no call in the group has a known price; `GET /api/v1/projects/{project_id}/unpriced-models` shows which models in your traffic are missing from the price table.
-
-The worker refreshes the last 48 hours of rollups every five minutes. A window over 24 hours can therefore lag by up to five minutes, and a span that arrives more than 48 hours after it started is not reflected until the range is backfilled by hand with `spanlight rollups backfill --project <project id> --from <date> --to <date>` (at most 90 days at a time). The rollups are derived data and can always be rebuilt from the spans.
+The worker rewrites the last three hours of rollups every five minutes and the rest of the last 48 hours about once an hour. A span that arrives more than ten minutes after it started can therefore take up to five minutes to show in a chart, or up to an hour if it arrives more than about two hours after its hour ended; and one that arrives more than 48 hours after it started is not reflected until the range is backfilled by hand with `spanlight rollups backfill --project <project id> --from <date> --to <date>` (at most 90 days at a time). The rollups are derived data and can always be rebuilt from the spans.
 
 ## Rate limits
 
@@ -79,14 +76,14 @@ Measure before you tune. [Self-hosting](/docs/self-hosting/) lists the four Post
 
 ## Check it worked
 
-- **Long windows.** On **Overview**, choose a time range longer than 24 hours. The header shows the chip **Estimated · hourly rollups**, and its tooltip reads "Estimated from hourly rollups. Counts and cost can lag up to 5 minutes; percentiles are accurate to about ±25 %." The API response has `"approximate": true`.
+- **Long windows.** On **Overview**, choose a time range longer than the last hour, such as the default 24 hours. The header shows the chip **Estimated · hourly rollups**, and its tooltip reads "Percentiles are estimated from hourly latency histograms, accurate to about ±25 %. Counts and cost are exact; a span that arrives late can take up to an hour to appear." The API response has `"approximate": true`.
 - **Health.** `GET /health/ready` answers `200` with `"status":"ok"`.
 - **Backups.** After the first run at 03:00 UTC, `spanlight backup list` shows a dump from that night. Without the prerequisites above the job ends as `skipped_not_configured` and no dump appears.
 
 ## Troubleshooting
 
-- **A percentile differs between a 24-hour and a 7-day range.** By design: up to 24 hours reads the spans, longer reads hourly rollups. See [Metrics over long windows are approximate](#metrics-over-long-windows-are-approximate).
-- **Recent spans are missing from a long-window chart.** Rollups are refreshed every five minutes for the last 48 hours. A span that arrives later than that needs `spanlight rollups backfill`.
+- **A percentile differs between the last hour and a longer range.** By design: the last hour reads the spans, longer ranges estimate percentiles from hourly rollups. See [Metrics over long windows are approximate](#metrics-over-long-windows-are-approximate).
+- **Recent spans are missing from a long-window chart.** Rollups are rewritten every five minutes for the last three hours and about once an hour for the rest of the last 48 hours. A span that arrives more than 48 hours late needs `spanlight rollups backfill`.
 - **Cost shows "—".** No call in the group has a known price. `GET /api/v1/projects/{project_id}/unpriced-models` names the models; see [How cost is calculated](/docs/concepts/cost/).
 - **`429 RATE_LIMITED`.** Wait `Retry-After` seconds and send fewer, larger batches. See [Rate limits](#rate-limits).
 - **`/health/ready` answers `503`.** The database, the migrations, the worker or the notification backlog is failing; see [the troubleshooting page](/docs/troubleshooting/#read-the-readiness-check-first).

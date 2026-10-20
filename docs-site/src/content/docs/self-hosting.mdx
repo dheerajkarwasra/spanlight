@@ -77,16 +77,21 @@ The feed addresses are fixed in the code; no setting changes them. The requests 
 
 ## Tuning Postgres
 
-The Compose file runs Postgres 17 with its stock settings, except `jit=off`: JIT compilation takes longer than the dashboard and rollup queries it is meant to speed up. Stock settings assume a small machine, so on a host with several gigabytes of memory and tens of millions of spans these four are worth a look. Spanlight does not set them, because the right values depend on your hardware and on what else runs on it.
+The Compose file runs Postgres 17 with settings sized for a host with 2 vCPUs and 4 GB of memory that runs the api, the worker and Postgres together. Postgres needs about 1.5 GB free for them (`shared_buffers` alone is 1 GB); on a smaller host it can fail to start or be killed for lack of memory, which `deploy/smoke.sh` and `docker compose logs postgres` show. Lower `shared_buffers` and `effective_cache_size` there; on a bigger node raise them.
 
-| Setting | Default | Why it matters here | A starting point |
-| --- | --- | --- | --- |
-| `shared_buffers` | `128MB` | Postgres' own page cache. The dashboard reads windows of recent spans, and a cache this small is churned by every other query. | About 25 % of the memory you give Postgres. The operating system caches the rest. |
-| `effective_cache_size` | `4GB` | Allocates nothing. It tells the planner how much data is probably cached (this plus the operating system's cache), and the planner chooses index scans over table scans more readily when the data fits. | 50 to 75 % of the memory you give Postgres. |
-| `work_mem` | `4MB` | Memory for one sort or hash. The latency percentiles sort every model call in the window, and larger windows spill to disk at the default. | 16 to 32 MB. It is used per sort or hash, per query, so many connections multiply it: keep connections times a few times `work_mem` well inside your memory. |
-| `random_page_cost` | `4` | The planner's cost of a random page read, against `1` for a sequential one. The default describes a spinning disk. | `1.1` on SSD or NVMe, which makes index scans look as cheap as they are. |
+| Setting | Shipped | Postgres default | Why it matters here | On a bigger node |
+| --- | --- | --- | --- | --- |
+| `shared_buffers` | `1GB` | `128MB` | Postgres' own page cache. The dashboard reads windows of recent spans through an index that outgrows 128 MB quickly. | About 25 % of the memory you give Postgres. The operating system caches the rest. |
+| `effective_cache_size` | `3GB` | `4GB` | Allocates nothing. It tells the planner how much data is probably cached (this plus the operating system's cache), and the planner chooses index scans over table scans more readily when the data fits. | 50 to 75 % of the memory you give Postgres. |
+| `work_mem` | `16MB` | `4MB` | Memory for one sort or hash. The latency percentiles sort every model call in the window, and larger windows spill to disk at the default. | 16 to 32 MB. It is used per sort or hash, per query, so many connections multiply it: keep connections times a few times `work_mem` well inside your memory. |
+| `maintenance_work_mem` | `256MB` | `64MB` | Memory for vacuum and index builds. | Up to about 1 GB. |
+| `max_connections` | `200` | `100` | Each api replica can open 30 connections; 200 fits six replicas and a worker (see the [scaling runbook](/docs/runbooks/scale/)). | Only as many as the replicas need. Each connection costs memory. |
+| `wal_compression` | `on` | `off` | Compresses the full-page images that ingestion writes into the WAL, for a little CPU. | Keep. |
+| `random_page_cost` | `1.1` | `4` | The planner's cost of a random page read, against `1` for a sequential one. The default describes a spinning disk. | Keep on SSD or NVMe; `4` on spinning disks. |
+| `autovacuum_vacuum_cost_limit` | `1000` | `-1` (`vacuum_cost_limit`, 200) | How much work autovacuum does before it pauses. Traces are rewritten as their spans arrive, and the default lets dead rows pile up. | Keep, or raise on fast disks. |
+| `jit` | `off` | `on` | JIT compilation takes longer than the dashboard and rollup queries it is meant to speed up. | Keep off. |
 
-To change them, extend the `command` of the `postgres` service in an override file, and keep `jit=off`, because an override replaces the whole `command`:
+To change them, override the `command` of the `postgres` service in an override file. An override replaces the whole `command`, so repeat every value, including `jit=off`. For a host with about 8 GB for Postgres:
 
 ```yaml
 # deploy/compose.tuning.yaml
@@ -103,7 +108,15 @@ services:
       - -c
       - work_mem=16MB
       - -c
+      - maintenance_work_mem=512MB
+      - -c
+      - max_connections=200
+      - -c
+      - wal_compression=on
+      - -c
       - random_page_cost=1.1
+      - -c
+      - autovacuum_vacuum_cost_limit=1000
 ```
 
 ```bash
@@ -112,7 +125,7 @@ docker compose -f deploy/compose.yaml -f deploy/compose.tuning.yaml --env-file d
   psql -U postgres -tAc "SHOW shared_buffers"
 ```
 
-Changing `shared_buffers` restarts Postgres, so expect a short outage. The values above suit a host with about 8 GB for Postgres; scale them to yours. On a managed Postgres, set the same parameters in the provider's console.
+Changing `shared_buffers` restarts Postgres, so expect a short outage. On a managed Postgres, set the same parameters in the provider's console.
 
 ## Railway
 

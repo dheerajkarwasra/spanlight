@@ -19,15 +19,15 @@ from app.db.models import Trace
 TraceSort = Literal["started_at", "retry_cost_usd"]
 
 
-def ordering(sort: TraceSort, trace: type[Trace] = Trace) -> list[ColumnElement[Any]]:
-    """The ORDER BY of `sort` over `trace` (the table, or an alias of a page of it)."""
+def ordering(sort: TraceSort) -> list[ColumnElement[Any]]:
+    """The ORDER BY of `sort`."""
     if sort == "retry_cost_usd":
         return [
-            trace.retry_cost_usd.desc().nulls_last(),
-            trace.started_at.desc(),
-            trace.trace_id.desc(),
+            Trace.retry_cost_usd.desc().nulls_last(),
+            Trace.started_at.desc(),
+            Trace.trace_id.desc(),
         ]
-    return [trace.started_at.desc(), trace.trace_id.desc()]
+    return [Trace.started_at.desc(), Trace.trace_id.desc()]
 
 
 def apply[*Ts](query: Select[*Ts], *, sort: TraceSort, cursor: str | None) -> Select[*Ts]:

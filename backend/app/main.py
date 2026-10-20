@@ -13,8 +13,10 @@ from app.alerts.channels import register_channel_deliverers
 from app.api import gw, health, ingest, scores_ingest, v1
 from app.api.deps import Clock, utcnow
 from app.api.gw_errors import install_gateway_error_handlers
+from app.api.key_cache import KeyCache
 from app.api.v1.prompts_read import key_router as prompt_read_router
 from app.config import Settings, get_settings
+from app.core.admission import AdmissionMiddleware
 from app.core.body_limit import BodyLimitMiddleware
 from app.core.egress import Resolver
 from app.core.errors import install_error_handlers
@@ -123,6 +125,7 @@ def create_app(
     app.state.ee_license = ee.load(settings, app.state.clock())
     app.state.rate_limit_engine = rate_limit_engine
     app.state.rate_limit_session_factory = rate_limit_session_factory
+    app.state.key_cache = KeyCache(settings.api_key_cache_ttl_seconds)
 
     install_error_handlers(app)
     embedded_gateway = settings.gateway_mode == "embedded"
@@ -136,18 +139,22 @@ def create_app(
     # Outside the idempotency middleware (which reads bodies) and inside the ones below, so a
     # refusal is logged with a request id.
     app.add_middleware(BodyLimitMiddleware)
+    # Outside the body limit and idempotency layers, so a rejected request's body is never read,
+    # and inside the request-id one, so a rejection carries a request id and is counted.
+    app.add_middleware(AdmissionMiddleware, limit=settings.api_max_in_flight)
     # Added last = outermost: every response, including Origin rejections,
     # carries a request id and is logged.
     app.add_middleware(OriginCheckMiddleware, allowed_origins=settings.origin_allowlist)
     app.add_middleware(BearerRequestMiddleware)
     app.add_middleware(RequestContextMiddleware)
 
+    # Hot ingestion and health paths first: FastAPI walks routers in mount order.
     for router in (
-        v1.router,
+        health.router,
         ingest.router,
         scores_ingest.router,
         prompt_read_router,
-        health.router,
+        v1.router,
         *ee.routers(),
     ):
         app.include_router(router)
@@ -226,7 +233,14 @@ def create_gateway_app(
 def _request_engine(settings: Settings) -> AsyncEngine:
     # A request waits only briefly for a connection: a pool that is full means the database is
     # behind, and an early 503 lets the client back off instead of piling up behind it.
-    return create_engine(settings.database_url, pool_timeout=settings.api_pool_timeout_seconds)
+    # No pre-ping: it is a `SELECT 1` round trip on every request. After a Postgres restart the
+    # first request on each stale connection answers 503 `Retry-After` instead (`app.core.errors`).
+    return create_engine(
+        settings.database_url,
+        pool_timeout=settings.api_pool_timeout_seconds,
+        pre_ping=False,
+        statement_timeout_ms=round(settings.api_statement_timeout_seconds * 1000),
+    )
 
 
 def _rate_limit_engine(settings: Settings) -> AsyncEngine:
@@ -241,6 +255,9 @@ def _rate_limit_engine(settings: Settings) -> AsyncEngine:
         # A stale connection fails one check, which fails open and is logged; a ping on every
         # checkout would add a round trip to every ingest and bearer read.
         pre_ping=False,
+        # Each check is one atomic statement (`PostgresTokenBucket.acquire`), so a transaction
+        # around it would only add the BEGIN and COMMIT round trips.
+        isolation_level="AUTOCOMMIT",
     )
 
 

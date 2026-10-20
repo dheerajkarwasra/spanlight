@@ -7,7 +7,7 @@
 - A user's session may be stolen, or someone has to be signed out everywhere.
 - A user lost the phone with their authenticator app and the recovery codes.
 
-Revocation is immediate. Every request checks the key's or token's `revoked_at` in the database, and nothing is cached, so a revoked credential is refused on its next request.
+A revoked access token or session is refused on its next request: they are read from the database every time. A revoked API key takes effect within `API_KEY_CACHE_TTL_SECONDS` (10 seconds by default) on each api process, because each process caches the key rows it has looked up for that long. The process that served the dashboard's revoke drops its copy at once; the others, and every process after a SQL revocation, refuse the key once their copy is older than the TTL. Set `API_KEY_CACHE_TTL_SECONDS=0` if revocation must be immediate everywhere.
 
 ## Prerequisites
 
@@ -58,7 +58,7 @@ Only a signed-in session creates keys. A key cannot create or revoke keys, not e
 
 ### Verify
 
-Send one request with the old key. Read it without echoing it:
+Wait `API_KEY_CACHE_TTL_SECONDS` (10 seconds by default) after revoking, then send one request with the old key. Read it without echoing it:
 
 ```bash
 read -rs OLD_KEY; echo

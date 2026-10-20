@@ -209,7 +209,7 @@ async def _check_owner_can_require_two_factor(
 
 @router.delete("/orgs/{org_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_org(
-    org_id: uuid.UUID, body: OrgDeleteIn, access: OrgDeleter, db: DbSession
+    org_id: uuid.UUID, body: OrgDeleteIn, request: Request, access: OrgDeleter, db: DbSession
 ) -> None:
     """Delete the organization with its projects, traces, keys, members, invites and audit log.
 
@@ -227,6 +227,8 @@ async def delete_org(
 
     project_ids = await delete_organization(db, org.id)
     await db.commit()
+    # The keys went with their projects; this process stops accepting them now, not after the TTL.
+    request.app.state.key_cache.clear()
     # After the commit, so a rolled-back delete is never reported. Ids only.
     logger.info(
         "org_deleted",

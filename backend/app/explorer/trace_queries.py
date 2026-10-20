@@ -1,18 +1,21 @@
 """SQL for the trace list and trace detail (`app.api.v1.traces`).
 
 Every statement filters on `project_id` explicitly as well as through row-level security, which
-keeps index usage obvious.
+keeps index usage obvious. The summary lookups are one statement built at import: building them
+per call (ORM aliases over the page subquery) was about a third of the trace list's api time.
 """
 
 import uuid
+from collections.abc import Sequence
+from typing import NamedTuple
 
-from sqlalchemy import Select, case, distinct, exists, func, select, true
+from sqlalchemy import ARRAY, String, bindparam, case, exists, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased, defer
+from sqlalchemy.orm import defer
 from sqlalchemy.orm.attributes import set_committed_value
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.db.models import Span, SpanStatus, Trace
+from app.db.models import Span, Trace
 from app.ingest.normalize import LEGACY_PAYLOAD_BYTES
 
 # The stored payload bytes one trace-detail response carries. With payloads up to 1 MiB a side,
@@ -21,51 +24,45 @@ from app.ingest.normalize import LEGACY_PAYLOAD_BYTES
 TRACE_PAYLOAD_BUDGET_BYTES = 8 * 1024 * 1024
 
 
-def summary_select(
-    trace: type[Trace] = Trace,
-) -> Select[Trace, list[str] | None, str | None, str | None]:
-    """Each trace with its models and the earliest failed span's status message and error class.
+class SummaryDetails(NamedTuple):
+    models: list[str] | None
+    error_message: str | None
+    error_class: str | None
 
-    The caller adds the filters. `trace` is the row source: the `traces` table, or an alias of a
-    subquery that already picked a page of traces (`page_select`), so the per-trace lookups below
-    run for that page only.
 
-    The earliest failed span (ties broken by span id) is one `LEFT JOIN LATERAL … LIMIT 1` on the
-    spans primary key (project_id, trace_id, …), so the message and the class are always the
-    same span's.
+# Each trace's distinct models and its earliest failed span's status message and error class
+# (ties broken by span id). The earliest failed span is one `LEFT JOIN LATERAL … LIMIT 1` on the
+# spans primary key (project_id, trace_id, …), so the message and the class are always the same
+# span's. One array parameter, not one per id: psycopg caches the parsed query only up to 50
+# parameters, and a page is 50 traces.
+SUMMARY_DETAILS = text(
     """
-    models = (
-        select(func.array_agg(distinct(Span.model)).filter(Span.model.is_not(None)))
-        .where(Span.project_id == trace.project_id, Span.trace_id == trace.trace_id)
-        .scalar_subquery()
-    )
-    earliest_failed = (
-        select(Span.status_message, Span.error_class)
-        .where(
-            Span.project_id == trace.project_id,
-            Span.trace_id == trace.trace_id,
-            Span.status == SpanStatus.ERROR,
-        )
-        .order_by(Span.started_at, Span.span_id)
-        .limit(1)
-        .lateral("earliest_failed")
-    )
-    return select(
-        trace, models, earliest_failed.c.status_message, earliest_failed.c.error_class
-    ).outerjoin(earliest_failed, true())
-
-
-def page_select(
-    page: Select[Trace],
-) -> tuple[type[Trace], Select[Trace, list[str] | None, str | None, str | None]]:
-    """`summary_select` over the traces `page` picks (already filtered, ordered and limited).
-
-    Returns the alias the page's rows are read through, for the caller to order the outer query
-    by. Picking the page first keeps the per-trace lookups off every other trace in the window: a
-    sort no index serves (retry cost) would otherwise run them for each one before the top N.
+    SELECT t.trace_id,
+           (SELECT array_agg(DISTINCT s.model) FILTER (WHERE s.model IS NOT NULL)
+              FROM spans AS s
+             WHERE s.project_id = :project_id AND s.trace_id = t.trace_id) AS models,
+           f.status_message,
+           f.error_class
+    FROM unnest(:trace_ids) AS t(trace_id)
+    LEFT JOIN LATERAL (
+        SELECT s.status_message, s.error_class
+          FROM spans AS s
+         WHERE s.project_id = :project_id AND s.trace_id = t.trace_id AND s.status = 'error'
+         ORDER BY s.started_at, s.span_id
+         LIMIT 1
+    ) AS f ON true
     """
-    paged: type[Trace] = aliased(Trace, page.subquery("paged"))
-    return paged, summary_select(paged)
+).bindparams(bindparam("trace_ids", type_=ARRAY(String)))
+
+
+async def summary_details(
+    db: AsyncSession, project_id: uuid.UUID, trace_ids: Sequence[str]
+) -> dict[str, SummaryDetails]:
+    """`SUMMARY_DETAILS` for the given traces, by trace id. One query; none for no ids."""
+    if not trace_ids:
+        return {}
+    rows = await db.execute(SUMMARY_DETAILS, {"project_id": project_id, "trace_ids": trace_ids})
+    return {trace_id: SummaryDetails(*details) for trace_id, *details in rows}
 
 
 def has_span(condition: ColumnElement[bool]) -> ColumnElement[bool]:

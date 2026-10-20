@@ -319,6 +319,7 @@ When `SpanlightAvailabilityFastBurn` or `SpanlightAvailabilitySlowBurn` fires:
 - **All statuses are in the latency histogram.** The histogram has no `status` label, so fast `401` and `429` responses are included and pull the p95 down slightly. A sustained pile of 429s therefore makes ingest latency look better than it is for accepted requests.
 - **No traffic, no ratio.** With zero requests, the error ratio is empty and the burn alerts do not fire. `SpanlightNotReady` and `SpanlightMetricsScrapeDown` cover the case where the service is down and silent.
 - **Counter resets.** Restarts reset the api's counters; `rate` and `increase` handle it.
+- **A Postgres restart costs a few 503s.** The api does not test pooled connections before use, so after Postgres restarts the first request on each stale connection answers `503 SERVICE_UNAVAILABLE` with `Retry-After: 5` and the api logs `db_connection_lost`: at most the pool size (10) per api process, usually fewer, since the first failure makes the pool replace its other connections. It happens once per restart and clears within seconds; a steady stream of `db_connection_lost` means connections keep dying (a proxy or firewall closing idle ones), not a restart.
 
 ## Worker and data checks
 

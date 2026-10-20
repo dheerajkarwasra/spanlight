@@ -13,7 +13,7 @@ export function slug(text) {
     .replace(/ /g, '-');
 }
 
-const cell = (text) => String(text ?? '').replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ').replace(/</g, '&lt;');
+const cell = (text) => String(text ?? '').replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ').replace(/</g, '&lt;');
 const code = (text) => `\`${String(text).replace(/`/g, "'")}\``;
 
 function dedent(text) {

@@ -59,9 +59,9 @@ MAX_ECHOED_MODEL = 256
 async def execute(request: GatewayRequest, context: GatewayContext) -> GatewayResult:
     """Serve one call; never raises.
 
-    A database too busy to answer (a pool timeout or a statement timeout, `is_busy`) is a 503
-    `SERVICE_UNAVAILABLE` with `Retry-After`, logged as a warning: it is load, not a bug. Any other
-    unexpected failure is a provider-shaped 500, logged with its traceback.
+    A database too busy to answer (a pool or statement timeout, or a lost connection: `is_busy`)
+    is a 503 `SERVICE_UNAVAILABLE` with `Retry-After`, logged as a warning: it is load, not a bug.
+    Any other unexpected failure is a provider-shaped 500, logged with its traceback.
     """
     call = Call(request, context)
     try:

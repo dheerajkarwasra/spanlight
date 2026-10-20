@@ -44,7 +44,7 @@ spl exec postgres psql -U postgres -d spanlight -c \
 spl exec postgres psql -U postgres -d spanlight -tA -c "SHOW max_connections"
 ```
 
-Expected on a healthy single-replica stack: `spanlight_app` with a handful of connections, well under `max_connections` (100 by default).
+Expected on a healthy single-replica stack: `spanlight_app` with a handful of connections, well under `max_connections` (200 in the shipped Compose file; Postgres's own default, which a managed Postgres may keep, is 100).
 
 **Slow statements right now:**
 
@@ -80,7 +80,7 @@ Every api process holds three pools, set in `backend/app/main.py`:
 
 | Pool | Size | Setting |
 |---|---|---|
-| Main (requests) | 10, may overflow by another 10; waits up to `API_POOL_TIMEOUT_SECONDS` (5 s) | size fixed in code, wait in the environment |
+| Main (requests) | 10, may overflow by another 10; waits up to `API_POOL_TIMEOUT_SECONDS` (1 s) | size fixed in code, wait in the environment |
 | Idempotency (reserving and completing an `Idempotency-Key`) | `IDEMPOTENCY_POOL_SIZE`, default 5, no overflow; waits up to `IDEMPOTENCY_POOL_TIMEOUT_SECONDS` (5 s) | environment |
 | Rate limiting | `RATE_LIMIT_POOL_SIZE`, default 5, no overflow; waits up to `RATE_LIMIT_POOL_TIMEOUT_SECONDS` (0.25 s) | environment |
 
@@ -90,21 +90,40 @@ So one api replica can open up to **20 + 5 + 5 = 30** connections. A worker hold
 30 x (api replicas) + 4 x (worker replicas) + 10 (headroom)  <=  max_connections - 3
 ```
 
-`3` is Postgres's default `superuser_reserved_connections`. With the default `max_connections = 100`, that allows two api replicas and one or two workers, and no more. For a third api replica, raise `max_connections` first.
+`3` is Postgres's default `superuser_reserved_connections`. The Compose file ships `max_connections = 200` (with the other settings in [Tuning Postgres](../../docs-site/src/content/docs/self-hosting.mdx#tuning-postgres), sized for a 2 vCPU / 4 GB host): that allows six api replicas and one worker (30 × 6 + 4 + 10 = 194 ≤ 197), or five api replicas and several workers. With Postgres's own default of 100, which a managed Postgres may keep, it allows two api replicas and one or two workers; for a third, raise `max_connections` first.
 
 What running out looks like:
 
-- The main pool is full: requests wait up to `API_POOL_TIMEOUT_SECONDS` (5 s) for a connection, then fail with `503 SERVICE_UNAVAILABLE` and `Retry-After: 5`, and the api logs `db_pool_timeout`. A statement that runs longer than `API_STATEMENT_TIMEOUT_SECONDS` (10 s) is cancelled the same way and logged as `db_statement_timeout`. Latency climbs first.
+- The main pool is full: requests wait up to `API_POOL_TIMEOUT_SECONDS` (1 s) for a connection, then fail with `503 SERVICE_UNAVAILABLE` and `Retry-After: 5`, and the api logs `db_pool_timeout`. A statement that runs longer than `API_STATEMENT_TIMEOUT_SECONDS` (10 s) is cancelled the same way and logged as `db_statement_timeout`. Latency climbs first.
 - The idempotency pool is full: a request with an `Idempotency-Key` fails after `IDEMPOTENCY_POOL_TIMEOUT_SECONDS`.
 - The rate-limit pool is full: the check is **skipped** and the request goes through, so limits are not enforced while it lasts. The api counts each skipped check in `spanlight_rate_limit_unavailable_total{scope}` and logs `rate_limit_unavailable` with the scope (at most once a minute per scope). If that counter rises, the stack is over its connection budget.
 
-Raise `max_connections` on the Compose Postgres with an override file, then restart Postgres (it is a restart, so plan a brief outage). The override replaces the service's `command`, so keep the `jit=off` the shipped file sets:
+Raise `max_connections` on the Compose Postgres with an override file, then restart Postgres (it is a restart, so plan a brief outage). The override replaces the service's whole `command`, so repeat every `-c` value the shipped `deploy/compose.yaml` sets and change only `max_connections`:
 
 ```yaml
 # deploy/compose.connections.yaml
 services:
   postgres:
-    command: ["postgres", "-c", "jit=off", "-c", "max_connections=200"]
+    command:
+      - postgres
+      - -c
+      - jit=off
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - effective_cache_size=3GB
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - max_connections=300
+      - -c
+      - wal_compression=on
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - autovacuum_vacuum_cost_limit=1000
 ```
 
 ```bash
@@ -112,7 +131,7 @@ docker compose -f deploy/compose.yaml -f deploy/compose.connections.yaml --env-f
 spl exec postgres psql -U postgres -tA -c "SHOW max_connections"
 ```
 
-Expected: `200`. From now on every compose command in these runbooks must carry the same `-f` pair, so update your `spl` function. More connections cost memory on the database host: size it first. On Railway, change the setting through Railway's Postgres service settings.
+Expected: `300`. From now on every compose command in these runbooks must carry the same `-f` pair, so update your `spl` function. More connections cost memory on the database host: size it first. On Railway, change the setting through Railway's Postgres service settings.
 
 ## 3. Scale the worker
 
@@ -137,7 +156,11 @@ On Railway, raise the worker service's replica count in its settings.
 
 ## 4. Scale the api
 
-Prefer a bigger instance (CPU) over more replicas until you need availability or have saturated one process. When you do add replicas:
+Prefer a bigger instance (CPU) over more replicas until you need availability or have saturated one process. The scale-out unit is the container: each api replica runs one uvicorn process (the image does not use `--workers`), and its `/metrics` and `/health/ready` describe that process alone.
+
+**What one process holds.** One api process served about 20 modelled companies before requests started failing, where a company is 1.2 ingest requests a second of 20 spans each plus 6 dashboard reads a second with an API key (overview over 24 hours and 7 days, trace list over 1 hour). That was measured on one Mac (Apple M4, Docker with 10 CPUs and 8 GB) with k6 on the same host and 3.7 to 4.1 million spans in the database; the api process, at 100 % of one core, was the limit, not Postgres. Past it, the api answers `503` with `Retry-After` instead of queueing. **How that scales with replicas is not measured**: on that Mac a second replica did not add capacity, because k6, Postgres and the replicas shared one machine. Measure on your own hardware, with the load generator on another host, before you count on N replicas holding N times as much.
+
+When you do add replicas:
 
 1. Check the connection budget above.
 2. Remember what is in front of them. The Caddyfile has one upstream setting, `API_UPSTREAM` (default `api:8000`). Docker's DNS returns every replica's address for the name `api`, but Caddy resolves one hostname once per connection and would keep sending a client's requests to the same replica. Plain `--scale api=2` therefore does not balance. `deploy/compose.replicas.yaml` is the supported way to run two replicas on Compose:
@@ -149,21 +172,24 @@ Prefer a bigger instance (CPU) over more replicas until you need availability or
 
    Expected: two `api` containers, `spanlight-api-1` and `spanlight-api-2`. The file sets `api` to two replicas and gives `web` `API_UPSTREAM: spanlight-api-1:8000 spanlight-api-2:8000`, so Caddy balances between the named containers. Its limits, from the file itself:
 
-   - **Exactly two replicas.** The container names are written into `API_UPSTREAM`. A third replica gets no traffic until you add its name there.
+   - **Two replicas as shipped.** The container names are written into `API_UPSTREAM` and `GATEWAY_UPSTREAM`. For N replicas, add `--scale api=N` to the `up` command and list all N names in both upstreams in a copy of the file; its header comment has a three-replica example. A replica that is not listed gets no traffic.
    - **The project must be named `spanlight`** (`name:` in `deploy/compose.yaml`); container names are `<project>-<service>-<index>`. Starting the stack with `-p other` breaks the names.
    - **It was written to check that replicas share their rate limits** (both draw from the same Postgres buckets), not as a high-availability setup: there is still one `web`, one Postgres and one host.
    - Add the same extra `-f` to your `spl` function, or later commands will not see the override and will recreate `web` and `api` with one replica.
 
-   For more replicas, or for replicas on several hosts, put your own load balancer in front of the api containers and point `API_UPSTREAM` at it, or use a platform with built-in service replicas, such as Railway.
+   For replicas on several hosts, put your own load balancer in front of the api containers and point `API_UPSTREAM` at it, or use a platform with built-in service replicas, such as Railway.
 3. Check the connection budget again with the replicas running (step 1 above).
+
+Each replica caches the API key rows it has looked up for `API_KEY_CACHE_TTL_SECONDS` (10 s), so a revoked key keeps working on the other replicas for up to that long ([revoke-key.md](revoke-key.md)).
 
 Behind a load balancer or proxy, set `TRUSTED_PROXIES` to its address ranges, so rate limits and session records see the real client IP and not the proxy's. The api reads `X-Forwarded-For` from Caddy, which takes it from `X-Real-IP` only for trusted proxies (see `deploy/Caddyfile`).
 
 ## 5. Scale Postgres
 
 - **Resources first.** More CPU and memory, and fast disk. This is the lever for slow dashboard queries and slow ingest.
+- **Settings follow the resources.** The Compose file sizes Postgres for a 2 vCPU / 4 GB node (`shared_buffers=1GB`, `effective_cache_size=3GB`, `work_mem=16MB`, `maintenance_work_mem=256MB`, `max_connections=200`, `wal_compression=on`, `random_page_cost=1.1`, `autovacuum_vacuum_cost_limit=1000`, `jit=off`). On a bigger node raise `shared_buffers` to about a quarter of the memory and `effective_cache_size` to about three quarters, as in [Tuning Postgres](../../docs-site/src/content/docs/self-hosting.mdx#tuning-postgres). Postgres needs about 1.5 GB free for the shipped values; on a smaller host it does not start until you lower them.
 - **Retention.** Each project keeps spans for `retention_days` (30 by default; the longest allowed is 90). The worker's hourly retention job deletes older spans. A shorter retention is the cheapest way to shrink the largest tables, `spans` and `traces`.
-- **Windows.** Dashboard queries over windows longer than 24 hours read the hourly rollups, not raw spans, and are cheap. Windows of 24 hours or less read raw spans, so a huge project is slowest on short windows.
+- **Windows.** At any window length, dashboard queries read whole closed hours from the hourly rollups and only the partial first and last hours, plus the hours the rollup job has not finished yet, from raw spans. The raw part stays small while the rollup job keeps up. If the job falls behind, up to 24 hours are read from raw spans and dashboards slow down, so check the worker first.
 - **Disk.** Watch the size of the volume (`pgdata` in Compose):
 
   ```bash
@@ -183,4 +209,4 @@ After a change, over at least ten minutes:
 
 ## Escape hatch
 
-Scale back down with the same command and a smaller number (`spl up -d --scale worker=1`, `--scale api=1`). Containers are stateless, so nothing is lost. If raising `max_connections` made the database host run out of memory, remove the override file from your `-f` list and run `up -d` again; Postgres restarts with its default.
+Scale back down with the same command and a smaller number (`spl up -d --scale worker=1`, `--scale api=1`). Containers are stateless, so nothing is lost. If raising `max_connections` made the database host run out of memory, remove the override file from your `-f` list and run `up -d` again; Postgres restarts with the shipped settings.

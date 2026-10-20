@@ -120,6 +120,12 @@ _DELETE_TRACE_ROLLUPS = text(
     """
 )
 
+# The environment is read per span from `traces_pkey` instead of joining `traces`. For a project
+# missing from the `spans.project_id` statistics (any project outside the most common values) the
+# planner expects one span, and the join became a nested loop over every trace of the project for
+# each span: 4.4 M rows thrown away and 566 ms for a project with 5,440 spans in three hours. A
+# hash join instead reads all of `traces`, every tenant included. The lookup is one probe per span
+# whatever the estimate (23-41 ms there, and no slower for 190 k spans). Every span has its trace.
 _INSERT_SPAN_ROLLUPS = text(
     f"""
     INSERT INTO span_rollups_hourly (
@@ -130,7 +136,8 @@ _INSERT_SPAN_ROLLUPS = text(
     WITH scoped AS (
         SELECT s.project_id,
                {_HOUR_BUCKET.format(column="s.started_at")}                    AS bucket_start,
-               t.environment,
+               (SELECT t.environment FROM traces AS t
+                WHERE t.project_id = s.project_id AND t.trace_id = s.trace_id)  AS environment,
                s.provider,
                s.model,
                s.kind,
@@ -145,7 +152,6 @@ _INSERT_SPAN_ROLLUPS = text(
                     THEN {BUCKET_INDEX_SQL.format(value="s.time_to_first_token_ms")}
                END                                                             AS ttft_index
         FROM spans AS s
-        JOIN traces AS t ON t.project_id = s.project_id AND t.trace_id = s.trace_id
         WHERE s.project_id = :project_id
           AND s.started_at >= :start
           AND s.started_at < :end

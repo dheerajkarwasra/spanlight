@@ -99,8 +99,16 @@ class Settings(BaseSettings):
     # of its statements may run. Past either limit the request fails fast with 503 and a
     # `Retry-After`, instead of queueing behind slow work until every other request is stuck too.
     # The worker and the streaming exports are not subject to them.
-    api_pool_timeout_seconds: float = Field(default=5.0, ge=1, le=60)
+    api_pool_timeout_seconds: float = Field(default=1.0, ge=1, le=60)
     api_statement_timeout_seconds: float = Field(default=10.0, ge=1, le=300)
+    # How many `/api` and `/v1` requests one process serves at once; past it a request answers
+    # 503 with `Retry-After: 1` at once instead of queueing (`app.core.admission`). About three
+    # times the main pool (10 + 10 overflow).
+    api_max_in_flight: int = Field(default=64, ge=1)
+    # How long one api process reuses a project API key's row before reading it again
+    # (`app.api.key_cache`). A key revoked through another process keeps working here for up to
+    # this long; 0 reads the row on every request.
+    api_key_cache_ttl_seconds: float = Field(default=10, ge=0)
 
     # The pool that idempotency keys use, apart from the main one. Reserving, completing and
     # releasing a key each take a connection for a few milliseconds while the request itself
@@ -242,6 +250,8 @@ class Settings(BaseSettings):
         "smtp_starttls",
         "api_pool_timeout_seconds",
         "api_statement_timeout_seconds",
+        "api_max_in_flight",
+        "api_key_cache_ttl_seconds",
         "idempotency_pool_size",
         "idempotency_pool_timeout_seconds",
         "rate_limit_pool_size",

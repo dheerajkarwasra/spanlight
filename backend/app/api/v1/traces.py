@@ -45,7 +45,7 @@ from app.explorer.metadata_filters import check_metadata_filter
 from app.explorer.score_filters import check_score_filters
 from app.explorer.trace_compare import align, compare_spans, payload_changed
 from app.explorer.trace_filters import apply_filters
-from app.explorer.trace_queries import page_select, summary_select, trace_span, trace_spans
+from app.explorer.trace_queries import SummaryDetails, summary_details, trace_span, trace_spans
 from app.explorer.trace_sort import TraceSort
 from app.ingest.error_class import ErrorClass
 from app.ingest.metadata import MetadataKey
@@ -59,6 +59,7 @@ OptionalText = Annotated[str | None, Query(max_length=256)]
 TraceIdQuery = Annotated[str, Query(min_length=1, max_length=256)]
 
 MAX_ERROR_MESSAGE_LENGTH = 500
+_NO_DETAILS = SummaryDetails(None, None, None)
 
 
 def _summary(
@@ -146,8 +147,6 @@ async def list_traces(
     project = access.require_project()
     check_score_filters(score_name, score_min, score_max, score_value)
     check_metadata_filter(metadata_key, metadata_value)
-    # The page is picked from the bare table first; the per-trace summary lookups then run for
-    # that page only (`page_select`).
     page_query = select(Trace).where(
         Trace.project_id == project.id,
         Trace.started_at >= window.start,
@@ -179,11 +178,9 @@ async def list_traces(
         content_from = await content_start(db, window.start, window.end)
         page_query = page_query.where(text_search(q, project.id, content_from, window.end))
     page_query = trace_sort.apply(page_query, sort=sort, cursor=cursor).limit(limit + 1)
-    paged, query = page_select(page_query)
-    query = query.order_by(*trace_sort.ordering(sort, paged))
 
     try:
-        rows = (await db.execute(query)).all()
+        rows = (await db.scalars(page_query)).all()
     except OperationalError as error:
         if q and is_statement_timeout(error.orig):
             raise search_too_broad() from None
@@ -191,10 +188,19 @@ async def list_traces(
     page = rows[:limit]
     next_cursor = None
     if len(rows) > limit:
-        next_cursor = trace_sort.next_cursor(page[-1][0], sort)
-    scores = await latest_scores_by_name(db, project.id, [row[0].trace_id for row in page])
+        next_cursor = trace_sort.next_cursor(page[-1], sort)
+    trace_ids = [trace.trace_id for trace in page]
+    details = await summary_details(db, project.id, trace_ids)
+    scores = await latest_scores_by_name(db, project.id, trace_ids)
     return Page[TraceSummaryOut](
-        items=[_summary(*row, scores.get(row[0].trace_id, [])) for row in page],
+        items=[
+            _summary(
+                trace,
+                *details.get(trace.trace_id, _NO_DETAILS),
+                scores.get(trace.trace_id, []),
+            )
+            for trace in page
+        ],
         next_cursor=next_cursor,
     )
 
@@ -210,17 +216,18 @@ async def compare_traces(
     """
     project = access.require_project()
     a, b = a.lower(), b.lower()
-    rows = (
-        await db.execute(
-            summary_select().where(Trace.project_id == project.id, Trace.trace_id.in_({a, b}))
+    traces = (
+        await db.scalars(
+            select(Trace).where(Trace.project_id == project.id, Trace.trace_id.in_({a, b}))
         )
     ).all()
-    found = {row[0].trace_id: row for row in rows}
+    found = {trace.trace_id: trace for trace in traces}
     if a not in found or b not in found:
         raise not_found()
+    details = await summary_details(db, project.id, list(found))
     scores = await latest_scores_by_name(db, project.id, list(found))
-    summary_a = _summary(*found[a], scores.get(a, []))
-    summary_b = _summary(*found[b], scores.get(b, []))
+    summary_a = _summary(found[a], *details.get(a, _NO_DETAILS), scores.get(a, []))
+    summary_b = _summary(found[b], *details.get(b, _NO_DETAILS), scores.get(b, []))
     spans_a, cut_a = await compare_spans(db, project.id, a)
     spans_b, cut_b = await compare_spans(db, project.id, b)
 
@@ -263,17 +270,16 @@ async def get_trace(
     project_id: uuid.UUID, trace_id: str, access: ProjectReader, db: DbSession
 ) -> TraceDetailOut:
     project = access.require_project()
-    row = (
-        await db.execute(
-            summary_select().where(
-                Trace.project_id == project.id, Trace.trace_id == trace_id.lower()
-            )
-        )
-    ).one_or_none()
-    if row is None:
+    trace = await db.scalar(
+        select(Trace).where(Trace.project_id == project.id, Trace.trace_id == trace_id.lower())
+    )
+    if trace is None:
         raise not_found()
-    scores = await latest_scores_by_name(db, project.id, [row[0].trace_id])
-    summary = _summary(*row, scores.get(row[0].trace_id, []))
+    details = await summary_details(db, project.id, [trace.trace_id])
+    scores = await latest_scores_by_name(db, project.id, [trace.trace_id])
+    summary = _summary(
+        trace, *details.get(trace.trace_id, _NO_DETAILS), scores.get(trace.trace_id, [])
+    )
     spans = await trace_spans(db, project.id, summary.trace_id)
     return TraceDetailOut(
         **summary.model_dump(),
@@ -317,6 +323,7 @@ async def list_sessions(
             func.min(Trace.started_at).label("first_at"),
             last_at.label("last_at"),
             func.sum(Trace.cost_usd).label("cost_usd"),
+            func.bool_or(Trace.has_unpriced).label("has_unpriced"),
             func.sum(Trace.error_count).label("error_count"),
         )
         .where(
@@ -351,6 +358,7 @@ async def list_sessions(
             first_at=row.first_at,
             last_at=row.last_at,
             cost_usd=row.cost_usd,
+            has_unpriced=row.has_unpriced,
             error_count=row.error_count,
         )
         for row in page

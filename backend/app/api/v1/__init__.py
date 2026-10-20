@@ -60,8 +60,11 @@ from app.api.v1 import (
 )
 
 # Every domain router, in mount order. The route inventory test walks this tuple, so a router
-# that is mounted some other way would escape it: add routers here.
+# that is mounted some other way would escape it: add routers here. The two busiest routers come
+# first because matching walks the tuple in order.
 DOMAIN_ROUTERS = (
+    metrics.router,
+    traces.router,
     auth.router,
     totp.router,
     tokens.router,
@@ -69,10 +72,8 @@ DOMAIN_ROUTERS = (
     orgs.router,
     projects.router,
     keys.router,
-    traces.router,
     cost_explanation.router,
     exports.router,
-    metrics.router,
     prices.router,
     price_overrides.router,
     billing_sources.router,

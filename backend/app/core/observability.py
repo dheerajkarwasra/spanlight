@@ -51,11 +51,21 @@ ROLLUP_DURATION = Histogram(
     "spanlight_rollup_duration_seconds",
     "Time one rollup_hourly run took, including any first-run backfill.",
 )
+METRICS_RAW_TAIL = Histogram(
+    "spanlight_metrics_raw_tail_seconds",
+    "How far back from now a metrics read takes raw spans instead of rollups; above about an hour"
+    " the rollup job is behind.",
+    buckets=(600, 1800, 3600, 5400, 7200, 10800, 21600, 43200, 86400),
+)
 RATE_LIMIT_UNAVAILABLE = Counter(
     "spanlight_rate_limit_unavailable_total",
     "Rate-limit checks skipped because the limiter could not run, by scope "
     "(ingest, demo, api, gateway).",
     ["scope"],
+)
+ADMISSION_REJECTIONS = Counter(
+    "spanlight_admission_rejections_total",
+    "Requests to /api or /v1 refused with 503 because API_MAX_IN_FLIGHT were already in flight.",
 )
 RATE_LIMIT_REJECTIONS = Counter(
     "spanlight_rate_limit_rejections_total",

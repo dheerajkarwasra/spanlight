@@ -57,17 +57,24 @@ original design; everything else is a clarification.
   field named; any other text value that reaches the database with NUL also answers `422 VALIDATION_ERROR` (without
   `errors`) instead of a 500.
 - **A busy database is a 503, not a 500** (added 2026-10-09). A request answers `503 SERVICE_UNAVAILABLE` with
-  `Retry-After: 5` in two cases: it waited longer than `API_POOL_TIMEOUT_SECONDS` (default 5) for a database
-  connection, or one of its statements ran longer than `API_STATEMENT_TIMEOUT_SECONDS` (default 10) and the
-  database cancelled it. Before this, the first case waited 30 seconds and then answered `500 INTERNAL_ERROR`, and
+  `Retry-After: 5` in four cases: it waited longer than `API_POOL_TIMEOUT_SECONDS` (default 1) for a database
+  connection, one of its statements ran longer than `API_STATEMENT_TIMEOUT_SECONDS` (default 10) and the
+  database cancelled it, the pooled connection it was given had died, or no connection could be opened because Postgres was restarting or unreachable (both added 2026-10-18). The request pool does
+  not test a connection before use (that was a `SELECT 1` per request), so after Postgres restarts, the first
+  request on each stale connection, at most the pool size (10) per api process, meets the dead connection once; the
+  pool is then refreshed. The same holds for `/gw/*` in the provider envelope. Before this, the first case waited 30 seconds and then answered `500 INTERNAL_ERROR`, and
   the second ran until the client gave up, holding its connection the whole time. The server logs each as a
-  warning (`db_pool_timeout`, `db_statement_timeout`) and not as an unhandled exception. Clients may retry after
+  warning (`db_pool_timeout`, `db_statement_timeout`, `db_connection_lost`, `db_unreachable`) and not as an unhandled exception. Clients may retry after
   the delay; the Python SDK already does for every `5xx`. Both limits apply to the database session of every
   `/api` and ingestion request, with two exceptions: deleting an organization or a project is not subject to the statement limit
   (the foreign keys remove all its spans in one statement, which on a large project takes longer than any
-  request limit), and the work that runs on its own sessions has no statement limit: the worker, exports, the
-  audit-log CSV stream (`GET /api/v1/orgs/{org_id}/audit/export.csv`) and the idempotency and rate-limit pools (the
-  last two have their own pool settings). Any other database failure stays a `500 INTERNAL_ERROR`.
+  request limit), and the work that runs on its own engine has no statement limit: the worker, exports and the
+  idempotency and rate-limit pools (the last two have their own pool settings). The statement limit is a setting of
+  the api's connections, so the audit-log CSV stream (`GET /api/v1/orgs/{org_id}/audit/export.csv`, one short
+  statement per batch) and the gateway's span writes are under it too. Any other database failure stays a `500
+  INTERNAL_ERROR`. Separately, a process that is already serving `API_MAX_IN_FLIGHT` (default 64) `/api` and `/v1`
+  requests answers the next one `503 SERVICE_UNAVAILABLE` with `Retry-After: 1` at once, before reading its body
+  or authenticating it (added 2026-10-18); `/gw` and `/health` are not counted.
 - **Request body limit:** every `/api/v1` request body is limited to **1 MiB**. Over the limit is `413
   PAYLOAD_TOO_LARGE`, answered without reading the body when `Content-Length` already declares too much, and
   while reading when the body is chunked or understates its length. Ingestion (`/v1/traces`,
@@ -166,6 +173,10 @@ original design; everything else is a clarification.
 - Non-members get 404 for every project route; members lacking a permission get 403.
 - `from`/`to` default to the last 24 h; `from >= to` or a window > 90 days → 422.
 - Sessions: `last_at` is the latest trace `ended_at`; ordering and cursors use it (desc).
+- Sessions `has_unpriced` (addition, 2026-10-19): `true` when any trace in the session has `has_unpriced`. A
+  session's `cost_usd` sums the known trace costs only, so with the flag set a known `cost_usd` is a lower bound,
+  and the UI marks it as one. Before this, a session with an unpriced call showed the smaller sum as if exact.
+  `recent_sessions` of the end-user detail carries the same flag.
 - Sessions `environment` (addition): `GET …/sessions?environment=` keeps only traces of that environment before the
   traces are grouped, exactly as the trace list does. A session that spans environments is listed with the
   `trace_count`, `cost_usd`, `error_count`, `first_at` and `last_at` of its matching traces only, and `last_at`
@@ -178,12 +189,23 @@ original design; everything else is a clarification.
     when there are no LLM calls.
   - `traces` counts traces started in the window. `environment` filters by the trace's environment.
   - Timeseries buckets are gapless (empty buckets have zero counts and `null` cost/p95), in UTC.
-- Metrics source and `approximate`: windows of 24 h or less read the raw spans (exact percentiles);
-  longer windows read the hourly rollups (hours whose `bucket_start` is in `[floor_hour(from), to)`,
-  so the first and last hour count in full) and estimate p50/p95 from merged latency histograms.
-  The overview's previous period follows the same rule as the current one. `overview` carries a
-  top-level `approximate: bool`; `timeseries` and `models` stay plain lists (an envelope would break
-  clients), so each item carries the same `approximate: bool`. Rollup reads can lag up to 5 minutes.
+- Metrics source and `approximate` (any window length): whole UTC hours that closed at least
+  10 minutes before the project's last rollup run are read from the hourly rollups; everything else
+  (the partial first hour, the partial last hour, and every hour from the last fully rolled-up one
+  to now) is read from the raw spans. The previous period is split the same way. The raw part never
+  reaches back more than 24 h: if the rollups are further behind, older hours are read as they
+  are; a project with no rollup row yet is read raw. Counts, errors, tokens, cost, `unpriced_calls`
+  and traces are exact sums of the two parts, except that a span stored more than 10 minutes after
+  it started can be missing from a rolled-up hour until that hour is rolled up again: within
+  5 minutes while the hour is one of the last three, otherwise within about an hour. When a window
+  reads any rollup hour, its p50/p95 are estimated from merged latency histograms (within about
+  ±25 %) and `approximate` is true; otherwise percentiles are exact (`percentile_cont`) and
+  `approximate` is false. `overview` carries a top-level `approximate: bool`, true when either
+  period used a rollup hour (then every percentile of the response is an estimate); `timeseries`
+  and `models` stay plain lists (an envelope would break clients), so each item carries
+  `approximate: bool`: per bucket for `timeseries` (a bucket of raw spans only keeps its exact
+  p95), and the window's value for every `models` row. `models` merges both parts per provider and
+  model before ranking, then keeps the top 100.
 - Trace `status=ok|error` filters on `error_count = 0 | > 0`. `q` matches the trace name
   (case-insensitive substring), an exact trace id, or (2026-10-19, `q` of 3+ characters) span content:
   a case-insensitive substring of a preview of a span's input and output (the last 2,000 characters of
@@ -727,6 +749,12 @@ key can read its own project through the dashboard API.
 - **Expiry.** A key at or past its `expires_at` is `401 KEY_EXPIRED`, on ingestion and on reads. This is only
   said to a caller who proved they hold the key: a wrong secret is `401 UNAUTHORIZED` whatever the key's state,
   and a revoked key is `401 UNAUTHORIZED` even if it has also expired.
+- **Revocation delay.** Each api process caches the key rows it has looked up for `API_KEY_CACHE_TTL_SECONDS`
+  (default 10, `0` turns it off), so revocation takes effect within `API_KEY_CACHE_TTL_SECONDS` on each api
+  process. The process that served the revoke, or the deletion of the key's project or organization, drops its
+  copy at once; a revocation through SQL waits out the TTL everywhere. The secret, `revoked_at` and
+  `expires_at` are still checked on every request, so a wrong secret and a key whose expiry has passed are
+  refused at once; only rows that exist are cached. Personal access tokens and sessions are not cached.
 - **Reading with a key.** A key with `traces:read` may call these routes, and only for its own project:
   `GET /api/v1/projects/{project_id}/traces`, `…/traces/{trace_id}`, `…/sessions`, `…/filters`,
   `…/metrics/overview`, `…/metrics/timeseries`, `…/metrics/models`, `…/releases`, `…/releases/compare`, `…/users` and
@@ -2572,7 +2600,7 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
   this span repeats the usage of its child spans and is excluded from totals.", ahead of every other status. Each span
   of a JSONL trace export carries `usage_rollup` after `cost_usd`; there is no CSV column, because span rows exist
   only in JSONL (a trace CSV row has the trace totals, which already exclude rollups). The hourly rollups recompute the
-  last 48 hours each run; a flag that flips on an older hour is corrected by `spanlight rollups backfill`.
+  last 48 hours (the last three every run, the rest about once an hour); a flag that flips on an older hour is corrected by `spanlight rollups backfill`.
 - **No backfill in the migration.** Rows stored before `0900` keep `false` until a batch touches their trace. The
   admin command `spanlight recompute-usage-rollups --since <Nd|Nh> [--batch-size 500]` recomputes the flags and the
   trace totals of the traces started in that window, one transaction per batch of traces of one project, through the

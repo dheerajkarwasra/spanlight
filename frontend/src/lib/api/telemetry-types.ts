@@ -260,6 +260,8 @@ export interface SessionSummary {
   first_at: string;
   last_at: string;
   cost_usd: string | null;
+  /** A trace in the session has an unpriced call, so a known `cost_usd` is a lower bound. */
+  has_unpriced: boolean;
   error_count: number;
 }
 

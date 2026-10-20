@@ -6,7 +6,7 @@ a trace counts for the window it started in and all of its spans count with it.
 
 The span side of each join is bounded below by the window start. That changes no result (a
 trace starts when its first span does, so none of its spans starts earlier), but it lets the
-planner read the spans through the covering index `spans_project_started_cov_idx` by range
+planner read the spans through the covering index `spans_project_started_window_idx` by range
 instead of probing the primary key once per trace. The upper side stays open: a span of a trace
 that started before the window ends may start after it.
 

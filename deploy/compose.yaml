@@ -74,6 +74,8 @@ x-backend: &backend
     DEMO_ENABLED: ${DEMO_ENABLED:-}
     API_POOL_TIMEOUT_SECONDS: ${API_POOL_TIMEOUT_SECONDS:-}
     API_STATEMENT_TIMEOUT_SECONDS: ${API_STATEMENT_TIMEOUT_SECONDS:-}
+    API_MAX_IN_FLIGHT: ${API_MAX_IN_FLIGHT:-}
+    API_KEY_CACHE_TTL_SECONDS: ${API_KEY_CACHE_TTL_SECONDS:-}
     IDEMPOTENCY_POOL_SIZE: ${IDEMPOTENCY_POOL_SIZE:-}
     IDEMPOTENCY_POOL_TIMEOUT_SECONDS: ${IDEMPOTENCY_POOL_TIMEOUT_SECONDS:-}
     RATE_LIMIT_POOL_SIZE: ${RATE_LIMIT_POOL_SIZE:-}
@@ -91,7 +93,31 @@ services:
     # Docker's 64 MB /dev/shm is too small for parallel hash joins ("could not resize shared memory segment").
     shm_size: 256mb
     # JIT compiles for longer than the dashboard and rollup queries take to run, so it only slows them down.
-    command: ["postgres", "-c", "jit=off"]
+    # The rest is sized for the documented 2 vCPU / 4 GB node with the api and worker beside Postgres.
+    # Postgres needs about 1.5 GB free for it (shared_buffers alone is 1 GB): on a smaller host it
+    # fails to start, so lower shared_buffers and effective_cache_size. On a bigger node raise
+    # shared_buffers to about a quarter of RAM and effective_cache_size to about three quarters.
+    # max_connections=200 fits 6 api replicas: replicas x 30 + 2 (worker) + 4 <= max_connections - 10.
+    command:
+      - postgres
+      - -c
+      - jit=off
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - effective_cache_size=3GB
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - max_connections=200
+      - -c
+      - wal_compression=on
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - autovacuum_vacuum_cost_limit=1000
     environment:
       POSTGRES_DB: spanlight
       POSTGRES_USER: postgres

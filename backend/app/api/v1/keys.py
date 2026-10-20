@@ -137,3 +137,6 @@ async def revoke_key(
         metadata={"name": key.name, "prefix": key.prefix, "project_id": str(project.id)},
     )
     await db.commit()
+    # After the commit, so the next lookup on this process reads the revoked row. Other api
+    # processes see the revocation within `API_KEY_CACHE_TTL_SECONDS`.
+    request.app.state.key_cache.evict(key.prefix)

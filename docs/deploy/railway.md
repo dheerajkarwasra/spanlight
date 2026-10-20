@@ -382,6 +382,16 @@ railway usage projects --project spanlight
 - **Keep Postgres private.** It has no public TCP proxy by default. Turning one on adds egress charges.
 - **Anthropic.** `DEMO_MONTHLY_BUDGET_USD=1.00` stops demo traffic once the month's recorded cost reaches $1. Also set a monthly spend limit on the key in the Anthropic Console.
 
+## Scaling
+
+Replicas are the knob. Each api replica runs one process, and rate limits, sessions and idempotency keys live in Postgres, so replicas share them; the worker scales the same way (jobs are claimed with `FOR UPDATE SKIP LOCKED`). Raise a service's replica count in its **Settings → Deploy**, then check three things:
+
+- **The connection budget.** An api replica opens up to 30 Postgres connections and a worker up to 4: `30 × api replicas + 4 × workers + 10 ≤ max_connections − 3`. Read `SHOW max_connections` on the Railway Postgres; at 100 that is two api replicas and one worker. The [scaling runbook](../runbooks/scale.md#2-the-connection-budget) has the details.
+- **That every replica gets traffic.** `web` reaches the api through one private hostname. After scaling, each replica's deploy logs should show `http_request` lines; if one stays quiet, the traffic is not spread.
+- **What to expect.** One api process held about 20 modelled companies (1.2 ingest requests a second of 20 spans plus 6 dashboard reads a second each) on the machine it was measured on. How that scales with replicas has not been measured, so watch latency and `503` rates after each step instead of assuming N replicas hold N times as much.
+
+A revoked API key keeps working on each api replica for up to `API_KEY_CACHE_TTL_SECONDS` (10 s), since each replica caches key rows that long.
+
 ## Deploy from GitHub later
 
 Once the repository is on GitHub, connect each service to it:

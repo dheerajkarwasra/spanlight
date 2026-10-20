@@ -16,7 +16,7 @@ Ranges of different groups may overlap; ranges of one group must not.
 The statement is assembled from fixed fragments according to which filters are set, so values
 only ever travel as bound parameters. ``traces`` is joined only for the filters that live on the
 trace (``environment``, ``external_user_id``, ``metadata``, ``trace_name``): without them the
-read stays on ``spans_project_started_cov_idx`` (see ``app.metrics.queries``). ``source_key_id``
+read stays on ``spans_project_started_window_idx`` (see ``app.metrics.queries``). ``source_key_id``
 is served by ``spans_project_source_key_started_idx`` and ``external_user_id`` by the partial
 index of migration 0302; a ``metadata`` pair or ``trace_name`` is matched on the window's traces,
 reached from the spans by primary key.
@@ -116,7 +116,7 @@ class RawAggregate:
 EMPTY = RawAggregate(0, 0, 0, 0, 0, None, None, None)
 
 
-def _histogram(column: str) -> str:
+def llm_histogram(column: str) -> str:
     """A 32-element ``integer[]`` counting the llm spans whose ``column`` is in each bucket.
 
     The NULL test is required: ``least`` ignores NULL arguments, so the index of a NULL value
@@ -150,7 +150,7 @@ def _statement(
             "FILTER (WHERE s.kind = 'llm') AS percentile"
         )
         if with_histogram:
-            columns.append(f"{_histogram(latency)} AS histogram")
+            columns.append(f"{llm_histogram(latency)} AS histogram")
     join = _TRACE_JOIN if dimensions & _TRACE_FILTERS else ""
     conditions = "".join(f"\n      AND {_CONDITIONS[name]}" for name in sorted(dimensions))
     statement = text(

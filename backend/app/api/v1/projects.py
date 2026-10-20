@@ -173,6 +173,8 @@ async def delete_project(
     )
     await delete_project_rows(db, project.id)
     await db.commit()
+    # The keys went with the project; this process stops accepting them now, not after the TTL.
+    request.app.state.key_cache.clear()
 
 
 @router.get("/projects/{project_id}/onboarding", response_model=OnboardingOut)

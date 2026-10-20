@@ -209,6 +209,7 @@ async def test_sessions(workspace: Workspace, seeded: dict[str, str]) -> None:
     assert [s["session_id"] for s in sessions] == ["s2", "s1"]
     s1 = sessions[1]
     assert s1["trace_count"] == 2 and s1["error_count"] == 1
+    assert s1["has_unpriced"] is False and sessions[0]["has_unpriced"] is True
 
     page = (
         await workspace.owner.get(
@@ -222,6 +223,32 @@ async def test_sessions(workspace: Workspace, seeded: dict[str, str]) -> None:
         )
     ).json()
     assert [s["session_id"] for s in page["items"] + rest["items"]] == ["s2", "s1"]
+
+
+async def test_session_with_an_unpriced_trace_is_a_lower_bound(
+    client: httpx.AsyncClient, workspace: Workspace
+) -> None:
+    # One priced trace and one unpriced trace: the sum skips the NULL, so the flag must say so.
+    priced, unpriced = new_trace_id(), new_trace_id()
+    await _ingest(
+        client,
+        workspace,
+        [
+            _llm(priced, WINDOW_START + timedelta(hours=1), 100, trace={"session_id": "mixed"}),
+            _llm(
+                unpriced,
+                WINDOW_START + timedelta(hours=2),
+                100,
+                model="unknown-llm",
+                trace={"session_id": "mixed"},
+            ),
+        ],
+    )
+    response = await workspace.owner.get(
+        f"/api/v1/projects/{workspace.project_id}/sessions", params=_window()
+    )
+    [session] = response.json()["items"]
+    assert session["cost_usd"] is not None and session["has_unpriced"] is True
 
 
 async def test_sessions_environment_filter(workspace: Workspace, seeded: dict[str, str]) -> None:

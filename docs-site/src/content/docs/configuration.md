@@ -172,8 +172,10 @@ A request that would otherwise wait on a busy database fails fast with `503` and
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `API_POOL_TIMEOUT_SECONDS` | number (min 1, max 60) | `5.0` | Seconds an API request waits for a connection from the main pool. Past it the request answers `503 SERVICE_UNAVAILABLE` with `Retry-After: 5`. Blank keeps the default. |
+| `API_POOL_TIMEOUT_SECONDS` | number (min 1, max 60) | `1.0` | Seconds an API request waits for a connection from the main pool. Past it the request answers `503 SERVICE_UNAVAILABLE` with `Retry-After: 5`. Blank keeps the default. |
 | `API_STATEMENT_TIMEOUT_SECONDS` | number (min 1, max 300) | `10.0` | Longest one database statement of an API request may run. The database cancels it and the request answers `503 SERVICE_UNAVAILABLE` with `Retry-After: 5`. Blank keeps the default. |
+| `API_MAX_IN_FLIGHT` | integer (min 1) | `64` | Most `/api` and `/v1` requests one api process serves at once. Past it a request answers `503 SERVICE_UNAVAILABLE` with `Retry-After: 1` at once instead of queueing. `/gw` and `/health` are not counted. Blank keeps the default. |
+| `API_KEY_CACHE_TTL_SECONDS` | number (min 0) | `10` | Seconds one api process reuses a project API key's row before reading it again. A key revoked or deleted through another api process keeps working on this one for up to this long; a revocation on the same process takes effect at once. `0` reads the key on every request. Blank keeps the default. |
 
 ### Connection pools
 

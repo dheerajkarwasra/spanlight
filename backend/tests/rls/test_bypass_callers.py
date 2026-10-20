@@ -41,6 +41,7 @@ ALLOWED = {
     "app.reconciliation.job_queries",
     "app.review.jobs",  # the nightly selection lists every enabled policy across projects
     "app.rollups.jobs",
+    "app.rollups.refresh",  # the rollup job's due refresh slices, across projects
     "app.rollups.usage_rollup_backfill",  # `spanlight recompute-usage-rollups`, across projects
     "app.scores.repair",
 }

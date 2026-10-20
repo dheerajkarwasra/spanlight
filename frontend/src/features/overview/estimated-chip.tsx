@@ -3,14 +3,14 @@ import { Info } from "lucide-react";
 import { TooltipContent, TooltipRoot, TooltipTrigger } from "@/components/ui/tooltip";
 import { useTapTooltip } from "@/lib/use-tap-tooltip";
 
-/** The tooltip copy, verbatim from the Phase 1 spec (§9.1). */
+/** The tooltip copy, verbatim from the hybrid metrics reads spec (§7). */
 export const APPROXIMATE_COPY =
-  "Estimated from hourly rollups. Counts and cost can lag up to 5 minutes; percentiles are accurate to about ±25 %.";
+  "Percentiles are estimated from hourly latency histograms, accurate to about ±25 %. Counts and cost are exact; a span that arrives late can take up to an hour to appear.";
 
 /**
  * "Estimated · hourly rollups" (Figma "Overview/Estimated chip"): the one explanation of the
  * "≈" prefix on percentile values, shown in the hero's meta line when the overview response is
- * `approximate`. A focusable button; its tooltip opens on hover and focus and closes on Esc.
+ * `approximate` (the window read at least one rollup hour, so also the default 24 h view). A focusable button; its tooltip opens on hover and focus and closes on Esc.
  */
 export function EstimatedChip() {
   const { rootProps, triggerProps } = useTapTooltip();

@@ -69,6 +69,7 @@ _RECENT_SESSIONS = text(
            min(started_at)    AS first_at,
            max(ended_at)      AS last_at,
            sum(cost_usd)      AS cost_usd,
+           bool_or(has_unpriced) AS has_unpriced,
            sum(error_count)   AS error_count
     FROM traces
     WHERE project_id = :project_id AND external_user_id = :external_user_id

@@ -18,7 +18,7 @@ from sqlalchemy.exc import DataError, OperationalError
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.core.db_errors import is_nul_error, is_statement_timeout
+from app.core.db_errors import is_nul_error, is_statement_timeout, is_unreachable
 from app.core.request_context import current_request_id
 
 PROBLEM_CONTENT_TYPE = "application/problem+json"
@@ -302,6 +302,13 @@ async def _handle_operational_error(request: Request, exc: Exception) -> JSONRes
     error = cast(OperationalError, exc)
     if is_statement_timeout(error.orig):
         return await _busy("db_statement_timeout", request)
+    if error.connection_invalidated:
+        # A pooled connection that died (Postgres restarted): the request pool has no pre-ping,
+        # so the first request on each stale connection meets it. The pool is refreshed.
+        return await _busy("db_connection_lost", request)
+    if is_unreachable(error.orig):
+        # No connection could be opened (Postgres restarting or unreachable): as transient.
+        return await _busy("db_unreachable", request)
     return await _handle_unexpected(request, exc)
 
 

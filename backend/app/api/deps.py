@@ -8,9 +8,10 @@ from typing import Annotated, Literal, overload
 
 from fastapi import Depends, Request
 from fastapi.params import Depends as DependsMarker
-from sqlalchemy import or_, select, update
+from sqlalchemy import Text, cast, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.key_cache import CachedKey, KeyCache
 from app.api.principals import (
     ApiKeyPrincipal,
     Principal,
@@ -51,8 +52,6 @@ from app.db.models import (
     Project,
     TokenScope,
 )
-from app.db.rls import bind_project
-from app.db.timeouts import limit_statement_time
 from app.services.sessions import resolve_session
 
 SESSION_COOKIE = "spl_session"
@@ -62,6 +61,10 @@ _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _READ_METHODS = frozenset({"GET", "HEAD"})
 LAST_USED_RESOLUTION = timedelta(minutes=1)
+# Selected next to the project in the lookup that authorizes it: Postgres evaluates it once, for
+# the one row returned, so the transaction is bound to the project in the same round trip, and
+# not at all when the lookup finds no row.
+_BIND_PROJECT = func.set_config("app.project_id", cast(Project.id, Text), True)
 
 
 def get_settings(request: Request) -> Settings:
@@ -74,10 +77,9 @@ async def get_db(request: Request) -> AsyncIterator[AsyncSession]:
 
     A statement that runs longer than `API_STATEMENT_TIMEOUT_SECONDS` is cancelled and the request
     answers 503 (see `app.core.errors`), so one slow read cannot hold a connection indefinitely.
+    The cap is set on the request engine's connections (`app.db.timeouts`).
     """
-    settings: Settings = request.app.state.settings
     async with request.app.state.session_factory() as session:
-        limit_statement_time(session, round(settings.api_statement_timeout_seconds * 1000))
         yield session
 
 
@@ -161,7 +163,7 @@ async def authenticate_bearer(
     credentials = _bearer_credentials(request)
     if credentials.startswith(PAT_PREFIX):
         return await _authenticate_token(db, credentials)
-    return await _authenticate_api_key(db, credentials)
+    return await _authenticate_api_key(db, request.app.state.key_cache, credentials)
 
 
 async def authenticate_api_key(request: Request, db: AsyncSession) -> ApiKeyPrincipal:
@@ -170,15 +172,35 @@ async def authenticate_api_key(request: Request, db: AsyncSession) -> ApiKeyPrin
     For the ingestion routes, which a personal access token has no business on: a token, valid
     or not, gets the same 401 as any credential that is not an API key.
     """
-    return await _authenticate_api_key(db, _bearer_credentials(request))
+    return await _authenticate_api_key(
+        db, request.app.state.key_cache, _bearer_credentials(request)
+    )
 
 
-async def _authenticate_api_key(db: AsyncSession, credentials: str) -> ApiKeyPrincipal:
+async def _authenticate_api_key(
+    db: AsyncSession, cache: KeyCache, credentials: str
+) -> ApiKeyPrincipal:
     parsed = parse_key(credentials, API_KEY_PREFIX)
     if parsed is None:
         raise _invalid_credentials()
 
-    key = await db.scalar(select(ApiKey).where(ApiKey.prefix == parsed.prefix))
+    # A cached row skips the lookup, never the checks below (see `app.api.key_cache`).
+    key = cache.get(parsed.prefix)
+    if key is None:
+        row = await db.scalar(select(ApiKey).where(ApiKey.prefix == parsed.prefix))
+        if row is not None:
+            key = CachedKey(
+                principal=ApiKeyPrincipal(
+                    key_id=row.id,
+                    project_id=row.project_id,
+                    scopes=frozenset(KeyScope(scope) for scope in row.scopes),
+                ),
+                secret_hash=row.secret_hash,
+                revoked_at=row.revoked_at,
+                expires_at=row.expires_at,
+                last_used_at=row.last_used_at,
+            )
+            cache.put(parsed.prefix, key)
     # The secret comes first, so only the holder of a key can learn that it was revoked or
     # expired; anyone else gets the same answer as for a key that never existed.
     if key is None or not key_secret_matches(parsed.secret, key.secret_hash):
@@ -189,12 +211,9 @@ async def _authenticate_api_key(db: AsyncSession, credentials: str) -> ApiKeyPri
     if key.expires_at is not None and key.expires_at <= now:
         raise key_expired()
 
-    await _record_use(db, ApiKey, key.id, now)
-    return ApiKeyPrincipal(
-        key_id=key.id,
-        project_id=key.project_id,
-        scopes=frozenset(KeyScope(scope) for scope in key.scopes),
-    )
+    if await _record_use(db, ApiKey, key.principal.key_id, key.last_used_at, now):
+        cache.touch(parsed.prefix, now)
+    return key.principal
 
 
 async def _authenticate_token(db: AsyncSession, credentials: str) -> TokenPrincipal:
@@ -211,7 +230,7 @@ async def _authenticate_token(db: AsyncSession, credentials: str) -> TokenPrinci
     if token.expires_at is not None and token.expires_at <= now:
         raise token_expired()
 
-    await _record_use(db, PersonalAccessToken, token.id, now)
+    await _record_use(db, PersonalAccessToken, token.id, token.last_used_at, now)
     return TokenPrincipal(user=presented.user, token_id=token.id, scope=token.scope)
 
 
@@ -219,14 +238,19 @@ async def _record_use(
     db: AsyncSession,
     model: type[ApiKey] | type[PersonalAccessToken],
     row_id: uuid.UUID,
+    last_used_at: datetime | None,
     now: datetime,
-) -> None:
-    """Record that a key or token was used, at most once a minute.
+) -> bool:
+    """Record that a key or token was used, at most once a minute; False if it was skipped.
 
     A busy credential must not write on every request. The condition is part of the UPDATE, so
     concurrent requests cannot both write. It commits when it wrote, which ends the transaction:
-    callers run it before the RLS binding.
+    callers run it before the RLS binding. `last_used_at` is the value the caller read (for a
+    key, possibly from the key cache, which the caller then updates): when it is recent the
+    UPDATE could not match, so the round trip is skipped.
     """
+    if last_used_at is not None and last_used_at >= now - LAST_USED_RESOLUTION:
+        return False
     written = await db.execute(
         update(model)
         .where(
@@ -239,6 +263,7 @@ async def _record_use(
     )
     if written.first() is not None:
         await db.commit()
+    return True
 
 
 async def current_principal(request: Request, db: DbSession, settings: SettingsDep) -> Principal:
@@ -408,8 +433,10 @@ def require(
 
     Non-members get 404, so the existence of other tenants' resources is never
     revealed. Members lacking the permission get 403. For project routes the
-    transaction is bound to the project, which row-level security enforces. In an org that
-    requires two-factor authentication, members without it get 403 `TWO_FACTOR_REQUIRED`.
+    transaction is bound to the project, which row-level security enforces, by the lookup that
+    proves membership, before the checks below; a refusal ends the transaction before any
+    handler runs. In an org that requires two-factor authentication, members without it get
+    403 `TWO_FACTOR_REQUIRED`.
 
     A personal access token is its user: it is checked with the user's memberships, read on every
     request, exactly as a session is. On top of that a `read` token is refused (403 `TOKEN_SCOPE`)
@@ -447,11 +474,12 @@ async def _key_access(request: Request, key: ApiKeyPrincipal, db: AsyncSession) 
         raise not_found()
     if KeyScope.TRACES_READ not in key.scopes:
         raise key_scope(f"This API key does not have the `{KeyScope.TRACES_READ}` scope.")
-    project = await db.get(Project, key.project_id)
-    if project is None:
+    row = (
+        await db.execute(select(Project, _BIND_PROJECT).where(Project.id == key.project_id))
+    ).one_or_none()
+    if row is None:
         raise not_found()
-    await bind_project(db, project.id)
-    return KeyAccess(key=key, project=project)
+    return KeyAccess(key=key, project=row[0])
 
 
 async def _member_access(
@@ -461,7 +489,7 @@ async def _member_access(
         project_id = _path_uuid(request, "project_id")
         row = (
             await db.execute(
-                select(Project, Organization, Membership.role)
+                select(Project, Organization, Membership.role, _BIND_PROJECT)
                 .join(Organization, Organization.id == Project.org_id)
                 .join(
                     Membership,
@@ -472,7 +500,7 @@ async def _member_access(
         ).one_or_none()
         if row is None:
             raise not_found()
-        project, org, role = row
+        project, org, role, _ = row
     elif "org_id" in request.path_params:
         org_id = _path_uuid(request, "org_id")
         org_row = (
@@ -508,6 +536,4 @@ async def _member_access(
         raise token_scope(
             "This access token is read-only. Create a token with the `write` scope to do this."
         )
-    if project is not None:
-        await bind_project(db, project.id)
     return Access(auth=auth, org=org, role=role, project=project)

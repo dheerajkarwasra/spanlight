@@ -14608,6 +14608,10 @@
             "title": "First At",
             "type": "string"
           },
+          "has_unpriced": {
+            "title": "Has Unpriced",
+            "type": "boolean"
+          },
           "last_at": {
             "format": "date-time",
             "title": "Last At",
@@ -14628,6 +14632,7 @@
           "first_at",
           "last_at",
           "cost_usd",
+          "has_unpriced",
           "error_count"
         ],
         "title": "SessionSummaryOut",

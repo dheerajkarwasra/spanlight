@@ -26,7 +26,7 @@ import uuid
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -100,10 +100,25 @@ _MODELS = text(
     {_ROLLUP_FILTER}
       AND kind = 'llm'
     GROUP BY provider, model
-    ORDER BY calls DESC, provider NULLS LAST, model NULLS LAST
-    LIMIT 100
     """
 ).bindparams(bindparam("environment", type_=String))
+
+# Every rollup run rewrites a project's recent hours in one transaction, so the newest row carries
+# the start of its last successful run (`computed_at` defaults to `now()`).
+_WATERMARK = text(
+    """
+    SELECT computed_at FROM span_rollups_hourly
+    WHERE project_id = :project_id
+    ORDER BY bucket_start DESC
+    LIMIT 1
+    """
+)
+
+ROLLUP_GRACE = timedelta(minutes=10)
+"""How long after an hour closes its spans may still arrive before the hour counts as complete."""
+
+RAW_TAIL_MAX = timedelta(hours=24)
+"""The longest raw tail a read accepts: rollups more than a day behind are read as they are."""
 
 
 @dataclass(frozen=True)
@@ -260,10 +275,27 @@ def group_hours(
     return {start: combine(start, rows) for start, rows in grouped.items()}
 
 
+async def read_split(db: AsyncSession, project_id: uuid.UUID, now: datetime) -> datetime | None:
+    """The first hour a metrics read takes from raw spans; every whole hour before it is read
+    from the rollups.
+
+    It follows the rollup job, not the clock: the hour that holds ``W - ROLLUP_GRACE``, where
+    ``W`` is the newest rollup row's ``computed_at``, so every earlier hour closed at least the
+    grace before the run that last rewrote it (the invariant in ``app.rollups.jobs``). A job that
+    falls behind moves the split back and the read gets slower, never wrong, up to
+    ``RAW_TAIL_MAX``. ``None`` when the project has no rollup row at all (new, or not rolled up
+    yet): the whole window is read raw.
+    """
+    watermark = (await db.execute(_WATERMARK, {"project_id": project_id})).scalar_one_or_none()
+    if watermark is None:
+        return None
+    return max(floor_hour(watermark - ROLLUP_GRACE), floor_hour(now - RAW_TAIL_MAX))
+
+
 async def read_model_rollups(
     db: AsyncSession, project_id: uuid.UUID, window: TimeWindow, environment: str | None
 ) -> list[ModelRollup]:
-    """The llm calls per (provider, model), busiest first, capped at 100 like the raw query."""
+    """The llm calls per (provider, model), every pair: the caller merges, sorts and cuts."""
     rows = (await db.execute(_MODELS, _params(project_id, window, environment))).all()
     return [
         ModelRollup(

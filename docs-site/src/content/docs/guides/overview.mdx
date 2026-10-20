@@ -26,7 +26,7 @@ Use the controls at the top right of the page, or in a row above the page on a p
 
 Both are kept in the page address and shared with Traces, Sessions and Releases. The line above the greeting names the date, the environment and the range.
 
-For a window longer than 24 hours, percentiles come from hourly rollups and are estimates. An **Estimated · hourly rollups** chip appears on that line, and the percentile values start with **≈**. The tooltip says counts and cost can lag by up to five minutes and percentiles are accurate to about 25 percent. A window of 24 hours or less reads the raw spans, so its percentiles are exact.
+When the window includes a whole hour that the worker has already rolled up, as the default 24 hours does, percentiles come from hourly latency histograms and are estimates. An **Estimated · hourly rollups** chip appears on that line, and the percentile values start with **≈**. The tooltip reads "Percentiles are estimated from hourly latency histograms, accurate to about ±25 %. Counts and cost are exact; a span that arrives late can take up to an hour to appear." A window with no whole rolled-up hour, such as **1h**, reads only the raw spans, so its percentiles are exact and the chip does not appear.
 
 ## The headline
 

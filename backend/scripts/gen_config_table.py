@@ -184,7 +184,12 @@ GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "A request that would otherwise wait on a busy database fails fast with `503` and "
         "`Retry-After` instead of queueing behind slow work. The worker, exports and deleting an "
         "organization or project are not subject to the statement limit.",
-        ("api_pool_timeout_seconds", "api_statement_timeout_seconds"),
+        (
+            "api_pool_timeout_seconds",
+            "api_statement_timeout_seconds",
+            "api_max_in_flight",
+            "api_key_cache_ttl_seconds",
+        ),
     ),
     (
         "Connection pools",
@@ -437,6 +442,17 @@ DESCRIPTIONS: dict[str, str] = {
         "Longest one database statement of an API request may run. The database cancels it and "
         "the request answers `503 SERVICE_UNAVAILABLE` with `Retry-After: 5`. Blank keeps the "
         "default."
+    ),
+    "api_max_in_flight": (
+        "Most `/api` and `/v1` requests one api process serves at once. Past it a request "
+        "answers `503 SERVICE_UNAVAILABLE` with `Retry-After: 1` at once instead of queueing. "
+        "`/gw` and `/health` are not counted. Blank keeps the default."
+    ),
+    "api_key_cache_ttl_seconds": (
+        "Seconds one api process reuses a project API key's row before reading it again. A key "
+        "revoked or deleted through another api process keeps working on this one for up to this "
+        "long; a revocation on the same process takes effect at once. `0` reads the key on every "
+        "request. Blank keeps the default."
     ),
     "idempotency_pool_size": "Connections in the idempotency-key pool.",
     "idempotency_pool_timeout_seconds": (

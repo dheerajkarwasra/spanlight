@@ -10,9 +10,9 @@ Percentiles read from a histogram are an approximation. Everything that falls
 into a bucket is assumed to be spread evenly across it, and the answer is
 interpolated linearly between the bucket's edges. Because a bucket is about
 1.5x wide, the estimate is within roughly 25 % of the true value, which is
-enough for a dashboard chart over days or weeks and is why those responses are
-labelled approximate. Windows of 24 hours or less read the raw spans and stay
-exact.
+enough for a dashboard chart and is why those responses are labelled
+approximate. A window that reads no rollup hour (in practice the last hour)
+reads the raw spans and stays exact.
 
 Bucket ``i`` holds the durations ``d`` with ``BOUNDS_MS[i-1] < d <= BOUNDS_MS[i]``
 (bucket 0 holds everything up to and including ``BOUNDS_MS[0]``). The last

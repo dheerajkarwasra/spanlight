@@ -26,7 +26,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.observability import SPAN_NORMALIZATION_FAILURES, feature_used
 from app.core.text import clean_json
-from app.db.rls import bind_project
 from app.ingest.jsondepth import MAX_JSON_DEPTH, exceeds_depth
 from app.ingest.normalize import (
     NormalizedSpan,
@@ -76,7 +75,13 @@ class ProjectGoneError(LookupError):
 # batch holds the traces and waits for the project: a deadlock that fails one of the two requests.
 # Taking the project first follows the lock order in `app.services.deletion`: a running deletion
 # makes the batch wait and then find no project, and a running batch makes the deletion wait.
-_KEY_SHARE_PROJECT = text("SELECT id FROM projects WHERE id = :project_id FOR KEY SHARE")
+# The same statement binds the transaction to the project (what `app.db.rls.bind_project` does),
+# saving a round trip. A project deleted while the lock was awaited may already be bound, but the
+# batch then fails before writing anything.
+_KEY_SHARE_PROJECT = text(
+    "SELECT id, set_config('app.project_id', CAST(id AS text), true)"
+    " FROM projects WHERE id = :project_id FOR KEY SHARE"
+)
 
 
 def parse_json_body(body: bytes) -> Any:
@@ -124,7 +129,6 @@ async def ingest_spans(
     Raises `ProjectGoneError` when the project no longer exists; nothing is written then.
     """
     now = now or datetime.now(UTC)
-    await bind_project(session, target.project_id)
     project = await session.execute(_KEY_SHARE_PROJECT, {"project_id": target.project_id})
     if project.scalar_one_or_none() is None:
         raise ProjectGoneError(str(target.project_id))

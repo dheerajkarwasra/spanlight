@@ -86,7 +86,9 @@ A burst that stays under the limit can still be heavy: many keys, or many large 
 1. Check the database as in [scale.md](scale.md#1-find-the-bottleneck): connections, running statements and CPU.
 2. If connections are the limit, check `spanlight_rate_limit_unavailable_total` and the `rate_limit_unavailable` log lines. They mean the rate-limit pool was exhausted and the limit was skipped for those requests.
 3. Add capacity: [scale.md](scale.md).
-4. The worker keeps going during a spike. Rollups recompute every 5 minutes, so charts over windows longer than 24 hours can lag by up to that long; windows of 24 hours or less read the raw spans and are current.
+4. The worker keeps going during a spike. Charts read every hour the rollup job has not finished yet from the raw spans, so they stay current while the job catches up, as long as it is less than 24 hours behind. A span stored more than 10 minutes after it started can be missing from an hour that is already rolled up until that hour is rolled up again: within 5 minutes for the last three hours, otherwise within about an hour.
+
+`503` responses with `Retry-After: 1` mean an api process was already serving `API_MAX_IN_FLIGHT` (default 64) `/api` and `/v1` requests: it answered at once instead of queueing, without reading the body or touching the database. Each one counts in `spanlight_admission_rejections_total`, and the process logs `admission_rejected` (with the limit and the path) at most once a minute while it lasts. A steady rate means the process is past what it can serve: add replicas as in [scale.md](scale.md) rather than raising the cap, which only brings back the queueing (slow answers, then proxy `502`s). `503` with `Retry-After: 5` is the database side instead: `db_pool_timeout` or `db_statement_timeout` in the logs (`db_connection_lost` right after a Postgres restart, once per stale pooled connection).
 
 Replaying a batch is safe. Ingestion is idempotent: spans are upserted on their natural key and trace totals are recomputed from the stored spans, so a sender that retries after a 429 or a timeout does not double-count.
 
@@ -94,7 +96,7 @@ Replaying a batch is safe. Ingestion is idempotent: spans are upserted on their 
 
 ### When to use
 
-Spans arrived more than 48 hours after they started. Typical causes: a sender buffered while offline and flushed days later, a collector replayed a backlog, or a project was imported. The trace explorer shows these spans (it reads raw spans), but charts over windows longer than 24 hours (they read the hourly rollups, and say `approximate`) are missing them, because the scheduled job only recomputes the last 48 hours.
+Spans arrived more than 48 hours after they started. Typical causes: a sender buffered while offline and flushed days later, a collector replayed a backlog, or a project was imported. The trace explorer shows these spans (it reads raw spans), but charts that cover those hours are missing them (closed hours are read from the hourly rollups, and the response says `approximate`), because the scheduled job only recomputes the last 48 hours.
 
 ### Find the affected range
 
@@ -140,7 +142,7 @@ Errors you may see:
 
 ### Verify
 
-Open the project's overview with a window longer than 24 hours (for example 30 days) and check that the span count for the affected days matches the trace explorer. Or compare in SQL, as the owner:
+Open the project's overview with a window that covers the affected days (for example 30 days) and check that the span count for the affected days matches the trace explorer. Or compare in SQL, as the owner:
 
 ```bash
 spl exec postgres psql -U postgres -d spanlight -c \

@@ -10,7 +10,7 @@ from collections.abc import Iterable, Sequence
 from decimal import Decimal
 from typing import Any, NamedTuple
 
-from sqlalchemy import exists, func, select, update
+from sqlalchemy import ARRAY, Select, String, any_, bindparam, exists, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -215,16 +215,13 @@ async def name_in_use(db: AsyncSession, project_id: uuid.UUID, name: str) -> boo
     return bool(found)
 
 
-async def latest_scores_by_name(
-    db: AsyncSession, project_id: uuid.UUID, trace_ids: Sequence[str]
-) -> dict[str, list[ScoreSummary]]:
-    """Each trace's latest score per name, most recently scored first, at most 10 names per trace.
+def _latest_scores_statement() -> Select[str, str, Decimal | None, str | None]:
+    """The latest score per name of the traces in `:trace_ids`, at most 10 names per trace.
 
-    One query over the page's trace ids: the latest row per (trace, name) is ranked by
-    `created_at` then id, and the names of a trace are ranked by how recently they were scored.
+    The latest row per (trace, name) is ranked by `created_at` then id, and the names of a trace
+    are ranked by how recently they were scored. Built once: the trace list runs it on every
+    request, and building the nested subqueries cost more CPU than the query itself.
     """
-    if not trace_ids:
-        return {}
     per_name = (
         select(
             Score.trace_id,
@@ -239,7 +236,12 @@ async def latest_scores_by_name(
             )
             .label("name_rank"),
         )
-        .where(Score.project_id == project_id, Score.trace_id.in_(set(trace_ids)))
+        .where(
+            Score.project_id == bindparam("project_id"),
+            # One array parameter, not one per id: psycopg caches the parsed query only up to 50
+            # parameters, and a page is 50 traces.
+            Score.trace_id == any_(bindparam("trace_ids", type_=ARRAY(String))),
+        )
         .subquery()
     )
     latest = select(per_name).where(per_name.c.name_rank == 1).subquery()
@@ -254,10 +256,27 @@ async def latest_scores_by_name(
             .label("trace_rank"),
         )
     ).subquery()
-    rows = await db.execute(
+    return (
         select(ranked.c.trace_id, ranked.c.name, ranked.c.value, ranked.c.string_value)
         .where(ranked.c.trace_rank <= MAX_SUMMARY_SCORES)
         .order_by(ranked.c.trace_id, ranked.c.trace_rank)
+    )
+
+
+_LATEST_SCORES = _latest_scores_statement()
+
+
+async def latest_scores_by_name(
+    db: AsyncSession, project_id: uuid.UUID, trace_ids: Sequence[str]
+) -> dict[str, list[ScoreSummary]]:
+    """Each trace's latest score per name, most recently scored first, at most 10 names per trace.
+
+    One query over the page's trace ids (see `_latest_scores_statement`).
+    """
+    if not trace_ids:
+        return {}
+    rows = await db.execute(
+        _LATEST_SCORES, {"project_id": project_id, "trace_ids": sorted(set(trace_ids))}
     )
     summaries: dict[str, list[ScoreSummary]] = {}
     for trace_id, name, value, string_value in rows:

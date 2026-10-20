@@ -1,10 +1,16 @@
 """The ``rollup_hourly`` job: keep the hourly rollups current.
 
-Every run does two things, in this order:
+Every run does three things, in this order:
 
-1. It recomputes the last 48 hours for each project that has spans in that window, so a span
-   that arrives late, or is sent again with other attributes, is reflected within one run.
-2. It backfills history. A project whose oldest span inside its retention (capped at 90 days)
+1. It recomputes the last three hours, ``[floor_hour(now) - 2 h, floor_hour(now) + 1 h)``, for
+   each project that has spans in them, in one transaction per project. A span that arrives
+   late into those hours, or is sent again with other attributes, is reflected within one run.
+2. It refreshes the rest of the last 48 hours in slices of at most six hours, one transaction
+   per slice, oldest first, while the budget lasts (``app.rollups.refresh``). A slice is due
+   about once an hour, so a span that arrives later than the recent hours is reflected within
+   about an hour. Rewriting all 48 hours every run took 30-87 s for a project with 2 M spans a
+   day, past the task timeout; three hours or one slice take a few seconds.
+3. It backfills history. A project whose oldest span inside its retention (capped at 90 days)
    is older than its oldest rollup hour has a gap, and the job fills ``[oldest span hour,
    oldest rollup hour)`` in daily chunks, newest first. Because the gap is read from the data,
    a backfill that was cut short (the task has a hard timeout) simply continues on the next run.
@@ -18,8 +24,9 @@ Every run does two things, in this order:
    project are merged into one range, since a backfill rebuilds every table of the hours it
    covers.
 
-The recompute comes first so a slow backfill never delays current data, and the backfill stops
-starting new chunks after ``BACKFILL_BUDGET_SECONDS`` so the run ends inside the task timeout.
+The recompute comes first so a slow refresh or backfill never delays current data, and both stop
+starting new slices or chunks after ``BACKFILL_BUDGET_SECONDS`` so the run ends inside the task
+timeout.
 Projects with a gap are served smallest gap first: a small project is finished in one run and
 a large one cannot starve the others, while the large one still advances with every run
 because the budget it gets is whatever the smaller ones left over.
@@ -27,6 +34,12 @@ because the budget it gets is whatever the smaller ones left over.
 Spans older than 48 hours are not revisited except at the old end of that gap. A span that
 arrives later than that, in the middle of the history, is missing from the rollups until
 someone runs ``spanlight rollups backfill`` for its hours.
+
+Invariant the metrics reads rely on: every hour more than three hours old was last rewritten
+after it closed (at the latest when it was the oldest of the recent hours, about two hours after
+it closed), and the recent hours of a project share the ``computed_at`` of its last run. So the
+``computed_at`` of a project's newest rollup row is a watermark: every whole hour that closed at
+least ten minutes before it is complete as of that run. Keep both when changing this job.
 
 After the rollups, the run also heals ``traces.has_scores`` flags a score/ingest race left unset
 (``app.scores.repair``); it shares this job rather than adding a job kind for a small sweep.
@@ -48,11 +61,15 @@ from app.ingest.error_class import ErrorClass
 from app.jobs.context import TaskContext
 from app.rollups.compute import backfill_rollups, compute_rollups, floor_hour
 from app.rollups.error_compute import FAILED_LLM_SPAN
+from app.rollups.refresh import due_slices
 from app.scores.repair import repair_has_scores
 
 logger = structlog.get_logger(__name__)
 
-RECOMPUTE_WINDOW = timedelta(hours=48)
+# The recent hours rewritten on every run: the current hour and the two before it.
+RECOMPUTE_WINDOW = timedelta(hours=2)
+# The range kept current by the refresh slices; older hours are only backfilled.
+REFRESH_WINDOW = timedelta(hours=48)
 MAX_BACKFILL_DAYS = 90
 # The worker kills a task after 50 s; stopping at 30 s leaves room for the chunk in flight.
 BACKFILL_BUDGET_SECONDS = 30.0
@@ -147,14 +164,15 @@ async def roll_up_all(
     now: datetime,
     context: TaskContext | None = None,
 ) -> tuple[int, int]:
-    """Recompute the recent window, then backfill gaps.
+    """Recompute the recent hours, refresh the due slices of the last 48 hours, then backfill gaps.
 
     Returns the number of projects recomputed and the number of rows the backfill wrote.
     """
     deadline = time.monotonic() + BACKFILL_BUDGET_SECONDS
-    window_start = floor_hour(now - RECOMPUTE_WINDOW)
+    window_start = floor_hour(now) - RECOMPUTE_WINDOW
     # `end` is exclusive and hour-aligned upwards, so the hour that holds `now` is included.
     window_end = floor_hour(now) + timedelta(hours=1)
+    refresh_start = floor_hour(now - REFRESH_WINDOW)
 
     async with session_factory() as db:
         await bypass_rls(db)
@@ -167,7 +185,17 @@ async def roll_up_all(
     for row in recent:
         await _recompute(session_factory, context, row.project_id, window_start, window_end)
 
-    gaps = await _find_gaps(session_factory, now, window_start)
+    slices = await due_slices(session_factory, now=now, start=refresh_start, end=window_start)
+    refreshed = 0
+    for project_id, slice_start, slice_end in slices:
+        if time.monotonic() >= deadline:
+            break
+        await _recompute(session_factory, context, project_id, slice_start, slice_end)
+        refreshed += 1
+    if slices:
+        logger.info("rollup_slices_refreshed", refreshed=refreshed, due=len(slices))
+
+    gaps = await _find_gaps(session_factory, now, refresh_start)
 
     backfilled = 0
     for _, project_id, gap_start, gap_end in gaps:

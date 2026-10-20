@@ -94,7 +94,11 @@ export function SessionTile({ session }: { session: SessionSummary }) {
           )}
         >
           <span className="sr-only">Cost: </span>
-          <CostValue cost={session.cost_usd} unknownReason="No price for the models used" />
+          <CostValue
+            cost={session.cost_usd}
+            hasUnpriced={session.has_unpriced}
+            unknownReason="No price for the models used"
+          />
         </p>
         <div className={cn("flex justify-end", ERRORS_COLUMN)}>
           <ErrorsBadge count={session.error_count} />

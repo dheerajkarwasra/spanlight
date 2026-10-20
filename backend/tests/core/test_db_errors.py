@@ -21,7 +21,7 @@ def _wrapped(wrapper: type[OperationalError | IntegrityError], sqlstate: str) ->
         (PoolTimeoutError("QueuePool limit of size 5 overflow 10 reached"), True),
         (_wrapped(OperationalError, "57014"), True),  # query_canceled: a statement timeout
         (_wrapped(OperationalError, "40P01"), False),  # a deadlock: not a busy database
-        (_wrapped(OperationalError, "08006"), False),  # a lost connection
+        (_wrapped(OperationalError, "08006"), True),  # a lost connection: transient, a 503
         (_wrapped(IntegrityError, "23505"), False),
         (TimeoutError("an asyncio timeout"), False),
         (RuntimeError("a bug"), False),

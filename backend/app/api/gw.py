@@ -50,7 +50,6 @@ from app.core.body import (
 from app.core.observability import GATEWAY_REQUESTS
 from app.core.security import GATEWAY_KEY_PREFIX, key_secret_matches, parse_key
 from app.core.text import clean_text
-from app.db.timeouts import limit_statement_time
 from app.gateway.context import ByteStream, GatewayRequest, Received, context_for_key
 from app.gateway.errors import (
     GatewayError,
@@ -135,25 +134,23 @@ async def _authenticate(request: Request, *, model_call: bool) -> KeyContext:
     if parsed is None:
         raise invalid_key()
     settings: Settings = runtime.settings
-    async with runtime.sessions() as db:
-        limit_statement_time(db, round(settings.api_statement_timeout_seconds * 1000))
-        async with db.begin():
-            key = await find_key(db, parsed.prefix)
-            stored = key.secret_hash if key is not None else _DUMMY_SECRET_HASH
-            if not key_secret_matches(parsed.secret, stored) or key is None:
-                raise invalid_key()
-            key_context = await load_key_context(db, key)
-            if key_context is None:
-                raise invalid_key()
-            refusal = await check_limits(
-                db,
-                runtime.limiter,
-                key=key,
-                org_id=key_context.org_id,
-                settings=settings,
-                now=request.app.state.clock(),
-                check_tokens=model_call,
-            )
+    async with runtime.sessions() as db, db.begin():
+        key = await find_key(db, parsed.prefix)
+        stored = key.secret_hash if key is not None else _DUMMY_SECRET_HASH
+        if not key_secret_matches(parsed.secret, stored) or key is None:
+            raise invalid_key()
+        key_context = await load_key_context(db, key)
+        if key_context is None:
+            raise invalid_key()
+        refusal = await check_limits(
+            db,
+            runtime.limiter,
+            key=key,
+            org_id=key_context.org_id,
+            settings=settings,
+            now=request.app.state.clock(),
+            check_tokens=model_call,
+        )
     # The transaction is over: nothing is held while the provider answers.
     if refusal is not None:
         if model_call:

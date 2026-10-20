@@ -74,7 +74,11 @@ function SessionRow({ session }: { session: SessionSummary }) {
           <span aria-hidden>·</span>
           {/* Above the stretched link so the cost tooltips work. */}
           <span className="pointer-events-none relative z-10 [&_[tabindex]]:pointer-events-auto">
-            <CostValue cost={session.cost_usd} unknownReason="No price for the models used" />
+            <CostValue
+              cost={session.cost_usd}
+              hasUnpriced={session.has_unpriced}
+              unknownReason="No price for the models used"
+            />
           </span>
           {failed ? (
             <>

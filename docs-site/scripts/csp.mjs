@@ -40,7 +40,7 @@ for (const file of files.filter((f) => f.endsWith('.html'))) {
   const relative = path.relative(DIST, file);
   const html = fs.readFileSync(file, 'utf8');
 
-  for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+  for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\b[^>]*>/gi)) {
     const [, attributes, body] = match;
     const src = attributes.match(/\bsrc="([^"]*)"/i)?.[1];
     if (src !== undefined) {
@@ -57,7 +57,7 @@ for (const file of files.filter((f) => f.endsWith('.html'))) {
     const url = attributes.match(/\b(?:src|href|data)="([^"]*)"/i)?.[1];
     if (url && isForeign(url)) problems.push(`${relative}: <${tag}> loads another origin: ${url}`);
   }
-  if (/\son[a-z]+\s*=\s*["']/i.test(html.replace(/<script\b[\s\S]*?<\/script>/gi, ''))) {
+  if (/\son[a-z]+\s*=\s*["']/i.test(html.replace(/<script\b[\s\S]*?<\/script\b[^>]*>/gi, ''))) {
     problems.push(`${relative}: inline event handler attribute`);
   }
 }

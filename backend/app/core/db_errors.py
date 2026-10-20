@@ -36,13 +36,33 @@ def is_statement_timeout(orig: object) -> bool:
     return isinstance(orig, psycopg.errors.QueryCanceled)
 
 
+# Postgres shutting down or starting up (admin_shutdown, crash_shutdown, cannot_connect_now).
+_RESTARTING = frozenset({"57P01", "57P02", "57P03"})
+
+
+def is_unreachable(orig: object) -> bool:
+    """Whether the database could not be reached: a connect that failed on the client side (no
+    SQLSTATE: refused, DNS), a connection exception (class 08), or Postgres restarting.
+    """
+    if not isinstance(orig, psycopg.OperationalError):
+        return False
+    state = orig.sqlstate
+    return state is None or state.startswith("08") or state in _RESTARTING
+
+
 def is_busy(failure: BaseException) -> bool:
-    """Whether the database was too busy to answer: no pooled connection came free in time, or
-    Postgres cancelled a statement at `statement_timeout`. Answered with a 503 and `Retry-After`.
+    """Whether the database was too busy to answer: no pooled connection came free in time,
+    Postgres cancelled a statement at `statement_timeout`, or a pooled connection turned out dead
+    (the request pool has no pre-ping; SQLAlchemy refreshes the pool), or it could not be reached
+    at all (`is_unreachable`, e.g. while Postgres restarts). Answered with a 503 and `Retry-After`.
     """
     if isinstance(failure, PoolTimeoutError):
         return True
-    return isinstance(failure, OperationalError) and is_statement_timeout(failure.orig)
+    if isinstance(failure, DBAPIError) and failure.connection_invalidated:
+        return True
+    return isinstance(failure, OperationalError) and (
+        is_statement_timeout(failure.orig) or is_unreachable(failure.orig)
+    )
 
 
 def is_transient(failure: BaseException) -> bool:

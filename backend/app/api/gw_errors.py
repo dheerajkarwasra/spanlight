@@ -21,12 +21,12 @@ import structlog
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
-from app.core.db_errors import is_busy
+from app.core.db_errors import is_busy, is_statement_timeout
 from app.core.errors import RETRY_AFTER_SECONDS, ProblemError
 from app.core.observability import GATEWAY_REQUESTS
 from app.core.request_context import current_request_id
@@ -95,9 +95,18 @@ def _validation_error(exc: RequestValidationError) -> GatewayError:
 
 
 def _database_error(request: Request, exc: Exception) -> GatewayError:
-    """Pool exhaustion or a statement timeout is a 503 with `Retry-After`; anything else a 500."""
+    """Pool exhaustion, a statement timeout, a lost connection or an unreachable database is a
+    503 with `Retry-After`; anything else a 500.
+    """
     if is_busy(exc):
-        event = "db_pool_timeout" if isinstance(exc, PoolTimeoutError) else "db_statement_timeout"
+        if isinstance(exc, PoolTimeoutError):
+            event = "db_pool_timeout"
+        elif isinstance(exc, DBAPIError) and exc.connection_invalidated:
+            event = "db_connection_lost"
+        elif isinstance(exc, OperationalError) and is_statement_timeout(exc.orig):
+            event = "db_statement_timeout"
+        else:
+            event = "db_unreachable"
         logger.warning(event, method=request.method, path=request.url.path)
         return service_unavailable(RETRY_AFTER_SECONDS)
     return _unexpected(request, exc)

@@ -133,6 +133,7 @@ def _session(row: Row[Any]) -> SessionSummaryOut:
         first_at=row.first_at,
         last_at=row.last_at,
         cost_usd=_cost(row.cost_usd),
+        has_unpriced=bool(row.has_unpriced),
         error_count=int(row.error_count),
     )
 

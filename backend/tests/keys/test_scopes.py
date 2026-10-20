@@ -94,6 +94,7 @@ async def test_a_key_with_both_scopes_ingests(
 
 @pytest.mark.parametrize(("path", "body"), INGEST_ROUTES)
 async def test_an_expired_key_is_key_expired_on_ingest(
+    app: Any,
     client: httpx.AsyncClient,
     workspace: Workspace,
     session_factory: SessionFactory,
@@ -105,6 +106,9 @@ async def test_an_expired_key_is_key_expired_on_ingest(
     assert ok.status_code == 200, ok.text
 
     await expire_api_key(session_factory, created["id"])
+    # The first request cached the key's row; an expiry written behind the app's back is only
+    # read once the row is looked up again.
+    app.state.key_cache.clear()
     response = await client.post(path, json=body, headers=bearer(created["secret"]))
 
     assert response.status_code == 401

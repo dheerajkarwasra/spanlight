@@ -110,8 +110,10 @@ async def test_connection_killed_before_commit_leaves_no_partial_trace(
 
     failed = await ingest_native(client, workspace, batch)
 
-    assert failed.status_code == 500, failed.text
-    assert failed.json()["code"] == "INTERNAL_ERROR"
+    # A lost connection is a retryable 503 (the request pool has no pre-ping), never a 500.
+    assert failed.status_code == 503, failed.text
+    assert failed.json()["code"] == "SERVICE_UNAVAILABLE"
+    assert "retry-after" in failed.headers
     assert await telemetry_rows(session_factory, workspace.project_id) == ([], [])
 
     # The pool replaces the dead connection, and the replay stores what a clean ingest stores.
