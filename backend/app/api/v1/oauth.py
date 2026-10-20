@@ -53,7 +53,8 @@ from app.auth.oauth_state import (
 )
 from app.config import Settings
 from app.core.errors import conflict, forbidden, not_found, unauthorized
-from app.db.models import OAuthIdentity, User
+from app.db.models import AuditAction, OAuthIdentity, User
+from app.services.audit import record_user_audit_in_each_org
 from app.services.credentials import lock_user_for_sign_in
 from app.services.demo import is_demo_user
 from app.services.sessions import ActiveSession, create_session, resolve_session
@@ -277,8 +278,12 @@ async def finish_sign_in(
         )
 
     now = utcnow()
+    ip = client_ip(request)
     issued = await create_session(
-        db, user.id, now=now, ip=client_ip(request), user_agent=request.headers.get("user-agent")
+        db, user.id, now=now, ip=ip, user_agent=request.headers.get("user-agent")
+    )
+    await record_user_audit_in_each_org(
+        db, user_id=user.id, action=AuditAction.USER_LOGIN, ip=ip, metadata={"method": "oauth"}
     )
     await db.commit()
     response = RedirectResponse(

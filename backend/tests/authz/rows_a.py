@@ -123,6 +123,14 @@ ORG_ADMIN_ROWS = (
     Row("DELETE", f"{ORG}/members/{{user_id}}", P.ORG_READ, then=P.MEMBER_MANAGE),
     Row("DELETE", f"{ORG}/invites/{{invite_id}}", P.MEMBER_MANAGE),
     Row("GET", f"{ORG}/audit/export.csv", P.AUDIT_READ),
+    Row("GET", f"{ORG}/audit/export.jsonl", P.AUDIT_READ),
+    Row("GET", f"{ORG}/audit/integrity", P.AUDIT_READ),
+    Row("GET", f"{ORG}/audit/stream", P.AUDIT_READ),
+    Row("PUT", f"{ORG}/audit/stream", P.ORG_SECURITY),
+    # 409 `AUDIT_STREAM_NOT_SET_UP`: the matrix org has no stream to delete, rotate or test.
+    Row("DELETE", f"{ORG}/audit/stream", P.ORG_SECURITY, also=frozenset({409})),
+    Row("POST", f"{ORG}/audit/stream/rotate-secret", P.ORG_SECURITY, also=frozenset({409})),
+    Row("POST", f"{ORG}/audit/stream/test", P.ORG_SECURITY, also=frozenset({409})),
     Row("DELETE", PRJ, P.PROJECT_DELETE),
     Row("DELETE", f"{PRJ}/keys/{{key_id}}", P.KEY_REVOKE_OWN),
 )

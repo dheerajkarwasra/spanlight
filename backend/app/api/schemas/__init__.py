@@ -115,6 +115,11 @@ from app.api.schemas.keys import ApiKeyCreatedOut, ApiKeyCreateIn, ApiKeyOut
 from app.api.schemas.metrics import KpisOut, ModelMetricsOut, OverviewOut, TimeseriesPointOut
 from app.api.schemas.orgs import (
     AuditEventOut,
+    AuditIntegrityOut,
+    AuditStreamIn,
+    AuditStreamOut,
+    AuditStreamSavedOut,
+    AuditStreamTestOut,
     InviteAcceptIn,
     InviteCreatedOut,
     InviteCreateIn,
@@ -201,6 +206,11 @@ __all__ = [
     "AttributionTotalsOut",
     "AttributionWindowOut",
     "AuditEventOut",
+    "AuditIntegrityOut",
+    "AuditStreamIn",
+    "AuditStreamOut",
+    "AuditStreamSavedOut",
+    "AuditStreamTestOut",
     "BillingSourceCreate",
     "BillingSourceOut",
     "BillingSourceRotateIn",

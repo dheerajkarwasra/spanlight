@@ -196,6 +196,10 @@ class Settings(BaseSettings):
     # routes stay and a manual refresh answers 409 NOT_CONFIGURED.
     billing_sources_enabled: bool = True
 
+    # Audit log. Events older than `audit_retention_days` are deleted by the hourly retention job;
+    # 0 keeps every event. 365 is the 12 months PCI DSS 10.5.1 asks for.
+    audit_retention_days: int = Field(default=365, ge=0)
+
     # Attribution. `attribution_enabled` schedules the attribution refresh (every 15 minutes),
     # which rebuilds the daily rollups the attribution view reads over windows longer than a
     # day; off, those windows go stale while windows of 24 hours or less stay live.
@@ -280,6 +284,7 @@ class Settings(BaseSettings):
         "review_selection_enabled",
         "replay_monthly_budget_usd",
         "billing_sources_enabled",
+        "audit_retention_days",
         "otel_service_name",
         "attribution_enabled",
         mode="before",

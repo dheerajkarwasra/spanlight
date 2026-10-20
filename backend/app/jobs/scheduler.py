@@ -78,6 +78,9 @@ SAMPLE_FOR_EVALUATION = PeriodicJob("sample_for_evaluation", timedelta(seconds=6
 # Recomputes the last three days of daily cost rollups. Always scheduled: the reconciliation
 # report and its billing sources read them. A single attempt: the next pass is the retry.
 ROLLUP_COST_DAILY = PeriodicJob("rollup_cost_daily", timedelta(minutes=15), max_attempts=1)
+# Sends each enabled audit stream what it has pending. A single attempt: a stream that failed
+# keeps its place and backs off on its own, and the next pass a minute later is the retry.
+DELIVER_AUDIT_STREAMS = PeriodicJob("deliver_audit_streams", timedelta(seconds=60), max_attempts=1)
 # Recomputes the last eight days of daily cost rollups once a UTC day, runnable from 02:30 UTC,
 # so a span that arrives up to a week late is still counted. A single attempt, like the 15-minute
 # pass, which keeps the last three days current meanwhile.
@@ -130,6 +133,7 @@ def periodic_jobs(settings: Settings) -> list[PeriodicJob]:
         SAMPLE_FOR_EVALUATION,
         ROLLUP_COST_DAILY,
         ROLLUP_COST_DAILY_DEEP,
+        DELIVER_AUDIT_STREAMS,
     ]
     if settings.is_demo_enabled:
         jobs.append(DEMO_TRAFFIC)

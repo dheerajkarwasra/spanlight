@@ -5,7 +5,18 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, LargeBinary, Text, func, text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    FetchedValue,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import CITEXT, INET, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -104,6 +115,26 @@ class AuditAction(enum.StrEnum):
     REVIEW_POLICY_DELETE = "review_policy.delete"
     REVIEW_POLICY_RUN = "review_policy.run"
     REPLAY_RUN = "replay.run"
+    USER_LOGIN = "user.login"
+    USER_LOGOUT = "user.logout"
+    USER_SESSION_REVOKE = "user.session_revoke"
+    TOKEN_CREATE = "token.create"  # noqa: S105 - an action name
+    TOKEN_REVOKE = "token.revoke"  # noqa: S105 - an action name
+    EXPORT_CREATE = "export.create"
+    AUDIT_EXPORT = "audit.export"
+    ACCESS_DENIED = "access.denied"
+    AUDIT_STREAM_CREATE = "audit_stream.create"
+    AUDIT_STREAM_UPDATE = "audit_stream.update"
+    AUDIT_STREAM_DELETE = "audit_stream.delete"
+    AUDIT_STREAM_ROTATE_SECRET = "audit_stream.rotate_secret"  # noqa: S105 - an action name
+    AUDIT_STREAM_TEST = "audit_stream.test"
+
+
+class AuditActorType(enum.StrEnum):
+    USER = "user"  # a signed-in person
+    TOKEN = "token"  # noqa: S105 - a person through a personal access token
+    SYSTEM = "system"  # the app itself
+    CLI = "cli"  # an operator's admin command
 
 
 class User(Base):
@@ -213,9 +244,9 @@ class AuditEvent(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, default=new_id)
     org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"))
-    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL")
-    )
+    # No foreign key (migration 1014): the event keeps the id after the user is deleted, and a
+    # cascade would rewrite a hashed column.
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID)
     action: Mapped[str] = mapped_column(Text)
     target_type: Mapped[str] = mapped_column(Text)
     target_id: Mapped[str] = mapped_column(Text)
@@ -224,3 +255,47 @@ class AuditEvent(Base):
         "metadata", JSONB, server_default=text("'{}'::jsonb")
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Migration 1013. NULL on earlier rows means not known; no foreign keys on the two ids, so an
+    # event outlives the token and the project it names.
+    actor_type: Mapped[str | None] = mapped_column(Text)
+    credential_id: Mapped[uuid.UUID | None] = mapped_column(UUID)
+    actor_email: Mapped[str | None] = mapped_column(Text)
+    project_id: Mapped[uuid.UUID | None] = mapped_column(UUID)
+    outcome: Mapped[str] = mapped_column(Text, server_default=text("'success'"))
+    reason: Mapped[str | None] = mapped_column(Text)
+    user_agent: Mapped[str | None] = mapped_column(Text)
+    request_id: Mapped[str | None] = mapped_column(Text)
+    # The org's hash chain (migration 1014), filled by the `audit_events_chain` trigger: never
+    # set by the app. NULL only on a row the trigger did not see.
+    seq: Mapped[int | None] = mapped_column(BigInteger, server_default=FetchedValue())
+    prev_hash: Mapped[bytes | None] = mapped_column(LargeBinary, server_default=FetchedValue())
+    row_hash: Mapped[bytes | None] = mapped_column(LargeBinary, server_default=FetchedValue())
+
+
+class AuditStream(Base):
+    """Where an organization's audit events are pushed: one HTTPS endpoint, signed like webhooks.
+
+    Org-scoped and not under row-level security, like alert channels. The signing secret is
+    sealed with `app.core.crypto` (`secret_enc` + `secret_key_id`). `delivered_seq` is the last
+    event `seq` the receiver accepted; the worker sends what follows it, in order.
+    """
+
+    __tablename__ = "audit_streams"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
+    )
+    url: Mapped[str] = mapped_column(Text)
+    secret_enc: Mapped[bytes] = mapped_column(LargeBinary)
+    secret_key_id: Mapped[str] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    delivered_seq: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
+    last_delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consecutive_failures: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

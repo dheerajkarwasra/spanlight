@@ -44,7 +44,15 @@ from app.config import get_settings
 from app.core.crypto import CryptoNotConfigured
 from app.core.security import MIN_PASSWORD_LENGTH, hash_password
 from app.db.migrations import upgrade_to_head
-from app.db.models import AuditAction, Membership, MembershipRole, Organization, Project, User
+from app.db.models import (
+    AuditAction,
+    AuditActorType,
+    Membership,
+    MembershipRole,
+    Organization,
+    Project,
+    User,
+)
 from app.db.roles import ensure_app_role
 from app.db.session import create_engine, create_session_factory
 from app.ee.license import LicenseError, parse_license
@@ -54,7 +62,7 @@ from app.pricing.prices import PRICING_VERSION
 from app.rollups.compute import backfill_rollups
 from app.rollups.jobs import MAX_BACKFILL_DAYS
 from app.rollups.usage_rollup_cli import BatchSizeOption, SinceOption, recompute_usage_rollups
-from app.services.audit import record_audit
+from app.services.audit import ChainCheck, check_audit_chain, record_audit
 from app.services.credentials import replace_password
 from app.storage.object_store import ObjectStore, get_object_store
 
@@ -125,6 +133,7 @@ def create_user(
                 db,
                 org_id=organization.id,
                 actor_user_id=None,
+                actor_type=AuditActorType.CLI,
                 action=AuditAction.MEMBER_ADD,
                 target_type="user",
                 target_id=user.id,
@@ -155,6 +164,7 @@ def reset_password(email: EmailOption) -> None:
                 db,
                 org_id=org_id,
                 actor_user_id=None,
+                actor_type=AuditActorType.CLI,
                 action=AuditAction.USER_PASSWORD_RESET,
                 target_type="user",
                 target_id=user.id,
@@ -192,6 +202,7 @@ def reset_two_factor(email: EmailOption) -> None:
                 db,
                 org_id=org_id,
                 actor_user_id=None,
+                actor_type=AuditActorType.CLI,
                 action=AuditAction.USER_TOTP_DISABLE,
                 target_type="user",
                 target_id=user.id,
@@ -257,6 +268,44 @@ def reseal_credentials_command() -> None:
             f"{result.remaining} provider credentials or billing sources are still sealed under "
             "an older key; keep every key in CREDENTIALS_KEYS and run the command again."
         )
+
+
+@app.command("audit-verify")
+def audit_verify(
+    org: Annotated[
+        str | None, typer.Option(help="Org slug; every organization when left out.")
+    ] = None,
+) -> None:
+    """Recompute each organization's audit hash chain and report where it breaks.
+
+    Exits 1 when any chain is broken. Note each head hash somewhere else: a later run whose head
+    no longer reaches it means recent events were removed.
+    """
+
+    async def operation(db: AsyncSession) -> list[tuple[str, ChainCheck]]:
+        query = select(Organization.id, Organization.slug).order_by(Organization.slug)
+        if org is not None:
+            query = query.where(Organization.slug == org)
+        rows = (await db.execute(query)).all()
+        if org is not None and not rows:
+            raise typer.BadParameter(f"no organization with slug {org!r}", param_hint="--org")
+        return [(slug, await check_audit_chain(db, org_id)) for org_id, slug in rows]
+
+    broken = False
+    for slug, check in _run(operation):
+        if check.checked == 0:
+            typer.echo(f"{slug}: no events")
+        elif check.ok:
+            head = check.head_hash.hex() if check.head_hash else "-"
+            typer.echo(
+                f"{slug}: ok, {check.checked} events (seq {check.first_seq}-{check.head_seq}), "
+                f"head {head}"
+            )
+        else:
+            broken = True
+            typer.echo(f"{slug}: BROKEN at seq {check.first_broken_seq}", err=True)
+    if broken:
+        raise typer.Exit(code=1)
 
 
 @app.command("migrate")

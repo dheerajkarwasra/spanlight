@@ -56,9 +56,12 @@ from app.db.models import (
 )
 from app.exports.audit import (
     MAX_AUDIT_EXPORT_ROWS,
+    AuditFileFormat,
+    AuditFilters,
     AuditQuery,
+    audit_event_out,
     count_events_up_to,
-    stream_audit_csv,
+    stream_audit_file,
     too_large,
 )
 from app.services.audit import record_audit
@@ -558,19 +561,7 @@ async def list_audit_events(
 
     rows = (await db.execute(query)).all()
     page = rows[:limit]
-    items = [
-        AuditEventOut(
-            id=event.id,
-            action=event.action,
-            actor=UserOut.model_validate(user) if user else None,
-            target_type=event.target_type,
-            target_id=event.target_id,
-            metadata=event.metadata_,
-            ip=str(event.ip) if event.ip else None,
-            created_at=event.created_at,
-        )
-        for event, user in page
-    ]
+    items = [audit_event_out(event, user) for event, user in page]
     next_cursor = None
     if len(rows) > limit:
         last_event = page[-1][0]
@@ -598,18 +589,67 @@ async def export_audit_csv(
 
     A log with more than 50 000 matching events is refused before anything is sent.
     """
-    audited_org_id = access.org.id  # read now: the rollback below expires loaded objects
+    return await _export_audit(request, access, db, filters, "csv")
+
+
+@router.get(
+    "/orgs/{org_id}/audit/export.jsonl",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "content": {"application/x-ndjson": {}},
+            "description": "The audit log as JSON Lines: one `AuditEventOut` per line.",
+        },
+        422: {"description": "More than 50 000 events match (`EXPORT_TOO_LARGE`)."},
+    },
+    summary="Download the audit log as JSON Lines",
+)
+async def export_audit_jsonl(
+    org_id: uuid.UUID,
+    request: Request,
+    access: AuditReader,
+    db: DbSession,
+    filters: AuditQuery,
+) -> StreamingResponse:
+    """The audit log, filtered like `GET /orgs/{org_id}/audit`, one event object per line
+    (newest first), for log tools. A log with more than 50 000 matching events is refused."""
+    return await _export_audit(request, access, db, filters, "jsonl")
+
+
+_AUDIT_MEDIA_TYPES: dict[AuditFileFormat, str] = {
+    "csv": "text/csv; charset=utf-8",
+    "jsonl": "application/x-ndjson",
+}
+
+
+async def _export_audit(
+    request: Request,
+    access: Access,
+    db: DbSession,
+    filters: AuditFilters,
+    file_format: AuditFileFormat,
+) -> StreamingResponse:
+    audited_org_id = access.org.id  # read now: the commit below expires loaded objects
     if await count_events_up_to(db, audited_org_id, filters, MAX_AUDIT_EXPORT_ROWS) > (
         MAX_AUDIT_EXPORT_ROWS
     ):
         raise too_large()
-    # Hand the connection back now: the body is read with sessions of its own and can take a
-    # while to send, which must not hold a pooled connection.
-    await db.rollback()
-    filename = f"audit-log-{utcnow():%Y%m%d}.csv"
+    await record_audit(
+        db,
+        org_id=audited_org_id,
+        actor_user_id=access.user_id,
+        action=AuditAction.AUDIT_EXPORT,
+        target_type="org",
+        target_id=audited_org_id,
+        metadata={"format": file_format, "filters": filters.as_metadata()},
+    )
+    # The commit also hands the connection back now: the body is read with sessions of its own
+    # and can take a while to send, which must not hold a pooled connection.
+    await db.commit()
+    filename = f"audit-log-{utcnow():%Y%m%d}.{file_format}"
     return StreamingResponse(
-        stream_audit_csv(request.app.state.session_factory, audited_org_id, filters),
-        media_type="text/csv; charset=utf-8",
+        stream_audit_file(request.app.state.session_factory, audited_org_id, filters, file_format),
+        media_type=_AUDIT_MEDIA_TYPES[file_format],
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
             "Cache-Control": "no-store",

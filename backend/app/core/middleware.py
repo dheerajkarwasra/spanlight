@@ -10,7 +10,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.errors import problem_response
 from app.core.observability import HTTP_LATENCY, HTTP_REQUESTS
-from app.core.request_context import set_request_id
+from app.core.request_context import AuditContext, set_audit_context, set_request_id
 from app.core.security import is_bearer
 
 REQUEST_ID_HEADER = "x-request-id"
@@ -70,6 +70,14 @@ class RequestContextMiddleware:
             incoming if incoming and _VALID_REQUEST_ID.match(incoming) else uuid.uuid4().hex
         )
         set_request_id(request_id)
+        client = scope.get("client")
+        user_agent = _header(scope, "user-agent")
+        set_audit_context(
+            AuditContext(
+                ip=client[0] if client else None,
+                user_agent=user_agent[:512] if user_agent else None,
+            )
+        )
         started = time.perf_counter()
         status_code = 500
 

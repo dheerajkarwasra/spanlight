@@ -43,6 +43,11 @@ Route = tuple[str, str]
 WRITE_GUARDED: set[Route] = {
     ("PATCH", "/api/v1/orgs/{org_id}"),
     ("DELETE", "/api/v1/orgs/{org_id}"),
+    # The audit stream: where the organization's audit trail is sent.
+    ("PUT", "/api/v1/orgs/{org_id}/audit/stream"),
+    ("DELETE", "/api/v1/orgs/{org_id}/audit/stream"),
+    ("POST", "/api/v1/orgs/{org_id}/audit/stream/rotate-secret"),
+    ("POST", "/api/v1/orgs/{org_id}/audit/stream/test"),
     ("PATCH", "/api/v1/orgs/{org_id}/members/{user_id}"),
     ("DELETE", "/api/v1/orgs/{org_id}/members/{user_id}"),
     ("GET", "/api/v1/orgs/{org_id}/invites"),

@@ -44,7 +44,8 @@ from app.core.errors import (
 )
 from app.core.security import mark_uncacheable
 from app.core.throttle import check_and_record
-from app.db.models import LoginAttempt, User
+from app.db.models import AuditAction, LoginAttempt, User
+from app.services.audit import record_user_audit_in_each_org
 from app.services.demo import is_demo_user
 from app.services.sessions import create_session
 
@@ -238,6 +239,15 @@ async def totp_verify(
     except CryptoNotConfigured:
         raise not_configured(NEEDS_KEYS) from None
     db.add(LoginAttempt(email=user.email, ip=ip, succeeded=accepted, created_at=now))
+    await record_user_audit_in_each_org(
+        db,
+        user_id=user.id,
+        action=AuditAction.USER_LOGIN,
+        ip=ip,
+        metadata={"method": "totp"},
+        outcome="success" if accepted else "failure",
+        reason=None if accepted else "invalid_totp",
+    )
     if not accepted:
         await db.commit()
         logger.warning("totp_code_rejected", user_id=str(user.id))

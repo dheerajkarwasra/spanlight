@@ -286,6 +286,7 @@ async def test_scheduler_dedupes_per_period(
     assert sorted(first) == [
         "backup_database",
         "cleanup_sessions",
+        "deliver_audit_streams",
         "deliver_notifications",
         "demo_traffic",
         "evaluate_alerts",
@@ -308,6 +309,7 @@ async def test_scheduler_dedupes_per_period(
     # Five minutes on (13:15): new periods for the 30-second, 1-minute, 5-minute and 15-minute
     # jobs; the hourly, daily, weekly and 30-minute jobs are already queued.
     assert sorted(again) == [
+        "deliver_audit_streams",
         "deliver_notifications",
         "evaluate_alerts",
         "poll_provider_status",
@@ -320,6 +322,7 @@ async def test_scheduler_dedupes_per_period(
     ]
     # At 13:35 a new 30-minute period for demo traffic too.
     assert sorted(later) == [
+        "deliver_audit_streams",
         "deliver_notifications",
         "demo_traffic",
         "evaluate_alerts",

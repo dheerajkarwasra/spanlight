@@ -40,6 +40,7 @@ from app.provider_status.retention import apply_provider_incident_retention
 from app.reconciliation.retention import apply_billing_retention
 from app.rollups.compute import floor_hour
 from app.rollups.retention import delete_hourly_rollups
+from app.services.audit import purge_audit_events
 
 logger = structlog.get_logger(__name__)
 
@@ -54,6 +55,9 @@ async def run_retention(context: TaskContext, _: dict[str, Any]) -> None:
     evals = await apply_eval_retention(context.session_factory, now=now)
     lines, fetch_runs = await apply_billing_retention(context.session_factory, now=now)
     incidents = await apply_provider_incident_retention(context.session_factory, now=now)
+    audit_events = await apply_audit_retention(
+        context.session_factory, now=now, days=context.settings.audit_retention_days
+    )
     logger.info(
         "retention_applied",
         traces_deleted=deleted,
@@ -68,7 +72,26 @@ async def run_retention(context: TaskContext, _: dict[str, Any]) -> None:
         provider_lines_deleted=lines,
         fetch_runs_deleted=fetch_runs,
         provider_incidents_deleted=incidents,
+        audit_events_deleted=audit_events,
     )
+
+
+async def apply_audit_retention(
+    session_factory: async_sessionmaker[AsyncSession], *, now: datetime, days: int
+) -> int:
+    """Delete audit events older than `days` (0 keeps them all), one transaction per batch."""
+    if days == 0:
+        return 0
+    total = 0
+    while True:
+        async with session_factory() as db:
+            deleted = await purge_audit_events(
+                db, before=now - timedelta(days=days), batch_size=BATCH_SIZE
+            )
+            await db.commit()
+        total += deleted
+        if deleted < BATCH_SIZE:
+            return total
 
 
 async def apply_retention(

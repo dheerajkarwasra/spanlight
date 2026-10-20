@@ -42,7 +42,7 @@ def back_to_head(app_database_url: str) -> Iterator[None]:
 
 
 def _assert_at_head(database_url: str) -> None:
-    assert probe.current_revision(database_url) == "1012" == head_revision()
+    assert probe.current_revision(database_url) == head_revision()
     items = probe.columns(database_url, "experiment_items")
     assert {name: items.get(name) for name in COPY_COLUMNS} == COPY_COLUMNS
     assert probe.columns(database_url, "datasets")["locked_at"][:2] == ("timestamptz", "YES")

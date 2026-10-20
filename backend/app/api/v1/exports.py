@@ -18,6 +18,7 @@ from app.core.idempotency import idempotent
 from app.core.pagination import DEFAULT_PAGE_SIZE, PageLimit
 from app.core.permissions import Permission
 from app.core.security import mark_uncacheable
+from app.db.models import AuditAction
 from app.exports.schemas import ExportCreateIn, ExportOut
 from app.exports.service import (
     create_export,
@@ -26,6 +27,7 @@ from app.exports.service import (
     list_exports,
     require_object_store,
 )
+from app.services.audit import record_audit
 from app.storage.object_store import get_object_store
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["exports"])
@@ -61,6 +63,15 @@ async def create_trace_export(
     project = access.require_project()
     store = require_object_store(settings)
     export = await create_export(db, project=project, user_id=access.user_id, body=body)
+    await record_audit(
+        db,
+        org_id=project.org_id,
+        actor_user_id=access.user_id,
+        action=AuditAction.EXPORT_CREATE,
+        target_type="export",
+        target_id=export.id,
+        metadata=body.model_dump(mode="json", by_alias=True),
+    )
     await db.commit()
     return export_out(export, store)
 

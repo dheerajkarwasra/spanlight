@@ -31,6 +31,7 @@ from app.reconciliation.runs import FETCH_SOURCE_JOB
 from app.review.job_keys import SELECT_JOB, SELECT_PROJECT_JOB
 from app.review.jobs import run_select_for_review, run_select_for_review_project
 from app.rollups.jobs import run_rollup_hourly
+from app.services.audit_stream import run_deliver_audit_streams
 
 TASKS: dict[str, TaskHandler] = {
     "retention": run_retention,
@@ -60,4 +61,5 @@ TASKS: dict[str, TaskHandler] = {
     "refresh_attribution": run_refresh_attribution,
     SELECT_JOB: run_select_for_review,
     SELECT_PROJECT_JOB: run_select_for_review_project,
+    "deliver_audit_streams": run_deliver_audit_streams,
 }

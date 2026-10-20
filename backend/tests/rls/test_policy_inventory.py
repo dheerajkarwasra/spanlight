@@ -16,6 +16,8 @@ EXCEPTIONS = {
     "api_keys",
     # org-scoped mapping read only through its source's org_id; holds no telemetry (Bet 1 §6.5)
     "billing_source_projects",
+    # org-scoped log; `project_id` is a filter, read only through the org `require()` resolved
+    "audit_events",
 }
 
 # Tables without a `project_id` of their own, isolated through their parent's policy.

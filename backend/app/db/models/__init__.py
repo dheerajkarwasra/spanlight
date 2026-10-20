@@ -64,7 +64,9 @@ from app.db.models.gateway import (
 )
 from app.db.models.identity import (
     AuditAction,
+    AuditActorType,
     AuditEvent,
+    AuditStream,
     Invite,
     LoginAttempt,
     Membership,
@@ -109,7 +111,9 @@ __all__ = [
     "ApiKey",
     "AttributionRollupDaily",
     "AuditAction",
+    "AuditActorType",
     "AuditEvent",
+    "AuditStream",
     "Base",
     "BillingFetchRun",
     "BillingProvider",

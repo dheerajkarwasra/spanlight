@@ -48,6 +48,9 @@ def ensure_app_role(admin_url: str, role: str, password: str) -> None:
             "ALTER DEFAULT PRIVILEGES IN SCHEMA public "
             "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {role}",
             "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO {role}",
+            # The audit log is append-only (migration 1013's trigger); the app never edits a row.
+            # It keeps DELETE for the retention purge, which the trigger lets through.
+            "REVOKE UPDATE ON audit_events FROM {role}",
         ):
             connection.execute(
                 sql.SQL(statement).format(database=sql.Identifier(database), role=role_id)

@@ -34,6 +34,7 @@ from app.core.errors import (
 )
 from app.core.permissions import Permission, has, permission_class
 from app.core.ratelimit import API_READ_LIMITER, enforce_rate_limit
+from app.core.request_context import current_audit_context
 from app.core.scopes import KeyScope
 from app.core.security import (
     API_KEY_PREFIX,
@@ -45,6 +46,8 @@ from app.core.security import (
 )
 from app.db.models import (
     ApiKey,
+    AuditAction,
+    AuditActorType,
     Membership,
     MembershipRole,
     Organization,
@@ -52,6 +55,8 @@ from app.db.models import (
     Project,
     TokenScope,
 )
+from app.services.audit import record_audit
+from app.services.demo import is_demo_user
 from app.services.sessions import resolve_session
 
 SESSION_COOKIE = "spl_session"
@@ -277,12 +282,32 @@ async def current_principal(request: Request, db: DbSession, settings: SettingsD
     signed-in browser is not limited here, and neither are writes, which are bounded by what the
     credential is allowed to change.
     """
+    principal: Principal
     if is_bearer(request.headers.get("authorization")):
         principal = await authenticate_bearer(request, db)
         if request.method in _READ_METHODS:
             await _limit_bearer_read(request, principal)
-        return principal
-    return await authenticate_session(request, db, settings)
+    else:
+        principal = await authenticate_session(request, db, settings)
+    _note_audit_actor(principal)
+    return principal
+
+
+def _note_audit_actor(principal: Principal) -> None:
+    """Tell the audit log who is acting (see `app.core.request_context.AuditContext`)."""
+    context = current_audit_context()
+    if context is None or isinstance(principal, ApiKeyPrincipal):
+        return
+    if is_demo_user(principal.user):
+        # Every visitor is this one account: their addresses stay out of the demo org's log.
+        context.ip = context.user_agent = None
+    context.user_id = principal.user.id
+    context.user_email = principal.user.email
+    if isinstance(principal, TokenPrincipal):
+        context.actor_type = AuditActorType.TOKEN.value
+        context.credential_id = principal.token_id
+    else:
+        context.actor_type = AuditActorType.USER.value
 
 
 async def _limit_bearer_read(request: Request, principal: ApiKeyPrincipal | TokenPrincipal) -> None:
@@ -501,6 +526,9 @@ async def _member_access(
         if row is None:
             raise not_found()
         project, org, role, _ = row
+        context = current_audit_context()
+        if context is not None:
+            context.project_id = project.id
     elif "org_id" in request.path_params:
         org_id = _path_uuid(request, "org_id")
         org_row = (
@@ -520,6 +548,7 @@ async def _member_access(
     if org.require_2fa and not auth.user.totp_enabled:
         # After membership (a stranger still gets 404) and before the permission check: the
         # fix is the same whatever the member tried, and `/auth/*` stays open to apply it.
+        await _audit_denied(request, auth, org, project, permission, "two_factor_required")
         raise ProblemError(
             403,
             "TWO_FACTOR_REQUIRED",
@@ -527,13 +556,52 @@ async def _member_access(
             "account security settings.",
         )
     if not has(role, permission):
+        await _audit_denied(request, auth, org, project, permission, "forbidden")
         raise forbidden()
     if (
         isinstance(auth, TokenPrincipal)
         and auth.scope is TokenScope.READ
         and (permission_class(permission) == "write" or request.method not in _SAFE_METHODS)
     ):
+        await _audit_denied(request, auth, org, project, permission, "token_scope")
         raise token_scope(
             "This access token is read-only. Create a token with the `write` scope to do this."
         )
     return Access(auth=auth, org=org, role=role, project=project)
+
+
+async def _audit_denied(
+    request: Request,
+    auth: UserPrincipal,
+    org: Organization,
+    project: Project | None,
+    permission: Permission,
+    reason: str,
+) -> None:
+    """Record a member's refused change: a role without the permission (`forbidden`), an org
+    that requires two-factor authentication (`two_factor_required`), or a read-only token
+    (`token_scope`). Reads are not recorded: the dashboard makes some a role may not on every
+    page load, and they change nothing. Neither is anything in a demo org.
+
+    Its own session, committed now: the request's transaction ends with the refusal.
+    """
+    if request.method not in _UNSAFE_METHODS or org.is_demo:
+        return
+    target_type, target_id = ("project", project.id) if project else ("org", org.id)
+    async with request.app.state.session_factory() as db:
+        await record_audit(
+            db,
+            org_id=org.id,
+            actor_user_id=auth.user.id,
+            action=AuditAction.ACCESS_DENIED,
+            target_type=target_type,
+            target_id=target_id,
+            outcome="failure",
+            reason=reason,
+            metadata={
+                "permission": permission.value,
+                "method": request.method,
+                "path": request.url.path,
+            },
+        )
+        await db.commit()

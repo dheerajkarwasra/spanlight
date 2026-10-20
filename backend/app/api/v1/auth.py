@@ -64,7 +64,16 @@ from app.core.security import (
     verify_password_async,
 )
 from app.core.throttle import check_and_record
-from app.db.models import EmailTokenKind, LoginAttempt, Membership, Organization, Session, User
+from app.db.models import (
+    AuditAction,
+    EmailTokenKind,
+    LoginAttempt,
+    Membership,
+    Organization,
+    Session,
+    User,
+)
+from app.services.audit import record_user_audit_in_each_org
 from app.services.credentials import LockedUser, lock_user_for_sign_in
 from app.services.demo import is_demo_user
 from app.services.sessions import create_session, revoke_other_sessions, revoke_session
@@ -219,6 +228,17 @@ async def login(
         password_ok = locked is not None and locked.has_password_hash(verified_hash)
     db.add(LoginAttempt(email=body.email, ip=ip, succeeded=password_ok, created_at=now))
     if user is None or locked is None or not password_ok:
+        if user is not None:
+            # An unknown address belongs to no org: it stays in `login_attempts` only.
+            await record_user_audit_in_each_org(
+                db,
+                user_id=user.id,
+                action=AuditAction.USER_LOGIN,
+                ip=ip,
+                metadata={"method": "password"},
+                outcome="failure",
+                reason="invalid_password",
+            )
         await db.commit()
         raise ProblemError(401, "INVALID_CREDENTIALS", INVALID_CREDENTIALS)
 
@@ -234,6 +254,9 @@ async def login(
     issued = await create_session(
         db, user.id, now=now, ip=ip, user_agent=request.headers.get("user-agent")
     )
+    await record_user_audit_in_each_org(
+        db, user_id=user.id, action=AuditAction.USER_LOGIN, ip=ip, metadata={"method": "password"}
+    )
     await db.commit()
     set_auth_cookies(
         response, settings, issued.token, max_age=issued.session.absolute_expires_at - now
@@ -244,6 +267,7 @@ async def login(
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(auth: CurrentSession, db: DbSession, settings: SettingsDep) -> Response:
     await revoke_session(db, auth.session.id)
+    await record_user_audit_in_each_org(db, user_id=auth.user.id, action=AuditAction.USER_LOGOUT)
     await db.commit()
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     clear_auth_cookies(response, settings)
@@ -339,6 +363,12 @@ async def delete_other_sessions(auth: CurrentSession, db: DbSession) -> None:
     """Sign out everywhere else: end every session of the user except the one making the call."""
     _refuse_demo_sessions(auth.user)
     ended = await revoke_other_sessions(db, auth.user.id, keep=auth.session.id)
+    await record_user_audit_in_each_org(
+        db,
+        user_id=auth.user.id,
+        action=AuditAction.USER_SESSION_REVOKE,
+        metadata={"count": ended, "kept_current": True},
+    )
     await db.commit()
     logger.info("sessions_revoked_others", user_id=str(auth.user.id), count=ended)
 
@@ -350,6 +380,13 @@ async def delete_session(session_id: uuid.UUID, auth: CurrentSession, db: DbSess
     if session is None or session.user_id != auth.user.id:
         raise not_found()
     await revoke_session(db, session.id)
+    await record_user_audit_in_each_org(
+        db,
+        user_id=auth.user.id,
+        action=AuditAction.USER_SESSION_REVOKE,
+        target_type="session",
+        target_id=session.id,
+    )
     await db.commit()
 
 
