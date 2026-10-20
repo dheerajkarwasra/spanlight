@@ -26,7 +26,14 @@ ARG DOCS_SITE_URL=
 ENV ASTRO_TELEMETRY_DISABLED=1 DOCS_SYNC_SKIP_TARGET_CHECK=1 DOCS_SITE_URL=$DOCS_SITE_URL
 WORKDIR /src/docs-site
 COPY docs-site/package.json docs-site/package-lock.json ./
-RUN npm ci
+# npm skips an optional dependency it fails to download, so Pagefind's binary for this platform
+# can be silently missing and the docs build fails much later (seen in CI on 2026-10-20). Check it
+# right after the install and retry once.
+RUN npm ci \
+    && PAGEFIND_BIN="@pagefind/$(node -p 'process.platform + "-" + process.arch')/package.json" \
+    && (node -e "require.resolve('$PAGEFIND_BIN')" 2>/dev/null \
+        || (echo "Pagefind binary missing after npm ci; retrying once" && rm -rf node_modules && npm ci)) \
+    && node -e "require.resolve('$PAGEFIND_BIN')"
 COPY CHANGELOG.md SECURITY.md /src/
 COPY backend/openapi.json /src/backend/openapi.json
 COPY backend/app/pricing/prices.py /src/backend/app/pricing/prices.py
