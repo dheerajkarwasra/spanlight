@@ -39,7 +39,8 @@ async def list_insights(
     if kind is not None:
         query = query.where(Insight.kind == kind)
     if trace_id is not None:
-        # Written so the planner can use the GIN index on `(evidence -> 'trace_ids')`.
+        # Runs on the project's insights: under row-level security `@>` (not leakproof) cannot
+        # use an index, so there is none on `evidence` (migration 1009).
         trace_ids = Insight.evidence.op("->")(text("'trace_ids'"))
         query = query.where(trace_ids.op("@>")(cast(func.json_build_array(trace_id), JSONB)))
     if after is not None:
