@@ -66,6 +66,7 @@ from app.exports.audit import (
 )
 from app.services.audit import record_audit
 from app.services.deletion import delete_organization, lock_organization
+from app.services.demo import is_demo_user
 from app.services.invites import check_invite_email_limit, enqueue_invite_email
 from app.services.slugs import RESERVED_ORG_SLUGS, slugify, with_random_suffix
 
@@ -85,6 +86,9 @@ OrgDeleter = Annotated[Access, Depends(require(Permission.ORG_DELETE))]
 async def create_org(
     body: OrgCreateIn, request: Request, auth: CurrentSession, db: DbSession
 ) -> Organization:
+    if is_demo_user(auth.user):
+        # Every visitor is this one user: an org made here would be owned by all of them.
+        raise forbidden("The demo account cannot create organizations.")
     org = await _insert_org(db, body.name)
     db.add(Membership(org_id=org.id, user_id=auth.user.id, role=MembershipRole.OWNER))
     await record_audit(
@@ -498,6 +502,9 @@ async def preview_invite(
 async def accept_invite(
     body: InviteAcceptIn, request: Request, auth: CurrentSession, db: DbSession
 ) -> MembershipOut:
+    if is_demo_user(auth.user):
+        # Joining would open the org to every demo visitor, not to the person invited.
+        raise forbidden("The demo account cannot accept invites.")
     now = utcnow()
     invite = await db.scalar(
         select(Invite).where(Invite.token_hash == token_digest(body.token)).with_for_update()
