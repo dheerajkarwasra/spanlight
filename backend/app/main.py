@@ -108,7 +108,7 @@ def create_app(
     app = FastAPI(
         title="Spanlight API",
         version="0.1.0",
-        docs_url="/api/docs",
+        docs_url="/api/docs" if settings.is_api_docs_enabled else None,
         redoc_url=None,
         openapi_url="/api/openapi.json",
         lifespan=lifespan,

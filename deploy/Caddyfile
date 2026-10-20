@@ -27,9 +27,10 @@
 
 	# Three Content-Security-Policy variants; every response gets exactly one of them.
 	# FastAPI's Swagger UI loads its bundle from jsDelivr and boots with an inline script, so
-	# /api/docs gets its own policy.
+	# /api/docs gets its own policy, limited to the swagger-ui-dist package (not all of jsDelivr).
+	# The api serves the page only when API_DOCS allows it: by default not over https.
 	@apiDocs path /api/docs
-	header @apiDocs Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https://fastapi.tiangolo.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+	header @apiDocs Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/; img-src 'self' data: https://fastapi.tiangolo.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 	# The documentation site under /docs/ is static, with a few inline scripts (theme switch, copy
 	# buttons, search). Its policy is the strict one plus those scripts by SHA-256 hash and
 	# 'wasm-unsafe-eval' for the search index. The snippet is generated from the built pages

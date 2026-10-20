@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     allowed_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
     secret_key: SecretStr = SecretStr(DEV_SECRET_KEY)
     metrics_token: SecretStr | None = None
+    # Swagger UI at /api/docs loads its script from a CDN onto the app's origin. Unset: on for
+    # http (local development), off for https. /api/openapi.json is served either way.
+    api_docs: bool | None = None
     # "<key_id>:<base64 of 32 bytes>[,<key_id>:<base64>...]"; the first entry encrypts new data.
     # Blank leaves application-level encryption off (see app/core/crypto.py).
     credentials_keys: SecretStr | None = None
@@ -218,6 +221,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "metrics_token",
+        "api_docs",
         "worker_metrics_port",
         "gateway_org_rpm_ceiling",
         "anthropic_api_key",
@@ -415,6 +419,10 @@ class Settings(BaseSettings):
         if self.demo_enabled is None:
             return self.anthropic_api_key is not None
         return self.demo_enabled
+
+    @property
+    def is_api_docs_enabled(self) -> bool:
+        return not self.secure_cookies if self.api_docs is None else self.api_docs
 
     @property
     def is_crypto_configured(self) -> bool:
