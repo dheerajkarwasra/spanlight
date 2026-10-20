@@ -8,12 +8,13 @@ import { UnknownValue } from "@/components/unknown-value";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent } from "@/components/ui/dialog";
 import {
+  AlsoInNote,
   DatasetSelect,
   datasetErrorMessage,
   rejectionLabel,
   useDatasetOption,
 } from "@/features/datasets";
-import type { QueueItem, TraceDetail } from "@/lib/api";
+import type { QueueItem, TraceDetail, TracesAdded } from "@/lib/api";
 
 import { reasonLabel } from "./reason-copy";
 import { useSaveFromReview } from "./review-queries";
@@ -76,8 +77,14 @@ interface SaveFormProps {
 function SaveForm({ item, trace, source, onDone }: SaveFormProps) {
   const [datasetId, setDatasetId] = useState("");
   // An item copied into this dataset whose `metadata.review` write failed: a retry only marks it.
-  const [copied, setCopied] = useState<{ datasetId: string; itemId: string } | null>(null);
+  const [copied, setCopied] = useState<{
+    datasetId: string;
+    itemId: string;
+    alsoIn: TracesAdded["also_in"];
+  } | null>(null);
   const [rejection, setRejection] = useState<string | null>(null);
+  // Saved, but other datasets already hold the trace: the dialog stays open to say so.
+  const [alsoIn, setAlsoIn] = useState<TracesAdded["also_in"] | null>(null);
   const save = useSaveFromReview();
   const dataset = useDatasetOption(datasetId);
   const choice = saveSpanOf(item, trace);
@@ -97,12 +104,18 @@ function SaveForm({ item, trace, source, onDone }: SaveFormProps) {
           reason,
           failure_category: source.failureCategory,
         }),
-        onCopied: (itemId) => setCopied({ datasetId, itemId }),
+        onCopied: (itemId, others) => setCopied({ datasetId, itemId, alsoIn: others }),
       },
       {
-        onSuccess: (rejected) => {
-          if (rejected !== null) {
-            setRejection(rejectionLabel(rejected));
+        onSuccess: (result) => {
+          if (result.rejected !== null) {
+            setRejection(rejectionLabel(result.rejected));
+            return;
+          }
+          // A retry only marks the earlier copy; the duplicate warning is that copy's.
+          const others = copied?.datasetId === datasetId ? copied.alsoIn : result.alsoIn;
+          if (others.length > 0) {
+            setAlsoIn(others);
             return;
           }
           toast.success(`Saved to “${dataset?.name ?? "the dataset"}”. ${RECORDED_NOTE}`);
@@ -119,7 +132,11 @@ function SaveForm({ item, trace, source, onDone }: SaveFormProps) {
         description="Copies this trace's stored input and output into a dataset, with why it was kept."
         showClose={save.isPending ? "disabled" : true}
       />
-      <DatasetSelect value={datasetId} onChange={setDatasetId} />
+      {alsoIn ? (
+        <AlsoInNote accepted={1} rejected={0} alsoIn={alsoIn} />
+      ) : (
+        <DatasetSelect value={datasetId} onChange={setDatasetId} />
+      )}
       {choice === null ? (
         <Notice tone="danger" role="alert">
           Nothing to save: this trace has no LLM span.
@@ -157,21 +174,29 @@ function SaveForm({ item, trace, source, onDone }: SaveFormProps) {
         {RECORDED_NOTE}
       </p>
       <div className="flex justify-end gap-2.5">
-        <DialogClose asChild>
-          <Button variant="ghost" disabled={save.isPending}>
-            Cancel
+        {alsoIn ? (
+          <Button variant="primary" autoFocus onClick={onDone}>
+            Done
           </Button>
-        </DialogClose>
-        <Button
-          variant="primary"
-          disabled={!datasetId || choice === null}
-          loading={save.isPending}
-          onClick={() => {
-            if (choice !== null) submit(choice.span);
-          }}
-        >
-          Save item
-        </Button>
+        ) : (
+          <>
+            <DialogClose asChild>
+              <Button variant="ghost" disabled={save.isPending}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              variant="primary"
+              disabled={!datasetId || choice === null}
+              loading={save.isPending}
+              onClick={() => {
+                if (choice !== null) submit(choice.span);
+              }}
+            >
+              Save item
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );

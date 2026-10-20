@@ -13,6 +13,7 @@ import type { Dataset } from "@/lib/api";
 import { formatInteger, pluralize } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+import { LockedBadge } from "./dataset-header";
 import { useDatasetListQuery } from "./dataset-queries";
 
 const ROW_GRID =
@@ -127,7 +128,10 @@ function DatasetRow({ dataset }: { dataset: Dataset }) {
       )}
     >
       <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="truncate text-sm font-semibold text-foreground">{dataset.name}</span>
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-semibold text-foreground">{dataset.name}</span>
+          {dataset.locked_at !== null ? <LockedBadge /> : null}
+        </span>
         {dataset.description ? (
           <span className="truncate text-xs font-medium text-muted-foreground">
             {dataset.description}

@@ -104,6 +104,26 @@ export function useDeleteDataset() {
   });
 }
 
+/** Locks the dataset against item edits; needs `datasets:lock` (admin). */
+export function useLockDataset(datasetId: string) {
+  const { projectId } = useProjectParams();
+  const invalidate = useInvalidateDatasets();
+  return useMutation({
+    mutationFn: () => datasetsApi.lock(projectId, datasetId),
+    onSuccess: invalidate,
+  });
+}
+
+/** Unlocks the dataset so items can be edited again; needs `datasets:lock` (admin). */
+export function useUnlockDataset(datasetId: string) {
+  const { projectId } = useProjectParams();
+  const invalidate = useInvalidateDatasets();
+  return useMutation({
+    mutationFn: () => datasetsApi.unlock(projectId, datasetId),
+    onSuccess: invalidate,
+  });
+}
+
 export function useAddItems(datasetId: string) {
   const { projectId } = useProjectParams();
   const invalidate = useInvalidateDatasets();

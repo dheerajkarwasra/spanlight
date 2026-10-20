@@ -144,6 +144,12 @@ export interface ExperimentItem {
   error: string | null;
   /** Scoring broke (the answer and its cost are kept); its scores are then absent. */
   evaluator_error: string | null;
+  /** The run's copy of the dataset item; all three are null on runs made before copies were kept. */
+  input: unknown;
+  expected_output: unknown;
+  item_metadata: Record<string, unknown> | null;
+  /** The item's 1-based place in the run. */
+  position: number;
   created_at: string;
 }
 
@@ -158,6 +164,16 @@ export interface CompareItemSide {
 
 export interface ItemDelta {
   dataset_item_id: string;
+  /** The item's 1-based place in run a, else in run b. */
+  position: number;
+  /** Run a's copy of the item, else run b's; null when neither run kept one. */
+  input: unknown;
+  expected_output: unknown;
+  /**
+   * True when the item was edited between the runs (the pair is then left out of the aggregate);
+   * null when either run kept no copy.
+   */
+  changed: boolean | null;
   /** Null when the item is not in run a (or b). */
   a: CompareItemSide | null;
   b: CompareItemSide | null;
@@ -208,6 +224,8 @@ export interface RunComparison {
   /** `b - a`; null when either side is unknown. */
   cost_delta_usd: string | null;
   latency_p95_delta_ms: number | null;
+  /** Pairs whose item was edited between the runs; they are left out of the aggregate. */
+  changed_items: number;
 }
 
 export interface ExperimentListQuery {

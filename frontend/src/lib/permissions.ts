@@ -25,6 +25,7 @@ export type Permission =
   | "annotations:write"
   | "prompts:write"
   | "datasets:write"
+  | "datasets:lock"
   | "experiments:run"
   | "evaluators:write";
 
@@ -54,6 +55,7 @@ const ADMIN: Permission[] = [
   "insights:manage",
   "evaluators:write",
   "billing_sources:manage",
+  "datasets:lock",
 ];
 const OWNER: Permission[] = [...ADMIN, "org:delete", "org:security", "credentials:manage"];
 

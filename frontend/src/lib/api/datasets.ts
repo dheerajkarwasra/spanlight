@@ -7,6 +7,8 @@ export interface Dataset {
   name: string;
   description: string | null;
   item_count: number;
+  /** When an admin locked the dataset against edits; null while it is editable. */
+  locked_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -64,6 +66,8 @@ export interface TracesAdded {
   rejected: { trace_id: string; reason: string }[];
   /** The new items' ids, in the order of the accepted traces. */
   item_ids: string[];
+  /** Accepted traces that other datasets of the project already hold; empty when none do. */
+  also_in: { trace_id: string; datasets: { id: string; name: string }[] }[];
 }
 
 /** A `.jsonl` or `.csv` upload; each bad line is listed and the rest is accepted. */
@@ -82,8 +86,8 @@ function datasetPath(projectId: string, datasetId: string): string {
 
 /**
  * Datasets under `/projects/{id}/datasets`. Reads need `project:read`; writes need
- * `datasets:write` (member). Errors: `409 NAME_TAKEN`, `409 DATASET_IN_USE`, `422 DATASET_FULL`,
- * `415 UNSUPPORTED_FILE`,
+ * `datasets:write` (member); locking needs `datasets:lock` (admin). Errors: `409 NAME_TAKEN`,
+ * `409 DATASET_IN_USE`, `409 DATASET_LOCKED`, `422 DATASET_FULL`, `415 UNSUPPORTED_FILE`,
  * `413 PAYLOAD_TOO_LARGE` (files over 5 MB).
  */
 export const datasetsApi = {
@@ -98,6 +102,11 @@ export const datasetsApi = {
   /** `409 DATASET_IN_USE` while an experiment ran on it. */
   delete: (projectId: string, datasetId: string): Promise<void> =>
     api.delete(datasetPath(projectId, datasetId)),
+  /** Item writes then answer `409 DATASET_LOCKED` until it is unlocked. */
+  lock: (projectId: string, datasetId: string): Promise<Dataset> =>
+    api.post<Dataset>(`${datasetPath(projectId, datasetId)}/lock`),
+  unlock: (projectId: string, datasetId: string): Promise<Dataset> =>
+    api.post<Dataset>(`${datasetPath(projectId, datasetId)}/unlock`),
 
   items: (
     projectId: string,

@@ -1,4 +1,4 @@
-import { QueryCache, QueryClient, type Query } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient, type Query } from "@tanstack/react-query";
 
 import { isApiError, isTwoFactorRequired, queryKeys } from "@/lib/api";
 
@@ -13,6 +13,11 @@ function shouldRetry(failureCount: number, error: unknown): boolean {
 /** `["project", id, "detail"]`: the query the app shell reads to decide whether a project opens. */
 function isProjectDetail(query: Query): boolean {
   return query.queryKey[0] === "project" && query.queryKey[2] === "detail";
+}
+
+/** `["project", id, "datasets", ...]`: every dataset list, detail, item and picker query. */
+function isDatasetQuery(query: Query): boolean {
+  return query.queryKey[0] === "project" && query.queryKey[2] === "datasets";
 }
 
 /** `me.totp_enabled`, or null when the cached value is not a signed-in user (signed out). */
@@ -38,6 +43,16 @@ export function createQueryClient(): QueryClient {
           void client.invalidateQueries({
             predicate: (query) => isProjectDetail(query) && !isTwoFactorBlocked(query),
           });
+        }
+      },
+    }),
+    mutationCache: new MutationCache({
+      onError: (error) => {
+        // Someone locked the dataset after this page loaded. Reload the dataset queries so the
+        // detail page hides its write controls and pickers stop offering it; the mutation's own
+        // error message is shown as before.
+        if (isApiError(error) && error.code === "DATASET_LOCKED") {
+          void client.invalidateQueries({ predicate: isDatasetQuery });
         }
       },
     }),

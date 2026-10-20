@@ -17,7 +17,6 @@ import { CompareResult } from "./compare-result";
 import { sideOf } from "./compare-sides";
 import {
   useCompareQuery,
-  useDatasetInputs,
   useExperimentQuery,
   useRunQuery,
   useRunsQuery,
@@ -66,7 +65,6 @@ function Comparison({ experiment }: { experiment: Experiment }) {
   // The polled run reads flip this when a run ends, so the comparison then loads by itself.
   const ready = Boolean(runA.data && runB.data && isFinished(runA.data) && isFinished(runB.data));
   const compare = useCompareQuery(experiment.id, a, b, ready);
-  const inputs = useDatasetInputs(experiment.dataset_id);
   const items = compare.data?.items ?? [];
   const metas = useScoreMetas(experiment, Object.keys(compare.data?.aggregate ?? {}), (name) =>
     items.flatMap((item) => [item.a?.scores[name], item.b?.scores[name]]),
@@ -179,7 +177,6 @@ function Comparison({ experiment }: { experiment: Experiment }) {
             void navigate({ search: (prev) => ({ ...prev, score: next }), replace: true }),
           detail: `${pair.b.name} against ${pair.a.name} · ${pluralize(inBoth, "item")} in both runs`,
         }}
-        inputs={inputs.data}
       />
     );
   }

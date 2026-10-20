@@ -9,6 +9,8 @@ import { DialogClose } from "@/components/ui/dialog";
 import type { TracesAdded } from "@/lib/api";
 import { pluralize, shortId } from "@/lib/format";
 
+import { alsoInNames } from "./also-in";
+import { AlsoInNote } from "./also-in-note";
 import { datasetErrorMessage, rejectionLabel } from "./dataset-errors";
 import { useAddItemsFromTraces, useDatasetOption } from "./dataset-queries";
 import { DatasetSelect } from "./dataset-select";
@@ -36,6 +38,7 @@ export function AddTracesForm({ traces, onPendingChange, onAdded, onDone }: AddT
   const dataset = useDatasetOption(datasetId);
   const tooMany = traces.length > MAX_TRACES_PER_ADD;
   const reasons = new Map(result?.rejected.map((entry) => [entry.trace_id, entry.reason]));
+  const alsoIn = new Map(result?.also_in.map((entry) => [entry.trace_id, alsoInNames([entry])]));
 
   function submit() {
     onPendingChange(true);
@@ -44,7 +47,7 @@ export function AddTracesForm({ traces, onPendingChange, onAdded, onDone }: AddT
       {
         onSuccess: (added) => {
           onAdded();
-          if (added.rejected.length === 0) {
+          if (added.rejected.length === 0 && added.also_in.length === 0) {
             toast.success(
               `Added ${pluralize(added.accepted, "item")} to “${dataset?.name ?? "the dataset"}”.`,
             );
@@ -64,14 +67,15 @@ export function AddTracesForm({ traces, onPendingChange, onAdded, onDone }: AddT
     <div className="flex flex-col gap-5">
       <DialogHeading
         title={`Add ${pluralize(traces.length, "trace")} to a dataset`}
-        description="Each trace adds one item from its first LLM span, its input and recorded output."
+        description="Each trace adds one item from its first LLM span. Traces that were already added are skipped."
         showClose={add.isPending ? "disabled" : true}
       />
       {result ? (
-        <Notice tone="warning" role="status">
-          Added {pluralize(result.accepted, "item")}. {pluralize(result.rejected.length, "trace")}{" "}
-          could not be added; the reasons are below.
-        </Notice>
+        <AlsoInNote
+          accepted={result.accepted}
+          rejected={result.rejected.length}
+          alsoIn={result.also_in}
+        />
       ) : (
         <DatasetSelect value={datasetId} onChange={setDatasetId} />
       )}
@@ -84,6 +88,7 @@ export function AddTracesForm({ traces, onPendingChange, onAdded, onDone }: AddT
               trace={trace}
               done={result !== null}
               reason={reasons.get(trace.trace_id) ?? null}
+              alsoIn={alsoIn.get(trace.trace_id) ?? null}
             />
           ))}
         </ul>
@@ -98,7 +103,7 @@ export function AddTracesForm({ traces, onPendingChange, onAdded, onDone }: AddT
       ) : null}
       <div className="flex justify-end gap-2.5">
         {result ? (
-          <Button variant="primary" onClick={onDone}>
+          <Button variant="primary" autoFocus onClick={onDone}>
             Done
           </Button>
         ) : (
@@ -125,10 +130,13 @@ function TraceLine({
   trace,
   done,
   reason,
+  alsoIn,
 }: {
   trace: TraceRef;
   done: boolean;
   reason: string | null;
+  /** The other datasets that already hold this trace, as prose; null when none do. */
+  alsoIn: string | null;
 }) {
   return (
     <li className="flex items-center gap-2 rounded-input bg-surface-muted px-3 py-2 text-xs">
@@ -137,7 +145,14 @@ function TraceLine({
       </span>
       <code className="shrink-0 text-accent">{shortId(trace.trace_id)}</code>
       {done ? (
-        reason === null ? (
+        reason === null && alsoIn !== null ? (
+          <span className="ml-auto flex min-w-0 items-center gap-1 text-warning">
+            <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
+            <span className="truncate" title={`Added, also in ${alsoIn}`}>
+              Added, also in {alsoIn}
+            </span>
+          </span>
+        ) : reason === null ? (
           <span className="ml-auto flex shrink-0 items-center gap-1 text-success">
             <Check aria-hidden className="size-3.5" />
             Added

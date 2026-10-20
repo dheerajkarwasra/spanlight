@@ -13,8 +13,10 @@ export interface FieldSelectOption {
   label: string;
   /** Shown before the label in the list only (a colour dot). */
   leading?: ReactNode;
-  /** Shown after the label in the list only (the stored value in mono). */
+  /** Shown after the label in the list only (the stored value in mono, or why it is disabled). */
   trailing?: ReactNode;
+  /** Listed but not selectable; kept readable, so `trailing` should say why. */
+  disabled?: boolean;
 }
 
 interface FieldSelectProps {
@@ -60,6 +62,10 @@ export function FieldSelect({
             value={option.value}
             leading={option.leading}
             trailing={option.trailing}
+            disabled={option.disabled}
+            className={
+              option.disabled ? "text-subtle-foreground data-[disabled]:opacity-100" : undefined
+            }
           >
             {option.label}
           </SelectItem>

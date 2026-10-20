@@ -8,7 +8,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import type { ExperimentItem, ExperimentRun } from "@/lib/api";
 import { pluralize } from "@/lib/format";
 
-import type { DatasetItemRef, useRunItemsQuery } from "./experiment-queries";
+import type { useRunItemsQuery } from "./experiment-queries";
 import { ItemRow } from "./run-item-row";
 import { leadScore, type ScoreMeta } from "./score-meta";
 
@@ -19,7 +19,6 @@ interface RunItemsProps {
   query: ReturnType<typeof useRunItemsQuery>;
   run: ExperimentRun;
   scores: readonly ScoreMeta[];
-  inputs: ReadonlyMap<string, DatasetItemRef> | undefined;
 }
 
 function scoreNumber(item: ExperimentItem, name: string): number {
@@ -30,7 +29,7 @@ function scoreNumber(item: ExperimentItem, name: string): number {
 }
 
 /** Figma "Experiments — Run" Items card: every item's output, scores, latency and cost. */
-export function RunItems({ query, run, scores, inputs }: RunItemsProps) {
+export function RunItems({ query, run, scores }: RunItemsProps) {
   const [filter, setFilter] = useState<Filter>("all");
   const lead = leadScore(scores);
   const all = useMemo(() => query.data?.pages.flatMap((page) => page.items) ?? [], [query.data]);
@@ -94,12 +93,7 @@ export function RunItems({ query, run, scores, inputs }: RunItemsProps) {
           </ColumnLabels>
           <ul aria-label="Items" className="flex flex-col gap-1.5">
             {shown.map((item) => (
-              <ItemRow
-                key={item.dataset_item_id}
-                item={item}
-                scores={scores}
-                input={inputs?.get(item.dataset_item_id)}
-              />
+              <ItemRow key={item.dataset_item_id} item={item} scores={scores} />
             ))}
           </ul>
           {query.hasNextPage ? (

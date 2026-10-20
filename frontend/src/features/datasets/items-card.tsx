@@ -62,7 +62,7 @@ export function ItemsCard({ dataset, canWrite, onOpen, onAddItem, uploadAction }
     }
     return (
       <>
-        <ItemTable items={items} onOpen={onOpen} />
+        <ItemTable items={items} canWrite={canWrite} onOpen={onOpen} />
         {query.isFetchNextPageError ? (
           <ErrorState
             compact

@@ -1,5 +1,6 @@
 import { useId, useState } from "react";
 
+import { Notice } from "@/components/notice";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -7,7 +8,6 @@ import type { ItemDelta } from "@/lib/api";
 import { formatInteger, pluralize } from "@/lib/format";
 
 import { changeCounts, sortByChange } from "./compare-view";
-import type { DatasetItemRef } from "./experiment-queries";
 import { ItemDeltaRow } from "./item-delta-row";
 import type { ScoreMeta } from "./score-meta";
 
@@ -18,13 +18,14 @@ interface CompareTableProps {
   items: readonly ItemDelta[];
   /** The scores to sort by and the selected one (`?score=`). */
   sort: { scores: readonly ScoreMeta[]; score: ScoreMeta; onChange: (name: string) => void };
-  inputs: ReadonlyMap<string, DatasetItemRef> | undefined;
   /** "Run #2" and "Run #3". */
   names: { a: string; b: string };
+  /** Pairs whose item was edited between the runs (`changed_items`), left out of the comparison. */
+  edited: number;
 }
 
 /** Figma "Experiments — Compare" Items: the score selector stays pinned while the list scrolls. */
-export function CompareTable({ items, sort, inputs, names }: CompareTableProps) {
+export function CompareTable({ items, sort, names, edited }: CompareTableProps) {
   const { scores, score, onChange: onScoreChange } = sort;
   const titleId = useId();
   const [limit, setLimit] = useState(PAGE);
@@ -60,15 +61,16 @@ export function CompareTable({ items, sort, inputs, names }: CompareTableProps) 
           comparable.{showing}
         </p>
       </div>
+      {edited > 0 ? (
+        <Notice tone="warning">
+          {edited === 1
+            ? "1 item was edited between the runs and is left out of the comparison."
+            : `${formatInteger(edited)} items were edited between the runs and are left out of the comparison.`}
+        </Notice>
+      ) : null}
       <ul aria-label={`Items sorted by change in ${score.name}`} className="flex flex-col gap-2.5">
         {shown.map((item) => (
-          <ItemDeltaRow
-            key={item.dataset_item_id}
-            item={item}
-            score={score}
-            input={inputs?.get(item.dataset_item_id)}
-            names={names}
-          />
+          <ItemDeltaRow key={item.dataset_item_id} item={item} score={score} names={names} />
         ))}
       </ul>
       {sorted.length > shown.length ? (

@@ -1,4 +1,4 @@
-import { CircleX } from "lucide-react";
+import { CircleX, Diff } from "lucide-react";
 
 import { CostValue, UNPRICED_OR_NO_USAGE_REASON } from "@/components/cost-value";
 import { UnknownValue } from "@/components/unknown-value";
@@ -6,8 +6,13 @@ import type { CompareItemSide, ItemDelta } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import { formatBooleanChange, formatLatency, formatScoreDelta, itemChange } from "./compare-view";
-import type { DatasetItemRef } from "./experiment-queries";
-import { inputText, itemLabel, itemProblem } from "./item-copy";
+import {
+  EDITED_ITEM_REASON,
+  inputText,
+  itemLabel,
+  itemProblem,
+  LEGACY_ITEM_REASON,
+} from "./item-copy";
 import { ItemScore } from "./item-score";
 import { ChangePill } from "./score-chips";
 import type { ScoreMeta } from "./score-meta";
@@ -16,12 +21,11 @@ interface ItemDeltaRowProps {
   item: ItemDelta;
   /** The score the list is sorted by. */
   score: ScoreMeta;
-  input: DatasetItemRef | undefined;
   names: { a: string; b: string };
 }
 
 /** One item of the comparison: how it moved on the selected score, and both answers. */
-export function ItemDeltaRow({ item, score, input, names }: ItemDeltaRowProps) {
+export function ItemDeltaRow({ item, score, names }: ItemDeltaRowProps) {
   const change = itemChange(item, score.name);
   // A yes / no item reads "No → Yes"; "+100 pts" on one item says nothing more.
   const delta =
@@ -31,24 +35,39 @@ export function ItemDeltaRow({ item, score, input, names }: ItemDeltaRowProps) {
   return (
     <li className="flex scroll-mt-24 flex-col gap-2.5 rounded-tile border border-border bg-surface p-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <span className="font-mono text-xs text-accent">
-          {itemLabel(item.dataset_item_id, input?.position)}
-        </span>
+        <span className="font-mono text-xs text-accent">{itemLabel(item.position)}</span>
         <span className="min-w-0 flex-1 basis-48 text-sm font-semibold text-foreground">
-          {inputText(input?.input) ?? <UnknownValue reason="The dataset item could not be read." />}
+          {/* No copy on either side reads as a legacy run (a known copy pair has `changed` set). */}
+          {item.input === null && item.changed === null ? (
+            <UnknownValue reason={LEGACY_ITEM_REASON} />
+          ) : (
+            inputText(item.input)
+          )}
         </span>
         <span className="flex items-center gap-2">
-          <ChangePill change={change} />
-          {delta !== null && (change === "improved" || change === "regressed") ? (
-            <span
-              className={cn(
-                "text-sm font-extrabold tabular",
-                change === "improved" ? "text-success" : "text-danger-text",
-              )}
-            >
-              {delta}
-            </span>
-          ) : null}
+          {item.changed ? (
+            <>
+              <span className="inline-flex min-h-[26px] shrink-0 items-center gap-1.5 rounded-full bg-surface-muted px-2.5 py-1 text-xs font-semibold whitespace-nowrap text-muted-foreground">
+                <Diff aria-hidden className="size-3.5" strokeWidth={2.5} />
+                Edited between runs
+              </span>
+              <UnknownValue reason={EDITED_ITEM_REASON} className="text-sm" />
+            </>
+          ) : (
+            <>
+              <ChangePill change={change} />
+              {delta !== null && (change === "improved" || change === "regressed") ? (
+                <span
+                  className={cn(
+                    "text-sm font-extrabold tabular",
+                    change === "improved" ? "text-success" : "text-danger-text",
+                  )}
+                >
+                  {delta}
+                </span>
+              ) : null}
+            </>
+          )}
         </span>
       </div>
       <div className="grid gap-3 md:grid-cols-2">

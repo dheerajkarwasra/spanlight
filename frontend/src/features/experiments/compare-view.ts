@@ -130,6 +130,10 @@ export function deltaTone(delta: number | null, higherIsBetter: boolean): Tone {
 
 /** How one item moved on `score`. */
 export function itemChange(item: ItemDelta, score: string): ItemChange {
+  // An item edited between the runs is scored against different references: not a fair pair.
+  if (item.changed === true) {
+    return "not_comparable";
+  }
   const before = item.a?.scores[score];
   const after = item.b?.scores[score];
   if (before === undefined || after === undefined) {
@@ -154,7 +158,8 @@ function rank(change: ItemChange): number {
 
 /**
  * Items by the largest absolute change of `score` first; unchanged items next, then the items
- * that cannot be compared (one side or its score missing). Ties keep the API's order.
+ * that cannot be compared (one side or its score missing, or edited between the runs). Ties keep
+ * the API's order.
  */
 export function sortByChange(items: readonly ItemDelta[], score: string): ItemDelta[] {
   return items

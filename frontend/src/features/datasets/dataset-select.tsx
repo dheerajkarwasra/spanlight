@@ -1,3 +1,4 @@
+import { Lock } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { FieldSelect } from "@/components/field-select";
@@ -47,8 +48,22 @@ export function DatasetSelect({ value, onChange, hint }: DatasetSelectProps) {
         value={value}
         onChange={onChange}
         placeholder="Pick a dataset"
-        options={query.data.items.map((dataset) => ({ value: dataset.id, label: dataset.name }))}
+        options={query.data.items.map((dataset) => ({
+          value: dataset.id,
+          label: dataset.name,
+          ...(dataset.locked_at !== null && { disabled: true, trailing: <LockedReason /> }),
+        }))}
       />
     </FormField>
+  );
+}
+
+/** Figma "Repro 5": a locked dataset stays listed, disabled, with the reason in words. */
+function LockedReason() {
+  return (
+    <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium">
+      <Lock aria-hidden className="size-3" />
+      Locked
+    </span>
   );
 }

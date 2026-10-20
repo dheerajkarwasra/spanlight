@@ -6,19 +6,17 @@ import type { ExperimentItem } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import { formatLatency } from "./compare-view";
-import type { DatasetItemRef } from "./experiment-queries";
-import { inputText, itemLabel, itemProblem } from "./item-copy";
+import { inputText, itemLabel, itemProblem, LEGACY_ITEM_REASON } from "./item-copy";
 import { ItemScore } from "./item-score";
 import type { ScoreMeta } from "./score-meta";
 
 interface ItemRowProps {
   item: ExperimentItem;
   scores: readonly ScoreMeta[];
-  input: DatasetItemRef | undefined;
 }
 
 /** One item of a run: its input, output or failure, scores, latency and cost. */
-export function ItemRow({ item, scores, input }: ItemRowProps) {
+export function ItemRow({ item, scores }: ItemRowProps) {
   const problem = item.error ? itemProblem(item.error) : null;
   return (
     <li
@@ -28,11 +26,14 @@ export function ItemRow({ item, scores, input }: ItemRowProps) {
       )}
     >
       <div className="col-span-2 flex min-w-0 flex-col gap-0.5 sm:col-span-4 lg:col-span-1">
-        <span className="font-mono text-xs text-accent">
-          {itemLabel(item.dataset_item_id, input?.position)}
-        </span>
+        <span className="font-mono text-xs text-accent">{itemLabel(item.position)}</span>
         <span className="line-clamp-2 text-foreground">
-          {inputText(input?.input) ?? <UnknownValue reason="The dataset item could not be read." />}
+          {/* A legacy row: the run was made before runs kept a copy of their items. */}
+          {item.input === null && item.item_metadata === null ? (
+            <UnknownValue reason={LEGACY_ITEM_REASON} />
+          ) : (
+            inputText(item.input)
+          )}
         </span>
       </div>
       <div className="col-span-2 min-w-0 sm:col-span-4 lg:col-span-1">

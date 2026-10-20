@@ -74,6 +74,8 @@ const AUDIT_ACTION_LABELS: ReadonlyMap<string, string> = new Map(
     "budget.create": "Created budget",
     "budget.update": "Updated budget",
     "budget.delete": "Deleted budget",
+    "dataset.lock": "Locked dataset",
+    "dataset.unlock": "Unlocked dataset",
   }),
 );
 
@@ -129,6 +131,8 @@ export const AUDIT_FILTER_ACTIONS: readonly string[] = [
   "budget.create",
   "budget.update",
   "budget.delete",
+  "dataset.lock",
+  "dataset.unlock",
 ];
 
 /** The label for a known action, or null so the caller can show the raw action in mono. */
@@ -156,6 +160,7 @@ const TARGET_TYPE_LABELS: ReadonlyMap<string, string> = new Map(
     alert_rule: "Alert rule",
     alert_event: "Alert",
     budget: "Budget",
+    dataset: "Dataset",
   }),
 );
 

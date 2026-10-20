@@ -10,6 +10,7 @@ import {
   reviewApi,
   type ReviewPolicy,
   type ReviewPolicyInput,
+  type TracesAdded,
 } from "@/lib/api";
 
 /** The project's review policy; null while it has none (the API's `404 NOT_FOUND`). */
@@ -98,19 +99,28 @@ interface SaveFromReviewInput {
   /** The item an earlier attempt copied but could not mark; the retry only marks it. */
   copiedItemId: string | null;
   metadata: Record<string, unknown>;
-  onCopied: (itemId: string) => void;
+  onCopied: (itemId: string, alsoIn: TracesAdded["also_in"]) => void;
+}
+
+interface SaveFromReviewResult {
+  /** The copy's rejection reason; null once saved. */
+  rejected: string | null;
+  /** Other datasets that already held the trace; empty on a retry that only marks the copy. */
+  alsoIn: TracesAdded["also_in"];
 }
 
 /**
  * Annotate's "Save as dataset item": copies the span through the from-traces route, then writes
- * `metadata.review` on the copy. Resolves to the copy's rejection reason, or null once saved.
+ * `metadata.review` on the copy. A rejected copy (such as `already in this dataset`) resolves
+ * with its reason and never sends the PATCH.
  */
 export function useSaveFromReview() {
   const { projectId } = useProjectParams();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (input: SaveFromReviewInput): Promise<string | null> => {
+    mutationFn: async (input: SaveFromReviewInput): Promise<SaveFromReviewResult> => {
       let itemId = input.copiedItemId;
+      let alsoIn: TracesAdded["also_in"] = [];
       if (itemId === null) {
         const added = await datasetsApi.addItemsFromTraces(
           projectId,
@@ -121,14 +131,15 @@ export function useSaveFromReview() {
         const rejected = added.rejected[0];
         itemId = added.item_ids[0] ?? null;
         if (rejected !== undefined || itemId === null) {
-          return rejected?.reason ?? "not copied";
+          return { rejected: rejected?.reason ?? "not copied", alsoIn };
         }
-        input.onCopied(itemId);
+        alsoIn = added.also_in;
+        input.onCopied(itemId, alsoIn);
       }
       await datasetsApi.updateItem(projectId, input.datasetId, itemId, {
         metadata: input.metadata,
       });
-      return null;
+      return { rejected: null, alsoIn };
     },
     onSettled: () =>
       queryClient.invalidateQueries({ queryKey: queryKeys.project(projectId).datasets.all }),

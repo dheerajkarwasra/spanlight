@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Callout } from "@/components/callout";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
+import { ReadOnlyNote } from "@/components/read-only-note";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,7 +13,12 @@ import { useProjectParams, usePermission } from "@/features/shell";
 import { isApiError, type Dataset } from "@/lib/api";
 
 import { BackToDatasetsLink, DatasetHeader } from "./dataset-header";
-import { DATASET_FULL_MESSAGE, DATASET_FULL_TITLE, MAX_ITEMS } from "./dataset-errors";
+import {
+  DATASET_FULL_MESSAGE,
+  DATASET_FULL_TITLE,
+  DATASET_LOCKED_MESSAGE,
+  MAX_ITEMS,
+} from "./dataset-errors";
 import { useDatasetQuery } from "./dataset-queries";
 import { ItemEditor, type ItemEditorTarget } from "./item-editor";
 import { ItemTableSkeleton } from "./item-table";
@@ -64,7 +70,10 @@ export function DatasetDetailPage() {
 }
 
 function DatasetDetail({ dataset }: { dataset: Dataset }) {
-  const canWrite = usePermission("datasets:write");
+  const locked = dataset.locked_at !== null;
+  // A lock hides every write control, whatever the role; the server answers DATASET_LOCKED anyway.
+  const canWrite = usePermission("datasets:write") && !locked;
+  const canLock = usePermission("datasets:lock");
   const [target, setTarget] = useState<ItemEditorTarget | null>(null);
   const full = dataset.item_count >= MAX_ITEMS;
   const addItem = () => {
@@ -74,8 +83,9 @@ function DatasetDetail({ dataset }: { dataset: Dataset }) {
   return (
     <div className={PAGE_CLASSES}>
       <BackToDatasetsLink />
-      <DatasetHeader dataset={dataset} canWrite={canWrite} onAddItem={addItem} />
-      {full ? (
+      <DatasetHeader dataset={dataset} canWrite={canWrite} canLock={canLock} onAddItem={addItem} />
+      {locked && !canLock ? <ReadOnlyNote>{DATASET_LOCKED_MESSAGE}</ReadOnlyNote> : null}
+      {full && !locked ? (
         <Callout tone="warning" title={DATASET_FULL_TITLE}>
           {DATASET_FULL_MESSAGE}
         </Callout>

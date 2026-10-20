@@ -29,6 +29,10 @@ function item(
 ): ItemDelta {
   return {
     dataset_item_id: id,
+    position: 1,
+    input: null,
+    expected_output: null,
+    changed: null,
     a: a === null ? null : side(a),
     b: b === null ? null : side(b),
     deltas: { quality: delta },

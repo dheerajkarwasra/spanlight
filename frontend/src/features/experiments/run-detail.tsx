@@ -10,7 +10,6 @@ import { formatRelativeTime } from "@/lib/format";
 
 import { BackToExperiment } from "./back-link";
 import {
-  useDatasetInputs,
   useEvaluatorsQuery,
   useExperimentQuery,
   useRunItemsQuery,
@@ -66,7 +65,6 @@ function RunView({ experiment, run }: { experiment: Experiment; run: ExperimentR
   const runs = useRunsQuery(experiment.id);
   const evaluators = useEvaluatorsQuery();
   const configs = useScoreConfigsQuery();
-  const inputs = useDatasetInputs(experiment.dataset_id);
   const index = useVersionIndex(targetVersionIds([run.target]));
   const items = useRunItemsQuery(experiment.id, run);
   const seen = Object.keys(run.totals?.scores ?? {});
@@ -120,7 +118,7 @@ function RunView({ experiment, run }: { experiment: Experiment; run: ExperimentR
       ) : null}
       <RunTotals run={run} />
       {run.totals ? <RunScores totals={run.totals} scores={scores} /> : null}
-      <RunItems query={items} run={run} scores={scores} inputs={inputs.data} />
+      <RunItems query={items} run={run} scores={scores} />
     </div>
   );
 }

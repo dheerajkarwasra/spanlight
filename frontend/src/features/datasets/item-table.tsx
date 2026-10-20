@@ -17,6 +17,8 @@ const NOT_SET = "Not set. Add an expected output to score this item.";
 
 interface ItemTableProps {
   items: DatasetItem[];
+  /** False when the editor opens view-only (no write permission, or the dataset is locked). */
+  canWrite: boolean;
   onOpen: (item: DatasetItem, number: number) => void;
 }
 
@@ -25,7 +27,8 @@ interface ItemTableProps {
  * whole row opens the editor; the chevron is its keyboard path and the source a real link. Below
  * `md` the rows become tiles (Figma "Datasets — Detail — 375").
  */
-export function ItemTable({ items, onOpen }: ItemTableProps) {
+export function ItemTable({ items, canWrite, onOpen }: ItemTableProps) {
+  const verb = canWrite ? "Edit" : "Open";
   function openFromRow(event: MouseEvent<HTMLDivElement>, item: DatasetItem, number: number) {
     if ((event.target as HTMLElement).closest("a, button")) return;
     onOpen(item, number);
@@ -44,7 +47,7 @@ export function ItemTable({ items, onOpen }: ItemTableProps) {
           <span role="columnheader">Metadata</span>
           <span role="columnheader">Source</span>
           <span role="columnheader">
-            <span className="sr-only">Edit</span>
+            <span className="sr-only">{verb}</span>
           </span>
         </div>
         {items.map((item, index) => (
@@ -85,7 +88,7 @@ export function ItemTable({ items, onOpen }: ItemTableProps) {
               <Button
                 variant="ghost"
                 size="icon-sm"
-                aria-label={`Edit item ${String(index + 1)}`}
+                aria-label={`${verb} item ${String(index + 1)}`}
                 onClick={() => {
                   onOpen(item, index + 1);
                 }}
@@ -99,7 +102,7 @@ export function ItemTable({ items, onOpen }: ItemTableProps) {
       <ul className="flex flex-col gap-2 md:hidden">
         {items.map((item, index) => (
           <li key={item.id}>
-            <ItemTile item={item} number={index + 1} onOpen={onOpen} />
+            <ItemTile item={item} number={index + 1} verb={verb} onOpen={onOpen} />
           </li>
         ))}
       </ul>
@@ -145,16 +148,18 @@ function SourceLink({ item }: { item: DatasetItem }) {
 function ItemTile({
   item,
   number,
+  verb,
   onOpen,
 }: {
   item: DatasetItem;
   number: number;
+  verb: string;
   onOpen: ItemTableProps["onOpen"];
 }) {
   return (
     <button
       type="button"
-      aria-label={`Edit item ${String(number)}`}
+      aria-label={`${verb} item ${String(number)}`}
       onClick={() => {
         onOpen(item, number);
       }}

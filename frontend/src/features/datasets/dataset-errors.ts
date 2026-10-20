@@ -8,10 +8,12 @@ export const DATASET_FULL_MESSAGE =
   "A dataset holds up to 10,000 items. Remove items you no longer need, or start a new dataset. New items and uploads are blocked until then.";
 export const DATASET_IN_USE_MESSAGE =
   "An experiment uses this dataset, so it cannot be deleted. Delete that experiment first, or keep the dataset.";
+export const DATASET_LOCKED_MESSAGE = "This dataset is locked. An admin can unlock it.";
 
 const COPY: Record<string, string> = {
   DATASET_FULL: "This dataset is full. A dataset holds up to 10,000 items.",
   DATASET_IN_USE: DATASET_IN_USE_MESSAGE,
+  DATASET_LOCKED: DATASET_LOCKED_MESSAGE,
   UNSUPPORTED_FILE: "Only .jsonl and .csv files of UTF-8 text can be uploaded.",
   PAYLOAD_TOO_LARGE: "The file is larger than 5 MB. Split it into smaller files.",
   FORBIDDEN: roleBlockedCopy("change datasets"),

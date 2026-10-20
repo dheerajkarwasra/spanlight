@@ -1,4 +1,4 @@
-/** How a dataset item and an item's failure read on the run and compare screens. Pure. */
+/** How a run's item copy and an item's failure read on the run and compare screens. Pure. */
 import { TEMPLATE_TOO_LARGE_MESSAGE } from "@/lib/prompt-template";
 
 const MAX_INPUT_CHARS = 280;
@@ -11,14 +11,18 @@ function clip(text: string): string {
   return flat.length > MAX_INPUT_CHARS ? `${flat.slice(0, MAX_INPUT_CHARS - 1)}…` : flat;
 }
 
+/** Why a row of a run made before runs kept their item copies shows no input. */
+export const LEGACY_ITEM_REASON = "This run was made before runs kept a copy of their items.";
+
+/** Why a compared pair whose item was edited between the runs shows no score change. */
+export const EDITED_ITEM_REASON =
+  "Not compared: this item’s input or expected output was edited between the runs.";
+
 /**
- * One line for a dataset item's input: the text itself, the values of a variables object joined,
- * or compact JSON for anything else. Null when the input is unknown (not loaded).
+ * One line for a run's copy of an item input: the text itself, the values of a variables object
+ * joined, or compact JSON for anything else (a JSON-null input reads "null").
  */
-export function inputText(input: unknown): string | null {
-  if (input === undefined) {
-    return null;
-  }
+export function inputText(input: unknown): string {
   if (typeof input === "string") {
     return clip(input);
   }
@@ -33,9 +37,9 @@ export function inputText(input: unknown): string | null {
   return clip(json ?? "");
 }
 
-/** "#32": an item's place in dataset order, or the start of its id when the place is unknown. */
-export function itemLabel(itemId: string, position: number | undefined): string {
-  return position === undefined ? itemId.slice(0, 8) : `#${position}`;
+/** "#32": an item's 1-based place in its run, in dataset order. */
+export function itemLabel(position: number): string {
+  return `#${position}`;
 }
 
 export interface ItemProblem {

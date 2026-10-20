@@ -28,8 +28,6 @@ const POLL_MS = 3_000;
 const LIST_PAGE = 50;
 /** The API's largest page: one read lists every run of an experiment in practice. */
 const MAX_PAGE = 200;
-/** An experiment reads at most this many dataset items (`EXPERIMENT_MAX_ITEMS` default). */
-const MAX_DATASET_ITEMS = 1_000;
 
 function experimentKeys(projectId: string) {
   return queryKeys.project(projectId).experiments;
@@ -167,40 +165,6 @@ export function useDatasetQuery(datasetId: string | undefined) {
     queryKey: queryKeys.project(projectId).datasets.detail(datasetId ?? ""),
     queryFn: () => datasetsApi.get(projectId, datasetId ?? ""),
     enabled: datasetId !== undefined,
-  });
-}
-
-/** A dataset item's input and its 1-based position in dataset order, by item id. */
-export interface DatasetItemRef {
-  position: number;
-  input: unknown;
-}
-
-/** Every item input of a dataset (an experiment reads at most 1,000), to label compared items. */
-export function useDatasetInputs(datasetId: string | undefined) {
-  const { projectId } = useProjectParams();
-  return useQuery({
-    queryKey: [
-      ...queryKeys.project(projectId).datasets.items(datasetId ?? "", { limit: MAX_PAGE }),
-      "all",
-    ],
-    queryFn: async () => {
-      const refs = new Map<string, DatasetItemRef>();
-      let cursor: string | null = null;
-      do {
-        const page = await datasetsApi.items(projectId, datasetId ?? "", {
-          limit: MAX_PAGE,
-          cursor,
-        });
-        for (const item of page.items) {
-          refs.set(item.id, { position: refs.size + 1, input: item.input });
-        }
-        cursor = page.next_cursor;
-      } while (cursor !== null && refs.size < MAX_DATASET_ITEMS);
-      return refs;
-    },
-    enabled: datasetId !== undefined,
-    staleTime: 60_000,
   });
 }
 
