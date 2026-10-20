@@ -117,7 +117,7 @@ output = client.files.content(batch.output_file_id).text
 spanlight.record_openai_batch_output(output, batch_id=batch.id)
 ```
 
-Pass the error file the same way to record the requests that failed. The spans have no input and a duration of 0, because the result carries neither; [Batch results](/docs/python-sdk/#batch-results) describes them in full. The function needs SDK 0.2.0, the next release.
+Pass the error file the same way to record the requests that failed. The spans have no input and a duration of 0, because the result carries neither; [Batch results](/docs/python-sdk/#batch-results) describes them in full. The function needs SDK 0.2.0 or newer.
 
 ## Gateway
 

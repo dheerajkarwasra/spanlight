@@ -410,7 +410,7 @@ spanlight.wrap_anthropic(
 ) -> ClientT
 ```
 
-Instruments `messages.create` (including `stream=True`) and `messages.stream` of an `Anthropic` or `AsyncAnthropic` client. From SDK 0.2.0, it also instruments `messages.batches.results`: every result you iterate is recorded as a span, as described under [`record_openai_batch_output`](#record_openai_batch_output). The parameters mean the same as for `wrap_openai`. In the next SDK release, it also instruments `messages.parse`, the same methods of `client.beta.messages` (fast mode, compaction and the tool runner are beta-only), and the clients that `client.with_options(...)` and `client.copy(...)` return.
+Instruments `messages.create` (including `stream=True`) and `messages.stream` of an `Anthropic` or `AsyncAnthropic` client. From SDK 0.2.0, it also instruments `messages.batches.results`: every result you iterate is recorded as a span, as described under [`record_openai_batch_output`](#record_openai_batch_output). The parameters mean the same as for `wrap_openai`. From SDK 0.2.1, it also instruments `messages.parse`, the same methods of `client.beta.messages` (fast mode, compaction and the tool runner are beta-only), and the clients that `client.with_options(...)` and `client.copy(...)` return.
 
 ```python
 import spanlight

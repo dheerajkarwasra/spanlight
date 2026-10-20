@@ -15,7 +15,7 @@
 
 </div>
 
-Spanlight records every LLM call your application makes: prompts and completions, latency, time to first token, tokens, cost and errors, grouped into traces and user sessions. Send traces with the Python or TypeScript SDK, any OpenTelemetry exporter, or by changing one `base_url` to the built-in gateway. Then go past tracing: audit what each call cost, check it against the provider's bill, find out why calls fail, and review yesterday's traffic every morning.
+Spanlight records every LLM call your application makes: prompts and completions, latency, time to first token, tokens, cost and errors, grouped into traces and user sessions. Send traces with the Python or TypeScript SDK, any OpenTelemetry exporter over OTLP/HTTP, or by changing one `base_url` to the built-in gateway. Then go past tracing: audit what each call cost, check it against the provider's bill, find out why calls fail, and review yesterday's traffic every morning.
 
 > [!TIP]
 > Want to look before you install? The [live demo](https://spanlight.dev) runs on real Claude calls under a small monthly budget.
@@ -29,7 +29,7 @@ Spanlight records every LLM call your application makes: prompts and completions
 - **The Doctor and provider health.** Fifteen deterministic detectors flag known failure patterns (retry storms, ignored `Retry-After`, truncated outputs, tool loops, cost and latency spikes and more), each with its evidence and a suggested fix. Provider health tells a provider outage or rate limit apart from your own bug, with the provider's status page incidents alongside.
 - **A gateway for OpenAI and Anthropic.** The official SDKs work against it unchanged, streaming and tool calls included. It adds sealed provider credentials, routes with retries and fallbacks, per-key rate limits, an exact-match cache, and an Integration Lab that injects real provider failures on non-production keys.
 - **Prompts, evals and a daily review.** Versioned prompts with labels, a playground, exact replay of any recorded call, datasets, experiments with 95% confidence intervals on pass rates, and a nightly queue of the traces worth reading.
-- **OpenTelemetry native.** `POST /v1/otlp/traces` reads the GenAI conventions (`gen_ai.*`, also written by LiteLLM), OpenInference, OpenLLMetry (Traceloop) and the Vercel AI SDK, and counts usage once across nested spans. Recorded fixtures cover LangChain, LangGraph, LlamaIndex, Pydantic AI and the OpenAI Agents SDK. A Python SDK is on PyPI; a TypeScript SDK for Node.js is in [`sdks/typescript/`](sdks/typescript/) (not on npm yet).
+- **OpenTelemetry native.** `POST /v1/otlp/traces` (OTLP over HTTP, as JSON or protobuf; gRPC is not accepted) reads the GenAI conventions (`gen_ai.*`, also written by LiteLLM), OpenInference, OpenLLMetry (Traceloop) and the Vercel AI SDK, and counts usage once across nested spans. Recorded fixtures cover LangChain, LangGraph, LlamaIndex, Pydantic AI and the OpenAI Agents SDK. A Python SDK is on PyPI; a TypeScript SDK for Node.js is in [`sdks/typescript/`](sdks/typescript/) (not on npm yet).
 - **Built for teams, private by design.** Organizations, projects, roles, scoped API keys and an audit log. Postgres row-level security isolates every project's data, and secrets are redacted from payloads before storage.
 - **Self-hosted on one database.** Postgres is the only datastore, the job queue included. The core is MIT licensed.
 
@@ -143,7 +143,7 @@ Pick one of three ways in. They all end up in the same place:
 | Way in | What you change | Good for |
 | --- | --- | --- |
 | **Python SDK** | `spanlight.init()` and wrap your OpenAI or Anthropic client | Python apps; adds your own steps with `@observe` |
-| **OpenTelemetry** | Point any OTLP exporter at `/v1/otlp/traces` | Any language or framework (LangChain, LlamaIndex, Vercel AI SDK, …) |
+| **OpenTelemetry** | Point any OTLP/HTTP exporter at `/v1/otlp/traces` | Any language or framework (LangChain, LlamaIndex, Vercel AI SDK, …) |
 | **Gateway** | Change your client's `base_url` to Spanlight | No code changes; also adds retries, fallbacks, caching and budgets |
 
 The SDK sends calls in the background, compressed and in batches, and never throws an error into your code.
