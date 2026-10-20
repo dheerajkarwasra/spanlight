@@ -214,6 +214,7 @@ GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "",
         (
             "metrics_token",
+            "api_docs",
             "sentry_dsn",
             "otel_exporter_otlp_endpoint",
             "otel_service_name",
@@ -476,6 +477,11 @@ DESCRIPTIONS: dict[str, str] = {
     "metrics_token": (
         "Bearer token that protects `/metrics`. Unset makes `/metrics` answer `404`. The "
         "endpoint is served by the API directly, not through the web port."
+    ),
+    "api_docs": (
+        "Serve the Swagger UI at `/api/docs`, whose script comes from jsDelivr. Unset means on "
+        "when `APP_BASE_URL` is http and off (`404`) when it is https. `/api/openapi.json` is "
+        "served either way."
     ),
     "sentry_dsn": (
         "Sentry DSN for error reporting. Request bodies, cookies and query strings are never sent."
