@@ -11,6 +11,7 @@ URLs follow the webhook rules (`app.alerts.channels.urls`): https and public add
 with CREDENTIALS_KEYS and shown once, when it is generated.
 """
 
+import asyncio
 import json
 import time
 import uuid
@@ -46,6 +47,9 @@ MAX_BACKOFF = timedelta(hours=1)
 EVENTS_EVENT = "audit.events"
 SECRET_UNREADABLE = "The signing secret cannot be decrypted with CREDENTIALS_KEYS."  # noqa: S105
 TEST_EVENT = "audit.test"
+# The whole POST, not each read: httpx's timeout restarts with every byte, so a receiver that
+# trickles its answer would otherwise hold the run until the task's hard limit cancels it.
+POST_DEADLINE_S = 15.0
 
 
 class StreamNotFoundError(Exception):
@@ -204,17 +208,23 @@ async def _post(
     delivery_id: str,
 ) -> None:
     timestamp = int(time.time())
-    await post_checked(
-        client,
-        stream.url,
-        body=body,
-        headers={
-            "x-spanlight-event": event,
-            "x-spanlight-delivery": delivery_id,
-            "x-spanlight-timestamp": str(timestamp),
-            "x-spanlight-signature": sign(secret.encode(), timestamp, body),
-        },
-    )
+    try:
+        async with asyncio.timeout(POST_DEADLINE_S):
+            await post_checked(
+                client,
+                stream.url,
+                body=body,
+                headers={
+                    "x-spanlight-event": event,
+                    "x-spanlight-delivery": delivery_id,
+                    "x-spanlight-timestamp": str(timestamp),
+                    "x-spanlight-signature": sign(secret.encode(), timestamp, body),
+                },
+            )
+    except TimeoutError:
+        raise RetryableDeliveryError(
+            f"The receiver did not answer within {POST_DEADLINE_S:g} seconds."
+        ) from None
 
 
 async def send_test(
@@ -359,7 +369,13 @@ async def deliver_streams(
     """Send what every enabled stream has pending. Returns how many events went."""
     async with session_factory() as db:
         org_ids = (
-            await db.scalars(select(AuditStream.org_id).where(AuditStream.enabled.is_(True)))
+            await db.scalars(
+                select(AuditStream.org_id)
+                .where(AuditStream.enabled.is_(True))
+                # Least recently delivered first: a stream that keeps the run busy until it is
+                # cancelled must not starve every stream after it.
+                .order_by(AuditStream.last_delivered_at.asc().nulls_first(), AuditStream.org_id)
+            )
         ).all()
     if not org_ids:
         return 0
