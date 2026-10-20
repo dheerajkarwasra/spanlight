@@ -21,6 +21,7 @@ docs/plans/
 docs/specs/
 docs/design/
 docs/launch/
+docs/feedback/
 
 # Doctor accuracy harness results (one JSON Lines file per run; the directory itself is kept)
 backend/accuracy/results/*
