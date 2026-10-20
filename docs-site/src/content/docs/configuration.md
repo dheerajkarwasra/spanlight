@@ -158,6 +158,14 @@ A billing source connects a provider's cost report (an Anthropic or OpenAI admin
 | --- | --- | --- | --- |
 | `BILLING_SOURCES_ENABLED` | boolean | `true` | Schedules the daily fetch of connected provider cost reports; `false` stops every provider cost-API call, the routes stay and a manual refresh answers `409 NOT_CONFIGURED`. |
 
+### Audit log
+
+Every organization keeps an append-only log of who changed what, sign-ins and refused changes included. Admins and owners read it under Settings, Audit log.
+
+| Variable | Type | Default | Description |
+| --- | --- | --- | --- |
+| `AUDIT_RETENTION_DAYS` | integer (min 0) | `365` | Days an audit event is kept; the hourly retention job deletes older ones. `0` keeps every event. |
+
 ### Attribution
 
 The attribution view groups spend and usage by trace metadata, trace name, end user or release. Windows of 24 hours or less read the traces live; longer windows read daily rollups that the refresh job rebuilds every 15 minutes.

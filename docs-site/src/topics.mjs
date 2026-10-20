@@ -36,7 +36,7 @@ export const TOPICS = [
         label: 'Evaluate',
         items: ['prompts', 'playground', 'datasets', 'scores', 'review', 'evaluators', 'experiments', 'eval-gate'],
       },
-      { label: 'Operate', items: ['alerts', 'budgets', 'guides/reconciliation', 'webhooks'] },
+      { label: 'Operate', items: ['alerts', 'budgets', 'guides/reconciliation', 'webhooks', 'audit-log'] },
       {
         label: 'Gateway',
         items: [

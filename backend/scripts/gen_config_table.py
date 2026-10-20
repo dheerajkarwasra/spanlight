@@ -173,6 +173,12 @@ GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         ("billing_sources_enabled",),
     ),
     (
+        "Audit log",
+        "Every organization keeps an append-only log of who changed what, sign-ins and refused "
+        "changes included. Admins and owners read it under Settings, Audit log.",
+        ("audit_retention_days",),
+    ),
+    (
         "Attribution",
         "The attribution view groups spend and usage by trace metadata, trace name, end user or "
         "release. Windows of 24 hours or less read the traces live; longer windows read daily "
@@ -428,6 +434,10 @@ DESCRIPTIONS: dict[str, str] = {
         "Schedules the daily fetch of connected provider cost reports; `false` stops every "
         "provider cost-API call, the routes stay and a manual refresh answers "
         "`409 NOT_CONFIGURED`."
+    ),
+    "audit_retention_days": (
+        "Days an audit event is kept; the hourly retention job deletes older ones. `0` keeps "
+        "every event."
     ),
     "attribution_enabled": (
         "Schedule the attribution refresh, which rebuilds the daily rollups behind windows "

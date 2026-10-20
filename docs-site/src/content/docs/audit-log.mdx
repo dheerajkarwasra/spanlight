@@ -1,0 +1,121 @@
+---
+title: Audit log
+description: What the organization audit log records, who can read it, how to filter and export it, how its hash chain shows tampering, and how to stream it to your log tool.
+sidebar:
+  order: 4
+---
+
+{/* Sources: backend/app/services/audit.py, backend/app/services/audit_stream.py, backend/app/exports/audit.py, backend/app/api/v1/orgs.py, backend/app/api/v1/audit_streams.py, backend/app/api/deps.py, backend/alembic/versions/1013_harden_audit_events.py, backend/alembic/versions/1014_chain_and_stream_audit_events.py, frontend/src/features/settings/audit-log-page.tsx, frontend/src/features/settings/audit-stream-card.tsx */}
+
+import NextSteps from '../../components/NextSteps.astro';
+import Prerequisites from '../../components/Prerequisites.astro';
+
+Every organization keeps one audit log: who changed what, who signed in, and which changes were refused. Admins and owners read it under **Settings → Audit log**. Only owners can set up streaming.
+
+## What is recorded
+
+- **Changes:** members, invites and roles, projects, API keys and access tokens, provider credentials, gateway routes and keys, alerts, budgets, prompts, datasets, evaluators, experiments, billing sources, the review policy, replays and the audit stream itself.
+- **Sign-ins:** a successful sign-in (password, two-factor code or OAuth), a wrong password for an existing account, a wrong two-factor code, a sign-out and an ended session. A sign-in attempt for an address with no account belongs to no organization and is not in any audit log.
+- **Refused changes:** a member whose role lacks the permission, a member of an organization that requires two-factor authentication without it, and a read-only access token used for a write. Refused reads are not recorded.
+- **Exports:** a trace export request and every audit log download.
+
+Each event carries:
+
+| Field | Meaning |
+| --- | --- |
+| `actor`, `actor_email` | Who acted. `actor_email` is the address when the event was written, so it stays after the person is removed. |
+| `actor_type` | `user` (signed in), `token` (an access token), `cli` (an admin command on the server) or `system` (Spanlight itself). |
+| `credential_id` | The access token used, for `actor_type: token`. |
+| `project_id` | The project, for events written in one. |
+| `outcome`, `reason` | `success` or `failure`, and why it failed (`invalid_password`, `invalid_totp`, `forbidden`, `two_factor_required`, `token_scope`). |
+| `ip`, `user_agent`, `request_id` | Where the request came from, when the actor made it. |
+| `metadata` | What changed. Values that look like secrets, and keys named like one (`secret`, `password`, `token`, `api_key`), are stored as `[REDACTED]`. |
+| `seq`, `prev_hash`, `hash` | The event's place in the hash chain (below). |
+
+The demo organization records no visitor IP addresses or browsers.
+
+## Filter and export
+
+Filter by action, actor, date, outcome, project and actor type. The filters stay in the page URL, so a filtered view can be shared.
+
+**Download** exports what the filters show, up to 50,000 events, as CSV or JSON Lines (one event object per line, the same shape the API returns). Over the API: `GET /api/v1/orgs/{org_id}/audit/export.csv` and `…/export.jsonl` take the same query parameters as `GET /api/v1/orgs/{org_id}/audit`.
+
+## Retention
+
+Events older than `AUDIT_RETENTION_DAYS` (default 365, `0` keeps everything) are deleted by the hourly retention job. Deleting an organization deletes its audit log.
+
+## Tamper evidence
+
+Events can't be changed or deleted through Spanlight: the database refuses updates and deletes from the application, except the retention job and an organization's deletion.
+
+Each event is also part of its organization's hash chain. `seq` counts the organization's events from 1. `hash` is SHA-256 over the event's content and `prev_hash`, which is the previous event's `hash`. Editing, inserting or removing an event in the middle breaks the chain at that point, and the next check finds it:
+
+- In the app, the line under the log reads **Chain intact** or **Chain broken** with the first event that no longer matches.
+- Over the API, `GET /api/v1/orgs/{org_id}/audit/integrity` returns `ok`, `checked`, `head_seq`, `head_hash` and `first_broken_seq`.
+- On the server, `spanlight audit-verify [--org <slug>]` checks every organization and exits `1` if any chain is broken.
+
+The chain proves the stored events have not been changed since they were written. It can't show that the newest events were removed, because the chain would simply end earlier. Keep a copy of `head_hash` outside Spanlight (streaming does this for you): a later chain that no longer reaches that hash means events were removed. The chain does not protect against someone who controls the database server.
+
+## Stream to your log tool
+
+Streaming sends every new audit event to one HTTPS endpoint you own, such as a SIEM's HTTP collector or your own service.
+
+<Prerequisites
+  items={[
+    'The owner role in the organization',
+    'CREDENTIALS_KEYS set on the server, because the signing secret is stored encrypted',
+  ]}
+/>
+
+1. Under **Settings → Audit log → Streaming**, enter the endpoint URL and select **Start streaming**.
+2. Copy the signing secret. It is shown once; **Rotate secret** makes a new one and the old one stops working at once.
+3. Select **Send test**. Your endpoint gets one `audit.test` event and the card says whether it answered with a 2xx.
+
+The stream starts with the events written after you save. The URL follows the [alert webhook URL rules](/docs/webhooks/#url-and-secret-handling): `https://` and a public address, unless the server sets `WEBHOOK_ALLOW_PRIVATE_TARGETS`.
+
+### The request
+
+```http
+POST /your/path HTTP/1.1
+Content-Type: application/json
+X-Spanlight-Event: audit.events
+X-Spanlight-Delivery: <org id>:<first seq>-<last seq>
+X-Spanlight-Timestamp: <unix seconds>
+X-Spanlight-Signature: sha256=<64 hex characters>
+
+{"events": [ { ...event... }, ... ]}
+```
+
+Each request carries up to 500 events in `seq` order, each the object the audit API returns. [Verify the signature](/docs/webhooks/#verify-a-request) exactly as for alert webhooks, with the stream's secret. Deduplicate on `X-Spanlight-Delivery`, which stays the same when a batch is retried.
+
+### Delivery
+
+- The worker sends what is pending once a minute, up to 10,000 events per stream per run.
+- Any 2xx moves the stream past the batch. Anything else, a timeout or a refused connection is a failure: the batch is sent again later, after 1, 2, 4 … minutes, at most an hour apart. Nothing is skipped or lost while the endpoint is down; the card shows how many events are waiting.
+- Delivery is at least once and in order. A batch can arrive twice, never out of order.
+- Turning the stream off pauses it; turning it on again resumes from where it stopped. **Remove** deletes the endpoint and its secret. The events stay in the audit log.
+
+## Check it worked
+
+- Change something (rename the organization, say) and reload **Settings → Audit log**: the event is at the top, and the line under the log still reads **Chain intact**.
+- With a stream on, the card reads **Delivering** with nothing waiting a minute or two later, and your endpoint has the event in a request whose signature verifies.
+
+## Troubleshooting
+
+| What you see | Why, and what to do |
+| --- | --- |
+| **Start streaming** answers that CREDENTIALS_KEYS isn't set | The server has no key to encrypt the signing secret with. Ask the operator to set `CREDENTIALS_KEYS`. |
+| `The stream URL is not allowed` | The URL is not `https://`, has a user name, or its host resolves to a private address. Use a public HTTPS endpoint, or ask the operator to set `WEBHOOK_ALLOW_PRIVATE_TARGETS` for one inside the network. |
+| **Failing** with an HTTP status | Your endpoint did not answer 2xx. Fix it; delivery resumes on its own from the first event it has not accepted, and **Send test** checks it at once. |
+| **Failing**: the signing secret cannot be decrypted | `CREDENTIALS_KEYS` no longer holds the key the secret was sealed with. Select **Rotate secret** and give your endpoint the new one. |
+| **Chain broken** | An event was changed or removed outside Spanlight. Compare with your streamed copy or a backup from before the event `first_broken_seq` names, and find out who had database access. |
+| An event you expected is missing | Refused reads, sign-in attempts for unknown addresses, and the demo visitors' sign-ins and refused changes are not recorded, and retention deletes events older than `AUDIT_RETENTION_DAYS`. |
+
+## Next steps
+
+<NextSteps
+  links={[
+    { title: 'Verify a signed request', href: '/docs/webhooks/#verify-a-request', description: 'The signature check streaming shares with alert webhooks.' },
+    { title: 'Configuration', href: '/docs/configuration/', description: 'AUDIT_RETENTION_DAYS, CREDENTIALS_KEYS and WEBHOOK_ALLOW_PRIVATE_TARGETS.' },
+  ]}
+/>

@@ -164,6 +164,14 @@ Shows which edition the instance runs and what the license key in `EE_LICENSE_KE
 
 Without a key it prints `Edition: community (EE_LICENSE_KEY is not set)`. With a key that verifies it prints `Edition: enterprise`, then the license id, the licensee, the signing key id, the expiry date with the days left (or `expired: ee features are off`) and the features the license grants. A key that does not verify exits with status `1` and `Error: EE_LICENSE_KEY is invalid: ...`; the API and worker refuse to start with such a key, so run this command to find out why. The key is verified offline: nothing is sent anywhere.
 
+### `audit-verify`
+
+```text
+spanlight audit-verify [--org <slug>]
+```
+
+Recomputes each organization's [audit log hash chain](/docs/audit-log/#tamper-evidence) from the stored events. For each organization it prints `ok` with the number of events, the `seq` range and the newest hash, `no events`, or `BROKEN at seq <n>` (to standard error) for the first event that no longer matches its hash or its predecessor. It exits with status `1` when any chain is broken. `--org` checks one organization by slug. Keep the printed head hashes somewhere else: a later run whose chain no longer reaches one means recent events were removed.
+
 ## Maintenance
 
 ### `rollups backfill`

@@ -2936,3 +2936,60 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
   left out of `improved`, `regressed`, `unchanged` and the paired test, since its two scores were measured against
   different references; `ComparisonOut.changed_items` counts such pairs. Each run's means, intervals, cost and
   latency still cover all of its items.
+
+## Audit log hardening (added 2026-10-20)
+
+- **Event fields.** `AuditEventOut` (list and CSV) gains `actor_type` (`user`, `token` for a personal access
+  token, `system` for the app itself, `cli` for an admin command; `null` on events written before migration
+  `1013`, not known), `actor_email` (the actor's email when the event was written, so it survives the user's
+  deletion; for older events the API falls back to the live user's email), `credential_id` (the token used, when
+  `actor_type` is `token`), `project_id` (set on events written by a project route), `outcome` (`success` or
+  `failure`; every earlier event is a success), `reason` (a failure's code), `user_agent` and `request_id` (the
+  request's `X-Request-ID`). The IP and user agent are recorded only when the actor is the one making the request;
+  an event with no actor carries neither. The demo account's requests record no IP or user agent.
+- **Filters.** `GET /orgs/{org_id}/audit` and its exports take `project_id`, `outcome` (`success`, `failure`)
+  and `actor_type` (`user`, `token`, `system`, `cli`) too; any other value is `422`. The CSV
+  columns are `id, created_at, action, actor_id, actor_email, actor_type, credential_id, project_id, target_type,
+  target_id, outcome, reason, ip, user_agent, request_id, metadata`.
+- **New actions.** `user.login` (`metadata.method`: `password`, `totp` or `oauth`; a wrong password for a known
+  account or a wrong two-factor code is `outcome: failure` with `reason` `invalid_password` or `invalid_totp`; an
+  unknown address belongs to no org and is only counted in `login_attempts`; the two-factor challenge step writes
+  nothing), `user.logout`, `user.session_revoke` (one session: target `session`; every other session:
+  `metadata.count`), `token.create` and `token.revoke` (target `token`, `metadata` name and scope; a repeated
+  revoke writes nothing), `export.create` (target `export`, `metadata` the request body), `audit.export` (written
+  before the file streams, `metadata` `{format, filters}` with the filters that were set) and `access.denied` (a
+  member refused on POST, PUT, PATCH or DELETE, never in a demo org; `reason` is `forbidden` for a role without
+  the permission, `two_factor_required` in an org that requires two-factor authentication, `token_scope` for a
+  read-only personal access token; `metadata` permission, method and path; written in its own transaction, as the
+  refused request's rolls back).
+- **Hash chain (migration 1014).** Every event gets `seq` (1, 2, 3 … per org), `prev_hash` and `hash` (hex
+  SHA-256 over the event's canonical JSON, `prev_hash` included), filled by a database trigger under a per-org
+  advisory lock, so `seq` follows commit order. Events written before 1014 were chained by the migration as
+  stored then. `actor_user_id` no longer has a foreign key (a cascade would rewrite a hashed column); the id and
+  `actor_email` stay after the user is deleted. `GET /orgs/{org_id}/audit/integrity` (`audit:read`) →
+  `{ok, checked, first_seq, head_seq, head_hash, first_broken_seq}`; the oldest stored event is trusted as the
+  start, since retention removes older ones. CLI: `spanlight audit-verify [--org <slug>]`, exit `1` on a break.
+- **Audit streaming (MIT, no license gate).** One HTTPS endpoint per org. `GET /orgs/{org_id}/audit/stream`
+  (`audit:read`) → the stream or `null`; `PUT` `{url, enabled}` (`org:security`, owners) creates it, with
+  `secret` returned once, or changes it; `POST …/stream/rotate-secret` returns a new `secret` once; `DELETE`
+  removes it; `POST …/stream/test` sends one `audit.test` event now → `{ok, error}` (10 an hour, `429`). Without a
+  stream, rotate, delete and test answer `409 AUDIT_STREAM_NOT_SET_UP`; a URL the webhook rules refuse is
+  `422 UNSAFE_URL`; no CREDENTIALS_KEYS is `409 NOT_CONFIGURED`. The worker job `deliver_audit_streams` (every
+  minute) POSTs `{"events": [AuditEventOut…]}` in `seq` order, up to 500 per request and 20 requests per stream
+  per run, signed like alert webhooks, `X-Spanlight-Event: audit.events`, `X-Spanlight-Delivery:
+  <org id>:<first seq>-<last seq>`. `delivered_seq` moves only on a 2xx; a failure backs off 1, 2, 4 … minutes
+  (at most an hour). A new stream starts after the newest event. The audit trail records the URL's host only,
+  never its path or query. New actions: `audit_stream.create`, `.update`, `.delete`, `.rotate_secret`, `.test`.
+- **JSON Lines export.** `GET /orgs/{org_id}/audit/export.jsonl` takes the same filters and limit as the CSV
+  (`audit:read`, `422 EXPORT_TOO_LARGE` past 50 000) and streams `application/x-ndjson`, one `AuditEventOut`
+  object per line, newest first, for log tools. Account-level events (sign-in,
+  sign-out, sessions, tokens) are written to each non-demo org of the user, like `user.password_reset`.
+- **Append-only.** A trigger refuses `UPDATE` and `DELETE` on `audit_events`, except a foreign-key cascade (an
+  org's deletion deletes its log; a user's deletion nulls `actor_user_id`) and the retention purge.
+  `ensure-app-role` revokes `UPDATE` on the table from the app role.
+- **Retention.** `AUDIT_RETENTION_DAYS` (default 365, `0` keeps everything); the hourly retention job deletes
+  older events in batches of 5,000.
+- **Redaction.** Metadata keys naming a secret (`secret`, `password`, `token`, `api_key`, `authorization`,
+  `cookie`, `hash`, `private_key`, as a whole word of the key) are stored as `[REDACTED]`, and string values go
+  through the span payload redactor.
+- Who may read the log is unchanged: `audit:read`, admins and owners.

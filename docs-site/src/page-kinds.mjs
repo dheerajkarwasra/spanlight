@@ -49,6 +49,7 @@ export const PAGE_KINDS = {
   alerts: 'how-to',
   budgets: 'how-to',
   webhooks: 'how-to',
+  'audit-log': 'how-to',
   'gateway/quickstart': 'how-to',
   'gateway/cache': 'how-to',
   'gateway/credentials': 'how-to',
