@@ -99,7 +99,7 @@ function DocsLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <a
       href={href}
-      className="inline-flex items-center gap-1 rounded-sm text-sm font-semibold text-accent underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      className="inline-flex items-center gap-1 rounded-sm text-sm font-semibold text-accent underline-offset-4 hover:underline focus-visible:outline-[1.5px] focus-visible:outline-offset-2 focus-visible:outline-ring"
     >
       {children}
       <ChevronRight aria-hidden className="size-4" />

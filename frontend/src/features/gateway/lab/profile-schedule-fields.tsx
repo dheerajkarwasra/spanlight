@@ -2,7 +2,7 @@ import { useId } from "react";
 import { Controller, type Control, type UseFormRegisterReturn } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
-import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 
 import type { ProfileFormValues } from "./lab-profile";
@@ -31,7 +31,7 @@ export function ProfileScheduleFields({
         hint="Pre-filled to 24 hours from now. Clear it to keep the profile running."
         error={expiresAtError}
       >
-        <Input type="datetime-local" {...expiresAt} />
+        <DateInput type="datetime-local" {...expiresAt} />
       </FormField>
     </div>
   );

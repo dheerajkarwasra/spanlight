@@ -3,7 +3,7 @@ import { useRef, useState, type SubmitEvent } from "react";
 
 import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 import {
@@ -114,7 +114,7 @@ export function WindowPicker({ value, onChange }: WindowPickerProps) {
           </div>
           <form onSubmit={apply} className="flex flex-col gap-4" noValidate>
             <FormField label="First day">
-              <Input
+              <DateInput
                 type="date"
                 value={first}
                 max={today}
@@ -124,7 +124,7 @@ export function WindowPicker({ value, onChange }: WindowPickerProps) {
               />
             </FormField>
             <FormField label="Last day" error={error ?? undefined}>
-              <Input
+              <DateInput
                 ref={lastDay}
                 type="date"
                 value={last}

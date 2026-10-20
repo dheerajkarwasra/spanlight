@@ -22,7 +22,7 @@ interface SidebarProps {
 
 /** Lime focus ring: the violet ring does not reach 3:1 on the near-black rail. */
 const RAIL_FOCUS =
-  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime";
+  "focus-visible:outline-[1.5px] focus-visible:outline-offset-2 focus-visible:outline-lime";
 
 const SETTINGS_PATH: NavItem["to"] = "/$orgId/$projectId/settings";
 

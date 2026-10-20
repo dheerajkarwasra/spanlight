@@ -57,7 +57,7 @@ export function SessionTile({ session }: { session: SessionSummary }) {
             to="/$orgId/$projectId/sessions/$sessionId"
             params={{ orgId, projectId, sessionId: toPathId(session.session_id) }}
             title={session.session_id}
-            className="truncate font-mono text-code text-foreground outline-none after:absolute after:inset-0 after:rounded-tile after:outline-offset-2 after:content-[''] focus-visible:after:outline-2 focus-visible:after:outline-ring"
+            className="truncate font-mono text-code text-foreground outline-none after:absolute after:inset-0 after:rounded-tile after:outline-offset-2 after:content-[''] focus-visible:after:outline-[1.5px] focus-visible:after:outline-ring"
           >
             {session.session_id}
           </Link>

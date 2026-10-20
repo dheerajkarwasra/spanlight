@@ -96,7 +96,7 @@ export function ChipInput({
         className={cn(
           "flex min-h-[46px] flex-wrap items-center gap-1.5 rounded-input border border-input bg-surface px-3 py-1.5",
           "transition-colors duration-200 ease-out-quart",
-          "focus-within:border-accent focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring",
+          "field-focus-within",
           (ariaInvalid || rejection) && "border-[1.5px] border-danger",
           disabled && "cursor-not-allowed bg-surface-muted opacity-60",
         )}

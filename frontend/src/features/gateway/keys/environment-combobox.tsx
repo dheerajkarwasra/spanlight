@@ -68,8 +68,8 @@ export function EnvironmentCombobox({
           aria-describedby={ariaDescribedBy}
           className={cn(
             "flex h-[46px] w-full items-center justify-between gap-2 rounded-input border border-input bg-surface px-4 text-sm text-foreground",
-            "transition-colors duration-200 ease-out-quart focus-visible:border-accent",
-            "aria-invalid:border-[1.5px] aria-invalid:border-danger aria-invalid:focus-visible:outline-danger",
+            "field-focus transition-colors duration-200 ease-out-quart",
+            "aria-invalid:border-[1.5px] aria-invalid:border-danger",
           )}
         >
           <span className={cn("truncate", value === "" && "text-subtle-foreground")}>

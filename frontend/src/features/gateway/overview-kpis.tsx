@@ -57,7 +57,7 @@ function InfoButton({ label, text }: { label: string; text: string }) {
       <button
         type="button"
         aria-label={`About ${label}: ${text}`}
-        className="-my-1 inline-flex size-6 items-center justify-center rounded-full text-subtle-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        className="-my-1 inline-flex size-6 items-center justify-center rounded-full text-subtle-foreground hover:text-foreground focus-visible:outline-[1.5px] focus-visible:outline-offset-2 focus-visible:outline-ring"
       >
         <Info aria-hidden className="size-3.5" />
       </button>

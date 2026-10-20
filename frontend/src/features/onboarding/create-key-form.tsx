@@ -78,7 +78,7 @@ export function CreateKeyForm({
       <div
         className={cn(
           KEY_FIELD_CLASSES,
-          "has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-lime",
+          "has-[input:focus-visible]:outline-[1.5px] has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-lime",
           fieldError && "ring-[1.5px] ring-rail-danger",
         )}
       >

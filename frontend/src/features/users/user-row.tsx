@@ -21,7 +21,7 @@ function UserLink({ userId }: { userId: string }) {
       params={{ orgId, projectId, userId: toPathId(userId) }}
       search={keepWindow}
       title={userId}
-      className="block truncate font-mono text-code font-semibold text-foreground outline-none after:absolute after:inset-0 after:rounded-input after:outline-offset-2 after:content-[''] hover:underline focus-visible:after:outline-2 focus-visible:after:outline-ring"
+      className="block truncate font-mono text-code font-semibold text-foreground outline-none after:absolute after:inset-0 after:rounded-input after:outline-offset-2 after:content-[''] hover:underline focus-visible:after:outline-[1.5px] focus-visible:after:outline-ring"
     >
       {userId}
     </Link>

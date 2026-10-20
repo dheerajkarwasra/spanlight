@@ -52,7 +52,7 @@ export function InsightRow({ insight, now }: InsightRowProps) {
         <Link
           to="/$orgId/$projectId/doctor/$insightId"
           params={{ orgId, projectId, insightId: insight.id }}
-          className="text-sm font-semibold [overflow-wrap:anywhere] text-foreground outline-none after:absolute after:inset-0 after:rounded-tile focus-visible:after:outline-2 focus-visible:after:outline-offset-2 focus-visible:after:outline-ring"
+          className="text-sm font-semibold [overflow-wrap:anywhere] text-foreground outline-none after:absolute after:inset-0 after:rounded-tile focus-visible:after:outline-[1.5px] focus-visible:after:outline-offset-2 focus-visible:after:outline-ring"
         >
           {insight.title}
         </Link>

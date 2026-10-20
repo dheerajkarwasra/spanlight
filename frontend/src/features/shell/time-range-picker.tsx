@@ -3,7 +3,7 @@ import { CalendarClock } from "lucide-react";
 import { useState, type SubmitEvent } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
@@ -131,7 +131,7 @@ function CustomRangePopover() {
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="range-from">From</Label>
-            <Input
+            <DateInput
               id="range-from"
               type="datetime-local"
               value={customFrom}
@@ -142,7 +142,7 @@ function CustomRangePopover() {
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="range-to">To</Label>
-            <Input
+            <DateInput
               id="range-to"
               type="datetime-local"
               value={customTo}

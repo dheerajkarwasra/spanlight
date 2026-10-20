@@ -77,7 +77,7 @@ export function RuleRow({ rule, channels, acknowledged, now }: RuleRowProps) {
           to="/$orgId/$projectId/alerts/$ruleId"
           params={{ orgId, projectId, ruleId: rule.id }}
           className={cn(
-            "truncate text-sm font-semibold outline-none after:absolute after:inset-0 after:rounded-tile focus-visible:after:outline-2 focus-visible:after:outline-offset-2 focus-visible:after:outline-ring",
+            "truncate text-sm font-semibold outline-none after:absolute after:inset-0 after:rounded-tile focus-visible:after:outline-[1.5px] focus-visible:after:outline-offset-2 focus-visible:after:outline-ring",
             rule.enabled ? "text-foreground" : "text-muted-foreground",
           )}
         >

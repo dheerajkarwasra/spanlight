@@ -34,7 +34,7 @@ export function VoteButton({ verdict, pressed, describedBy, onClick, ref }: Vote
       className={cn(
         "inline-flex h-11 shrink-0 items-center gap-2 rounded-full px-[18px] text-sm font-semibold",
         "transition-[background-color,color,border-color] duration-200 ease-out-quart",
-        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+        "focus-visible:outline-[1.5px] focus-visible:outline-offset-2 focus-visible:outline-ring",
         "[&_svg]:pointer-events-none [&_svg]:shrink-0",
         pressed
           ? "border-2 border-accent bg-accent-subtle px-[17px] text-accent"

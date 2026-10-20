@@ -21,7 +21,7 @@ export function BackToAlerts() {
     <Link
       to="/$orgId/$projectId/alerts"
       params={{ orgId, projectId }}
-      className="inline-flex w-fit items-center gap-1.5 rounded-sm text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      className="inline-flex w-fit items-center gap-1.5 rounded-sm text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-[1.5px] focus-visible:outline-offset-2 focus-visible:outline-ring"
     >
       <ArrowLeft aria-hidden className="size-4" strokeWidth={2} />
       Alerts

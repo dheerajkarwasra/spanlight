@@ -2,7 +2,7 @@ import { CalendarDays, ChevronDown } from "lucide-react";
 import { useId, useState, type SubmitEvent } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -91,7 +91,7 @@ function DateRangeForm({ initial, onApply }: DateRangeFormProps) {
       </div>
       <div className="flex flex-col gap-2">
         <Label htmlFor="audit-since">From</Label>
-        <Input
+        <DateInput
           id="audit-since"
           type="date"
           aria-invalid={issue !== null}
@@ -105,7 +105,7 @@ function DateRangeForm({ initial, onApply }: DateRangeFormProps) {
       </div>
       <div className="flex flex-col gap-2">
         <Label htmlFor="audit-until">To</Label>
-        <Input
+        <DateInput
           id="audit-until"
           type="date"
           aria-invalid={issue !== null}

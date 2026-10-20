@@ -27,7 +27,7 @@ export function ComputedAtChip({ value }: ComputedAtChipProps) {
   const label = value === null ? null : computedAtLabel(value, now);
 
   return (
-    <span className="relative inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-xs font-medium whitespace-nowrap text-muted-foreground has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ring">
+    <span className="relative inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-xs font-medium whitespace-nowrap text-muted-foreground has-[:focus-visible]:outline-[1.5px] has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ring">
       <span aria-hidden className="py-1.5">
         {value !== null && label !== null ? (
           <time dateTime={value}>{label}</time>

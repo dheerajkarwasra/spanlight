@@ -105,8 +105,9 @@ export function ChipMultiSelect({
           className={cn(
             "flex min-h-[46px] flex-wrap items-center gap-1.5 rounded-input border border-input bg-surface px-3 py-1.5",
             "transition-colors duration-200 ease-out-quart",
-            "focus-within:border-accent focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring",
-            ariaInvalid && "border-[1.5px] border-danger focus-within:outline-danger",
+            "field-focus-within",
+            ariaInvalid &&
+              "border-[1.5px] border-danger focus-within:border-danger focus-within:shadow-[0_0_0_3px_var(--color-danger-ring-soft)]",
           )}
         >
           {value.map((picked) => {

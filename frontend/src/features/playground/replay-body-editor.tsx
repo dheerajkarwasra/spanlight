@@ -92,7 +92,7 @@ export function ReplayBodyEditor({ text, onChange }: ReplayBodyEditorProps) {
           }}
           className={cn(
             LAYER,
-            "relative block h-80 w-full resize-y overflow-auto rounded-input border-border bg-transparent text-foreground outline-none focus-visible:border-accent",
+            "relative block h-80 w-full resize-y overflow-auto rounded-input field-focus border-border bg-transparent text-foreground",
           )}
         />
       </div>

@@ -67,7 +67,7 @@ export function ProbabilityField({ value, onChange, error }: ProbabilityFieldPro
           aria-valuetext={`${percent ?? 0} %`}
           className={cn(
             "block size-5 rounded-full border-2 border-accent bg-surface shadow-card",
-            "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+            "focus-visible:outline-[1.5px] focus-visible:outline-offset-2 focus-visible:outline-ring",
           )}
         />
       </SliderPrimitive.Root>

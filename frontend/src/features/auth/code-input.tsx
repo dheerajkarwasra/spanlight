@@ -37,10 +37,10 @@ type CellState = "idle" | "active" | "error" | "error-active";
 
 const CELL_STATES: Record<CellState, string> = {
   idle: "border border-input",
-  active: "border-2 border-accent",
+  active: "border border-ring shadow-[0_0_0_3px_var(--color-ring-soft)]",
   error: "border-[1.5px] border-danger",
-  // Refused and focused: the red border stays, and the cell being typed into keeps the focus ring.
-  "error-active": "border-[1.5px] border-danger outline-2 outline-offset-2 outline-ring",
+  // Refused and focused: the red border stays, and the cell being typed into gets the danger halo.
+  "error-active": "border-[1.5px] border-danger shadow-[0_0_0_3px_var(--color-danger-ring-soft)]",
 };
 
 function Cell({

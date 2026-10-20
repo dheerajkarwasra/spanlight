@@ -136,6 +136,9 @@
   --code-comment: rgb(255 255 255 / 0.5);
 
   --ring: #7c3aed;
+  /* The soft halo around a focused field: the ring colour, faint. The border carries the contrast. */
+  --ring-soft: rgb(124 58 237 / 0.14);
+  --danger-ring-soft: rgb(225 29 72 / 0.14);
 
   /* Elevation */
   --elevation-xs: 0 1px 2px rgb(0 0 0 / 0.04);
@@ -242,6 +245,8 @@
   --code-keyword: #e5e5e5;
 
   --ring: #e5e5e5;
+  --ring-soft: rgb(229 229 229 / 0.12);
+  --danger-ring-soft: rgb(253 164 175 / 0.16);
 
   /* Dark surfaces rely on borders, not shadows. */
   --elevation-xs: none;
@@ -330,6 +335,8 @@
   --color-code-string: var(--code-string);
   --color-code-comment: var(--code-comment);
   --color-ring: var(--ring);
+  --color-ring-soft: var(--ring-soft);
+  --color-danger-ring-soft: var(--danger-ring-soft);
 
   --font-sans: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
@@ -504,9 +511,9 @@
     unicode-bidi: isolate;
   }
 
-  /* Keyboard focus: a solid 2px violet ring, 2px outside the control. */
+  /* Keyboard focus: a fine 1.5px ring, 2px outside the control. Fields use `field-focus`. */
   :focus-visible {
-    outline: 2px solid var(--color-ring);
+    outline: 1.5px solid var(--color-ring);
     outline-offset: 2px;
   }
 
@@ -522,6 +529,35 @@
     font-family: var(--font-mono);
     /* Show code exactly as typed: "->" stays two characters. */
     font-variant-ligatures: none;
+  }
+}
+
+/*
+ * A focused field (input, select, editor): no ring outside it; the 1px border takes the ring colour
+ * (5.7:1 on white, so the focus stays visible) with a faint 3px halo. An invalid field does the
+ * same in danger.
+ */
+@utility field-focus {
+  &:focus-visible {
+    outline: none;
+    border-color: var(--color-ring);
+    box-shadow: 0 0 0 3px var(--color-ring-soft);
+  }
+  &[aria-invalid="true"]:focus-visible {
+    border-color: var(--color-danger);
+    box-shadow: 0 0 0 3px var(--color-danger-ring-soft);
+  }
+}
+
+/* The same for a field built from a wrapper around an input (chips, tag inputs). */
+@utility field-focus-within {
+  &:focus-within {
+    outline: none;
+    border-color: var(--color-ring);
+    box-shadow: 0 0 0 3px var(--color-ring-soft);
+  }
+  &:focus-within :focus-visible {
+    outline: none;
   }
 }
 

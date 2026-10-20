@@ -88,10 +88,10 @@ export function PromotedKeysInput({
             "flex min-h-12 flex-wrap items-center gap-1.5 rounded-input border border-input bg-surface px-2.5 py-2",
             "max-md:flex-col max-md:items-stretch max-md:gap-1 max-md:p-1",
             "transition-colors duration-200 ease-out-quart",
-            "focus-within:border-accent focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring",
+            "field-focus-within",
             // A ring, not a 2 px border, so the content doesn't shift.
             error &&
-              "border-danger ring-1 ring-danger focus-within:border-danger focus-within:outline-danger",
+              "border-danger ring-1 ring-danger focus-within:border-danger focus-within:shadow-[0_0_0_3px_var(--color-danger-ring-soft)]",
           )}
         >
           {keys.length > 0 ? (
@@ -114,7 +114,7 @@ export function PromotedKeysInput({
                       // The button is gone; at the cap the text box mounts only on the next render.
                       requestAnimationFrame(() => inputRef.current?.focus());
                     }}
-                    className="flex size-6 shrink-0 items-center justify-center rounded-full text-foreground hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-ring max-md:size-11"
+                    className="flex size-6 shrink-0 items-center justify-center rounded-full text-foreground hover:bg-surface-hover focus-visible:outline-[1.5px] focus-visible:outline-ring max-md:size-11"
                   >
                     <X aria-hidden className="size-3" strokeWidth={2.5} />
                   </button>
