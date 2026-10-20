@@ -1,9 +1,18 @@
 import { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useOrgProjectsQuery, useProjectParams } from "@/features/shell";
 
 import { AuditDateFilter } from "./audit-date-filter";
-import { actionOptions, actorOptions, withSelected } from "./audit-filter-options";
+import {
+  ACTOR_TYPE_OPTIONS,
+  OUTCOME_OPTIONS,
+  actionOptions,
+  asActorType,
+  actorOptions,
+  projectOptions,
+  withSelected,
+} from "./audit-filter-options";
 import { FilterSelectPill } from "./audit-filter-pill";
 import type { AuditFilterValues } from "./audit-filters";
 import { useMembersQuery } from "./member-queries";
@@ -17,12 +26,15 @@ interface AuditFilterBarProps {
 }
 
 /**
- * Action, Actor and Date pills with "Clear filters" (Figma "Settings/Filter pill" row). The
- * choices live in the URL, so the list and the CSV download read the same ones.
+ * Action, Actor, Date, Outcome, Project and Actor type pills with "Clear filters" (Figma "Audit log v3"). The
+ * choices live in the URL, so the list and the downloads read the same ones.
  */
 export function AuditFilterBar({ values, onChange, showClear, onClear }: AuditFilterBarProps) {
   const membersQuery = useMembersQuery();
   const members = membersQuery.data;
+  const { orgId } = useProjectParams();
+  const projectsQuery = useOrgProjectsQuery(orgId);
+  const projectList = projectsQuery.data;
 
   const actions = useMemo(
     () => withSelected(actionOptions(), values.action, values.action ?? ""),
@@ -31,6 +43,10 @@ export function AuditFilterBar({ values, onChange, showClear, onClear }: AuditFi
   const actors = useMemo(
     () => withSelected(actorOptions(members ?? []), values.actor, "Former member"),
     [members, values.actor],
+  );
+  const projects = useMemo(
+    () => withSelected(projectOptions(projectList ?? []), values.project, "Deleted project"),
+    [projectList, values.project],
   );
 
   return (
@@ -58,6 +74,35 @@ export function AuditFilterBar({ values, onChange, showClear, onClear }: AuditFi
         until={values.until}
         onApply={(range) => {
           onChange(range);
+        }}
+      />
+      <FilterSelectPill
+        label="Outcome"
+        allLabel="All outcomes"
+        value={values.outcome}
+        options={OUTCOME_OPTIONS}
+        onChange={(outcome) => {
+          onChange({
+            outcome: outcome === "success" || outcome === "failure" ? outcome : undefined,
+          });
+        }}
+      />
+      <FilterSelectPill
+        label="Project"
+        allLabel="All projects"
+        value={values.project}
+        options={projects}
+        onChange={(project) => {
+          onChange({ project });
+        }}
+      />
+      <FilterSelectPill
+        label="Actor type"
+        allLabel="All types"
+        value={values.via}
+        options={ACTOR_TYPE_OPTIONS}
+        onChange={(via) => {
+          onChange({ via: asActorType(via) });
         }}
       />
       {showClear ? (

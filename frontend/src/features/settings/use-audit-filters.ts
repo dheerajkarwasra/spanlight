@@ -15,11 +15,11 @@ const auditRoute = getRouteApi("/_authed/$orgId/$projectId/settings/audit");
 export function useAuditFilters() {
   const search = auditRoute.useSearch();
   const navigate = auditRoute.useNavigate();
-  const { action, actor, since, until } = search;
+  const { action, actor, since, until, outcome, project, via } = search;
 
   const values: AuditFilterValues = useMemo(
-    () => ({ action, actor, since, until }),
-    [action, actor, since, until],
+    () => ({ action, actor, since, until, outcome, project, via }),
+    [action, actor, since, until, outcome, project, via],
   );
   const filters: AuditFilters = useMemo(() => toAuditFilters(values), [values]);
 
@@ -38,6 +38,9 @@ export function useAuditFilters() {
         actor: undefined,
         since: undefined,
         until: undefined,
+        outcome: undefined,
+        project: undefined,
+        via: undefined,
       }),
       replace: true,
     });

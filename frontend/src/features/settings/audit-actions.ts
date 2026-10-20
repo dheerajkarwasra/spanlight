@@ -76,7 +76,18 @@ const AUDIT_ACTION_LABELS: ReadonlyMap<string, string> = new Map(
     "budget.delete": "Deleted budget",
     "dataset.lock": "Locked dataset",
     "dataset.unlock": "Unlocked dataset",
+    "user.session_revoke": "Ended a session",
+    "token.create": "Created access token",
+    "token.revoke": "Revoked access token",
+    "export.create": "Requested an export",
+    "audit.export": "Downloaded the audit log",
+    "access.denied": "Change refused",
   }),
+);
+
+// How an action reads when it failed, where that differs from its success.
+const AUDIT_FAILURE_LABELS: ReadonlyMap<string, string> = new Map(
+  Object.entries({ "user.login": "Failed sign-in" }),
 );
 
 /**
@@ -133,11 +144,23 @@ export const AUDIT_FILTER_ACTIONS: readonly string[] = [
   "budget.delete",
   "dataset.lock",
   "dataset.unlock",
+  "user.login",
+  "user.logout",
+  "user.session_revoke",
+  "token.create",
+  "token.revoke",
+  "export.create",
+  "audit.export",
+  "access.denied",
 ];
 
 /** The label for a known action, or null so the caller can show the raw action in mono. */
-export function auditActionLabel(action: string): string | null {
-  return AUDIT_ACTION_LABELS.get(action) ?? null;
+export function auditActionLabel(
+  action: string,
+  outcome: AuditEvent["outcome"] = "success",
+): string | null {
+  const failed = outcome === "failure" ? AUDIT_FAILURE_LABELS.get(action) : undefined;
+  return failed ?? AUDIT_ACTION_LABELS.get(action) ?? null;
 }
 
 const TARGET_TYPE_LABELS: ReadonlyMap<string, string> = new Map(
@@ -151,6 +174,8 @@ const TARGET_TYPE_LABELS: ReadonlyMap<string, string> = new Map(
     member: "Member",
     invite: "Invite",
     session: "Session",
+    token: "Access token",
+    export: "Export",
     provider_credential: "Provider credential",
     gateway_route: "Gateway route",
     gateway_key: "Gateway key",
@@ -185,14 +210,78 @@ function readString(metadata: Record<string, unknown>, key: string): string | nu
   return typeof value === "string" && value !== "" ? value : null;
 }
 
+// Why an event failed, as the server's `reason` codes read.
+const FAILURE_REASONS: ReadonlyMap<string, string> = new Map(
+  Object.entries({
+    invalid_password: "Wrong password",
+    invalid_totp: "Wrong two-factor code",
+    two_factor_required: "Two-factor authentication required",
+    token_scope: "Read-only access token",
+  }),
+);
+
+const SIGN_IN_METHODS: ReadonlyMap<string, string> = new Map(
+  Object.entries({ password: "with password", totp: "with two-factor code", oauth: "with OAuth" }),
+);
+
+/** Why the event failed in words, e.g. "Wrong password" or "Role lacks project:write". */
+export function auditFailureReason(
+  event: Pick<AuditEvent, "outcome" | "reason"> & { metadata: Record<string, unknown> | null },
+): string | null {
+  if (event.outcome !== "failure" || !event.reason) {
+    return null;
+  }
+  if (event.reason === "forbidden") {
+    const permission = event.metadata ? readString(event.metadata, "permission") : null;
+    return permission ? `Role lacks ${permission}` : "Role lacks the permission";
+  }
+  return FAILURE_REASONS.get(event.reason) ?? event.reason;
+}
+
+export interface AuditChange {
+  field: string;
+  from: unknown;
+  to: unknown;
+}
+
+function isChange(value: unknown): value is { from: unknown; to: unknown } {
+  return typeof value === "object" && value !== null && "from" in value && "to" in value;
+}
+
 /**
- * A one-line summary of the event's metadata for the table, e.g. the key name
- * or "member → admin". Null when there's nothing worth surfacing.
+ * The before and after values the event recorded: `{field: {from, to}}` entries at the top
+ * level or under `changes`, and the top-level `from`/`to` pair of a role change. Empty when the
+ * event recorded none.
+ */
+export function auditChanges(metadata: Record<string, unknown> | null): AuditChange[] {
+  if (!metadata) {
+    return [];
+  }
+  if ("from" in metadata && "to" in metadata) {
+    return [{ field: "role", from: metadata.from, to: metadata.to }];
+  }
+  const nested = metadata.changes;
+  const source =
+    typeof nested === "object" && nested !== null ? (nested as Record<string, unknown>) : metadata;
+  return Object.entries(source).flatMap(([field, value]) =>
+    isChange(value) ? [{ field, from: value.from, to: value.to }] : [],
+  );
+}
+
+/**
+ * A one-line summary of the event for the table: why it failed, the key name, "member → admin",
+ * the fields that changed, or how someone signed in. Null when there's nothing worth surfacing.
  */
 export function auditEventSummary(
-  action: string,
-  metadata: Record<string, unknown> | null,
+  event: Pick<AuditEvent, "action" | "outcome" | "reason"> & {
+    metadata: Record<string, unknown> | null;
+  },
 ): string | null {
+  const failure = auditFailureReason(event);
+  if (failure) {
+    return failure;
+  }
+  const { action, metadata } = event;
   if (!metadata) {
     return null;
   }
@@ -206,6 +295,14 @@ export function auditEventSummary(
     const fields = Object.keys(changes);
     return fields.length > 0 ? fields.join(", ") : null;
   }
+  const changed = auditChanges(metadata).map((change) => change.field);
+  if (changed.length > 0) {
+    return changed.join(", ");
+  }
+  if (action === "user.login") {
+    const method = readString(metadata, "method");
+    return method ? (SIGN_IN_METHODS.get(method) ?? null) : null;
+  }
   return readString(metadata, "name") ?? readString(metadata, "role");
 }
 
@@ -213,7 +310,24 @@ export function hasMetadata(metadata: Record<string, unknown> | null): boolean {
   return metadata !== null && Object.keys(metadata).length > 0;
 }
 
-/** Who acted: their name, else their email, or "System" for an event no person caused. */
-export function auditActorName(event: Pick<AuditEvent, "actor">): string {
-  return event.actor ? event.actor.name || event.actor.email : "System";
+/**
+ * Who acted: their name, else their email, else the email recorded with the event (a person who
+ * has since been deleted), "Admin command" for the server's admin CLI, or "System" for an event
+ * the app caused itself.
+ */
+export function auditActorName(
+  event: Pick<AuditEvent, "actor" | "actor_email" | "actor_type">,
+): string {
+  if (event.actor) {
+    return event.actor.name || event.actor.email;
+  }
+  if (event.actor_email) {
+    return event.actor_email;
+  }
+  return event.actor_type === "cli" ? "Admin command" : "System";
+}
+
+/** "via access token" when a person acted through a personal access token, else null. */
+export function auditActorVia(event: Pick<AuditEvent, "actor_type">): string | null {
+  return event.actor_type === "token" ? "via access token" : null;
 }

@@ -168,9 +168,58 @@ export interface AuditEvent {
   id: string;
   action: string;
   actor: User | null;
+  /** `user`, `token`, `system` or `cli`; null on events recorded before it was. */
+  actor_type: "user" | "token" | "system" | "cli" | null;
+  /** The actor's email when the event was written; kept after the user is gone. */
+  actor_email: string | null;
+  credential_id: string | null;
+  project_id: string | null;
   target_type: string;
   target_id: string;
+  outcome: "success" | "failure";
+  reason: string | null;
   metadata: Record<string, unknown>;
   ip: string | null;
+  user_agent: string | null;
+  request_id: string | null;
   created_at: string;
+  /** The org's hash chain: `hash` (hex SHA-256) covers the event and `prev_hash`. */
+  seq: number | null;
+  prev_hash: string | null;
+  hash: string | null;
+}
+
+/** `GET /orgs/{id}/audit/integrity`: the hash chain recomputed from the stored events. */
+export interface AuditIntegrity {
+  ok: boolean;
+  checked: number;
+  first_seq: number | null;
+  head_seq: number | null;
+  head_hash: string | null;
+  first_broken_seq: number | null;
+}
+
+/** The org's audit stream to an HTTPS endpoint. Never carries the signing secret. */
+export interface AuditStream {
+  url: string;
+  enabled: boolean;
+  delivered_seq: number;
+  head_seq: number;
+  last_delivered_at: string | null;
+  last_error: string | null;
+  last_error_at: string | null;
+  consecutive_failures: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AuditStreamSaved {
+  stream: AuditStream;
+  /** Shown once: when the stream is created or its secret rotated; null otherwise. */
+  secret: string | null;
+}
+
+export interface AuditStreamTest {
+  ok: boolean;
+  error: string | null;
 }

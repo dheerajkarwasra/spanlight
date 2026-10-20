@@ -26,6 +26,11 @@ export const auditSearchSchema = z
     actor: z.string().regex(UUID_PATTERN).optional().catch(undefined),
     since: optionalDay(),
     until: optionalDay(),
+    outcome: z.enum(["success", "failure"]).optional().catch(undefined),
+    /** The id of a project: only events written in it. */
+    project: z.string().regex(UUID_PATTERN).optional().catch(undefined),
+    /** Who acted: `user`, `token`, `cli` or `system`. */
+    via: z.enum(["user", "token", "cli", "system"]).optional().catch(undefined),
   })
   .transform((search) =>
     search.since !== undefined && search.until !== undefined && search.since > search.until

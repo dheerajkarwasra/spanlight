@@ -99,7 +99,10 @@ export function AuditLogContent({ query, filtered, onClearFilters }: AuditLogCon
       </div>
       <p className="flex items-start gap-2 px-1 pt-1.5 text-xs font-medium text-muted-foreground">
         <Info aria-hidden className="mt-px size-3.5 shrink-0 text-subtle-foreground" />
-        <span>Download CSV exports every event that matches these filters, up to 50,000 rows.</span>
+        <span>
+          Download exports every event that matches these filters, up to 50,000, as CSV or JSON
+          Lines.
+        </span>
       </p>
     </>
   );

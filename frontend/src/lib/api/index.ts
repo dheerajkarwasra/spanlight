@@ -39,7 +39,7 @@ export type * from "./experiments";
 export { gatewayApi } from "./gateway";
 export { insightsApi } from "./insights";
 export { orgsApi } from "./orgs";
-export type { AuditFilters, AuditQuery, OrgUpdate } from "./orgs";
+export type { AuditFileFormat, AuditFilters, AuditQuery, OrgUpdate } from "./orgs";
 export { playgroundApi } from "./playground";
 export type * from "./playground";
 export { pricesApi } from "./prices";

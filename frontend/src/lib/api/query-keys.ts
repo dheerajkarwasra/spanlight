@@ -49,6 +49,8 @@ export const queryKeys = {
       /** Every audit query of the org: invalidate with this, read one with `auditEvents`. */
       audit,
       auditEvents: (filters: AuditFilters) => [...audit, filters] as const,
+      auditIntegrity: [...audit, "integrity"] as const,
+      auditStream: [...all, "audit-stream"] as const,
       credentials: [...all, "credentials"] as const,
       priceOverrides: [...all, "price-overrides"] as const,
       /** The org's billing sources; one source and its runs sit under it, so this covers them. */

@@ -3,7 +3,7 @@
  * words and file name around them. Pure functions only, so the list and the CSV download always
  * carry the same filters.
  */
-import type { AuditFilters } from "@/lib/api";
+import type { AuditEvent, AuditFileFormat, AuditFilters } from "@/lib/api";
 
 /** The filters as the URL keeps them; days are local (`2026-10-08`) and inclusive. */
 export interface AuditFilterValues {
@@ -11,6 +11,11 @@ export interface AuditFilterValues {
   actor?: string | undefined;
   since?: string | undefined;
   until?: string | undefined;
+  outcome?: AuditEvent["outcome"] | undefined;
+  /** A project id: only events written in that project. */
+  project?: string | undefined;
+  /** Who acted: a signed-in person, an access token, an admin command or the app itself. */
+  via?: NonNullable<AuditEvent["actor_type"]> | undefined;
 }
 
 const DAY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -55,12 +60,29 @@ export function toAuditFilters(values: AuditFilterValues): AuditFilters {
   if (to) {
     filters.to = to.toISOString();
   }
+  if (values.outcome) {
+    filters.outcome = values.outcome;
+  }
+  if (values.project) {
+    filters.project_id = values.project;
+  }
+  if (values.via) {
+    filters.actor_type = values.via;
+  }
   return filters;
 }
 
 /** Whether any filter is set: "Clear filters" and the empty-state wording depend on it. */
 export function hasAuditFilters(values: AuditFilterValues): boolean {
-  return Boolean(values.action || values.actor || values.since || values.until);
+  return Boolean(
+    values.action ||
+    values.actor ||
+    values.since ||
+    values.until ||
+    values.outcome ||
+    values.project ||
+    values.via,
+  );
 }
 
 /** Why the two days cannot be applied, or null: the API refuses a range that ends before it starts. */
@@ -112,8 +134,12 @@ function localDay(date: Date): string {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
-/** `audit-acme-ai-2026-10-09.csv`. The slug is made safe for a file name. */
-export function auditCsvFilename(orgSlug: string, now: Date = new Date()): string {
+/** `audit-acme-ai-2026-10-09.csv` (or `.jsonl`). The slug is made safe for a file name. */
+export function auditFilename(
+  orgSlug: string,
+  format: AuditFileFormat = "csv",
+  now: Date = new Date(),
+): string {
   const slug = orgSlug.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "org";
-  return `audit-${slug}-${localDay(now)}.csv`;
+  return `audit-${slug}-${localDay(now)}.${format}`;
 }

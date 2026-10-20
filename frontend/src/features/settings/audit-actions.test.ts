@@ -53,28 +53,33 @@ describe("shortTargetId", () => {
 });
 
 describe("auditEventSummary", () => {
+  // A successful event with these fields; `null` stands for an event the server sent no object for.
+  const summary = (action: string, metadata: Record<string, unknown> | null) =>
+    auditEventSummary({
+      action,
+      metadata,
+      outcome: "success",
+      reason: null,
+    });
+
   it("summarises role changes", () => {
-    expect(auditEventSummary("member.role_change", { from: "member", to: "admin" })).toBe(
-      "member → admin",
-    );
+    expect(summary("member.role_change", { from: "member", to: "admin" })).toBe("member → admin");
   });
 
   it("lists changed project fields", () => {
-    expect(
-      auditEventSummary("project.update", { changes: { retention_days: 7, name: "Bot" } }),
-    ).toBe("retention_days, name");
+    expect(summary("project.update", { changes: { retention_days: 7, name: "Bot" } })).toBe(
+      "retention_days, name",
+    );
   });
 
   it("uses the name, then the role", () => {
-    expect(auditEventSummary("key.create", { name: "production-api", prefix: "idk" })).toBe(
-      "production-api",
-    );
-    expect(auditEventSummary("invite.create", { role: "viewer" })).toBe("viewer");
+    expect(summary("key.create", { name: "production-api", prefix: "idk" })).toBe("production-api");
+    expect(summary("invite.create", { role: "viewer" })).toBe("viewer");
   });
 
   it("returns null when there is nothing to show", () => {
-    expect(auditEventSummary("key.create", null)).toBeNull();
-    expect(auditEventSummary("key.create", {})).toBeNull();
+    expect(summary("key.create", null)).toBeNull();
+    expect(summary("key.create", {})).toBeNull();
   });
 });
 

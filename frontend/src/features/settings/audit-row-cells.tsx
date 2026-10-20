@@ -4,7 +4,13 @@ import { UnknownValue } from "@/components/unknown-value";
 import type { AuditEvent } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-import { auditActorName, shortTargetId, targetTypeLabel } from "./audit-actions";
+import {
+  auditActorName,
+  auditActorVia,
+  shortTargetId,
+  targetTypeLabel,
+  type AuditChange,
+} from "./audit-actions";
 import { InitialAvatar } from "./initial-avatar";
 
 interface DetailRowProps {
@@ -24,24 +30,60 @@ export function DetailRow({ label, children, className }: DetailRowProps) {
 
 export function AuditActor({ event }: { event: AuditEvent }) {
   const name = auditActorName(event);
+  const via = auditActorVia(event);
+  const person = event.actor !== null || event.actor_email !== null;
   return (
     <span className="flex min-w-0 items-center gap-2">
       <InitialAvatar
         name={name}
-        seed={event.actor?.id ?? "system"}
+        seed={event.actor?.id ?? event.actor_email ?? "system"}
         size="sm"
-        tone={event.actor ? undefined : "neutral"}
+        tone={person ? undefined : "neutral"}
       />
-      <span
-        title={event.actor?.email}
-        className={cn(
-          "truncate text-sm font-medium",
-          event.actor ? "text-foreground" : "text-muted-foreground",
-        )}
-      >
-        {name}
+      <span className="flex min-w-0 flex-col">
+        <span
+          title={event.actor?.email ?? event.actor_email ?? undefined}
+          className={cn(
+            "truncate text-sm font-medium",
+            person ? "text-foreground" : "text-muted-foreground",
+          )}
+        >
+          {name}
+        </span>
+        {via ? (
+          <span className="truncate text-xs font-medium text-muted-foreground">{via}</span>
+        ) : null}
       </span>
     </span>
+  );
+}
+
+function changeValue(value: unknown): string {
+  return typeof value === "string" ? value : JSON.stringify(value);
+}
+
+/** Figma "Audit log v3" Changes: one line per field, the old value muted, the new one strong. */
+export function AuditChanges({ changes }: { changes: AuditChange[] }) {
+  return (
+    <div className="flex flex-col gap-1.5 rounded-lg bg-surface px-3 py-2.5">
+      <span className="text-xs font-semibold text-muted-foreground">Changes</span>
+      <ul className="flex flex-col gap-1.5">
+        {changes.map((change) => (
+          <li
+            key={change.field}
+            className="flex min-w-0 flex-wrap items-baseline gap-x-2 font-mono text-label"
+          >
+            <span className="w-28 shrink-0 text-muted-foreground">{change.field}</span>
+            <span className="break-all text-muted-foreground">{changeValue(change.from)}</span>
+            <span aria-hidden className="font-sans text-subtle-foreground">
+              →
+            </span>
+            <span className="sr-only">changed to</span>
+            <span className="break-all text-foreground">{changeValue(change.to)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
