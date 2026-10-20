@@ -147,7 +147,7 @@ For every LLM call the SDK records the provider, the model (from the response, f
 
 Token counts follow one rule everywhere: `input_tokens` **includes** cached tokens, and `cached_tokens` says how many of them came from the provider's prompt cache. For Anthropic, the wrapper also reports the tokens written to the cache as `cache_write_tokens`, and the part written with a 1-hour lifetime as `cache_write_1h_tokens` (since SDK 0.1.2), because Anthropic bills writes above the input rate. [How cost is calculated](/docs/concepts/cost/) explains the convention.
 
-SDK 0.2.0, the next release, also records what changes the price of a call beyond its tokens:
+SDK 0.2.0, also records what changes the price of a call beyond its tokens:
 
 - **The service tier** the provider billed (`usage.service_tier` for Anthropic, the top-level `service_tier` for OpenAI), so a batch or flex call is priced at its own rate. See [Service tiers](/docs/concepts/cost/#service-tiers).
 - **Web searches** the model ran: Anthropic's `server_tool_use.web_search_requests`, and the completed `web_search_call` items of an OpenAI Responses answer. Each search adds the provider's fee to the cost. See [Fees (web search)](/docs/concepts/cost/#fees-web-search).
@@ -156,7 +156,7 @@ SDK 0.2.0, the next release, also records what changes the price of a call beyon
 
 ## Failed calls
 
-When a provider call fails with an HTTP error, the span records what the provider said besides its message, so [Provider health](/docs/guides/provider-health/) can tell which limit refused the call. From SDK 0.2.0, the next release, a failed call's span carries:
+When a provider call fails with an HTTP error, the span records what the provider said besides its message, so [Provider health](/docs/guides/provider-health/) can tell which limit refused the call. From SDK 0.2.0, a failed call's span carries:
 
 | Attribute | Value |
 | --- | --- |
@@ -172,7 +172,7 @@ When your client talks to the Spanlight gateway and the gateway itself refused t
 
 ## Batch results
 
-A batch request is answered hours later, without its request, and billed at the batch rate. The SDK records each result as an `llm` span when you read it. These need SDK 0.2.0, the next release.
+A batch request is answered hours later, without its request, and billed at the batch rate. The SDK records each result as an `llm` span when you read it. These need SDK 0.2.0.
 
 **Anthropic.** Results you read through a wrapped client are recorded as you iterate, sync or async. Pass the batch id, positionally or as `message_batch_id`:
 
@@ -249,7 +249,7 @@ The rate-limit headers of a failed call pass a fixed allowlist of 29 names befor
 
 A batch goes out when it reaches `batch_size` spans or after `flush_interval` seconds. Network errors, `429` and `5xx` are retried with jittered exponential backoff, and `Retry-After` is honoured. Other `4xx` responses are not retried; they are logged to the `spanlight` logger, as are spans the server rejects. Ingestion is idempotent by design: a retried batch upserts the same rows, so it does not double-count. A span that cannot be encoded as JSON is dropped alone and counted as failed; the rest of its batch is sent.
 
-From SDK 0.2.0, the next release, every batch of spans also reports what the SDK lost: a `client` object with the SDK's name and version, a random exporter id (new in each process, and in a forked child) and two running totals, the spans and scores dropped because the queue was full and those lost after retries or rejected by the server. It holds no span content. The server turns the totals into [telemetry completeness](/docs/concepts/telemetry-completeness/); an older server ignores the object.
+From SDK 0.2.0, every batch of spans also reports what the SDK lost: a `client` object with the SDK's name and version, a random exporter id (new in each process, and in a forked child) and two running totals, the spans and scores dropped because the queue was full and those lost after retries or rejected by the server. It holds no span content. The server turns the totals into [telemetry completeness](/docs/concepts/telemetry-completeness/); an older server ignores the object.
 
 See what the SDK is doing with:
 
