@@ -201,6 +201,7 @@ Idempotency keys and rate limiting each use a small pool of their own, so they c
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
 | `METRICS_TOKEN` | secret | unset | Bearer token that protects `/metrics`. Unset makes `/metrics` answer `404`. The endpoint is served by the API directly, not through the web port. |
+| `API_DOCS` | boolean | unset | Serve the Swagger UI at `/api/docs`, whose script comes from jsDelivr. Unset means on when `APP_BASE_URL` is http and off (`404`) when it is https. `/api/openapi.json` is served either way. |
 | `SENTRY_DSN` | string | unset | Sentry DSN for error reporting. Request bodies, cookies and query strings are never sent. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | string | unset | Base URL of an OTLP HTTP collector for Spanlight's own traces (spans go to `<endpoint>/v1/traces`; a value ending in `/traces` is used as it is, and a `/v1/otlp` base gets `/traces`). Unset turns self-tracing off. Request bodies, headers and query parameters are never recorded. |
 | `OTEL_SERVICE_NAME` | string | `spanlight-api` | Service name on Spanlight's own spans. |

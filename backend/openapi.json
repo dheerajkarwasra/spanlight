@@ -16074,6 +16074,25 @@
         "title": "TotpEnabledOut",
         "type": "object"
       },
+      "TotpSetupIn": {
+        "properties": {
+          "password": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          }
+        },
+        "title": "TotpSetupIn",
+        "type": "object"
+      },
       "TotpSetupOut": {
         "description": "What to add to an authenticator app. Returned once; the secret is never shown again.",
         "properties": {
@@ -18169,8 +18188,25 @@
     },
     "/api/v1/auth/totp/setup": {
       "post": {
-        "description": "Make a secret for an authenticator app. Replaces one from an earlier, unconfirmed setup.",
+        "description": "Make a secret for an authenticator app. Replaces one from an earlier, unconfirmed setup.\n\nNeeds the current password, or a sign-in in the last 10 minutes for an account without one.",
         "operationId": "totp_setup_api_v1_auth_totp_setup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TotpSetupIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -18181,6 +18217,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Totp Setup",

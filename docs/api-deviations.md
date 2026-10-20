@@ -38,6 +38,9 @@ original design; everything else is a clarification.
   `TWO_FACTOR_REQUIRED` (403, the org requires two-factor and the caller has not turned it on),
   `INVALID_TOTP_CODE` (422 when enabling or disabling, 401 when signing in),
   `TOTP_CHALLENGE_INVALID` (401, the second step of signing in),
+  `INVALID_PASSWORD` (422, two-factor setup with a missing or wrong current password),
+  `REAUTH_REQUIRED` (403, two-factor setup by an account without a password whose sign-in is older than
+  10 minutes), `TOO_MANY_EXPORTS` (409, a project already has 5 exports queued or running),
   `EE_LICENSE_REQUIRED` (403, an enterprise-edition feature the instance's license does not grant; the
   `feature` member names it, see "Enterprise edition" below),
   `CONFIRMATION_MISMATCH` (422, a deletion whose typed `confirm` is not the slug of what it deletes),
@@ -2993,3 +2996,42 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
   `cookie`, `hash`, `private_key`, as a whole word of the key) are stored as `[REDACTED]`, and string values go
   through the span payload redactor.
 - Who may read the log is unchanged: `audit:read`, admins and owners.
+
+## Security review fixes (added 2026-10-20)
+
+- **Ingestion bounds.** `POST /v1/traces`, `/v1/otlp/traces` and `/v1/scores` count spans (or scores) before
+  decoding any of them: over 1000 is `413 PAYLOAD_TOO_LARGE` straight after the JSON parse or the protobuf parse,
+  before the depth check and the cleaning walk. A gzip or deflate body that inflates past 1 MiB and by more than
+  100 times its compressed size is `413 PAYLOAD_TOO_LARGE` ("may inflate at most 100-fold"); real batches stay well
+  under it (one long prompt repeated in every span is about 45:1). Parsing, validation, redaction and truncation
+  run in a worker thread, off the event loop.
+- **OTLP protobuf is counted from the wire.** `/v1/otlp/traces` walks a protobuf body's wire format before parsing
+  it, so a body of millions of empty messages is refused before any is built. More than 1000 `ResourceSpans`,
+  `ScopeSpans` or spans is `413 PAYLOAD_TOO_LARGE`. More than 300,000 messages in all (1000 spans with the OTel
+  SDKs' default limit of 128 attributes, two messages each, is 256,000) or messages nested more than 100 deep
+  (upb's own limit) is `400 INVALID_OTLP`. **Deviation:** a body with group-encoded fields (wire types 3 and 4,
+  deprecated and never sent by OTLP exporters) is `400 INVALID_OTLP`; the protobuf runtime alone would keep them
+  as unknown fields.
+- **Demo account.** `POST /api/v1/orgs` and `POST /api/v1/invites/accept` answer `403 FORBIDDEN` for the shared
+  demo user, like tokens and two-factor already did.
+- **Two-factor setup needs the owner.** `POST /api/v1/auth/totp/setup` takes an optional body `{password}`. An
+  account with a password must send its current one: missing or wrong is `422 INVALID_PASSWORD`; five attempts
+  per 15 minutes per user, then `429 RATE_LIMITED`. An account without a password (GitHub or Google only) must
+  have signed in within the last 10 minutes, else `403 REAUTH_REQUIRED`. `enable` needs a pending setup, so it is
+  covered too. **Deviation:** the body was empty before.
+- **Password reset revokes personal access tokens.** Completing a reset by email and the CLI `reset-password`
+  revoke every personal access token of the user's that still works, and the `user.password_reset` event's
+  `metadata.tokens_revoked` says how many.
+- **API reference.** `/api/docs` (Swagger UI, whose script comes from jsDelivr) is served only when `API_DOCS`
+  allows it; unset, it is on when `APP_BASE_URL` is http and off (404) when it is https. `/api/openapi.json` is
+  always served. The Caddy policy for `/api/docs` allows scripts from `cdn.jsdelivr.net/npm/swagger-ui-dist@5/`
+  only, no longer all of jsDelivr.
+- **Gateway deadlines.** A streamed answer may run at most 600 seconds after its first chunk (the official OpenAI
+  client's own default); past that the stream is cut and the span records `stream_error: the stream ran past 600
+  s`. The request body must arrive within 30 seconds, else the provider envelope's `400` "Request body was not
+  sent in time."
+- **Exports.** A project may have at most 5 exports `queued` or `running`; another request is `409
+  TOO_MANY_EXPORTS` until one finishes.
+- **Audit streaming.** Each POST to a receiver, including `…/stream/test`, has a 15-second deadline for the whole
+  exchange; a timeout counts as a failed delivery and backs off. Streams are served least recently delivered
+  first, so one slow receiver cannot starve the others.
