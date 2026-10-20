@@ -203,7 +203,7 @@ For which attribute fills which field, see [OTLP attribute mapping](/docs/refere
 
 FOOTER = """## Related pages
 
-- [OTLP ingestion](/docs/otlp/): send traces from any OpenTelemetry exporter.
+- [OTLP ingestion](/docs/otlp/): send traces from any OpenTelemetry exporter over OTLP/HTTP.
 - [OTLP attribute mapping](/docs/reference/otlp-mapping/): which attribute fills which field.
 """
 
