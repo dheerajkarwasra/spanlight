@@ -3,11 +3,13 @@ import { useId, useState } from "react";
 import { Notice } from "@/components/notice";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Switch } from "@/components/ui/switch";
 import type { ItemDelta } from "@/lib/api";
 import { formatInteger, pluralize } from "@/lib/format";
 
-import { changeCounts, sortByChange } from "./compare-view";
+import { changeCounts, regressionsOnly, sortByChange } from "./compare-view";
 import { ItemDeltaRow } from "./item-delta-row";
 import type { ScoreMeta } from "./score-meta";
 
@@ -26,14 +28,22 @@ interface CompareTableProps {
 
 /** Figma "Experiments — Compare" Items: the score selector stays pinned while the list scrolls. */
 export function CompareTable({ items, sort, names, edited }: CompareTableProps) {
-  const { scores, score, onChange: onScoreChange } = sort;
+  const { scores, score } = sort;
   const titleId = useId();
+  const switchId = useId();
   const [limit, setLimit] = useState(PAGE);
-  const sorted = sortByChange(items, score.name);
+  // Spec ruling 6: off by default, not stored.
+  const [switchOn, setSwitchOn] = useState(false);
+  // A categorical score has no deltas: no switch, and a switch left on for another score is off.
+  const canFilter = score.kind !== "categorical";
+  const onlyRegressions = switchOn && canFilter;
+  const listed = onlyRegressions ? regressionsOnly(items, score.name) : items;
+  const sorted = sortByChange(listed, score.name);
   const counts = changeCounts(items, score.name);
   const shown = sorted.slice(0, limit);
+  // With the switch on, the pinned bar carries the count; the list line does not repeat it.
   const showing =
-    shown.length < sorted.length
+    shown.length < sorted.length && !onlyRegressions
       ? ` Showing the ${formatInteger(shown.length)} largest changes.`
       : "";
 
@@ -45,17 +55,40 @@ export function CompareTable({ items, sort, names, edited }: CompareTableProps) 
           aria-label="Sort by change in"
           tone="ink"
           value={score.name}
-          onValueChange={onScoreChange}
+          onValueChange={(name) => {
+            sort.onChange(name);
+            setLimit(PAGE);
+          }}
           options={scores.map((meta) => ({ value: meta.name, label: meta.name }))}
           className="max-w-full overflow-x-auto border-0 bg-surface-muted shadow-none"
         />
+        {canFilter ? (
+          <div className="flex items-center gap-2">
+            <Switch
+              id={switchId}
+              checked={onlyRegressions}
+              onCheckedChange={(next) => {
+                setSwitchOn(next);
+                setLimit(PAGE);
+              }}
+            />
+            <Label htmlFor={switchId} className="font-medium whitespace-nowrap">
+              Regressions only
+            </Label>
+          </div>
+        ) : null}
+        <span className="text-sm font-semibold text-foreground" aria-live="polite">
+          {onlyRegressions
+            ? `${pluralize(sorted.length, "regression")} of ${pluralize(items.length, "item")}`
+            : null}
+        </span>
         <span className="ml-auto hidden text-xs font-medium text-subtle-foreground sm:inline">
           Pinned while you scroll
         </span>
       </div>
       <div className="flex flex-col">
         <CardTitle id={titleId}>Items</CardTitle>
-        <p className="text-xs font-medium text-muted-foreground" aria-live="polite">
+        <p className="text-xs font-medium text-muted-foreground">
           Sorted by change in {score.name}. {pluralize(counts.changed, "item")} changed ·{" "}
           {formatInteger(counts.unchanged)} unchanged · {formatInteger(counts.notComparable)} not
           comparable.{showing}
@@ -67,6 +100,9 @@ export function CompareTable({ items, sort, names, edited }: CompareTableProps) 
             ? "1 item was edited between the runs and is left out of the comparison."
             : `${formatInteger(edited)} items were edited between the runs and are left out of the comparison.`}
         </Notice>
+      ) : null}
+      {onlyRegressions && sorted.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No item regressed on {score.name}.</p>
       ) : null}
       <ul aria-label={`Items sorted by change in ${score.name}`} className="flex flex-col gap-2.5">
         {shown.map((item) => (

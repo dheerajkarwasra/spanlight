@@ -10,14 +10,14 @@ import { Button } from "@/components/ui/button";
 import { useCurrentOrg, usePermission } from "@/features/shell";
 import { viewOnlyCopy } from "@/lib/permissions";
 
-import { AlertsLayout } from "./alerts-layout";
 import { ChannelDialog } from "./channel-dialog";
 import { CHANNEL_COPY } from "./channel-kinds";
 import { ChannelList } from "./channel-list";
 import { useAlertChannelsQuery } from "./alerts-queries";
 
 /**
- * Figma "Alerts — Channels" and its states (empty, loading, error, read-only, test results).
+ * Figma "Alerts — Channels" and its states (empty, loading, error, read-only, test results), shown
+ * under Settings › Notification channels.
  * Channels belong to the organization: every member reads them, admins and owners add, test,
  * edit and delete them.
  */
@@ -39,23 +39,21 @@ export function AlertChannelsPage() {
   ) : null;
 
   return (
-    <AlertsLayout>
-      <SectionCard
-        title="Channels"
-        description={`Shared by every project in ${orgName}. Test a channel to check it works.`}
-        className="gap-4"
-        actions={addButton}
-      >
-        {canWrite ? null : (
-          <ReadOnlyNote>{viewOnlyCopy("alert channels", "alerts:write")}</ReadOnlyNote>
-        )}
-        <ChannelsContent query={query} canWrite={canWrite} addButton={addButton} />
-        <p className="flex items-center gap-2 px-1 pt-2 text-xs font-medium text-muted-foreground">
-          <Info aria-hidden className="size-3.5 shrink-0" />
-          {CHANNEL_COPY.footnote}
-        </p>
-      </SectionCard>
-    </AlertsLayout>
+    <SectionCard
+      title="Notification channels"
+      description={`Shared by every project in ${orgName}. Test a channel to check it works.`}
+      className="gap-4"
+      actions={addButton}
+    >
+      {canWrite ? null : (
+        <ReadOnlyNote>{viewOnlyCopy("alert channels", "alerts:write")}</ReadOnlyNote>
+      )}
+      <ChannelsContent query={query} canWrite={canWrite} addButton={addButton} />
+      <p className="flex items-center gap-2 px-1 pt-2 text-xs font-medium text-muted-foreground">
+        <Info aria-hidden className="size-3.5 shrink-0" />
+        {CHANNEL_COPY.footnote}
+      </p>
+    </SectionCard>
   );
 }
 

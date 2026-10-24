@@ -1,6 +1,8 @@
 import { isApiError, NetworkError, type FeedbackVerdict } from "@/lib/api";
 import { formatInteger } from "@/lib/format";
 
+import { REASON_MAX_LENGTH } from "./mute-form";
+
 /*
  * The "Was this right?" row's wording and transitions. A member's vote is saved the moment a
  * verdict is clicked; clicking the pressed verdict again takes the vote back.
@@ -83,6 +85,13 @@ export function feedbackStatusParts(
 /** "53 / 500": the note's length against the limit. */
 export function noteCounter(note: string): string {
   return `${String(note.length)} / ${String(NOTE_MAX_LENGTH)}`;
+}
+
+/** The mute reason a Wrong vote prefills: "Marked wrong: <note>", cut to the reason's limit. */
+export function muteReasonFromNote(note: string): string {
+  const trimmed = note.trim();
+  const reason = trimmed === "" ? "Marked wrong" : `Marked wrong: ${trimmed}`;
+  return reason.slice(0, REASON_MAX_LENGTH);
 }
 
 /** The inline error when a vote or its removal failed. */

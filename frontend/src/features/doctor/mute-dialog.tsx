@@ -7,6 +7,8 @@ import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/input";
+import type { MuteInput } from "@/lib/api";
+import { pluralize } from "@/lib/format";
 
 import { useMuteInsight } from "./doctor-queries";
 import { actionErrorMessage } from "./insight-errors";
@@ -21,15 +23,34 @@ import {
 
 const MUTE_BODY = "Muted insights keep counting occurrences but never notify.";
 
-interface MuteDialogProps {
-  insightId: string;
+type MuteDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}
+  /** The reason the field opens with, e.g. from a Wrong vote's note. */
+  defaultReason?: string;
+} & (
+  | { insightId: string; onSubmit?: undefined; count?: undefined; onCloseAutoFocus?: undefined }
+  /** Bulk mode: the caller mutes the `count` insights and reports per id; it must not throw. */
+  | {
+      insightId?: undefined;
+      onSubmit: (values: MuteInput) => Promise<void>;
+      count: number;
+      /** Where focus goes on close when the trigger may be gone; `preventDefault` to take it. */
+      onCloseAutoFocus?: (event: Event) => void;
+    }
+);
 
 /** Figma "Doctor — Mute dialog": a date up to 90 days ahead (with presets) and a reason. */
-export function MuteDialog({ insightId, open, onOpenChange }: MuteDialogProps) {
+export function MuteDialog({ open, onOpenChange, defaultReason, ...target }: MuteDialogProps) {
   const [pending, setPending] = useState(false);
+  // Unused in bulk mode; hooks can't be called conditionally.
+  const mute = useMuteInsight(target.insightId ?? "");
+  const submit =
+    target.onSubmit ??
+    (async (values: MuteInput) => {
+      await mute.mutateAsync(values);
+      toast.success("Muted the insight.");
+    });
   return (
     <Dialog
       open={open}
@@ -42,7 +63,10 @@ export function MuteDialog({ insightId, open, onOpenChange }: MuteDialogProps) {
       {/* Mounted only while open, so the dates are measured from when it opens. */}
       {open ? (
         <MuteDialogBody
-          insightId={insightId}
+          count={target.count ?? 1}
+          onCloseAutoFocus={target.onCloseAutoFocus}
+          onSubmit={submit}
+          defaultReason={defaultReason ?? ""}
           onPendingChange={setPending}
           onDone={() => {
             onOpenChange(false);
@@ -54,16 +78,20 @@ export function MuteDialog({ insightId, open, onOpenChange }: MuteDialogProps) {
 }
 
 interface BodyProps {
-  insightId: string;
+  count: number;
+  onCloseAutoFocus: ((event: Event) => void) | undefined;
+  onSubmit: (values: MuteInput) => Promise<void>;
+  defaultReason: string;
   onPendingChange: (pending: boolean) => void;
   onDone: () => void;
 }
 
-function MuteDialogBody({ insightId, onPendingChange, onDone }: BodyProps) {
-  const mute = useMuteInsight(insightId);
+function MuteDialogBody(props: BodyProps) {
+  const { count, onSubmit, defaultReason, onPendingChange, onDone } = props;
+  const [pending, setPending] = useState(false);
   const [now] = useState(() => new Date());
   const [date, setDate] = useState("");
-  const [reason, setReason] = useState("");
+  const [reason, setReason] = useState(defaultReason);
   const [errors, setErrors] = useState<MuteErrors>({});
   const [failure, setFailure] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -77,24 +105,29 @@ function MuteDialogBody({ insightId, onPendingChange, onDone }: BodyProps) {
       return;
     }
     setFailure(null);
+    setPending(true);
     onPendingChange(true);
     try {
-      await mute.mutateAsync({ until: check.until, reason: reason.trim() });
-      toast.success("Muted the insight.");
+      await onSubmit({ until: check.until, reason: reason.trim() });
       onDone();
     } catch (error) {
       setFailure(actionErrorMessage(error));
     } finally {
+      setPending(false);
       onPendingChange(false);
     }
   }
 
   return (
-    <DialogContent hideClose className="max-w-[540px] gap-5 rounded-card p-6 sm:p-7">
+    <DialogContent
+      hideClose
+      onCloseAutoFocus={props.onCloseAutoFocus}
+      className="max-w-[540px] gap-5 rounded-card p-6 sm:p-7"
+    >
       <DialogHeading
-        title="Mute this insight"
+        title={count === 1 ? "Mute this insight" : `Mute ${pluralize(count, "insight")}`}
         description={MUTE_BODY}
-        showClose={mute.isPending ? "disabled" : true}
+        showClose={pending ? "disabled" : true}
       />
       <form
         ref={formRef}
@@ -121,7 +154,7 @@ function MuteDialogBody({ insightId, onPendingChange, onDone }: BodyProps) {
             name="reason"
             rows={2}
             value={reason}
-            placeholder="Why are you muting this insight?"
+            placeholder={`Why are you muting ${count === 1 ? "this insight" : "these insights"}?`}
             onChange={(event) => {
               setReason(event.target.value);
             }}
@@ -134,10 +167,10 @@ function MuteDialogBody({ insightId, onPendingChange, onDone }: BodyProps) {
         )}
         <div className="flex justify-end gap-2.5">
           <DialogClose asChild>
-            <Button disabled={mute.isPending}>Cancel</Button>
+            <Button disabled={pending}>Cancel</Button>
           </DialogClose>
-          <Button type="submit" variant="primary" loading={mute.isPending}>
-            Mute insight
+          <Button type="submit" variant="primary" loading={pending}>
+            {count === 1 ? "Mute insight" : "Mute insights"}
           </Button>
         </div>
       </form>

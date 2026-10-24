@@ -69,6 +69,12 @@ class AttributionOut(BaseModel):
     metadata key, no `other`) or `rollup` (a longer window, read from the daily rollup rows of
     promoted keys: exact per day, up to `updated_within_minutes` behind). `none` and `other`
     are `None` when they hold no traces.
+
+    On the rollup source, `computed_at` is the latest recompute among the rows read (the last
+    refresh pass; `None` when no row was read) and `pending_traces` counts the traces of the
+    window and environment started after the latest recompute of their own UTC day, every trace
+    of a day without rows, up to 10,000. Both are `None` on the raw source, where nothing is
+    pending.
     """
 
     group_by: GroupKind
@@ -76,8 +82,31 @@ class AttributionOut(BaseModel):
     window: AttributionWindowOut
     source: AttributionSource
     updated_within_minutes: int
+    computed_at: datetime | None
+    pending_traces: int | None
     items: list[AttributionRowOut]
     next_cursor: str | None
     none: AttributionBucketOut | None
     other: AttributionBucketOut | None
     totals: AttributionTotalsOut
+
+
+class SeriesPointOut(BaseModel):
+    """One bucket of the series. `cost_usd` is `None` when its traces made calls and none was
+    priced, a lower bound while `unpriced_calls` is above 0, and 0 for a bucket without traces."""
+
+    bucket_start: datetime
+    cost_usd: Money | None
+    unpriced_calls: int
+
+
+class AttributionSeriesOut(BaseModel):
+    """The spend of the window per bucket, from the same source as the list: hourly on `raw` (a
+    window of 24 hours or less), per UTC day on `rollup` (`window` widened to whole days). Every
+    bucket of the window is present; the points add up to the list's `totals`, or to the group's
+    row when `value` was given."""
+
+    bucket: Literal["hour", "day"]
+    source: AttributionSource
+    window: AttributionWindowOut
+    points: list[SeriesPointOut]

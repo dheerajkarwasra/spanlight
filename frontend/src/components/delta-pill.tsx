@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 type DeltaPillSurface = "default" | "ink" | "accent";
 
-interface DeltaPillProps {
+export interface DeltaPillProps {
   /** Signed change versus the previous period. `null` renders nothing (no comparison). */
   delta: number | null;
   /**

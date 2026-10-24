@@ -7,6 +7,7 @@
 import type { AttributionGroupBy } from "./attribution-types";
 import type { User } from "./identity-types";
 import type { ScoreSummary } from "./scores";
+import type { Page } from "./types";
 
 export interface Project {
   id: string;
@@ -91,8 +92,8 @@ export type ErrorClass =
 export type RateLimitKind =
   "requests" | "tokens" | "spend_cap" | "acceleration" | "overloaded" | "gateway" | "unknown";
 
-/** The trace list's order: newest first, or the most expensive retries first (unknown last). */
-export type TraceSort = "started_at" | "retry_cost_usd";
+/** The trace list's order: newest first, or a value sort (unknown values last either way). */
+export type TraceSort = "started_at" | "duration" | "cost" | "tokens" | "retry_cost_usd";
 
 /** Backend values: `stop`, `length`, `tool_calls`, `content_filter` or `other`. */
 export type FinishReason = "stop" | "length" | "tool_calls" | "content_filter" | "other";
@@ -132,6 +133,12 @@ export interface TraceSummary {
   scores: ScoreSummary[];
   /** The trace's metadata as stored: at most 32 keys, every value a string. */
   metadata: Record<string, string>;
+  /**
+   * Readable text of the trace's input and output, at most 200 characters. Filled only by the
+   * list with `preview=true`; null otherwise or when nothing readable was captured.
+   */
+  input_preview?: string | null;
+  output_preview?: string | null;
 }
 
 /** The tier a provider billed a call at, normalised from each provider's spelling. */
@@ -200,6 +207,8 @@ export interface Span {
   /** The span repeats the usage of its child spans, so trace totals leave it out. */
   usage_rollup: boolean;
   usage_state: UsageState;
+  /** Digest of the request body; equal on consecutive siblings means a retry. Null when not sent. */
+  request_hash: string | null;
 }
 
 export interface TraceDetail extends TraceSummary {
@@ -254,6 +263,18 @@ export interface TraceComparison {
   truncated: boolean;
 }
 
+/**
+ * One trace of a session with the few spans its conversation needs (root, first LLM call with an
+ * input, last with an output, earliest failure). A span past the page's payload budget has
+ * `payload_omitted` set.
+ */
+export interface SessionTurn {
+  trace: TraceSummary;
+  spans: Span[];
+  /** The trace's tool spans, all of them (not only those in `spans`). */
+  tool_calls: number;
+}
+
 export interface SessionSummary {
   session_id: string;
   trace_count: number;
@@ -263,6 +284,33 @@ export interface SessionSummary {
   /** A trace in the session has an unpriced call, so a known `cost_usd` is a lower bound. */
   has_unpriced: boolean;
   error_count: number;
+}
+
+/** The sessions list's order; value sorts list unknown values last in both directions. */
+export type SessionSort = "last" | "cost" | "turns" | "errors" | "tokens";
+
+/** A `GET /sessions` row. */
+export interface SessionListItem extends SessionSummary {
+  /** The one user id every trace of the session names (traces without one left out), else null. */
+  external_user_id: string | null;
+  /** Distinct user ids among the session's traces. */
+  user_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  /** From the first trace's start to the last trace's end. */
+  duration_ms: number;
+  /** The newest trace; null only when the session's traces were deleted while the page was read. */
+  last_trace_id: string | null;
+  /** The newest trace's input preview; null without `preview=true` or when none was captured. */
+  last_input_preview?: string | null;
+}
+
+export interface SessionPage extends Page<SessionListItem> {
+  /**
+   * The 99th percentile of session cost over the window, whatever the search. First page only
+   * (null on later pages) and null while fewer than 20 sessions have a known cost.
+   */
+  cost_p99_usd: string | null;
 }
 
 export interface Kpis {
@@ -285,6 +333,14 @@ export interface OverviewMetrics {
 }
 
 export type Bucket = "hour" | "day";
+
+/** Traces and failed traces per bucket for the trace list's filters (`GET …/traces/histogram`). */
+export interface TraceHistogram {
+  /** Hours for a window of 48 hours or less, else UTC days. */
+  bucket: Bucket;
+  /** Oldest first; buckets without a trace are left out. */
+  buckets: { bucket_start: string; traces: number; errors: number }[];
+}
 
 export interface TimeseriesPoint {
   bucket_start: string;
@@ -362,6 +418,8 @@ export interface ExportFilters extends AttributionExportFilters {
   metadata_key?: string | null;
   metadata_value?: string | null;
   q?: string | null;
+  /** A selection from the trace list (1 to 200 ids); the window and other filters still apply. */
+  trace_ids?: string[] | null;
 }
 
 export type ExportKind = "traces" | "attribution";

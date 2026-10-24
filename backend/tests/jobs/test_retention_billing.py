@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 
 from app.config import Settings
+from app.db.rls import bypass_rls
 from app.jobs.context import TaskContext
 from app.jobs.queue import ClaimedJob
 from app.jobs.tasks import retention
@@ -257,3 +258,30 @@ async def test_billing_retention_is_independent_of_span_retention(
     assert fields["attribution_rollups_deleted"] == 0
     assert fields["provider_lines_deleted"] == 1
     assert fields["fetch_runs_deleted"] == 1
+
+
+async def test_user_stats_batch_deletes_batch_size_rows_across_environments(
+    session_factory: SessionFactory,
+) -> None:
+    """One user's old day in three environments (one of them none): a batch of 2 deletes 2 rows,
+    not every environment row of the keys it picked, and retention still takes all three."""
+    (project,) = await new_projects(session_factory, 1)
+    old_day = (NOW - timedelta(days=60)).date()
+    for environment in ("prod", "staging", None):
+        await execute(
+            session_factory,
+            "INSERT INTO user_stats_daily (project_id, day, environment, external_user_id, "
+            "traces, llm_calls, errors, unpriced_calls, tokens, computed_at) "
+            "VALUES (:project_id, :day, :environment, 'u1', 1, 1, 0, 0, 1, now())",
+            {"project_id": project, "day": old_day, "environment": environment},
+        )
+    params = {"project_id": project, "cutoff": NOW - timedelta(days=30), "batch_size": 2}
+    async with session_factory() as db:
+        await bypass_rls(db)
+        result = await db.execute(retention.DELETE_USER_STATS, params)
+        await db.commit()
+    assert getattr(result, "rowcount", None) == 2
+
+    deleted = await apply_daily_table_retention(session_factory, now=NOW)
+    assert deleted.user_stats == 1
+    assert await fetch(session_factory, "SELECT 1 FROM user_stats_daily") == []

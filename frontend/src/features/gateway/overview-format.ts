@@ -1,6 +1,13 @@
+import type { DeltaPillProps } from "@/components/delta-pill";
 import { GATEWAY_TIME_RANGE_OPTIONS } from "@/features/shell";
 import type { FaultScenario, FaultScenarioCount, GatewayOverview, ProviderKind } from "@/lib/api";
-import { formatDuration, formatInteger, formatPercent } from "@/lib/format";
+import {
+  formatDuration,
+  formatInteger,
+  formatPercent,
+  pluralize,
+  relativeChange,
+} from "@/lib/format";
 import { resolveRange, type RangeValue, type ResolvedRange } from "@/lib/time-range";
 
 /** The overview endpoint rejects a window longer than this. */
@@ -8,6 +15,9 @@ export const MAX_OVERVIEW_WINDOW_MS = 7 * 24 * 3600_000;
 
 /** Shown wherever a ratio or percentile has no request behind it. */
 export const NO_REQUESTS_REASON = "No requests in this window.";
+
+/** Requests ran, but none recorded the gateway's overhead (cache hits and refusals don't). */
+const NO_OVERHEAD_REASON = "No gateway overhead recorded.";
 
 /**
  * The window the overview reads. The shared time-range state may hold 30 days or a custom range
@@ -21,18 +31,10 @@ export function gatewayWindow(range: ResolvedRange): ResolvedRange {
     : resolveRange({ range: GATEWAY_TIME_RANGE_OPTIONS.fallback });
 }
 
-/** A no-break space keeps "24" and "h" on one line when a KPI detail wraps (T7-07). */
-const WINDOW_PHRASES: Record<RangeValue, string> = {
-  "1h": "last 1\u00a0h",
-  "24h": "last 24\u00a0h",
-  "7d": "last 7\u00a0d",
-  "30d": "last 30\u00a0d",
-  custom: "this window",
-};
-
-/** "last 24 h": the window as it reads in a KPI detail line. */
+/** "last 24 h": the window as it reads in a KPI line. A no-break space keeps "24" and "h" together. */
 export function windowPhrase(value: RangeValue): string {
-  return WINDOW_PHRASES[value];
+  const length = RANGE_LENGTHS[value];
+  return length ? `last ${length.replace(" ", "\u00a0")}` : "this window";
 }
 
 /** Share of requests as a percentage; null when there are no requests to take a share of. */
@@ -82,8 +84,10 @@ export function providerLabel(provider: ProviderKind | null): string | null {
   return provider === null ? null : PROVIDER_LABELS[provider];
 }
 
-export type GatewayKpiId =
-  "requests" | "error_rate" | "cache_hit_rate" | "fallbacks" | "p95_overhead" | "p95_ttft";
+export type GatewayKpiId = "requests" | "latency" | "cache_hit_rate" | "fallbacks";
+
+/** A line under a KPI value: plain text, or a labelled value that may be unknown. */
+export type GatewayKpiLine = string | { prefix: string; value: string | null; reason: string };
 
 export interface GatewayKpi {
   id: GatewayKpiId;
@@ -91,19 +95,50 @@ export interface GatewayKpi {
   /** Formatted value; null renders as "—" with `unknownReason`. */
   value: string | null;
   unknownReason: string;
-  detail: string;
-  /** A second line in the accent colour, e.g. "115 from Lab". */
-  extra: string | null;
-  /** Explains the metric behind an info button. */
-  info: string | null;
+  /** Change versus the previous window; undefined when there is nothing to compare with. */
+  delta: DeltaPillProps | undefined;
+  /** The first line is the card's denominator; the others follow it. */
+  lines: GatewayKpiLine[];
 }
 
-/** The six KPI tiles, in the order of the frame. */
+const RANGE_LENGTHS: Record<RangeValue, string | null> = {
+  "1h": "1 h",
+  "24h": "24 h",
+  "7d": "7 d",
+  "30d": "30 d",
+  custom: null,
+};
+
+/** Rounded so a vanishing change reads as flat, never "−0.0". */
+function rounded(value: number, decimals: number): number {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor + 0;
+}
+
+/** The four ribbon cards (spec ruling 20), each with its delta against the previous window. */
 export function buildGatewayKpis(overview: GatewayOverview, window: RangeValue): GatewayKpi[] {
-  const { requests, errors, cache } = overview;
+  const { requests, errors, cache, previous } = overview;
   const noRequests = requests === 0;
   const fromLab = labErrorCount(overview.faults);
-  const keyCount = overview.by_key.length;
+  const length = RANGE_LENGTHS[window];
+  const comparisonLabel = length ? `vs previous ${length}` : "vs previous window";
+  // A previous window without gateway traffic has nothing to compare with: no pill at all.
+  const compared = previous.requests > 0;
+
+  function delta(
+    change: number | null,
+    increaseIsGood: boolean | null,
+    format?: (absolute: number) => string,
+  ): DeltaPillProps | undefined {
+    return compared && change !== null
+      ? { delta: change, increaseIsGood, format, comparisonLabel, showArrow: true }
+      : undefined;
+  }
+  const change = (current: number | null, before: number | null) =>
+    current === null || before === null ? null : current - before;
+  const requestsChange = relativeChange(requests, previous.requests);
+  const overheadChange = change(overview.p95_overhead_ms, previous.p95_overhead_ms);
+  const cacheChange = change(cache.hit_rate, previous.cache_hit_rate);
 
   return [
     {
@@ -111,56 +146,64 @@ export function buildGatewayKpis(overview: GatewayOverview, window: RangeValue):
       label: "Requests",
       value: formatInteger(requests),
       unknownReason: NO_REQUESTS_REASON,
-      detail: noRequests
-        ? windowPhrase(window)
-        : `across ${formatInteger(keyCount)} ${keyCount === 1 ? "key" : "keys"} · ${windowPhrase(window)}`,
-      extra: null,
-      info: null,
+      delta: delta(requestsChange === null ? null : rounded(requestsChange * 100, 1), null),
+      lines: [
+        overview.error_rate === null
+          ? windowPhrase(window)
+          : `${formatPercent(1 - overview.error_rate) ?? ""} success · ${pluralize(errors, "error")}`,
+        ...(fromLab > 0 ? [`${pluralize(fromLab, "error")} from Lab`] : []),
+      ],
     },
     {
-      id: "error_rate",
-      label: "Error rate",
-      value: formatPercent(overview.error_rate),
-      unknownReason: NO_REQUESTS_REASON,
-      detail: `${formatInteger(errors)} of ${formatInteger(requests)} requests`,
-      extra: fromLab > 0 ? `${formatInteger(fromLab)} from Lab` : null,
-      info: null,
+      id: "latency",
+      label: "Latency",
+      value: formatMs(overview.p95_overhead_ms),
+      unknownReason: noRequests ? NO_REQUESTS_REASON : NO_OVERHEAD_REASON,
+      delta: delta(
+        overheadChange === null ? null : rounded(overheadChange, 0),
+        false,
+        (absolute) => formatMs(absolute) ?? "",
+      ),
+      lines: [
+        {
+          prefix: "Upstream p95",
+          value: formatMs(overview.p95_upstream_ms),
+          reason: noRequests ? NO_REQUESTS_REASON : NO_OVERHEAD_REASON,
+        },
+        {
+          prefix: "TTFT p95",
+          value: formatMs(overview.p95_ttft_ms),
+          reason: noRequests ? NO_REQUESTS_REASON : "No streaming requests in this window.",
+        },
+      ],
     },
     {
       id: "cache_hit_rate",
       label: "Cache hit rate",
       value: formatPercent(cache.hit_rate),
       unknownReason: noRequests ? NO_REQUESTS_REASON : "No cache lookups in this window.",
-      detail: `${formatInteger(cache.hits)} hits · ${formatInteger(cache.misses)} misses`,
-      extra: null,
-      info: null,
+      delta: delta(
+        cacheChange === null ? null : rounded(cacheChange * 100, 1),
+        true,
+        (absolute) => `${absolute.toFixed(1)} pt`,
+      ),
+      lines: [
+        `${formatInteger(cache.hits) ?? "0"} hits · ${formatInteger(cache.misses) ?? "0"} misses`,
+      ],
     },
     {
       id: "fallbacks",
       label: "Fallbacks",
       value: formatInteger(overview.fallbacks),
       unknownReason: NO_REQUESTS_REASON,
-      detail: `plus ${formatInteger(overview.retries)} retries`,
-      extra: null,
-      info: null,
-    },
-    {
-      id: "p95_overhead",
-      label: "p95 overhead",
-      value: formatMs(overview.p95_overhead_ms),
-      unknownReason: NO_REQUESTS_REASON,
-      detail: "added by Spanlight, per request",
-      extra: null,
-      info: "Time Spanlight adds on top of the provider, measured per request.",
-    },
-    {
-      id: "p95_ttft",
-      label: "p95 time to first token",
-      value: formatMs(overview.p95_ttft_ms),
-      unknownReason: noRequests ? NO_REQUESTS_REASON : "No streaming requests in this window.",
-      detail: overview.p95_ttft_ms === null ? "0 streaming requests" : "streaming requests only",
-      extra: null,
-      info: null,
+      delta: delta(
+        overview.fallbacks - previous.fallbacks,
+        false,
+        (absolute) => formatInteger(absolute) ?? "",
+      ),
+      lines: [
+        `${formatInteger(overview.rate_limited) ?? "0"} rate-limited · ${pluralize(overview.retries, "retry", "retries")}`,
+      ],
     },
   ];
 }

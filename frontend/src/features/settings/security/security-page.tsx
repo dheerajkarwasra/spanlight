@@ -11,7 +11,7 @@ import { SessionsSection } from "../sessions-section";
  */
 export function SecurityPage() {
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex max-w-[720px] flex-col gap-5">
       <TwoFactorRequiredNotice />
       <TotpSection />
       <OAuthLinkError />

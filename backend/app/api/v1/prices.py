@@ -9,6 +9,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from app.api.deps import CurrentUser, DbSession, ReadAccess, require
+from app.api.params import Environment
 from app.api.schemas import PriceOut, UnpricedModelOut
 from app.api.window import Window
 from app.core.permissions import Permission
@@ -28,11 +29,17 @@ async def get_prices(auth: CurrentUser, db: DbSession) -> list[PriceOut]:
 
 @router.get("/projects/{project_id}/unpriced-models", response_model=list[UnpricedModelOut])
 async def get_unpriced_models(
-    project_id: uuid.UUID, access: ProjectReader, db: DbSession, window: Window
+    project_id: uuid.UUID,
+    access: ProjectReader,
+    db: DbSession,
+    window: Window,
+    environment: Environment = None,
 ) -> list[UnpricedModelOut]:
     """Models with LLM usage in the window whose calls got no cost for want of a price."""
     project = access.require_project()
-    models = await list_unpriced_models(db, project.id, start=window.start, end=window.end)
+    models = await list_unpriced_models(
+        db, project.id, start=window.start, end=window.end, environment=environment
+    )
     return [
         UnpricedModelOut(
             provider=model.provider,

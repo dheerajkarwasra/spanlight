@@ -78,6 +78,7 @@ const failed: Span = {
   prompt_version_id: null,
   usage_rollup: false,
   usage_state: "usage_not_reported",
+  request_hash: null,
 };
 
 function renderBlock(span: Span) {

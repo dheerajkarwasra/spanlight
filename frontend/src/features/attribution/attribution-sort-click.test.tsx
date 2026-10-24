@@ -18,7 +18,7 @@ describe("Attribution sorting", () => {
     renderApp(ROLLUP);
 
     const view = within(await screen.findByRole("table", { name: "Cost by customer_id" }));
-    await userEvent.click(view.getByRole("button", { name: "LLM calls" }));
+    await userEvent.click(view.getByRole("button", { name: "Sort by LLM calls" }));
 
     await waitFor(() => {
       expect(read).toHaveBeenLastCalledWith("proj_1", expect.objectContaining({ sort: "calls" }));

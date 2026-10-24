@@ -6,6 +6,7 @@ import {
   formatCompactDuration,
   formatDayTime,
   formatSessionWindow,
+  isCostOutlier,
   turnRangeLabel,
 } from "./session-format";
 
@@ -87,5 +88,14 @@ describe("turnRangeLabel", () => {
     expect(turnRangeLabel(12, 12, false)).toBe("12 turns");
     expect(turnRangeLabel(1, 1, false)).toBe("1 turn");
     expect(turnRangeLabel(10, 100, true)).toBe("Latest 100 turns");
+  });
+});
+
+describe("isCostOutlier", () => {
+  it("flags only a known cost above a known 99th percentile", () => {
+    expect(isCostOutlier("0.50", "0.40")).toBe(true);
+    expect(isCostOutlier("0.40", "0.40")).toBe(false);
+    expect(isCostOutlier(null, "0.40")).toBe(false);
+    expect(isCostOutlier("0.50", null)).toBe(false);
   });
 });

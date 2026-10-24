@@ -9,9 +9,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectParams } from "@/features/shell/project-context";
 import { fromPathId } from "@/lib/api";
 
+import { SessionActions } from "./session-actions";
 import { SessionConversation } from "./session-conversation";
-import { BackToSessionsLink, SessionHeader, SessionHeaderSkeleton } from "./session-header";
-import { useSessionTracesQuery } from "./session-queries";
+import { SessionHeader, SessionHeaderSkeleton, SessionsBreadcrumbs } from "./session-header";
+import { useSessionTurnsQuery } from "./session-queries";
 import { sortChronologically, summariseSession } from "./session-summary";
 import { SessionSummaryCard } from "./session-summary-card";
 
@@ -23,9 +24,9 @@ const BODY_CLASSES = "grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_300px]"
 
 export function SessionDetailPage() {
   const sessionId = fromPathId(sessionRoute.useParams().sessionId);
-  const tracesQuery = useSessionTracesQuery(sessionId);
+  const turnsQuery = useSessionTurnsQuery(sessionId);
 
-  if (tracesQuery.isPending) {
+  if (turnsQuery.isPending) {
     return (
       <div className={PAGE_CLASSES} aria-busy>
         <span className="sr-only" role="status">
@@ -40,16 +41,16 @@ export function SessionDetailPage() {
     );
   }
 
-  if (tracesQuery.isError && tracesQuery.data === undefined) {
+  if (turnsQuery.isError && turnsQuery.data === undefined) {
     return (
       <div className={PAGE_CLASSES}>
-        <BackToSessionsLink />
+        <SessionsBreadcrumbs sessionId={sessionId} />
         <Card>
           <ErrorState
-            error={tracesQuery.error}
+            error={turnsQuery.error}
             title="Couldn't load this session"
             onRetry={() => {
-              void tracesQuery.refetch();
+              void turnsQuery.refetch();
             }}
           />
         </Card>
@@ -57,31 +58,37 @@ export function SessionDetailPage() {
     );
   }
 
-  const traces = sortChronologically(tracesQuery.data.pages.flatMap((page) => page.items));
+  const turns = sortChronologically(turnsQuery.data.pages.flatMap((page) => page.items));
+  const traces = turns.map((turn) => turn.trace);
 
   if (traces.length === 0) {
-    return <SessionNotFound />;
+    return <SessionNotFound sessionId={sessionId} />;
   }
 
   const totals = summariseSession(traces);
-  const hasEarlierTurns = tracesQuery.hasNextPage;
+  const hasEarlierTurns = turnsQuery.hasNextPage;
 
   return (
     <div className={PAGE_CLASSES}>
-      <SessionHeader
-        sessionId={sessionId}
-        traces={traces}
-        totals={totals}
-        partial={hasEarlierTurns}
-      />
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0 flex-1">
+          <SessionHeader
+            sessionId={sessionId}
+            traces={traces}
+            totals={totals}
+            partial={hasEarlierTurns}
+          />
+        </div>
+        <SessionActions traces={traces} partial={hasEarlierTurns} />
+      </div>
       <div className={BODY_CLASSES}>
         <SessionConversation
-          traces={traces}
+          turns={turns}
           hasEarlierTurns={hasEarlierTurns}
-          isLoadingEarlier={tracesQuery.isFetchingNextPage}
-          loadEarlierFailed={tracesQuery.isFetchNextPageError}
+          isLoadingEarlier={turnsQuery.isFetchingNextPage}
+          loadEarlierFailed={turnsQuery.isFetchNextPageError}
           onLoadEarlier={() => {
-            void tracesQuery.fetchNextPage();
+            void turnsQuery.fetchNextPage();
           }}
         />
         <SessionSummaryCard
@@ -95,16 +102,16 @@ export function SessionDetailPage() {
   );
 }
 
-function SessionNotFound() {
+function SessionNotFound({ sessionId }: { sessionId: string }) {
   const { orgId, projectId } = useProjectParams();
   return (
     <div className={PAGE_CLASSES}>
-      <BackToSessionsLink />
+      <SessionsBreadcrumbs sessionId={sessionId} />
       <Card>
         <EmptyState
           icon={MessagesSquare}
           title="Session not found"
-          description="No traces with this session ID in the last 90 days. They may have been deleted by the retention policy, or the ID is wrong."
+          description="No traces with this session ID. They may have been deleted by the retention policy, or the ID is wrong."
           action={
             <Button asChild variant="primary">
               <Link to="/$orgId/$projectId/sessions" params={{ orgId, projectId }}>

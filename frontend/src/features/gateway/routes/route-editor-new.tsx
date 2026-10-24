@@ -2,6 +2,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
+import { CrumbButton } from "@/components/breadcrumbs";
 import { Callout } from "@/components/callout";
 import { ErrorState } from "@/components/error-state";
 import { NoAccess } from "@/components/no-access";
@@ -12,7 +13,7 @@ import { errorMessage } from "@/lib/api";
 
 import { LeaveGuardDialog } from "./leave-guard";
 import { RouteEditorForm } from "./route-editor-form";
-import { BackLabel, RouteEditorHeader } from "./route-editor-header";
+import { RouteEditorHeader } from "./route-editor-header";
 import { RouteEditorSkeleton } from "./route-editor-skeleton";
 import { configFromFormValues, newRouteFormValues } from "./route-form";
 import { applyRouteFieldErrors } from "./route-form-errors";
@@ -106,11 +107,7 @@ function NewRouteForm({
         name={name}
         badges={<Badge size="sm">Not saved</Badge>}
         meta="New route · the name is fixed once it is created"
-        back={
-          <Button variant="link" size="sm" onClick={onCancel}>
-            <BackLabel />
-          </Button>
-        }
+        parent={<CrumbButton onClick={onCancel}>Routes</CrumbButton>}
       />
       {lookups.credentials.length === 0 ? (
         <Callout

@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/page-header";
 import { SectionCard } from "@/components/section-card";
 import { ColumnLabels, TileList, TileListSkeleton } from "@/components/tile-list";
 import { Button } from "@/components/ui/button";
+import { LiveDemoButton } from "@/features/auth";
 import { usePermission, useProjectParams } from "@/features/shell";
 import type { Experiment } from "@/lib/api";
 import { pluralize } from "@/lib/format";
@@ -69,6 +70,7 @@ export function ExperimentsPage() {
             title="No experiments yet"
             description="An experiment runs every item of a dataset through a prompt and a model, scores the results and lets you compare two runs."
             action={canRun ? <NewExperimentButton /> : null}
+            setup={<LiveDemoButton />}
             className="rounded-tile bg-surface-muted"
           />
         </SectionCard>

@@ -1,4 +1,4 @@
-import { Tag } from "lucide-react";
+import { Tag, X } from "lucide-react";
 
 import type { PromptKind, PromptLabel } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -24,13 +24,15 @@ interface LabelBadgeProps {
   label: string;
   /** Shown after the label ("production · v2") where the row doesn't already say the version. */
   version?: number | undefined;
+  /** Adds a "×" that asks to remove the label; left out for roles that can't move labels. */
+  onRemove?: (() => void) | undefined;
 }
 
 /**
  * Figma "Prompts/Label badge". `production` is violet; every other label (staging and custom
  * ones) is neutral with a strong outline, so no label borrows the warning tone.
  */
-export function LabelBadge({ label, version }: LabelBadgeProps) {
+export function LabelBadge({ label, version, onRemove }: LabelBadgeProps) {
   const production = label === "production";
   return (
     <span
@@ -40,10 +42,23 @@ export function LabelBadge({ label, version }: LabelBadgeProps) {
         production
           ? "bg-accent-subtle text-accent"
           : "border border-border-strong bg-surface-muted text-foreground",
+        // A removable production badge gets the Figma 1px accent outline.
+        onRemove && production && "ring-1 ring-accent ring-inset",
+        onRemove && "py-0 pr-0.5",
       )}
     >
       <Tag aria-hidden className="size-3" strokeWidth={2.25} />
       {version === undefined ? label : `${label} · v${String(version)}`}
+      {onRemove ? (
+        <button
+          type="button"
+          aria-label={`Remove label ${label}`}
+          onClick={onRemove}
+          className="-my-px inline-flex size-6 items-center justify-center rounded-full hover:bg-surface-hover focus-visible:outline-[1.5px] focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          <X aria-hidden className="size-3" strokeWidth={2.5} />
+        </button>
+      ) : null}
     </span>
   );
 }

@@ -119,7 +119,7 @@ A delivery fails for good on an error a retry cannot fix (a 4xx other than 408 o
 
    Rows with an empty `channel_id` are transactional mail (verification, password reset, invitation, digest). Their payload was cleared when they failed, so that reset links do not linger, and they cannot be retried: ask the person to request the mail again.
 
-2. Fix the cause first, otherwise the retry fails again. The usual ones: the Slack URL or the webhook endpoint changed or was revoked (edit the channel under **Alerts → Channels**), the receiver answers a 4xx, or `CREDENTIALS_KEYS` no longer holds the key the channel's secret was sealed with.
+2. Fix the cause first, otherwise the retry fails again. The usual ones: the Slack URL or the webhook endpoint changed or was revoked (edit the channel under **Settings → Notification channels**), the receiver answers a 4xx, or `CREDENTIALS_KEYS` no longer holds the key the channel's secret was sealed with.
 
 3. Send the channel a test (**Test** on the channel's row) and check it arrives. This also marks the channel verified.
 
@@ -129,7 +129,7 @@ A delivery fails for good on an error a retry cannot fix (a 4xx other than 408 o
 
 A failed delivery is retried with its own id, so a webhook receiver still sees the same `X-Spanlight-Delivery` and deduplicates. Its attempts start over, it is due at once, and its last error stays until the next attempt replaces it.
 
-In the dashboard: **Alerts → Channels**, press **Deliveries** on the channel's row, and press **Retry** on the failed delivery. Only failed rows offer it.
+In the dashboard: **Settings → Notification channels**, press **Deliveries** on the channel's row, and press **Retry** on the failed delivery. Only failed rows offer it.
 
 With the API (needs an admin or owner token):
 

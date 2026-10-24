@@ -9,6 +9,8 @@ interface EmptyStateProps {
   description: ReactNode;
   /** Usually one primary pill button, optionally a secondary one. */
   action?: ReactNode;
+  /** Getting-started help under the actions, after a hairline: a key snippet, the live demo. */
+  setup?: ReactNode;
   /** 2 when the state replaces a whole page under its `h1`; 3 inside a card that has a title. */
   headingLevel?: 2 | 3;
   className?: string;
@@ -20,6 +22,7 @@ export function EmptyState({
   title,
   description,
   action,
+  setup,
   headingLevel = 3,
   className,
 }: EmptyStateProps) {
@@ -45,6 +48,12 @@ export function EmptyState({
       </div>
       {action ? (
         <div className="mt-1 flex flex-wrap items-center justify-center gap-2">{action}</div>
+      ) : null}
+      {setup ? (
+        // `empty:hidden` drops the hairline when every part renders nothing (the demo org).
+        <div className="mt-1 flex w-full max-w-md flex-col items-center gap-3 border-t border-border pt-5 empty:hidden">
+          {setup}
+        </div>
       ) : null}
     </div>
   );

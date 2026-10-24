@@ -14,6 +14,7 @@ interface SheetContentProps extends ComponentProps<typeof SheetPrimitive.Content
   side?: "left" | "right";
   /** Hide the built-in close button when the content renders its own. */
   hideClose?: boolean;
+  overlayClassName?: string;
 }
 
 /** A floating side panel (8px inset, 28px radius) over a blurred overlay. */
@@ -22,11 +23,17 @@ function SheetContent({
   children,
   side = "left",
   hideClose = false,
+  overlayClassName,
   ...props
 }: SheetContentProps) {
   return (
     <SheetPrimitive.Portal>
-      <SheetPrimitive.Overlay className="fixed inset-0 z-50 animate-fade-in bg-overlay backdrop-blur-[4px]" />
+      <SheetPrimitive.Overlay
+        className={cn(
+          "fixed inset-0 z-50 animate-fade-in bg-overlay backdrop-blur-[4px]",
+          overlayClassName,
+        )}
+      />
       <SheetPrimitive.Content
         className={cn(
           "fixed inset-y-2 z-50 flex w-80 max-w-[calc(100vw-1rem)] flex-col overflow-y-auto rounded-card border border-border bg-surface text-foreground shadow-lg",

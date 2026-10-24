@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  formatBucketTime,
   formatCompact,
   formatCost,
   formatDuration,
@@ -24,6 +25,13 @@ describe("formatDuration", () => {
     expect(formatDuration(4213)).toBe("4.21 s");
     expect(formatDuration(42_100)).toBe("42.1 s");
     expect(formatDuration(123_000)).toBe("2m 03s");
+  });
+
+  it("formats an hour or more as hours and minutes", () => {
+    expect(formatDuration(3_600_000)).toBe("1h 00m");
+    expect(formatDuration(3_599_400)).toBe("59m 59s");
+    // A long session: 4,663 minutes is 77 hours 43 minutes, not "4663m 01s".
+    expect(formatDuration(279_781_000)).toBe("77h 43m");
   });
 });
 
@@ -92,5 +100,19 @@ describe("pluralize", () => {
   it("picks the singular or plural form", () => {
     expect(pluralize(1, "turn")).toBe("1 turn");
     expect(pluralize(1200, "error")).toBe("1,200 errors");
+  });
+});
+
+describe("formatBucketTime", () => {
+  // A local wall-clock time, so the label reads the same in any time zone.
+  const start = new Date(2026, 9, 14, 9, 30).toISOString();
+
+  it("reads a time while the hourly buckets fit in one day", () => {
+    expect(formatBucketTime(start, 24)).toBe("09:30");
+    expect(formatBucketTime(start, 0)).toBe("09:30");
+  });
+
+  it("adds the day once more than 24 hourly buckets span days", () => {
+    expect(formatBucketTime(start, 25)).toBe("Oct 14, 09:30");
   });
 });

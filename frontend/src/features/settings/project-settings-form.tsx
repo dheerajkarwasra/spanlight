@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
 import { FormField } from "@/components/form-field";
@@ -53,7 +53,7 @@ function valuesFrom(project: Project): ProjectSettingsValues {
 }
 
 /**
- * The project cards (General, Data, Email, Insight notifications, Attribution) and their save
+ * The project cards (General, Data, Insight notifications, Attribution) and their save
  * bar. One form, so one "Save changes" sends only the fields that differ from the saved project.
  */
 export function ProjectSettingsForm({ project, canEdit }: ProjectSettingsFormProps) {
@@ -63,6 +63,7 @@ export function ProjectSettingsForm({ project, canEdit }: ProjectSettingsFormPro
     defaultValues: valuesFrom(project),
   });
   const { errors, isDirty } = form.formState;
+  const retentionDays = useWatch({ control: form.control, name: "retention_days" });
 
   const onSubmit = form.handleSubmit((values) => {
     const update = changedProjectFields(project, values);
@@ -115,10 +116,7 @@ export function ProjectSettingsForm({ project, canEdit }: ProjectSettingsFormPro
         <ProjectIdentifiers project={project} />
       </SectionCard>
 
-      <SectionCard
-        title="Data"
-        description="Control how long traces are kept and what is stored with them."
-      >
+      <SectionCard title="Data" description="What Spanlight keeps and for how long.">
         <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
           <FormField
             label="Retention period (days)"
@@ -137,20 +135,13 @@ export function ProjectSettingsForm({ project, canEdit }: ProjectSettingsFormPro
               {...form.register("retention_days", { valueAsNumber: true })}
             />
           </FormField>
-          <div className="flex min-w-0 flex-1 flex-col gap-1 sm:pt-[30px]">
-            <p className="text-sm text-muted-foreground">
-              Traces older than this are deleted automatically, in batches, every hour.
-            </p>
-            <p className="text-xs font-medium text-muted-foreground">
-              Shortening the period deletes older traces within the next hour.
-            </p>
-          </div>
+          <p className="min-w-0 flex-1 text-sm text-muted-foreground sm:pt-[30px]">
+            Traces older than{" "}
+            {Number.isInteger(retentionDays) ? retentionDays : project.retention_days} days are
+            deleted every hour.
+          </p>
         </div>
-        <hr className="border-border" />
         <CapturePayloadsField control={form.control} canEdit={canEdit} />
-      </SectionCard>
-
-      <SectionCard title="Email" description="What members of this project get by email.">
         <WeeklyDigestField control={form.control} canEdit={canEdit} />
       </SectionCard>
 

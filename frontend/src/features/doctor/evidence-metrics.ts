@@ -50,9 +50,9 @@ const HINTS: Record<string, string> = {
   storms: "bursts in the window",
   largest_storm: "same request, within 60 s",
   hashes: "request hashes",
-  baseline_error_rate: "previous 7 days",
-  baseline_p95_ms: "previous 7 days",
-  baseline_hourly_usd: "previous 7 days",
+  baseline_error_rate: "the 7 days before the last 24 hours",
+  baseline_p95_ms: "the 7 days before the last 24 hours",
+  baseline_hourly_usd: "the 7 days before the last 24 hours",
 };
 
 export function metricLabel(name: string): string {

@@ -1,4 +1,5 @@
 import { screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError, projectsApi, type FilterOptions, type TraceSummary } from "@/lib/api";
@@ -56,16 +57,25 @@ function searchOf(link: HTMLElement) {
   return new URL(link.getAttribute("href") ?? "", "http://localhost").searchParams;
 }
 
+/** The table once the rows are in (the loading table carries the same name). */
 async function tracesTable() {
-  return within(await screen.findByRole("table", { name: "Traces" }));
+  await screen.findAllByText("trace-t1", {}, { timeout: 4000 });
+  return within(screen.getByRole("table", { name: "Traces" }));
 }
 
 describe("the trace list's metadata chips", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     mockProject(["customer_id", "feature"]);
   });
 
+  /** Promoted keys put a Metadata column in Table settings, hidden until the viewer shows it. */
+  function showMetadataColumn() {
+    window.localStorage.setItem("spanlight.columns.traces", "metadata:1");
+  }
+
   it("shows a chip only for the promoted keys a trace carries", async () => {
+    showMetadataColumn();
     vi.spyOn(projectsApi, "traces").mockResolvedValue({
       items: [
         trace("t1", { customer_id: "acme", region: "eu-west-1" }),
@@ -87,6 +97,7 @@ describe("the trace list's metadata chips", () => {
   });
 
   it("links a chip to the list filtered by its pair", async () => {
+    showMetadataColumn();
     vi.spyOn(projectsApi, "traces").mockResolvedValue({
       items: [trace("t1", { customer_id: "acme" })],
       next_cursor: null,
@@ -99,6 +110,7 @@ describe("the trace list's metadata chips", () => {
   });
 
   it("folds the chips past the first into a count", async () => {
+    showMetadataColumn();
     vi.spyOn(projectsApi, "traces").mockResolvedValue({
       items: [trace("t1", { customer_id: "acme", feature: "triage" })],
       next_cursor: null,
@@ -108,6 +120,18 @@ describe("the trace list's metadata chips", () => {
     const table = await tracesTable();
     expect(table.getByText("+1")).toBeInTheDocument();
     expect(table.getByText(/1 more: feature triage/)).toBeInTheDocument();
+  });
+
+  it("shows the column by default while a metadata filter is set", async () => {
+    vi.spyOn(projectsApi, "traces").mockResolvedValue({
+      items: [trace("t1", { region: "eu-west-1" })],
+      next_cursor: null,
+    });
+    renderApp(`${LIST}?metadata_key=region&metadata_value=eu-west-1`);
+
+    const table = await tracesTable();
+    expect(table.getByRole("columnheader", { name: "Metadata" })).toBeInTheDocument();
+    expect(table.getByRole("link", { name: "region eu-west-1" })).toBeInTheDocument();
   });
 
   it("has no metadata column when the project promotes no key", async () => {
@@ -143,8 +167,15 @@ describe("the trace list's metadata chips", () => {
 
 describe("the trace detail's metadata block", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     mockProject(["customer_id"]);
   });
+
+  /** The metadata sits in the Trace info panel, closed until its summary bar button opens it. */
+  async function openMetadata() {
+    await userEvent.click(await screen.findByRole("button", { name: "Trace info" }));
+    return within(await screen.findByRole("region", { name: "Metadata" }));
+  }
 
   function mockTrace(metadata: Record<string, string>) {
     vi.spyOn(projectsApi, "trace").mockResolvedValue({ ...trace("t1", metadata), spans: [] });
@@ -154,7 +185,7 @@ describe("the trace detail's metadata block", () => {
     mockTrace({ region: "eu-west-1", customer_id: "acme", "a.b-c": "x" });
     renderApp(`${LIST}/t1`);
 
-    const block = within(await screen.findByRole("region", { name: "Metadata" }));
+    const block = await openMetadata();
     expect(block.getByText("3 keys")).toBeInTheDocument();
     const links = block.getAllByRole("link");
     expect(links.map((link) => link.textContent)).toEqual(["x", "acme", "eu-west-1"]);
@@ -167,7 +198,7 @@ describe("the trace detail's metadata block", () => {
     mockTrace({ support_note: "[REDACTED]" });
     renderApp(`${LIST}/t1`);
 
-    const block = within(await screen.findByRole("region", { name: "Metadata" }));
+    const block = await openMetadata();
     const link = block.getByRole("link", { name: "Show traces where support_note = [REDACTED]" });
     expect(within(link).getByText("redacted")).toHaveAttribute("title", "[REDACTED]");
     expect(searchOf(link).get("metadata_value")).toBe("[REDACTED]");
@@ -177,7 +208,7 @@ describe("the trace detail's metadata block", () => {
     mockTrace({});
     renderApp(`${LIST}/t1`);
 
-    const block = within(await screen.findByRole("region", { name: "Metadata" }));
+    const block = await openMetadata();
     expect(block.getByText(/No metadata on this trace/)).toBeInTheDocument();
     expect(block.queryByRole("link")).not.toBeInTheDocument();
   });

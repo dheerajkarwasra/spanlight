@@ -54,6 +54,7 @@ from app.api.v1 import (
     replays,
     review_policy,
     scores,
+    sessions,
     telemetry_completeness,
     tokens,
     totp,
@@ -66,6 +67,7 @@ from app.api.v1 import (
 DOMAIN_ROUTERS = (
     metrics.router,
     traces.router,
+    sessions.router,
     auth.router,
     totp.router,
     tokens.router,

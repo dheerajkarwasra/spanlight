@@ -4,7 +4,13 @@
  * (`sdks/python`, import `spanlight`) and the ingestion contract.
  */
 
-import { gatewayAnthropicBaseUrl, gatewayBaseUrl } from "@/features/gateway";
+import {
+  GATEWAY_MODE_NOTES,
+  gatewayAnthropicBaseUrl,
+  gatewayBaseUrl,
+  gatewaySnippetHost,
+} from "@/features/gateway";
+import type { GatewayMode } from "@/lib/api";
 
 export const API_KEY_PLACEHOLDER = "<YOUR_API_KEY>";
 export const DEFAULT_ENVIRONMENT = "production";
@@ -39,6 +45,8 @@ export interface SnippetOptions {
   /** Origin of this Spanlight instance, e.g. "https://spanlight.example.com". */
   host: string;
   environment?: string;
+  /** `/me`'s gateway mode; a gateway this origin doesn't serve gets a placeholder host. */
+  gatewayMode?: GatewayMode;
 }
 
 function normalizeHost(host: string): string {
@@ -234,13 +242,15 @@ EOF`,
  * "No SDK": point an existing provider client at the gateway. The key is a gateway key, never the
  * ingest API key, so it is always the placeholder; the user creates one under Gateway › Credentials.
  */
-function gatewaySnippet(host: string): Snippet {
+function gatewaySnippet(origin: string, mode: GatewayMode): Snippet {
+  const host = gatewaySnippetHost(mode, origin);
   const openAiBase = gatewayBaseUrl(host);
   const anthropicBase = gatewayAnthropicBaseUrl(host);
+  const steps = "Add a provider credential, then create a gateway key.";
   return {
     id: "gateway",
     label: "No SDK",
-    description: "Add a provider credential, then create a gateway key.",
+    description: mode === "embedded" ? steps : `${GATEWAY_MODE_NOTES[mode]} ${steps}`,
     blocks: [
       {
         title: "OpenAI SDK",
@@ -295,6 +305,7 @@ export function buildSnippets({
   apiKey,
   host,
   environment = DEFAULT_ENVIRONMENT,
+  gatewayMode = "embedded",
 }: SnippetOptions): Snippet[] {
   const key = apiKey ?? API_KEY_PLACEHOLDER;
   const origin = normalizeHost(host);
@@ -304,6 +315,6 @@ export function buildSnippets({
     anthropicSnippet(key, origin, environment),
     otelSnippet(key, origin, environment),
     curlSnippet(key, origin, environment),
-    gatewaySnippet(origin),
+    gatewaySnippet(origin, gatewayMode),
   ];
 }

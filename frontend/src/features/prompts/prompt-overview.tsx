@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Ellipsis } from "lucide-react";
+import { Ellipsis, FlaskConical, Monitor } from "lucide-react";
 import { useState } from "react";
 
 import { ErrorState } from "@/components/error-state";
@@ -13,13 +13,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useProjectParams } from "@/features/shell";
+import { usePermission, useProjectParams } from "@/features/shell";
 import type { Prompt } from "@/lib/api";
+import { useMediaQuery } from "@/lib/use-media-query";
 
 import { CardTitle } from "./card-title";
 import { DeletePromptDialog } from "./delete-prompt-dialog";
 import { KindChip } from "./label-badges";
 import { LabelDialog } from "./label-dialog";
+import { RemoveLabelDialog } from "./remove-label-dialog";
 import { useAuthorName } from "./use-author-name";
 import { TemplateCard } from "./template-card";
 import { UsageCard } from "./usage-card";
@@ -35,18 +37,31 @@ interface PromptOverviewProps {
   canWrite: boolean;
 }
 
+/** Below `sm` the page is a read-only version list: labels can move, nothing else is edited. */
+const PHONE_QUERY = "(max-width: 639px)";
+
 /** Figma "Prompts — Detail": versions on the left, usage and template of one version on the right. */
 export function PromptOverview({ prompt, selected, onSelect, canWrite }: PromptOverviewProps) {
   const [labelVersion, setLabelVersion] = useState<number | null>(null);
+  const [removingLabel, setRemovingLabel] = useState<string | null>(null);
   const versions = usePromptVersionsQuery(prompt.name).data?.pages.flatMap((page) => page.items);
   const authorName = useAuthorName();
   const isLatest = selected === prompt.latest.version;
   // The same cache entry the template card reads.
   const selectedVersion = usePromptVersionQuery(prompt.name, isLatest ? null : selected).data;
+  const phone = useMediaQuery(PHONE_QUERY);
+  const selectedId = isLatest ? prompt.latest.id : (selectedVersion?.id ?? null);
 
   return (
     <>
-      <PromptHeader prompt={prompt} selected={selected} canWrite={canWrite} />
+      <PromptHeader
+        prompt={prompt}
+        selected={selected}
+        selectedId={selectedId}
+        canWrite={canWrite}
+        phone={phone}
+        onMoveLabel={() => setLabelVersion(selected)}
+      />
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-6">
         <VersionList
           name={prompt.name}
@@ -55,14 +70,14 @@ export function PromptOverview({ prompt, selected, onSelect, canWrite }: PromptO
           selected={selected}
           onSelect={onSelect}
           onSetLabel={canWrite ? setLabelVersion : null}
+          onRemoveLabel={canWrite ? setRemovingLabel : null}
           authorName={authorName}
         />
         <div className="flex min-w-0 flex-col gap-4 lg:gap-6">
-          <UsageCard
-            name={prompt.name}
-            version={selected}
-            versionId={isLatest ? prompt.latest.id : (selectedVersion?.id ?? null)}
-          />
+          {/* On a phone every row already shows its usage line. */}
+          {phone ? null : (
+            <UsageCard name={prompt.name} version={selected} versionId={selectedId} />
+          )}
           <SelectedTemplate prompt={prompt} selected={selected} />
         </div>
       </div>
@@ -72,6 +87,11 @@ export function PromptOverview({ prompt, selected, onSelect, canWrite }: PromptO
         versions={versions ?? [prompt.latest]}
         version={labelVersion}
         onClose={() => setLabelVersion(null)}
+      />
+      <RemoveLabelDialog
+        name={prompt.name}
+        label={removingLabel}
+        onClose={() => setRemovingLabel(null)}
       />
     </>
   );
@@ -108,11 +128,24 @@ function SelectedTemplate({ prompt, selected }: { prompt: Prompt; selected: numb
 interface PromptHeaderProps {
   prompt: Prompt;
   selected: number;
+  /** The shown version's id; null while an older one loads. */
+  selectedId: string | null;
   canWrite: boolean;
+  /** Below `sm`: only "Move label" and the menu; editing and testing wait for a larger screen. */
+  phone: boolean;
+  onMoveLabel: () => void;
 }
 
-function PromptHeader({ prompt, selected, canWrite }: PromptHeaderProps) {
+function PromptHeader({
+  prompt,
+  selected,
+  selectedId,
+  canWrite,
+  phone,
+  onMoveLabel,
+}: PromptHeaderProps) {
   const { orgId, projectId } = useProjectParams();
+  const canRun = usePermission("experiments:run");
   const [deleting, setDeleting] = useState(false);
   const editLink = usePromptLink(prompt.name, { view: "edit", v: selected });
   return (
@@ -127,6 +160,7 @@ function PromptHeader({ prompt, selected, canWrite }: PromptHeaderProps) {
         description={prompt.description ?? undefined}
         actions={
           <>
+            {phone && canWrite ? <Button onClick={onMoveLabel}>Move label</Button> : null}
             {canWrite ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -145,16 +179,30 @@ function PromptHeader({ prompt, selected, canWrite }: PromptHeaderProps) {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}
-            <Button asChild>
-              <Link
-                to="/$orgId/$projectId/playground"
-                params={{ orgId, projectId }}
-                search={{ prompt: prompt.name, v: selected }}
-              >
-                Open in playground
-              </Link>
-            </Button>
-            {canWrite ? (
+            {canRun && !phone ? (
+              <Button asChild>
+                <Link
+                  to="/$orgId/$projectId/experiments/new"
+                  params={{ orgId, projectId }}
+                  search={{ prompt: prompt.name, version: selectedId ?? undefined }}
+                >
+                  <FlaskConical aria-hidden />
+                  Create experiment
+                </Link>
+              </Button>
+            ) : null}
+            {phone ? null : (
+              <Button asChild>
+                <Link
+                  to="/$orgId/$projectId/playground"
+                  params={{ orgId, projectId }}
+                  search={{ prompt: prompt.name, v: selected }}
+                >
+                  Open in playground
+                </Link>
+              </Button>
+            )}
+            {canWrite && !phone ? (
               <Button variant="primary" asChild>
                 <Link {...editLink}>New version</Link>
               </Button>
@@ -162,6 +210,12 @@ function PromptHeader({ prompt, selected, canWrite }: PromptHeaderProps) {
           </>
         }
       />
+      {phone ? (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Monitor aria-hidden className="size-4 shrink-0" />
+          Edit and test versions on a larger screen.
+        </p>
+      ) : null}
       <DeletePromptDialog
         name={prompt.name}
         versionCount={prompt.latest.version}

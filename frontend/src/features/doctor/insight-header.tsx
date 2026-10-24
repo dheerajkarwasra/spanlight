@@ -1,6 +1,4 @@
-import { Link } from "@tanstack/react-router";
-import { ArrowLeft } from "lucide-react";
-
+import { Breadcrumbs, Crumb } from "@/components/breadcrumbs";
 import { useProjectParams } from "@/features/shell";
 import type { InsightDetail } from "@/lib/api";
 
@@ -11,18 +9,15 @@ import { SeverityBadge } from "./severity-badge";
 import { StatusPill } from "./status-pill";
 import { StatusBanner } from "./status-banner";
 
-/** "← Doctor": back to the list. */
-export function BackToDoctor() {
+/** "Doctor › <current>": the trail back to the list. */
+export function DoctorBreadcrumbs({ current }: { current: string }) {
   const { orgId, projectId } = useProjectParams();
   return (
-    <Link
-      to="/$orgId/$projectId/doctor"
-      params={{ orgId, projectId }}
-      className="inline-flex w-fit items-center gap-1.5 rounded-sm text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-[1.5px] focus-visible:outline-offset-2 focus-visible:outline-ring"
-    >
-      <ArrowLeft aria-hidden className="size-4" strokeWidth={2} />
-      Doctor
-    </Link>
+    <Breadcrumbs current={current}>
+      <Crumb to="/$orgId/$projectId/doctor" params={{ orgId, projectId }}>
+        Doctor
+      </Crumb>
+    </Breadcrumbs>
   );
 }
 
@@ -53,13 +48,13 @@ interface InsightHeaderProps {
 }
 
 /**
- * Figma detail header: back link, badges, title, meta line, the status banner, the summary and
+ * Figma detail header: breadcrumbs, badges, title, meta line, the status banner, the summary and
  * the actions. The summary leads; the actions sit beside it on a wide screen.
  */
 export function InsightHeader({ insight, canManage, now }: InsightHeaderProps) {
   return (
     <div className="flex flex-col gap-4">
-      <BackToDoctor />
+      <DoctorBreadcrumbs current={insight.title} />
       <ul aria-label="Severity, status and kind" className="flex flex-wrap items-center gap-2">
         <li>
           <SeverityBadge severity={insight.severity} />

@@ -5,6 +5,7 @@ import type { TraceSummary } from "@/lib/api";
 import {
   averageCostPerTurn,
   consistentUserId,
+  cumulativeCost,
   modelUsage,
   sortChronologically,
   spanBetween,
@@ -109,12 +110,20 @@ describe("summariseSession", () => {
 describe("sortChronologically", () => {
   it("orders oldest first without mutating the input", () => {
     const input = [
-      makeTrace("new", "2026-10-07T12:05:00Z", "2026-10-07T12:05:01Z"),
-      makeTrace("old", "2026-10-07T12:00:00Z", "2026-10-07T12:00:01Z"),
+      {
+        trace: makeTrace("new", "2026-10-07T12:05:00Z", "2026-10-07T12:05:01Z"),
+        spans: [],
+        tool_calls: 0,
+      },
+      {
+        trace: makeTrace("old", "2026-10-07T12:00:00Z", "2026-10-07T12:00:01Z"),
+        spans: [],
+        tool_calls: 0,
+      },
     ];
 
-    expect(sortChronologically(input).map((trace) => trace.trace_id)).toEqual(["old", "new"]);
-    expect(input[0]?.trace_id).toBe("new");
+    expect(sortChronologically(input).map((turn) => turn.trace.trace_id)).toEqual(["old", "new"]);
+    expect(input[0]?.trace.trace_id).toBe("new");
   });
 });
 
@@ -240,5 +249,18 @@ describe("turnsOutsideEnvironment", () => {
   it("counts other environments and traces without one", () => {
     expect(turnsOutsideEnvironment(traces, "production")).toBe(2);
     expect(turnsOutsideEnvironment(traces, "staging")).toBe(2);
+  });
+});
+
+describe("cumulativeCost", () => {
+  it("adds known costs turn by turn and stays null until one is known", () => {
+    const at = "2026-10-07T12:00:00Z";
+    const traces = [
+      makeTrace("a", at, at, { cost_usd: null }),
+      makeTrace("b", at, at, { cost_usd: "0.25" }),
+      makeTrace("c", at, at, { cost_usd: null }),
+      makeTrace("d", at, at, { cost_usd: "0.5" }),
+    ];
+    expect(cumulativeCost(traces)).toEqual([null, 0.25, 0.25, 0.75]);
   });
 });

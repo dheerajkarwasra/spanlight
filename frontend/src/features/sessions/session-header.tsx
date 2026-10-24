@@ -1,7 +1,7 @@
-import { Link } from "@tanstack/react-router";
-import { ArrowLeft, Info, User } from "lucide-react";
+import { Info, User } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 
+import { Breadcrumbs, Crumb } from "@/components/breadcrumbs";
 import { CopyButton } from "@/components/copy-button";
 import { CostValue } from "@/components/cost-value";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,17 +12,15 @@ import { formatDuration, pluralize } from "@/lib/format";
 import { formatSessionWindow } from "./session-format";
 import { consistentUserId, turnsOutsideEnvironment, type SessionTotals } from "./session-summary";
 
-export function BackToSessionsLink() {
+/** "Sessions › <session ID>": back to the list. */
+export function SessionsBreadcrumbs({ sessionId }: { sessionId: string }) {
   const { orgId, projectId } = useProjectParams();
   return (
-    <Link
-      to="/$orgId/$projectId/sessions"
-      params={{ orgId, projectId }}
-      className="inline-flex w-fit items-center gap-1.5 rounded-xs text-sm font-medium text-muted-foreground hover:text-foreground"
-    >
-      <ArrowLeft aria-hidden className="size-3.5" />
-      Sessions
-    </Link>
+    <Breadcrumbs current={sessionId}>
+      <Crumb to="/$orgId/$projectId/sessions" params={{ orgId, projectId }}>
+        Sessions
+      </Crumb>
+    </Breadcrumbs>
   );
 }
 
@@ -35,7 +33,7 @@ interface SessionHeaderProps {
 }
 
 /**
- * Back link, the title with the session ID chip, a one-line summary, and, when an environment is
+ * Breadcrumbs, the title with the session ID chip, a one-line summary, and, when an environment is
  * selected and some turns are from another one, a note saying the session shows them all.
  */
 export function SessionHeader({ sessionId, traces, totals, partial }: SessionHeaderProps) {
@@ -45,7 +43,7 @@ export function SessionHeader({ sessionId, traces, totals, partial }: SessionHea
 
   return (
     <header className="flex flex-col gap-3.5">
-      <BackToSessionsLink />
+      <SessionsBreadcrumbs sessionId={sessionId} />
       <div className="flex min-w-0 flex-wrap items-center gap-3.5">
         <h1 className="text-h1 text-foreground">Session</h1>
         <div className="flex max-w-full min-w-0 items-center gap-1 rounded-full border border-border bg-surface py-1 pr-1.5 pl-3.5">

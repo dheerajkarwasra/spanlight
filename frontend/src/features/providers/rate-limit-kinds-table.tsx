@@ -63,7 +63,7 @@ export function RateLimitKindsTable({ providers }: { providers: readonly Provide
               {rows.map((row) => (
                 <TableRow key={`${row.provider ?? ""}:${row.kind}`}>
                   <TableCell className="h-12 font-mono text-[13px] text-muted-foreground">
-                    {row.provider ?? "unknown"}
+                    {row.provider ?? "No provider"}
                   </TableCell>
                   <TableCell className="h-12">{rateLimitKindLabel(row.kind)}</TableCell>
                   <TableCell className="h-12 font-mono text-[13px] text-muted-foreground">
@@ -117,7 +117,7 @@ function KindTile({ row }: { row: KindRow }) {
       <div className="flex items-center justify-between gap-3">
         <span className="text-sm font-semibold">{rateLimitKindLabel(row.kind)}</span>
         <span className="font-mono text-[13px] text-muted-foreground">
-          {row.provider ?? "unknown"}
+          {row.provider ?? "No provider"}
         </span>
       </div>
       <p className="text-xs font-medium text-muted-foreground">

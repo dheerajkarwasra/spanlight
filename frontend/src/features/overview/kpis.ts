@@ -1,18 +1,19 @@
-import type { Kpis, OverviewMetrics } from "@/lib/api";
+import type { Health, OverviewMetrics } from "@/lib/api";
 import {
   formatCompact,
+  formatCost,
   formatDuration,
-  formatInteger,
   formatPercent,
-  pluralNoun,
+  parseMoney,
+  pluralize,
   relativeChange,
 } from "@/lib/format";
 import type { ResolvedRange } from "@/lib/time-range";
 
 import type { ChartPoint } from "./chart-data";
+import { NO_SCORE_REASON } from "./doctor-format";
 import { errorCountFrom } from "./hero";
-
-export type KpiId = "p95" | "error_rate" | "llm_calls" | "tokens";
+import { formatCompactCost, formatTileCost, projectMonthlySpend } from "./spend";
 
 /** How a change is measured: relative percent, percentage points or milliseconds. */
 export type DeltaUnit = "percent" | "points" | "ms";
@@ -26,29 +27,6 @@ export interface KpiDelta {
    * neither good nor bad and the pill stays neutral.
    */
   increaseIsGood: boolean | null;
-}
-
-export interface KpiCardModel {
-  id: KpiId;
-  label: string;
-  /** Formatted value, or null when the metric is unknown for this window. */
-  value: string | null;
-  /** Why the value is unknown. Only shown when `value` is null. */
-  unknownReason: string;
-  /** The line under the value, e.g. "p50 640 ms" or "203 of 48.2K calls". */
-  detail: string | null;
-  /**
-   * The p50 that `detail` reports on the p95 card ("640 ms"), kept apart so the card can put
-   * the "≈" in front of the number. Null on the other cards and when the p50 is unknown.
-   */
-  p50: string | null;
-  /**
-   * True when this card's percentiles (value and `p50`) are estimates from hourly rollups.
-   * Always false for counts, rates and tokens, which are exact.
-   */
-  approximate: boolean;
-  /** Change versus the previous window, or null when there is nothing to compare. */
-  delta: KpiDelta | null;
 }
 
 const NO_LLM_CALLS = "No LLM calls in this period";
@@ -114,86 +92,127 @@ function delta(
   return value === null ? null : { value, unit, increaseIsGood };
 }
 
-function totalTokens(kpis: Kpis): number {
-  return kpis.input_tokens + kpis.output_tokens;
+export type RibbonKpiId = "calls" | "p95" | "spend" | "doctor";
+
+/** One card of the KPI ribbon (spec §4 O1), formatted; the ribbon adds links and sparklines. */
+export interface RibbonKpi {
+  id: RibbonKpiId;
+  label: string;
+  /** Formatted value, or null when the metric is unknown for this window. */
+  value: string | null;
+  /** Why the value is unknown. Only shown when `value` is null. */
+  unknownReason: string;
+  /** The muted line under the value, e.g. "15 errors · 3.5%". */
+  denominator: string | null;
+  /** The value (and the p50 line) are estimates from hourly rollups. */
+  approximate: boolean;
+  /** Change versus the previous window, or null when there is nothing to compare. */
+  delta: KpiDelta | null;
+  /** Per-bucket values for the sparkline; null for a card without one. */
+  trend: (number | null)[] | null;
+  /** Spend only: some calls had no price, so the spend is a lower bound. */
+  lowerBound: boolean;
+  /** Spend only: the exact amount behind the short value ("$12,345.67" for "$12.3K"). */
+  exact: string | null;
+  /** Doctor only: open critical findings, shown in danger text after the denominator. */
+  critical: number;
 }
 
-/** The four KPI cards next to the calls chart, in display order. */
-export function buildKpiCards({ current, previous, approximate }: OverviewMetrics): KpiCardModel[] {
+interface RibbonInput {
+  metrics: OverviewMetrics;
+  /** The timeseries behind the sparklines; null while it is unknown. */
+  points: readonly ChartPoint[] | null;
+  /** The Doctor's score; null when it failed to load. */
+  health: Health | null;
+  range: Pick<ResolvedRange, "value" | "durationMs">;
+  now: Date;
+}
+
+/**
+ * Spend short enough for a half-width phone tile at 28 px: "$4.12", "$112", "$1.2K", "<$0.01".
+ */
+function tileCost(amount: number): string {
+  return Math.abs(amount) >= 1000 ? formatCompactCost(amount) : formatTileCost(amount);
+}
+
+/** "Projected $X this month" for short windows, else the previous window's spend. */
+function spendLine(
+  projection: number | null,
+  previousCost: number | null,
+  range: Pick<ResolvedRange, "value">,
+): string | null {
+  if (projection !== null) {
+    return `Projected ${formatCompactCost(projection)} this month`;
+  }
+  return previousCost === null
+    ? null
+    : `vs ${formatCost(previousCost) ?? ""} ${previousPeriodLabel(range)}`;
+}
+
+/** Calls · error rate, p95 latency, spend and the Doctor's score, in display order. */
+export function ribbonKpis({ metrics, points, health, range, now }: RibbonInput): RibbonKpi[] {
+  const { current, previous, approximate } = metrics;
   const errors = errorCountFrom(current.error_rate, current.llm_calls);
-  const callsLabel = formatCompact(current.llm_calls) ?? "0";
   const p50 = formatDuration(current.p50_ms);
+  const cost = parseMoney(current.cost_usd);
+  const previousCost = parseMoney(previous.cost_usd);
+  const projection = projectMonthlySpend(cost, range.durationMs, now);
+  const open = health ? health.open_critical + health.open_warning : 0;
+  const trend = (pick: (point: ChartPoint) => number | null) => points?.map(pick) ?? null;
+  const base = {
+    approximate: false,
+    delta: null,
+    trend: null,
+    lowerBound: false,
+    exact: null,
+    critical: 0,
+  };
 
   return [
     {
+      ...base,
+      id: "calls",
+      label: "Calls · error rate",
+      value: formatCompact(current.llm_calls),
+      unknownReason: "Not reported for this period",
+      denominator:
+        errors === null
+          ? null
+          : `${pluralize(errors, "error")} · ${formatPercent(current.error_rate) ?? ""}`,
+      delta: delta(percentDelta(current.llm_calls, previous.llm_calls), "percent", null),
+      trend: trend((point) => point.llmCalls),
+    },
+    {
+      ...base,
       id: "p95",
       label: "p95 latency",
       value: formatDuration(current.p95_ms),
       unknownReason: NO_LLM_CALLS,
-      detail: p50 === null ? null : `p50 ${p50}`,
-      p50,
+      denominator: p50 === null ? null : `p50 ${approximate ? "≈ " : ""}${p50}`,
       approximate,
       delta: delta(msDelta(current.p95_ms, previous.p95_ms), "ms", false),
+      trend: trend((point) => point.p95Ms),
     },
     {
-      id: "error_rate",
-      label: "Error rate",
-      value: formatPercent(current.error_rate),
-      unknownReason: NO_LLM_CALLS,
-      detail:
-        errors === null
-          ? null
-          : `${formatInteger(errors) ?? "0"} of ${callsLabel} ${pluralNoun(current.llm_calls, "call")}`,
-      p50: null,
-      approximate: false,
-      delta: delta(pointsDelta(current.error_rate, previous.error_rate), "points", false),
+      ...base,
+      id: "spend",
+      label: "Spend",
+      value: cost === null ? null : tileCost(cost),
+      exact: formatCost(cost),
+      unknownReason: "No price for any model in this period",
+      denominator: spendLine(projection, previousCost, range),
+      delta: delta(percentDelta(cost, previousCost), "percent", false),
+      lowerBound: cost !== null && current.unpriced_calls > 0,
     },
     {
-      id: "llm_calls",
-      label: "LLM calls",
-      value: formatCompact(current.llm_calls),
-      unknownReason: "Not reported for this period",
-      detail: `across ${formatCompact(current.traces) ?? "0"} ${pluralNoun(current.traces, "trace")}`,
-      p50: null,
-      approximate: false,
-      delta: delta(percentDelta(current.llm_calls, previous.llm_calls), "percent", null),
-    },
-    {
-      id: "tokens",
-      label: "Tokens",
-      value: formatCompact(totalTokens(current)),
-      unknownReason: "Not reported for this period",
-      detail: `${formatCompact(current.input_tokens) ?? "0"} in · ${
-        formatCompact(current.output_tokens) ?? "0"
-      } out`,
-      p50: null,
-      approximate: false,
-      delta: delta(percentDelta(totalTokens(current), totalTokens(previous)), "percent", null),
+      ...base,
+      id: "doctor",
+      label: "Doctor",
+      value: health?.value == null ? null : String(health.value),
+      unknownReason: health ? NO_SCORE_REASON : "The Doctor's score didn't load",
+      denominator: health ? pluralize(open, "open finding") : null,
+      critical: health?.open_critical ?? 0,
+      approximate: health?.approximate ?? false,
     },
   ];
-}
-
-/**
- * Counts and rates start their sparkline at zero, so a flat 0 % error rate draws along the bottom
- * instead of mid-box; latency keeps a min–max domain (its shape is what matters).
- */
-export const KPI_ZERO_BASED: Record<KpiId, boolean> = {
-  p95: false,
-  error_rate: true,
-  llm_calls: true,
-  tokens: true,
-};
-
-/** Per-bucket values behind a KPI's sparkline, over the whole window. Unknown buckets stay null. */
-export function kpiTrend(id: KpiId, points: readonly ChartPoint[]): (number | null)[] {
-  switch (id) {
-    case "p95":
-      return points.map((point) => point.p95Ms);
-    case "error_rate":
-      return points.map((point) => (point.llmCalls > 0 ? point.errors / point.llmCalls : null));
-    case "llm_calls":
-      return points.map((point) => point.llmCalls);
-    case "tokens":
-      return points.map((point) => point.tokens);
-  }
 }

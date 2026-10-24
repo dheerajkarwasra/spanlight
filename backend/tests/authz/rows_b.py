@@ -45,6 +45,10 @@ TRACE_ROWS = (
     Row("GET", f"{PRJ}/traces/{{trace_id}}/spans/{{span_id}}/cost-explanation", P.PROJECT_READ),
     # Phase 2.1: one span with its payloads, for a span trace detail returned without them.
     Row("GET", f"{PRJ}/traces/{{trace_id}}/spans/{{span_id}}", P.PROJECT_READ),
+    # UX Phase 1: a session's traces with each turn's spans; an empty page for an unknown id.
+    Row("GET", f"{PRJ}/sessions/{{session_id:path}}/turns", P.PROJECT_READ),
+    # UX Phase 3: trace and error counts over time for the trace list's filters.
+    Row("GET", f"{PRJ}/traces/histogram", P.PROJECT_READ),
 )
 
 # Bet 1: the provider accounts an organization reconciles against. Members read them; admins and
@@ -147,6 +151,14 @@ REPLAY_ROWS = (
     Row("POST", f"{PRJ}/playground/replays", P.EXPERIMENTS_RUN),
 )
 
+# UX Phase 4: the Cost hub's reads. API-key readable, like the metrics routes, except the
+# budget burn, which is as closed to keys as the budget it reads.
+COST_ROWS = (
+    Row("GET", f"{PRJ}/metrics/token-mix", P.PROJECT_READ),
+    Row("GET", f"{PRJ}/attribution/series", P.PROJECT_READ),
+    Row("GET", f"{PRJ}/budgets/{{budget_id}}/burn", P.PROJECT_READ),
+)
+
 ROWS_B = (
     PROMPT_ROWS
     + SCORE_ROWS
@@ -158,4 +170,5 @@ ROWS_B = (
     + EXPERIMENT_ROWS
     + REVIEW_ROWS
     + REPLAY_ROWS
+    + COST_ROWS
 )

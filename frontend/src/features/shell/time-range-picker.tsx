@@ -1,31 +1,26 @@
 import { useNavigate } from "@tanstack/react-router";
 import { CalendarClock } from "lucide-react";
-import { useState, type SubmitEvent } from "react";
+import { useId, useState, type SubmitEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { DateInput } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
+import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Tooltip } from "@/components/ui/tooltip";
 import {
   describeRange,
   MAX_WINDOW_MS,
   RANGE_LABELS,
+  RANGE_PRESETS,
   toLocalInputValue,
   type RangePreset,
 } from "@/lib/time-range";
 import { cn } from "@/lib/utils";
 
+import { DisabledFilter } from "./disabled-filter";
 import { useProjectFilters } from "./project-context";
 import { DEFAULT_TIME_RANGE_OPTIONS, type TimeRangeOptions } from "./time-range-options";
-
-function presetOptions(presets: readonly RangePreset[]): SegmentedOption<RangePreset>[] {
-  return presets.map((preset) => ({
-    value: preset,
-    label: preset,
-    srLabel: RANGE_LABELS[preset].toLowerCase(),
-  }));
-}
 
 interface TimeRangePickerProps {
   /** Defaults to every preset plus the custom range. */
@@ -34,13 +29,18 @@ interface TimeRangePickerProps {
 
 /**
  * The time window for project data (Figma "Control/Time range"): a segmented pill for the
- * presets, plus a calendar pill that opens a custom from/to range.
+ * presets, plus a calendar pill that opens a custom from/to range. Presets the page doesn't offer
+ * are drawn disabled with the page's note; a page that can't honour a range at all gets the whole
+ * control disabled with the reason. It never rewrites the URL's range.
  */
 export function TimeRangePicker({ options = DEFAULT_TIME_RANGE_OPTIONS }: TimeRangePickerProps) {
   const navigate = useNavigate();
   const { range } = useProjectFilters();
+  const noteId = useId();
+  const { rangeDisabled, presetNote } = options;
   const preset =
     options.presets.find((candidate) => candidate === range.value) ?? options.fallback ?? null;
+  const showNote = presetNote !== undefined && rangeDisabled === undefined;
 
   function selectPreset(next: RangePreset) {
     void navigate({
@@ -49,16 +49,50 @@ export function TimeRangePicker({ options = DEFAULT_TIME_RANGE_OPTIONS }: TimeRa
     });
   }
 
-  return (
+  const control = (
     <div className="flex items-center gap-2">
       <SegmentedControl
         aria-label="Time range"
+        aria-describedby={showNote ? noteId : undefined}
         value={preset}
         onValueChange={selectPreset}
-        options={presetOptions(options.presets)}
+        options={RANGE_PRESETS.map((value) => ({
+          value,
+          label: value,
+          srLabel: RANGE_LABELS[value].toLowerCase(),
+          disabled: rangeDisabled !== undefined || !options.presets.includes(value),
+        }))}
       />
-      {options.allowCustom ? <CustomRangePopover /> : null}
+      {options.allowCustom && rangeDisabled === undefined ? (
+        <CustomRangePopover />
+      ) : (
+        <Button variant="secondary" size="icon" aria-label="Custom range" disabled>
+          <CalendarClock aria-hidden />
+        </Button>
+      )}
     </div>
+  );
+
+  if (rangeDisabled !== undefined) {
+    return (
+      <DisabledFilter label="Time range" reason={rangeDisabled}>
+        {control}
+      </DisabledFilter>
+    );
+  }
+  if (!showNote) {
+    return control;
+  }
+  // Disabled pills take no pointer events, so the note's tooltip hangs on the whole control.
+  return (
+    <Tooltip content={presetNote}>
+      <div>
+        {control}
+        <span id={noteId} className="sr-only">
+          {presetNote}
+        </span>
+      </div>
+    </Tooltip>
   );
 }
 

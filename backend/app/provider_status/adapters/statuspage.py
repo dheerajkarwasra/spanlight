@@ -3,9 +3,9 @@
 Anthropic's page is Statuspage; OpenAI's is incident.io's compatible rendering of the same shape
 (no `components`, no `started_at`). The document is `{page, incidents[]}`; an incident has `id`,
 `name`, `status`, `impact`, `created_at`, `updated_at`, `resolved_at`, optionally `started_at`
-and `components[{name}]`, and `incident_updates[{body, created_at}]`. Neither feed carries the
-incident page's url in a usable form (Statuspage's `shortlink` is on another host), so it is
-built from the id under the adapter's own prefix.
+and `components[{name}]`, and `incident_updates[{body, created_at, display_at}]`. Neither feed
+carries the incident page's url in a usable form (Statuspage's `shortlink` is on another host),
+so it is built from the id under the adapter's own prefix.
 """
 
 from collections.abc import Callable
@@ -57,14 +57,27 @@ def latest_update(incident: dict[str, Any]) -> str | None:
     return update_text(newest[1]) if newest else None
 
 
+def _started_at(incident: dict[str, Any]) -> datetime:
+    """`started_at` when the feed sends it, else the earliest of `created_at` and the updates'
+    `display_at`: `created_at` is when the incident was posted, and an incident posted after
+    the fact carries its real times in `display_at`."""
+    sent = optional_time(incident, "started_at")
+    if sent is not None:
+        return sent
+    moments = [optional_time(incident, "created_at")] + [
+        optional_time(require_object(update), "display_at")
+        for update in _list(incident, "incident_updates")
+    ]
+    known = [moment for moment in moments if moment is not None]
+    if not known:
+        raise FeedParseError("incident has neither started_at nor created_at")
+    return min(known)
+
+
 def _incident(raw: Any, url_prefix: str, api_affected: ApiAffected) -> ParsedIncident:
     incident = require_object(raw)
     external_id = require_str(incident, "id")
     url = incident_url(url_prefix, external_id)
-    created_at = optional_time(incident, "created_at")
-    started_at = optional_time(incident, "started_at") or created_at
-    if started_at is None:
-        raise FeedParseError("incident has neither started_at nor created_at")
     return ParsedIncident(
         external_id=external_id,
         title=title_text(require_str(incident, "name")),
@@ -72,7 +85,7 @@ def _incident(raw: Any, url_prefix: str, api_affected: ApiAffected) -> ParsedInc
         status=normal_status(incident.get("status")),
         api_affected=api_affected(incident),
         components=component_names(raw_component_names(incident)),
-        started_at=started_at,
+        started_at=_started_at(incident),
         resolved_at=optional_time(incident, "resolved_at"),
         url=url,
         latest_update=latest_update(incident),

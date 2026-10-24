@@ -4,10 +4,12 @@ Pure: builds `ItemRow`s directly, no database.
 """
 
 import uuid
+from dataclasses import MISSING, fields, replace
 from decimal import Decimal
 from typing import Any
 
-from app.evals.compare import ItemRow, compare_runs
+from app.evals.compare import ItemRow, _facts, compare_runs
+from app.evals.experiment_totals import ItemFacts, Totals, summarize_items
 
 X = uuid.UUID("00000000-0000-0000-0000-000000000001")
 Y = uuid.UUID("00000000-0000-0000-0000-000000000002")
@@ -28,6 +30,7 @@ def _row(
         latency_ms=100.0,
         cost_usd=Decimal("0.001"),
         error=None,
+        evaluator_error=None,
         input={"question": "Capital of France?"} if has_copy else None,
         expected_output=expected if has_copy else None,
         has_copy=has_copy,
@@ -74,3 +77,12 @@ def test_legacy_side_is_unknown_and_kept() -> None:
     assert (score.improved, score.regressed, score.unchanged) == (2, 0, 0)
     assert score.test is not None and score.test.n == 2
     assert comparison.changed_items == 0
+
+
+def test_compare_totals_count_evaluator_errors_with_no_silent_default() -> None:
+    """The totals behind a comparison count items whose scoring broke; neither the totals nor the
+    facts they read default the count, so a caller that forgets it fails instead of reading 0."""
+    assert {f.name: f.default for f in fields(Totals)}["evaluator_errors"] is MISSING
+    assert {f.name: f.default for f in fields(ItemFacts)}["evaluator_error"] is MISSING
+    broken = replace(_row(X, 0.2), evaluator_error="judge timed out")
+    assert summarize_items(_facts([broken, _row(Y, 0.4)])).evaluator_errors == 1

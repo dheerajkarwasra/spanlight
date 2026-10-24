@@ -5,6 +5,7 @@ import {
   formatWindow,
   insightKindLabel,
   lastCheckedText,
+  loadedText,
   splitInlineCode,
 } from "./insight-format";
 
@@ -76,5 +77,14 @@ describe("splitInlineCode", () => {
       { text: "timeout=30", code: true },
       { text: " on <client>", code: false },
     ]);
+  });
+});
+
+describe("loadedText", () => {
+  it("counts the loaded insights with the matching noun", () => {
+    expect(loadedText(1, false)).toBe("1 insight shown");
+    expect(loadedText(1200, false)).toBe("All 1,200 insights shown");
+    expect(loadedText(1, true)).toBe("Showing 1 insight");
+    expect(loadedText(50, true)).toBe("Showing 50 insights");
   });
 });

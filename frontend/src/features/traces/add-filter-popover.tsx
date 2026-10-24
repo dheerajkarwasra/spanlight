@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { CHIP_BASE } from "./facet-chips";
 import { isMetadataValueTooLong } from "./metadata-filter";
 import { MetadataFilterField, type MetadataDraft } from "./metadata-filter-field";
-import type { TraceFilters } from "./search";
+import { promptVersionIdSchema, type TraceFilters } from "./search";
 import type { FilterPatch } from "./use-trace-filters";
 
 interface AddFilterPopoverProps {
@@ -25,16 +25,27 @@ export function AddFilterPopover({ search, metadataKeys, onApply }: AddFilterPop
   const [open, setOpen] = useState(false);
   const [user, setUser] = useState("");
   const [session, setSession] = useState("");
+  const [name, setName] = useState("");
+  const [promptVersion, setPromptVersion] = useState("");
+  const [showVersionError, setShowVersionError] = useState(false);
+  // The API takes a UUID here; anything else would come back as an error, so it never leaves.
+  const versionInvalid = promptVersion.trim() !== "" && !isVersionId(promptVersion.trim());
+  const versionError = showVersionError && versionInvalid;
   const [metadata, setMetadata] = useState<MetadataDraft>({ key: undefined, value: "" });
 
   function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isMetadataValueTooLong(metadata.value)) {
+    if (versionInvalid) {
+      setShowVersionError(true);
+    }
+    if (isMetadataValueTooLong(metadata.value) || versionInvalid) {
       return;
     }
     onApply({
       user: user.trim(),
       session: session.trim(),
+      name: name.trim(),
+      prompt_version: promptVersion.trim(),
       metadata_key: metadata.key,
       metadata_value: metadata.key !== undefined ? metadata.value : undefined,
     });
@@ -49,6 +60,9 @@ export function AddFilterPopover({ search, metadataKeys, onApply }: AddFilterPop
         if (next) {
           setUser(search.user ?? "");
           setSession(search.session ?? "");
+          setName(search.name ?? "");
+          setPromptVersion(search.prompt_version ?? "");
+          setShowVersionError(false);
           setMetadata({ key: search.metadata_key, value: search.metadata_value ?? "" });
         }
       }}
@@ -62,7 +76,7 @@ export function AddFilterPopover({ search, metadataKeys, onApply }: AddFilterPop
           Add filter
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-90 max-w-[calc(100vw-2rem)]">
+      <PopoverContent className="max-h-(--radix-popover-content-available-height) w-90 max-w-[calc(100vw-2rem)] overflow-y-auto">
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
             <ListFilter aria-hidden className="size-3.5" />
@@ -94,6 +108,42 @@ export function AddFilterPopover({ search, metadataKeys, onApply }: AddFilterPop
               }}
             />
           </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="trace-filter-name">Name</Label>
+            <Input
+              id="trace-filter-name"
+              value={name}
+              placeholder="e.g. answer_ticket"
+              autoComplete="off"
+              className="font-mono text-label"
+              onChange={(event) => {
+                setName(event.target.value);
+              }}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="trace-filter-prompt-version">Prompt version</Label>
+            <Input
+              id="trace-filter-prompt-version"
+              value={promptVersion}
+              placeholder="Version ID"
+              autoComplete="off"
+              aria-invalid={versionError || undefined}
+              aria-describedby={versionError ? "trace-filter-prompt-version-error" : undefined}
+              className="font-mono text-label"
+              onChange={(event) => {
+                setPromptVersion(event.target.value);
+              }}
+            />
+            {versionError ? (
+              <p
+                id="trace-filter-prompt-version-error"
+                className="text-xs font-medium text-danger-text"
+              >
+                A version ID is a UUID.
+              </p>
+            ) : null}
+          </div>
           <div aria-hidden className="h-px bg-border" />
           <MetadataFilterField keys={metadataKeys} draft={metadata} onChange={setMetadata} />
           <div className="flex justify-end gap-2">
@@ -114,4 +164,8 @@ export function AddFilterPopover({ search, metadataKeys, onApply }: AddFilterPop
       </PopoverContent>
     </Popover>
   );
+}
+
+function isVersionId(value: string): boolean {
+  return promptVersionIdSchema.safeParse(value).success;
 }

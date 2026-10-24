@@ -18,6 +18,8 @@ interface FeedbackRowProps {
   feedback: InsightFeedback;
   /** `insights:feedback`: members and above. */
   canVote: boolean;
+  /** `insights:manage`: a Wrong vote's note then offers to mute the finding. */
+  canManage: boolean;
 }
 
 /**
@@ -34,7 +36,7 @@ interface LocalVote {
  * the vote at once and opens an optional note; clicking the pressed verdict, or "Remove my
  * answer", takes it back. Viewers see the row disabled with the reason as visible text.
  */
-export function FeedbackRow({ insightId, feedback, canVote }: FeedbackRowProps) {
+export function FeedbackRow({ insightId, feedback, canVote, canManage }: FeedbackRowProps) {
   const titleId = useId();
   const reasonId = useId();
   const now = useNow();
@@ -165,6 +167,7 @@ export function FeedbackRow({ insightId, feedback, canVote }: FeedbackRowProps) 
         <FeedbackNote
           initial={put.data?.note ?? ""}
           saving={put.isPending}
+          muteInsightId={canManage && mine === "wrong" ? insightId : undefined}
           onSave={(note) => {
             save(mine, note);
           }}

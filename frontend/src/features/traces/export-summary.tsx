@@ -10,6 +10,7 @@ import {
   formatTraceCount,
   type ExportWindowProblem,
 } from "@/features/exports";
+import { pluralize } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import type { ExportDraft } from "./use-export-draft";
@@ -52,7 +53,11 @@ export function ExportSummary({ draft, problem }: ExportSummaryProps) {
           </div>
         </SummaryRow>
         <SummaryRow icon={Filter} label="Filters">
-          {entries.length > 0 ? (
+          {filters.trace_ids ? (
+            <span className="text-sm font-semibold text-foreground">
+              {pluralize(filters.trace_ids.length, "selected trace")}
+            </span>
+          ) : entries.length > 0 ? (
             <ul aria-label="Active filters" className="flex flex-wrap gap-1.5">
               {entries.map((entry) => (
                 <li key={entry.key} className="min-w-0">
@@ -97,7 +102,9 @@ export function ExportSummary({ draft, problem }: ExportSummaryProps) {
         </p>
       ) : (
         <p className="text-xs leading-[1.4] font-medium text-muted-foreground">
-          Uses the filters and time range from the trace list. Change them on the Traces page.
+          {filters.trace_ids
+            ? "Uses the traces ticked in the list. Change the selection on the Traces page."
+            : "Uses the filters and time range from the trace list. Change them on the Traces page."}
         </p>
       )}
       {notApplied.length > 0 ? (

@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card";
 import type { Prompt, PromptVersion } from "@/lib/api";
 import { pluralize } from "@/lib/format";
 
-import { BackToPrompt } from "./back-link";
+import { PromptBreadcrumbs } from "./back-link";
 import { CardTitle } from "./card-title";
 import { draftFromVersion, hasChanges, toAdvice } from "./draft";
 import { EditorSide } from "./editor-side";
@@ -124,7 +124,7 @@ export function NewVersionEditor({ prompt, base }: NewVersionEditorProps) {
       : `Plain text · ${pluralize(variableCount, "variable")}`;
   return (
     <EditorFrame
-      back={<BackToPrompt name={prompt.name} version={base.version} />}
+      back={<PromptBreadcrumbs name={prompt.name} version={base.version} current="New version" />}
       title={
         <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
           New version of {prompt.name}

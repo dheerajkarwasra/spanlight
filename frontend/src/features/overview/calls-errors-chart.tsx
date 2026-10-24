@@ -18,6 +18,7 @@ import {
   type ChartPoint,
 } from "./chart-data";
 import { incidentSummary } from "./incident-overlay";
+import { markerLines, type ReleaseMarker } from "./release-markers";
 import { useCallsView, useIncidentOverlay } from "./use-incident-overlay";
 
 export interface CallsChartData {
@@ -34,6 +35,10 @@ interface CallsErrorsChartProps {
   bands?: Band[] | undefined;
   /** This server does not poll the status feeds: a note replaces the switch. */
   pollingOff?: boolean;
+  /** Releases first seen in the window: dashed markers. */
+  releases?: readonly ReleaseMarker[];
+  /** Why there are no release markers (a window over 30 days), shown under the legend. */
+  releasesNote?: string | null;
   isRefreshing: boolean;
   className?: string;
 }
@@ -55,6 +60,8 @@ export function CallsErrorsChart({
   data,
   bands,
   pollingOff = false,
+  releases = [],
+  releasesNote = null,
   isRefreshing,
   className,
 }: CallsErrorsChartProps) {
@@ -68,6 +75,7 @@ export function CallsErrorsChart({
   const errorsLabel = `${formatInteger(errors) ?? "0"} ${errors === 1 ? "error" : "errors"}`;
   const table = callsTable(points, bucket, feed === "ready" && overlayOn ? shownBands : null);
   const incidents = incidentSummary(shownBands);
+  const releaseLines = markerLines(releases, points, bucket);
   const label = `LLM calls and failed calls per ${bucketNoun(bucket)}: ${callsLabel}, ${errorsLabel} in total${
     incidents ? `; ${incidents}` : ""
   }`;
@@ -107,6 +115,7 @@ export function CallsErrorsChart({
         view={view}
         onViewChange={setView}
         partialBucket={points.some((point) => point.partial) ? bucket : null}
+        releases={{ shown: releaseLines.length > 0, note: releasesNote }}
       />
       <div className={cn("transition-opacity", isRefreshing && "opacity-60")}>
         {!hasCallData(points) ? (
@@ -119,7 +128,7 @@ export function CallsErrorsChart({
             No LLM calls in this period
           </div>
         ) : view === "table" ? (
-          <CallsErrorsTable table={table} />
+          <CallsErrorsTable table={table} bucket={bucket} />
         ) : (
           <>
             <CallsErrorsPlot
@@ -127,6 +136,7 @@ export function CallsErrorsChart({
               bucket={bucket}
               now={now}
               bands={shownBands}
+              releaseLines={releaseLines}
               label={label}
             />
             <ChartDataTableView table={table} />

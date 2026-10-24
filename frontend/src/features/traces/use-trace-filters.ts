@@ -51,8 +51,8 @@ export const FILTER_LABELS: Record<FilterKey, string> = {
 /** The score facet's URL params, and "has scores". They show as one chip each. */
 type ScoreKey = "score" | "score_min" | "score_max" | "score_value" | "has_scores";
 
-/** "Has retries" (a chip) and the list's order (no chip: it filters nothing). */
-type RetryKey = "has_retries" | "sort";
+/** "Has retries" (a chip) and the list's sort and direction (no chip: they filter nothing). */
+type RetryKey = "has_retries" | "sort" | "order";
 
 /** The metadata pair's URL params; they show as one chip. */
 type MetadataParam = "metadata_key" | "metadata_value";

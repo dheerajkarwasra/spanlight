@@ -1,5 +1,6 @@
-import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
+
+import { Breadcrumbs } from "@/components/breadcrumbs";
 
 interface RouteEditorHeaderProps {
   name: string;
@@ -7,17 +8,17 @@ interface RouteEditorHeaderProps {
   badges: ReactNode;
   /** The line under the name: who saved it and when, or that the route is new. */
   meta: ReactNode;
-  /** The back link (or a button on an unsaved route): "← Routes". */
-  back: ReactNode;
+  /** The "Routes" crumb: a `Crumb` link, or a `CrumbButton` on an unsaved route. */
+  parent: ReactNode;
   /** History and the overflow menu. */
   actions?: ReactNode;
 }
 
-/** The route editor's header (Figma "Gateway — Route editor"): back link, name, badges, meta. */
-export function RouteEditorHeader({ name, badges, meta, back, actions }: RouteEditorHeaderProps) {
+/** The route editor's header (Figma "Gateway — Route editor"): breadcrumbs, name, badges, meta. */
+export function RouteEditorHeader({ name, badges, meta, parent, actions }: RouteEditorHeaderProps) {
   return (
     <div className="flex flex-col gap-3">
-      <div>{back}</div>
+      <Breadcrumbs current={name}>{parent}</Breadcrumbs>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex min-w-0 flex-col gap-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -35,15 +36,5 @@ export function RouteEditorHeader({ name, badges, meta, back, actions }: RouteEd
         {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
       </div>
     </div>
-  );
-}
-
-/** "← Routes", as a link or a button; pass the element and this styles its content. */
-export function BackLabel() {
-  return (
-    <>
-      <ArrowLeft aria-hidden />
-      Routes
-    </>
   );
 }

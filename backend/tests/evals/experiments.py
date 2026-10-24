@@ -11,6 +11,7 @@ optionally held until a `Stall` is released.
 
 import secrets
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
@@ -51,7 +52,11 @@ async def call_estimate(sessions: async_sessionmaker[AsyncSession], clock: Manua
 
 
 async def create_experiment(
-    workspace: GatewayWorkspace, *, items: int, max_cost_usd: str
+    workspace: GatewayWorkspace,
+    *,
+    items: int,
+    max_cost_usd: str,
+    evaluator_ids: Sequence[uuid.UUID] = (),
 ) -> ExperimentRef:
     project = f"/api/v1/projects/{workspace.project_id}"
     dataset = await workspace.owner.post(f"{project}/datasets", json={"name": "cap-items"})
@@ -74,7 +79,12 @@ async def create_experiment(
     }
     response = await workspace.owner.post(
         f"{project}/experiments",
-        json={"name": "cap", "dataset_id": dataset_id, "config": config},
+        json={
+            "name": "cap",
+            "dataset_id": dataset_id,
+            "config": config,
+            "evaluator_ids": [str(evaluator_id) for evaluator_id in evaluator_ids],
+        },
     )
     assert response.status_code == 201, response.text
     experiment_id = response.json()["id"]

@@ -13,7 +13,7 @@ export async function expectNoAxeViolations(page: Page): Promise<void> {
   // intentionally hidden toasts behind the front one. Their colors use the same
   // foreground/surface tokens as cards, which are covered elsewhere.
   const results = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa"])
+    .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"])
     .exclude("[data-sonner-toaster]")
     .analyze();
   expect(results.violations, JSON.stringify(results.violations, null, 2)).toEqual([]);

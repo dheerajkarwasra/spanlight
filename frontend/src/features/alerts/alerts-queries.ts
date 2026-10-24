@@ -68,6 +68,19 @@ export function useRuleEventsQuery(ruleId: string) {
   });
 }
 
+/** Every rule's events across the project, newest first, a page at a time ("Load older"). */
+export function useEventHistoryQuery() {
+  const { projectId } = useProjectParams();
+  const query = { limit: EVENTS_PAGE_SIZE };
+  return useInfiniteQuery({
+    queryKey: queryKeys.project(projectId).alertEvents(query),
+    queryFn: ({ pageParam }) => alertsApi.events(projectId, { ...query, cursor: pageParam }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.next_cursor,
+    refetchInterval: REFRESH_MS,
+  });
+}
+
 /** Rules, one rule and their events change together: a mute, an acknowledge or a delete. */
 function useInvalidateAlerts() {
   const { projectId } = useProjectParams();

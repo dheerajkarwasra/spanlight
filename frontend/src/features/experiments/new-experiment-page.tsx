@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
 
 import { Notice } from "@/components/notice";
@@ -9,13 +9,14 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { usePermission, useProjectParams } from "@/features/shell";
 import { formatCost, formatInteger } from "@/lib/format";
 
-import { BackToExperiments } from "./back-link";
+import { ExperimentsBreadcrumbs } from "./back-link";
 import { ExperimentForm } from "./experiment-form";
 import {
   DEFAULT_MAX_COST,
   INITIAL_STATE,
   MAX_ITEMS_CEILING,
   parseNumber,
+  prefillState,
   serverErrors,
   toCreate,
   validate,
@@ -23,6 +24,9 @@ import {
   type FormState,
 } from "./experiment-form-state";
 import { useCreateExperiment, useDatasetsQuery } from "./experiment-queries";
+import { usePromptVersionsQuery } from "./use-version-index";
+
+const route = getRouteApi("/_authed/$orgId/$projectId/experiments/new");
 
 const READ_ONLY =
   "Your role can view experiments but not create them. Members and above create and run experiments, because every run makes real provider calls.";
@@ -37,6 +41,35 @@ export function NewExperimentPage() {
   const [state, setState] = useState<FormState>(INITIAL_STATE);
   const [errors, setErrors] = useState<FormErrors>({});
   const [checked, setChecked] = useState(false);
+  const search = route.useSearch();
+  const prefillVersions = usePromptVersionsQuery(search.prompt);
+  const [prefilled, setPrefilled] = useState(false);
+
+  // Once, when the lists the ids are checked against have loaded (a failed datasets load waits for
+  // its retry). The form is usable meanwhile, so only fields still at their initial value are
+  // filled: what the user already set stays.
+  if (!prefilled && datasets.isSuccess && !(search.prompt && prefillVersions.isPending)) {
+    const patch = prefillState(search, prefillVersions.data);
+    if (!datasets.data.some((item) => item.id === patch.datasetId)) delete patch.datasetId;
+    // The prompt's versions failed to load (usually: no prompt by that name).
+    if (prefillVersions.isError) delete patch.promptName;
+    setPrefilled(true);
+    setState((current) => {
+      const fresh = Object.fromEntries(
+        Object.entries(patch).filter(
+          ([key]) => current[key as keyof FormState] === INITIAL_STATE[key as keyof FormState],
+        ),
+      ) as Partial<FormState>;
+      // A version, and the source and model it brings, belong to its prompt: none once the user
+      // picked a prompt of their own.
+      if (fresh.promptName === undefined) {
+        delete fresh.versionId;
+        delete fresh.source;
+        delete fresh.model;
+      }
+      return { ...current, ...fresh };
+    });
+  }
 
   function change(patch: Partial<FormState>) {
     const next = { ...state, ...patch };
@@ -69,7 +102,7 @@ export function NewExperimentPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <BackToExperiments />
+        <ExperimentsBreadcrumbs current="New experiment" />
         <PageHeader
           title="New experiment"
           description="Choose a dataset, what to run on it and how to score the results."

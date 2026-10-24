@@ -24,6 +24,7 @@ from app.api.schemas import (
     PromptOut,
     VersionCreate,
     VersionOut,
+    VersionUsageOut,
 )
 from app.core.errors import not_found
 from app.core.pagination import PageLimit, decode_uuid_cursor, encode_cursor
@@ -31,6 +32,7 @@ from app.core.permissions import Permission
 from app.core.wire import unescape_path_name
 from app.prompts import queries, service
 from app.prompts.schemas import LabelName
+from app.prompts.usage import versions_usage
 
 router = APIRouter(prefix="/projects/{project_id}/prompts", tags=["prompts"])
 
@@ -128,18 +130,25 @@ async def list_versions(
     name: WireName,
     access: PromptReader,
     db: DbSession,
+    clock: ClockDep,
     limit: PageLimit = DEFAULT_PAGE,
     cursor: Annotated[str | None, Query(max_length=512)] = None,
+    usage: Annotated[bool, Query()] = False,
 ) -> Page[VersionOut]:
-    """Newest first."""
+    """Newest first. With `usage=true` each item carries `usage_7d`, read for the page at once."""
     prompt = await queries.get_prompt(db, access.require_project().id, unescape_path_name(name))
     if prompt is None:
         raise not_found()
     rows = await queries.list_versions(db, prompt.id, before=cursor_version(cursor), limit=limit)
     shown = rows[:limit]
     last = shown[-1] if shown else None
+    items = [VersionOut.of(version) for version in shown]
+    if usage and shown:
+        found = await versions_usage(db, prompt.project_id, [v.id for v in shown], clock())
+        for item in items:
+            item.usage_7d = VersionUsageOut.of(found[item.id])
     return Page(
-        items=[VersionOut.of(version) for version in shown],
+        items=items,
         next_cursor=(
             encode_cursor(last.created_at, str(last.version))
             if len(rows) > limit and last

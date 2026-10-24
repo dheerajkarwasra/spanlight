@@ -9,7 +9,7 @@ share; only the `other` fold exists on the rollup path.
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -20,9 +20,11 @@ from app.api.schemas.attribution import (
     AttributionBucketOut,
     AttributionOut,
     AttributionRowOut,
+    AttributionSeriesOut,
     AttributionSource,
     AttributionTotalsOut,
     AttributionWindowOut,
+    SeriesPointOut,
 )
 from app.api.window import TimeWindow
 from app.attribution import queries
@@ -30,7 +32,8 @@ from app.attribution.aggregate_sql import GroupKind
 from app.attribution.queries import AttributionSort
 from app.core.errors import FieldError, ProblemError, key_not_promoted
 from app.core.pagination import decode_value_cursor, encode_value_cursor
-from app.end_users.days import day_bounds, midnight
+from app.end_users.days import ONE_DAY, day_bounds, midnight
+from app.rollups.compute import HOUR, floor_hour
 
 RAW_WINDOW = timedelta(hours=24)
 ROLLUP_LAG_MINUTES = 15
@@ -183,15 +186,65 @@ async def read_attribution(
     buckets = _by_bucket(totals)
     overall = _totals(buckets[None])
     items, next_cursor = _page(rows, overall.cost_usd, request)
+    computed_at = buckets[None].computed_at
+    pending = None
+    if source == "rollup":
+        days = day_bounds(request.window)
+        kind, key, env = request.group_by, request.key, request.environment
+        pending = await queries.count_pending(db, project_id, kind, key, days, env)
     return AttributionOut(
         group_by=request.group_by,
         key=request.key,
         window=window,
         source=source,
         updated_within_minutes=0 if source == "raw" else ROLLUP_LAG_MINUTES,
+        computed_at=computed_at,
+        pending_traces=pending,
         items=items,
         next_cursor=next_cursor,
         none=_bucket(buckets.get("none")),
         other=_bucket(buckets.get("other")),
         totals=overall,
     )
+
+
+async def read_attribution_series(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    promoted_keys: Sequence[str],
+    kind: GroupKind,
+    key: str | None,
+    window: TimeWindow,
+    env: str | None,
+    value: str | None,
+) -> AttributionSeriesOut:
+    """The list's source and window, bucketed: per hour on `raw`, per UTC day on `rollup`,
+    every bucket present (one without traces costs a known 0). `value` keeps that group only."""
+    source = check_request(kind, key, window, promoted_keys)
+    if source == "raw":
+        rows = await queries.read_series(db, project_id, kind, key, env, value, window=window)
+        start, end, step = window.start, window.end, HOUR
+        current = floor_hour(start)
+    else:
+        days = day_bounds(window)
+        rows = await queries.read_series(db, project_id, kind, key, env, value, days=days)
+        start, end, step = midnight(days[0]), midnight(days[1]), ONE_DAY
+        current = start
+    stored = {_bucket_start(row.bucket_start): row for row in rows}
+    points: list[SeriesPointOut] = []
+    while current < end:
+        row = stored.get(current)
+        cost = Decimal(0) if row is None else _money(row.cost_usd)
+        unpriced = 0 if row is None else _count(row.unpriced_calls)
+        points.append(SeriesPointOut(bucket_start=current, cost_usd=cost, unpriced_calls=unpriced))
+        current += step
+    return AttributionSeriesOut(
+        bucket="hour" if source == "raw" else "day",
+        source=source,
+        window=AttributionWindowOut(from_=start, to=end),
+        points=points,
+    )
+
+
+def _bucket_start(value: date | datetime) -> datetime:
+    return value if isinstance(value, datetime) else midnight(value)

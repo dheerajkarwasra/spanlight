@@ -91,7 +91,7 @@ def _params(path: str, trace_id: str) -> dict[str, str] | None:
         return {"token": "x"}
     if path.endswith("/releases/compare"):
         return dict(zip(("a", "b"), RELEASES, strict=True))
-    if path.endswith("/attribution"):
+    if path.endswith(("/attribution", "/attribution/series")):
         return {"group_by": "trace_name"}
     return None
 

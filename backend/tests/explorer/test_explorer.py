@@ -265,7 +265,7 @@ async def test_sessions_environment_filter(workspace: Workspace, seeded: dict[st
     assert dev["items"][0]["trace_count"] == 1 and dev["items"][0]["error_count"] == 1
 
     none = (await workspace.owner.get(url, params={**_window(), "environment": "staging"})).json()
-    assert none == {"items": [], "next_cursor": None}
+    assert none == {"items": [], "next_cursor": None, "cost_p99_usd": None}
 
     # Keyset pagination stays correct with the filter.
     first = (

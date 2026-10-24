@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Info } from "lucide-react";
 
 import { ApproxValue } from "@/components/approx-value";
+import { NO_PRICE_REASON } from "@/components/cost-value";
 import { Tooltip } from "@/components/ui/tooltip";
 import { UNKNOWN_DASH_CLASS, UnknownValue } from "@/components/unknown-value";
 import { useProjectParams } from "@/features/shell/project-context";
@@ -13,7 +14,6 @@ import { cn } from "@/lib/utils";
 import { isUnpriced } from "./models";
 
 const NO_CALLS = "No LLM calls in this period";
-const NO_PRICE = "No price for this model";
 
 /** A p50 or p95 in milliseconds; "≈" when the window reads hourly rollups. */
 export function ModelLatency({
@@ -33,7 +33,7 @@ export function ModelCost({ model }: { model: ModelMetrics }) {
     return (
       <span className="inline-flex items-center gap-1.5 text-subtle-foreground">
         <Info aria-hidden className="size-3.5" />
-        <UnknownValue reason={NO_PRICE} />
+        <UnknownValue reason={NO_PRICE_REASON} />
       </span>
     );
   }
@@ -58,6 +58,20 @@ export function ModelName({ model }: { model: string | null }) {
   );
 }
 
+/** Cost › Pricing, where an unpriced model gets a price; follows an unpriced note. */
+export function SetPricesLink() {
+  const { orgId, projectId } = useProjectParams();
+  return (
+    <Link
+      to="/$orgId/$projectId/pricing"
+      params={{ orgId, projectId }}
+      className="shrink-0 rounded-sm font-semibold text-accent hover:underline hover:underline-offset-4"
+    >
+      Set prices
+    </Link>
+  );
+}
+
 /**
  * Marks a row with no provider, so a model's gateway cache hits and refusals don't read as a
  * duplicate of its provider row.
@@ -67,7 +81,7 @@ export function NoProviderTag({ className }: { className?: string }) {
     <Tooltip content={NO_PROVIDER_REASON}>
       <span
         tabIndex={0}
-        aria-label={NO_PROVIDER_REASON}
+        aria-label={`No provider: ${NO_PROVIDER_REASON}`}
         className={cn(
           "shrink-0 cursor-help rounded-sm text-xs font-medium",
           UNKNOWN_DASH_CLASS,

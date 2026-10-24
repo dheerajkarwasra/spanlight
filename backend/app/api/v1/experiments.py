@@ -31,6 +31,7 @@ from app.core.pagination import PageLimit, decode_uuid_cursor, encode_cursor
 from app.core.permissions import Permission
 from app.evals import experiment_queries as queries
 from app.evals import experiments as service
+from app.scores import service as score_service
 
 logger = structlog.get_logger(__name__)
 
@@ -67,9 +68,12 @@ async def list_experiments(
     rows = await queries.list_experiments(db, access.require_project().id, after=after, limit=limit)
     shown, more = rows[:limit], len(rows) > limit
     summaries = await queries.run_summaries(db, [experiment.id for experiment in shown])
+    legacy = await service.legacy_evaluator_errors(db, [s.last_run for s in summaries.values()])
     last = shown[-1] if shown else None
     return Page(
-        items=[ExperimentOut.of(experiment, summaries[experiment.id]) for experiment in shown],
+        items=[
+            ExperimentOut.of(experiment, summaries[experiment.id], legacy) for experiment in shown
+        ],
         next_cursor=encode_cursor(last.created_at, str(last.id)) if more and last else None,
     )
 
@@ -117,8 +121,9 @@ async def get_experiment(
     experiment = await queries.get_experiment(db, access.require_project().id, experiment_id)
     if experiment is None:
         raise not_found()
-    summaries = await queries.run_summaries(db, [experiment.id])
-    return ExperimentOut.of(experiment, summaries[experiment.id])
+    summary = (await queries.run_summaries(db, [experiment.id]))[experiment.id]
+    legacy = await service.legacy_evaluator_errors(db, [summary.last_run])
+    return ExperimentOut.of(experiment, summary, legacy)
 
 
 @router.post(
@@ -178,8 +183,9 @@ async def list_runs(
     rows = await queries.list_runs(db, experiment.id, after=after, limit=limit)
     shown, more = rows[:limit], len(rows) > limit
     last = shown[-1] if shown else None
+    legacy = await service.legacy_evaluator_errors(db, shown)
     return Page(
-        items=[ExperimentRunOut.of(run) for run in shown],
+        items=[ExperimentRunOut.of(run, evaluator_errors=legacy.get(run.id)) for run in shown],
         next_cursor=encode_cursor(last.started_at, str(last.id)) if more and last else None,
     )
 
@@ -226,8 +232,16 @@ async def list_run_items(
     first, rows = await queries.list_items(db, run.id, after=after, limit=limit)
     shown, more = rows[:limit], len(rows) > limit
     last = shown[-1] if shown else None
+    comments = await score_service.experiment_score_comments(
+        db, access.require_project().id, [item.trace_id for item in shown if item.trace_id]
+    )
     return Page(
-        items=[ExperimentItemOut.of(item, first + i) for i, item in enumerate(shown)],
+        items=[
+            ExperimentItemOut.of(
+                item, first + i, comments.get(item.trace_id) if item.trace_id else None
+            )
+            for i, item in enumerate(shown)
+        ],
         next_cursor=(
             encode_cursor(last.created_at, str(last.dataset_item_id)) if more and last else None
         ),

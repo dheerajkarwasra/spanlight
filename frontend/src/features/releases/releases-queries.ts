@@ -1,5 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
+import { FAILURE_CATEGORY_SCORE, useScoreConfigsQuery } from "@/features/scores";
 import { useProjectFilters, useProjectParams } from "@/features/shell";
 import { queryKeys, releasesApi, type ReleaseListQuery } from "@/lib/api";
 
@@ -55,4 +56,17 @@ export function useFailureCategoriesQuery(enabled: boolean) {
     placeholderData: keepPreviousData,
     enabled,
   });
+}
+
+/**
+ * Whether the project has the categorical `failure_category` config the rates read needs: false
+ * when the score configs show none (the read would only answer 404), undefined while they load. A
+ * failed configs read says true and leaves the answer to the rates read.
+ */
+export function useHasFailureCategories(): boolean | undefined {
+  const configs = useScoreConfigsQuery();
+  if (configs.isError) return true;
+  return configs.data?.some(
+    (config) => config.name === FAILURE_CATEGORY_SCORE && config.data_type === "categorical",
+  );
 }

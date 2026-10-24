@@ -208,6 +208,10 @@ test.describe("provider path", () => {
     const { base, apiKey } = await createWorkspace(page, { apiKey: true });
     const { retryTrace } = await seedFailures(page, apiKey ?? "");
 
+    // Retries is hidden by default; show it the way Table settings would.
+    await page.addInitScript(() => {
+      window.localStorage.setItem("spanlight.columns.traces", "retries:1");
+    });
     await page.goto(`${base}/traces`);
     await expect(page.getByText("Retries", { exact: true }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: /^1 retry · / })).toBeVisible();

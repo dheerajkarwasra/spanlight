@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 
 import { CodeBlock } from "@/components/code-block";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useMe } from "@/features/auth";
 
 import { buildSnippets, type SnippetId } from "./snippets";
 
@@ -21,7 +22,8 @@ interface SnippetTabsProps {
  * The gateway tab uses a gateway key instead, so it links to where one is created.
  */
 export function SnippetTabs({ apiKey, value, onValueChange, orgId, projectId }: SnippetTabsProps) {
-  const snippets = buildSnippets({ apiKey, host: window.location.origin });
+  const gatewayMode = useMe().capabilities.gateway_mode;
+  const snippets = buildSnippets({ apiKey, host: window.location.origin, gatewayMode });
 
   return (
     <Tabs

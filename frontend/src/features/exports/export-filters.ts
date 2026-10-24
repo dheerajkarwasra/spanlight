@@ -4,6 +4,7 @@
  * functions only, so the traces page and the exports list agree on every word.
  */
 import type { ErrorClass, ExportFilters } from "@/lib/api";
+import { pluralize } from "@/lib/format";
 import { MAX_WINDOW_MS } from "@/lib/time-range";
 
 /** The limit the API enforces between `from` and `to`; the dialog checks it before any request. */
@@ -138,8 +139,14 @@ export function exportFilterEntries(filters: ExportFilters): FilterEntry[] {
   return entries;
 }
 
-/** "status: error · model: gpt-4.1", or "All traces" when only the window is set. */
+/**
+ * "status: error · model: gpt-4.1", "All traces" when only the window is set, or "2 selected
+ * traces" for an export of ticked traces (the ids pin the set).
+ */
 export function exportFilterSummary(filters: ExportFilters): string {
+  if (filters.trace_ids?.length) {
+    return pluralize(filters.trace_ids.length, "selected trace");
+  }
   const entries = exportFilterEntries(filters);
   if (entries.length === 0) {
     return "All traces";

@@ -2,9 +2,11 @@ import { useState, type ReactElement } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { useMe } from "@/features/auth";
 import {
   DialogHeading,
   EXPORT_DIALOG_CLASS,
+  ExportsNotConfigured,
   ExportQueued,
   SubmitError,
   blockWhile,
@@ -13,7 +15,7 @@ import {
   formatTraceCount,
   useExportSubmission,
 } from "@/features/exports";
-import type { ExportFormat } from "@/lib/api";
+import type { ExportFormat, TraceSummary } from "@/lib/api";
 
 import { ExportFormatPicker } from "./export-format-picker";
 import { ExportSummary } from "./export-summary";
@@ -22,6 +24,8 @@ import { useExportDraft } from "./use-export-draft";
 interface ExportDialogProps {
   /** The element that opens the dialog: the Export button. */
   trigger: ReactElement;
+  /** The traces ticked in the list ("Export selection"); without it, the list's filters. */
+  selection?: readonly TraceSummary[];
 }
 
 /**
@@ -30,7 +34,7 @@ interface ExportDialogProps {
  * dialog is open, so every opening starts fresh: the filters are read again and the submission gets
  * a new idempotency key.
  */
-export function ExportDialog({ trigger }: ExportDialogProps) {
+export function ExportDialog({ trigger, selection }: ExportDialogProps) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -38,6 +42,7 @@ export function ExportDialog({ trigger }: ExportDialogProps) {
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       {open ? (
         <ExportDialogContent
+          selection={selection}
           onClose={() => {
             setOpen(false);
           }}
@@ -47,8 +52,14 @@ export function ExportDialog({ trigger }: ExportDialogProps) {
   );
 }
 
-function ExportDialogContent({ onClose }: { onClose: () => void }) {
-  const live = useExportDraft();
+function ExportDialogContent({
+  selection,
+  onClose,
+}: {
+  selection: readonly TraceSummary[] | undefined;
+  onClose: () => void;
+}) {
+  const live = useExportDraft(selection);
   // What is sent is frozen at opening, so the summary and the request cannot drift apart when the
   // list's "now" moves on; the row count may still arrive afterwards.
   const [filters] = useState(live.filters);
@@ -56,6 +67,7 @@ function ExportDialogContent({ onClose }: { onClose: () => void }) {
 
   const [format, setFormat] = useState<ExportFormat>("jsonl");
   const submission = useExportSubmission();
+  const exportsConfigured = useMe().capabilities.exports_configured;
   const problem = exportWindowProblem(filters);
 
   return (
@@ -76,11 +88,12 @@ function ExportDialogContent({ onClose }: { onClose: () => void }) {
         <>
           <DialogHeading
             title="Export traces"
-            description="Create a file of the traces that match your current filters. You’ll download it from Settings › Exports."
+            description={`Create a file of ${selection ? "the selected traces" : "the traces that match your current filters"}. You’ll download it from Settings › Exports.`}
             closeDisabled={submission.isPending}
           />
           <ExportFormatPicker value={format} onChange={setFormat} />
           <ExportSummary draft={draft} problem={problem} />
+          {exportsConfigured ? null : <ExportsNotConfigured />}
           {submission.error ? <SubmitError error={submission.error} /> : null}
           <div className="flex items-center justify-end gap-2.5 max-sm:[&>*]:flex-1">
             <DialogClose asChild>
@@ -91,7 +104,7 @@ function ExportDialogContent({ onClose }: { onClose: () => void }) {
             <Button
               variant="primary"
               loading={submission.isPending}
-              disabled={problem !== null}
+              disabled={problem !== null || !exportsConfigured}
               onClick={() => {
                 submission.submit({ format, filters });
               }}

@@ -7,6 +7,7 @@ import {
   feedbackErrorMessage,
   feedbackLabel,
   feedbackStatusParts,
+  muteReasonFromNote,
   nextVerdict,
   noteCounter,
 } from "./feedback-state";
@@ -122,5 +123,21 @@ describe("feedbackErrorMessage", () => {
     expect(feedbackErrorMessage("save", new Error("boom"))).toBe(
       "Your answer wasn’t saved. Try again.",
     );
+  });
+});
+
+describe("muteReasonFromNote", () => {
+  it("prefixes the note, trimmed", () => {
+    expect(muteReasonFromNote("  Batch backfill retries ")).toBe(
+      "Marked wrong: Batch backfill retries",
+    );
+  });
+
+  it("stands alone without a note", () => {
+    expect(muteReasonFromNote("   ")).toBe("Marked wrong");
+  });
+
+  it("stays within the mute reason's 500 characters", () => {
+    expect(muteReasonFromNote("x".repeat(500))).toHaveLength(500);
   });
 });

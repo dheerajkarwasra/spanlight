@@ -109,6 +109,16 @@ describe("visibleSettingsNav", () => {
     expect(visibleSettingsNav(null).map((group) => group.id)).toEqual(["personal"]);
   });
 
+  it("shows notification channels to every member, viewers included", () => {
+    const organization = visibleSettingsNav("viewer").find((group) => group.id === "organization");
+    expect(organization?.items.map((item) => item.label)).toEqual([
+      "Organization",
+      "Members",
+      "Notification channels",
+      "Billing sources",
+    ]);
+  });
+
   it("shows every page to an owner", () => {
     const all = SETTINGS_NAV_GROUPS.flatMap((group) => group.items.map((item) => item.label));
     expect(labels("owner")).toEqual(all);
@@ -120,6 +130,9 @@ describe("activeSettingsItem", () => {
     const groups = visibleSettingsNav("owner");
     expect(activeSettingsItem("/acme/web/settings/keys", groups)?.label).toBe("API keys");
     expect(activeSettingsItem("/acme/web/settings/audit/export", groups)?.label).toBe("Audit log");
+    expect(activeSettingsItem("/acme/web/settings/channels", groups)?.label).toBe(
+      "Notification channels",
+    );
     expect(activeSettingsItem("/acme/web/traces", groups)).toBeNull();
   });
 

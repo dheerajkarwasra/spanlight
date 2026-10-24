@@ -1,10 +1,12 @@
 // Trace list load: 20 requests a second on GET /api/v1/projects/{id}/traces, read with API keys
-// that hold `traces:read`. Half of the requests are the first page the dashboard opens with (the
-// last 24 hours, no filter); the rest use the filters people reach for first: one model, and
-// failed traces only. The 24 hours end at `data_end` of the credentials file, the instant the
-// seeded data ends at, and not at the wall clock: a seed that took hours would otherwise leave
-// the end of the day empty. The target is the web service (Caddy). Threshold: p95 of the request
-// time below 300 ms.
+// that hold `traces:read`. Out of ten requests, three are the first page the dashboard opens with
+// (the last 24 hours, no filter), two filter by one model and one to failed traces, and four sort
+// the first page by a value (duration, cost, tokens and retry cost, one each, largest first).
+// Each variant's time is a metric of its own, so the summary shows each sort beside the first
+// page. The 24 hours end at `data_end` of the credentials file, the
+// instant the seeded data ends at, and not at the wall clock: a seed that took hours would
+// otherwise leave the end of the day empty. The target is the web service (Caddy). Threshold: p95
+// of the request time below 300 ms.
 //
 // Environment (all optional in the container the workflow starts):
 //   BASE_URL          where the web service listens, default http://localhost:8080
@@ -15,7 +17,8 @@
 import http from 'k6/http';
 import exec from 'k6/execution';
 import { check } from 'k6';
-import { TREND_STATS, summarize } from './summary.js';
+import { Trend } from 'k6/metrics';
+import { TREND_STATS, formatValue, summarize } from './summary.js';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 const DURATION = __ENV.DURATION || '30s';
@@ -29,12 +32,30 @@ const WINDOW_END = new Date(credentials.data_end);
 const WINDOW_START = new Date(WINDOW_END.getTime() - 24 * 3600 * 1000);
 const WINDOW = `from=${WINDOW_START.toISOString()}&to=${WINDOW_END.toISOString()}`;
 
+const ONE_MODEL = { name: 'one-model', filter: `&model=${encodeURIComponent(FILTER_MODEL)}` };
+const ERRORS_ONLY = { name: 'errors-only', filter: '&status=error' };
+const FIRST_PAGE = { name: 'first-page', filter: '' };
 const VARIANTS = [
-  { name: 'first-page', filter: '' },
-  { name: 'first-page', filter: '' },
-  { name: 'one-model', filter: `&model=${encodeURIComponent(FILTER_MODEL)}` },
-  { name: 'errors-only', filter: '&status=error' },
+  FIRST_PAGE,
+  ONE_MODEL,
+  { name: 'sort-duration', filter: '&sort=duration' },
+  FIRST_PAGE,
+  ERRORS_ONLY,
+  { name: 'sort-cost', filter: '&sort=cost' },
+  FIRST_PAGE,
+  ONE_MODEL,
+  { name: 'sort-tokens', filter: '&sort=tokens' },
+  { name: 'sort-retry-cost', filter: '&sort=retry_cost_usd' },
 ];
+const VARIANT_NAMES = [...new Set(VARIANTS.map((variant) => variant.name))];
+
+// Tags alone do not reach the summary unless a threshold names them, so each variant also gets a
+// metric of its own (metric names take no `-`).
+const metricName = (variantName) => `traces_duration_${variantName.replaceAll('-', '_')}`;
+const durationByVariant = {};
+for (const variantName of VARIANT_NAMES) {
+  durationByVariant[variantName] = new Trend(metricName(variantName), true);
+}
 
 // A 429 or any other status outside 2xx counts as a failed request, not just a slow one.
 http.setResponseCallback(http.expectedStatuses({ min: 200, max: 299 }));
@@ -75,6 +96,7 @@ export default function () {
       tags: { name: 'GET /traces', variant: variant.name },
     },
   );
+  durationByVariant[variant.name].add(response.timings.duration);
   const served = check(response, {
     'status is 200': (r) => r.status === 200,
     // An empty page is fast for the wrong reason: the seeded data has matches for every variant.
@@ -90,14 +112,31 @@ export default function () {
   }
 }
 
+// Not a threshold: each variant's time, to compare the sorts with the first page.
+function variantRows(data) {
+  return VARIANT_NAMES.map((variantName) => {
+    const metric = data.metrics[metricName(variantName)];
+    const values = metric && metric.values ? metric.values : {};
+    const cell = (stat) => formatValue(values[stat], metric && metric.contains);
+    return `| ${variantName} | ${cell('med')} | ${cell('p(95)')} | ${cell('max')} |`;
+  });
+}
+
 export function handleSummary(data) {
   return summarize({
     name: 'traces',
     title: `Trace list: ${REQUESTS_PER_SECOND} requests per second`,
     description:
-      `${REQUESTS_PER_SECOND} requests a second for ${DURATION}: the first page, and the first ` +
-      'page filtered by model or to failed traces.',
+      `${REQUESTS_PER_SECOND} requests a second for ${DURATION}: the first page, the first page ` +
+      'filtered by model or to failed traces, and the first page sorted by duration, cost, ' +
+      'tokens or retry cost.',
     data,
     resultsDir: RESULTS_DIR,
+    extraLines: [
+      '| Variant | Median | p95 | Max |',
+      '|---|---|---|---|',
+      ...variantRows(data),
+      '',
+    ],
   });
 }

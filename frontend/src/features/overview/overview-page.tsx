@@ -19,6 +19,7 @@ export function OverviewPage() {
   const project = useProjectQuery();
   const now = new Date();
   const state = pageStateOf(queries);
+  const status = statusFor(state, queries);
   const { range, environment } = queries;
   const environmentLabel = environment ?? "All environments";
 
@@ -47,8 +48,8 @@ export function OverviewPage() {
       <OverviewHero
         eyebrow={eyebrow}
         greeting={greetingFor(now, me.user.name)}
-        status={statusFor(state, queries)}
-        isLoading={state === "loading"}
+        status={status}
+        isLoading={status === null && state !== "error"}
         listeningEnvironment={environment ?? null}
       />
       <OverviewBody

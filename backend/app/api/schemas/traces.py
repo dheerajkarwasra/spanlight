@@ -2,11 +2,11 @@
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, computed_field
 
-from app.api.schemas.common import Money
+from app.api.schemas.common import Money, Page
 from app.api.schemas.scores import ScoreSummaryOut
 from app.db.models import SpanKind, SpanStatus
 from app.ingest.error_class import ErrorClass
@@ -50,6 +50,27 @@ class TraceSummaryOut(BaseModel):
     scores: list[ScoreSummaryOut]
     """The latest score of each name, most recently scored first; at most 10 names. The full
     list is `GET /traces/{trace_id}/scores`."""
+    input_preview: str | None = None
+    """At most 200 characters of readable text from the root span's input, else the first llm
+    span's input. Filled only by the trace list with `preview=true`; null otherwise or when no
+    input was captured."""
+    output_preview: str | None = None
+    """The same from the root span's output, else the last llm span's output."""
+
+
+class TraceBucketOut(BaseModel):
+    bucket_start: datetime
+    """The bucket's start in UTC: an hour, or midnight of a day."""
+    traces: int
+    errors: int
+    """Of those traces, the ones with at least one failed span."""
+
+
+class TraceHistogramOut(BaseModel):
+    bucket: Literal["hour", "day"]
+    """Hours for a window of 48 hours or less, else days."""
+    buckets: list[TraceBucketOut]
+    """Oldest first; buckets without a trace are left out."""
 
 
 class SpanOut(BaseModel):
@@ -102,9 +123,9 @@ class SpanOut(BaseModel):
     attributes: dict[str, Any]
     truncated: bool
     payload_omitted: bool = False
-    """True when trace detail left `input` and `output` out (null) because the trace's payloads
-    passed the response's 8 MiB budget; `GET .../traces/{trace_id}/spans/{span_id}` returns
-    them. Always false on that endpoint."""
+    """True when trace detail (or session turns) left `input` and `output` out (null) because the
+    payloads passed the response's 8 MiB budget; `GET .../traces/{trace_id}/spans/{span_id}`
+    returns them. Always false on that endpoint."""
     finish_reason: str | None
     """Canonical: `stop`, `length`, `tool_calls`, `content_filter` or `other`; the raw value is
     the `finish_reason` attribute (or the provider's own attribute)."""
@@ -112,6 +133,9 @@ class SpanOut(BaseModel):
     """The prompt version the SDK reported, as sent; the server may not know the id."""
     usage_rollup: bool
     """True when a descendant span carries its own usage; excluded from every total."""
+    request_hash: str | None
+    """32 hex characters identifying what the model was asked (model and input, as
+    `traces.retry_calls` groups calls); null when the span has no input."""
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -199,6 +223,46 @@ class SessionSummaryOut(BaseModel):
     # A trace in the session has an unpriced call, so a known `cost_usd` is a lower bound.
     has_unpriced: bool
     error_count: int
+
+
+class SessionListItemOut(SessionSummaryOut):
+    """A `GET /sessions` row: the summary a user's recent sessions show, and more."""
+
+    external_user_id: str | None
+    """The user id of the session's traces when they all name the same one (traces without one
+    left out), else null."""
+    user_count: int
+    """Distinct user ids among the session's traces."""
+    input_tokens: int
+    output_tokens: int
+    duration_ms: float
+    """From the first trace's start to the last trace's end."""
+    last_trace_id: str | None
+    """The newest trace (latest start), the first turn `GET /sessions/{id}/turns` returns; null
+    only when the session's traces were deleted while the page was read."""
+    last_input_preview: str | None = None
+    """The newest trace's `input_preview` (as `GET /traces` picks it); null without
+    `preview=true`."""
+
+
+class SessionPage(Page[SessionListItemOut]):
+    cost_p99_usd: Money | None
+    """The 99th percentile of session cost over every session of the window (and environment),
+    whatever the search, on the first page (no `cursor`); null on later pages and while fewer than
+    20 sessions have a known cost."""
+
+
+class SessionTurnOut(BaseModel):
+    """One trace of a session and the spans its conversation turn is read from."""
+
+    trace: TraceSummaryOut
+    """The same item `GET /traces` returns."""
+    spans: list[SpanOut]
+    """At most 4 distinct spans, in start order: the root (no parent, or a parent not stored), the
+    first llm span with an input, the last llm span with an output, and the earliest failed
+    span."""
+    tool_calls: int
+    """The trace's tool spans, all of them (not only those in `spans`)."""
 
 
 class FiltersOut(BaseModel):

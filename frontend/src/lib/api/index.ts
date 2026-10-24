@@ -49,7 +49,10 @@ export type {
   CreateApiKeyInput,
   MetricsQuery,
   SessionListQuery,
+  SessionTurnsQuery,
   TimeWindow,
+  TokenMix,
+  TraceHistogramQuery,
   TraceListQuery,
 } from "./projects";
 export { fromPathPromptName, promptsApi, toPathPromptName } from "./prompts";

@@ -12,6 +12,7 @@
  *   `{ role: "assistant", content: [...] }`.
  * - OpenTelemetry GenAI messages: `[{ role, parts: [{ type: "text", content }] }]`.
  * - A single `{ role, content }` message, or a `{ messages: [...] }` wrapper.
+ * - A bare content-block list without `role` (an Anthropic response's `content`).
  *
  * Anything else returns `null` so the caller can fall back to a JSON view.
  */
@@ -20,9 +21,12 @@ export type ChatRole = "system" | "user" | "assistant" | "tool";
 
 export type ChatPart =
   | { type: "text"; text: string }
-  | { type: "image"; description: string }
+  /** `src` is set for inline `data:image/…` images only; they render as thumbnails. */
+  | { type: "image"; description: string; src?: string }
   | { type: "tool_call"; id: string | null; name: string; arguments: unknown }
   | { type: "tool_result"; toolCallId: string | null; content: unknown; isError: boolean }
+  | { type: "thinking"; text: string }
+  | { type: "redacted_thinking" }
   | { type: "json"; value: unknown };
 
 export interface ChatMessage {
@@ -81,6 +85,30 @@ function parseArguments(value: unknown): unknown {
   } catch {
     return value;
   }
+}
+
+/** The `data:image/…` URL of an inline image, so it can render as a thumbnail. */
+function inlineImageSrc(source: unknown): string | undefined {
+  if (typeof source === "string") {
+    return source.startsWith("data:image/") ? source : undefined;
+  }
+  if (!isObject(source)) {
+    return undefined;
+  }
+  if (source.url !== undefined) {
+    return inlineImageSrc(source.url);
+  }
+  const mediaType = stringOrNull(source.media_type);
+  const data = stringOrNull(source.data);
+  return source.type === "base64" && mediaType?.startsWith("image/") && data
+    ? `data:${mediaType};base64,${data}`
+    : undefined;
+}
+
+function imagePart(source: unknown): ChatPart {
+  const src = inlineImageSrc(source);
+  const description = describeImage(source);
+  return src === undefined ? { type: "image", description } : { type: "image", description, src };
 }
 
 function describeImage(source: unknown): string {
@@ -142,9 +170,9 @@ function parsePart(part: unknown): ChatPart {
     }
     case "image_url":
     case "input_image":
-      return { type: "image", description: describeImage(part.image_url) };
+      return imagePart(part.image_url);
     case "image":
-      return { type: "image", description: describeImage(part.source ?? part.url) };
+      return imagePart(part.source ?? part.url);
     case "tool_use":
     case "tool_call":
     case "function_call":
@@ -162,11 +190,13 @@ function parsePart(part: unknown): ChatPart {
         content: flattenToolResultContent(part.content ?? part.response),
         isError: part.is_error === true,
       };
-    case "thinking":
+    case "thinking": {
       // The signature is an opaque base64 blob; only the reasoning text is worth showing.
-      return { type: "json", value: { type: "thinking", thinking: part.thinking } };
+      const text = stringOrNull(part.thinking);
+      return text === null ? { type: "json", value: part } : { type: "thinking", text };
+    }
     case "redacted_thinking":
-      return { type: "json", value: { type: "redacted_thinking" } };
+      return { type: "redacted_thinking" };
     default:
       return { type: "json", value: part };
   }
@@ -315,12 +345,27 @@ function isContentBlockList(value: unknown): value is JsonObject[] {
 }
 
 /**
+ * A bare content-block list (`[{ type: "thinking" }, { type: "text" }]`, no `role`) is one
+ * assistant turn, but only when every block is a kind we render, so a list of typed records
+ * (retrieved documents, say) stays JSON.
+ */
+function parseBlockListMessage(payload: unknown[]): ChatMessage[] | null {
+  if (!isContentBlockList(payload)) {
+    return null;
+  }
+  const message = parseMessage({ content: payload }, "assistant");
+  return message && message.parts.length > 0 && message.parts.every((part) => part.type !== "json")
+    ? [message]
+    : null;
+}
+
+/**
  * Normalises a span input/output payload into chat messages, or returns null
  * when the payload isn't a recognised chat format.
  */
 export function parseChatPayload(payload: unknown): ChatMessage[] | null {
   if (Array.isArray(payload)) {
-    return parseMessageList(payload);
+    return parseMessageList(payload) ?? parseBlockListMessage(payload);
   }
   if (!isObject(payload)) {
     return null;

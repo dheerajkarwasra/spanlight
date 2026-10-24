@@ -42,6 +42,8 @@ def trace_conditions(
         conditions.append(Trace.session_id == filters.session_id)
     if filters.tag is not None:
         conditions.append(Trace.tags.contains([filters.tag]))
+    if filters.trace_ids is not None:
+        conditions.append(Trace.trace_id.in_([trace_id.lower() for trace_id in filters.trace_ids]))
     conditions += metadata_conditions(filters.metadata_key, filters.metadata_value)
     if filters.status == "error":
         conditions.append(Trace.error_count > 0)

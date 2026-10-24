@@ -86,9 +86,9 @@ Sending the same batch again leaves the metadata as it was.
 
 Values go through the same [secret redaction](/docs/guides/privacy/#redaction-always-runs) as payloads. A value that looked like a secret is kept under its key as `[REDACTED]`, so a leak shows up as a group named `[REDACTED]` on the Attribution page (with a **redacted** badge) instead of vanishing. Email addresses and JWTs are not redacted, so do not use an email address as a customer id unless you are content to store it. Metadata is stored whether or not the project captures prompts and completions.
 
-## The Attribution page
+## The Spend page
 
-Pick what to group by: **Metadata** (then a key), **Trace name**, **User** or **Release**. The page follows the top bar's time range and environment. Each row shows the value, traces, LLM calls, errors, unpriced calls, cost, share of cost, retries and retry cost; phones show tiles. A value links to the trace list filtered to that value, over the same window and environment.
+The dashboard shows this page as **Cost, Spend** (`/attribution`). Pick what to group by: **Metadata** (then a key), **Trace name**, **User** or **Release**. The page follows the top bar's time range and environment. Each row shows the value, traces, LLM calls, errors, unpriced calls, cost, share of cost, retries and retry cost; phones show tiles. A value links to the trace list filtered to that value, over the same window and environment.
 
 Two sources answer, depending on the window:
 
@@ -106,6 +106,8 @@ Below the rows:
 - **Total**: every trace started in the window.
 
 The rows, **None** and **Other** add up to the total, for cost, traces, calls, errors, unpriced calls and tokens. Cost is the sum over every span of the trace, the same figure as the trace's own cost; the counts are of its LLM calls. A cost of **—** means no call in the group had a price, never zero. A retries cell of **—** means retries were not computed, because the traces were stored before retry tracking was added.
+
+**Spend over time** charts the window's cost per UTC day, or per hour for 24 hours or less, from the same source as the rows, with a table view. A bucket whose calls were all unpriced reads **—**, not $0, and a bucket with some unpriced calls is a lower bound. Each row's **…** menu has **Show over time**, which charts that group alone, **Set a budget for this**, which opens the [budget](/docs/budgets/#read-a-budgets-burn) dialog for that trace name, user or metadata pair (not for a release), and **Open traces**. The series also comes from `GET /api/v1/projects/{project_id}/attribution/series`.
 
 The same table comes from `GET /api/v1/projects/{project_id}/attribution` (see the [Attribution endpoint](/docs/api/attribution/)), and from an attribution export as CSV (see [Exports](/docs/guides/exports/#export-the-attribution-table)).
 

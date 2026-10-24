@@ -89,3 +89,5 @@ export function toDailyPoints(daily: readonly UserDayStats[]): DailyPoint[] {
 export function hasDailyCalls(points: readonly DailyPoint[]): boolean {
   return points.some((point) => point.calls > 0);
 }
+
+export const NO_USER_PRICE = "No price for the models this user called.";

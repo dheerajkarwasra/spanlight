@@ -4,7 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { authApi } from "@/lib/api";
 import { ME, mockSignedIn, renderApp } from "@/test/render-app";
 
-import { mockAttribution, PAGE, project, response } from "./attribution-test-data";
+import {
+  listReads,
+  mockAttribution,
+  PAGE,
+  project,
+  response,
+  windowNoteLive,
+} from "./attribution-test-data";
 import { isFetchDisabled } from "./fetch-rule";
 
 describe("isFetchDisabled", () => {
@@ -42,7 +49,7 @@ describe("GroupByPicker on the page", () => {
     const promote = screen.getByRole("link", { name: "Promote" });
     expect(promote.getAttribute("href")).toMatch(/^\/acme\/support\/settings\/project(\?|$)/);
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
-    expect(read).not.toHaveBeenCalled();
+    expect(listReads(read)).toHaveLength(0);
   });
 
   it("asks a member to ask an admin instead of linking to settings", async () => {
@@ -55,7 +62,7 @@ describe("GroupByPicker on the page", () => {
 
     expect(await screen.findByText(/Ask an admin to promote/)).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Promote" })).not.toBeInTheDocument();
-    expect(read).not.toHaveBeenCalled();
+    expect(listReads(read)).toHaveLength(0);
   });
 
   it("drops the previous window's page when the fetch is held", async () => {
@@ -64,9 +71,11 @@ describe("GroupByPicker on the page", () => {
     );
     const router = renderApp(`${PAGE}?group_by=metadata&key=region&range=24h`);
     await waitFor(() => {
-      expect(read).toHaveBeenCalledTimes(1);
+      expect(listReads(read)).toHaveLength(1);
     });
-    expect(await screen.findByText("Live")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(windowNoteLive()).toHaveLength(1);
+    });
 
     await router.navigate({
       to: ".",
@@ -76,9 +85,10 @@ describe("GroupByPicker on the page", () => {
     expect(
       await screen.findByText(/isn’t promoted, so this window can’t use it/),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Live")).not.toBeInTheDocument();
-    expect(screen.getByText("Updated every 15 min")).toBeInTheDocument();
-    expect(read).toHaveBeenCalledTimes(1);
+    expect(windowNoteLive()).toHaveLength(0);
+    // No page for this window, so no freshness to state.
+    expect(screen.queryByRole("button", { name: /^Updated / })).not.toBeInTheDocument();
+    expect(listReads(read)).toHaveLength(1);
   });
 
   it("asks for a key and sends no request when metadata has none", async () => {
@@ -86,7 +96,7 @@ describe("GroupByPicker on the page", () => {
     renderApp(`${PAGE}?group_by=metadata`);
 
     expect(await screen.findByRole("heading", { name: "Pick a metadata key" })).toBeInTheDocument();
-    expect(read).not.toHaveBeenCalled();
+    expect(listReads(read)).toHaveLength(0);
   });
 
   it("lists promoted keys first, marked promoted, then the keys seen in 7 days", async () => {

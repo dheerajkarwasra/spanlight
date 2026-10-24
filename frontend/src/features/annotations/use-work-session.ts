@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 import { useRefreshScores } from "@/features/scores";
 import { useProjectParams } from "@/features/shell";
 import { annotationsApi, type CompletedScore } from "@/lib/api";
 
+import { submittedValues, type ScoreValue } from "./agreement";
 import { isClaimLost, workNotice } from "./annotation-errors";
 import { useInvalidateQueues } from "./annotation-queries";
 import { claimFor, type InFlightClaim, type SessionKey } from "./in-flight-claims";
@@ -28,6 +29,11 @@ export function useWorkSession(queueId: string) {
   const invalidate = useInvalidateQueues();
   const refreshScores = useRefreshScores();
   const [state, dispatch] = useReducer(workReducer, INITIAL_WORK_STATE);
+  /** What the reviewer sent for the item they completed last, for the "Last item" strip. */
+  const [lastCompleted, setLastCompleted] = useState<{
+    traceId: string;
+    values: Record<string, ScoreValue>;
+  } | null>(null);
   const active = useRef<SessionKey | null>(null);
   /** The item this session holds, and the trace it is about. */
   const held = useRef<string | null>(null);
@@ -89,6 +95,7 @@ export function useWorkSession(queueId: string) {
     void claimNext();
     return () => {
       active.current = null;
+      setLastCompleted(null);
       claimSeq.current += 1;
       if (busy.current === "claim") {
         busy.current = null;
@@ -159,6 +166,12 @@ export function useWorkSession(queueId: string) {
       if (active.current !== key) {
         return;
       }
+      // A skip or release ends the strip too: it only ever names the item finished last.
+      setLastCompleted(
+        action === "complete" && traceId !== null
+          ? { traceId, values: submittedValues(scores) }
+          : null,
+      );
       dispatch({ type: "saved", action });
       if (action === "release") {
         void invalidateRef.current();
@@ -171,6 +184,7 @@ export function useWorkSession(queueId: string) {
 
   return {
     state,
+    lastCompleted,
     complete: (scores: CompletedScore[]) => save("complete", scores),
     skip: () => save("skip"),
     release: () => save("release"),

@@ -8,7 +8,9 @@ import { PageHeader } from "@/components/page-header";
 import { SectionCard } from "@/components/section-card";
 import { TileListSkeleton } from "@/components/tile-list";
 import { Button } from "@/components/ui/button";
+import { LiveDemoButton } from "@/features/auth";
 import { ReviewPolicyCard } from "@/features/review";
+import { ScoreSettingsLinks } from "@/features/scores";
 import { usePermission } from "@/features/shell";
 import { pluralize } from "@/lib/format";
 
@@ -45,7 +47,12 @@ export function QueuesPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Review"
-        description="Annotation queues hold traces for people to score by hand. Reviewers claim one item at a time."
+        description={
+          <>
+            Annotation queues hold traces for people to score by hand. Reviewers claim one item at a
+            time. <ScoreSettingsLinks />
+          </>
+        }
         actions={newQueue("New queue")}
       />
       <ReviewPolicyCard
@@ -103,6 +110,7 @@ function QueuesContent({ query, configs, createButton }: QueuesContentProps) {
         title="No queues yet"
         description="Create a queue, then add traces from the Traces page. Reviewers score them one at a time with the keyboard."
         action={createButton ?? undefined}
+        setup={<LiveDemoButton />}
         className="rounded-tile bg-surface-muted"
       />
     );

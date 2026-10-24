@@ -357,6 +357,23 @@ async def test_trace_export_errors_keep_their_field_paths(exporter: Workspace) -
     assert [error["field"] for error in response.json()["errors"]] == ["filters.to"]
 
 
+async def test_trace_ids_take_1_to_200_ids_of_at_most_64_characters(
+    exporter: Workspace,
+) -> None:
+    def body(trace_ids: list[str]) -> dict[str, Any]:
+        return {"format": "csv", "filters": {**_window(1), "trace_ids": trace_ids}}
+
+    ids = [f"{index:032x}" for index in range(200)]
+    response = await exporter.owner.post(_url(exporter), json=body(ids))
+    assert response.status_code == 202, response.text
+    assert response.json()["filters"]["trace_ids"] == ids
+
+    for bad in ([*ids, "f" * 32], [], ["x" * 65], [""]):
+        response = await exporter.owner.post(_url(exporter), json=body(bad))
+        assert response.status_code == 422, response.text
+        assert response.json()["errors"][0]["field"].startswith("filters.trace_ids")
+
+
 @pytest.mark.parametrize("body", [[], "x", 5])
 async def test_a_body_that_is_not_an_object_is_422(exporter: Workspace, body: Any) -> None:
     response = await exporter.owner.post(_url(exporter), json=body)

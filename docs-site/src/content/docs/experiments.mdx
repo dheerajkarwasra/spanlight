@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-{/* Sources: backend/app/evals/experiments.py, backend/app/api/experiment_problems.py, frontend/src/features/experiments/run-label.ts, frontend/src/features/experiments/start-run.tsx, frontend/src/features/experiments/run-list.tsx, frontend/src/features/experiments/run-scores.tsx, backend/app/evals/stats.py, backend/app/evals/compare.py, backend/app/evals/experiment_totals.py, backend/app/evals/experiment_prepare.py, backend/app/evals/experiment_run.py, backend/app/evals/experiment_compare.py, sdks/python/src/spanlight/_experiments_report.py, docs/api-deviations.md */}
+{/* Sources: backend/app/evals/experiments.py, backend/app/api/experiment_problems.py, frontend/src/features/experiments/run-label.ts, frontend/src/features/experiments/start-run.tsx, frontend/src/features/experiments/run-list.tsx, frontend/src/features/experiments/run-scores.tsx, backend/app/evals/stats.py, backend/app/evals/compare.py, backend/app/evals/experiment_totals.py, backend/app/evals/experiment_prepare.py, backend/app/evals/experiment_run.py, backend/app/evals/experiment_compare.py, sdks/python/src/spanlight/_experiments_report.py, frontend/src/features/experiments/new-experiment-page.tsx, frontend/src/features/experiments/experiment-form-state.ts, frontend/src/features/experiments/compare-table.tsx, frontend/src/features/experiments/output-diff.tsx, frontend/src/features/experiments/output-diff-rows.ts, docs/api-deviations.md */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
@@ -52,6 +52,16 @@ For a prompt target, the item's `input` fills the template's variables:
 - any other input becomes the single variable `input`, as text.
 
 An item that cannot fill every variable the template uses gets the item error `missing_variables: question, tier`, and one whose filled-in prompt would exceed 256 KB gets `prompt_too_large`. That fails that item only, not the run.
+
+### Open the form prefilled
+
+Other pages open **New experiment** with some fields already filled in:
+
+- **Run experiment** on a [dataset](/docs/datasets/#run-an-experiment-on-a-dataset)'s page chooses that dataset.
+- **Create experiment** on a [prompt](/docs/prompts/)'s page chooses the prompt and the version shown, makes the target a prompt version, and fills the model from the version's model advice when it has one. Each version row has the same link (**Experiment**, or **Create experiment** in the row's menu on a phone) for that version.
+- In the [playground](/docs/playground/), **Create experiment** does the same for a column whose source is a prompt version, and for the version you just saved ("Saved as v3").
+
+Nothing is created until you submit the form, and you can change every field first. A dataset or version that no longer exists, or that the form's lists do not include, is left empty for you to choose. The links are shown to members, admins and owners.
 
 ## Start a run
 
@@ -250,6 +260,8 @@ Choose two runs of an experiment and open **Compare**. Both must have finished; 
 - **Categories** have no delta: equal values are unchanged, different ones count as neither improved nor regressed.
 - **Items match on the dataset item.** Items present in both runs come first; items that only one run has are listed after them with the other side empty and no deltas.
 - **Items edited between the runs are left out.** When both runs kept a copy of an item and its `input` or `expected_output` differs between them, the two scores were measured against different cases, so they are not compared. Such an item has `changed: true` and no deltas, and it is left out of the improved, regressed and unchanged counts and of the significance test; `changed_items` says how many there are. Each run's own means, intervals, cost and latency still cover all of its items. Item `metadata` is not compared, because evaluators never see it. When the item is in one run only, or either run was made before runs kept a copy, `changed` is `null`; such an item is handled as before.
+- **Regressions only.** The switch beside the score picker in the bar at the top keeps the items whose chosen score went down (a lower number, or yes to no), and the bar counts them, for example "3 regressions of 40 items". It is off whenever you open the page.
+- **Show diff.** Under the two answers of an item, **Show diff** lines them up line by line: lines only in A are marked "−", lines only in B "+", and a long run of unchanged lines is folded into a line such as "12 unchanged lines". On a narrow screen A is shown above B. When the two answers are the same, the item says "Same output" instead.
 - **Cost and p95 duration** show the difference between the runs. When either side's cost is unknown, the cost difference is "—" rather than a guess.
 
 The page also states the trade-off in a sentence built from the differences, for example "B scores +0.08 on relevance, costs +$0.012, p95 latency +310 ms."

@@ -1,7 +1,8 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { History } from "lucide-react";
 import { useState } from "react";
 
+import { Crumb } from "@/components/breadcrumbs";
 import { ReadOnlyNote } from "@/components/read-only-note";
 import { UnknownValue, ValueOrUnknown } from "@/components/unknown-value";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +14,7 @@ import { viewOnlyCopy } from "@/lib/permissions";
 
 import { RouteActionsMenu } from "./route-actions-menu";
 import { RouteEditorForm } from "./route-editor-form";
-import { BackLabel, RouteEditorHeader } from "./route-editor-header";
+import { RouteEditorHeader } from "./route-editor-header";
 import { LeaveGuardDialog } from "./leave-guard";
 import { formValuesFromConfig } from "./route-form";
 import { RouteSaveBar } from "./route-save-bar";
@@ -72,12 +73,10 @@ export function ExistingRouteEditor({ route, lookups }: ExistingRouteEditorProps
           </>
         }
         meta={<SavedLine route={route} keyCount={keys?.length ?? null} />}
-        back={
-          <Button variant="link" size="sm" asChild>
-            <Link to="/$orgId/$projectId/gateway/routes" params={{ orgId, projectId }}>
-              <BackLabel />
-            </Link>
-          </Button>
+        parent={
+          <Crumb to="/$orgId/$projectId/gateway/routes" params={{ orgId, projectId }}>
+            Routes
+          </Crumb>
         }
         actions={
           <>

@@ -2,8 +2,7 @@ import { Search } from "lucide-react";
 import { useState, type KeyboardEvent } from "react";
 
 import { Input } from "@/components/ui/input";
-
-import { useDebouncedCallback } from "./use-debounced-callback";
+import { useDebouncedCallback } from "@/lib/use-debounced-callback";
 
 const SEARCH_DEBOUNCE_MS = 300;
 

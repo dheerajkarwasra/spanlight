@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
-import type { TraceSummary } from "@/lib/api";
+import type { SessionTurn, TraceSummary } from "@/lib/api";
 
 import { SessionConversation } from "./session-conversation";
 
@@ -18,11 +18,6 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("@/features/shell/project-context", () => ({
   useProjectParams: () => ({ orgId: "org_1", projectId: "proj_1" }),
-}));
-
-// Message text is loaded per turn; these tests only cover the turn list itself.
-vi.mock("@/features/traces/trace-queries", () => ({
-  useTraceQuery: () => ({ isPending: true, isError: false }),
 }));
 
 function makeTrace(index: number): TraceSummary {
@@ -59,7 +54,11 @@ function renderConversation(count: number, hasEarlierTurns = false) {
   render(
     <TooltipProvider>
       <SessionConversation
-        traces={Array.from({ length: count }, (_, index) => makeTrace(index))}
+        turns={Array.from({ length: count }, (_, index): SessionTurn => ({
+          trace: makeTrace(index),
+          spans: [],
+          tool_calls: 0,
+        }))}
         hasEarlierTurns={hasEarlierTurns}
         isLoadingEarlier={false}
         loadEarlierFailed={false}

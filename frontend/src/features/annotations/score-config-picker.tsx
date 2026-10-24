@@ -1,7 +1,9 @@
+import { Link } from "@tanstack/react-router";
 import { Info } from "lucide-react";
 import { useId } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { useProjectParams } from "@/features/shell";
 import type { ScoreConfig } from "@/lib/api";
 import { configChipText } from "@/lib/score-format";
 import { cn } from "@/lib/utils";
@@ -19,6 +21,7 @@ interface ScoreConfigPickerProps {
 /** "Scores to collect": one checkbox row per score config of the project. */
 export function ScoreConfigPicker({ configs, picked, onChange }: ScoreConfigPickerProps) {
   const hintId = useId();
+  const params = useProjectParams();
   const full = picked.length >= MAX_CONFIGS;
 
   function toggle(id: string, checked: boolean) {
@@ -35,8 +38,16 @@ export function ScoreConfigPicker({ configs, picked, onChange }: ScoreConfigPick
         </div>
       ) : configs.length === 0 ? (
         <p className="rounded-input bg-surface-muted px-3.5 py-3 text-sm text-muted-foreground">
-          This project has no score configs yet. Create one under Settings, or send a score from the
-          SDK, then come back.
+          This project has no score configs yet. Create one under{" "}
+          <Link
+            to="/$orgId/$projectId/settings/project"
+            params={params}
+            hash="score-configs"
+            className="rounded-xs font-semibold text-accent underline underline-offset-2"
+          >
+            Settings
+          </Link>
+          , or send a score from the SDK, then come back.
         </p>
       ) : (
         <ul className="flex max-h-64 flex-col gap-1.5 overflow-y-auto">

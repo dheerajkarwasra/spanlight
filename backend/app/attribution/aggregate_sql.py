@@ -7,7 +7,8 @@ One definition for the two callers, the daily attribution rollup and the raw rea
   `metadata ->> :key`, `name`, `external_user_id` or `release`. A NULL dimension is the `none`
   bucket (`group_value` NULL), a real group.
 - Its figures come from its spans whatever day they started. `llm_calls`, `errors` (status
-  `error`) and `unpriced_calls` (`cost_usd IS NULL`) count its `llm` spans. `cost_usd` and the
+  `error`) and `unpriced_calls` (`cost_usd IS NULL`, usage rollups left out as in the metrics)
+  count its `llm` spans. `cost_usd` and the
   token totals sum every span, priced first per trace with the exact expression that stores
   `traces.cost_usd` (`app.ingest.store._RECOMPUTE_ROLLUPS`), then summed per group. So a group's
   cost is the sum of its traces' `cost_usd`, NULL as absent, and the rows of a window add up to
@@ -74,8 +75,9 @@ _PER_TRACE = """
                t.retry_cost_usd,
                count(*) FILTER (WHERE s.kind = 'llm') AS llm_calls,
                count(*) FILTER (WHERE s.kind = 'llm' AND s.status = 'error') AS errors,
-               count(*) FILTER (WHERE s.kind = 'llm' AND s.cost_usd IS NULL)
-                   AS unpriced_calls,
+               count(*) FILTER (
+                   WHERE s.kind = 'llm' AND s.cost_usd IS NULL AND s.usage_rollup = false
+               ) AS unpriced_calls,
                coalesce(sum(s.input_tokens) {summed}, 0) AS input_tokens,
                coalesce(sum(s.output_tokens) {summed}, 0) AS output_tokens,
                CASE WHEN sum(s.cost_usd) {summed} < 1000000
@@ -108,23 +110,32 @@ _GROUPED = """grouped AS (
 )"""
 
 
-def grouped_cte(kind: GroupKind, *, by_day: bool, with_environment: bool) -> str:
+_BUCKETS = {
+    "day": "(t.started_at AT TIME ZONE 'UTC')::date AS day",
+    "hour": "date_trunc('hour', t.started_at, 'UTC') AS hour",
+}
+
+
+def grouped_cte(
+    kind: GroupKind, *, by_day: bool, with_environment: bool, by_hour: bool = False
+) -> str:
     """The SQL of the CTE `grouped` (without `WITH`) for one kind of group.
 
-    Columns: `day` (the UTC date of the traces' start, only when `by_day`), `environment`,
-    `group_value` (NULL for the `none` bucket), `traces`, `llm_calls`, `errors`,
-    `unpriced_calls`, `input_tokens`, `output_tokens`, `cost_usd`, `retries`, `retry_cost_usd`.
-    One row per (day, environment, group_value); `with_environment` keeps the traces of
-    `:environment` only.
+    Columns: `day` (the UTC date of the traces' start, only when `by_day`) or `hour` (the UTC
+    hour it starts in, only when `by_hour`), `environment`, `group_value` (NULL for the `none`
+    bucket), `traces`, `llm_calls`, `errors`, `unpriced_calls`, `input_tokens`, `output_tokens`,
+    `cost_usd`, `retries`, `retry_cost_usd`. One row per (day or hour, environment,
+    group_value); `with_environment` keeps the traces of `:environment` only.
     """
+    bucket = "day" if by_day else "hour" if by_hour else None
     per_trace = _PER_TRACE.format(
-        day="(t.started_at AT TIME ZONE 'UTC')::date AS day,\n               " if by_day else "",
+        day=f"{_BUCKETS[bucket]},\n               " if bucket else "",
         group_expression=GROUP_EXPRESSIONS[kind],
         summed=_SUMMED,
         environment="\n          AND t.environment = :environment" if with_environment else "",
     )
     return _GROUPED.format(
-        day="per_trace.day, " if by_day else "",
+        day=f"per_trace.{bucket}, " if bucket else "",
         per_trace=per_trace,
         cost=money_sum("per_trace.cost_usd"),
         retry_cost=retry_cost_sum("per_trace.retry_calls", "per_trace.retry_cost_usd"),

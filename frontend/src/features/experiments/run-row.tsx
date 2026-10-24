@@ -57,17 +57,20 @@ export function RunRow({ run, context, ticked, onTick }: RunRowProps) {
         ticked ? "bg-surface-selected" : "bg-surface-muted hover:bg-surface-hover",
       )}
     >
-      <CheckboxPrimitive.Root
-        checked={ticked}
-        disabled={!finished}
-        onCheckedChange={(next) => onTick(next === true)}
-        aria-label={`Compare ${runName(run.number)}`}
-        className="flex size-5 shrink-0 items-center justify-center rounded-checkbox border-[1.5px] border-subtle-foreground bg-surface disabled:opacity-40 data-[state=checked]:border-ink data-[state=checked]:bg-ink"
-      >
-        <CheckboxPrimitive.Indicator>
-          <Check aria-hidden className="size-3.5 text-ink-foreground" strokeWidth={3} />
-        </CheckboxPrimitive.Indicator>
-      </CheckboxPrimitive.Root>
+      {/* The label gives the 20 px box a 24 px target. */}
+      <label className="-mx-0.5 flex size-6 shrink-0 cursor-pointer items-center justify-center">
+        <CheckboxPrimitive.Root
+          checked={ticked}
+          disabled={!finished}
+          onCheckedChange={(next) => onTick(next === true)}
+          aria-label={`Compare ${runName(run.number)}`}
+          className="flex size-5 shrink-0 items-center justify-center rounded-checkbox border-[1.5px] border-subtle-foreground bg-surface disabled:opacity-40 data-[state=checked]:border-ink data-[state=checked]:bg-ink"
+        >
+          <CheckboxPrimitive.Indicator>
+            <Check aria-hidden className="size-3.5 text-ink-foreground" strokeWidth={3} />
+          </CheckboxPrimitive.Indicator>
+        </CheckboxPrimitive.Root>
+      </label>
       <Link
         to="/$orgId/$projectId/experiments/$experimentId/runs/$runId"
         params={{ orgId, projectId, experimentId, runId: run.id }}

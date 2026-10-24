@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-{/* Sources: frontend/src/features/budgets/budgets-page.tsx, frontend/src/features/budgets/budget-row.tsx, frontend/src/features/budgets/budget-progress.tsx, frontend/src/features/budgets/budget-period.ts, frontend/src/features/budgets/budget-enforcement.ts, frontend/src/features/budgets/scope-picker.tsx, backend/app/gateway/errors.py, backend/app/gateway/execute.py, backend/app/budgets/guard.py, backend/app/budgets/scope_parse.py, backend/app/budgets/service.py */}
+{/* Sources: frontend/src/features/budgets/budgets-page.tsx, frontend/src/features/budgets/budget-row.tsx, frontend/src/features/budgets/budget-progress.tsx, frontend/src/features/budgets/budget-burn.tsx, frontend/src/features/budgets/budget-prefill.ts, frontend/src/features/budgets/budget-period.ts, frontend/src/features/budgets/budget-enforcement.ts, frontend/src/features/budgets/scope-picker.tsx, backend/app/gateway/errors.py, backend/app/gateway/execute.py, backend/app/budgets/guard.py, backend/app/budgets/scope_parse.py, backend/app/budgets/service.py */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
@@ -18,7 +18,7 @@ Anyone who can see the project can read its budgets; only organization **admins 
   items={[
     'The admin or owner role in the project. Every role can read budgets',
     'The worker running, with ALERTS_EVALUATION_ENABLED on (the default). Budgets are evaluated once a minute',
-    'To be notified: a channel under Alerts, Channels',
+    'To be notified: a channel under Settings, Notification channels',
     'To block calls: traffic that goes through the gateway. A budget cannot stop calls sent straight from the SDK',
     'For the weekly digest: an email provider (EMAIL_PROVIDER) set on the server',
   ]}
@@ -102,6 +102,12 @@ Both carry the header `X-Spanlight-Code: BUDGET_EXCEEDED`. Match on `spanlight_c
 ### Rollover
 
 At 00:00 UTC on the first day of a new period, a blocking budget stops blocking, even before the next evaluation has resolved it. The first evaluation of the new period resolves the budget whatever the new spend is (spend of blocked or unpriced calls is not known), and it fires again only if the new period's spend is already above the amount. The `state` of a budget in the first minute of a period shows "—" until it is evaluated.
+
+## Read a budget's burn
+
+Each budget's bar marks 50, 80 and 100 % of the amount; hover a mark to read it in dollars. **Show burn** opens the spend to date per UTC day since the period began, drawn against the amount, with a table view. A day whose spans were all unpriced shows "—", not $0. The same series comes from `GET /api/v1/projects/{project_id}/budgets/{budget_id}/burn`.
+
+To start a budget from what is spending, open **Cost, Spend**, open a row's **…** menu and choose **Set a budget for this**. The create dialog opens with the row's trace name, user or metadata pair filled in. A link to `/budgets?new=1&scope=user&value=…` does the same (`scope` is `trace_name`, `user`, `model` or `metadata`, which also takes `key`).
 
 ## Check it worked
 

@@ -43,6 +43,10 @@ export interface AttributionResponse {
   window: { from: string; to: string };
   source: AttributionSource;
   updated_within_minutes: number;
+  /** The rollup's latest recompute among the rows read; null when none was read, and on `raw`. */
+  computed_at: string | null;
+  /** The window's traces the rollup doesn't include yet, capped at 10,000; null on `raw`. */
+  pending_traces: number | null;
   items: AttributionRow[];
   next_cursor: string | null;
   /** `null` when no trace lacks the dimension. */
@@ -50,6 +54,33 @@ export interface AttributionResponse {
   /** `null` when nothing was folded; always `null` on the raw path. */
   other: AttributionBucket | null;
   totals: AttributionTotals;
+}
+
+/** One bucket of the Spend chart. */
+export interface AttributionSeriesPoint {
+  /** Can precede the series' `window.from`: the raw path floors it to the hour. */
+  bucket_start: string;
+  /** "0" for a bucket without traces; `null` when its calls had no price; a lower bound while `unpriced_calls` > 0. */
+  cost_usd: string | null;
+  unpriced_calls: number;
+}
+
+/** The window's spend per bucket, from the list's own source: hourly on `raw`, per UTC day on `rollup`. */
+export interface AttributionSeries {
+  bucket: "hour" | "day";
+  source: AttributionSource;
+  window: { from: string; to: string };
+  points: AttributionSeriesPoint[];
+}
+
+/** The list's filters, plus `value` for one group's series instead of the window total. */
+export interface AttributionSeriesQuery {
+  group_by: AttributionGroupBy;
+  key?: string | undefined;
+  from?: string | undefined;
+  to?: string | undefined;
+  environment?: string | undefined;
+  value?: string | undefined;
 }
 
 export interface AttributionQuery {

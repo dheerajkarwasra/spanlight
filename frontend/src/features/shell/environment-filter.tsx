@@ -9,12 +9,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import { DisabledFilter } from "./disabled-filter";
 import { useFilterOptionsQuery, useProjectFilters } from "./project-context";
 
 const ALL = "__all__";
 
-/** The environment pill (Figma "Environment pill"): filters project data by environment. */
-export function EnvironmentFilter() {
+/**
+ * The environment pill (Figma "Environment pill"): filters project data by environment. With a
+ * `disabledReason` the page can't honour it: the pill is disabled and the reason is shown.
+ */
+export function EnvironmentFilter({ disabledReason }: { disabledReason?: string }) {
   const navigate = useNavigate();
   const { environment } = useProjectFilters();
   const optionsQuery = useFilterOptionsQuery();
@@ -24,8 +28,9 @@ export function EnvironmentFilter() {
       ? [environment, ...environments]
       : environments;
 
-  return (
+  const pill = (
     <Select
+      disabled={disabledReason !== undefined}
       value={environment ?? ALL}
       onValueChange={(value) => {
         void navigate({
@@ -50,5 +55,12 @@ export function EnvironmentFilter() {
         ))}
       </SelectContent>
     </Select>
+  );
+  return disabledReason === undefined ? (
+    pill
+  ) : (
+    <DisabledFilter label="Environment" reason={disabledReason}>
+      {pill}
+    </DisabledFilter>
   );
 }

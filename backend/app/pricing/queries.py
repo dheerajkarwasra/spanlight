@@ -22,15 +22,20 @@ UNPRICED_MODELS_LIMIT = 100
 # Spans that lack a token count or a model, or whose counts are over `MAX_PRICED_TOKENS`, are
 # unpriced for another reason and are not listed.
 # Runs under the caller's row-level security binding; the `project_id` filter is for the index.
-_UNPRICED_MODELS = text(
-    """
+# With an environment filter it joins `traces`, because the environment belongs to the trace.
+_TRACE_JOIN = "JOIN traces AS t ON t.project_id = s.project_id AND t.trace_id = s.trace_id"
+_UNPRICED_MODELS = {
+    environment: text(
+        f"""
     SELECT s.provider,
            s.model,
            count(*)                                                            AS llm_calls,
            coalesce(sum(s.input_tokens) FILTER (WHERE NOT s.usage_rollup), 0)  AS input_tokens,
            coalesce(sum(s.output_tokens) FILTER (WHERE NOT s.usage_rollup), 0) AS output_tokens
     FROM spans AS s
+    {_TRACE_JOIN if environment else ""}
     WHERE s.project_id = :project_id
+      {"AND t.environment = :environment" if environment else ""}
       AND s.started_at >= :start
       AND s.started_at < :end
       AND s.kind = 'llm'
@@ -43,7 +48,9 @@ _UNPRICED_MODELS = text(
     ORDER BY llm_calls DESC, s.provider NULLS LAST, s.model
     LIMIT :limit
     """
-)
+    )
+    for environment in (False, True)
+}
 
 
 @dataclass(frozen=True)
@@ -69,13 +76,19 @@ async def list_prices(db: AsyncSession) -> list[ModelPrice]:
 
 
 async def list_unpriced_models(
-    db: AsyncSession, project_id: uuid.UUID, *, start: datetime, end: datetime
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    *,
+    start: datetime,
+    end: datetime,
+    environment: str | None = None,
 ) -> list[UnpricedModel]:
     """Models a project called in `[start, end)` that no price covered, most-called first."""
     rows = await db.execute(
-        _UNPRICED_MODELS,
+        _UNPRICED_MODELS[environment is not None],
         {
             "project_id": project_id,
+            "environment": environment,
             "start": start,
             "end": end,
             "limit": UNPRICED_MODELS_LIMIT,

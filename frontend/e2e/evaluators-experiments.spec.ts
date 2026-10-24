@@ -67,4 +67,17 @@ test("experiment: without a provider credential the form says so instead of runn
   await page.getByRole("button", { name: "Create experiment" }).click();
   await expect(page.getByText("Choose a credential.")).toBeVisible();
   await expect(page).toHaveURL(/\/experiments\/new$/);
+
+  // The same pages at the 375 px minimum width.
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expectNoAxeViolations(page);
+  await page.goto(`${base}/experiments`);
+  await expect(page.getByRole("heading", { name: "No experiments yet" })).toBeVisible();
+  await expectNoAxeViolations(page);
+  await page.goto(`${base}/evaluators`);
+  await expect(page.getByRole("heading", { name: "No evaluators yet" })).toBeVisible();
+  await expectNoAxeViolations(page);
 });
+
+// The compare page's "Regressions only" switch and "Show diff" need two finished runs, and a run
+// makes real provider calls, so this suite does not reach them (no fake rows on the product path).

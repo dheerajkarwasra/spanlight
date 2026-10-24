@@ -11,6 +11,7 @@ import {
   type DatasetCreate,
   type DatasetItemInput,
   type DatasetItemUpdate,
+  type DatasetUpdate,
 } from "@/lib/api";
 
 export { useScoreConfigsQuery } from "@/features/scores";
@@ -101,6 +102,16 @@ export function useDeleteDataset() {
       queryClient.removeQueries({ queryKey: keys.detail(dataset.id) });
       await queryClient.invalidateQueries({ queryKey: keys.all });
     },
+  });
+}
+
+/** Edits the dataset's description (the only editable field); `null` clears it. */
+export function useUpdateDataset(datasetId: string) {
+  const { projectId } = useProjectParams();
+  const invalidate = useInvalidateDatasets();
+  return useMutation({
+    mutationFn: (update: DatasetUpdate) => datasetsApi.update(projectId, datasetId, update),
+    onSuccess: invalidate,
   });
 }
 

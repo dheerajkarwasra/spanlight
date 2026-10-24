@@ -49,17 +49,19 @@ DELETE_DETECTOR_RUNS = text(
 DETECTOR_RUN_RETENTION = timedelta(days=7)
 
 # The per-user daily stats and the daily cost rollups are derived from the traces and spans, so
-# they go with them: a day goes once it ends before the project's cutoff.
+# they go with them: a day goes once it ends before the project's cutoff. User stats rows are
+# picked by `ctid`: their natural key holds a nullable `environment`, which a tuple `IN` cannot
+# match, and the key without it would take every environment's row, more than the batch.
 DELETE_USER_STATS = text(
     """
     DELETE FROM user_stats_daily
-    WHERE (project_id, day, external_user_id) IN (
-        SELECT project_id, day, external_user_id
+    WHERE ctid = ANY(ARRAY(
+        SELECT ctid
         FROM user_stats_daily
         WHERE project_id = :project_id
           AND day < (CAST(:cutoff AS timestamptz) AT TIME ZONE 'UTC')::date
         LIMIT :batch_size
-    )
+    ))
     """
 )
 DELETE_COST_ROLLUPS = text(

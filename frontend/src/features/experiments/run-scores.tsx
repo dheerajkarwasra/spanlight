@@ -1,7 +1,9 @@
+import type { ReactNode } from "react";
+
 import { SectionCard } from "@/components/section-card";
 import { UnknownValue } from "@/components/unknown-value";
 import type { RunTotals, ScoreStat } from "@/lib/api";
-import { formatInteger } from "@/lib/format";
+import { formatInteger, pluralize } from "@/lib/format";
 
 import { categoryOrder, FEW_ITEMS, formatInterval, formatMean } from "./compare-view";
 import { DistributionBar, DistributionLegend, type Segment } from "./distribution-bar";
@@ -30,6 +32,7 @@ export function RunScores({ totals, scores }: RunScoresProps) {
             meta={meta}
             stat={totals.scores[meta.name]}
             items={totals.items}
+            evaluatorErrors={totals.evaluator_errors}
           />
         ))}
       </ul>
@@ -41,12 +44,14 @@ function ScoreTile({
   meta,
   stat,
   items,
+  evaluatorErrors,
 }: {
   meta: ScoreMeta;
   stat: ScoreStat | undefined;
   items: number;
+  evaluatorErrors: number;
 }) {
-  const content = describe(meta, stat, items);
+  const content = describe(meta, stat, items, evaluatorErrors);
   const interval = meta.kind === "boolean" && content.value !== null ? stat : undefined;
   return (
     <li className="flex flex-col gap-3 rounded-tile bg-surface-muted p-4">
@@ -108,13 +113,40 @@ function IntervalBar({ stat: { ci_low, ci_high, mean } }: { stat: ScoreStat }) {
   );
 }
 
+/**
+ * "198 of 200 scored · 2 errors". The errors are the run's evaluator failures (per run, not per
+ * score), so a score every item has leaves them out.
+ */
+function ScoredNote({
+  count,
+  items,
+  evaluatorErrors,
+}: {
+  count: number;
+  items: number;
+  evaluatorErrors: number;
+}) {
+  return (
+    <>
+      {formatInteger(count)} of {formatInteger(items)} scored
+      {evaluatorErrors > 0 && count < items ? (
+        <>
+          {" · "}
+          <span className="text-danger-text">{pluralize(evaluatorErrors, "error")}</span>
+        </>
+      ) : null}
+    </>
+  );
+}
+
 function describe(
   meta: ScoreMeta,
   stat: ScoreStat | undefined,
   items: number,
-): { value: string | null; note: string; segments?: Segment[] } {
+  evaluatorErrors: number,
+): { value: string | null; note: ReactNode; segments?: Segment[] } {
   const count = stat?.count ?? 0;
-  const without = Math.max(0, items - count);
+  const scored = <ScoredNote count={count} items={items} evaluatorErrors={evaluatorErrors} />;
   if (meta.kind === "categorical") {
     const order = categoryOrder(meta.categories, [stat?.categories]);
     const segments = order.map(({ name, tone }) => ({
@@ -125,7 +157,7 @@ function describe(
     const top = segments[0];
     return {
       value: top ? `${formatInteger(top.count)} ${top.label}` : null,
-      note: `${formatInteger(count)} scored`,
+      note: scored,
       segments,
     };
   }
@@ -133,11 +165,15 @@ function describe(
     const yes = Math.round(stat.mean * count);
     return {
       value: formatMean(stat.mean, "boolean"),
-      note: `${formatInteger(yes)} yes · ${formatInteger(count - yes)} no`,
+      note: (
+        <>
+          {formatInteger(yes)} yes · {formatInteger(count - yes)} no · {scored}
+        </>
+      ),
     };
   }
   return {
     value: formatMean(stat?.mean ?? null, meta.kind),
-    note: `${formatInteger(count)} scored · ${formatInteger(without)} without a score`,
+    note: scored,
   };
 }

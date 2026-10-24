@@ -15,10 +15,12 @@ interface DoneCardProps {
   progress: QueueProgress | null;
   /** Scores per finished item: every score of the queue is required. */
   scoresPerItem: number;
+  /** The "Last item" strip for the final item, when it was submitted. */
+  lastItem: ReactNode;
 }
 
 /** Figma "Annotate — all done": the claim found nothing left to review. */
-export function AllDoneCard({ queueId, progress, scoresPerItem }: DoneCardProps) {
+export function AllDoneCard({ queueId, progress, scoresPerItem, lastItem }: DoneCardProps) {
   const { orgId, projectId } = useProjectParams();
   return (
     <EndCard
@@ -34,6 +36,7 @@ export function AllDoneCard({ queueId, progress, scoresPerItem }: DoneCardProps)
           <Stat label="Scores written" value={progress.done * scoresPerItem} />
         </dl>
       )}
+      {lastItem === null ? null : <div className="w-full max-w-[400px] text-left">{lastItem}</div>}
       <Button variant="primary" asChild>
         <Link to="/$orgId/$projectId/queues/$queueId" params={{ orgId, projectId, queueId }}>
           Back to queue

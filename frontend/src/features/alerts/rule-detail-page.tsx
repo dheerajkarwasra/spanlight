@@ -12,7 +12,7 @@ import { useNow } from "@/lib/use-now";
 
 import { useAlertChannelsQuery, useAlertRuleQuery, useRuleEventsQuery } from "./alerts-queries";
 import { EventTimeline } from "./event-timeline";
-import { BackToAlerts, RuleDetailHeader } from "./rule-detail-header";
+import { AlertsBreadcrumbs, RuleDetailHeader } from "./rule-detail-header";
 import { RuleDetailSkeleton } from "./rule-detail-skeleton";
 import { RuleSettingsCard } from "./rule-settings-card";
 import { mutedLabel, mutedUntil } from "./rule-state";
@@ -90,7 +90,7 @@ function RuleLoadError({ onRetry }: { onRetry: () => void }) {
   const { orgId, projectId } = useProjectParams();
   return (
     <div className="flex flex-col gap-6">
-      <BackToAlerts />
+      <AlertsBreadcrumbs current="Rule" />
       <div
         role="alert"
         className="flex flex-col items-center gap-4 rounded-card bg-surface-muted px-6 py-12 text-center"

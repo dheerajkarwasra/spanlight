@@ -4,29 +4,39 @@ import { ErrorState } from "@/components/error-state";
 import { ListFooter } from "@/components/list-footer";
 import { PageHeader } from "@/components/page-header";
 import { UnknownValue } from "@/components/unknown-value";
+import { useTablePrefs, type SortOrder } from "@/components/data-table";
 import { Card } from "@/components/ui/card";
 import { useProjectFilters, useProjectQuery } from "@/features/shell/project-context";
 import { rangePhrase } from "@/lib/time-range";
+import { useMediaQuery } from "@/lib/use-media-query";
 
 import { BulkSelectionBar } from "./bulk-selection-bar";
 import { recallOpenedTrace, rememberTracesSearch } from "./last-traces-search";
-import { retryCostColumn } from "./retry-format";
 import { loadedSummary, windowCountLine } from "./list-summary";
+import { PeekSheet } from "./peek-sheet";
+import { TraceHistogram } from "./trace-histogram";
 import { useTraceCountQuery, useTraceListQuery } from "./trace-queries";
 import { ExportTracesButton } from "./export-trigger";
 import { TraceTiles, TraceTilesSkeleton } from "./trace-tiles";
 import { TracesEmptyState } from "./traces-empty-state";
-import { TracesTable, TracesTableSkeleton } from "./traces-table";
-import { tableLayout } from "./traces-table-grid";
+import { previewsShown } from "./traces-columns";
+import { TracesTable } from "./traces-table";
 import { TracesToolbar } from "./traces-toolbar";
+import type { TraceFilters } from "./search";
 import { onlyRetriesFilter, useTraceFilters } from "./use-trace-filters";
+import { usePeek } from "./use-peek";
 import { useTraceSelection } from "./use-trace-selection";
 
 const NO_KEYS: readonly string[] = [];
+/** Below `md` tiles, from it the table; one renders (2,000 hidden tiles slowed each peek step). */
+const PHONE_QUERY = "(max-width: 767px)";
 
 export function TracesPage() {
   const filters = useTraceFilters();
-  const tracesQuery = useTraceListQuery(filters.search);
+  const phone = useMediaQuery(PHONE_QUERY);
+  // The table's column choices (shared with the table): previews only while Input or Output shows.
+  const previews = previewsShown(useTablePrefs("traces").overrides);
+  const tracesQuery = useTraceListQuery(filters.search, previews);
   const countQuery = useTraceCountQuery();
   const promotedKeys = useProjectQuery().data?.promoted_metadata_keys ?? NO_KEYS;
   const { search } = filters;
@@ -37,12 +47,11 @@ export function TracesPage() {
 
   const traces = tracesQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const selection = useTraceSelection(traces);
+  const peek = usePeek(traces.map((trace) => trace.trace_id));
   const isRefreshing =
     tracesQuery.isFetching && !tracesQuery.isFetchingNextPage && !tracesQuery.isPending;
   const stale = tracesQuery.isPlaceholderData;
-  const selectedTraceId = recallOpenedTrace();
-  const retryCost = retryCostColumn(search);
-  const layout = tableLayout(retryCost !== "hidden", promotedKeys.length > 0);
+  const selectedTraceId = (peek.enabled ? peek.peekId : undefined) ?? recallOpenedTrace();
 
   const summary = loadedSummary({
     loaded: traces.length,
@@ -50,6 +59,10 @@ export function TracesPage() {
     filtered: filters.hasFacetFilters,
     hasNextPage: tracesQuery.hasNextPage,
   });
+  function setSort(sort: TraceFilters["sort"], order: SortOrder | undefined) {
+    filters.setFilters({ sort, order });
+  }
+
   const footerProps = {
     summary,
     hasNextPage: tracesQuery.hasNextPage,
@@ -71,15 +84,12 @@ export function TracesPage() {
 
   function renderBody() {
     if (tracesQuery.isPending) {
-      return (
-        <>
-          <Card className="hidden p-2 md:block">
-            <TracesTableSkeleton layout={layout} />
-          </Card>
-          <div className="md:hidden">
-            <TraceTilesSkeleton />
-          </div>
-        </>
+      return phone ? (
+        <TraceTilesSkeleton />
+      ) : (
+        <Card className="flex flex-col p-2">
+          <TracesTable traces={[]} search={search} onSortChange={setSort} loading />
+        </Card>
       );
     }
     if (tracesQuery.isError && traces.length === 0) {
@@ -112,32 +122,34 @@ export function TracesPage() {
         </Card>
       );
     }
-    return (
-      <>
-        <Card className="@container hidden flex-col p-2 md:flex">
-          <TracesTable
-            traces={traces}
-            selectedTraceId={selectedTraceId}
-            stale={stale}
-            selection={selection}
-            retryCost={retryCost}
-          />
-          {loadMoreError ?? <ListFooter layout="card" {...footerProps} />}
-        </Card>
-        <div className="flex flex-col gap-4 md:hidden">
-          <TraceTiles
-            traces={traces}
-            selectedTraceId={selectedTraceId}
-            stale={stale}
-            promotedKeys={promotedKeys}
-          />
-          {loadMoreError ? (
-            <Card>{loadMoreError}</Card>
-          ) : (
-            <ListFooter layout="stacked" {...footerProps} />
-          )}
-        </div>
-      </>
+    return phone ? (
+      <div className="flex flex-col gap-4">
+        <TraceTiles
+          traces={traces}
+          selectedTraceId={selectedTraceId}
+          stale={stale}
+          promotedKeys={promotedKeys}
+          previews={previews}
+        />
+        {loadMoreError ? (
+          <Card>{loadMoreError}</Card>
+        ) : (
+          <ListFooter layout="stacked" {...footerProps} />
+        )}
+      </div>
+    ) : (
+      <Card className="flex flex-col p-2">
+        <TracesTable
+          traces={traces}
+          search={search}
+          onSortChange={setSort}
+          selectedTraceId={selectedTraceId}
+          loading={stale}
+          selection={selection}
+          onPeek={peek.enabled ? peek.open : undefined}
+          footer={loadMoreError ?? <ListFooter layout="card" {...footerProps} />}
+        />
+      </Card>
     );
   }
 
@@ -156,8 +168,10 @@ export function TracesPage() {
         onFiltersChange={filters.setFilters}
         onClearFilters={filters.clearFilters}
       />
+      <TraceHistogram search={search} />
       {renderBody()}
       <BulkSelectionBar selection={selection} />
+      {peek.enabled ? <PeekSheet peek={peek} /> : null}
     </div>
   );
 }

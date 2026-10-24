@@ -7,6 +7,7 @@ row-level security needs.
 """
 
 import uuid
+from dataclasses import asdict
 from typing import Annotated
 
 import structlog
@@ -19,6 +20,7 @@ from app.api.schemas import Page
 from app.api.schemas.insight_feedback import feedback_summary_out
 from app.api.schemas.insights import (
     DetectorRunOut,
+    EvidenceSpanOut,
     ExplanationOut,
     HealthOut,
     InsightDetailOut,
@@ -111,10 +113,13 @@ async def get_insight(
         db, project_id, insight_id, MAX_EXPLANATIONS
     )
     feedback = await feedback_queries.feedback_summary(db, project_id, insight_id, access.user_id)
+    detail = insight_out(insight)
+    spans = await explain_queries.evidence_spans(db, project_id, detail.evidence.trace_ids)
     return InsightDetailOut(
-        **insight_out(insight).model_dump(),
+        **detail.model_dump(),
         explanations=[explanation_out(row) for row in explanations],
         feedback=feedback_summary_out(feedback),
+        evidence_spans=[EvidenceSpanOut(**asdict(span)) for span in spans],
     )
 
 

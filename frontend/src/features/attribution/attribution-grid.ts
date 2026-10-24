@@ -1,19 +1,6 @@
 import type { AttributionGroupBy, AttributionResponse, AttributionRow } from "@/lib/api";
-import { cn } from "@/lib/utils";
 
 import type { DrillContext } from "./drill-down";
-
-/*
- * Figma "Attribution / Page (desktop)": nine columns at 1280 (RULING T20-2). The Value column
- * keeps 160 px and truncates; below the `@4xl` container width the page shows tiles instead.
- *   value · traces · LLM calls · errors · unpriced · cost · share · retries · retry cost
- * Tracks are 764 px; 12 px gaps make 860. At 1280 with the sidebar the row has 866 px, so the
- * gap cannot grow further; at the 896 px breakpoint the tracks use 6 of the row's 12 px end padding.
- */
-export const ATTRIBUTION_GRID = cn(
-  "grid items-center gap-3 px-3",
-  "grid-cols-[minmax(160px,1fr)_64px_76px_64px_72px_80px_104px_60px_84px]",
-);
 
 export const NO_GROUP_PRICE = "No priced calls in this group";
 export const NO_RETRIES = "No retries";

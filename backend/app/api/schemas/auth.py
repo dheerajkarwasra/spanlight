@@ -21,6 +21,19 @@ class MembershipOut(BaseModel):
     role: MembershipRole
 
 
+class CapabilitiesOut(BaseModel):
+    """What this server is set up to do, so the dashboard can explain a missing feature up front.
+
+    Booleans and the gateway mode only: never a key, key id, bucket or other configured value.
+    """
+
+    gateway_mode: Literal["embedded", "standalone", "disabled"]
+    # CREDENTIALS_KEYS is set, so provider credentials can be saved.
+    credentials_configured: bool
+    # Object storage (bucket and both keys) is set, so exports have somewhere to go.
+    exports_configured: bool
+
+
 class MeOut(BaseModel):
     user: UserOut
     memberships: list[MembershipOut]
@@ -36,6 +49,7 @@ class MeOut(BaseModel):
     # asked and cannot receive email. False on a server without email, where no link can arrive,
     # so the dashboard shows no verification prompt there. Self-only, like `has_password`.
     email_verification_required: bool
+    capabilities: CapabilitiesOut
 
 
 class SessionOut(BaseModel):

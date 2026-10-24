@@ -192,6 +192,8 @@ Every priced span stores the version of the price it used in `pricing_version`, 
 
 An organization can set its own rate for a model, for example a negotiated price or a self-hosted model. An override has a provider, a model name, the input and output rates, an optional cached rate, optional cache-write rates for the 5-minute and 1-hour lifetimes, an optional `min_prompt_tokens` and an optional start time. Owners and admins manage them under `/api/v1/orgs/{org_id}/price-overrides`; see [Prices endpoints](/docs/api/prices/).
 
+In the dashboard, **Cost, Pricing** has three parts. **Unpriced models** lists the models of the window's calls that had no price, with their calls and input and output tokens; **Add price** next to one opens the override dialog with its provider and model filled in. **Organization overrides** lists the organization's overrides with their rates and start day; owners and admins add one with **Add** and delete one with its **×** button (stored costs are not recomputed, and new spans use the book price again). **Price book** lists every built-in price, searchable by provider or model. A link to `/pricing?provider=…&model=…`, such as **Set a price for …** on a Doctor unpriced-spend finding, opens the dialog prefilled.
+
 - An override matches models the same way the built-in prices do.
 - The longest matching name wins whichever table it comes from. For equal names the override wins.
 - An override is one tier of a model. The tier rule above picks the row first, among built-in rows and overrides alike, so an override of the base row (`min_prompt_tokens` 0) of `claude-haiku-5-5` leaves the built-in row for prompts over 100,000 tokens in force. To change that tier too, add a second override with `min_prompt_tokens` 100001.

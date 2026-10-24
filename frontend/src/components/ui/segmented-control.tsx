@@ -21,6 +21,8 @@ interface SegmentedControlProps<T extends string> {
   options: readonly SegmentedOption<T>[];
   /** Names the group for assistive technology, e.g. "Time range". */
   "aria-label": string;
+  /** Points at text that explains the group, e.g. why some options are disabled. */
+  "aria-describedby"?: string;
   /**
    * `ink`: white pill track, the active segment filled with ink (Figma "Control/Time range").
    * `surface`: muted track, the active segment raised on white (Figma "Snippet tab").
@@ -38,6 +40,7 @@ function SegmentedControl<T extends string>({
   onValueChange,
   options,
   "aria-label": ariaLabel,
+  "aria-describedby": ariaDescribedBy,
   tone = "ink",
   className,
 }: SegmentedControlProps<T>) {
@@ -51,6 +54,7 @@ function SegmentedControl<T extends string>({
         }
       }}
       aria-label={ariaLabel}
+      aria-describedby={ariaDescribedBy}
       orientation="horizontal"
       className={cn(
         "inline-flex shrink-0 items-center gap-0.5 rounded-full border border-border p-1",

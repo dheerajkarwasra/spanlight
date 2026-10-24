@@ -1,6 +1,8 @@
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { projectsApi } from "@/lib/api";
 import { readLastProject } from "@/lib/last-project";
 import { makeProject, mockSignedIn, ORG_ID, renderApp } from "@/test/render-app";
 
@@ -18,6 +20,27 @@ vi.mock("@/features/annotations/annotate-page", async () => {
     },
   };
 });
+
+vi.mock("@/features/billing-sources/reconciliation-page", () => ({
+  ReconciliationPage: () => <p>Reconciliation page</p>,
+}));
+
+/** A window at least 1280 px wide (Tailwind `xl`), where the rail is expanded unless collapsed. */
+function wideWindow() {
+  vi.spyOn(window, "matchMedia").mockImplementation(
+    (query: string) =>
+      ({
+        matches: query === "(min-width: 80rem)",
+        media: query,
+        onchange: null,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false,
+      }) as MediaQueryList,
+  );
+}
 
 async function expectLastProject(projectId: string) {
   await waitFor(() => {
@@ -77,5 +100,89 @@ describe("AppShell", () => {
     // The rail belongs to the chromed layout only.
     expect(screen.queryByRole("navigation", { name: "Main" })).toBeNull();
     expect(workMode.mounts).toBe(1);
+  });
+
+  describe("rail", () => {
+    it("collapses to the icon rail and remembers it", async () => {
+      wideWindow();
+      mockSignedIn([makeProject("proj_1", "Checkout")]);
+      renderApp(`/${ORG_ID}/proj_1/settings/project`);
+
+      await userEvent.click(await screen.findByRole("button", { name: "Collapse sidebar" }));
+
+      expect(window.localStorage.getItem("spanlight.rail")).toBe("collapsed");
+      // At this width it expands in place, so it opens no dialog.
+      expect(screen.getByRole("button", { name: "Expand sidebar" })).not.toHaveAttribute(
+        "aria-haspopup",
+      );
+      expect(screen.queryByRole("button", { name: "Collapse sidebar" })).toBeNull();
+    });
+
+    it("still collapses for the session when storage is blocked", async () => {
+      wideWindow();
+      mockSignedIn([makeProject("proj_1", "Checkout")]);
+      renderApp(`/${ORG_ID}/proj_1/settings/project`);
+      const collapse = await screen.findByRole("button", { name: "Collapse sidebar" });
+      vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+        throw new DOMException("Blocked", "SecurityError");
+      });
+
+      await userEvent.click(collapse);
+
+      expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeInTheDocument();
+    });
+
+    it("shows the Connect tile only before the first trace", async () => {
+      wideWindow();
+      mockSignedIn([makeProject("proj_1", "Checkout")]);
+      vi.spyOn(projectsApi, "onboarding").mockResolvedValue({
+        has_traces: false,
+        first_trace_at: null,
+      });
+      renderApp(`/${ORG_ID}/proj_1/settings/project`);
+
+      const nav = await screen.findByRole("navigation", { name: "Main" });
+      const rail = nav.closest("aside");
+      expect(rail).not.toBeNull();
+      expect(
+        await within(rail as HTMLElement).findByRole("link", { name: /Connect your app/ }),
+      ).toBeInTheDocument();
+    });
+
+    it("drops the Connect tile once traces arrive, and the user menu still offers it", async () => {
+      wideWindow();
+      mockSignedIn([makeProject("proj_1", "Checkout")]);
+      vi.spyOn(projectsApi, "onboarding").mockResolvedValue({
+        has_traces: true,
+        first_trace_at: "2026-10-01T00:00:00Z",
+      });
+      renderApp(`/${ORG_ID}/proj_1/settings/project`);
+      await waitFor(() => {
+        expect(projectsApi.onboarding).toHaveBeenCalledWith("proj_1");
+      });
+
+      const nav = await screen.findByRole("navigation", { name: "Main" });
+      const rail = nav.closest("aside") as HTMLElement;
+      expect(within(rail).queryByRole("link", { name: /Connect your app/ })).toBeNull();
+
+      await userEvent.click(within(rail).getByRole("button", { name: /Account menu/ }));
+      expect(await screen.findByRole("menuitem", { name: "Connect your app" })).toBeInTheDocument();
+    });
+
+    it("lights Cost, not Settings, on a billing source's reconciliation page", async () => {
+      wideWindow();
+      mockSignedIn([makeProject("proj_1", "Checkout")]);
+      renderApp(`/${ORG_ID}/proj_1/settings/billing-sources/s1`);
+      await screen.findByText("Reconciliation page");
+
+      const nav = screen.getByRole("navigation", { name: "Main" });
+      expect(within(nav).getByRole("link", { name: "Cost" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      expect(within(nav).getByRole("link", { name: "Settings" })).not.toHaveAttribute(
+        "aria-current",
+      );
+    });
   });
 });

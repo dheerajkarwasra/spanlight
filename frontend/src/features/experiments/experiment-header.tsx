@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/page-header";
 import type { Dataset, Experiment } from "@/lib/api";
 import { formatCost, formatInteger } from "@/lib/format";
 
-import { BackToExperiments } from "./back-link";
+import { ExperimentsBreadcrumbs } from "./back-link";
 import type { VersionIndex } from "./run-label";
 import type { ScoreMeta } from "./score-meta";
 import { TargetChips } from "./target-text";
@@ -31,7 +31,7 @@ export function ExperimentHeader({
 }: ExperimentHeaderProps) {
   return (
     <div className="flex flex-col gap-2">
-      <BackToExperiments />
+      <ExperimentsBreadcrumbs current={experiment.name} />
       <PageHeader title={experiment.name} actions={actions} />
       <dl className="flex flex-wrap items-center gap-x-2 gap-y-2">
         <dt className={LABEL}>Dataset</dt>

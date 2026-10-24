@@ -15,6 +15,7 @@ import { activeChoiceScore, choicesOf } from "./score-draft";
 import { ScoresPanel } from "./scores-panel";
 import { ShortcutHelp } from "./shortcut-help";
 import type { ShortcutAction } from "./shortcuts";
+import { LastItemStrip } from "./last-item-strip";
 import { useItemDraft } from "./use-item-draft";
 import { useReviewActions } from "./use-review-actions";
 import { useWorkSession } from "./use-work-session";
@@ -108,6 +109,10 @@ function AnnotateWork() {
   useWorkShortcuts(helpOpen, onAction);
 
   const progress = queue.data?.progress ?? null;
+  const lastItem =
+    session.lastCompleted === null ? null : (
+      <LastItemStrip configs={configs} last={session.lastCompleted} />
+    );
   return (
     <div className="min-h-dvh bg-background lg:bg-canvas lg:p-3">
       <div className="relative flex min-h-dvh flex-col gap-6 overflow-clip bg-background px-4 pt-5 pb-10 lg:min-h-[calc(100dvh-1.5rem)] lg:gap-8 lg:rounded-card lg:px-10 lg:pt-7">
@@ -136,7 +141,12 @@ function AnnotateWork() {
               onRetry={() => void session.claim()}
             />
           ) : state.phase === "empty" ? (
-            <AllDoneCard queueId={queueId} progress={progress} scoresPerItem={configs.length} />
+            <AllDoneCard
+              queueId={queueId}
+              progress={progress}
+              scoresPerItem={configs.length}
+              lastItem={lastItem}
+            />
           ) : state.phase === "released" ? (
             <ReleasedCard
               pending={progress?.pending ?? null}
@@ -155,6 +165,7 @@ function AnnotateWork() {
                 configs={configs}
                 instructions={queue.data?.instructions ?? null}
                 draft={draft}
+                lastItem={lastItem}
                 work={{
                   notice: state.notice,
                   busy: state.phase === "claiming" ? "claim" : state.saving,

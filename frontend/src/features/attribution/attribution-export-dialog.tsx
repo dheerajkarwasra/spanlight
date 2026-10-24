@@ -4,9 +4,11 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Tooltip } from "@/components/ui/tooltip";
+import { useMe } from "@/features/auth";
 import {
   DialogHeading,
   EXPORT_DIALOG_CLASS,
+  ExportsNotConfigured,
   ExportQueued,
   SubmitError,
   blockWhile,
@@ -80,6 +82,7 @@ function AttributionExportContent({
   // Frozen at opening, so the summary and the request cannot drift apart as the page refetches.
   const [view] = useState(live);
   const submission = useExportSubmission();
+  const exportsConfigured = useMe().capabilities.exports_configured;
 
   return (
     <DialogContent
@@ -121,6 +124,7 @@ function AttributionExportContent({
             </div>
           </div>
           <AttributionExportSummary view={view} />
+          {exportsConfigured ? null : <ExportsNotConfigured />}
           {submission.error ? <SubmitError error={submission.error} /> : null}
           <div className="flex items-center justify-end gap-2.5 max-sm:[&>*]:flex-1">
             <DialogClose asChild>
@@ -131,6 +135,7 @@ function AttributionExportContent({
             <Button
               variant="primary"
               loading={submission.isPending}
+              disabled={!exportsConfigured}
               onClick={() => {
                 submission.submit(toAttributionExportInput(view));
               }}

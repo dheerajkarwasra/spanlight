@@ -59,6 +59,7 @@ function makeSpan({
     prompt_version_id: null,
     usage_rollup: false,
     usage_state: "not_applicable",
+    request_hash: null,
   };
 }
 

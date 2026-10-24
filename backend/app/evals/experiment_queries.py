@@ -189,6 +189,22 @@ async def list_run_items(
     )
 
 
+async def evaluator_error_counts(
+    db: AsyncSession, run_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, int]:
+    """Each run's items whose scoring broke; a run without any is absent. One query."""
+    if not run_ids:
+        return {}
+    rows = await db.execute(
+        select(ExperimentItem.run_id, func.count())
+        .where(
+            ExperimentItem.run_id.in_(list(run_ids)), ExperimentItem.evaluator_error.is_not(None)
+        )
+        .group_by(ExperimentItem.run_id)
+    )
+    return {run_id: int(count) for run_id, count in rows}
+
+
 async def item_facts(db: AsyncSession, run_id: uuid.UUID) -> list[ItemFacts]:
     """What the totals need of every stored item of the run (no outputs are read)."""
     rows = await db.execute(
@@ -197,9 +213,13 @@ async def item_facts(db: AsyncSession, run_id: uuid.UUID) -> list[ItemFacts]:
             ExperimentItem.cost_usd,
             ExperimentItem.error,
             ExperimentItem.scores,
+            ExperimentItem.evaluator_error,
         ).where(ExperimentItem.run_id == run_id)
     )
-    return [ItemFacts(row.latency_ms, row.cost_usd, row.error, row.scores or {}) for row in rows]
+    return [
+        ItemFacts(row.latency_ms, row.cost_usd, row.error, row.scores or {}, row.evaluator_error)
+        for row in rows
+    ]
 
 
 async def project_evaluators(

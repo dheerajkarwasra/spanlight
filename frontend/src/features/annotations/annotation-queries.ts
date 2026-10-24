@@ -1,11 +1,14 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { useCallback } from "react";
+import { toast } from "sonner";
 
 import { useProjectParams } from "@/features/shell";
 import {
   annotationsApi,
   orgsApi,
   queryKeys,
+  type AnnotationQueue,
   type QueueCreate,
   type QueueItemStatus,
   type ReviewReason,
@@ -82,6 +85,26 @@ export function useCreateQueue() {
   return useMutation({
     mutationFn: (input: QueueCreate) => annotationsApi.create(projectId, input),
     onSuccess: invalidate,
+  });
+}
+
+/**
+ * Deletes a queue and leaves its page first: dropping the cache of a page that is still mounted
+ * would refetch it into a 404.
+ */
+export function useDeleteQueue() {
+  const { orgId, projectId } = useProjectParams();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (queue: AnnotationQueue) => annotationsApi.delete(projectId, queue.id),
+    onSuccess: async (_result, queue) => {
+      toast.success(`Deleted queue “${queue.name}”.`);
+      await navigate({ to: "/$orgId/$projectId/queues", params: { orgId, projectId } });
+      const keys = queryKeys.project(projectId).annotations;
+      queryClient.removeQueries({ queryKey: keys.detail(queue.id) });
+      await queryClient.invalidateQueries({ queryKey: keys.all });
+    },
   });
 }
 

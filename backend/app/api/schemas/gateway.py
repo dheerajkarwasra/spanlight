@@ -12,7 +12,7 @@ only the create response carries the key's `secret`, once.
 
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -199,6 +199,34 @@ class FaultScenarioCountOut(BaseModel):
     count: int
 
 
+class GatewayTotalsOut(BaseModel):
+    """The previous window's totals, for the overview's deltas; each reads as the field of the
+    same name on `GatewayOverviewOut` (`cache_hit_rate` as `cache.hit_rate`)."""
+
+    requests: int
+    errors: int
+    error_rate: float | None
+    p95_overhead_ms: float | None
+    cache_hit_rate: float | None
+    fallbacks: int
+    rate_limited: int
+
+
+class GatewaySeriesPointOut(BaseModel):
+    bucket_start: datetime
+    requests: int
+    errors: int
+
+
+class GatewaySeriesOut(BaseModel):
+    # 5-minute buckets for a window of 1 hour or less, else hours; aligned to the UTC clock
+    # (whole hours, :00, :05, ...), so the first may start before `from` and the last may run
+    # past `to`: both can be partial.
+    bucket: Literal["5m", "hour"]
+    # Every bucket of the window, in order; one without calls reads 0 requests and 0 errors.
+    points: list[GatewaySeriesPointOut]
+
+
 class GatewayOverviewOut(BaseModel):
     """Gateway traffic of a window of at most 7 days.
 
@@ -219,6 +247,15 @@ class GatewayOverviewOut(BaseModel):
     retries: int
     p95_overhead_ms: float | None
     p95_ttft_ms: float | None
+    # p95 of a call's duration less the gateway's overhead, over calls that recorded an overhead
+    # and reached a provider: the provider's time over every attempt, plus retry backoff and Lab
+    # fault holds, and a stream's whole body. Cache hits and refusals are left out.
+    p95_upstream_ms: float | None
+    # Calls that ended rate limited, by the gateway (`rate_limit_kind` "gateway") or a provider.
+    rate_limited: int
+    # The same totals over the window of equal length right before this one.
+    previous: GatewayTotalsOut
+    series: GatewaySeriesOut
     by_target: list[GatewayTargetUsageOut]
     by_key: list[GatewayKeyUsageOut]
     faults: list[FaultScenarioCountOut]

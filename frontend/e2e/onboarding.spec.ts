@@ -1,5 +1,3 @@
-import { randomBytes } from "node:crypto";
-
 import {
   e2eEnabled,
   expect,
@@ -36,54 +34,36 @@ test("signup → onboarding → first trace → trace detail", async ({ page }) 
 
   // 3. API key, shown once.
   await page.getByRole("button", { name: "Create API key" }).click();
-  await expect(page.getByText("This key is shown once.", { exact: false })).toBeVisible();
+  // The hint below the key form says the same, so wait on the reveal-only Copy button first.
+  await expect(page.getByRole("button", { name: "Copy API key" })).toBeVisible();
+  await expect(page.getByText("Shown once. Revoke it in Settings › API keys.")).toBeVisible();
   const pageText = await page.locator("main").innerText();
   const secret = SECRET_PATTERN.exec(pageText)?.[0];
   expect(secret, "the new API key secret is displayed").toBeTruthy();
   await expect(page.getByText("Waiting for your first trace…")).toBeVisible();
   await expectNoAxeViolations(page);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expectNoAxeViolations(page);
 
-  // 4. Send a real trace through the ingestion API, as the curl snippet does.
-  const traceId = randomBytes(16).toString("hex");
-  const now = Date.now();
-  const response = await page.request.post("/v1/traces", {
-    headers: { Authorization: `Bearer ${secret ?? ""}` },
-    data: {
-      spans: [
-        {
-          trace_id: traceId,
-          span_id: randomBytes(8).toString("hex"),
-          parent_span_id: null,
-          name: "e2e chat",
-          kind: "llm",
-          status: "ok",
-          start_time: new Date(now - 1200).toISOString(),
-          end_time: new Date(now).toISOString(),
-          provider: "openai",
-          model: "gpt-4o-mini",
-          usage: { input_tokens: 12, output_tokens: 40 },
-          input: [{ role: "user", content: "Hello from Playwright" }],
-          output: { role: "assistant", content: "Hello back" },
-          trace: { name: "e2e-trace", environment: "e2e" },
-        },
-      ],
-    },
-  });
-  expect(response.ok()).toBe(true);
+  // 4. "Send a test trace" posts one real span with the key on screen.
+  await page.getByRole("button", { name: "Send a test trace" }).click();
+  await expect(page.getByText("Test trace sent. Waiting for it to arrive…")).toBeVisible();
 
   // 5. The waiting state flips to success (polls every 2 s).
   await expect(page.getByText("First trace received")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("heading", { level: 1, name: "You’re connected." })).toBeVisible();
-  await expect(page.getByRole("list", { name: "First trace" })).toContainText("e2e-trace");
+  await expect(page.getByRole("list", { name: "First trace" })).toContainText(
+    "Test trace from setup",
+  );
   await expectNoAxeViolations(page);
-  await page.getByRole("link", { name: "View traces" }).click();
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expectNoAxeViolations(page);
+  // The key secret is still on screen, so the page offers the trace instead of leaving.
+  await expect(page.getByRole("button", { name: "Copy API key" })).toBeVisible();
+  await page.getByRole("link", { name: "Open your first trace" }).click();
 
-  // 6. The trace is listed and its detail renders the chat payload.
-  const traceLink = page.getByRole("link", { name: "e2e-trace" });
-  await expect(traceLink).toBeVisible();
-  await expectNoAxeViolations(page);
-  await traceLink.click();
-  await expect(page).toHaveURL(new RegExp(traceId));
-  await expect(page.getByText("Hello from Playwright")).toBeVisible();
+  // 6. Trace detail renders the test span's payload.
+  await expect(page).toHaveURL(/\/traces\/[0-9a-f]{32}/);
+  await expect(page.getByText("Sent from the setup page").first()).toBeVisible();
   await expectNoAxeViolations(page);
 });

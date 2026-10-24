@@ -1,5 +1,5 @@
 import { getRouteApi } from "@tanstack/react-router";
-import { Plus } from "lucide-react";
+import { Play, Plus } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { DisabledReason } from "@/components/disabled-reason";
@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/page-header";
 import { ReadOnlyNote } from "@/components/read-only-note";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { usePermission } from "@/features/shell";
+import { usePermission, useProjectParams } from "@/features/shell";
 import { cn } from "@/lib/utils";
 
 import { ConfigColumn } from "./config-column";
@@ -26,6 +26,8 @@ import {
 } from "./config-state";
 import { useCredentialsQuery, usePricesQuery } from "./playground-queries";
 import { ReplayColumn } from "./replay-column";
+import { estimateForColumns, runLabel } from "./run-estimate";
+import { PlaygroundRunsLink, RunEstimateLine } from "./run-estimate-line";
 import { IDLE } from "./run-state";
 import { usePlaygroundRun } from "./use-playground-run";
 import { useSeedColumn } from "./use-seed-column";
@@ -72,15 +74,14 @@ export function PlaygroundPage() {
 /** Figma "Playground" (1, 2 and 3 columns, running, results, errors, 375 px). */
 function RunColumnsPage() {
   const canRun = usePermission("experiments:run");
+  const { orgId, projectId } = useProjectParams();
   const credentialsQuery = useCredentialsQuery();
   const prices = usePricesQuery();
   const counter = useRef(1);
   const [columns, setColumns] = useState(() => [newColumn("col-0")]);
   const credentials = credentialsQuery.data ?? [];
-  const { states, notice, running, run } = usePlaygroundRun(
-    columns,
-    credentials.map((credential) => credential.id),
-  );
+  const credentialIds = credentials.map((credential) => credential.id);
+  const { states, notice, running, run } = usePlaygroundRun(columns, credentialIds);
   const seedProblem = useSeedColumn(setColumns);
   const nextKey = () => `col-${counter.current++}`;
 
@@ -96,11 +97,21 @@ function RunColumnsPage() {
     });
   }
   const many = columns.length > 1;
+  const estimate = estimateForColumns(
+    columns,
+    credentialsQuery.isSuccess ? credentials : undefined,
+    prices.data,
+    new Date(),
+  );
 
   if (!canRun) {
     return (
       <div className="flex flex-col gap-6">
-        <PageHeader title="Playground" description={DESCRIPTION} />
+        <PageHeader
+          title="Playground"
+          description={DESCRIPTION}
+          actions={<PlaygroundRunsLink orgId={orgId} projectId={projectId} />}
+        />
         <ReadOnlyNote>
           Only members, admins and owners can run the playground, because every run is a real
           provider call that is paid for. You can still read the traces it produced in the
@@ -127,7 +138,7 @@ function RunColumnsPage() {
         title="Playground"
         description={DESCRIPTION}
         actions={
-          <>
+          <div className="flex flex-wrap items-start gap-2">
             {canAddColumn(columns) ? (
               addButton
             ) : (
@@ -137,10 +148,15 @@ function RunColumnsPage() {
                 {addButton}
               </DisabledReason>
             )}
-            <Button variant="primary" loading={running} onClick={() => void run()}>
-              {many ? "Run all" : "Run"}
-            </Button>
-          </>
+            <PlaygroundRunsLink orgId={orgId} projectId={projectId} />
+            <div className="flex flex-col items-end gap-1.5">
+              <Button variant="primary" loading={running} onClick={() => void run()}>
+                {running ? null : <Play aria-hidden />}
+                {runLabel(columns.length)}
+              </Button>
+              {estimate ? <RunEstimateLine estimate={estimate} /> : null}
+            </div>
+          </div>
         }
       />
       {seedProblem ? (

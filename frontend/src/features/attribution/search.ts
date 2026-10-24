@@ -6,9 +6,10 @@ import { projectSearchSchema } from "@/lib/time-range";
 const METADATA_KEY = /^[a-z0-9_.-]{1,64}$/;
 
 /**
- * URL-synced view of the Attribution page, on top of the shell's window and environment params.
+ * URL-synced view of the Spend page, on top of the shell's window and environment params.
  * `key` names the metadata key and is dropped for every other `group_by`, which the API refuses
- * it with.
+ * it with. `focus` is the group the chart shows (spec ruling 10); the page drops it when the
+ * grouping changes.
  */
 export const attributionSearchSchema = projectSearchSchema
   .extend({
@@ -18,6 +19,8 @@ export const attributionSearchSchema = projectSearchSchema
       .catch("trace_name"),
     key: z.string().regex(METADATA_KEY).optional().catch(undefined),
     sort: z.enum(["cost", "calls", "errors", "retry_cost"]).default("cost").catch("cost"),
+    // The router reads an all-digit value as a number.
+    focus: z.coerce.string().min(1).max(512).optional().catch(undefined),
   })
   .transform((search) => (search.group_by === "metadata" ? search : { ...search, key: undefined }));
 

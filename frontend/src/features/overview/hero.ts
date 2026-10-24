@@ -58,7 +58,7 @@ export function shortRangeLabel(range: Pick<ResolvedRange, "value">): string {
   return SHORT_RANGE_LABELS[range.value];
 }
 
-export type HeroStatusKind = "first-run" | "empty-window" | "errors" | "healthy";
+export type HeroStatusKind = "first-run" | "empty-window" | "errors" | "findings" | "healthy";
 
 /** The status sentence: a plain lead followed by an emphasised (serif) accent. */
 export interface HeroStatus {
@@ -72,6 +72,8 @@ interface HeroStatusInput {
   traces: number;
   /** Failed LLM calls in the selected window. */
   errors: number;
+  /** Open Doctor findings (critical + warning); 0 while unknown. */
+  findings?: number;
   /** False when the project has never received a trace; null while that is unknown. */
   hasEverReceivedTraces: boolean | null;
 }
@@ -80,23 +82,39 @@ interface HeroStatusInput {
  * Sums up the window in one sentence:
  * - nothing ever received → "Waiting for your first trace."
  * - nothing in this window (but older traces exist) → "No traces in this window."
- * - failed calls → "3 errors need a look."
+ * - failed calls and open Doctor findings → "3 errors and 1 finding need a look."
+ * - open findings only → "1 finding needs a look."
  * - otherwise → "Your models are behaving."
  */
-export function heroStatus({ traces, errors, hasEverReceivedTraces }: HeroStatusInput): HeroStatus {
+export function heroStatus({
+  traces,
+  errors,
+  findings = 0,
+  hasEverReceivedTraces,
+}: HeroStatusInput): HeroStatus {
   if (traces === 0) {
     if (hasEverReceivedTraces === false) {
       return { kind: "first-run", lead: "Waiting for your", accent: "first trace." };
     }
     return { kind: "empty-window", lead: "No traces in", accent: "this window." };
   }
-  if (errors > 0) {
-    const count = new Intl.NumberFormat("en-US").format(errors);
-    return errors === 1
-      ? { kind: "errors", lead: "1 error", accent: "needs a look." }
-      : { kind: "errors", lead: `${count} errors`, accent: "need a look." };
+  const parts = [countOf(errors, "error"), countOf(findings, "finding")].filter(Boolean);
+  if (parts.length === 0) {
+    return { kind: "healthy", lead: "Your models are", accent: "behaving." };
   }
-  return { kind: "healthy", lead: "Your models are", accent: "behaving." };
+  return {
+    kind: errors > 0 ? "errors" : "findings",
+    lead: parts.join(" and "),
+    accent: errors + findings === 1 ? "needs a look." : "need a look.",
+  };
+}
+
+/** "1 error", "1,203 errors"; null for zero. */
+function countOf(count: number, noun: string): string | null {
+  if (count <= 0) {
+    return null;
+  }
+  return count === 1 ? `1 ${noun}` : `${new Intl.NumberFormat("en-US").format(count)} ${noun}s`;
 }
 
 /**

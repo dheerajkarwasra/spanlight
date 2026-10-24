@@ -4,18 +4,29 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import type { Budget } from "@/lib/api";
 
 import { BudgetForm } from "./budget-form";
+import type { BudgetFormValues } from "./budget-schema";
 
 interface BudgetDialogProps {
   /** Null to create a budget; a budget to edit it. */
   budget: Budget | null;
   /** The button that opens the dialog: Create budget, or the row's Edit. */
   trigger: ReactElement;
+  /** A create dialog's prefill (spec ruling 12). When given, the dialog starts open. */
+  initial?: Partial<BudgetFormValues>;
+  /** Called whenever the dialog closes (cancelled or saved). */
+  onClose?: () => void;
 }
 
 /** Figma "Budgets — Budget dialog" (every scope, validation errors). Mounted only while open. */
-export function BudgetDialog({ budget, trigger }: BudgetDialogProps) {
-  const [open, setOpen] = useState(false);
+export function BudgetDialog({ budget, trigger, initial, onClose }: BudgetDialogProps) {
+  const [open, setOpen] = useState(initial !== undefined);
   const [pending, setPending] = useState(false);
+  const change = (next: boolean) => {
+    setOpen(next);
+    if (!next) {
+      onClose?.();
+    }
+  };
 
   return (
     <Dialog
@@ -23,7 +34,7 @@ export function BudgetDialog({ budget, trigger }: BudgetDialogProps) {
       onOpenChange={(next) => {
         // Escape, Cancel, the close mark and an outside click may not close it mid-save.
         if (next || !pending) {
-          setOpen(next);
+          change(next);
         }
       }}
     >
@@ -35,9 +46,10 @@ export function BudgetDialog({ budget, trigger }: BudgetDialogProps) {
         >
           <BudgetForm
             budget={budget}
+            initial={initial}
             onPendingChange={setPending}
             onSaved={() => {
-              setOpen(false);
+              change(false);
             }}
           />
         </DialogContent>

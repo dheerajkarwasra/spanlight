@@ -6,14 +6,13 @@ import { SectionCard } from "@/components/section-card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { InsightStatus } from "@/lib/api";
-import { formatInteger } from "@/lib/format";
 import { useNow } from "@/lib/use-now";
 
 import { useInsightPages } from "./doctor-queries";
 import { InsightEmpty } from "./insight-empty";
 import { InsightFilterBar } from "./insight-filter-bar";
 import { hasActiveFilters, normalizeFilters, searchToQuery } from "./insight-filters";
-import { listSummary, STATUS_LABELS } from "./insight-format";
+import { listSummary, loadedText, STATUS_LABELS } from "./insight-format";
 import { InsightList, InsightListSkeleton } from "./insight-list";
 
 const doctorRoute = getRouteApi("/_authed/$orgId/$projectId/doctor");
@@ -154,11 +153,10 @@ interface LoadMoreRowProps {
 }
 
 function LoadMoreRow({ loaded, hasNextPage, loading, onLoadMore }: LoadMoreRowProps) {
-  const count = formatInteger(loaded) ?? String(loaded);
   return (
     <div className="flex items-center justify-between gap-3 px-1 pt-1">
       <p className="text-xs font-medium text-muted-foreground tabular" aria-live="polite">
-        {hasNextPage ? `Showing ${count} insights` : `All ${count} insights shown`}
+        {loadedText(loaded, hasNextPage)}
       </p>
       {hasNextPage ? (
         <Button size="sm" onClick={onLoadMore} loading={loading}>

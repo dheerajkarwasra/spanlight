@@ -50,7 +50,7 @@ export function TraceAttributeChips({ trace }: { trace: TraceDetail }) {
             params={{ orgId, projectId }}
             search={{ user: trace.external_user_id }}
             title={`Show traces from user ${trace.external_user_id}`}
-            className="truncate rounded-sm font-mono text-label text-accent hover:underline"
+            className="block min-h-6 truncate rounded-sm font-mono text-label leading-6 text-accent hover:underline"
           >
             {trace.external_user_id}
           </Link>
@@ -62,7 +62,7 @@ export function TraceAttributeChips({ trace }: { trace: TraceDetail }) {
             to="/$orgId/$projectId/sessions/$sessionId"
             params={{ orgId, projectId, sessionId: toPathId(trace.session_id) }}
             title={`Open session ${trace.session_id}`}
-            className="truncate rounded-sm font-mono text-label text-accent hover:underline"
+            className="block min-h-6 truncate rounded-sm font-mono text-label leading-6 text-accent hover:underline"
           >
             {trace.session_id}
           </Link>
@@ -103,7 +103,7 @@ function Chip({
   return (
     <div
       className={cn(
-        "flex max-w-full min-w-0 items-center gap-1.5 rounded-full bg-surface-muted px-3 py-1",
+        "flex min-h-7 max-w-full min-w-0 items-center gap-1.5 rounded-full bg-surface-muted px-3 py-0.5",
         className,
       )}
     >

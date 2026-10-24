@@ -41,16 +41,26 @@ export function DialogHeading({ title, description, closeDisabled = false }: Dia
 }
 
 /**
- * Why Start export failed. `409 NOT_CONFIGURED` is the warning from the Figma frame: the button
+ * Figma G3: the server has no object storage, so exports have nowhere to go. Shown up front when
+ * `/me` says so (Start export is then off), and after a `409 NOT_CONFIGURED` answer.
+ */
+export function ExportsNotConfigured({ role }: { role?: "status" }) {
+  return (
+    <Callout tone="warning" role={role} title="Not configured on this server">
+      Exports need object storage. Ask your administrator to set{" "}
+      <code className="font-mono">S3_BUCKET</code>, <code className="font-mono">S3_ACCESS_KEY</code>{" "}
+      and <code className="font-mono">S3_SECRET_KEY</code>.
+    </Callout>
+  );
+}
+
+/**
+ * Why Start export failed. On `409 NOT_CONFIGURED` (storage removed since `/me` loaded) the button
  * stays enabled so the person can try again once storage is set up. Anything else is an error.
  */
 export function SubmitError({ error }: { error: unknown }) {
   if (isExportNotConfigured(error)) {
-    return (
-      <Callout tone="warning" role="status" title="Not available on this server">
-        Exports need object storage. Ask your administrator to set the S3 settings.
-      </Callout>
-    );
+    return <ExportsNotConfigured role="status" />;
   }
   return (
     <Callout tone="danger" role="alert" title="Couldn't start the export">

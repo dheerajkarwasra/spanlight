@@ -1,200 +1,99 @@
-import { Link, useNavigate } from "@tanstack/react-router";
-import type { MouseEvent } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 
-import { CostValue, UNKNOWN_TOTAL_REASON } from "@/components/cost-value";
-import { RelativeTime } from "@/components/relative-time";
-import { ValueOrUnknown } from "@/components/unknown-value";
-import { ScoresCell, useScoreTypeOf } from "@/features/scores";
+import { DataTable, type SortOrder } from "@/components/data-table";
+import { useScoreTypeOf } from "@/features/scores";
 import { useProjectParams, useProjectQuery } from "@/features/shell/project-context";
 import type { TraceSummary } from "@/lib/api";
-import { formatDuration } from "@/lib/format";
-import { cn } from "@/lib/utils";
 
-import { RetryCostCell, RetryCountCell } from "./retry-cell";
-import type { RetryCostColumn } from "./retry-format";
-import { MetadataChips } from "./metadata-chips";
-import { RowCheckbox } from "./row-checkbox";
-import { TraceStatusDot } from "./status";
-import { ModelBadges, TagBadges, TokenPair, TraceErrorLine, UserSession } from "./trace-cells";
-import { Cell, TracesTableHead } from "./traces-table-columns";
-import { tableLayout } from "./traces-table-grid";
+import { retryCostColumn } from "./retry-format";
+import { TRACE_SORTS, type TraceFilters } from "./search";
+import { traceColumns } from "./traces-columns";
 import type { TraceSelection } from "./use-trace-selection";
-
-export { TracesTableSkeleton } from "./traces-table-columns";
 
 const NO_KEYS: readonly string[] = [];
 
 interface TracesTableProps {
   traces: TraceSummary[];
+  /** The URL search: the sort, and the filters that add columns (retries, metadata). */
+  search: TraceFilters;
+  onSortChange: (sort: TraceFilters["sort"], order: SortOrder | undefined) => void;
   /** The trace opened last; its row is highlighted when you come back to the list. */
   selectedTraceId?: string | null;
-  /** Dim rows while results for new filters are loading. */
-  stale?: boolean;
+  /** First load (skeleton rows), or results for new filters on their way (rows dim). */
+  loading: boolean;
   /** Ticked rows for the bulk actions; without it the checkbox column stays empty. */
   selection?: TraceSelection;
-  /** The Retry cost column, shown while the list is sorted or filtered by retries. */
-  retryCost?: RetryCostColumn;
+  /** From 1280 px: a row click (or a plain click on its name) peeks instead of navigating. */
+  onPeek?: (traceId: string) => void;
+  footer?: ReactNode;
 }
 
+/** The traces list from `md` up: the shared DataTable with the trace columns (spec §5). */
 export function TracesTable({
   traces,
+  search,
+  onSortChange,
   selectedTraceId = null,
-  stale = false,
+  loading,
   selection,
-  retryCost = "hidden",
+  onPeek,
+  footer,
 }: TracesTableProps) {
   const navigate = useNavigate();
-  const promotedKeys = useProjectQuery().data?.promoted_metadata_keys ?? NO_KEYS;
-  const layout = tableLayout(retryCost !== "hidden", promotedKeys.length > 0);
   const { orgId, projectId } = useProjectParams();
+  const promotedKeys = useProjectQuery().data?.promoted_metadata_keys ?? NO_KEYS;
   const scoreTypeOf = useScoreTypeOf();
+  const columns = traceColumns({
+    orgId,
+    projectId,
+    selection,
+    retryCost: retryCostColumn(search) !== "hidden",
+    metadataKey: search.metadata_key,
+    promotedKeys,
+    scoreTypeOf,
+    previewsPending: loading,
+    onPeek,
+  });
 
-  function openTrace(event: MouseEvent<HTMLDivElement>, traceId: string) {
-    // Let real links/buttons inside the row, and text selection, behave normally.
-    const target = event.target as HTMLElement;
-    const interactive = target.closest("a, button, input, [role='button'], [tabindex]");
-    if (interactive && event.currentTarget.contains(interactive)) {
-      return;
-    }
-    if (window.getSelection()?.toString()) {
+  // The one place a row click is handled (links, buttons and selected text are left alone).
+  function openTrace(trace: TraceSummary) {
+    if (onPeek) {
+      onPeek(trace.trace_id);
       return;
     }
     void navigate({
       to: "/$orgId/$projectId/traces/$traceId",
-      params: { orgId, projectId, traceId },
+      params: { orgId, projectId, traceId: trace.trace_id },
     });
   }
 
   return (
-    <div
-      role="table"
-      aria-label="Traces"
-      aria-busy={stale || undefined}
-      className={cn("flex flex-col gap-0.5 transition-opacity", stale && "opacity-60")}
-    >
-      <TracesTableHead
-        selection={selection}
-        layout={layout}
-        sortedByRetryCost={retryCost === "sorted"}
-      />
-      <div role="rowgroup" className="flex flex-col gap-0.5">
-        {traces.map((trace) => {
-          const ticked = selection?.isSelected(trace.trace_id) ?? false;
-          const selected = trace.trace_id === selectedTraceId || ticked;
-          return (
-            <div
-              key={trace.trace_id}
-              role="row"
-              data-state={selected ? "selected" : undefined}
-              onClick={(event) => {
-                openTrace(event, trace.trace_id);
-              }}
-              className={cn(
-                layout.row,
-                "group/row h-14 cursor-pointer rounded-input text-sm transition-colors",
-                selected ? "bg-surface-selected" : "hover:bg-surface-hover",
-              )}
-            >
-              <Cell className="flex justify-center">
-                {selection ? (
-                  <RowCheckbox
-                    checked={ticked}
-                    onCheckedChange={() => {
-                      selection.toggle(trace);
-                    }}
-                    label={`Select ${trace.name ?? "unnamed trace"} ${trace.trace_id}`}
-                  />
-                ) : null}
-              </Cell>
-              <Cell className="flex justify-center">
-                <TraceStatusDot errorCount={trace.error_count} errorMessage={trace.error_message} />
-              </Cell>
-              <Cell className="min-w-0">
-                <TraceName trace={trace} orgId={orgId} projectId={projectId} />
-              </Cell>
-              {layout.metadata !== null ? (
-                <Cell className={cn(layout.metadata, "min-w-0")}>
-                  <MetadataChips metadata={trace.metadata} promoted={promotedKeys} max={1} linked />
-                </Cell>
-              ) : null}
-              <Cell className="truncate text-muted-foreground">
-                <RelativeTime iso={trace.started_at} />
-              </Cell>
-              <Cell className="text-right text-foreground tabular">
-                <ValueOrUnknown
-                  value={formatDuration(trace.duration_ms)}
-                  reason="Duration isn't known yet"
-                />
-              </Cell>
-              <Cell className={cn(layout.models, "min-w-0")}>
-                <ModelBadges models={trace.models} />
-              </Cell>
-              <Cell className={cn(layout.tokens, "text-right text-muted-foreground")}>
-                <TokenPair input={trace.input_tokens} output={trace.output_tokens} />
-              </Cell>
-              <Cell className="text-right font-medium text-foreground">
-                <CostValue
-                  cost={trace.cost_usd}
-                  hasUnpriced={trace.has_unpriced}
-                  unknownReason={UNKNOWN_TOTAL_REASON}
-                />
-              </Cell>
-              <Cell className={cn(layout.retries, "text-right")}>
-                <RetryCountCell trace={trace} />
-              </Cell>
-              {layout.retryCost ? (
-                <Cell className="text-right">
-                  <RetryCostCell trace={trace} />
-                </Cell>
-              ) : null}
-              <Cell className={cn(layout.scoresAndTags, "min-w-0 overflow-hidden")}>
-                <ScoresCell scores={trace.scores} typeOf={scoreTypeOf} />
-              </Cell>
-              <Cell className={cn(layout.scoresAndTags, "min-w-0 overflow-hidden")}>
-                <TagBadges tags={trace.tags} max={1} />
-              </Cell>
-              <Cell className={cn(layout.user, "min-w-0")}>
-                <UserSession userId={trace.external_user_id} sessionId={trace.session_id} />
-              </Cell>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-interface TraceNameProps {
-  trace: TraceSummary;
-  orgId: string;
-  projectId: string;
-}
-
-/** Bold name (the row's link) over the trace ID in mono, or over the class and message of a failed trace. */
-function TraceName({ trace, orgId, projectId }: TraceNameProps) {
-  const hasName = trace.name !== null && trace.name !== "";
-  return (
-    <div className="flex min-w-0 flex-col">
-      <Link
-        to="/$orgId/$projectId/traces/$traceId"
-        params={{ orgId, projectId, traceId: trace.trace_id }}
-        className={cn(
-          "truncate rounded-sm font-semibold text-foreground hover:underline",
-          !hasName && "font-medium text-muted-foreground italic",
-        )}
-      >
-        {hasName ? trace.name : "Unnamed trace"}
-      </Link>
-      {trace.error_class !== null || trace.error_message ? (
-        <TraceErrorLine errorClass={trace.error_class} message={trace.error_message} />
-      ) : (
-        <span
-          title={trace.trace_id}
-          className="truncate font-mono text-label text-subtle-foreground group-hover/row:text-muted-foreground"
-        >
-          {trace.trace_id}
-        </span>
-      )}
-    </div>
+    <DataTable<TraceSummary>
+      id="traces"
+      label="Traces"
+      columns={columns}
+      rows={traces}
+      rowKey={(trace) => trace.trace_id}
+      onRowClick={openTrace}
+      rowState={(trace) =>
+        trace.trace_id === selectedTraceId || selection?.isSelected(trace.trace_id)
+          ? "selected"
+          : undefined
+      }
+      sort={{
+        key: search.sort ?? "started_at",
+        order: search.order ?? "desc",
+        onChange: (key, order) => {
+          const sort = TRACE_SORTS.find((candidate) => candidate === key);
+          // Descending is the default order, so the URL leaves it out; newest first has no sort either.
+          if (sort === "started_at" && order === "desc") onSortChange(undefined, undefined);
+          else onSortChange(sort, order === "desc" ? undefined : order);
+        },
+      }}
+      footer={footer}
+      empty={null}
+      loading={loading}
+    />
   );
 }

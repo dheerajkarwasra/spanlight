@@ -1,6 +1,7 @@
 """The totals of an experiment run, computed from its stored items. Pure: no database, no I/O.
 
-* `items` counts every stored item and `errors` those with an `error`;
+* `items` counts every stored item, `errors` those with an `error` and `evaluator_errors` those
+  whose scoring broke (`evaluator_error`);
 * `cost_usd` sums the items whose cost is known; None when no item's cost is known (unknown is
   never 0). `has_unpriced` says that at least one item that made a call has no known cost (an
   unpriced model or no reported usage), so `cost_usd` is a lower bound;
@@ -15,7 +16,7 @@ The run stores its totals when it ends; they can be recomputed from the items at
 
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
@@ -29,7 +30,8 @@ class ItemFacts:
     latency_ms: float | None
     cost_usd: Decimal | None
     error: str | None
-    scores: Mapping[str, Any] = field(default_factory=dict)
+    scores: Mapping[str, Any]
+    evaluator_error: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +54,7 @@ class Totals:
     latency_p50_ms: float | None
     latency_p95_ms: float | None
     scores: dict[str, ScoreStat]
+    evaluator_errors: int
 
 
 def nearest_rank(values: Sequence[float], percentile: float) -> float | None:
@@ -80,6 +83,7 @@ def summarize_items(
         latency_p50_ms=nearest_rank(latencies, 50),
         latency_p95_ms=nearest_rank(latencies, 95),
         scores=_score_stats(items, boolean_scores),
+        evaluator_errors=sum(1 for item in items if item.evaluator_error is not None),
     )
 
 
@@ -129,6 +133,7 @@ def totals_json(totals: Totals) -> dict[str, Any]:
     return {
         "items": totals.items,
         "errors": totals.errors,
+        "evaluator_errors": totals.evaluator_errors,
         "cost_usd": None if totals.cost_usd is None else str(totals.cost_usd),
         "has_unpriced": totals.has_unpriced,
         "latency_p50_ms": totals.latency_p50_ms,
@@ -151,9 +156,14 @@ def _rate(value: Any) -> Decimal | None:
     return None if value is None else Decimal(str(value))
 
 
-def totals_from_json(stored: Mapping[str, Any]) -> Totals:
+def totals_from_json(stored: Mapping[str, Any], evaluator_errors: int | None = None) -> Totals:
     """The inverse of `totals_json`. Totals stored before the pass count and interval existed
-    lack those keys and read as None."""
+    lack those keys and read as None. Totals stored before `evaluator_errors` existed lack it: the
+    caller counts it from the run's items (`needs_evaluator_errors`) and passes it in."""
+    if "evaluator_errors" in stored:
+        evaluator_errors = int(stored["evaluator_errors"])
+    elif evaluator_errors is None:
+        raise ValueError("stored totals lack evaluator_errors; count them from the items")
     cost = stored.get("cost_usd")
     return Totals(
         items=int(stored.get("items", 0)),
@@ -173,4 +183,10 @@ def totals_from_json(stored: Mapping[str, Any]) -> Totals:
             )
             for name, stat in (stored.get("scores") or {}).items()
         },
+        evaluator_errors=evaluator_errors,
     )
+
+
+def needs_evaluator_errors(stored: Mapping[str, Any] | None) -> bool:
+    """Stored totals from before `evaluator_errors` existed."""
+    return stored is not None and "evaluator_errors" not in stored

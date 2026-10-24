@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { usePermission } from "@/features/shell";
 import { isApiError, type Prompt } from "@/lib/api";
 
-import { BackToPrompts } from "./back-link";
+import { PromptsBreadcrumbs } from "./back-link";
 import { NewVersionEditor } from "./prompt-editor";
 import { PromptOverview } from "./prompt-overview";
 import { usePromptQuery, usePromptVersionQuery } from "./prompt-queries";
@@ -30,7 +30,7 @@ export function PromptDetailPage() {
         <span className="sr-only" role="status">
           Loading prompt
         </span>
-        <BackToPrompts />
+        <PromptsBreadcrumbs current={name} />
         <Skeleton className="h-10 w-72 max-w-full" />
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-6">
           <Skeleton className="h-80 rounded-card" />
@@ -43,7 +43,7 @@ export function PromptDetailPage() {
     const missing = isApiError(promptQuery.error) && promptQuery.error.isNotFound;
     return (
       <div className={PAGE}>
-        <BackToPrompts />
+        <PromptsBreadcrumbs current={name} />
         <Card>
           {missing ? (
             <EmptyState
@@ -90,7 +90,7 @@ function PromptScreen({ prompt }: { prompt: Prompt }) {
   }
   return (
     <>
-      <BackToPrompts />
+      <PromptsBreadcrumbs current={prompt.name} />
       <PromptOverview
         prompt={prompt}
         selected={selected}

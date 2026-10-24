@@ -1,48 +1,26 @@
+import { EmptySparkline } from "@/components/sparkline";
 import { Card } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
 
-import { EmptySparkline } from "./sparkline";
+/** The ribbon's labels (kpis.ts `ribbonKpis`), so the first-run cards match the dashboard. */
+const EMPTY_KPI_LABELS = ["Calls · error rate", "p95 latency", "Spend", "Doctor"] as const;
 
-/** The shared shape of a KPI card, so placeholders and real cards line up. */
-export const CARD_LAYOUT =
-  "flex h-full min-h-[174px] min-w-0 flex-col gap-1.5 p-4 sm:py-5 sm:pr-5 sm:pl-6";
-
-/** Loading placeholders shaped like the four KPI cards. */
-export function KpiCardsSkeleton({ className }: { className?: string }) {
-  return (
-    <div aria-hidden className={cn("grid grid-cols-2 gap-3 sm:gap-4", className)}>
-      {Array.from({ length: 4 }, (_, index) => (
-        <Card key={index} className={CARD_LAYOUT}>
-          <div className="flex items-center justify-between">
-            <Skeleton className="h-4 w-20" />
-            <Skeleton className="h-6 w-14 rounded-full" />
-          </div>
-          <Skeleton className="h-9 w-24" />
-          <Skeleton className="h-3 w-28" />
-          <Skeleton className="mt-auto h-8 w-full" />
-        </Card>
-      ))}
-    </div>
-  );
-}
-
-const EMPTY_KPI_LABELS = ["LLM calls", "p95 latency", "Error rate", "Spend"] as const;
-
-/** First-run KPI cards: the metrics the page will show, with nothing to report yet. */
+/**
+ * First-run KPI cards: the ribbon's metrics with nothing to report yet, in `KpiCard`'s shape
+ * (110 px, 12 px label, 28 px value, 36 px sparkline).
+ */
 export function EmptyKpiCards() {
   return (
-    <ul aria-label="Key metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <ul aria-label="Key metrics" className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
       {EMPTY_KPI_LABELS.map((label) => (
         <li key={label} className="min-w-0">
-          <Card className={CARD_LAYOUT}>
-            <p className="text-sm font-medium text-muted-foreground">{label}</p>
-            <p aria-hidden className="text-metric text-subtle-foreground">
+          <Card className="flex h-full min-h-[110px] min-w-0 flex-col gap-1 p-4">
+            <p className="truncate text-xs font-medium text-muted-foreground">{label}</p>
+            <p aria-hidden className="text-metric [font-size:1.75rem] text-subtle-foreground">
               —
             </p>
-            <p className="text-xs font-medium text-subtle-foreground">No data yet</p>
-            <div className="mt-auto pt-1.5">
-              <EmptySparkline />
+            <p className="text-xs text-subtle-foreground">No data yet</p>
+            <div className="mt-auto pt-1">
+              <EmptySparkline className="h-9" />
             </div>
           </Card>
         </li>

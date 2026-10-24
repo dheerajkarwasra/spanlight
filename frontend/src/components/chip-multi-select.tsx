@@ -131,7 +131,7 @@ export function ChipMultiSelect({
                     event.stopPropagation();
                     onChange(value.filter((candidate) => candidate !== picked));
                   }}
-                  className="flex size-4 shrink-0 items-center justify-center rounded-full hover:bg-surface-hover"
+                  className="-my-1 flex size-6 shrink-0 items-center justify-center rounded-full hover:bg-surface-hover"
                 >
                   <X aria-hidden className="size-3" strokeWidth={2.5} />
                 </button>

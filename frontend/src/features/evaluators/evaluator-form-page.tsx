@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { usePermission } from "@/features/shell";
 import { isApiError, type Evaluator } from "@/lib/api";
 
-import { BackToEvaluators } from "./back-link";
+import { EvaluatorsBreadcrumbs } from "./back-link";
 import { EvaluatorForm } from "./evaluator-form";
 import { EVALUATORS_READ_ONLY } from "./evaluator-labels";
 import { useEvaluatorQuery, usePromptVersionByIdQuery } from "./evaluator-queries";
@@ -31,7 +31,7 @@ export function NewEvaluatorPage() {
   const canWrite = usePermission("evaluators:write");
   return (
     <div className="flex flex-col gap-6">
-      <BackToEvaluators />
+      <EvaluatorsBreadcrumbs current="New evaluator" />
       <PageHeader
         title="New evaluator"
         description="Choose how traces get scored. You can change sampling and filters later."
@@ -80,7 +80,7 @@ export function EditEvaluatorPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <BackToEvaluators />
+      <EvaluatorsBreadcrumbs current="Edit" evaluator={query.data} />
       <PageHeader
         title={query.data ? `Edit ${query.data.name}` : "Edit evaluator"}
         description="Change what it checks, how much it samples and which traces it sees."

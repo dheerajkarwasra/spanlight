@@ -211,7 +211,7 @@ function report(days: ReconciliationDay[], summary?: ReconciliationReport["summa
 }
 
 describe("flattenDays", () => {
-  const rows = flattenDays(report([day(), PROVISIONAL, NOT_FETCHED]));
+  const rows = flattenDays(report([day(), PROVISIONAL, NOT_FETCHED]), "p1");
 
   it("lists the newest day first, labelled without a year", () => {
     expect(rows.map((row) => row.label)).toEqual(["Oct 3", "Oct 2", "Oct 1"]);
@@ -323,7 +323,7 @@ describe("renderRules", () => {
   it("shows both chips on a pending day that is also past retention", () => {
     const both = { ...PENDING, groups: RETENTION.groups };
     expect(renderRules(both)).toMatchObject({ incompleteChip: true, retentionChip: true });
-    expect(flattenDays(report([both]))[0]?.chips.map((chip) => chip.label)).toEqual([
+    expect(flattenDays(report([both]), "p1")[0]?.chips.map((chip) => chip.label)).toEqual([
       "Provisional",
       "Rollup pending",
       "Spans no longer retained",
@@ -344,6 +344,7 @@ describe("visible notes of a day (the tile layout has no tooltips)", () => {
   it("spell out the provisional rule and why figures are missing", () => {
     const [notFetched, provisional, settled] = flattenDays(
       report([day(), PROVISIONAL, NOT_FETCHED]),
+      "p1",
     );
     expect(notFetched?.notes).toEqual([
       "Provisional: provider data can lag; this day is final 48 h after it ends and after a fetch past that point.",
@@ -360,6 +361,7 @@ describe("unknown figures", () => {
   it("say why each figure is missing", () => {
     const [retention, notFetched, pending] = flattenDays(
       report([RETENTION, PENDING, NOT_FETCHED]),
+      "p1",
     ).sort((a, b) => a.day.localeCompare(b.day));
     expect(notFetched?.day).toBe("2026-10-03");
     expect(notFetched?.provider.reason).toMatch(/not fetched yet/i);
@@ -386,11 +388,15 @@ describe("unknown figures", () => {
       ],
     });
     const unpriced = group({ group: "acme-llm", spanlight_usd: null });
-    const [onlyUntraced] = flattenDays(report([day({ spanlight_usd: null, groups: [untraced] })]));
+    const [onlyUntraced] = flattenDays(
+      report([day({ spanlight_usd: null, groups: [untraced] })]),
+      "p1",
+    );
     expect(onlyUntraced?.spanlight.reason).toMatch(/no calls/i);
     expect(onlyUntraced?.groups[0]?.spanlight.reason).toMatch(/no calls/i);
     const [mixed] = flattenDays(
       report([day({ spanlight_usd: null, groups: [untraced, unpriced] })]),
+      "p1",
     );
     expect(mixed?.spanlight.reason).toMatch(/no price/i);
     expect(mixed?.groups[1]?.spanlight.reason).toMatch(/no price/i);
@@ -409,6 +415,7 @@ describe("unknown figures", () => {
           ],
         }),
       ]),
+      "p1",
     );
     expect(row?.groups[0]?.variance.reason).toMatch(/nothing to compare/i);
     expect(row?.groups[0]?.note).toBe(

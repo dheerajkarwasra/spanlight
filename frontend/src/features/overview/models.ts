@@ -42,3 +42,37 @@ export function isUnpriced(model: Pick<ModelMetrics, "cost_usd">): boolean {
 export function unpricedCalls(models: readonly ModelMetrics[]): number {
   return models.filter(isUnpriced).reduce((sum, model) => sum + model.calls, 0);
 }
+
+export interface ModelSpend {
+  model: string | null;
+  provider: string | null;
+  /** Null for a model without a price ("—"). */
+  costUsd: number | null;
+  /** Fraction of the window's priced spend, 0–1; null for an unpriced model. */
+  share: number | null;
+}
+
+/**
+ * Spend by model (spec §4, ruling 14): the priced models by cost with their share of the priced
+ * spend, then the unpriced ones by calls, `limit` rows in all.
+ */
+export function spendByModel(models: readonly ModelMetrics[], limit = 5): ModelSpend[] {
+  const rows = models.map((model) => ({
+    model: model.model,
+    provider: model.provider,
+    costUsd: parseMoney(model.cost_usd),
+    calls: model.calls,
+  }));
+  const priced = rows.filter((row) => row.costUsd !== null);
+  const total = priced.reduce((sum, row) => sum + (row.costUsd ?? 0), 0);
+  const unpriced = rows.filter((row) => row.costUsd === null).sort((a, b) => b.calls - a.calls);
+  return [...priced.sort((a, b) => (b.costUsd ?? 0) - (a.costUsd ?? 0)), ...unpriced]
+    .slice(0, limit)
+    .map(({ model, provider, costUsd }) => ({
+      model,
+      provider,
+      costUsd,
+      // Every priced model at $0 shares nothing, so 0 / 1.
+      share: costUsd === null ? null : costUsd / (total || 1),
+    }));
+}

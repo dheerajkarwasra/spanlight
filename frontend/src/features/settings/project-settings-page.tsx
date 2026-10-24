@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 import { ErrorState } from "@/components/error-state";
 import { ReadOnlyNote } from "@/components/read-only-note";
 import { Card } from "@/components/ui/card";
@@ -8,9 +10,11 @@ import { viewOnlyCopy } from "@/lib/permissions";
 
 import { ProjectDangerZone } from "./project-danger-zone";
 import { ProjectSettingsForm } from "./project-settings-form";
+import { SelfSavingHeading } from "./settings-save-bar";
 
 /**
- * General and Data settings, the project's score configs, then the "Danger zone". Deleting a project needs `project:delete`
+ * The project form and its save bar, the self-saving score configs (`#score-configs`, linked from
+ * Evaluate), then the "Danger zone". Deleting a project needs `project:delete`
  * (admins and owners), and the public demo's project can't be deleted, so neither sees the card.
  */
 export function ProjectSettingsPage() {
@@ -18,6 +22,7 @@ export function ProjectSettingsPage() {
   const org = useCurrentOrg();
   const canEdit = usePermission("project:write");
   const canDelete = usePermission("project:delete") && org !== null && !org.is_demo;
+  const selfSavingId = useId();
 
   if (projectQuery.isPending) {
     return <ProjectSettingsSkeleton />;
@@ -38,7 +43,7 @@ export function ProjectSettingsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex max-w-[720px] flex-col gap-5">
       {canEdit ? null : (
         <ReadOnlyNote>{viewOnlyCopy("project settings", "project:write")}</ReadOnlyNote>
       )}
@@ -48,7 +53,15 @@ export function ProjectSettingsPage() {
         project={projectQuery.data}
         canEdit={canEdit}
       />
-      <ScoreConfigsCard />
+      {/* Without a save bar there is nothing to set these cards apart from. */}
+      <section
+        id="score-configs"
+        aria-labelledby={canEdit ? selfSavingId : undefined}
+        className="flex scroll-mt-6 flex-col gap-4"
+      >
+        {canEdit ? <SelfSavingHeading id={selfSavingId} /> : null}
+        <ScoreConfigsCard />
+      </section>
       {canDelete ? <ProjectDangerZone project={projectQuery.data} /> : null}
     </div>
   );
@@ -56,7 +69,11 @@ export function ProjectSettingsPage() {
 
 function ProjectSettingsSkeleton() {
   return (
-    <div role="status" aria-label="Loading project settings" className="flex flex-col gap-5">
+    <div
+      role="status"
+      aria-label="Loading project settings"
+      className="flex max-w-[720px] flex-col gap-5"
+    >
       <Card className="flex flex-col gap-5 p-5 sm:p-6">
         <div className="flex flex-col gap-2">
           <Skeleton className="h-5 w-24" />

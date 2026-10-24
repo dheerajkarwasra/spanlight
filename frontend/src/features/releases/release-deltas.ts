@@ -42,7 +42,7 @@ export const METRICS: readonly MetricSpec[] = [
 
 export const NO_COST_REASON =
   "No span in this release was priced (unknown model or no usage reported).";
-const NO_CALLS_REASON = "This release made no LLM calls in the window.";
+export const NO_CALLS_REASON = "This release made no LLM calls in the window.";
 const NO_DELTA_REASON = "Unknown for one of the two releases, so there is nothing to compare.";
 
 export interface KpiRow {

@@ -16,8 +16,9 @@ from fastapi import APIRouter, Depends, Request, status
 from app.alerts.rule_errors import UnknownChannelError
 from app.api.deps import Access, ClockDep, DbSession, SettingsDep, client_ip, require
 from app.api.locks import lock_project_of
-from app.api.schemas import BudgetOut, BudgetPatch, BudgetSpec
+from app.api.schemas import BudgetBurnOut, BudgetOut, BudgetPatch, BudgetSpec
 from app.budgets import queries, service
+from app.budgets.burn import budget_burn
 from app.budgets.errors import (
     BudgetLimitError,
     BudgetNameTakenError,
@@ -149,6 +150,22 @@ async def get_budget(
         raise not_found()
     budget, state = found
     return BudgetOut.of(budget, state, clock())
+
+
+@router.get("/{budget_id}/burn", response_model=BudgetBurnOut, summary="Get a budget's burn")
+async def get_budget_burn(
+    project_id: uuid.UUID,
+    budget_id: uuid.UUID,
+    access: BudgetReader,
+    db: DbSession,
+    clock: ClockDep,
+) -> BudgetBurnOut:
+    """Spend per UTC day of the current period up to now, with the running total. A day whose
+    spans were all unpriced is `null`; the running total counts the known days only."""
+    found = await queries.get_budget(db, access.require_project().id, budget_id)
+    if found is None:
+        raise not_found()
+    return await budget_burn(db, found[0], clock())
 
 
 @router.patch("/{budget_id}", response_model=BudgetOut, summary="Edit a budget")

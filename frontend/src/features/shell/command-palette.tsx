@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { FolderOpen, KeyRound, LogOut, Monitor, Moon, Search, Sun, Users } from "lucide-react";
+import { FolderOpen, Keyboard, LogOut, Monitor, Moon, Search, Settings, Sun } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -12,23 +12,31 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { Kbd } from "@/components/ui/kbd";
+import { visibleSettingsNav, type SettingsPath } from "@/features/settings/settings-nav-items";
 import { useTheme } from "@/lib/theme";
 
-import { NAV_ITEMS } from "./nav-items";
-import { useOrgProjectsQuery, useProjectParams } from "./project-context";
+import { HUBS } from "./nav-items";
+import { useCurrentRole, useOrgProjectsQuery, useProjectParams } from "./project-context";
 import { useSignOut } from "./use-sign-out";
 
 const TRACE_ID_PATTERN = /^[0-9a-f]{32}$/i;
 
+/** Extra words a settings page matches, for the tasks people name instead of the page. */
+const SETTINGS_KEYWORDS: Partial<Record<SettingsPath, string[]>> = {
+  "/$orgId/$projectId/settings/channels": ["alert channels", "slack", "webhook", "email"],
+};
+
 interface CommandPaletteProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onOpenShortcuts: () => void;
 }
 
-export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
+export function CommandPalette({ open, onOpenChange, onOpenShortcuts }: CommandPaletteProps) {
   const navigate = useNavigate();
   const params = useProjectParams();
   const projectsQuery = useOrgProjectsQuery(params.orgId);
+  const role = useCurrentRole();
   const { setTheme } = useTheme();
   const signOut = useSignOut();
   const [query, setQuery] = useState("");
@@ -80,47 +88,55 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         ) : null}
 
         <CommandGroup heading="Go to">
-          {NAV_ITEMS.map(({ label, to, icon: Icon, shortcut }) => (
-            <CommandItem
-              key={to}
-              value={`go to ${label}`}
-              onSelect={() => {
-                run(() => {
-                  void navigate({ to, params });
-                });
-              }}
-            >
-              <Icon aria-hidden />
-              <span className="flex-1">{label}</span>
-              <span className="flex gap-1" aria-hidden>
-                {shortcut.split(" ").map((key) => (
-                  <Kbd key={key}>{key}</Kbd>
-                ))}
-              </span>
-            </CommandItem>
-          ))}
-          <CommandItem
-            value="go to api keys"
-            onSelect={() => {
-              run(() => {
-                void navigate({ to: "/$orgId/$projectId/settings/keys", params });
-              });
-            }}
-          >
-            <KeyRound aria-hidden />
-            API keys
-          </CommandItem>
-          <CommandItem
-            value="go to members"
-            onSelect={() => {
-              run(() => {
-                void navigate({ to: "/$orgId/$projectId/settings/members", params });
-              });
-            }}
-          >
-            <Users aria-hidden />
-            Members
-          </CommandItem>
+          {HUBS.flatMap((hub) =>
+            hub.tabs.map(({ label, to, icon: Icon, shortcut, keywords }) => (
+              <CommandItem
+                key={to}
+                value={`go to ${label} ${hub.label}`}
+                keywords={keywords}
+                onSelect={() => {
+                  run(() => {
+                    void navigate({ to, params });
+                  });
+                }}
+              >
+                <Icon aria-hidden />
+                <span className="flex-1">
+                  {label}
+                  {label === hub.label ? null : (
+                    <span className="ml-2 text-muted-foreground">{hub.label}</span>
+                  )}
+                </span>
+                {shortcut ? (
+                  <span className="flex gap-1" aria-hidden>
+                    {shortcut.split(" ").map((key) => (
+                      <Kbd key={key}>{key}</Kbd>
+                    ))}
+                  </span>
+                ) : null}
+              </CommandItem>
+            )),
+          )}
+        </CommandGroup>
+
+        <CommandGroup heading="Settings">
+          {visibleSettingsNav(role).flatMap((group) =>
+            group.items.map(({ label, to }) => (
+              <CommandItem
+                key={to}
+                value={`go to settings ${label}`}
+                keywords={SETTINGS_KEYWORDS[to]}
+                onSelect={() => {
+                  run(() => {
+                    void navigate({ to, params });
+                  });
+                }}
+              >
+                <Settings aria-hidden />
+                {label}
+              </CommandItem>
+            )),
+          )}
         </CommandGroup>
 
         {projectsQuery.data && projectsQuery.data.length > 1 ? (
@@ -182,6 +198,16 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           >
             <Monitor aria-hidden />
             Match system theme
+          </CommandItem>
+          <CommandItem
+            value="keyboard shortcuts help"
+            onSelect={() => {
+              run(onOpenShortcuts);
+            }}
+          >
+            <Keyboard aria-hidden />
+            <span className="flex-1">Keyboard shortcuts</span>
+            <Kbd aria-hidden>?</Kbd>
           </CommandItem>
           <CommandItem
             value="sign out log out"

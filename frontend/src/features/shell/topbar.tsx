@@ -13,7 +13,7 @@ import { TimeRangePicker } from "./time-range-picker";
 
 interface TopbarProps {
   onOpenCommandPalette: () => void;
-  /** Time range and environment controls of a time-windowed data page; null hides them. */
+  /** The page's time range and environment controls; null hides them (2FA-locked org). */
   dataFilters: TimeRangeOptions | null;
 }
 
@@ -26,7 +26,7 @@ export function Topbar({ onOpenCommandPalette, dataFilters }: TopbarProps) {
         {dataFilters ? (
           <>
             <TimeRangePicker options={dataFilters} />
-            {dataFilters.environment === false ? null : <EnvironmentFilter />}
+            <EnvironmentFilter disabledReason={dataFilters.environmentDisabled} />
           </>
         ) : null}
         <ThemeToggle />
@@ -42,6 +42,7 @@ function SearchPill({ onClick }: { onClick: () => void }) {
       type="button"
       onClick={onClick}
       aria-keyshortcuts="Meta+K Control+K"
+      title="Search (⌘K) · Keyboard shortcuts (?)"
       className={cn(
         "flex h-10 w-80 min-w-0 items-center gap-2.5 rounded-full border border-border bg-surface pr-2 pl-4 text-left text-sm text-subtle-foreground shadow-card",
         "transition-colors duration-200 hover:text-muted-foreground xl:w-96",
@@ -68,6 +69,7 @@ export function MobileAppBar({
 }: MobileAppBarProps) {
   return (
     <header
+      data-app-bar
       className={cn(
         "sticky top-0 z-30 flex items-center justify-between gap-3 bg-background/80 px-4 pt-3.5 pb-2.5 backdrop-blur-md",
         className,
@@ -99,7 +101,7 @@ export function MobileDataFilters({ options }: { options: TimeRangeOptions }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <TimeRangePicker options={options} />
-      {options.environment === false ? null : <EnvironmentFilter />}
+      <EnvironmentFilter disabledReason={options.environmentDisabled} />
     </div>
   );
 }

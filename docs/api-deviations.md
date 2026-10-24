@@ -2202,7 +2202,7 @@ Calls made after the full test pass on behaviour the spec left open.
 - **Trace list.** `has_retries=true` keeps traces with `retry_calls > 0` and `has_retries=false` those with
   `retry_calls = 0`; a trace whose count is unknown is in neither. `sort=retry_cost_usd` orders by retry cost
   descending with unknown costs last, then `started_at` and `trace_id` descending, with keyset pagination on those
-  three. No index backs this sort.
+  three. No index backs this sort. UX Phase 3 adds `order=asc` and more value sorts (see below).
 - **`client` object on `POST /v1/traces`.** A spans batch may carry
   `{"sdk", "version", "exporter_id", "dropped_total", "failed_total"}` beside `spans`. `exporter_id` is 32 hex
   characters; the totals are cumulative for the exporter's lifetime, each in `[0, 2^63)`. Anything else makes the
@@ -3035,3 +3035,191 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
 - **Audit streaming.** Each POST to a receiver, including `…/stream/test`, has a 15-second deadline for the whole
   exchange; a timeout counts as a failed delivery and backs off. Streams are served least recently delivered
   first, so one slow receiver cannot starve the others.
+
+## UX Phase 1 trust fixes (added 2026-10-21)
+
+- **Server capabilities on `/auth/me`.** `GET /api/v1/auth/me` adds `capabilities: {gateway_mode, credentials_configured,
+  exports_configured}`, so the dashboard can say up front why a feature is off instead of waiting for a `409`.
+  `gateway_mode` is `embedded`, `standalone` or `disabled` (already public on `/health/ready`);
+  `credentials_configured` is true when `CREDENTIALS_KEYS` is set; `exports_configured` is true when the bucket and
+  both object-storage keys are set. Booleans and the mode only, never a key, key id or bucket name. Personal access
+  tokens see it too, since `/auth/me` is the one `/auth` route they may call.
+- **Session turns.** `GET /api/v1/projects/{p}/sessions/{session_id}/turns` returns `Page[SessionTurnOut]`, one item
+  per trace of the session: `trace` (the `GET /traces` item) and `spans`, at most 4 distinct spans in start order
+  (the root, meaning no parent or a parent not stored; the first `llm` span with an input; the last `llm` span with
+  an output; the earliest failed span, the one `error_message` comes from). Same read permission (API keys
+  included), order (`started_at`, `trace_id` descending), cursor and `limit` (default 50, at most 200) as
+  `GET /traces?session_id=`, plus `environment` (at most 64 characters, as on users and attribution). It takes no `from`/`to`: a session's traces are listed for as long
+  as they are retained. Payloads share one 8 MiB budget per page, spent in page order then start order; a span past
+  it has `payload_omitted: true` and null payloads, read with `GET .../traces/{trace_id}/spans/{span_id}`. A
+  session id the project does not have is an empty page, not a 404. The session id is a `:path` segment: a slash
+  travels percent-encoded, and `.`, `..` or an id starting with `~` travels with one leading `~`, as on the users
+  routes. The server picks the first `llm` span with any input, while the dashboard used to walk every `llm` span
+  until one had user text, so a first call with no user message (system prompt only) now falls back to the last
+  call's span or the root.
+- **Judge reasoning on evaluator runs and experiment items.** Each item of `EvaluatorRunOut.scores` adds `comment`
+  (the judge's reasoning as stored on the score; null when it gave none). `ExperimentItemOut` adds `score_comments:
+  {score name: comment}`, read from the scores that the run's experiment evaluator runs wrote on the item's trace
+  (newest per name; scores from online or test runs on the same trace are ignored). It is null when the item has
+  no trace or no such comment. No new column: the comment was already stored on `scores`.
+- **Evaluator errors in experiment run totals.** `TotalsOut` adds `evaluator_errors`: answered items whose scoring
+  broke (`ExperimentItemOut.evaluator_error` set). `errors` still counts only failed calls, so the two never
+  overlap. For totals stored before this field existed, every read (run, runs list, experiment `last_run`) counts
+  it from the run's items.
+- **Attribution freshness.** `AttributionOut` adds `computed_at` and `pending_traces`; `updated_within_minutes`
+  stays. On the rollup source, `computed_at` is the latest recompute among the rollup rows read (the last refresh
+  pass; null when no row was read, so the refresh has not run for the window yet). `pending_traces` counts the
+  window's traces (and `environment`'s) that started after the latest recompute of their own UTC day's rows, every
+  trace of a day without rows, capped at 10,000 for the whole window (the read stops there). Old days the refresh no longer recomputes were recomputed after
+  they ended, so their traces are never pending. Both are null on the raw source, where nothing is pending. Traces
+  carry no ingest time, so "after" is by trace start, the time the refresh assigns traces to days by: a trace that
+  arrives late with an old start time is not counted as pending.
+- **Attribution `unpriced_calls` leaves usage rollups out.** An unpriced `llm` span flagged `usage_rollup` (it
+  repeats a descendant's usage) is no longer counted, as in the metrics and the Users list, so attribution and
+  Overview agree. Rollup rows written before the change keep the old count until the refresh recomputes their day
+  (yesterday and today every pass, the seven days before once a day); older days keep it, since the refresh never
+  recomputes them.
+- **Users by environment.** `GET /projects/{id}/users` and `…/users/{external_user_id}` take `environment` (at most
+  64 characters, as on attribution). Given, every figure (the list, the detail's totals, its day series and its
+  recent sessions) counts only that environment's traces; `environment=` names the empty environment, as on
+  `/traces`. Without it every environment is summed, traces without an environment included, each counted once.
+  `user_stats_daily` is kept per environment for this (migration 1015, which re-derives every stored day that still
+  has traces). `computed_at` stays the latest recompute of the window, of any environment.
+- **Users `pending_traces`.** `UserListOut` adds `pending_traces`, with the attribution rule: the window's user
+  traces (and `environment`'s) that started after the latest recompute of their own UTC day's rows, every trace of
+  a day without rows, capped at 10,000 for the whole window. 0 when nothing is pending; null only when the window has neither stats rows
+  nor user traces. By trace start, like attribution: a trace that arrives late with an old start is not pending.
+
+## UX Phase 3 (added 2026-10-21)
+
+- **Trace list sorts and direction.** `GET /traces` takes `sort` = `started_at` (default), `duration`, `cost`,
+  `tokens` or `retry_cost_usd`, and `order` = `desc` (default) or `asc`; any other value is `422`. `duration` is
+  `ended_at - started_at`, `cost` is `cost_usd`, `tokens` is `input_tokens + output_tokens`. A value sort orders by
+  its value in `order` with unknown (null) values last in both directions, then `started_at` and `trace_id` in the
+  same direction; `started_at` with `order=asc` is oldest first. Keyset pagination as before: the value sorts use
+  the three-part cursor (value, `started_at`, `trace_id`; the duration value in milliseconds), `started_at` the
+  two-part one. `order` is not in the cursor, so the next request repeats it; a cursor from another value sort or
+  direction is not rejected but pages meaninglessly. No index backs the value sorts: they read the window's traces
+  and keep the top page, measured in [Performance](performance.md#trace-list-sorts-previews-and-histogram-ux-phase-3).
+- **Trace list previews.** `GET /traces` takes `preview` (boolean, default `false`). With `preview=true` each item's
+  `input_preview` and `output_preview` hold at most 200 characters of readable text (cut at a word boundary with
+  "…"); otherwise both are `null`, as they are on trace detail, compare and session turns. Per field the source is
+  the root span's own payload (no parent, or a parent not stored; the earliest such span), else the first llm span
+  with an input or the last llm span with an output. Only the first 4000 characters of the payload's JSON text are
+  read; for an input with `messages` (or a list of messages) that is the last message with `role: "user"`, when
+  there is one. Complete JSON gives the last user message of `messages` (input) or the assistant text (OpenAI
+  `choices[0].message.content`, Anthropic text blocks); else the first string among `text`, `content`, `output`,
+  `answer`, `report`, `query`, `prompt`, `input`; else `key: value` pairs. A cut prefix has its JSON punctuation
+  removed. Runs of 64+ base64 characters become `[binary]`. `null` when no payload was captured or nothing in it is
+  readable; error traces still show their payload preview (the error line is `error_message`).
+- **`request_hash` on spans.** `SpanOut` (trace detail, one span, session turns) carries the span's stored
+  `request_hash`: 32 hex characters of the model and input, the key `retry_calls` groups calls by; `null` when the
+  span had no input.
+- **Export by trace ids.** `POST /exports` trace `filters` take `trace_ids`: 1 to 200 ids, each 1 to 64
+  characters, matched lower-cased (`trace_id IN (...)`). `trace_ids` narrows the filtered set; the window still
+  applies, as do the other filters, so a selected trace outside `from`/`to` is not exported. The ids are stored with
+  the export's filters and returned in `filters`.
+- **Trace histogram.** `GET /projects/{p}/traces/histogram` (`project:read`, API keys with `traces:read`) takes the
+  window and exactly the filters of `GET /traces` (one shared definition, `q` included, with the same `422`s:
+  `SEARCH_TOO_BROAD`, a score bound without `score_name`, `metadata_value` without `metadata_key`) and returns
+  `{bucket, buckets: [{bucket_start, traces, errors}]}`. `bucket` is `hour` for a window of 48 hours or less, else
+  `day`; `bucket_start` is the start of the UTC hour or day the trace started in, so the first bucket can start
+  before `from`. Buckets without a trace are left out (an empty window is `buckets: []`), oldest first. `traces`
+  counts what the list pages through for the same parameters; `errors` counts those with `error_count > 0`, as
+  `status=error` does. In `openapi.json` the list's filter parameters now follow `sort`, `order`, `preview`,
+  `limit`, `cursor`, `from` and `to`; the set of parameters and their meaning are unchanged.
+- **Sessions list fields.** `GET /projects/{p}/sessions` items (`SessionListItemOut`) add `external_user_id` (the
+  one user id the session's traces name; traces without a user id do not count against it; `null` with none or with
+  two or more), `user_count` (distinct user ids), `input_tokens`, `output_tokens`, `duration_ms` (latest trace end
+  minus earliest trace start), `last_trace_id` (the newest trace by start, ties by the larger `trace_id`: the first
+  turn `GET /sessions/{id}/turns` returns; `null` only if the session's traces were deleted between the page's two
+  statements) and `last_input_preview` (that trace's `input_preview` under the trace
+  list's rules, only with `preview=true`, else `null`). Every figure covers the session's traces started in the
+  window (and environment), as before. A user's `recent_sessions` keep the shorter `SessionSummaryOut`. The page adds
+  `cost_p99_usd`: `percentile_cont(0.99)` of the window's (and environment's) session costs, sessions with an unknown
+  cost left out, at 8 decimal places; `null` while fewer than 20 sessions have a cost. It ignores `q` and is
+  computed on the first page only (no `cursor`); later pages return `null`, so a client keeps the first page's.
+- **Sessions search and sorts.** `GET /sessions` takes `q` (1 to 256 characters, no NUL; else `422`): sessions
+  whose id starts with it, ignoring case, with `%`, `_` and `\` matching themselves, or that have a trace of
+  exactly that `external_user_id`. A matching session still sums all its traces in the window. `sort` = `last`
+  (default; latest trace end), `cost`, `turns` (trace count), `errors` (error count sum) or `tokens` (input plus
+  output), and `order` = `desc` (default) or `asc`. Ties go by `session_id` in the same direction; unknown costs
+  come last in both directions. `last` keeps its `(last_at, session_id)` cursor; the value sorts use a
+  `(value, session_id)` cursor, so a cursor of the other kind is `422`. `sort`, `order` and `q` are not in the
+  cursor: the next request repeats them. No index backs the value sorts or the search; both group the window's
+  session traces, as the list already did.
+- **Tool calls per turn.** `GET /sessions/{id}/turns` items add `tool_calls`: the trace's spans of kind `tool`,
+  every one of them (not only the ones in `spans`), read for the page in one grouped query.
+- **Users search and direction.** `GET /projects/{p}/users` takes `q` (1 to 256 characters, no NUL; else `422`):
+  the users whose `external_user_id` contains it, case-insensitively, with `%`, `_` and `\` matching themselves.
+  It also takes `order` = `desc` (default) or `asc`, which flips the `sort` value's direction only: unknown values
+  (a cost with no priced call) stay last and ties go by `external_user_id` ascending in both directions. `order`
+  and `q` are not in the cursor, so the next request repeats them. No index backs the search; it filters the
+  window's `user_stats_daily` rows the list already reads. `computed_at` and `pending_traces` ignore `q`: they
+  describe the whole window.
+
+## UX Phase 5 (added 2026-10-21)
+
+- **Usage per version on the versions list.** `GET /projects/{p}/prompts/{name}/versions` takes `usage` (boolean,
+  default `false`). With `usage=true` each item's `usage_7d` is the `VersionUsageOut` that
+  `GET …/versions/{version}/usage` returns for it (same 7-day window, same rules: `cost_usd` and `p95_ms` null when
+  unknown, usage rollups left out of cost, `has_unpriced` marks a lower bound), read for the whole page in one
+  grouped query on the `(project_id, prompt_version_id, started_at)` index. A version with no calls in the window
+  reads `traces: 0, llm_calls: 0, cost_usd: null, p95_ms: null, has_unpriced: false`. Without the flag nothing extra
+  runs and `usage_7d` is null; it is also null on every other endpoint that returns a `VersionOut` (`GET /prompts/{name}`
+  `latest`, `GET …/versions/{version}`, `GET /prompt-versions/{id}`, create), so null means "not requested", never
+  "no usage".
+
+## UX Phase 4 (added 2026-10-21)
+
+- **Token mix.** `GET /projects/{p}/metrics/token-mix?from&to` (`project:read`, API keys with `traces:read`, the
+  same ≤ 90-day window as `/metrics/timeseries`) returns `first_day`, `last_day`, `uncached_input_tokens`,
+  `output_tokens`, `cache_read_tokens`, `cache_write_tokens` (5-minute plus 1-hour writes), `fee_usd` and `cost_usd`,
+  summed from `cost_rollups_daily`. The window widens to every UTC day it touches: `first_day` is the date of `from`,
+  `last_day` the date of the instant before `to`, so a window ending at midnight leaves that day out. Every figure
+  is null when no rollup row falls in those days, never 0. There is no cost per token class (reasoning tokens are
+  output tokens, priced at the output rate), and `cost_usd` and `fee_usd` sum the priced rows only.
+- **Token mix ignores environment.** `cost_rollups_daily` has no environment column, so the route takes no
+  `environment` and the mix is always for all environments; the dashboard's caption says so.
+- **Unpriced models take `environment`.** `GET /projects/{p}/unpriced-models` accepts `environment` (at most 64
+  characters; `environment=` names the empty environment), matched against the trace each span belongs to, as on
+  the metrics routes.
+- **Attribution series.** `GET /projects/{p}/attribution/series` takes the list's `from`, `to`, `group_by`, `key` and
+  `environment` with the same rules (`project:read`, API keys with `traces:read`, ≤ 90 days, `key` only with
+  `metadata`, `422 KEY_NOT_PROMOTED` over 24 hours on a key that is not promoted; the spec's table says 409, the list
+  has always answered 422 and the series follows it), plus `value` (at most 512 characters). It returns `bucket`,
+  `source`, `window` and `points` of `{bucket_start, cost_usd, unpriced_calls}`, from the list's own source: a
+  window of 24 hours or less is read raw and bucketed by UTC hour of trace start (`bucket: "hour"`, the first point
+  is the hour holding `from`), a longer one reads the daily rollup rows widened to whole UTC days (`bucket: "day"`).
+  Every bucket of the window is present; one without traces reads `cost_usd: "0"`, one whose traces made calls and
+  none was priced reads `null`. Without `value` the points are every trace of the window and add up to the list's
+  `totals`; with `value` they are that group's (the `none` bucket cannot be asked for, and on the rollup path a
+  value folded into `other` on a day is missing from that day, as from the list). At the $1,000,000 money cap the
+  two can differ: each point is capped on its own bucket, so points under $1M each may add up to a figure while the
+  list's group or `totals` cost for the whole window reads `null`.
+- **Budget burn.** `GET /projects/{p}/budgets/{budget_id}/burn` (`project:read` like the budget itself, no API keys;
+  another project's budget is 404) returns `period_start` and `resets_at` (as on the budget's `state`), `amount_usd`
+  and `points` of `{day, spend_usd, cumulative_usd}`: one point per UTC day from `period_start` to now (at most 31;
+  the first and the current day can be partial), each read as the budget's evaluation reads its spend (the budget's
+  scope as the only filter, rollups before the split and raw spans after; a metadata, trace-name, user or gateway-key
+  scope reads raw spans for the whole period). A day without spans reads `"0"`; one whose spans were all unpriced
+  reads `spend_usd: null`. `cumulative_usd` is the running sum of the known days, null until the first known day.
+  The spec's table lists only `cumulative_usd`; `spend_usd` is added so the table view can show each day.
+- **Evidence spans.** `GET /projects/{p}/insights/{id}` adds `evidence_spans`: `{trace_id, span_id, name, status,
+  model}` for each trace of `evidence.trace_ids`, in that order, read at request time (stored evidence is
+  unchanged). Each is the span "Explain with Claude" quotes: the trace's first failed span, preferring llm spans,
+  else its first llm span, else its first span (ties by `started_at`, then `span_id`). No payloads are returned. A
+  trace with no stored span (retention deleted it, or it never arrived) is left out rather than returned with nulls,
+  so the client compares against `evidence.trace_ids` to show it as no longer stored.
+- **Gateway overview deltas and series.** `GET /projects/{p}/gateway/overview` adds `previous` (`requests`, `errors`,
+  `error_rate`, `p95_overhead_ms`, `cache_hit_rate`, `fallbacks`, `rate_limited`: the totals statement re-run on the
+  window of equal length right before, same environment), `rate_limited` (calls whose `rate_limit_kind` is set, the
+  gateway's own refusals included) and `series` (`bucket: "5m"` for a window of 1 hour or less, else `"hour"`; points
+  `{bucket_start, requests, errors}` aligned to the UTC clock (whole hours, or :00, :05, ...), so the first bucket may
+  start before `from` and the last may run past `to`, and both can be partial; every bucket present, 0 when empty; at
+  most 169). `p95_upstream_ms` is the p95 of `duration_ms` less the
+  `spanlight.gateway.overhead_ms` attribute. The overhead is the gateway's own time only (elapsed less the provider
+  attempts and deliberate waits), so the difference is the provider's time over every attempt plus retry backoff and
+  Lab fault holds, and for a stream the whole body. The spec counts every span with an overhead attribute; calls
+  without a provider attempt (`spanlight.gateway.attempts` 0: cache hits and rate-limit refusals) are left out too,
+  since their difference is 0 and is not upstream time. `null` when no call qualifies.

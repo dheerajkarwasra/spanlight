@@ -1,32 +1,25 @@
 import { getRouteApi, Link } from "@tanstack/react-router";
-import { SearchX, Waypoints } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { SearchX } from "lucide-react";
+import { useEffect } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ScoresPanel } from "@/features/scores";
 import { useProjectParams } from "@/features/shell/project-context";
-import { isApiError, type Span, type TraceDetail } from "@/lib/api";
+import { isApiError } from "@/lib/api";
 
-import { hasModelCall } from "./cost-explanation";
 import { recallTracesSearch, rememberOpenedTrace } from "./last-traces-search";
-import { SpanDetailPanel, SpanDetailSkeleton, type SpanDetailTab } from "./span-detail-panel";
-import { buildSpanTree } from "./span-tree";
-import { SpanCostCard } from "./span-cost-card";
-import { SpanUsageCard, SpanUsageSkeleton } from "./span-usage-card";
-import { SpanWaterfall, SpanWaterfallSkeleton } from "./span-waterfall";
-import { useSpanQuery, useTraceQuery } from "./trace-queries";
-import { BackToTracesLink, TraceHeader, TraceHeaderSkeleton } from "./trace-header";
+import { useTraceQuery } from "./trace-queries";
+import { TracesBreadcrumbs } from "./trace-header";
+import { TraceView, TraceViewSkeleton } from "./trace-view";
 
 const traceRoute = getRouteApi("/_authed/$orgId/$projectId/traces/$traceId");
 
-const PAGE_CLASSES = "flex flex-col gap-5";
+/** Tight gaps above the tree so its first row sits ≤ 160 px under the breadcrumbs (spec §1). */
+const PAGE_CLASSES = "flex flex-col gap-1";
 
-/** The span detail stays in view (scrolling on its own) while a long waterfall scrolls past. */
-const DETAIL_VIEWPORT_HEIGHT = "xl:max-h-[calc(100dvh-3rem)] xl:overflow-y-auto";
-
+/** The trace page: breadcrumbs over the trace view, which holds the summary bar, tree and inspector. */
 export function TraceDetailPage() {
   const { traceId } = traceRoute.useParams();
   const traceQuery = useTraceQuery(traceId);
@@ -41,17 +34,8 @@ export function TraceDetailPage() {
         <span className="sr-only" role="status">
           Loading trace
         </span>
-        <BackToTracesLink />
-        <TraceHeaderSkeleton />
-        <TraceBodyLayout
-          left={
-            <>
-              <SpanWaterfallSkeleton />
-              <SpanUsageSkeleton />
-            </>
-          }
-          right={<SpanDetailSkeleton />}
-        />
+        <TracesBreadcrumbs current="Trace" />
+        <TraceViewSkeleton />
       </div>
     );
   }
@@ -62,7 +46,7 @@ export function TraceDetailPage() {
     }
     return (
       <div className={PAGE_CLASSES}>
-        <BackToTracesLink />
+        <TracesBreadcrumbs current="Trace" />
         <Card>
           <ErrorState
             error={traceQuery.error}
@@ -78,126 +62,8 @@ export function TraceDetailPage() {
 
   return (
     <div className={PAGE_CLASSES}>
-      <BackToTracesLink />
-      <TraceHeader trace={traceQuery.data} />
-      <TraceBody trace={traceQuery.data} />
-    </div>
-  );
-}
-
-function TraceBody({ trace }: { trace: TraceDetail }) {
-  const search = traceRoute.useSearch();
-  const navigate = traceRoute.useNavigate();
-  const [tab, setTab] = useState<SpanDetailTab>("io");
-  const roots = buildSpanTree(trace.spans);
-
-  if (trace.spans.length === 0) {
-    return (
-      <Card>
-        <EmptyState
-          icon={Waypoints}
-          title="No spans in this trace"
-          description="The trace was created but none of its spans have arrived. Spans are usually ingested within a few seconds."
-        />
-      </Card>
-    );
-  }
-
-  const selectedSpan =
-    trace.spans.find((span) => span.span_id === search.span) ?? roots[0]?.span ?? null;
-
-  function selectSpan(spanId: string) {
-    void navigate({
-      search: (prev) => ({ ...prev, span: spanId }),
-      replace: true,
-      resetScroll: false,
-    });
-  }
-
-  return (
-    <TraceBodyLayout
-      left={
-        <>
-          <SpanWaterfall
-            spans={trace.spans}
-            roots={roots}
-            selectedSpanId={selectedSpan?.span_id ?? null}
-            onSelect={selectSpan}
-          />
-          {selectedSpan ? <SpanUsageCard span={selectedSpan} /> : null}
-          {selectedSpan && hasModelCall(selectedSpan) ? (
-            <SpanCostCard key={selectedSpan.span_id} span={selectedSpan} traceId={trace.trace_id} />
-          ) : null}
-          <ScoresPanel traceId={trace.trace_id} />
-        </>
-      }
-      right={
-        selectedSpan ? (
-          <SelectedSpanDetail
-            key={selectedSpan.span_id}
-            span={selectedSpan}
-            tab={tab}
-            onTabChange={setTab}
-            traceId={trace.trace_id}
-          />
-        ) : null
-      }
-    />
-  );
-}
-
-/**
- * The selected span's detail. A span trace detail returned without its payloads (the trace's
- * payloads passed the response budget) is fetched whole first.
- */
-function SelectedSpanDetail({
-  span,
-  tab,
-  onTabChange,
-  traceId,
-}: {
-  span: Span;
-  tab: SpanDetailTab;
-  onTabChange: (tab: SpanDetailTab) => void;
-  traceId: string;
-}) {
-  const fullSpan = useSpanQuery(traceId, span);
-  if (span.payload_omitted && fullSpan.isPending) {
-    return <SpanDetailSkeleton className={DETAIL_VIEWPORT_HEIGHT} />;
-  }
-  if (span.payload_omitted && fullSpan.isError) {
-    return (
-      <Card className={DETAIL_VIEWPORT_HEIGHT}>
-        <ErrorState
-          error={fullSpan.error}
-          title="Couldn't load this span"
-          onRetry={() => {
-            void fullSpan.refetch();
-          }}
-        />
-      </Card>
-    );
-  }
-  return (
-    <SpanDetailPanel
-      span={fullSpan.data ?? span}
-      tab={tab}
-      onTabChange={onTabChange}
-      traceId={traceId}
-      className={DETAIL_VIEWPORT_HEIGHT}
-    />
-  );
-}
-
-/**
- * Figma "Body": spans and usage on the left (622), the span detail on the right (438).
- * Below 1280px the columns stack.
- */
-function TraceBodyLayout({ left, right }: { left: ReactNode; right: ReactNode }) {
-  return (
-    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,622fr)_minmax(0,438fr)] xl:items-start">
-      <div className="flex min-w-0 flex-col gap-6">{left}</div>
-      <div className="min-w-0 xl:sticky xl:top-6">{right}</div>
+      <TracesBreadcrumbs current={traceQuery.data.name ?? "Unnamed trace"} />
+      <TraceView trace={traceQuery.data} spans={traceQuery.data.spans} variant="page" />
     </div>
   );
 }
@@ -206,7 +72,7 @@ function TraceNotFound() {
   const { orgId, projectId } = useProjectParams();
   return (
     <div className={PAGE_CLASSES}>
-      <BackToTracesLink />
+      <TracesBreadcrumbs current="Trace" />
       <Card>
         <EmptyState
           icon={SearchX}

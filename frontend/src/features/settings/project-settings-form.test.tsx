@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -31,6 +31,34 @@ const project: Project = {
 };
 
 describe("ProjectSettingsForm", () => {
+  it("groups retention, payload capture and the weekly digest in one Data card with their consequences", async () => {
+    const user = userEvent.setup();
+    render(
+      <TooltipProvider>
+        <ProjectSettingsForm project={project} canEdit />
+      </TooltipProvider>,
+    );
+
+    const data = within(screen.getByRole("region", { name: "Data" }));
+    expect(data.getByRole("spinbutton", { name: /Retention/ })).toBeInTheDocument();
+    expect(data.getByRole("switch", { name: /Capture prompts/ })).toBeInTheDocument();
+    expect(data.getByRole("switch", { name: /Weekly digest/ })).toBeInTheDocument();
+    expect(data.getByText("Traces older than 30 days are deleted every hour.")).toBeInTheDocument();
+    expect(
+      data.getByText("Applies to spans ingested after you save; stored traces keep what they had."),
+    ).toBeInTheDocument();
+    expect(
+      data.getByText("Sent Mondays to organization members with a verified email."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Email" })).not.toBeInTheDocument();
+
+    // The retention line follows the value being typed.
+    const retention = data.getByRole("spinbutton", { name: /Retention/ });
+    await user.clear(retention);
+    await user.type(retention, "7");
+    expect(data.getByText("Traces older than 7 days are deleted every hour.")).toBeInTheDocument();
+  });
+
   it("shows a refused promoted key under the field", async () => {
     mutate.mockImplementation((_update, { onError }: { onError: (error: unknown) => void }) => {
       onError(

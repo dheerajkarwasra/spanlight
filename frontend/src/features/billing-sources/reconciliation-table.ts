@@ -22,6 +22,7 @@ import {
   formatTokenDifference,
   formatUsd,
 } from "./reconciliation-format";
+import { residualTracesSearch, type ResidualTracesLink } from "./residual-link";
 import { formatUtc } from "./source-model";
 
 /**
@@ -72,6 +73,8 @@ export interface GroupRow {
   variance: VarianceFigure;
   tokens: TokenRow[];
   lines: ExplainedRow[];
+  /** "View traces" for the group's day and first model; null when there is none (ruling 7). */
+  traces: ResidualTracesLink | null;
 }
 
 export interface ChargeRow {
@@ -245,7 +248,11 @@ function modelsLine(side: string, models: readonly string[]): string {
   return `${side} ${models.length === 1 ? "model" : "models"} ${models.length > 0 ? models.join(", ") : "none"}`;
 }
 
-function groupRow(group: ReconciliationGroup, sides: SideReasons): GroupRow {
+function groupRow(
+  group: ReconciliationGroup,
+  sides: SideReasons,
+  traces: ResidualTracesLink | null,
+): GroupRow {
   const compared = comparisonReason(sides);
   return {
     key: group.group,
@@ -262,6 +269,7 @@ function groupRow(group: ReconciliationGroup, sides: SideReasons): GroupRow {
     variance: varianceOf(group.variance_ratio, group.residual_usd, sides),
     tokens: tokenRows(group, sides),
     lines: group.explained.map(explainedRow),
+    traces,
   };
 }
 
@@ -299,7 +307,13 @@ function dayNotes(day: ReconciliationDay): string[] {
   return [provisionalChip ? PROVISIONAL_NOTE : null, unknownReason].filter((note) => note !== null);
 }
 
-function dayRow(day: ReconciliationDay): DayRow {
+/** Which project reads the report: its own traces are the only ones a group can link to. */
+interface Reader {
+  projectIds: string[];
+  projectId: string;
+}
+
+function dayRow(day: ReconciliationDay, reader: Reader): DayRow {
   const sides = sideReasons(day);
   const compared = comparisonReason(sides);
   return {
@@ -312,7 +326,13 @@ function dayRow(day: ReconciliationDay): DayRow {
     residual: money(day.residual_usd, compared, true),
     variance: varianceOf(day.variance_ratio, day.residual_usd, sides),
     meta: dayMeta(day),
-    groups: day.groups.map((group) => groupRow(group, sides)),
+    groups: day.groups.map((group) =>
+      groupRow(
+        group,
+        sides,
+        residualTracesSearch(day.day, group, reader.projectIds, reader.projectId),
+      ),
+    ),
     credits: charges(day.credits),
     other: charges(day.other),
     chargesKnown: day.fetched_at !== null,
@@ -321,9 +341,15 @@ function dayRow(day: ReconciliationDay): DayRow {
   };
 }
 
-/** The report's days as table rows, newest first, each with its groups and listed charges. */
-export function flattenDays(report: ReconciliationReport): DayRow[] {
-  return [...report.days].sort((a, b) => b.day.localeCompare(a.day)).map(dayRow);
+/**
+ * The report's days as table rows, newest first, each with its groups and listed charges, as
+ * project `projectId` reads them.
+ */
+export function flattenDays(report: ReconciliationReport, projectId: string): DayRow[] {
+  const reader = { projectIds: report.projects.map((project) => project.id), projectId };
+  return [...report.days]
+    .sort((a, b) => b.day.localeCompare(a.day))
+    .map((day) => dayRow(day, reader));
 }
 
 /** The days a failing source leaves without provider figures, and those it leaves provisional. */

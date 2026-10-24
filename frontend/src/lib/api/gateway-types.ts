@@ -295,6 +295,32 @@ export interface FaultScenarioCount {
   count: number;
 }
 
+/** The previous window's totals; each reads as the overview field of the same name. */
+export interface GatewayTotals {
+  requests: number;
+  errors: number;
+  error_rate: number | null;
+  p95_overhead_ms: number | null;
+  cache_hit_rate: number | null;
+  fallbacks: number;
+  rate_limited: number;
+}
+
+export interface GatewaySeriesPoint {
+  bucket_start: string;
+  requests: number;
+  errors: number;
+}
+
+/**
+ * 5-minute buckets for a window of 1 hour or less, else hours, counted from the window's start
+ * (the last may run past its end). Gap-filled: a bucket without calls reads 0 and 0.
+ */
+export interface GatewaySeries {
+  bucket: "5m" | "hour";
+  points: GatewaySeriesPoint[];
+}
+
 /** Gateway traffic of a window of at most 7 days. */
 export interface GatewayOverview {
   requests: number;
@@ -305,6 +331,13 @@ export interface GatewayOverview {
   fallbacks: number;
   p95_ttft_ms: number | null;
   p95_overhead_ms: number | null;
+  /** p95 of duration less overhead, over calls that reached a provider (retry backoff included). */
+  p95_upstream_ms: number | null;
+  /** Calls that ended rate limited, by the gateway or a provider. */
+  rate_limited: number;
+  /** The same totals over the window of equal length right before this one. */
+  previous: GatewayTotals;
+  series: GatewaySeries;
   cache: GatewayCacheStats;
   faults: FaultScenarioCount[];
   by_key: GatewayKeyUsage[];

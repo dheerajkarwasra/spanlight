@@ -100,7 +100,12 @@ def _rows(
             "status": incident.status,
             "api_affected": incident.api_affected,
             "components": list(incident.components),
-            "started_at": incident.started_at,
+            # A start after the feed's own end (an estimated start, or a feed contradicting
+            # itself) is clamped to the end: the end is what the feed states, and dropping the
+            # row would lose a real incident.
+            "started_at": incident.started_at
+            if incident.resolved_at is None
+            else min(incident.started_at, incident.resolved_at),
             "resolved_at": incident.resolved_at,
             "url": incident.url,
             "latest_update": incident.latest_update,

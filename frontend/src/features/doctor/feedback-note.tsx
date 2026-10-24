@@ -3,7 +3,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 
-import { NOTE_MAX_LENGTH, noteCounter } from "./feedback-state";
+import { muteReasonFromNote, NOTE_MAX_LENGTH, noteCounter } from "./feedback-state";
+import { MuteDialog } from "./mute-dialog";
 
 interface FeedbackNoteProps {
   /** The note already stored with the vote, if any. */
@@ -11,16 +12,26 @@ interface FeedbackNoteProps {
   saving: boolean;
   onSave: (note: string) => void;
   onSkip: () => void;
+  /** Set after a Wrong vote for `insights:manage`: offers to mute the finding with this note. */
+  muteInsightId?: string | undefined;
 }
 
 /**
  * Figma "Note field": an optional note (≤ 500 characters) under a saved vote. It takes focus
- * when it opens; Skip closes it and the vote stays as saved.
+ * when it opens; Skip closes it and the vote stays as saved. After a Wrong vote an admin can
+ * also mute the finding, the reason prefilled from the note.
  */
-export function FeedbackNote({ initial, saving, onSave, onSkip }: FeedbackNoteProps) {
+export function FeedbackNote({
+  initial,
+  saving,
+  onSave,
+  onSkip,
+  muteInsightId,
+}: FeedbackNoteProps) {
   const fieldId = useId();
   const metaId = useId();
   const [note, setNote] = useState(initial);
+  const [muting, setMuting] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -64,7 +75,25 @@ export function FeedbackNote({ initial, saving, onSave, onSkip }: FeedbackNotePr
         <Button variant="ghost" className="max-md:h-11" disabled={saving} onClick={onSkip}>
           Skip
         </Button>
+        {muteInsightId === undefined ? null : (
+          <Button
+            className="max-md:h-11"
+            onClick={() => {
+              setMuting(true);
+            }}
+          >
+            Mute this finding
+          </Button>
+        )}
       </div>
+      {muteInsightId === undefined ? null : (
+        <MuteDialog
+          insightId={muteInsightId}
+          open={muting}
+          onOpenChange={setMuting}
+          defaultReason={muteReasonFromNote(note)}
+        />
+      )}
     </div>
   );
 }

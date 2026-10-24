@@ -1,6 +1,6 @@
 import { api } from "./client";
 import { projectPath } from "./paths";
-import type { Budget, BudgetInput, BudgetUpdate } from "./types";
+import type { Budget, BudgetBurn, BudgetInput, BudgetUpdate } from "./types";
 
 function budgetsPath(projectId: string): string {
   return `${projectPath(projectId)}/budgets`;
@@ -19,6 +19,9 @@ export const budgetsApi = {
   list: (projectId: string): Promise<Budget[]> => api.get<Budget[]>(budgetsPath(projectId)),
   get: (projectId: string, budgetId: string): Promise<Budget> =>
     api.get<Budget>(budgetPath(projectId, budgetId)),
+  /** Cumulative spend per day of the current period (session only, not API keys). */
+  burn: (projectId: string, budgetId: string): Promise<BudgetBurn> =>
+    api.get<BudgetBurn>(`${budgetPath(projectId, budgetId)}/burn`),
   /** `422 UNKNOWN_SCOPE` when a `gateway_key` scope names no key of the project. */
   create: (projectId: string, input: BudgetInput): Promise<Budget> =>
     api.post<Budget>(budgetsPath(projectId), input),

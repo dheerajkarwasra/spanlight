@@ -2,44 +2,35 @@ import { Link } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 
 import { badgeVariants } from "@/components/ui/badge";
-import {
-  type InsightQuery,
-  SEVERITY_LABELS,
-  SEVERITY_STYLE,
-  useProjectInsights,
-} from "@/features/doctor";
+import { SEVERITY_LABELS, SEVERITY_STYLE } from "@/features/doctor";
 import { useProjectParams } from "@/features/shell/project-context";
-import type { Insight } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-/** Findings that still need a person; resolved and muted ones are not a reason to look. */
-const ACTIVE_STATUSES = ["open", "acknowledged"] as const;
-/** The API cites at most 20 traces per insight; a trace rarely carries more than a few. */
-const BADGE_LIMIT = 10;
-
-/** The trace's open Doctor findings; empty while loading and on error (a badge is a hint). */
-function useTraceInsights(traceId: string): Insight[] {
-  const query: InsightQuery = {
-    trace_id: traceId,
-    status: ACTIVE_STATUSES,
-    limit: BADGE_LIMIT,
-  };
-  return useProjectInsights(query, { retry: false }).data?.items ?? [];
-}
+import { useTraceInsights } from "./trace-queries";
 
 /**
  * Figma "Doctor/Insight badge": "Critical · Retry storm ›", one chip per insight. The chip is its
  * own shape (a link with a chevron); the severity icon and wording are the Doctor's, so severity
- * never reads by colour alone.
+ * never reads by colour alone. `compact` (the summary bar) keeps one row and lets the chips
+ * shrink, with the severity word left to the icon and screen readers.
  */
-export function InsightBadges({ traceId }: { traceId: string }) {
+export function InsightBadges({
+  traceId,
+  compact = false,
+}: {
+  traceId: string;
+  compact?: boolean;
+}) {
   const { orgId, projectId } = useProjectParams();
   const insights = useTraceInsights(traceId);
   if (insights.length === 0) {
     return null;
   }
   return (
-    <ul aria-label="Doctor findings for this trace" className="flex flex-wrap items-center gap-2">
+    <ul
+      aria-label="Doctor findings for this trace"
+      className={cn("flex items-center gap-2", compact ? "min-w-0 overflow-hidden" : "flex-wrap")}
+    >
       {insights.map((insight) => {
         const { variant, icon: Icon } = SEVERITY_STYLE[insight.severity];
         return (
@@ -55,7 +46,10 @@ export function InsightBadges({ traceId }: { traceId: string }) {
             >
               <Icon aria-hidden strokeWidth={2} />
               <span className="truncate">
-                {SEVERITY_LABELS[insight.severity]} · {insight.label}
+                <span className={cn(compact && "sr-only")}>
+                  {SEVERITY_LABELS[insight.severity]} ·{" "}
+                </span>
+                {insight.label}
               </span>
               <ChevronRight aria-hidden />
             </Link>

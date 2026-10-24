@@ -6,13 +6,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectParams } from "@/features/shell";
 import { errorMessage, isApiError } from "@/lib/api";
 
-import { BackToDoctor } from "./insight-header";
+import { DoctorBreadcrumbs } from "./insight-header";
 
 /** Figma "Doctor — Insight detail — loading": blocks shaped like the sections. */
 export function InsightDetailSkeleton() {
   return (
     <div role="status" aria-label="Loading insight" className="flex flex-col gap-6">
-      <BackToDoctor />
+      <DoctorBreadcrumbs current="Finding" />
       <div className="flex flex-col gap-3">
         <Skeleton className="h-6 w-56 rounded-full" />
         <Skeleton className="h-9 w-full max-w-2xl" />
@@ -37,7 +37,7 @@ export function InsightLoadError({ error, onRetry }: { error: unknown; onRetry: 
   const gone = isApiError(error) && error.isNotFound;
   return (
     <div className="flex flex-col gap-6">
-      <BackToDoctor />
+      <DoctorBreadcrumbs current="Finding" />
       <div
         role="alert"
         className="flex flex-col items-center gap-4 rounded-card bg-surface-muted px-6 py-12 text-center"

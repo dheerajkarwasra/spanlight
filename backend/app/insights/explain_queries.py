@@ -9,6 +9,7 @@ flag, and the reservation insert is checked by the table's policy. Callers commi
 
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
@@ -25,6 +26,27 @@ from app.db.models import (
     SpanStatus,
 )
 from app.insights.explain import TraceExcerpt
+
+# One span per trace: its first failed span, preferring llm spans, else its first llm span, else
+# its first span. Shared by the explain excerpts and an insight's evidence spans.
+_ONE_SPAN_PER_TRACE = (
+    Span.trace_id,
+    case((Span.status == SpanStatus.ERROR, 0), else_=1),
+    case((Span.kind == SpanKind.LLM, 0), else_=1),
+    Span.started_at,
+    Span.span_id,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceSpan:
+    """The span an evidence trace opens on."""
+
+    trace_id: str
+    span_id: str
+    name: str
+    status: str
+    model: str | None
 
 
 async def oldest_credential(
@@ -47,18 +69,36 @@ async def trace_excerpts(
     """
     if not trace_ids:
         return []
-    failed_first = case((Span.status == SpanStatus.ERROR, 0), else_=1)
-    llm_first = case((Span.kind == SpanKind.LLM, 0), else_=1)
     rows = (
         await db.scalars(
             select(Span)
             .where(Span.project_id == project_id, Span.trace_id.in_(list(trace_ids)))
             .ext(distinct_on(Span.trace_id))
-            .order_by(Span.trace_id, failed_first, llm_first, Span.started_at, Span.span_id)
+            .order_by(*_ONE_SPAN_PER_TRACE)
         )
     ).all()
     by_trace = {span.trace_id: span for span in rows}
     return [_excerpt(by_trace[trace_id]) for trace_id in trace_ids if trace_id in by_trace]
+
+
+async def evidence_spans(
+    db: AsyncSession, project_id: uuid.UUID, trace_ids: Sequence[str]
+) -> list[EvidenceSpan]:
+    """The span each trace opens on, chosen like `trace_excerpts` and in the order of
+    `trace_ids`, without payloads. Traces with no stored span are left out."""
+    if not trace_ids:
+        return []
+    rows = await db.execute(
+        select(Span.trace_id, Span.span_id, Span.name, Span.status, Span.model)
+        .where(Span.project_id == project_id, Span.trace_id.in_(list(trace_ids)))
+        .ext(distinct_on(Span.trace_id))
+        .order_by(*_ONE_SPAN_PER_TRACE)
+    )
+    by_trace = {
+        row.trace_id: EvidenceSpan(row.trace_id, row.span_id, row.name, row.status.value, row.model)
+        for row in rows
+    }
+    return [by_trace[trace_id] for trace_id in trace_ids if trace_id in by_trace]
 
 
 def _excerpt(span: Span) -> TraceExcerpt:

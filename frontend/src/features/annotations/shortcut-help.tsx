@@ -49,6 +49,10 @@ export function ShortcutHelp({ open, onOpenChange }: ShortcutHelpProps) {
           Shortcuts are ignored while you type in the comment field. Release is a button; it has no
           key.
         </p>
+        <p className="flex items-center gap-2 text-label font-medium text-muted-foreground">
+          <Info aria-hidden className="size-3.5 shrink-0" />
+          Evaluator scores stay hidden until you submit.
+        </p>
         <div className="flex justify-end">
           <DialogClose asChild>
             <Button variant="primary">Close</Button>

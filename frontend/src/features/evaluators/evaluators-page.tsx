@@ -10,6 +10,8 @@ import { ReadOnlyLine } from "@/components/read-only-line";
 import { SectionCard } from "@/components/section-card";
 import { TileListSkeleton } from "@/components/tile-list";
 import { Button } from "@/components/ui/button";
+import { LiveDemoButton } from "@/features/auth";
+import { ScoreSettingsLinks } from "@/features/scores";
 import { usePermission, useProjectParams } from "@/features/shell";
 import { pluralize } from "@/lib/format";
 
@@ -55,7 +57,12 @@ export function EvaluatorsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Evaluators"
-        description="Score traces automatically with a rule, an LLM judge or your own webhook. A judge never spends more than its monthly budget."
+        description={
+          <>
+            Score traces automatically with a rule, an LLM judge or your own webhook. A judge never
+            spends more than its monthly budget. <ScoreSettingsLinks />
+          </>
+        }
         actions={
           <div className="flex flex-col items-stretch gap-2 sm:items-end">
             {button}
@@ -89,6 +96,7 @@ export function EvaluatorsPage() {
             title="No evaluators yet"
             description="An evaluator scores traces for you: a rule you write, an LLM judge under a monthly budget, or your own webhook."
             action={canWrite ? button : undefined}
+            setup={<LiveDemoButton />}
             className="rounded-tile bg-surface-muted"
           />
         ) : (

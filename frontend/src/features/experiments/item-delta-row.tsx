@@ -14,6 +14,7 @@ import {
   LEGACY_ITEM_REASON,
 } from "./item-copy";
 import { ItemScore } from "./item-score";
+import { OutputDiff } from "./output-diff";
 import { ChangePill } from "./score-chips";
 import type { ScoreMeta } from "./score-meta";
 
@@ -33,7 +34,8 @@ export function ItemDeltaRow({ item, score, names }: ItemDeltaRowProps) {
       ? formatBooleanChange(item.a?.scores[score.name], item.b?.scores[score.name])
       : formatScoreDelta(item.deltas[score.name] ?? null, score.kind);
   return (
-    <li className="flex scroll-mt-24 flex-col gap-2.5 rounded-tile border border-border bg-surface p-4">
+    // Ruling 21: focus scrolls clear of the pinned compare bar (+ the phone app bar below `lg`).
+    <li className="flex scroll-mt-36 flex-col gap-2.5 rounded-tile border border-border bg-surface p-4 **:scroll-mt-36 lg:scroll-mt-24 lg:**:scroll-mt-24">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <span className="font-mono text-xs text-accent">{itemLabel(item.position)}</span>
         <span className="min-w-0 flex-1 basis-48 text-sm font-semibold text-foreground">
@@ -74,8 +76,14 @@ export function ItemDeltaRow({ item, score, names }: ItemDeltaRowProps) {
         <Side side={item.a} name={`A · ${names.a}`} score={score} tone="a" />
         <Side side={item.b} name={`B · ${names.b}`} score={score} tone="b" />
       </div>
+      <OutputDiff a={answer(item.a)} b={answer(item.b)} names={names} />
     </li>
   );
+}
+
+/** A side's answer text; null when it has none to compare (absent, failed, or no text). */
+function answer(side: CompareItemSide | null): string | null {
+  return side && !side.error ? (side.output?.text ?? null) : null;
 }
 
 interface SideProps {

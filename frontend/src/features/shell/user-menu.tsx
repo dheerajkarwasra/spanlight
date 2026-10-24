@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { LogOut, UserRound } from "lucide-react";
+import { ArrowUpRight, BookOpen, Cable, Keyboard, LogOut, UserRound } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -10,13 +10,22 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useMe } from "@/features/auth";
+import { docsLink } from "@/lib/docs-links";
 import { ROLE_LABELS } from "@/lib/permissions";
+import { cn } from "@/lib/utils";
 
 import { useCurrentOrg, useCurrentRole, useProjectParams } from "./project-context";
 import { useSignOut } from "./use-sign-out";
 
-/** The account tile at the bottom of the rail: avatar, name, "Role · Organization". */
-export function UserMenu() {
+interface UserMenuProps {
+  /** `tile` (the full rail): avatar, name, "Role · Organization". `avatar` (the icon rail): just the avatar. */
+  variant?: "tile" | "avatar";
+  /** Opens the keyboard shortcuts help; the item shows only when given. */
+  onOpenShortcuts?: () => void;
+}
+
+/** The account menu at the bottom of the rail, also the steady home of help and setup links. */
+export function UserMenu({ variant = "tile", onOpenShortcuts }: UserMenuProps) {
   const { user } = useMe();
   const params = useProjectParams();
   const role = useCurrentRole();
@@ -28,23 +37,39 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="flex w-full items-center gap-3 rounded-2xl bg-rail-tile px-3 py-2.5 text-left transition-colors duration-200 hover:bg-rail-tile-hover focus-visible:outline-lime data-[state=open]:bg-rail-tile-hover"
+        className={cn(
+          "shrink-0 transition-colors duration-200 focus-visible:outline-lime",
+          variant === "tile"
+            ? "flex w-full items-center gap-3 rounded-2xl bg-rail-tile px-3 py-2.5 text-left hover:bg-rail-tile-hover data-[state=open]:bg-rail-tile-hover"
+            : "rounded-full",
+        )}
         aria-label={`${[displayName, context].filter(Boolean).join(", ")}. Account menu`}
       >
         <span
           aria-hidden
-          className="size-9 shrink-0 rounded-full bg-linear-to-r from-avatar-from to-avatar-to"
+          className={cn(
+            "block shrink-0 rounded-full bg-linear-to-r from-avatar-from to-avatar-to",
+            variant === "tile" ? "size-9" : "size-10",
+          )}
         />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-sm font-semibold text-rail-foreground">{displayName}</span>
-          {context ? (
-            <span className="truncate text-xs font-medium text-rail-subtle-foreground">
-              {context}
+        {variant === "tile" ? (
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate text-sm font-semibold text-rail-foreground">
+              {displayName}
             </span>
-          ) : null}
-        </span>
+            {context ? (
+              <span className="truncate text-xs font-medium text-rail-subtle-foreground">
+                {context}
+              </span>
+            ) : null}
+          </span>
+        ) : null}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" side="top" className="w-60">
+      <DropdownMenuContent
+        align={variant === "tile" ? "start" : "end"}
+        side={variant === "tile" ? "top" : "right"}
+        className="w-60"
+      >
         <DropdownMenuLabel className="truncate tracking-normal normal-case">
           {user.email}
         </DropdownMenuLabel>
@@ -55,6 +80,27 @@ export function UserMenu() {
             Account settings
           </Link>
         </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <a href={docsLink()} target="_blank" rel="noreferrer">
+            <BookOpen aria-hidden />
+            Docs
+            <ArrowUpRight aria-hidden className="ml-auto" />
+            <span className="sr-only">(opens in a new tab)</span>
+          </a>
+        </DropdownMenuItem>
+        {onOpenShortcuts ? (
+          <DropdownMenuItem onSelect={onOpenShortcuts} aria-keyshortcuts="?">
+            <Keyboard aria-hidden />
+            Keyboard shortcuts
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuItem asChild>
+          <Link to="/onboarding" search={{ org: params.orgId, project: params.projectId }}>
+            <Cable aria-hidden />
+            Connect your app
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={() => {
             signOut.mutate();

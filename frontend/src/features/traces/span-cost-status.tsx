@@ -1,10 +1,12 @@
+import { Link } from "@tanstack/react-router";
 import { ChevronRight, CircleCheck, Info, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Callout } from "@/components/callout";
 import { CopyButton } from "@/components/copy-button";
 import { Badge } from "@/components/ui/badge";
-import { docsLink } from "@/lib/docs-links";
+import { useProjectParams } from "@/features/shell/project-context";
+import type { Span } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import { MISMATCH_BODY, formatExactUsd, type StatusTone } from "./cost-explanation";
@@ -80,29 +82,31 @@ export function Note({ children, tile = false }: { children: ReactNode; tile?: b
   );
 }
 
-const PRICING_DOCS = {
-  unknown: docsLink("concepts/cost/#when-a-cost-is-unknown"),
-  overrides: docsLink("concepts/cost/#price-overrides"),
-};
+const LINK =
+  "inline-flex items-center gap-1 rounded-sm text-sm font-semibold text-accent underline-offset-4 hover:underline focus-visible:outline-[1.5px] focus-visible:outline-offset-2 focus-visible:outline-ring";
 
-/** Figma "Links" of the no-price state: where unpriced models are listed and fixed. */
-export function NoPriceLinks() {
+/**
+ * Figma "Links" of the no-price state: Cost › Pricing lists the unpriced models, and opens "Add
+ * price override" prefilled with the span's provider and model when both are known.
+ */
+export function NoPriceLinks({ provider, model }: Pick<Span, "provider" | "model">) {
+  const { orgId, projectId } = useProjectParams();
+  const params = { orgId, projectId };
   return (
     <div className="flex flex-wrap gap-x-5 gap-y-2">
-      <DocsLink href={PRICING_DOCS.unknown}>See unpriced models</DocsLink>
-      <DocsLink href={PRICING_DOCS.overrides}>Add a price override</DocsLink>
+      <Link to="/$orgId/$projectId/pricing" params={params} className={LINK}>
+        See unpriced models
+        <ChevronRight aria-hidden className="size-4" />
+      </Link>
+      <Link
+        to="/$orgId/$projectId/pricing"
+        params={params}
+        search={provider !== null && model !== null ? { provider, model } : {}}
+        className={LINK}
+      >
+        Add a price override
+        <ChevronRight aria-hidden className="size-4" />
+      </Link>
     </div>
-  );
-}
-
-function DocsLink({ href, children }: { href: string; children: ReactNode }) {
-  return (
-    <a
-      href={href}
-      className="inline-flex items-center gap-1 rounded-sm text-sm font-semibold text-accent underline-offset-4 hover:underline focus-visible:outline-[1.5px] focus-visible:outline-offset-2 focus-visible:outline-ring"
-    >
-      {children}
-      <ChevronRight aria-hidden className="size-4" />
-    </a>
   );
 }

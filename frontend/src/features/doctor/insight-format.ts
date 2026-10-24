@@ -152,16 +152,27 @@ export function formatDateTime(iso: string | null | undefined): string | null {
   return date === null ? null : monthDayClock.format(date);
 }
 
-/** "Oct 10, 14:30 – 14:45 · 15 min window": the evidence window. */
-export function formatWindow(start: string, end: string): string | null {
+/** "15 min window", "3 h window": the evidence window's length; null for an unreadable time. */
+export function windowLength(start: string, end: string): string | null {
   const from = parse(start);
   const to = parse(end);
   if (from === null || to === null) {
     return null;
   }
   const minutes = Math.max(1, Math.round((to.getTime() - from.getTime()) / MINUTE_MS));
-  const length =
-    minutes >= 120 && minutes % 60 === 0 ? `${minutes / 60} h window` : `${minutes} min window`;
+  return minutes >= 120 && minutes % 60 === 0
+    ? `${minutes / 60} h window`
+    : `${minutes} min window`;
+}
+
+/** "Oct 10, 14:30 – 14:45 · 15 min window": the evidence window. */
+export function formatWindow(start: string, end: string): string | null {
+  const from = parse(start);
+  const to = parse(end);
+  const length = windowLength(start, end);
+  if (from === null || to === null || length === null) {
+    return null;
+  }
   return `${monthDayClock.format(from)} – ${clockOnly.format(to)} · ${length}`;
 }
 
@@ -170,6 +181,13 @@ export function activityLine(insight: Insight, now: Date): string {
   const seen = compactRelative(insight.last_seen_at, now);
   const count = pluralize(insight.occurrences, "occurrence");
   return seen === null ? count : `${count} · last seen ${seen}`;
+}
+
+/** The list's footer: "Showing 50 insights" while more pages exist, else "All 120 insights shown". */
+export function loadedText(loaded: number, hasNextPage: boolean): string {
+  const counted = pluralize(loaded, "insight");
+  if (hasNextPage) return `Showing ${counted}`;
+  return loaded === 1 ? `${counted} shown` : `All ${counted} shown`;
 }
 
 /** "8 open · 2 critical · 4 warning · 2 info" over the loaded insights; only non-zero parts. */

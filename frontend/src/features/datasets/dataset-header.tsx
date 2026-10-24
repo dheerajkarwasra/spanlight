@@ -1,26 +1,31 @@
-import { Lock, Plus, Trash2, Upload } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { FlaskConical, Lock, Plus, Trash2, Upload } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { BackLink } from "@/components/back-link";
+import { Breadcrumbs, Crumb } from "@/components/breadcrumbs";
 import { DisabledReason } from "@/components/disabled-reason";
 import { UnknownValue } from "@/components/unknown-value";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useProjectParams } from "@/features/shell";
+import { usePermission, useProjectParams } from "@/features/shell";
 import type { Dataset } from "@/lib/api";
 import { formatDate, pluralize } from "@/lib/format";
 
 import { MAX_ITEMS } from "./dataset-errors";
 import { DeleteDatasetDialog } from "./delete-dataset-dialog";
+import { EditDescriptionDialog } from "./edit-description-dialog";
 import { DatasetLockAction } from "./lock-dataset-dialog";
 import { UploadDialog } from "./upload-dialog";
 
-export function BackToDatasetsLink() {
+/** "Datasets › <current>": back to the list. */
+export function DatasetsBreadcrumbs({ current }: { current: string }) {
   const { orgId, projectId } = useProjectParams();
   return (
-    <BackLink to="/$orgId/$projectId/datasets" params={{ orgId, projectId }}>
-      Datasets
-    </BackLink>
+    <Breadcrumbs current={current}>
+      <Crumb to="/$orgId/$projectId/datasets" params={{ orgId, projectId }}>
+        Datasets
+      </Crumb>
+    </Breadcrumbs>
   );
 }
 
@@ -46,6 +51,9 @@ interface DatasetHeaderProps {
 /** Figma detail header: name, item count (warning once full), lock state, description, actions. */
 export function DatasetHeader({ dataset, canWrite, canLock, onAddItem }: DatasetHeaderProps) {
   const full = dataset.item_count >= MAX_ITEMS;
+  // The lock guards items only; the server takes description edits on a locked dataset too.
+  const canEditDescription = usePermission("datasets:write");
+  const canRun = usePermission("experiments:run");
   const created = formatDate(dataset.created_at);
   const line = [dataset.description, created ? `created ${created}` : null]
     .filter(Boolean)
@@ -53,7 +61,7 @@ export function DatasetHeader({ dataset, canWrite, canLock, onAddItem }: Dataset
 
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-8">
-      <div className="flex min-w-0 flex-col gap-2">
+      <div className="flex min-w-0 flex-1 flex-col gap-2 lg:min-w-64">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <h1 className="min-w-0 text-h1 [overflow-wrap:anywhere] text-foreground">
             {dataset.name}
@@ -87,8 +95,8 @@ export function DatasetHeader({ dataset, canWrite, canLock, onAddItem }: Dataset
           </p>
         ) : null}
       </div>
-      {canWrite || canLock ? (
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+      {canWrite || canLock || canEditDescription || canRun ? (
+        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
           {canWrite ? (
             <DeleteDatasetDialog
               dataset={dataset}
@@ -101,30 +109,59 @@ export function DatasetHeader({ dataset, canWrite, canLock, onAddItem }: Dataset
             />
           ) : null}
           {canLock ? <DatasetLockAction dataset={dataset} /> : null}
+          {canEditDescription ? <EditDescriptionDialog dataset={dataset} /> : null}
           {canWrite ? (
-            <>
-              <BlockedWhenFull full={full}>
-                <UploadDialog
-                  datasetId={dataset.id}
-                  trigger={
-                    <Button disabled={full}>
-                      <Upload aria-hidden />
-                      Upload file
-                    </Button>
-                  }
-                />
-              </BlockedWhenFull>
-              <BlockedWhenFull full={full}>
-                <Button variant="primary" disabled={full} onClick={onAddItem}>
-                  <Plus aria-hidden />
-                  Add item
-                </Button>
-              </BlockedWhenFull>
-            </>
+            <BlockedWhenFull full={full}>
+              <UploadDialog
+                datasetId={dataset.id}
+                trigger={
+                  <Button disabled={full}>
+                    <Upload aria-hidden />
+                    Upload file
+                  </Button>
+                }
+              />
+            </BlockedWhenFull>
+          ) : null}
+          {canRun ? <RunExperimentButton dataset={dataset} /> : null}
+          {canWrite ? (
+            <BlockedWhenFull full={full}>
+              <Button variant="primary" disabled={full} onClick={onAddItem}>
+                <Plus aria-hidden />
+                Add item
+              </Button>
+            </BlockedWhenFull>
           ) : null}
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** A new experiment with this dataset already picked; an empty dataset has nothing to run. */
+function RunExperimentButton({ dataset }: { dataset: Dataset }) {
+  const { orgId, projectId } = useProjectParams();
+  if (dataset.item_count === 0) {
+    return (
+      <DisabledReason reason="Add items first">
+        <Button disabled>
+          <FlaskConical aria-hidden />
+          Run experiment
+        </Button>
+      </DisabledReason>
+    );
+  }
+  return (
+    <Button asChild>
+      <Link
+        to="/$orgId/$projectId/experiments/new"
+        params={{ orgId, projectId }}
+        search={{ dataset: dataset.id }}
+      >
+        <FlaskConical aria-hidden />
+        Run experiment
+      </Link>
+    </Button>
   );
 }
 

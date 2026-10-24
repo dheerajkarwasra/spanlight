@@ -5,7 +5,7 @@ import type { ModelMetrics } from "@/lib/api";
 import { formatInteger } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-import { ModelCost, ModelLatency, ModelName, NoProviderTag } from "./model-cells";
+import { ModelCost, ModelLatency, ModelName, NoProviderTag, SetPricesLink } from "./model-cells";
 import { modelRowKey, unpricedCalls } from "./models";
 
 /** One hairline-divided row per model, shown when the card is narrow. */
@@ -42,7 +42,7 @@ export function ModelTiles({ models }: { models: ModelMetrics[] }) {
           <Info aria-hidden className="mt-px size-3.5 shrink-0" />
           <span>
             — means no price for this model. Its {formatInteger(unpriced)}{" "}
-            {unpriced === 1 ? "call isn’t" : "calls aren’t"} in spend.
+            {unpriced === 1 ? "call isn’t" : "calls aren’t"} in spend. <SetPricesLink />
           </span>
         </p>
       ) : null}

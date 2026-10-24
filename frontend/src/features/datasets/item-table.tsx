@@ -1,18 +1,14 @@
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, Link2 } from "lucide-react";
-import type { MouseEvent } from "react";
+import { Link2 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { DataTable, type DataColumn } from "@/components/data-table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectParams } from "@/features/shell";
 import type { DatasetItem } from "@/lib/api";
 import { shortId } from "@/lib/format";
-import { cn } from "@/lib/utils";
 
 import { metadataChip, valueText } from "./item-values";
 
-const ROW_GRID =
-  "grid grid-cols-[32px_minmax(0,1fr)_minmax(0,0.85fr)_160px_120px_32px] items-center gap-4 px-3";
 const NOT_SET = "Not set. Add an expected output to score this item.";
 
 interface ItemTableProps {
@@ -22,83 +18,98 @@ interface ItemTableProps {
   onOpen: (item: DatasetItem, number: number) => void;
 }
 
+interface NumberedItem {
+  item: DatasetItem;
+  number: number;
+}
+
 /**
- * Figma "Items" table: number, input, expected output, metadata chips and the source trace. The
- * whole row opens the editor; the chevron is its keyboard path and the source a real link. Below
- * `md` the rows become tiles (Figma "Datasets — Detail — 375").
+ * Figma "Items" table on the shared `DataTable`: number, input, expected output, metadata chips
+ * and the source trace. The whole row opens the editor; the number is its keyboard path and the
+ * source a real link. Below `md` the rows become tiles (Figma "Datasets — Detail — 375").
  */
 export function ItemTable({ items, canWrite, onOpen }: ItemTableProps) {
   const verb = canWrite ? "Edit" : "Open";
-  function openFromRow(event: MouseEvent<HTMLDivElement>, item: DatasetItem, number: number) {
-    if ((event.target as HTMLElement).closest("a, button")) return;
-    onOpen(item, number);
-  }
+  const rows = items.map((item, index) => ({ item, number: index + 1 }));
+  const columns: DataColumn<NumberedItem>[] = [
+    {
+      id: "number",
+      header: "#",
+      width: "64px",
+      sticky: true,
+      cell: ({ item, number }) => (
+        <button
+          type="button"
+          aria-label={`${verb} item ${String(number)}`}
+          onClick={() => {
+            onOpen(item, number);
+          }}
+          className="min-h-6 min-w-6 rounded-sm text-xs text-muted-foreground tabular hover:text-foreground"
+        >
+          {number}
+        </button>
+      ),
+    },
+    {
+      id: "input",
+      header: "Input",
+      width: "minmax(200px,1fr)",
+      cell: ({ item }) => <span className="truncate font-medium">{valueText(item.input)}</span>,
+    },
+    {
+      id: "expected",
+      header: "Expected output",
+      width: "minmax(180px,0.85fr)",
+      cell: ({ item }) =>
+        item.expected_output === null ? (
+          <span className="truncate text-xs text-muted-foreground">{NOT_SET}</span>
+        ) : (
+          <span className="truncate">{valueText(item.expected_output)}</span>
+        ),
+    },
+    {
+      id: "metadata",
+      header: "Metadata",
+      width: "200px",
+      hideable: true,
+      cell: ({ item }) => (
+        <span className="flex min-w-0 gap-1 overflow-hidden">
+          {Object.entries(item.metadata)
+            .slice(0, 3)
+            .map(([key, value]) => (
+              <span
+                key={key}
+                className="shrink-0 rounded-full border border-border-strong px-2 py-0.5 font-mono text-2xs text-foreground"
+              >
+                {metadataChip(key, value)}
+              </span>
+            ))}
+        </span>
+      ),
+    },
+    {
+      id: "source",
+      header: "Source",
+      width: "130px",
+      hideable: true,
+      cell: ({ item }) => <SourceLink item={item} />,
+    },
+  ];
 
   return (
     <>
-      <div role="table" aria-label="Items" className="hidden flex-col gap-1.5 md:flex">
-        <div
-          role="row"
-          className={cn(ROW_GRID, "py-2 text-overline text-muted-foreground uppercase")}
-        >
-          <span role="columnheader">#</span>
-          <span role="columnheader">Input</span>
-          <span role="columnheader">Expected output</span>
-          <span role="columnheader">Metadata</span>
-          <span role="columnheader">Source</span>
-          <span role="columnheader">
-            <span className="sr-only">{verb}</span>
-          </span>
-        </div>
-        {items.map((item, index) => (
-          <div
-            key={item.id}
-            role="row"
-            onClick={(event) => {
-              openFromRow(event, item, index + 1);
-            }}
-            className={cn(
-              ROW_GRID,
-              "min-h-15 cursor-pointer rounded-tile bg-surface-muted py-2.5 text-sm transition-colors hover:bg-surface-hover",
-            )}
-          >
-            <span role="cell" className="text-xs text-muted-foreground tabular">
-              {index + 1}
-            </span>
-            <span role="cell" className="line-clamp-2 font-medium text-foreground">
-              {valueText(item.input)}
-            </span>
-            <ExpectedCell value={item.expected_output} />
-            <span role="cell" className="flex min-w-0 gap-1 overflow-hidden">
-              {Object.entries(item.metadata)
-                .slice(0, 3)
-                .map(([key, value]) => (
-                  <span
-                    key={key}
-                    className="shrink-0 rounded-full border border-border-strong px-2 py-0.5 font-mono text-2xs text-foreground"
-                  >
-                    {metadataChip(key, value)}
-                  </span>
-                ))}
-            </span>
-            <span role="cell" className="min-w-0">
-              <SourceLink item={item} />
-            </span>
-            <span role="cell">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`${verb} item ${String(index + 1)}`}
-                onClick={() => {
-                  onOpen(item, index + 1);
-                }}
-              >
-                <ChevronRight aria-hidden />
-              </Button>
-            </span>
-          </div>
-        ))}
-      </div>
+      <DataTable<NumberedItem>
+        id="dataset-items"
+        label="Dataset items"
+        columns={columns}
+        rows={rows}
+        rowKey={({ item }) => item.id}
+        onRowClick={({ item, number }) => {
+          onOpen(item, number);
+        }}
+        empty={null}
+        loading={false}
+      />
       <ul className="flex flex-col gap-2 md:hidden">
         {items.map((item, index) => (
           <li key={item.id}>
@@ -107,21 +118,6 @@ export function ItemTable({ items, canWrite, onOpen }: ItemTableProps) {
         ))}
       </ul>
     </>
-  );
-}
-
-function ExpectedCell({ value }: { value: unknown }) {
-  if (value === null) {
-    return (
-      <span role="cell" className="line-clamp-2 text-xs text-muted-foreground">
-        {NOT_SET}
-      </span>
-    );
-  }
-  return (
-    <span role="cell" className="line-clamp-2 text-foreground">
-      {valueText(value)}
-    </span>
   );
 }
 

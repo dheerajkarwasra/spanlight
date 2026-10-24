@@ -34,13 +34,13 @@ export function usePromptQuery(name: string) {
   });
 }
 
-/** The prompt's versions, newest first. */
+/** The prompt's versions, newest first, each with its seven days of usage. */
 export function usePromptVersionsQuery(name: string) {
   const { projectId } = useProjectParams();
   return useInfiniteQuery({
     queryKey: queryKeys.project(projectId).prompts.versions(name),
     queryFn: ({ pageParam }) =>
-      promptsApi.versions(projectId, name, { limit: PAGE_SIZE, cursor: pageParam }),
+      promptsApi.versions(projectId, name, { limit: PAGE_SIZE, cursor: pageParam, usage: true }),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor,
   });
@@ -108,6 +108,15 @@ export function useSetLabel(name: string) {
   return useMutation({
     mutationFn: ({ label, version }: { label: string; version: number }) =>
       promptsApi.setLabel(projectId, name, label, version),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteLabel(name: string) {
+  const { projectId } = useProjectParams();
+  const invalidate = useInvalidatePrompts();
+  return useMutation({
+    mutationFn: (label: string) => promptsApi.deleteLabel(projectId, name, label),
     onSuccess: invalidate,
   });
 }

@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { isApiError, type Experiment } from "@/lib/api";
 import { pluralize } from "@/lib/format";
 
-import { BackToExperiment } from "./back-link";
+import { ExperimentBreadcrumbs } from "./back-link";
 import { ComparePickers } from "./compare-pickers";
 import { CompareResult } from "./compare-result";
 import { sideOf } from "./compare-sides";
@@ -34,7 +34,11 @@ export function ComparePage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <BackToExperiment experimentId={experimentId} name={experiment.data?.name} />
+        <ExperimentBreadcrumbs
+          experimentId={experimentId}
+          name={experiment.data?.name}
+          current="Compare"
+        />
         <PageHeader
           title="Compare runs"
           description="Higher is better for every score. Items are sorted by the size of the change."

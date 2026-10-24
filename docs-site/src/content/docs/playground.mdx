@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-{/* Sources: backend/app/playground/service.py, backend/app/playground/request.py, backend/app/playground/output.py, frontend/src/features/playground/result-error.ts, frontend/src/features/playground/result-metrics.tsx, frontend/src/features/playground/playground-page.tsx, backend/app/playground/replay_source.py, backend/app/playground/replay_request.py, backend/app/playground/replay_errors.py, backend/app/playground/replay_service.py, backend/app/playground/replay_settle.py, backend/app/api/v1/replays.py, backend/app/api/replay_problems.py, docs/api-deviations.md */}
+{/* Sources: backend/app/playground/service.py, backend/app/playground/request.py, backend/app/playground/output.py, frontend/src/features/playground/result-error.ts, frontend/src/features/playground/result-metrics.tsx, frontend/src/features/playground/playground-page.tsx, frontend/src/features/playground/run-estimate.ts, frontend/src/features/playground/run-estimate-line.tsx, backend/app/playground/replay_source.py, backend/app/playground/replay_request.py, backend/app/playground/replay_errors.py, backend/app/playground/replay_service.py, backend/app/playground/replay_settle.py, backend/app/api/v1/replays.py, backend/app/api/replay_problems.py, docs/api-deviations.md */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
@@ -39,6 +39,12 @@ When a prompt needs variables, fill in their values for each configuration. A co
 
 Once you have a configuration you like, you can save it as a new version of a prompt. That is the ordinary "add a version" call, so a template identical to the latest version is refused.
 
+### What a run will cost
+
+The run button says how many calls it makes: **Run** for one configuration, **Run 3 calls** for three. Under it, a line such as "Est. up to $0.004 at list prices" gives the most the run can cost. Input tokens are counted as characters ÷ 3 (a character outside ASCII counts as one token), output tokens as each configuration's `max_tokens` (1024 on Anthropic when unset), and both are priced from the [price table](/docs/concepts/cost/). The info button beside it (**How the estimate works**) explains the method. Your organization's price overrides and cached-token discounts are not included, so what the run is charged can differ.
+
+When a configuration cannot be estimated, the line names it (the configurations are lettered Run A, Run B and Run C) instead of guessing, for example "Est. unavailable for Run B (no price for `my-model`)", or "(no max tokens set)" for a configuration on another provider than Anthropic with no `max_tokens`. It never shows $0. The line appears once every configuration has a credential and a model.
+
 ## What a run does
 
 - The calls go out at the same time, **one attempt each, with no retries and no fallbacks**, so what you see is what that credential and model do.
@@ -54,7 +60,7 @@ Every configuration leaves a trace in the project:
 - the trace's user id is your account id;
 - the span records the prompt version when you used one, so it appears in that version's [usage](/docs/prompts/#see-which-version-produced-a-trace).
 
-Open a result's trace from the run to see the exact request and response. [Evaluators](/docs/evaluators/) never sample playground traces, so trying prompts does not trigger automatic scoring.
+Open a result's trace from the run to see the exact request and response, or select **View playground runs** in the playground header to open **Traces** filtered to the tag `spanlight:playground`. [Evaluators](/docs/evaluators/) never sample playground traces, so trying prompts does not trigger automatic scoring.
 
 ## Cost and limits
 
@@ -206,7 +212,7 @@ Under `/api/v1/projects/{project_id}`:
 
 ## Check it worked
 
-Choose a credential and a model, write a message and select **Run**. The column shows the answer and a row of figures labelled Tokens, Cost, Latency and First token. First token is "—" because answers are not streamed. Then open **Traces** and filter the environment to `playground`: the run left a trace named `playground`.
+Choose a credential and a model, write a message and select **Run**. The column shows the answer and a row of figures labelled Tokens, Cost, Latency and First token. First token is "—" because answers are not streamed. Then select **View playground runs**: **Traces** lists the run's trace, named `playground`.
 
 ## Troubleshooting
 

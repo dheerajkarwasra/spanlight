@@ -1,12 +1,19 @@
 import type { AlertEventQuery, AlertRulePreviewInput } from "./alerts-types";
 import type { QueueItemListQuery } from "./annotations";
-import type { AttributionQuery } from "./attribution-types";
+import type { AttributionQuery, AttributionSeriesQuery } from "./attribution-types";
 import type { DatasetListQuery, ItemListQuery } from "./datasets";
 import type { EvaluatorRunListQuery } from "./evaluators";
 import type { PromptListQuery } from "./prompts";
 import type { ReplayListQuery } from "./replays";
 import type { AuditFilters } from "./orgs";
-import type { MetricsQuery, SessionListQuery, TimeWindow, TraceListQuery } from "./projects";
+import type {
+  MetricsQuery,
+  SessionListQuery,
+  SessionTurnsQuery,
+  TimeWindow,
+  TraceHistogramQuery,
+  TraceListQuery,
+} from "./projects";
 import type {
   Bucket,
   CompletenessQuery,
@@ -82,10 +89,14 @@ export const queryKeys = {
       keys: [...all, "keys"] as const,
       exports: [...all, "exports"] as const,
       export: (exportId: string) => [...all, "export", exportId] as const,
-      unpricedModels: (window: TimeWindow) => [...all, "unpriced-models", window] as const,
+      /** Every unpriced-models query of the project: invalidate with this. */
+      unpricedModelsAll: [...all, "unpriced-models"] as const,
+      unpricedModels: (window: TimeWindow, environment: string | undefined) =>
+        [...all, "unpriced-models", { ...window, environment }] as const,
       onboarding: [...all, "onboarding"] as const,
       filters: [...all, "filters"] as const,
       traces: (query: Omit<TraceListQuery, "cursor">) => [...all, "traces", query] as const,
+      traceHistogram: (query: TraceHistogramQuery) => [...all, "trace-histogram", query] as const,
       trace: (traceId: string) => [...all, "trace", traceId] as const,
       /** One span with its payloads; under `trace(traceId)` so invalidating a trace covers it. */
       span: (traceId: string, spanId: string) =>
@@ -95,10 +106,13 @@ export const queryKeys = {
       costExplanation: (traceId: string, spanId: string) =>
         [...all, "trace", traceId, "span", spanId, "cost-explanation"] as const,
       sessions: (query: Omit<SessionListQuery, "cursor">) => [...all, "sessions", query] as const,
+      sessionTurns: (sessionId: string, query: Omit<SessionTurnsQuery, "cursor">) =>
+        [...all, "session-turns", sessionId, query] as const,
       overview: (query: MetricsQuery) => [...all, "overview", query] as const,
       timeseries: (query: MetricsQuery & { bucket: Bucket }) =>
         [...all, "timeseries", query] as const,
       models: (query: MetricsQuery) => [...all, "models", query] as const,
+      tokenMix: (window: TimeWindow) => [...all, "token-mix", window] as const,
       alertRules: [...all, "alert-rules"] as const,
       alertRule: (ruleId: string) => [...all, "alert-rules", ruleId] as const,
       /** Every rule's event timeline: invalidate with this. */
@@ -107,6 +121,8 @@ export const queryKeys = {
         [...all, "alert-events", query] as const,
       alertPreview: (spec: AlertRulePreviewInput) => [...all, "alert-preview", spec] as const,
       budgets: [...all, "budgets"] as const,
+      /** Under `budgets`, so a budget edit invalidates its burn line too. */
+      budgetBurn: (budgetId: string) => [...all, "budgets", budgetId, "burn"] as const,
       /** Every Doctor query of the project (insights, summary, health, runs): invalidate with this. */
       doctor,
       insights: (query: Omit<InsightListQuery, "cursor">) =>
@@ -134,6 +150,8 @@ export const queryKeys = {
       user: (userId: string, query: UserDetailQuery) => [...all, "user", userId, query] as const,
       attribution: (query: Omit<AttributionQuery, "cursor">) =>
         [...all, "attribution", query] as const,
+      attributionSeries: (query: AttributionSeriesQuery) =>
+        [...all, "attribution-series", query] as const,
       gateway: {
         /** Every gateway query of the project: invalidate with this. */
         all: gateway,

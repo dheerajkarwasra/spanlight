@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ids import new_id
-from app.db.models import Score, ScoreConfig, Trace, User
+from app.db.models import EvaluatorRun, EvaluatorRunSource, Score, ScoreConfig, Trace, User
 from app.scores.types import ScoreDataType
 
 # A trace's scores are listed whole; this bounds one response.
@@ -38,6 +38,15 @@ class ScoreSummary(NamedTuple):
     name: str
     value: Decimal | None
     string_value: str | None
+
+
+class RunScore(NamedTuple):
+    """A score an evaluator run wrote; `comment` is the judge's reasoning, if any."""
+
+    name: str
+    value: Decimal | None
+    string_value: str | None
+    comment: str | None
 
 
 async def configs_by_name(
@@ -286,18 +295,44 @@ async def latest_scores_by_name(
 
 async def scores_by_run(
     db: AsyncSession, project_id: uuid.UUID, run_ids: Iterable[uuid.UUID]
-) -> dict[uuid.UUID, list[ScoreSummary]]:
+) -> dict[uuid.UUID, list[RunScore]]:
     """The scores each evaluator run wrote, by run id, in name order. One query."""
     wanted = set(run_ids)
     if not wanted:
         return {}
     rows = await db.execute(
-        select(Score.evaluator_run_id, Score.name, Score.value, Score.string_value)
+        select(Score.evaluator_run_id, Score.name, Score.value, Score.string_value, Score.comment)
         .where(Score.project_id == project_id, Score.evaluator_run_id.in_(wanted))
         .order_by(Score.evaluator_run_id, Score.name, Score.created_at)
     )
-    summaries: dict[uuid.UUID, list[ScoreSummary]] = {}
-    for run_id, name, value, string_value in rows:
+    summaries: dict[uuid.UUID, list[RunScore]] = {}
+    for run_id, name, value, string_value, comment in rows:
         if run_id is not None:
-            summaries.setdefault(run_id, []).append(ScoreSummary(name, value, string_value))
+            summaries.setdefault(run_id, []).append(RunScore(name, value, string_value, comment))
     return summaries
+
+
+async def experiment_comments_by_trace(
+    db: AsyncSession, project_id: uuid.UUID, trace_ids: Iterable[str]
+) -> dict[str, dict[str, str]]:
+    """`{trace id: {score name: comment}}` of the scores experiment evaluator runs wrote on these
+    traces, the newest per name; a trace without such a comment is absent. One query."""
+    wanted = set(trace_ids)
+    if not wanted:
+        return {}
+    rows = await db.execute(
+        select(Score.trace_id, Score.name, Score.comment)
+        .join(EvaluatorRun, EvaluatorRun.id == Score.evaluator_run_id)
+        .where(
+            Score.project_id == project_id,
+            Score.trace_id.in_(wanted),
+            Score.comment.is_not(None),
+            EvaluatorRun.source == EvaluatorRunSource.EXPERIMENT,
+        )
+        .order_by(Score.created_at, Score.id)
+    )
+    comments: dict[str, dict[str, str]] = {}
+    for trace_id, name, comment in rows:
+        if comment is not None:  # filtered above; narrows the type
+            comments.setdefault(trace_id, {})[name] = comment  # ascending: the newest wins
+    return comments

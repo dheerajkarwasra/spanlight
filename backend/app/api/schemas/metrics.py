@@ -1,6 +1,6 @@
 """Project-level KPIs, time series and per-model breakdowns."""
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -46,3 +46,17 @@ class ModelMetricsOut(BaseModel):
     output_tokens: int
     cost_usd: Money | None
     approximate: bool
+
+
+class TokenMixOut(BaseModel):
+    """LLM tokens by price class over the whole UTC days `first_day`..`last_day`, all
+    environments. Every figure is null when the project has no cost rollup in those days."""
+
+    first_day: date
+    last_day: date
+    uncached_input_tokens: int | None
+    output_tokens: int | None
+    cache_read_tokens: int | None
+    cache_write_tokens: int | None
+    fee_usd: Money | None
+    cost_usd: Money | None

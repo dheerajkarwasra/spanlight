@@ -10,6 +10,7 @@ import { shareOf } from "./footer-format";
 import { dimensionName, type AttributionView } from "./attribution-grid";
 import { DrillLink, ErrorCount, GroupCost, ShareCell, ValueLabel } from "./attribution-row";
 import { drillDownSearch, type TraceDrillSearch } from "./drill-down";
+import { RowActions } from "./row-actions";
 
 const TILE_CLASS =
   "flex flex-col gap-2 rounded-tile bg-surface-muted px-4 py-3.5 transition-colors";
@@ -20,6 +21,8 @@ interface TileProps {
   share: number | null;
   /** The whole tile is the link (RULING T20-3); no link for "other" and the total. */
   search: TraceDrillSearch | null;
+  /** The row menu, beside the link rather than inside it (no nested interactive content). */
+  actions?: ReactNode;
 }
 
 function Stat({ label, children }: { label: string; children: ReactNode }) {
@@ -32,7 +35,7 @@ function Stat({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** Figma "Attribution / Page (375)" tile: value and cost, the share bar, calls, errors, traces. */
-function AttributionTile({ label, figures, share, search }: TileProps) {
+function AttributionTile({ label, figures, share, search, actions }: TileProps) {
   const body = (
     <>
       <span className="flex min-w-0 items-baseline justify-between gap-3">
@@ -53,18 +56,36 @@ function AttributionTile({ label, figures, share, search }: TileProps) {
       </span>
     </>
   );
-  if (search === null) {
-    return <div className={TILE_CLASS}>{body}</div>;
+  const tile =
+    search === null ? (
+      <div className={cn(TILE_CLASS, actions && "pr-14")}>{body}</div>
+    ) : (
+      <DrillLink
+        search={search}
+        className={cn(TILE_CLASS, "hover:bg-surface-hover", actions && "pr-14")}
+      >
+        {body}
+      </DrillLink>
+    );
+  if (!actions) {
+    return tile;
   }
   return (
-    <DrillLink search={search} className={cn(TILE_CLASS, "hover:bg-surface-hover")}>
-      {body}
-    </DrillLink>
+    <div className="relative">
+      {tile}
+      <div className="absolute top-1.5 right-1.5">{actions}</div>
+    </div>
   );
 }
 
-/** The phone layout: one tile per value. */
-export function AttributionTiles({ view, stale }: { view: AttributionView; stale: boolean }) {
+interface AttributionTilesProps {
+  view: AttributionView;
+  stale: boolean;
+  onFocus: (value: string) => void;
+}
+
+/** The phone layout: one tile per value, each with the row menu. */
+export function AttributionTiles({ view, stale, onFocus }: AttributionTilesProps) {
   return (
     <ul
       aria-label={`Cost by ${dimensionName(view.drill.groupBy, view.drill.key)}`}
@@ -78,6 +99,15 @@ export function AttributionTiles({ view, stale }: { view: AttributionView; stale
             figures={row}
             share={row.share_of_cost}
             search={drillDownSearch(view.drill, row.value)}
+            actions={
+              // 44 px on touch (spec §11).
+              <RowActions
+                value={row.value}
+                drill={view.drill}
+                onFocus={onFocus}
+                className="size-11"
+              />
+            }
           />
         </li>
       ))}

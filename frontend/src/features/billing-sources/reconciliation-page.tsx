@@ -2,7 +2,7 @@ import { getRouteApi } from "@tanstack/react-router";
 import { Receipt } from "lucide-react";
 import { useMemo } from "react";
 
-import { BackLink } from "@/components/back-link";
+import { Breadcrumbs, Crumb } from "@/components/breadcrumbs";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -66,8 +66,12 @@ interface ContentProps {
 
 function ReconciliationContent({ source, reportWindow, onWindowChange }: ContentProps) {
   const canManage = usePermission("billing_sources:manage");
+  const { projectId } = useProjectParams();
   const report = useReconciliationQuery(source.id, reportWindow);
-  const rows = useMemo(() => (report.data ? flattenDays(report.data) : []), [report.data]);
+  const rows = useMemo(
+    () => (report.data ? flattenDays(report.data, projectId) : []),
+    [report.data, projectId],
+  );
   const tiles = useMemo(() => (report.data ? summaryTiles(report.data) : []), [report.data]);
 
   return (
@@ -133,9 +137,11 @@ function SourceError({ error, retrying, onRetry }: SourceErrorProps) {
   const missing = isApiError(error) && error.status === 404;
   return (
     <div className="flex flex-col gap-6">
-      <BackLink to="/$orgId/$projectId/settings/billing-sources" params={{ orgId, projectId }}>
-        Billing sources
-      </BackLink>
+      <Breadcrumbs current="Billing source">
+        <Crumb to="/$orgId/$projectId/reconciliation" params={{ orgId, projectId }}>
+          Reconciliation
+        </Crumb>
+      </Breadcrumbs>
       <ErrorState
         error={error}
         title={missing ? "Billing source not found" : "Couldn't load this billing source"}

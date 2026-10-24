@@ -5,6 +5,7 @@ import { viewOnlyCopy } from "@/lib/permissions";
 import { OrgDangerZone } from "./danger-zone";
 import { OrganizationForm } from "./organization-form";
 import { OrgSecurityCard } from "./org-security-card";
+import { SelfSavingHeading } from "../settings-save-bar";
 
 /**
  * Settings › Organization: rename, the two-factor requirement, and deleting the organization.
@@ -24,7 +25,7 @@ export function OrganizationPage() {
   const editable = !org.is_demo;
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex max-w-[720px] flex-col gap-5">
       {canRename ? null : (
         <ReadOnlyNote>{viewOnlyCopy("organization settings", "org:update")}</ReadOnlyNote>
       )}
@@ -34,6 +35,8 @@ export function OrganizationPage() {
         canEdit={editable && canRename}
         canSecure={editable && canSecure}
       />
+      {/* The form shows its save bar only to those who can rename. */}
+      {editable && canRename ? <SelfSavingHeading /> : null}
       <OrgSecurityCard org={org} canChange={editable && canSecure} sayWhoCanChange={canRename} />
       {editable && canDelete ? <OrgDangerZone org={org} /> : null}
     </div>

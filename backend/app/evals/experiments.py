@@ -16,6 +16,7 @@ pays providers. A second unfinished run is refused by a partial unique index
 """
 
 import uuid
+from collections.abc import Iterable
 from datetime import datetime
 
 from sqlalchemy.exc import IntegrityError
@@ -40,7 +41,12 @@ from app.evals.experiment_errors import (
     RunInProgressError,
 )
 from app.evals.experiment_request import priced
-from app.evals.experiment_totals import Totals, summarize_items, totals_from_json
+from app.evals.experiment_totals import (
+    Totals,
+    needs_evaluator_errors,
+    summarize_items,
+    totals_from_json,
+)
 from app.evals.service import Actor
 from app.gateway import service as gateway
 from app.jobs.queue import enqueue
@@ -243,8 +249,19 @@ async def run_totals(db: AsyncSession, project_id: uuid.UUID, run: ExperimentRun
     """The totals stored when the run ended; computed from its items while it runs (or when a
     run was reaped before it could store them)."""
     if run.totals is not None:
-        return totals_from_json(run.totals)
+        legacy = await legacy_evaluator_errors(db, [run])
+        return totals_from_json(run.totals, legacy.get(run.id))
     return summarize_items(
         await queries.item_facts(db, run.id),
         boolean_scores=await boolean_score_names(db, project_id),
     )
+
+
+async def legacy_evaluator_errors(
+    db: AsyncSession, runs: Iterable[ExperimentRun | None]
+) -> dict[uuid.UUID, int]:
+    """For runs whose stored totals predate `evaluator_errors`, the count from their items (0
+    included); other runs are absent. One query, none when every run's totals have the count."""
+    old = [run.id for run in runs if run is not None and needs_evaluator_errors(run.totals)]
+    counts = await queries.evaluator_error_counts(db, old)
+    return {run_id: counts.get(run_id, 0) for run_id in old}

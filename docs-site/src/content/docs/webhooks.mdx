@@ -12,7 +12,7 @@ import Prerequisites from '../../components/Prerequisites.astro';
 
 A webhook channel makes Spanlight send a signed `POST` with a JSON body to a URL you choose whenever an alert rule fires or resolves, a budget is exceeded, or the [Doctor](/docs/doctor/) opens a critical insight. Use it to open tickets, page a rota, or feed your own tooling. This page lists the events, the request, how to check that a request really came from your Spanlight, and what happens when your endpoint is down.
 
-Webhook channels belong to an organization. Create one under **Alerts → Channels**, choose **Webhook** and enter the URL. Spanlight shows the signing secret once, when the channel is created and again when you rotate it. Copy it then; it cannot be read back.
+Webhook channels belong to an organization. Create one under **Settings → Notification channels**, choose **Webhook** and enter the URL. Spanlight shows the signing secret once, when the channel is created and again when you rotate it. Copy it then; it cannot be read back.
 
 <Prerequisites
   items={[
@@ -207,7 +207,7 @@ A PagerDuty channel sends Events API v2 events instead of webhooks, and does not
 
 ## Check it worked
 
-Press **Test** on the webhook channel's row under **Alerts, Channels**. A tile under the row reads **Test sent**, and the row's **Not tested yet** changes to a **Verified** badge.
+Press **Test** on the webhook channel's row under **Settings, Notification channels**. A tile under the row reads **Test sent**, and the row's **Not tested yet** changes to a **Verified** badge.
 
 Your endpoint received one request with `X-Spanlight-Event: test` and a body of `version`, `event`, `occurred_at`, `org` and `url`. Run the [verification steps](#verify-a-request) on it: the computed signature must equal `X-Spanlight-Signature`. **Deliveries** on the row lists the test with the status `Sent`.
 

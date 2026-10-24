@@ -122,6 +122,11 @@
   --chart-class-client: #e34948;
   --chart-class-gateway: #57534e;
   --chart-class-unknown: #a8a6a0;
+  /* The cost strip's token mix; aliases, so `.dark` (on the same root element) restyles them. */
+  --chart-mix-input: var(--chart-class-rate-limit);
+  --chart-mix-output: var(--chart-class-provider-5xx);
+  --chart-mix-cache-read: var(--chart-class-timeout);
+  --chart-mix-cache-write: var(--chart-class-network);
 
   /* Hero mesh gradient */
   --mesh-1: #e9d5ff;
@@ -571,6 +576,14 @@
   font-style: italic;
   font-weight: 400;
   letter-spacing: 0;
+}
+
+/* The phone app bar is sticky (4rem tall): keep a focused or scrolled-to element below it
+   (WCAG 2.4.11). */
+@media (width < 64rem) {
+  :root:has([data-app-bar]) {
+    scroll-padding-top: 4rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

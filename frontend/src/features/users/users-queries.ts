@@ -1,15 +1,18 @@
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
 import { useProjectFilters, useProjectParams } from "@/features/shell/project-context";
-import { endUsersApi, queryKeys, type UserSort } from "@/lib/api";
+import { endUsersApi, queryKeys } from "@/lib/api";
 
-import { toUserListQuery } from "./user-sort";
+import { toUserListQuery, type UsersListState } from "./user-sort";
 
-/** End users ranked by `sort` over the selected range. Previous rows stay while the sort changes. */
-export function useUserListQuery(sort: UserSort) {
+/**
+ * End users matching `q`, ranked by `sort` and `order` over the selected range and environment.
+ * Previous rows stay while the sort or search changes.
+ */
+export function useUserListQuery(list: UsersListState) {
   const { projectId } = useProjectParams();
-  const { range } = useProjectFilters();
-  const query = toUserListQuery(sort, range);
+  const { range, environment } = useProjectFilters();
+  const query = toUserListQuery(list, range, environment);
 
   return useInfiniteQuery({
     queryKey: queryKeys.project(projectId).users(query),
@@ -20,11 +23,11 @@ export function useUserListQuery(sort: UserSort) {
   });
 }
 
-/** One user's totals, daily rows and recent sessions over the selected range. */
+/** One user's totals, daily rows and recent sessions over the selected range and environment. */
 export function useUserDetailQuery(userId: string) {
   const { projectId } = useProjectParams();
-  const { range } = useProjectFilters();
-  const query = { from: range.from, to: range.to };
+  const { range, environment } = useProjectFilters();
+  const query = { from: range.from, to: range.to, environment };
 
   return useQuery({
     queryKey: queryKeys.project(projectId).user(userId, query),

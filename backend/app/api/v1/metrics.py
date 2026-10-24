@@ -10,10 +10,11 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import DbSession, ReadAccess, require
-from app.api.schemas import ModelMetricsOut, OverviewOut, TimeseriesPointOut
+from app.api.schemas import ModelMetricsOut, OverviewOut, TimeseriesPointOut, TokenMixOut
 from app.api.window import Window
 from app.core.permissions import Permission
 from app.metrics import service
+from app.metrics.token_mix import token_mix
 
 router = APIRouter(prefix="/projects/{project_id}/metrics", tags=["metrics"])
 
@@ -57,3 +58,12 @@ async def models(
 ) -> list[ModelMetricsOut]:
     project = access.require_project()
     return await service.models(db, project.id, window, environment)
+
+
+@router.get("/token-mix", response_model=TokenMixOut)
+async def get_token_mix(
+    project_id: uuid.UUID, access: ProjectReader, db: DbSession, window: Window
+) -> TokenMixOut:
+    """Tokens by price class over the UTC days the window touches, all environments."""
+    project = access.require_project()
+    return await token_mix(db, project.id, window)

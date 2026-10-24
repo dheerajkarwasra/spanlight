@@ -10,7 +10,7 @@ sidebar:
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
 
-An **alert rule** watches one metric of a project and notifies **channels** when the metric crosses a line, and again when it comes back. Rules belong to a project and are managed under **Alerts, Rules**; channels belong to the organization and are managed under **Alerts, Channels**. [Budgets](/docs/budgets/) use the same channels and the same delivery path.
+An **alert rule** watches one metric of a project and notifies **channels** when the metric crosses a line, and again when it comes back. Rules belong to a project and are managed under **Alerts**; channels belong to the organization and are managed under **Settings, Notification channels**. [Budgets](/docs/budgets/) use the same channels and the same delivery path.
 
 Anyone who can see a project can read its rules and events. Only organization **admins and owners** can create, edit, mute or delete rules and channels, acknowledge events, and retry deliveries. A member sees the controls disabled.
 
@@ -97,6 +97,10 @@ The rule editor draws the last 7 days of the metric, with the anomaly band for a
 - **Acknowledge** marks an event as seen by you, for the team's own bookkeeping. It does not stop the alert, change its state or send anything. An event can be acknowledged once, open or resolved.
 - **Editing a firing rule resolves it.** Changing a rule's kind, metric, condition, threshold, window, filters, baseline or sensitivity, disabling it, or deleting it ends its open event at that moment and sends `alert.resolved` to its channels (unless it is muted). The next evaluation starts from a clean state, and the cooldown applies. Renaming, changing channels or cooldown, and enabling keep the state.
 
+### Firing history
+
+While any rule or budget fires, the Alerts page opens with a banner naming the first of them and when it started. Beside the rules, **Firing history** lists every firing of the project, latest first, one row per rule ("Fired 3 times · last 14 min ago"). Expand a row for its firings: when each started, how long it lasted and the value against the line. **View traces** opens the traces the rule measured, from one window before the firing to its end, with the rule's filters; filters the trace list cannot express, such as provider, are named under the link. A budget's firing links to Budgets.
+
 ## How evaluation works
 
 The worker evaluates every enabled rule **once a minute**. Each rule is evaluated in its own transaction. A state change, its event, and every notification it causes are written together, so a crash can never leave an event without its notifications, or notifications without an event.
@@ -126,7 +130,7 @@ Full descriptions are in [Configuration](/docs/configuration/#alerts).
 
 ## Check it worked
 
-Save a channel, then press **Test** on its row. A tile under the row reads **Test sent**, and the row's **Not tested yet** changes to a **Verified** badge. Then save a rule and open **Alerts, Rules**. Right after saving, the rule's pill reads **No data yet**. After the worker's first pass, within about a minute, it reads **OK** or **Firing**. **OK** can also mean the metric had no data in the window: open the rule and look at its last value, which reads "—" when it is unknown. See the first row below.
+Save a channel, then press **Test** on its row. A tile under the row reads **Test sent**, and the row's **Not tested yet** changes to a **Verified** badge. Then save a rule and open **Alerts**. Right after saving, the rule's pill reads **No data yet**. After the worker's first pass, within about a minute, it reads **OK** or **Firing**. **OK** can also mean the metric had no data in the window: open the rule and look at its last value, which reads "—" when it is unknown. See the first row below.
 
 ## Troubleshooting
 

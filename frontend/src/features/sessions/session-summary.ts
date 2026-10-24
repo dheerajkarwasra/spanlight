@@ -1,5 +1,5 @@
 /** Aggregates for a session built from its traces. Pure functions only. */
-import type { TraceSummary } from "@/lib/api";
+import type { SessionTurn, TraceSummary } from "@/lib/api";
 import { parseMoney } from "@/lib/format";
 
 export interface SessionTotals {
@@ -15,10 +15,10 @@ export interface SessionTotals {
   durationMs: number | null;
 }
 
-/** Oldest first, for reading a conversation top to bottom. */
-export function sortChronologically(traces: readonly TraceSummary[]): TraceSummary[] {
-  return [...traces].sort(
-    (a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime(),
+/** Turns oldest first, for reading a conversation top to bottom. */
+export function sortChronologically(turns: readonly SessionTurn[]): SessionTurn[] {
+  return [...turns].sort(
+    (a, b) => new Date(a.trace.started_at).getTime() - new Date(b.trace.started_at).getTime(),
   );
 }
 
@@ -181,5 +181,15 @@ export function timelinePoints(traces: readonly TraceSummary[]): TimelinePoint[]
         failed: trace.error_count > 0,
       },
     ];
+  });
+}
+
+/** Running total of the known turn costs, oldest first; null until a turn has a known cost. */
+export function cumulativeCost(traces: readonly TraceSummary[]): (number | null)[] {
+  let total: number | null = null;
+  return traces.map((trace) => {
+    const cost = parseMoney(trace.cost_usd);
+    if (cost !== null) total = (total ?? 0) + cost;
+    return total;
   });
 }

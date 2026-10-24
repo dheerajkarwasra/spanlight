@@ -6,6 +6,7 @@ string; an unknown cost or latency is `null`, never zero.
 """
 
 import uuid
+from collections.abc import Mapping
 from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Any
@@ -59,7 +60,10 @@ class ScoreStatOut(ApiModel):
 
 class TotalsOut(ApiModel):
     items: int
+    # Items whose call failed.
     errors: int
+    # Answered items whose scoring broke (`evaluator_error`); 0 on totals stored before this count.
+    evaluator_errors: int
     # The sum of the known item costs; null when no item's cost is known.
     cost_usd: Money | None
     # True when an item that made a call has no known cost: `cost_usd` is then a lower bound.
@@ -74,6 +78,7 @@ class TotalsOut(ApiModel):
         return cls(
             items=totals.items,
             errors=totals.errors,
+            evaluator_errors=totals.evaluator_errors,
             cost_usd=totals.cost_usd,
             has_unpriced=totals.has_unpriced,
             latency_p50_ms=totals.latency_p50_ms,
@@ -112,8 +117,14 @@ class ExperimentRunOut(ApiModel):
     totals: TotalsOut | None = None
 
     @classmethod
-    def of(cls, run: ExperimentRun, totals: Totals | None = None) -> "ExperimentRunOut":
-        """`totals` overrides the stored ones (a live computation)."""
+    def of(
+        cls,
+        run: ExperimentRun,
+        totals: Totals | None = None,
+        evaluator_errors: int | None = None,
+    ) -> "ExperimentRunOut":
+        """`totals` overrides the stored ones (a live computation). `evaluator_errors` is the
+        count from the items for stored totals that predate it (`legacy_evaluator_errors`)."""
         return cls(
             id=run.id,
             experiment_id=run.experiment_id,
@@ -125,14 +136,18 @@ class ExperimentRunOut(ApiModel):
             finished_at=run.finished_at,
             heartbeat_at=run.heartbeat_at,
             started_by=run.started_by,
-            totals=_totals_out(run, totals),
+            totals=_totals_out(run, totals, evaluator_errors),
         )
 
 
-def _totals_out(run: ExperimentRun, totals: Totals | None) -> TotalsOut | None:
+def _totals_out(
+    run: ExperimentRun, totals: Totals | None, evaluator_errors: int | None
+) -> TotalsOut | None:
     if totals is not None:
         return TotalsOut.of(totals)
-    return TotalsOut.of(totals_from_json(run.totals)) if run.totals is not None else None
+    if run.totals is None:
+        return None
+    return TotalsOut.of(totals_from_json(run.totals, evaluator_errors))
 
 
 class LastRunOut(ApiModel):
@@ -147,14 +162,14 @@ class LastRunOut(ApiModel):
     totals: TotalsOut | None
 
     @classmethod
-    def of(cls, run: ExperimentRun) -> "LastRunOut":
+    def of(cls, run: ExperimentRun, evaluator_errors: int | None = None) -> "LastRunOut":
         return cls(
             id=run.id,
             number=run.number,
             status=run.status,
             started_at=run.started_at,
             finished_at=run.finished_at,
-            totals=_totals_out(run, None),
+            totals=_totals_out(run, None, evaluator_errors),
         )
 
 
@@ -171,8 +186,14 @@ class ExperimentOut(ApiModel):
     last_run: LastRunOut | None
 
     @classmethod
-    def of(cls, experiment: Experiment, summary: RunSummary | None = None) -> "ExperimentOut":
-        """`summary` None means the experiment has no runs (it was just created)."""
+    def of(
+        cls,
+        experiment: Experiment,
+        summary: RunSummary | None = None,
+        legacy_evaluator_errors: Mapping[uuid.UUID, int] | None = None,
+    ) -> "ExperimentOut":
+        """`summary` None means the experiment has no runs (it was just created);
+        `legacy_evaluator_errors` is `experiments.legacy_evaluator_errors` of its last run."""
         last = summary.last_run if summary is not None else None
         return cls.model_validate(
             {
@@ -184,7 +205,11 @@ class ExperimentOut(ApiModel):
                 "created_by": experiment.created_by,
                 "created_at": experiment.created_at,
                 "run_count": summary.run_count if summary is not None else 0,
-                "last_run": LastRunOut.of(last) if last is not None else None,
+                "last_run": (
+                    LastRunOut.of(last, (legacy_evaluator_errors or {}).get(last.id))
+                    if last is not None
+                    else None
+                ),
             }
         )
 
@@ -209,10 +234,14 @@ class ExperimentItemOut(ApiModel):
     error: str | None
     # Scoring the answer broke (the answer and its cost are kept); its scores are then absent.
     evaluator_error: str | None
+    # `{score name: the judge's reasoning}` from the scores on the item's trace; null when none.
+    score_comments: dict[str, str] | None
     created_at: datetime
 
     @classmethod
-    def of(cls, item: ExperimentItem, position: int) -> "ExperimentItemOut":
+    def of(
+        cls, item: ExperimentItem, position: int, score_comments: dict[str, str] | None = None
+    ) -> "ExperimentItemOut":
         return cls(
             dataset_item_id=item.dataset_item_id,
             position=position,
@@ -226,5 +255,6 @@ class ExperimentItemOut(ApiModel):
             cost_usd=item.cost_usd,
             error=item.error,
             evaluator_error=item.evaluator_error,
+            score_comments=score_comments,
             created_at=item.created_at,
         )

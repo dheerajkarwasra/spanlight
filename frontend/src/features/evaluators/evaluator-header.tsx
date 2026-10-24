@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useProjectParams } from "@/features/shell";
 import { errorMessage, type Evaluator } from "@/lib/api";
 
-import { BackToEvaluators } from "./back-link";
+import { EvaluatorsBreadcrumbs } from "./back-link";
 import { KindChip, StatePill } from "./evaluator-chips";
 import { evaluatorSummary, samplingLabel, scoreLabel } from "./evaluator-labels";
 import { useUpdateEvaluator } from "./evaluator-queries";
@@ -37,7 +37,7 @@ export function EvaluatorHeader({ evaluator, channelName, canWrite }: EvaluatorH
 
   return (
     <div className="flex flex-col gap-4">
-      <BackToEvaluators />
+      <EvaluatorsBreadcrumbs current={evaluator.name} />
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-8">
         <div className="flex min-w-0 flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2.5">

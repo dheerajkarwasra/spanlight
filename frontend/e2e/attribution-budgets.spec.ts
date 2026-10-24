@@ -49,7 +49,11 @@ test("attribution: empty, grouped by metadata, drill-down, promote, export", asy
   const globex = table.getByRole("row").filter({ has: page.getByRole("link", { name: "globex" }) });
   await expect(acme).toContainText("66.7%");
   await expect(globex).toContainText("33.3%");
-  await expect(table.getByRole("columnheader")).toHaveCount(9);
+  // At 1280 px every default column fits: seven plus Table settings; Retries stay hidden by default.
+  await expect(table.getByRole("columnheader")).toHaveCount(8);
+  await expect(table.getByRole("columnheader", { name: "LLM calls" })).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: "Errors" })).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: "Retries" })).toHaveCount(0);
   await checkAtWidths(page, "attribution", async () => {
     // The table on a laptop, one tile per value on a phone.
     await expect(page.getByLabel("Cost by customer_id").filter({ visible: true })).toHaveCount(1);
@@ -71,10 +75,15 @@ test("attribution: empty, grouped by metadata, drill-down, promote, export", asy
   await checkAtWidths(page, "attribution-export", async () => {
     await expect(exportDialog.getByRole("button", { name: "Start export" })).toBeVisible();
   });
-  await exportDialog.getByRole("button", { name: "Start export" }).click();
-  const queued = page.getByRole("dialog", { name: "Export queued" });
-  const notConfigured = exportDialog.getByText("Not available on this server");
-  await expect(queued.or(notConfigured)).toBeVisible();
+  // Without object storage the dialog says so up front and the button stays disabled.
+  const startExport = exportDialog.getByRole("button", { name: "Start export" });
+  const notConfigured = exportDialog.getByText("Not configured on this server");
+  if (await notConfigured.isVisible()) {
+    await expect(startExport).toBeDisabled();
+  } else {
+    await startExport.click();
+    await expect(page.getByRole("dialog", { name: "Export queued" })).toBeVisible();
+  }
   await expectNoAxeViolations(page);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toBeHidden();
@@ -108,7 +117,13 @@ test("attribution: empty, grouped by metadata, drill-down, promote, export", asy
   await checkAtWidths(page, "traces-metadata-chip", async () => {
     await expect(page.getByText("acme-chat-1").filter({ visible: true }).first()).toBeVisible();
   });
+  // From 1280 px a row click opens the peek, which hides below 1280 (the 375 px check below), so
+  // open the trace page itself: below 1280 a row click navigates.
+  await page.setViewportSize({ width: 1024, height: 900 });
   await page.getByRole("link", { name: "acme-chat-1" }).click();
+  await expect(page).toHaveURL(/\/traces\/[0-9a-f]{32}/);
+  // The metadata block sits in the Trace info panel, opened from the summary bar.
+  await page.getByRole("button", { name: "Trace info" }).click();
   const metadata = page.getByRole("region", { name: "Metadata" });
   await expect(metadata).toBeVisible();
   await expect(

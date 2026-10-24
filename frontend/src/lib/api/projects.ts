@@ -1,4 +1,5 @@
 import { api } from "./client";
+import { toPathId } from "./end-users";
 import { projectPath } from "./paths";
 import type {
   ApiKey,
@@ -13,11 +14,14 @@ import type {
   Page,
   Project,
   ProjectUpdate,
-  SessionSummary,
+  SessionPage,
+  SessionSort,
+  SessionTurn,
   Span,
   TimeseriesPoint,
   TraceComparison,
   TraceDetail,
+  TraceHistogram,
   TraceSort,
   TraceStatusFilter,
   TraceSummary,
@@ -27,6 +31,21 @@ import type {
 export interface TimeWindow {
   from: string;
   to: string;
+}
+
+/**
+ * LLM tokens by price class over whole UTC days, all environments (`GET …/metrics/token-mix`).
+ * Every figure is null when the project has no cost rollup in those days.
+ */
+export interface TokenMix {
+  first_day: string;
+  last_day: string;
+  uncached_input_tokens: number | null;
+  output_tokens: number | null;
+  cache_read_tokens: number | null;
+  cache_write_tokens: number | null;
+  fee_usd: string | null;
+  cost_usd: string | null;
 }
 
 export interface MetricsQuery extends TimeWindow {
@@ -60,12 +79,36 @@ export interface TraceListQuery extends TimeWindow {
   name?: string | undefined;
   /** The server's default is `started_at` (newest first). */
   sort?: TraceSort | undefined;
+  /** The server's default is `desc`. */
+  order?: "asc" | "desc" | undefined;
+  /** Fill `input_preview` / `output_preview` on each trace. */
+  preview?: boolean | undefined;
   limit?: number | undefined;
   cursor?: string | null | undefined;
 }
 
+/** The histogram takes exactly the list's filters, without its order and paging. */
+export type TraceHistogramQuery = Omit<
+  TraceListQuery,
+  "sort" | "order" | "preview" | "limit" | "cursor"
+>;
+
 export interface SessionListQuery extends TimeWindow {
   /** Counts only the traces of this environment; omitted for every environment. */
+  environment?: string | undefined;
+  /** A session id prefix (ignoring case) or an exact user id. */
+  q?: string | undefined;
+  /** The server's default is `last` (latest turn first). */
+  sort?: SessionSort | undefined;
+  order?: "asc" | "desc" | undefined;
+  /** Fill `last_input_preview` on each session. */
+  preview?: boolean | undefined;
+  limit?: number;
+  cursor?: string | null;
+}
+
+/** A session's turns, newest first like `GET /traces?session_id=`, for as long as retained. */
+export interface SessionTurnsQuery {
   environment?: string | undefined;
   limit?: number;
   cursor?: string | null;
@@ -106,6 +149,8 @@ export const projectsApi = {
 
   traces: (projectId: string, query: TraceListQuery): Promise<Page<TraceSummary>> =>
     api.get<Page<TraceSummary>>(`${projectPath(projectId)}/traces`, { ...query }),
+  traceHistogram: (projectId: string, query: TraceHistogramQuery): Promise<TraceHistogram> =>
+    api.get<TraceHistogram>(`${projectPath(projectId)}/traces/histogram`, { ...query }),
   trace: (projectId: string, traceId: string): Promise<TraceDetail> =>
     api.get<TraceDetail>(`${projectPath(projectId)}/traces/${encodeURIComponent(traceId)}`),
   compareTraces: (projectId: string, a: string, b: string): Promise<TraceComparison> =>
@@ -117,8 +162,18 @@ export const projectsApi = {
       `${projectPath(projectId)}/traces/${encodeURIComponent(traceId)}/spans/${encodeURIComponent(spanId)}`,
     ),
 
-  sessions: (projectId: string, query: SessionListQuery): Promise<Page<SessionSummary>> =>
-    api.get<Page<SessionSummary>>(`${projectPath(projectId)}/sessions`, { ...query }),
+  sessions: (projectId: string, query: SessionListQuery): Promise<SessionPage> =>
+    api.get<SessionPage>(`${projectPath(projectId)}/sessions`, { ...query }),
+  /** The session id travels as one path segment, `~`-prefixed like user ids (`toPathId`). */
+  sessionTurns: (
+    projectId: string,
+    sessionId: string,
+    query: SessionTurnsQuery,
+  ): Promise<Page<SessionTurn>> =>
+    api.get<Page<SessionTurn>>(
+      `${projectPath(projectId)}/sessions/${encodeURIComponent(toPathId(sessionId))}/turns`,
+      { ...query },
+    ),
 
   overview: (projectId: string, query: MetricsQuery): Promise<OverviewMetrics> =>
     api.get<OverviewMetrics>(`${projectPath(projectId)}/metrics/overview`, { ...query }),
@@ -129,4 +184,7 @@ export const projectsApi = {
     api.get<TimeseriesPoint[]>(`${projectPath(projectId)}/metrics/timeseries`, { ...query }),
   models: (projectId: string, query: MetricsQuery): Promise<ModelMetrics[]> =>
     api.get<ModelMetrics[]>(`${projectPath(projectId)}/metrics/models`, { ...query }),
+  /** Ignores `environment`: the cost rollup it reads has none. */
+  tokenMix: (projectId: string, window: TimeWindow): Promise<TokenMix> =>
+    api.get<TokenMix>(`${projectPath(projectId)}/metrics/token-mix`, { ...window }),
 };

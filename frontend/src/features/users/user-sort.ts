@@ -1,3 +1,4 @@
+import type { SortOrder } from "@/components/data-table";
 import type { UserListQuery, UserSort } from "@/lib/api";
 
 import type { UsersSearch } from "./search";
@@ -11,33 +12,34 @@ export const SORT_COLUMNS: readonly { sort: UserSort; label: string }[] = [
   { sort: "cost", label: "Cost" },
 ];
 
-/** Footer wording for the active sort. The API always sorts descending, unknowns last. */
-const SORT_PHRASES: Record<UserSort, string> = {
-  cost: "sorted by cost, unpriced last",
-  errors: "sorted by errors",
-  traces: "sorted by traces",
-};
-
-export function sortPhrase(sort: UserSort): string {
-  return SORT_PHRASES[sort];
+/** Footer wording for the active sort. Unknowns sort last in both directions. */
+export function sortPhrase(sort: UserSort, order: SortOrder): string {
+  const direction = order === "asc" ? "lowest first" : "highest first";
+  return `sorted by ${sort}, ${direction}${sort === "cost" ? ", unpriced last" : ""}`;
 }
 
-/** Search params after choosing a sort column: the window and environment params are kept. */
-export function withSort<T extends UsersSearch>(search: T, sort: UserSort): T {
-  return { ...search, sort };
+/**
+ * Search params after choosing a sort: the window, environment and search params are kept, and
+ * the defaults (`cost`, `desc`) are left out of the URL.
+ */
+export function withSort<T extends UsersSearch>(search: T, sort: UserSort, order: SortOrder): T {
+  return {
+    ...search,
+    sort: sort === "cost" ? undefined : sort,
+    order: order === "desc" ? undefined : order,
+  };
 }
 
-/** `aria-sort` of a sortable column header: only the active column is ordered. */
-export function ariaSortFor(column: UserSort, active: UserSort): "descending" | "none" {
-  return column === active ? "descending" : "none";
-}
+/** The list state the URL carries besides the window. */
+export type UsersListState = Pick<UsersSearch, "sort" | "order" | "q">;
 
-/** Maps the URL sort and the resolved time range onto the list endpoint's query. */
+/** Maps the URL list state, the resolved time range and the environment onto the list's query. */
 export function toUserListQuery(
-  sort: UserSort,
+  { sort, order, q }: UsersListState,
   window: { from: string; to: string },
+  environment: string | undefined,
 ): Omit<UserListQuery, "cursor"> {
-  return { from: window.from, to: window.to, sort, limit: USER_PAGE_SIZE };
+  return { from: window.from, to: window.to, sort, order, q, environment, limit: USER_PAGE_SIZE };
 }
 
 /** The window params every project page shares; kept when moving between the list and a user. */
@@ -51,15 +53,15 @@ export function keepWindow(previous: {
 }
 
 /*
- * The list's sort from the last visit, so "Back to users" on the detail page returns to the same
- * order. In memory only, like the traces list's remembered search.
+ * The list's sort, direction and search from the last visit, so "Back to users" on the detail page
+ * returns to the same list. In memory only, like the traces list's remembered search.
  */
-let lastSort: UserSort | null = null;
+let lastList: UsersListState | null = null;
 
-export function rememberUsersSort(sort: UserSort): void {
-  lastSort = sort;
+export function rememberUsersList(list: UsersListState): void {
+  lastList = list;
 }
 
-export function recallUsersSort(): UserSort | undefined {
-  return lastSort ?? undefined;
+export function recallUsersList(): Partial<UsersListState> {
+  return lastList ?? {};
 }

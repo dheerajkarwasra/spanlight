@@ -25,10 +25,15 @@ export function CapturePayloadsField({ control, canEdit }: CapturePayloadsFieldP
         <Label htmlFor={switchId} className="text-sm">
           Capture prompts &amp; completions
         </Label>
-        <p id={descriptionId} className="text-sm text-muted-foreground">
-          Secrets such as API keys are redacted before storage. Turn off to keep metadata only:
-          tokens, cost, latency and model. Existing traces are unaffected.
-        </p>
+        <div id={descriptionId} className="flex flex-col gap-1">
+          <p className="text-sm text-muted-foreground">
+            Secrets such as API keys are redacted before storage. Turn off to keep metadata only:
+            tokens, cost, latency and model.
+          </p>
+          <p className="text-xs font-medium text-muted-foreground">
+            Applies to spans ingested after you save; stored traces keep what they had.
+          </p>
+        </div>
       </div>
       <Controller
         control={control}
@@ -49,7 +54,7 @@ export function CapturePayloadsField({ control, canEdit }: CapturePayloadsFieldP
   );
 }
 
-/** The "Weekly digest email" switch tile of the Email card. */
+/** The "Weekly digest email" switch tile of the Data card. */
 export function WeeklyDigestField({ control, canEdit }: CapturePayloadsFieldProps) {
   const switchId = useId();
   const descriptionId = useId();
@@ -60,9 +65,14 @@ export function WeeklyDigestField({ control, canEdit }: CapturePayloadsFieldProp
         <Label htmlFor={switchId} className="text-sm">
           Weekly digest email
         </Label>
-        <p id={descriptionId} className="text-sm text-muted-foreground">
-          Every Monday, members get a summary of spend, calls, errors and alerts.
-        </p>
+        <div id={descriptionId} className="flex flex-col gap-1">
+          <p className="text-sm text-muted-foreground">
+            A summary of spend, calls, errors and alerts.
+          </p>
+          <p className="text-xs font-medium text-muted-foreground">
+            Sent Mondays to organization members with a verified email.
+          </p>
+        </div>
       </div>
       <Controller
         control={control}

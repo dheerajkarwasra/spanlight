@@ -59,7 +59,7 @@ KIND_INFO: dict[str, KindInfo] = {
             S.WARNING,
             "Error rate jumped to {error_rate} on {model} in {environment}",
             "{errors} of {calls} LLM calls failed in the last 15 minutes, against "
-            "{baseline_error_rate} over the previous 7 days.",
+            "{baseline_error_rate} over the 7 days before the last 24 hours.",
             "Open the example traces and filter by error class; one class usually names the "
             "cause: `rate_limit` → slow down or raise limits, `auth` → rotate the key, "
             "`provider_5xx` → add a fallback target to the gateway route, `context_length` → "
@@ -75,7 +75,7 @@ KIND_INFO: dict[str, KindInfo] = {
             S.WARNING,
             "p95 latency on {model} rose to {p95}",
             "p95 over the last hour is {p95} across {calls} successful calls, against "
-            "{baseline_p95} over the previous 7 days.",
+            "{baseline_p95} over the 7 days before the last 24 hours.",
             "Compare a slow trace with a fast one. Longer inputs or outputs, a new release, or "
             "a provider slowdown are the usual causes. Cap `max_tokens`, trim context, or route "
             "latency-sensitive calls to a faster model.",

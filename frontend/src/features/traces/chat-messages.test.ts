@@ -24,7 +24,7 @@ describe("parseChatPayload — OpenAI Chat Completions", () => {
     expect(parseChatPayload([{ role: "developer", content: "Rules" }])?.[0]?.role).toBe("system");
   });
 
-  it("parses content parts, including images, without loading image data", () => {
+  it("parses content parts; inline images keep their data URL, remote ones only a label", () => {
     const messages = parseChatPayload([
       {
         role: "user",
@@ -38,7 +38,7 @@ describe("parseChatPayload — OpenAI Chat Completions", () => {
 
     expect(messages?.[0]?.parts).toEqual([
       { type: "text", text: "What is this?" },
-      { type: "image", description: "Inline image (base64)" },
+      { type: "image", description: "Inline image (base64)", src: "data:image/png;base64,AAAA" },
       { type: "image", description: "https://example.com/cat.png" },
     ]);
   });
@@ -195,7 +195,7 @@ describe("parseChatPayload — Anthropic Messages", () => {
     ]);
   });
 
-  it("describes base64 images by media type", () => {
+  it("describes base64 images by media type and keeps them as a data URL", () => {
     const messages = parseChatPayload({
       messages: [
         {
@@ -208,7 +208,11 @@ describe("parseChatPayload — Anthropic Messages", () => {
     });
 
     expect(messages?.[0]?.parts).toEqual([
-      { type: "image", description: "Inline image (image/png, base64)" },
+      {
+        type: "image",
+        description: "Inline image (image/png, base64)",
+        src: "data:image/png;base64,AAAA",
+      },
     ]);
   });
 
@@ -252,14 +256,66 @@ describe("parseChatPayload — Anthropic Messages", () => {
     expect(parseChatPayload({ content: [] })).toBeNull();
   });
 
-  it("keeps unknown blocks as JSON parts", () => {
+  it("reads thinking blocks as thinking parts", () => {
     const messages = parseChatPayload([
-      { role: "assistant", content: [{ type: "thinking", thinking: "hmm" }] },
+      { role: "assistant", content: [{ type: "thinking", thinking: "hmm", signature: "c2ln" }] },
     ]);
 
-    expect(messages?.[0]?.parts).toEqual([
-      { type: "json", value: { type: "thinking", thinking: "hmm" } },
+    expect(messages?.[0]?.parts).toEqual([{ type: "thinking", text: "hmm" }]);
+  });
+
+  it("reads redacted thinking as a redacted part", () => {
+    const messages = parseChatPayload([
+      { role: "assistant", content: [{ type: "redacted_thinking", data: "opaque" }] },
     ]);
+
+    expect(messages?.[0]?.parts).toEqual([{ type: "redacted_thinking" }]);
+  });
+
+  it("drops empty and signature-only thinking blocks", () => {
+    const messages = parseChatPayload([
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "", signature: "c2ln" },
+          { type: "thinking", signature: "c2ln" },
+          { type: "text", text: "Done." },
+        ],
+      },
+    ]);
+
+    expect(messages?.[0]?.parts).toEqual([{ type: "text", text: "Done." }]);
+  });
+
+  it("reads a top-level content-block list as one assistant message", () => {
+    const messages = parseChatPayload([
+      { type: "thinking", thinking: "Check the policy." },
+      { type: "text", text: "Replacement started." },
+    ]);
+
+    expect(messages).toEqual([
+      {
+        role: "assistant",
+        name: null,
+        toolCallId: null,
+        parts: [
+          { type: "thinking", text: "Check the policy." },
+          { type: "text", text: "Replacement started." },
+        ],
+      },
+    ]);
+  });
+
+  it("does not read a list of unknown typed objects as a message", () => {
+    expect(parseChatPayload([{ type: "doc", id: "kb-112" }])).toBeNull();
+  });
+
+  it("keeps unknown blocks as JSON parts", () => {
+    const messages = parseChatPayload([
+      { role: "assistant", content: [{ type: "citation", ref: 1 }] },
+    ]);
+
+    expect(messages?.[0]?.parts).toEqual([{ type: "json", value: { type: "citation", ref: 1 } }]);
   });
 });
 

@@ -44,8 +44,17 @@ test("prompt v1 → v2 → label → playground explains the missing credential"
   await labelDialog.getByRole("button", { name: "Save label" }).click();
   await expect(labelDialog).toBeHidden();
   await expect(page.getByText("production", { exact: true }).first()).toBeVisible();
+  // Each version row carries its last 7 days of usage; nothing has called this prompt yet.
+  await expect(versions.getByText("No calls in 7 days")).toHaveCount(2);
 
-  // 4. The playground cannot run without a provider credential, and says so before any call.
+  // 4. "Create experiment" opens the new-experiment form with the shown version picked.
+  await page.getByRole("link", { name: "Create experiment", exact: true }).click();
+  await expect(page).toHaveURL(/\/experiments\/new\?prompt=support-answer&version=/);
+  await expect(page.getByRole("combobox", { name: "Prompt" })).toHaveText("support-answer");
+  await expect(page.getByRole("combobox", { name: "Version" })).toHaveText("v1");
+  await expectNoAxeViolations(page);
+
+  // 5. The playground cannot run without a provider credential, and says so before any call.
   await page.goto(`${base}/playground`);
   await expect(
     page.getByText("This organization has no provider credentials yet.", { exact: false }),
@@ -56,5 +65,24 @@ test("prompt v1 → v2 → label → playground explains the missing credential"
   await column.getByLabel("Text of message 1").fill("Hello");
   await page.getByRole("button", { name: "Run", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("Run A: Choose a credential.");
+  await expectNoAxeViolations(page);
+  // The run button counts the calls once there is more than one column.
+  await page.getByRole("button", { name: "Add column" }).click();
+  await expect(page.getByRole("button", { name: "Run 2 calls" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "View playground runs" })).toHaveAttribute(
+    "href",
+    /\/traces\?tag=spanlight(%3A|:)playground$/,
+  );
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expectNoAxeViolations(page);
+
+  // 6. On a phone the prompt is read-only: "Move label" instead of "New version".
+  await page.goto(`${base}/prompts/support-answer`);
+  await expect(page.getByRole("button", { name: "Move label", exact: true })).toBeVisible();
+  await expect(page.getByText("Edit and test versions on a larger screen.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "New version" })).toHaveCount(0);
+  await expectNoAxeViolations(page);
+  await page.goto(`${base}/prompts`);
+  await expect(page.getByRole("link", { name: "support-answer" }).first()).toBeVisible();
   await expectNoAxeViolations(page);
 });

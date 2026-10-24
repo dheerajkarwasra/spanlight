@@ -28,3 +28,19 @@ export function firstTraceWindow(firstTraceAt: string): { from: string; to: stri
   }
   return { from: firstTraceAt, to: new Date(start + 1).toISOString() };
 }
+
+/**
+ * What the Connect step does when it sees the first trace. It opens the trace only when the
+ * trace arrived during this visit (the step saw "no traces yet" first) and no key secret created
+ * on this visit is on screen: leaving would lose the secret, which is shown once. Otherwise it
+ * offers the link.
+ */
+export function firstTraceAction({
+  secretOnScreen,
+  arrivedThisVisit,
+}: {
+  secretOnScreen: boolean;
+  arrivedThisVisit: boolean;
+}): "open" | "offer" {
+  return arrivedThisVisit && !secretOnScreen ? "open" : "offer";
+}

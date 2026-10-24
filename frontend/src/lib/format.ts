@@ -57,6 +57,9 @@ export function formatDuration(ms: Maybe<number>): string | null {
   }
   const totalSeconds = Math.round(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
+  if (minutes >= 60) {
+    return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`;
+  }
   const seconds = totalSeconds % 60;
   return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
 }
@@ -178,4 +181,26 @@ export function pluralize(count: number, singular: string, plural = `${singular}
 /** "support/answer v3": a prompt version as every screen names it. */
 export function formatPromptVersion(name: string, version: number): string {
   return `${name} v${String(version)}`;
+}
+
+const bucketTimeFormat = new Intl.DateTimeFormat("en-GB", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+const bucketDayTimeFormat = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+/**
+ * A chart bucket's start in local time: "14:00", or "Oct 14, 09:00" once more than 24 hourly
+ * buckets span days and a time alone would repeat. Pass 0 for sub-hour buckets.
+ */
+export function formatBucketTime(iso: string, hourlyBuckets: number): string {
+  return (hourlyBuckets > 24 ? bucketDayTimeFormat : bucketTimeFormat).format(new Date(iso));
 }

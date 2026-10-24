@@ -269,6 +269,24 @@ export interface Budget {
   updated_at: string;
 }
 
+/** One UTC day of the budget's current period; the first and the current day can be partial. */
+export interface BudgetBurnPoint {
+  /** "YYYY-MM-DD". */
+  day: string;
+  /** The day's spend; null when it had spans and none could be priced. */
+  spend_usd: string | null;
+  /** The known days' spend so far, this one included; null until the first known day. */
+  cumulative_usd: string | null;
+}
+
+/** `GET …/budgets/{id}/burn`: spend per day of the current period, up to now. */
+export interface BudgetBurn {
+  period_start: string;
+  resets_at: string;
+  amount_usd: string;
+  points: BudgetBurnPoint[];
+}
+
 export interface BudgetInput {
   name: string;
   scope: BudgetScope;

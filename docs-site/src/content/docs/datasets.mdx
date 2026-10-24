@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-{/* Sources: backend/app/api/dataset_problems.py, backend/app/api/v1/dataset_items.py, backend/app/datasets/schemas.py, frontend/src/features/datasets/dataset-errors.ts, frontend/src/features/datasets/use-upload-file.ts, frontend/src/features/datasets/upload-preview.ts, frontend/src/features/datasets/upload-result.tsx, frontend/src/features/datasets/items-card.tsx, frontend/src/features/datasets/datasets-page.tsx, backend/app/datasets/service.py, backend/app/datasets/locking.py, backend/app/api/v1/datasets.py */}
+{/* Sources: backend/app/api/dataset_problems.py, backend/app/api/v1/dataset_items.py, backend/app/datasets/schemas.py, frontend/src/features/datasets/dataset-errors.ts, frontend/src/features/datasets/use-upload-file.ts, frontend/src/features/datasets/upload-preview.ts, frontend/src/features/datasets/upload-result.tsx, frontend/src/features/datasets/items-card.tsx, frontend/src/features/datasets/datasets-page.tsx, backend/app/datasets/service.py, backend/app/datasets/locking.py, backend/app/api/v1/datasets.py, frontend/src/features/datasets/dataset-header.tsx */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
@@ -138,6 +138,10 @@ Lock a dataset that must not change, such as a holdout set you report scores on.
 Reading the dataset and its items, changing its description, and running experiments on it still work. A locked dataset cannot change while a run is reading it.
 
 Only **admins** and **owners** can lock and unlock (the `datasets:lock` permission), so a member cannot undo the lock. `POST /api/v1/projects/{project_id}/datasets/{dataset_id}/lock` and `.../unlock` both answer `200` with the dataset, whose `locked_at` is the time it was locked, or `null` when it is unlocked. Both are safe to repeat: locking a locked dataset keeps its first `locked_at`. A personal access token with only the read scope cannot use them. Each lock and unlock is recorded in the audit log as `dataset.lock` or `dataset.unlock`.
+
+## Run an experiment on a dataset
+
+On a dataset's page, **Run experiment** opens **New experiment** with the dataset already chosen. Pick the target and the evaluators, then create the experiment as usual; see [Experiments](/docs/experiments/#open-the-form-prefilled). The button is shown to members, admins and owners, and is disabled with "Add items first" while the dataset has no items.
 
 ## Check it worked
 

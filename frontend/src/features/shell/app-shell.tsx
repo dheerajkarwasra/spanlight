@@ -17,23 +17,31 @@ import {
 import { VerifyEmailBanner } from "@/features/auth";
 import { isApiError, isTwoFactorRequired } from "@/lib/api";
 import { writeLastProject } from "@/lib/last-project";
+import { useMediaQuery } from "@/lib/use-media-query";
+import { cn } from "@/lib/utils";
 
 import { CommandPalette } from "./command-palette";
 import { FocusShell } from "./focus-shell";
+import { HubTabs } from "./hub-tabs";
+import { IconRail } from "./icon-rail";
+import { hubForPath, showsHubTabs } from "./nav-items";
 import { useProjectParams, useProjectQuery } from "./project-context";
+import { ShortcutHelp } from "./shortcut-help";
 import { Sidebar } from "./sidebar";
 import { MobileAppBar, MobileDataFilters, Topbar } from "./topbar";
 import { TwoFactorRequired } from "./two-factor-required";
 import { useOnAccountSettingsPath, useOnSecurityPath, useTwoFactorGate } from "./two-factor-gate";
-import { useDataFilters } from "./use-data-filters";
+import { hasEnabledFilter, useDataFilters } from "./use-data-filters";
 import { useKeyboardShortcuts } from "./use-keyboard-shortcuts";
+import { useRailCollapsed } from "./use-rail-collapsed";
 
 /**
  * The signed-in layout.
  *
  * Desktop (≥ 1024px): canvas with a 12px gutter, the floating dark rail on the left and the
  * rounded main panel (mesh backdrop, in-panel top bar) on the right. The page scrolls the
- * window; the rail stays pinned.
+ * window; the rail stays pinned. From 1280px the rail is expanded unless the viewer collapsed it;
+ * below that it is the 56px icon rail, whose "Expand sidebar" opens the full rail in the sheet.
  *
  * Phones and tablets: no gutter, a sticky app bar, the rail in a sheet, and the data filters
  * in a row above the page content.
@@ -60,7 +68,12 @@ function ChromeShell() {
   const params = useProjectParams();
   const projectQuery = useProjectQuery();
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // Tailwind's `xl`: the only width where the full rail fits beside the page.
+  const wide = useMediaQuery("(min-width: 80rem)");
+  const [railCollapsed, setRailCollapsed] = useRailCollapsed();
+  const iconRail = !wide || railCollapsed;
   const twoFactorBlocked = useTwoFactorGate(projectQuery);
   // Account settings call only `/auth/*`: a failed project query must not replace them, which
   // would also unmount a setup wizard that is holding recovery codes.
@@ -71,20 +84,29 @@ function ChromeShell() {
   const routeDataFilters = useDataFilters();
   const dataFilters = twoFactorBlocked ? null : routeDataFilters;
 
+  // One modal at a time: the palette replaces the keyboard help instead of stacking on it.
   const togglePalette = useCallback(() => {
+    setHelpOpen(false);
     setPaletteOpen((current) => !current);
   }, []);
   const openPalette = useCallback(() => {
     setMobileNavOpen(false);
+    setHelpOpen(false);
     setPaletteOpen(true);
+  }, []);
+  const openHelp = useCallback(() => {
+    setMobileNavOpen(false);
+    setHelpOpen(true);
   }, []);
   const closeMobileNav = useCallback(() => {
     setMobileNavOpen(false);
   }, []);
 
-  useKeyboardShortcuts(togglePalette);
+  useKeyboardShortcuts(togglePalette, openHelp);
   // The mesh is a hero decoration: only the Overview greeting gets it, data pages stay plain.
-  const onOverview = useLocation({ select: (location) => location.pathname.endsWith("/overview") });
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const onOverview = pathname.endsWith("/overview");
+  const hub = hubForPath(pathname);
 
   useEffect(() => {
     if (projectQuery.isSuccess) {
@@ -105,9 +127,28 @@ function ChromeShell() {
         Skip to content
       </a>
 
-      <aside className="hidden w-60 shrink-0 lg:block">
+      <aside className={cn("hidden shrink-0 lg:block", iconRail ? "w-14" : "w-60")}>
         <div className="sticky top-3 h-[calc(100dvh-1.5rem)]">
-          <Sidebar />
+          {iconRail ? (
+            <IconRail
+              expandOpensSheet={!wide}
+              onOpenShortcuts={openHelp}
+              onExpand={() => {
+                if (wide) {
+                  setRailCollapsed(false);
+                } else {
+                  setMobileNavOpen(true);
+                }
+              }}
+            />
+          ) : (
+            <Sidebar
+              onOpenShortcuts={openHelp}
+              onCollapse={() => {
+                setRailCollapsed(true);
+              }}
+            />
+          )}
         </div>
       </aside>
 
@@ -119,6 +160,7 @@ function ChromeShell() {
           </SheetDescription>
           <Sidebar
             onNavigate={closeMobileNav}
+            onOpenShortcuts={openHelp}
             headerAction={
               <div className="flex items-center gap-1.5">
                 <ThemeToggle tone="rail" />
@@ -155,7 +197,7 @@ function ChromeShell() {
           <Topbar onOpenCommandPalette={openPalette} dataFilters={dataFilters} />
         </div>
 
-        {dataFilters ? (
+        {dataFilters && hasEnabledFilter(dataFilters) ? (
           <div className="relative px-4 pt-3 lg:hidden">
             <MobileDataFilters options={dataFilters} />
           </div>
@@ -179,12 +221,16 @@ function ChromeShell() {
               }}
             />
           ) : (
-            <Outlet />
+            <>
+              {hub && showsHubTabs(pathname) ? <HubTabs hub={hub} /> : null}
+              <Outlet />
+            </>
           )}
         </main>
       </div>
 
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} onOpenShortcuts={openHelp} />
+      <ShortcutHelp open={helpOpen} onOpenChange={setHelpOpen} />
     </div>
   );
 }

@@ -15,13 +15,13 @@ import { AttributionExportButton } from "./attribution-export-dialog";
 import { useAttributionQuery } from "./attribution-queries";
 import { AttributionResults } from "./attribution-results";
 import { withSort } from "./attribution-sort";
-import { AttributionEmpty, PickKeyPrompt } from "./attribution-states";
-import { AttributionTableHead, AttributionTableSkeleton } from "./attribution-table";
-import { AttributionTilesSkeleton } from "./attribution-tiles";
+import { AttributionEmpty, AttributionLoading, PickKeyPrompt } from "./attribution-states";
+import { CostStrip } from "./cost-strip";
 import { drillWindow } from "./drill-down";
 import { isFetchDisabled } from "./fetch-rule";
 import { GroupByPicker } from "./group-by-picker";
 import { NotPromotedNote } from "./not-promoted-note";
+import { SpendChart } from "./spend-chart";
 import { WindowNote } from "./window-note";
 
 const attributionRoute = getRouteApi("/_authed/$orgId/$projectId/attribution");
@@ -34,22 +34,27 @@ export function AttributionPage() {
   const navigate = attributionRoute.useNavigate();
   const { range, environment } = useProjectFilters();
   const project = useProjectQuery();
-  const filters = useFilterOptionsQuery();
+  const options = useFilterOptionsQuery();
   const canPromote = usePermission("project:write");
   const promoted = project.data?.promoted_metadata_keys ?? [];
-  const { group_by: groupBy, key, sort } = search;
+  const { group_by: groupBy, key, sort, focus } = search;
   const held = isFetchDisabled(groupBy, key, promoted, range.durationMs / HOUR_MS);
   // Until the project loads, a key's promotion is unknown and the note could be wrong.
   const waiting = groupBy === "metadata" && project.isPending;
-  const query = useAttributionQuery(
-    { group_by: groupBy, key, from: range.from, to: range.to, environment, sort, limit: PAGE_SIZE },
-    !held && !waiting,
-  );
+  const filters = { group_by: groupBy, key, from: range.from, to: range.to, environment };
+  const listQuery = { ...filters, sort, limit: PAGE_SIZE };
+  const query = useAttributionQuery(listQuery, !held && !waiting);
   // A held query still carries the previous key's or window's page as placeholder data.
   const page = held ? undefined : query.data?.pages[0];
 
   function onGroupBy(next: AttributionGroupBy, nextKey: string | undefined) {
-    void navigate({ search: (previous) => ({ ...previous, group_by: next, key: nextKey }) });
+    // The focused group belongs to the old grouping.
+    void navigate({
+      search: (previous) => ({ ...previous, group_by: next, key: nextKey, focus: undefined }),
+    });
+  }
+  function onFocus(value: string | undefined) {
+    void navigate({ search: (previous) => ({ ...previous, focus: value }) });
   }
   function onSort(next: AttributionSort) {
     void navigate({ search: (previous) => withSort(previous, next) });
@@ -70,20 +75,7 @@ export function AttributionPage() {
       return <NotPromotedNote metadataKey={key} canPromote={canPromote} />;
     }
     if (waiting || query.isPending) {
-      return (
-        <div className="@container">
-          <Card role="status" aria-label="Loading attribution" className="p-2">
-            {/* The same container breakpoint as the loaded table, so the layout does not jump. */}
-            <div className="hidden @4xl:block">
-              <AttributionTableHead sort={sort} onSort={onSort} />
-              <AttributionTableSkeleton />
-            </div>
-            <div className="@4xl:hidden">
-              <AttributionTilesSkeleton />
-            </div>
-          </Card>
-        </div>
-      );
+      return <AttributionLoading />;
     }
     if (query.isError && page === undefined) {
       return (
@@ -111,7 +103,11 @@ export function AttributionPage() {
     ) {
       return (
         <Card>
-          <AttributionEmpty groupBy={page.group_by} metadataKey={page.key} />
+          <AttributionEmpty
+            groupBy={page.group_by}
+            metadataKey={page.key}
+            pendingTraces={page.pending_traces}
+          />
         </Card>
       );
     }
@@ -126,25 +122,36 @@ export function AttributionPage() {
       },
     };
     return (
-      <AttributionResults
-        view={view}
-        sort={sort}
-        onSort={onSort}
-        paging={{
-          stale: query.isPlaceholderData,
-          hasNextPage: query.hasNextPage,
-          isFetchingNextPage: query.isFetchingNextPage,
-          loadMoreError: query.isFetchNextPageError ? query.error : null,
-          onLoadMore: loadMore,
-        }}
-      />
+      <>
+        <SpendChart
+          query={filters}
+          focus={focus}
+          onClearFocus={() => {
+            onFocus(undefined);
+          }}
+          pendingTraces={page.pending_traces}
+        />
+        <AttributionResults
+          view={view}
+          sort={sort}
+          onSort={onSort}
+          onFocus={onFocus}
+          paging={{
+            stale: query.isPlaceholderData,
+            hasNextPage: query.hasNextPage,
+            isFetchingNextPage: query.isFetchingNextPage,
+            loadMoreError: query.isFetchNextPageError ? query.error : null,
+            onLoadMore: loadMore,
+          }}
+        />
+      </>
     );
   }
 
   return (
     <div className="flex flex-col gap-4 md:gap-6">
       <PageHeader
-        title="Attribution"
+        title="Spend"
         description={
           <span className="flex flex-col gap-2">
             <span>
@@ -161,15 +168,17 @@ export function AttributionPage() {
           />
         }
       />
+      {/* A held or keyless query would be refused; the strip then reads its own totals. */}
+      <CostStrip attributionQuery={held || waiting ? undefined : listQuery} />
       <GroupByPicker
         groupBy={groupBy}
         metadataKey={key}
         keys={{
           promoted,
-          seen: filters.data?.metadata_keys,
-          failed: filters.isError,
+          seen: options.data?.metadata_keys,
+          failed: options.isError,
           onRetry: () => {
-            void filters.refetch();
+            void options.refetch();
           },
         }}
         onChange={onGroupBy}

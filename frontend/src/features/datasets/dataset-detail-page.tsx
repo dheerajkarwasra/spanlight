@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectParams, usePermission } from "@/features/shell";
 import { isApiError, type Dataset } from "@/lib/api";
 
-import { BackToDatasetsLink, DatasetHeader } from "./dataset-header";
+import { DatasetHeader, DatasetsBreadcrumbs } from "./dataset-header";
 import {
   DATASET_FULL_MESSAGE,
   DATASET_FULL_TITLE,
@@ -40,7 +40,7 @@ export function DatasetDetailPage() {
         <span className="sr-only" role="status">
           Loading dataset
         </span>
-        <BackToDatasetsLink />
+        <DatasetsBreadcrumbs current="Dataset" />
         <Skeleton className="h-9 w-72 max-w-full" />
         <Card className="p-6">
           <ItemTableSkeleton />
@@ -51,7 +51,7 @@ export function DatasetDetailPage() {
   if (query.isError) {
     return (
       <div className={PAGE_CLASSES}>
-        <BackToDatasetsLink />
+        <DatasetsBreadcrumbs current="Dataset" />
         <Card>
           {isApiError(query.error) && query.error.isNotFound ? (
             <DatasetNotFound />
@@ -82,7 +82,7 @@ function DatasetDetail({ dataset }: { dataset: Dataset }) {
 
   return (
     <div className={PAGE_CLASSES}>
-      <BackToDatasetsLink />
+      <DatasetsBreadcrumbs current={dataset.name} />
       <DatasetHeader dataset={dataset} canWrite={canWrite} canLock={canLock} onAddItem={addItem} />
       {locked && !canLock ? <ReadOnlyNote>{DATASET_LOCKED_MESSAGE}</ReadOnlyNote> : null}
       {full && !locked ? (

@@ -39,6 +39,7 @@ from app.api.schemas import (
     SignupIn,
     UserOut,
 )
+from app.api.schemas.auth import CapabilitiesOut
 from app.auth.email_tokens import consume_token
 from app.auth.login_challenge import issue_challenge
 from app.auth.login_throttle import enforce_login_throttle
@@ -306,6 +307,11 @@ async def me(
             settings.is_email_configured
             and not auth.user.email_verified
             and not is_demo_user(auth.user)
+        ),
+        capabilities=CapabilitiesOut(
+            gateway_mode=settings.gateway_mode,
+            credentials_configured=settings.is_crypto_configured,
+            exports_configured=settings.is_object_storage_configured,
         ),
     )
 

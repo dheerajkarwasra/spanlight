@@ -10,8 +10,9 @@ import type { TraceSummary } from "@/lib/api";
 import { formatCost, formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+import { ONBOARDING_COPY } from "./copy";
 import { formatArrival } from "./first-trace";
-import { POLL_INTERVAL_MS, useFirstTrace } from "./use-onboarding-status";
+import { useFirstTrace } from "./use-onboarding-status";
 
 interface WaitingForTraceProps {
   /** The polling error, shown only while there is no status yet. */
@@ -19,10 +20,17 @@ interface WaitingForTraceProps {
   onRetry: () => void;
   /** On the "No SDK" tab the next step is a gateway key, not the ingest snippet. */
   gateway?: boolean;
+  /** A setup test trace was accepted: say so and drop the "send or run" helper. */
+  testSent?: boolean;
 }
 
 /** "Waiting for your first trace…" row with a live pulse (Figma "Status — waiting"). */
-export function WaitingForTrace({ error, onRetry, gateway = false }: WaitingForTraceProps) {
+export function WaitingForTrace({
+  error,
+  onRetry,
+  gateway = false,
+  testSent = false,
+}: WaitingForTraceProps) {
   if (error) {
     return (
       <Card>
@@ -31,34 +39,31 @@ export function WaitingForTrace({ error, onRetry, gateway = false }: WaitingForT
     );
   }
 
+  const [waitingTitle, waitingHelper] = ONBOARDING_COPY.connect.helper ?? [];
   return (
     <Card
       className={cn(
         "items-center py-[18px] pr-6 pl-[18px]",
-        // Nothing is polled on the gateway tab, so no pulse and no poll note.
-        gateway
-          ? "flex"
-          : "grid grid-cols-[2.25rem_minmax(0,1fr)] gap-x-4 gap-y-1 sm:grid-cols-[2.25rem_minmax(0,1fr)_auto]",
+        // Nothing is polled on the gateway tab, so no pulse.
+        gateway ? "flex" : "grid grid-cols-[2.25rem_minmax(0,1fr)] gap-x-4",
       )}
     >
       {gateway ? null : <LiveIndicator />}
-      <div className="flex flex-col gap-0.5">
+      {/* A live region, so "Test trace sent" is announced without moving focus. */}
+      <div role="status" className="flex flex-col gap-0.5">
         <p className="text-sm font-semibold text-foreground">
           {gateway
             ? "Create a gateway key to send your first call"
-            : "Waiting for your first trace…"}
+            : testSent
+              ? "Test trace sent. Waiting for it to arrive…"
+              : waitingTitle}
         </p>
-        <p className="text-xs font-medium text-muted-foreground">
-          {gateway
-            ? "Calls show up here once a key exists and a snippet runs."
-            : "Run the snippet — this page updates automatically."}
-        </p>
+        {testSent && !gateway ? null : (
+          <p className="text-xs font-medium text-muted-foreground">
+            {gateway ? "Calls show up here once a key exists and a snippet runs." : waitingHelper}
+          </p>
+        )}
       </div>
-      {gateway ? null : (
-        <p className="col-start-2 text-xs font-medium text-subtle-foreground sm:col-start-3 sm:row-start-1">
-          Checking every {POLL_INTERVAL_MS / 1000} s
-        </p>
-      )}
     </Card>
   );
 }
@@ -88,6 +93,7 @@ interface FirstTraceCardProps {
 /** The violet success card (Figma "Success card") with the first trace's details. */
 export function FirstTraceCard({ orgId, projectId, firstTraceAt }: FirstTraceCardProps) {
   const arrival = formatArrival(firstTraceAt);
+  const trace = useFirstTrace(projectId, firstTraceAt);
 
   return (
     <Card variant="accent" className="flex flex-col gap-5 overflow-hidden p-6 sm:p-8">
@@ -113,25 +119,30 @@ export function FirstTraceCard({ orgId, projectId, firstTraceAt }: FirstTraceCar
         </div>
       </div>
 
-      <TraceChips projectId={projectId} firstTraceAt={firstTraceAt} />
+      <TraceChips trace={trace} />
 
-      <div className="flex flex-col gap-2.5 sm:flex-row">
+      {isLoading(trace) ? null : (
         <Button
           asChild
           variant="primary"
           size="lg"
-          className={cn("w-full sm:w-auto", ACCENT_FOCUS)}
+          className={cn("w-full sm:w-auto sm:self-start", ACCENT_FOCUS)}
         >
-          <Link to="/$orgId/$projectId/traces" params={{ orgId, projectId }}>
-            View traces
-          </Link>
+          {trace.data ? (
+            <Link
+              to="/$orgId/$projectId/traces/$traceId"
+              params={{ orgId, projectId, traceId: trace.data.trace_id }}
+            >
+              Open your first trace
+            </Link>
+          ) : (
+            // The trace couldn't be loaded; the list keeps the page from being a dead end.
+            <Link to="/$orgId/$projectId/traces" params={{ orgId, projectId }}>
+              View traces
+            </Link>
+          )}
         </Button>
-        <Button asChild size="lg" className={cn("w-full sm:w-auto", ACCENT_FOCUS)}>
-          <Link to="/$orgId/$projectId/overview" params={{ orgId, projectId }}>
-            Go to overview
-          </Link>
-        </Button>
-      </div>
+      )}
     </Card>
   );
 }
@@ -139,20 +150,17 @@ export function FirstTraceCard({ orgId, projectId, firstTraceAt }: FirstTraceCar
 const CHIP_PLACEHOLDER =
   "h-8 animate-pulse rounded-full bg-hero-card/15 motion-reduce:animate-none";
 
+function isLoading(trace: ReturnType<typeof useFirstTrace>): boolean {
+  return trace.isPending && trace.fetchStatus !== "idle";
+}
+
 /**
  * Name, duration and cost of the first trace. Chips without a value are left out; while the
  * trace loads, pill-shaped placeholders hold the row.
  */
-function TraceChips({
-  projectId,
-  firstTraceAt,
-}: {
-  projectId: string;
-  firstTraceAt: string | null;
-}) {
-  const trace = useFirstTrace(projectId, firstTraceAt);
 
-  if (trace.isPending && trace.fetchStatus !== "idle") {
+function TraceChips({ trace }: { trace: ReturnType<typeof useFirstTrace> }) {
+  if (isLoading(trace)) {
     return (
       <div aria-hidden className="flex gap-2">
         <span className={cn(CHIP_PLACEHOLDER, "w-28")} />

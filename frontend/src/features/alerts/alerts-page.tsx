@@ -13,6 +13,7 @@ import { useNow } from "@/lib/use-now";
 import { AlertsLayout } from "./alerts-layout";
 import { useAlertChannelsQuery, useAlertRulesQuery, useOpenEventsQuery } from "./alerts-queries";
 import { CreateRuleButton } from "./create-rule-button";
+import { FiringHistory } from "./firing-history";
 import { RuleList, RuleListSkeleton } from "./rule-list";
 import { rulesCountLine } from "./rule-state";
 
@@ -25,7 +26,7 @@ export function AlertsPage() {
   const canWrite = usePermission("alerts:write");
 
   return (
-    <AlertsLayout>
+    <AlertsLayout aside={<FiringHistory rules={rulesQuery.data} />}>
       <SectionCard
         title="Alert rules"
         description={<CountLine query={rulesQuery} />}

@@ -1,11 +1,22 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { visibleColumns } from "@/components/data-table";
 import { ApiError } from "@/lib/api";
 import { mockSignedIn, renderApp } from "@/test/render-app";
 
-import { bucket, mockAttribution, PAGE, project, response, row } from "./attribution-test-data";
+import {
+  bucket,
+  listReads,
+  mockAttribution,
+  PAGE,
+  project,
+  response,
+  row,
+  windowNoteLive,
+} from "./attribution-test-data";
+import { spendColumns } from "./spend-columns";
 
 const ROLLUP = `${PAGE}?group_by=metadata&key=customer_id&range=30d&env=production`;
 
@@ -21,8 +32,13 @@ describe("AttributionTable", () => {
   beforeEach(() => {
     mockSignedIn([project(["customer_id"])]);
   });
+  afterEach(() => {
+    window.localStorage.removeItem("spanlight.columns.spend");
+  });
 
   it("shows unknown cost, share and retries as a dash with the reason, never 0", async () => {
+    // Retries and Retry cost are hidden by default; this viewer turned them on.
+    window.localStorage.setItem("spanlight.columns.spend", "retries:1,retry_cost:1");
     mockAttribution(() =>
       Promise.resolve(
         response({
@@ -100,7 +116,7 @@ describe("AttributionTable", () => {
     mockAttribution(() => Promise.resolve(response()));
     renderApp(ROLLUP);
 
-    expect(await screen.findByText("Updated every 15 min")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Updated / })).toBeInTheDocument();
     expect(await screen.findByText("Sep 16 – Oct 15 · 30 days")).toBeInTheDocument();
   });
 
@@ -149,7 +165,9 @@ describe("AttributionTable", () => {
     mockAttribution(() => Promise.resolve(response({ source: "raw", updated_within_minutes: 0 })));
     renderApp(`${PAGE}?group_by=metadata&key=plan&range=24h`);
 
-    expect(await screen.findByText("Live")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(windowNoteLive()).toHaveLength(1);
+    });
   });
 
   it("names the key in the empty state and shows how to set it", async () => {
@@ -174,10 +192,36 @@ describe("AttributionTable", () => {
     renderApp(ROLLUP);
 
     expect(await screen.findByText("Couldn't load attribution")).toBeInTheDocument();
-    expect(read).toHaveBeenCalledTimes(1);
+    expect(listReads(read)).toHaveLength(1);
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     await waitFor(() => {
-      expect(read).toHaveBeenCalledTimes(2);
+      expect(listReads(read)).toHaveLength(2);
     });
+  });
+
+  it("hides LLM calls and Errors by default when the table box is narrower than every track", () => {
+    const columns = spendColumns({
+      drill: {
+        groupBy: "metadata",
+        key: "customer_id",
+        window: { from: "", to: "" },
+        environment: undefined,
+      },
+      onFocus: () => undefined,
+    });
+    const ids = (width: number) => visibleColumns(columns, {}, width).map((col) => col.id);
+    // The threshold is every default track's minimum width plus the 40 px Table settings track.
+    const fullWidth = columns
+      .filter((col) => !col.defaultHidden)
+      .reduce((sum, col) => sum + Number(/\d+/.exec(col.width)?.[0]), 40);
+    expect(columns.find((col) => col.id === "calls")?.minContainer).toBe(fullWidth);
+    // The table box measures 819 px at a 1024 px window and 891 px at 1280 px.
+    expect(ids(819)).toEqual(["group", "traces", "unpriced", "cost", "share"]);
+    expect(ids(891)).toEqual(["group", "traces", "calls", "errors", "unpriced", "cost", "share"]);
+    // A viewer's choice in Table settings still wins.
+    expect(visibleColumns(columns, { calls: true }, 819).map((col) => col.id)).toContain("calls");
+    expect(columns.filter((col) => col.hideable).map((col) => col.id)).toEqual(
+      expect.arrayContaining(["calls", "errors"]),
+    );
   });
 });

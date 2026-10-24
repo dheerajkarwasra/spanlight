@@ -34,7 +34,7 @@ export function FeedStatusLine({ sources, now }: FeedStatusLineProps) {
         return (
           <li key={source.provider} className="flex items-start gap-2">
             {/* The dot stays on the first line; the text and the badge wrap beside it. */}
-            <StatusDot state={stale ? "warning" : "ok"} className="mt-[5px]" />
+            <StatusDot state={stale ? "warning" : "ok"} className="mt-[3px]" />
             <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
               <span className={stale ? "text-foreground" : "text-muted-foreground"}>
                 {feedLabel(source.provider)} feed: {fetched}

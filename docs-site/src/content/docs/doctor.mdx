@@ -89,6 +89,10 @@ What happens when the detector runs:
 
 Actions, for admins and owners: **Acknowledge** (open to acknowledged), **Resolve** (any status but resolved; the insight reopens if the problem is seen again), **Mute** with a date up to 90 days ahead and a required reason (1 to 500 characters), and **Unmute**. An action that does not apply to the current status answers `409 INVALID_TRANSITION`; a bad mute date or reason answers `422 INVALID_MUTE`. Every action is written to the audit log.
 
+On a laptop the Doctor's list is a table. Admins and owners can tick several findings, or all of them with the header box, and **Acknowledge** or **Mute** them together; each is sent on its own, and the bar reports how many went through and how many failed, with a retry for the failed ones. On a phone the list is one tile per finding, without bulk actions.
+
+An insight page shows what the detector measured. An error, latency or cost spike charts the value it saw against its baseline. **Example traces** lists up to 20 of the traces behind the finding, newest first; each opens on its first failed span, or its first LLM span, and a trace that retention has deleted reads "Trace no longer stored".
+
 Resolved insights are kept for the project's retention period and then deleted.
 
 ### Notifications
@@ -122,6 +126,8 @@ A detector meets the target when its precision is at least 0.8, the lower end of
 
 Operators can read the same table across every project with [`spanlight doctor precision`](/docs/reference/cli/#doctor-precision).
 
+Each insight page also shows its check's **track record** from the same votes, for example "This check was right 9 of 10 times (precision 0.90, 0.60–0.98)", or "Not enough votes yet (3 of 20)". After a **Wrong** vote, admins and owners get **Mute this finding**, which opens the mute dialog with your note as the reason.
+
 ## Provider incidents and status pages
 
 When `provider_incident` fires, it looks for an incident on the provider's own status page that overlaps its 30-minute window (allowing 15 minutes after the provider marked it resolved) and that touched the provider's API. The summary then ends with "Matches the provider's status page incident" and the incident's title and impact, and the insight page shows a line "Matches the provider’s status page incident:" with the title linked to the provider's page. Without one the summary ends with "No matching incident on the provider's status page." When the server does not poll status pages, the insight page says the feeds are off, so no incident could be matched. The citation only explains a finding: the thresholds, the severity and when the insight opens or resolves are the same with or without it. See [Status page incidents](/docs/guides/provider-health/#status-page-incidents).
@@ -143,7 +149,7 @@ The score is a prompt to look, not a grade: two open critical insights alone tak
 
 ## Explain with Claude
 
-Each insight page has an **Explain with Claude** button. It asks a Claude model to explain the finding to the engineer who owns the application: the likely cause, how to confirm it in the listed traces, and a concrete fix.
+Each insight page has an **Explain with Claude** section, closed by default, whose summary counts the stored explanations; open it for the **Explain with Claude** button. The button asks a Claude model to explain the finding to the engineer who owns the application: the likely cause, how to confirm it in the listed traces, and a concrete fix.
 
 - **Opt-in.** Nothing is sent anywhere until an admin or owner presses the button. It needs an Anthropic provider credential under **Gateway, Credentials**, `CREDENTIALS_KEYS` on the server and the gateway running in the API process (`GATEWAY_MODE=embedded`, the default); without them the button explains what is missing (`409 NOT_CONFIGURED`).
 - **Admins and owners only.** Members and viewers read the explanations already stored, and see the button disabled.

@@ -5,14 +5,14 @@ sidebar:
   order: 1
 ---
 
-{/* Sources: backend/app/api/prompt_problems.py, backend/app/api/v1/prompts_read.py, frontend/src/features/prompts/prompt-errors.ts, frontend/src/features/prompts/prompts-page.tsx, frontend/src/features/prompts/prompt-detail-page.tsx, frontend/src/features/prompts/usage-card.tsx, sdks/python/src/spanlight/_prompts.py, sdks/python/src/spanlight/_prompt_client.py */}
+{/* Sources: backend/app/api/prompt_problems.py, backend/app/api/v1/prompts_read.py, frontend/src/features/prompts/prompt-errors.ts, frontend/src/features/prompts/prompts-page.tsx, frontend/src/features/prompts/prompt-detail-page.tsx, frontend/src/features/prompts/usage-card.tsx, frontend/src/features/prompts/version-list.tsx, frontend/src/features/prompts/version-usage-line.tsx, frontend/src/features/prompts/prompt-overview.tsx, frontend/src/features/onboarding/key-snippet.tsx, sdks/python/src/spanlight/_prompts.py, sdks/python/src/spanlight/_prompt_client.py */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
 
 A **prompt** is a named template that Spanlight stores for you. Every change is a new, numbered **version** that can never be edited, and **labels** such as `production` point at the version your application should use. Your application asks for "the `production` version of `support/answer`", so you can ship, test or roll back a prompt by moving a label, without a deploy. Every trace that used a version links back to it, so you can see what a change did to latency, tokens and cost.
 
-Anyone who can see the project can read prompts. **Members**, **admins** and **owners** can create prompts, add versions, move labels and delete prompts. Prompts live under **Prompts** in the project.
+Anyone who can see the project can read prompts. **Members**, **admins** and **owners** can create prompts, add versions, move labels and delete prompts. Prompts live under **Prompts** in the project. Until the project has a prompt, that page shows the key line your code needs, `SPANLIGHT_API_KEY=` followed by the prefix of the project's newest active key (or a **Create an API key** link when there is none or you cannot list keys), and **See it in the live demo**, which opens a shared sample workspace and signs you out of your own, so it asks first.
 
 <Prerequisites
   items={[
@@ -143,7 +143,11 @@ Spans can carry the id of the prompt version they used.
 - **Other senders.** Spans sent as native JSON may set `prompt_version_id`. OTLP has no field for it. The id is stored even when Spanlight has no such version (for example one that was deleted since), and the link then simply leads nowhere.
 - **The playground and experiments** link their spans automatically.
 
-Trace and span detail show the prompt version, and **Traces** can be filtered by it (`prompt_version_id`). The prompt page shows each version's use over the last 7 days: traces, LLM calls, cost and p95 duration. Cost and duration are "—" when unknown, and the cost is a lower bound when some calls had no price.
+Trace and span detail show the prompt version, and **Traces** can be filtered by it (`prompt_version_id`). On the prompt page, each version row shows the version number, its labels, the commit message and its use over the last 7 days, such as "12 traces · $0.0410", or "No calls in 7 days". The **Usage** card of the selected version adds the LLM calls and the p95 duration. Cost and duration are "—" when unknown, and the cost is a lower bound when some calls had no price.
+
+## On a phone
+
+Below 640 pixels wide the prompt page is for reading and moving labels. The header keeps **Move label** for members, admins and owners, and hides **New version**, **Open in playground** and **Create experiment** with the line "Edit and test versions on a larger screen." The version list comes first and each row carries its own use, so the **Usage** card is left out. The template is shown read-only, and each row's menu keeps **Set label**, **Diff with previous** and **Create experiment**.
 
 ## Routes
 
@@ -155,7 +159,7 @@ Under `/api/v1/projects/{project_id}`. Prompt names contain `/`, so they are par
 | `POST /prompts` | `prompts:write` | Create a prompt and its version 1 |
 | `GET /prompts/{name}` | `project:read` | The prompt, its latest version and its labels |
 | `DELETE /prompts/{name}` | `prompts:write` | Delete (`409 PROMPT_IN_USE`) |
-| `GET /prompts/{name}/versions` | `project:read` | Versions, newest first |
+| `GET /prompts/{name}/versions` | `project:read` | Versions, newest first. With `usage=true` each version carries `usage_7d`, its use over the last 7 days |
 | `POST /prompts/{name}/versions` | `prompts:write` | Add a version |
 | `GET /prompts/{name}/versions/{version}` | `project:read` | One version |
 | `GET /prompts/{name}/versions/{version}/usage` | `project:read` | Use over the last 7 days |

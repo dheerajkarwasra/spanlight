@@ -16,6 +16,15 @@ export function useBudgetsQuery() {
   });
 }
 
+/** One budget's spend to date per day of its period; mounted only while "Show burn" is open. */
+export function useBudgetBurnQuery(budgetId: string) {
+  const { projectId } = useProjectParams();
+  return useQuery({
+    queryKey: queryKeys.project(projectId).budgetBurn(budgetId),
+    queryFn: () => budgetsApi.burn(projectId, budgetId),
+  });
+}
+
 export interface MetadataKeyOption {
   value: string;
   promoted: boolean;

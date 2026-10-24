@@ -17,6 +17,7 @@ import { usePromptFetcher, useSaveVersion, usePromptsQuery } from "./playground-
 export interface SavedVersion {
   name: string;
   version: number;
+  id: string;
 }
 
 function saveProblem(error: unknown, name: string): string {
@@ -117,7 +118,7 @@ export function SaveVersionForm({
           commit_message: commit.trim() === "" ? null : commit.trim(),
         },
       });
-      onSaved({ name: target.name, version: created.version });
+      onSaved({ name: target.name, version: created.version, id: created.id });
     } catch (error) {
       setProblem(saveProblem(error, target.name));
     } finally {
@@ -159,13 +160,16 @@ export function SaveVersionForm({
       ) : null}
       <TemplatePreview column={column} letter={letter} />
       <div className="flex items-center gap-2.5">
-        <input
-          id={configId}
-          type="checkbox"
-          checked={withConfig}
-          onChange={(event) => setWithConfig(event.target.checked)}
-          className="size-4 rounded-checkbox accent-accent"
-        />
+        {/* The label gives the 16 px box a 24 px target. */}
+        <label className="-mx-1 flex size-6 shrink-0 cursor-pointer items-center justify-center">
+          <input
+            id={configId}
+            type="checkbox"
+            checked={withConfig}
+            onChange={(event) => setWithConfig(event.target.checked)}
+            className="size-4 rounded-checkbox accent-accent"
+          />
+        </label>
         <label htmlFor={configId} className="text-label text-foreground">
           Also save the model and parameters as the version config (unchecked keeps the
           prompt&apos;s current config)

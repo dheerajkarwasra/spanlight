@@ -1,6 +1,8 @@
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
+import { useAlertRulesQuery } from "@/features/alerts";
+import { useBudgetsQuery } from "@/features/budgets";
 import { useProjectFilters, useProjectParams } from "@/features/shell/project-context";
 import {
   completenessApi,
@@ -8,15 +10,25 @@ import {
   projectsApi,
   providersApi,
   queryKeys,
+  releasesApi,
   type CompletenessQuery,
   type IncidentListQuery,
   type MetricsQuery,
+  type ReleaseListQuery,
   type TraceListQuery,
 } from "@/lib/api";
 import { bucketFor, resolveRange } from "@/lib/time-range";
 
+import { RELEASE_WINDOW_MAX_MS } from "./release-markers";
+
 export const RECENT_ERRORS_LIMIT = 3;
-export const LATEST_TRACES_LIMIT = 5;
+export const TAB_TRACES_LIMIT = 5;
+
+/**
+ * The open findings Needs attention picks its top 3 from by severity: enough that an older
+ * critical finding is not hidden behind newer warnings.
+ */
+export const OPEN_INSIGHTS_LIMIT = 20;
 
 /** The most incidents the calls/errors overlay asks for (the API's maximum). */
 export const INCIDENT_OVERLAY_LIMIT = 100;
@@ -75,15 +87,28 @@ export function useOverviewQueries() {
     placeholderData: keepPreviousData,
   });
 
-  // The most recently seen open finding, asked for only while there are open findings.
-  const topInsightQuery = { status: ["open", "acknowledged"], limit: 1 } as const;
-  const openFindings = (health.data?.open_critical ?? 0) + (health.data?.open_warning ?? 0);
-  const topInsight = useQuery({
-    queryKey: keys.insights(topInsightQuery),
-    queryFn: () => insightsApi.list(projectId, topInsightQuery),
-    select: (page) => page.items[0],
-    enabled: openFindings > 0,
+  // Open and acknowledged findings for Needs attention, most recently seen first.
+  const openInsightsQuery = {
+    status: ["open", "acknowledged"],
+    limit: OPEN_INSIGHTS_LIMIT,
+  } as const;
+  const openInsights = useQuery({
+    queryKey: keys.insights(openInsightsQuery),
+    queryFn: () => insightsApi.list(projectId, openInsightsQuery),
   });
+
+  // Release markers: the releases API answers 422 above 30 days, so longer windows skip it (and
+  // `windowMarkers` ignores the placeholder a disabled query still holds).
+  const releasesQuery: ReleaseListQuery = { from: range.from, to: range.to, environment };
+  const releases = useQuery({
+    queryKey: keys.releases(releasesQuery),
+    queryFn: () => releasesApi.list(projectId, releasesQuery),
+    enabled: range.durationMs <= RELEASE_WINDOW_MAX_MS,
+    placeholderData: keepPreviousData,
+  });
+
+  const alertRules = useAlertRulesQuery();
+  const budgets = useBudgetsQuery();
 
   // Losses are counted per project, not per environment, so the window alone scopes them.
   const completenessQuery: CompletenessQuery = { from: range.from, to: range.to };
@@ -103,42 +128,6 @@ export function useOverviewQueries() {
   const incidents = useQuery({
     queryKey: keys.providerIncidents(incidentsQuery),
     queryFn: () => providersApi.incidents(projectId, incidentsQuery),
-    placeholderData: keepPreviousData,
-  });
-
-  const errorsQuery: Omit<TraceListQuery, "cursor"> = {
-    ...metricsWindow,
-    status: "error",
-    limit: RECENT_ERRORS_LIMIT,
-  };
-  const recentErrors = useQuery({
-    queryKey: keys.traces(errorsQuery),
-    queryFn: () => projectsApi.traces(projectId, errorsQuery),
-    placeholderData: keepPreviousData,
-  });
-
-  // Preset windows end "now", so the latest traces poll and re-resolve the window on every
-  // fetch: a trace sent a minute after the page loaded still shows up. Custom windows are
-  // fixed in the past and fetched once.
-  const isLive = range.value !== "custom";
-  const latestTraces = useQuery({
-    queryKey: [
-      ...keys.all,
-      "latest-traces",
-      isLive
-        ? { range: range.value, environment, limit: LATEST_TRACES_LIMIT }
-        : { ...metricsWindow, limit: LATEST_TRACES_LIMIT },
-    ],
-    queryFn: () => {
-      const window = isLive ? resolveRange({ range: range.value }) : range;
-      return projectsApi.traces(projectId, {
-        from: window.from,
-        to: window.to,
-        environment,
-        limit: LATEST_TRACES_LIMIT,
-      });
-    },
-    refetchInterval: isLive ? LIVE_REFRESH_MS : false,
     placeholderData: keepPreviousData,
   });
 
@@ -167,19 +156,58 @@ export function useOverviewQueries() {
     range,
     environment,
     bucket,
-    isLive,
     overview,
     timeseries,
     models,
     health,
     detectorRuns,
-    topInsight,
+    openInsights,
     completeness,
     incidents,
-    recentErrors,
-    latestTraces,
+    releases,
+    alertRules,
+    budgets,
     onboarding,
   };
 }
 
 export type OverviewQueries = ReturnType<typeof useOverviewQueries>;
+
+export type TracesTab = "errors" | "slowest" | "latest";
+
+/** The slowest traces first: the Slowest tab's list and the p95 card's link (desc is the default order). */
+export const SLOWEST_SORT = { sort: "duration" } as const;
+
+/**
+ * One tab of the Traces card. Each tab's panel calls this, and Radix unmounts the panels that are
+ * not shown, so a tab fetches when opened and Latest polls only while its tab is open.
+ */
+export function useTracesTabQuery(tab: TracesTab) {
+  const { projectId } = useProjectParams();
+  const { range, environment } = useProjectFilters();
+  const keys = queryKeys.project(projectId);
+  // Preset windows end "now", so the latest traces poll and re-resolve the window on every
+  // fetch: a trace sent a minute after the page loaded still shows up. Custom windows are
+  // fixed in the past and fetched once.
+  const isLive = tab === "latest" && range.value !== "custom";
+  const query: Omit<TraceListQuery, "cursor"> = {
+    from: range.from,
+    to: range.to,
+    environment,
+    limit: tab === "errors" ? RECENT_ERRORS_LIMIT : TAB_TRACES_LIMIT,
+    status: tab === "errors" ? "error" : undefined,
+    ...(tab === "slowest" ? SLOWEST_SORT : {}),
+  };
+  const result = useQuery({
+    queryKey: isLive
+      ? [...keys.all, "latest-traces", { range: range.value, environment, limit: TAB_TRACES_LIMIT }]
+      : keys.traces(query),
+    queryFn: () => {
+      const window = isLive ? resolveRange({ range: range.value }) : range;
+      return projectsApi.traces(projectId, { ...query, from: window.from, to: window.to });
+    },
+    refetchInterval: isLive ? LIVE_REFRESH_MS : false,
+    placeholderData: keepPreviousData,
+  });
+  return { ...result, isLive };
+}

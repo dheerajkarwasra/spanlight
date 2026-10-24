@@ -9,13 +9,14 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Path, Query
 
 from app.api.deps import DbSession, ReadAccess, require
-from app.api.params import NO_NUL
+from app.api.params import NO_NUL, Environment
 from app.api.schemas import UserDetailOut, UserListOut
 from app.api.window import Window
 from app.core.pagination import DEFAULT_PAGE_SIZE, PageLimit
 from app.core.permissions import Permission
 from app.end_users import service
 from app.end_users.queries import UserSort
+from app.explorer.trace_sort import SortOrder
 
 router = APIRouter(prefix="/projects/{project_id}/users", tags=["users"])
 
@@ -35,9 +36,17 @@ async def list_users(
     sort: UserSort = "cost",
     limit: PageLimit = DEFAULT_PAGE_SIZE,
     cursor: Annotated[str | None, Query()] = None,
+    environment: Environment = None,
+    q: Annotated[
+        str | None,
+        Query(min_length=1, max_length=256, pattern=NO_NUL, description="User id contains"),
+    ] = None,
+    order: SortOrder = "desc",
 ) -> UserListOut:
     project = access.require_project()
-    return await service.list_users(db, project.id, window, sort, limit, cursor)
+    return await service.list_users(
+        db, project.id, window, sort, limit, cursor, environment, q, order
+    )
 
 
 @router.get("/{external_user_id:path}", response_model=UserDetailOut)
@@ -47,6 +56,7 @@ async def user_detail(
     access: ProjectReader,
     db: DbSession,
     window: Window,
+    environment: Environment = None,
 ) -> UserDetailOut:
     project = access.require_project()
-    return await service.user_detail(db, project.id, external_user_id, window)
+    return await service.user_detail(db, project.id, external_user_id, window, environment)

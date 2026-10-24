@@ -7,6 +7,7 @@ import { Notice } from "@/components/notice";
 import { orgsApi, queryKeys, type Membership, type Project } from "@/lib/api";
 import { can } from "@/lib/permissions";
 
+import { ONBOARDING_COPY } from "./copy";
 import { NameForm } from "./name-form";
 import { StepCard } from "./step-card";
 
@@ -35,8 +36,8 @@ export function ProjectStep({ membership }: ProjectStepProps) {
   return (
     <StepCard
       icon={Folder}
-      title="Name your first project"
-      description="One project per app or service. Environments like staging and production live inside a project."
+      title={ONBOARDING_COPY.project.cardTitle}
+      description={ONBOARDING_COPY.project.cardDescription}
     >
       {can(membership.role, "project:write") ? (
         <NameForm

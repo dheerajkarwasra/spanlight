@@ -8,9 +8,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { ModelMetrics } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+import { SetPricesLink } from "./model-cells";
 import { ModelTiles } from "./model-tiles";
 import { ModelsTable } from "./model-wide-table";
-import { MODEL_PREVIEW_LIMIT, sortModelsByCalls } from "./models";
+import { MODEL_PREVIEW_LIMIT, sortModelsByCalls, unpricedCalls } from "./models";
 
 interface ModelTableProps {
   models: ModelMetrics[];
@@ -78,6 +79,12 @@ export function ModelTable({ models, isRefreshing, className }: ModelTableProps)
             {visible.length < sorted.length
               ? `Showing top ${visible.length} of ${sorted.length} models`
               : `Showing all ${sorted.length} ${sorted.length === 1 ? "model" : "models"}`}
+            {unpricedCalls(visible) > 0 ? (
+              <>
+                {" · — means no price. "}
+                <SetPricesLink />
+              </>
+            ) : null}
           </p>
         </div>
       )}

@@ -9,6 +9,9 @@ const backendTarget = process.env.VITE_BACKEND_URL ?? "http://localhost:8000";
 // `/gw` is the gateway: the proxy streams bodies through unbuffered and adds no compression.
 const proxiedPaths = ["/api", "/v1", "/gw", "/health"];
 
+// The docs site (Astro, base /docs) runs on its own dev server; in production Caddy serves it.
+const docsTarget = process.env.VITE_DOCS_URL ?? "http://localhost:4321";
+
 const FONT_FILE = /\.(woff2?|ttf|otf)$/;
 
 export default defineConfig({
@@ -20,9 +23,12 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    proxy: Object.fromEntries(
-      proxiedPaths.map((path) => [path, { target: backendTarget, changeOrigin: false }]),
-    ),
+    proxy: {
+      ...Object.fromEntries(
+        proxiedPaths.map((path) => [path, { target: backendTarget, changeOrigin: false }]),
+      ),
+      "/docs": { target: docsTarget, changeOrigin: false },
+    },
   },
   build: {
     sourcemap: true,

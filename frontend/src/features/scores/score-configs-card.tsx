@@ -1,10 +1,12 @@
 import { Info, Pencil, Star, Trash2 } from "lucide-react";
+import { useEffect, useRef } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { SectionCard } from "@/components/section-card";
 import { ColumnLabels, TileList, TileListSkeleton } from "@/components/tile-list";
 import { Button } from "@/components/ui/button";
+import { LiveDemoButton } from "@/features/auth";
 import { usePermission } from "@/features/shell";
 import type { ScoreConfig } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -31,6 +33,19 @@ const COLUMNS = {
 export function ScoreConfigsCard() {
   const configsQuery = useScoreConfigsQuery();
   const canWrite = usePermission("scores:write");
+  const scrolled = useRef(false);
+
+  // The browser jumped to the hash before the anchors below rendered; scroll once they have.
+  useEffect(() => {
+    if (scrolled.current || !configsQuery.data) {
+      return;
+    }
+    scrolled.current = true;
+    const { hash } = window.location;
+    if (hash === "#score-configs" || hash === "#failure-categories") {
+      document.getElementById(hash.slice(1))?.scrollIntoView();
+    }
+  }, [configsQuery.data]);
 
   function body() {
     if (configsQuery.isPending) {
@@ -53,6 +68,7 @@ export function ScoreConfigsCard() {
         <EmptyState
           icon={Star}
           title="No score configs yet"
+          setup={<LiveDemoButton />}
           description="Create one to check score values as they arrive, or send a score from the SDK and its config is created from the first value."
           className="rounded-tile bg-surface-muted py-10"
         />

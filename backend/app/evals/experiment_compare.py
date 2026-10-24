@@ -26,6 +26,7 @@ def _row(item: ExperimentItem) -> ItemRow:
         latency_ms=item.latency_ms,
         cost_usd=item.cost_usd,
         error=item.error,
+        evaluator_error=item.evaluator_error,
         input=item.input,
         expected_output=item.expected_output,
         # A JSON-null input reads back as None too; the metadata is non-NULL on every copy.

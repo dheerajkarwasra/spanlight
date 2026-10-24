@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { ExternalLink, Receipt } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
@@ -8,7 +9,7 @@ import { ReadOnlyNote } from "@/components/read-only-note";
 import { SectionCard } from "@/components/section-card";
 import { TileListSkeleton } from "@/components/tile-list";
 import { Button } from "@/components/ui/button";
-import { useCurrentOrg, usePermission } from "@/features/shell";
+import { useCurrentOrg, usePermission, useProjectParams } from "@/features/shell";
 import { docsLink } from "@/lib/docs-links";
 import { viewOnlyCopy } from "@/lib/permissions";
 
@@ -25,6 +26,7 @@ import { SourceList } from "./source-list";
 export function BillingSourcesPage() {
   const org = useCurrentOrg();
   const canManage = usePermission("billing_sources:manage");
+  const params = useProjectParams();
   const query = useBillingSourcesQuery();
   // The server's `409 NOT_CONFIGURED` notice, once it answered one; null until then.
   const [notConfiguredCopy, setNotConfiguredCopy] = useState<string | null>(null);
@@ -46,7 +48,16 @@ export function BillingSourcesPage() {
       <SectionCard
         title="Billing sources"
         description={`What Anthropic and OpenAI bill ${org?.name ?? "your organization"}, fetched daily and compared with Spanlight’s own figures per project. Admin keys are encrypted at rest and never shown again.`}
-        actions={canManage ? addAction : null}
+        actions={
+          <>
+            <Button variant="secondary" asChild>
+              <Link to="/$orgId/$projectId/reconciliation" params={params}>
+                View reconciliation
+              </Link>
+            </Button>
+            {canManage ? addAction : null}
+          </>
+        }
         className="gap-3"
       >
         {notConfigured ? (

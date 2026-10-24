@@ -22,6 +22,8 @@ export function PromptTargetFields({ state, errors, onChange }: PromptTargetFiel
   const prompt = prompts.data?.find((item) => item.name === state.promptName);
 
   function pickVersion(id: string) {
+    // Radix echoes "" when a prefilled id has no option rendered yet; no option has that value.
+    if (id === "") return;
     const version = versions.data?.find((candidate: PromptVersion) => candidate.id === id);
     onChange({
       versionId: id,

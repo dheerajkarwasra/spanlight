@@ -1,4 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -48,6 +55,7 @@ const span: Span = {
   prompt_version_id: null,
   usage_rollup: false,
   usage_state: "priced",
+  request_hash: null,
 };
 
 /** The spec §8.1 example response. */
@@ -120,6 +128,27 @@ function renderCard(spanOverrides: Partial<Span> = {}) {
       </TooltipProvider>
     </QueryClientProvider>,
   );
+}
+
+/** The no-price state links into the app, so those cards render inside a router. */
+async function renderCardInRouter(spanOverrides: Partial<Span> = {}) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const rootRoute = createRootRoute({
+    component: () => (
+      <QueryClientProvider client={client}>
+        <TooltipProvider>
+          <SpanCostCard span={{ ...span, ...spanOverrides }} traceId="trace_1" />
+        </TooltipProvider>
+      </QueryClientProvider>
+    ),
+  });
+  const anyPath = createRoute({ getParentRoute: () => rootRoute, path: "$" });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([anyPath]),
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+  });
+  render(<RouterProvider router={router as never} />);
+  await screen.findByRole("button", { name: "Show cost breakdown" });
 }
 
 async function expand() {
@@ -307,7 +336,7 @@ describe("SpanCostCard details", () => {
     expect(document.getElementById(toggle.getAttribute("aria-controls") ?? "")).not.toBeNull();
   });
 
-  it("links a span with no price to the docs on unpriced models and overrides", async () => {
+  it("links a span with no price to Cost › Pricing, the override prefilled", async () => {
     vi.spyOn(costExplanationApi, "get").mockResolvedValue({
       ...OK,
       status: "no_price",
@@ -319,7 +348,7 @@ describe("SpanCostCard details", () => {
       message:
         "No price matched anthropic claude-sonnet-4-6 when the span was ingested, so the cost is unknown.",
     });
-    renderCard({ cost_usd: null, pricing_version: null });
+    await renderCardInRouter({ cost_usd: null, pricing_version: null });
     await expand();
 
     expect(
@@ -329,11 +358,30 @@ describe("SpanCostCard details", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "See unpriced models" })).toHaveAttribute(
       "href",
-      "/docs/concepts/cost/#when-a-cost-is-unknown",
+      "/org_1/proj_1/pricing",
     );
     expect(screen.getByRole("link", { name: "Add a price override" })).toHaveAttribute(
       "href",
-      "/docs/concepts/cost/#price-overrides",
+      "/org_1/proj_1/pricing?provider=anthropic&model=claude-sonnet-4-6",
+    );
+  });
+
+  it("opens the override form unfilled when the span has no model", async () => {
+    vi.spyOn(costExplanationApi, "get").mockResolvedValue({
+      ...OK,
+      status: "no_price",
+      price: null,
+      lines: [],
+      output_breakdown: null,
+      recomputed_usd: null,
+      stored_usd: null,
+    });
+    await renderCardInRouter({ cost_usd: null, pricing_version: null, model: null });
+    await expand();
+
+    expect(await screen.findByRole("link", { name: "Add a price override" })).toHaveAttribute(
+      "href",
+      "/org_1/proj_1/pricing",
     );
   });
 

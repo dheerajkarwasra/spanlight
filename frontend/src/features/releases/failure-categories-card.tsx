@@ -27,7 +27,7 @@ import {
   emptyState,
   fewItems,
 } from "./failure-categories";
-import { useFailureCategoriesQuery } from "./releases-queries";
+import { useFailureCategoriesQuery, useHasFailureCategories } from "./releases-queries";
 
 /** Per viewer, per browser: the card opens the way it was left. */
 const VIEW_KEY = "spanlight-release-failure-categories-view";
@@ -40,8 +40,9 @@ const VIEW_KEY = "spanlight-release-failure-categories-view";
 export function FailureCategoriesCard() {
   const titleId = useId();
   const [view, setView] = useChartView(VIEW_KEY);
-  const query = useFailureCategoriesQuery(true);
-  const state = emptyState(query.data, query.error);
+  const configured = useHasFailureCategories();
+  const query = useFailureCategoriesQuery(configured === true);
+  const state = configured === false ? "no_categories" : emptyState(query.data, query.error);
   const hasRates = query.data !== undefined && state === null;
 
   return (
@@ -60,14 +61,14 @@ export function FailureCategoriesCard() {
         ) : null}
       </div>
       <div className={cn("transition-opacity", query.isPlaceholderData && "opacity-60")}>
-        {query.isPending ? (
+        {state === "no_categories" ? (
+          <NoCategories />
+        ) : query.isPending ? (
           <Skeleton
             role="status"
             aria-label="Loading failure categories"
             className="h-[300px] rounded-tile"
           />
-        ) : state === "no_categories" ? (
-          <NoCategories />
         ) : query.data === undefined ? (
           <ErrorState
             compact

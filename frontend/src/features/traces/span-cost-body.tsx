@@ -87,7 +87,7 @@ function StatusSection({ explanation, span }: SpanCostBodyProps) {
     return (
       <>
         <Explanation>{[copy.body, usage].filter(Boolean).join(" ")}</Explanation>
-        <NoPriceLinks />
+        <NoPriceLinks provider={span.provider} model={span.model} />
       </>
     );
   }

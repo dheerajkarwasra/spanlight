@@ -20,7 +20,7 @@ test("doctor, releases and users: honest empty states, then a release comparison
   await expect(page.getByRole("heading", { name: "No releases in this window" })).toBeVisible();
   await expectNoAxeViolations(page);
   await page.goto(`${base}/users`);
-  await expect(page.getByRole("heading", { name: "No end users in this window" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "No end users yet" })).toBeVisible();
   await expectNoAxeViolations(page);
 
   // 2. Spans tagged with a release and an end user.
@@ -43,7 +43,7 @@ test("doctor, releases and users: honest empty states, then a release comparison
   await expect(metrics.getByRole("row", { name: /Error rate/ })).toContainText("50.0%");
   await expectNoAxeViolations(page);
 
-  // 4. The trace list shows the end user on the spans just sent.
+  // 4. The trace list shows the traces just sent.
   await page.goto(`${base}/traces`);
   await expect(page.getByRole("link", { name: "chat-v1" })).toBeVisible();
   await expectNoAxeViolations(page);
@@ -70,6 +70,29 @@ test("doctor feedback: a verdict is set, kept, cleared; the Precision tab follow
     projectIdOf(base),
     [traceId],
     HOSTILE_INCIDENT_TITLE,
+  );
+
+  // 0. The list: tiles on a phone, a table on a laptop, where the owner acknowledges in bulk.
+  await page.goto(`${base}/doctor`);
+  await checkAtWidths(page, "doctor-list", async () => {
+    await expect(
+      page.getByRole("link", { name: "anthropic is failing across your organization" }).filter({
+        visible: true,
+      }),
+    ).toHaveCount(1);
+  });
+  const findings = page.getByRole("table", { name: "Insights" });
+  await findings.getByRole("checkbox", { name: "Select every insight shown" }).click();
+  const bulkBar = page.getByRole("region", { name: "Selected insights" });
+  await expect(bulkBar).toContainText("1 selected");
+  await expectNoAxeViolations(page);
+  await bulkBar.getByRole("button", { name: "Acknowledge" }).click();
+  await expect(bulkBar).toBeHidden();
+  await expect(page.getByText("1 acknowledged")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Nothing open." })).toBeVisible();
+  await page.getByRole("radio", { name: /Acknowledged/ }).click();
+  await expect(findings.getByRole("row", { name: /anthropic is failing/ })).toContainText(
+    "Acknowledged",
   );
 
   // 1. The detail page: the incident line shows the title as text.

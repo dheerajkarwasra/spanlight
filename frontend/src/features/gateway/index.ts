@@ -3,7 +3,12 @@
  * queries several gateway pages share. Import from this file, not from the modules behind it.
  */
 export { GatewayLayout } from "./gateway-layout";
-export { gatewayAnthropicBaseUrl, gatewayBaseUrl } from "./gateway-url";
+export {
+  GATEWAY_MODE_NOTES,
+  gatewayAnthropicBaseUrl,
+  gatewayBaseUrl,
+  gatewaySnippetHost,
+} from "./gateway-url";
 export {
   useCredentialsQuery,
   useFaultProfilesQuery,

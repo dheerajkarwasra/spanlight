@@ -22,11 +22,12 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 /**
  * Global shortcuts: ⌘K / Ctrl+K toggles the command palette, and Linear-style "G then <key>"
- * sequences jump between pages. The keys come from `NAV_ITEMS`: O T S D V (provider health) R U G A B ",", and for the
- * Improve pages P (prompts), L (playground), N (datasets), Q (review queues), E (evaluators) and
- * X (experiments).
+ * sequences jump between pages. The keys come from the hub tabs in `NAV_ITEMS`: O (overview),
+ * T S U (traces, sessions, users), D V R A (doctor, provider health, releases, alerts), Q N X E
+ * (review, datasets, experiments, evaluators), P L (prompts, playground), C B (spend, budgets),
+ * G (gateway) and "," (settings). `?` opens the keyboard help.
  */
-export function useKeyboardShortcuts(onTogglePalette: () => void): void {
+export function useKeyboardShortcuts(onTogglePalette: () => void, onOpenHelp: () => void): void {
   const navigate = useNavigate();
   const params = useProjectParams();
 
@@ -44,12 +45,24 @@ export function useKeyboardShortcuts(onTogglePalette: () => void): void {
         return;
       }
 
-      if (isNavigationLocked()) {
+      // A screen that must not be left, or an open modal (the palette, the help, a confirm), owns
+      // the keyboard: no help on top of it and no page change behind it.
+      if (
+        isNavigationLocked() ||
+        document.querySelector('[role="dialog"], [role="alertdialog"]') !== null
+      ) {
         awaitingSecondKey = false;
         return;
       }
 
       if (event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) {
+        return;
+      }
+
+      if (event.key === "?") {
+        awaitingSecondKey = false;
+        event.preventDefault();
+        onOpenHelp();
         return;
       }
 
@@ -78,5 +91,5 @@ export function useKeyboardShortcuts(onTogglePalette: () => void): void {
       window.removeEventListener("keydown", onKeyDown);
       window.clearTimeout(timeoutId);
     };
-  }, [navigate, onTogglePalette, params]);
+  }, [navigate, onOpenHelp, onTogglePalette, params]);
 }

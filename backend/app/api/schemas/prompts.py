@@ -43,6 +43,24 @@ class LabelSetIn(ApiModel):
     version: Annotated[int, Field(ge=1)]
 
 
+class VersionUsageOut(ApiModel):
+    """Over the last 7 days. `cost_usd` and `p95_ms` are null when unknown, never 0.
+
+    `cost_usd` sums the calls that have a cost; when `has_unpriced` is true some LLM calls had
+    none (unknown model or missing usage), so it is a lower bound.
+    """
+
+    traces: int
+    llm_calls: int
+    cost_usd: Money | None
+    p95_ms: float | None
+    has_unpriced: bool
+
+    @classmethod
+    def of(cls, usage: VersionUsage) -> "VersionUsageOut":
+        return cls.model_validate(usage)
+
+
 class VersionOut(ApiModel):
     id: uuid.UUID
     version: int
@@ -56,6 +74,10 @@ class VersionOut(ApiModel):
     commit_message: str | None
     created_by: uuid.UUID | None
     created_at: datetime
+    usage_7d: VersionUsageOut | None = Field(
+        default=None,
+        description="Only filled by the versions list with `usage=true`; null otherwise.",
+    )
 
     @classmethod
     def of(cls, version: PromptVersion) -> "VersionOut":
@@ -117,21 +139,3 @@ class PromptOut(ApiModel):
             latest=VersionOut.of(latest),
             labels=[LabelOut.of(label) for label in labels],
         )
-
-
-class VersionUsageOut(ApiModel):
-    """Over the last 7 days. `cost_usd` and `p95_ms` are null when unknown, never 0.
-
-    `cost_usd` sums the calls that have a cost; when `has_unpriced` is true some LLM calls had
-    none (unknown model or missing usage), so it is a lower bound.
-    """
-
-    traces: int
-    llm_calls: int
-    cost_usd: Money | None
-    p95_ms: float | None
-    has_unpriced: bool
-
-    @classmethod
-    def of(cls, usage: VersionUsage) -> "VersionUsageOut":
-        return cls.model_validate(usage)

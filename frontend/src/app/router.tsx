@@ -17,10 +17,16 @@ import { authSearchSchema, safeNextPath } from "@/features/auth/search";
 import { SignupPage } from "@/features/auth/signup-page";
 import { TwoFactorPage } from "@/features/auth/two-factor-page";
 import { attributionSearchSchema } from "@/features/attribution/search";
+import { budgetsSearchSchema } from "@/features/budgets/budget-prefill";
 import { doctorSearchSchema } from "@/features/doctor/search";
-import { compareSearchSchema, experimentSearchSchema } from "@/features/experiments/search";
+import {
+  compareSearchSchema,
+  experimentSearchSchema,
+  newExperimentSearchSchema,
+} from "@/features/experiments/search";
 import { onboardingSearchSchema } from "@/features/onboarding/search";
 import { playgroundSearchSchema } from "@/features/playground/search";
+import { pricingSearchSchema } from "@/features/pricing/price-override-form";
 import { promptDetailSearchSchema, promptsSearchSchema } from "@/features/prompts/search";
 import { releasesSearchSchema } from "@/features/releases/search";
 import { AppShell } from "@/features/shell/app-shell";
@@ -28,6 +34,7 @@ import { resolveHomeDestination } from "@/features/shell/home-redirect";
 import { reconciliationSearchSchema } from "@/features/billing-sources/reconciliation-search";
 import { auditSearchSchema } from "@/features/settings/audit-search";
 import { securitySearchSchema } from "@/features/settings/security/search";
+import { sessionsSearchSchema } from "@/features/sessions/sessions-search";
 import {
   traceCompareSearchSchema,
   traceDetailSearchSchema,
@@ -278,6 +285,7 @@ const traceCompareRoute = createRoute({
 const sessionsRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/sessions",
+  validateSearch: sessionsSearchSchema,
   head: () => pageTitle("Sessions"),
   component: lazyRouteComponent(() => import("@/features/sessions/sessions-page"), "SessionsPage"),
 });
@@ -350,7 +358,7 @@ const attributionRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/attribution",
   validateSearch: attributionSearchSchema,
-  head: () => pageTitle("Attribution"),
+  head: () => pageTitle("Spend"),
   component: lazyRouteComponent(
     () => import("@/features/attribution/attribution-page"),
     "AttributionPage",
@@ -503,6 +511,7 @@ const experimentsRoute = createRoute({
 const newExperimentRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/experiments/new",
+  validateSearch: newExperimentSearchSchema,
   head: () => pageTitle("New experiment"),
   component: lazyRouteComponent(
     () => import("@/features/experiments/new-experiment-page"),
@@ -585,14 +594,13 @@ const alertsRoute = createRoute({
   component: lazyRouteComponent(() => import("@/features/alerts/alerts-page"), "AlertsPage"),
 });
 
+/** Channels moved to Settings; old links and bookmarks still land there. */
 const alertChannelsRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/alerts/channels",
-  head: () => pageTitle("Alert channels"),
-  component: lazyRouteComponent(
-    () => import("@/features/alerts/channels-page"),
-    "AlertChannelsPage",
-  ),
+  beforeLoad: ({ params, search }) => {
+    throw redirect({ to: "/$orgId/$projectId/settings/channels", params, search });
+  },
 });
 
 const alertRuleRoute = createRoute({
@@ -608,8 +616,28 @@ const alertRuleRoute = createRoute({
 const budgetsRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/budgets",
+  validateSearch: budgetsSearchSchema,
   head: () => pageTitle("Budgets"),
   component: lazyRouteComponent(() => import("@/features/budgets/budgets-page"), "BudgetsPage"),
+});
+
+const pricingRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/pricing",
+  validateSearch: pricingSearchSchema,
+  head: () => pageTitle("Pricing"),
+  component: lazyRouteComponent(() => import("@/features/pricing/pricing-page"), "PricingPage"),
+});
+
+/** Cost › Reconciliation: the billing sources that map this project; each opens its report. */
+const reconciliationTabRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/reconciliation",
+  head: () => pageTitle("Reconciliation"),
+  component: lazyRouteComponent(
+    () => import("@/features/billing-sources/reconciliation-tab-page"),
+    "ReconciliationTabPage",
+  ),
 });
 
 const settingsRoute = createRoute({
@@ -668,6 +696,16 @@ const membersRoute = createRoute({
   path: "/members",
   head: () => pageTitle("Members"),
   component: lazyRouteComponent(() => import("@/features/settings/members-page"), "MembersPage"),
+});
+
+const settingsChannelsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/channels",
+  head: () => pageTitle("Notification channels"),
+  component: lazyRouteComponent(
+    () => import("@/features/alerts/channels-page"),
+    "AlertChannelsPage",
+  ),
 });
 
 const billingSourcesRoute = createRoute({
@@ -785,6 +823,8 @@ const routeTree = rootRoute.addChildren([
       alertChannelsRoute,
       alertRuleRoute,
       budgetsRoute,
+      pricingRoute,
+      reconciliationTabRoute,
       reconciliationRoute,
       settingsRoute.addChildren([
         settingsIndexRoute,
@@ -793,6 +833,7 @@ const routeTree = rootRoute.addChildren([
         exportsRoute,
         organizationRoute,
         membersRoute,
+        settingsChannelsRoute,
         billingSourcesRoute,
         auditRoute,
         accountRoute,

@@ -21,6 +21,11 @@ export const ME: Me = {
   has_password: true,
   totp_enabled: false,
   email_verification_required: false,
+  capabilities: {
+    gateway_mode: "embedded",
+    credentials_configured: true,
+    exports_configured: true,
+  },
 };
 
 export function makeProject(id: string, name: string): Project {

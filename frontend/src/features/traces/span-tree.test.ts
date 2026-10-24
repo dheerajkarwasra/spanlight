@@ -3,18 +3,25 @@ import { describe, expect, it } from "vitest";
 import type { Span, SpanKind } from "@/lib/api";
 
 import {
-  ancestorIds,
   barLayout,
-  buildSpanTree,
   computeTimeline,
-  failedSpanCount,
-  flattenSpanTree,
   formatTickLabel,
-  kindsInTrace,
   niceTickStep,
-  parentSpanIds,
   timelineTicks,
   ttftOffsetPercent,
+} from "./span-timeline";
+import {
+  ancestorIds,
+  buildSpanTree,
+  failedSpanCount,
+  findSpanNode,
+  flattenSpanTree,
+  healthyParentIds,
+  kindsInTrace,
+  llmInputCandidates,
+  llmOutputCandidates,
+  parentSpanIds,
+  treeItemMeta,
 } from "./span-tree";
 
 const BASE = Date.parse("2026-10-07T12:00:00.000Z");
@@ -61,6 +68,7 @@ function makeSpan(
     prompt_version_id: null,
     usage_rollup: false,
     usage_state: "not_applicable",
+    request_hash: null,
   };
 }
 
@@ -98,6 +106,8 @@ describe("buildSpanTree", () => {
     const rows = flattenSpanTree(buildSpanTree(spans), new Set());
 
     expect(rows.map((row) => row.span.span_id).sort()).toEqual(["a", "b", "c"]);
+    // Their parents exist, so none is flagged as missing one.
+    expect(rows.some((row) => row.orphaned)).toBe(false);
   });
 
   it("treats a span that names itself as parent as a root", () => {
@@ -156,18 +166,20 @@ describe("flattenSpanTree", () => {
 });
 
 describe("ancestorIds", () => {
-  it("returns ancestors nearest first and stops on missing parents or cycles", () => {
-    const spans = [
+  it("returns every node above the given spans in the forest, cycles broken", () => {
+    const roots = buildSpanTree([
       makeSpan("root", null, 0, 10),
       makeSpan("a", "root", 1, 5),
       makeSpan("a1", "a", 2, 1),
+      makeSpan("b", "root", 3, 1),
       makeSpan("x", "y", 0, 1),
       makeSpan("y", "x", 0, 1),
-    ];
+    ]);
 
-    expect(ancestorIds(spans, "a1")).toEqual(["a", "root"]);
-    expect(ancestorIds(spans, "root")).toEqual([]);
-    expect(ancestorIds(spans, "x")).toEqual(["y"]);
+    expect(ancestorIds(roots, new Set(["a1"]))).toEqual(new Set(["a", "root"]));
+    expect(ancestorIds(roots, new Set(["a1", "b"]))).toEqual(new Set(["a", "root"]));
+    expect(ancestorIds(roots, new Set(["root"]))).toEqual(new Set());
+    expect(ancestorIds(roots, new Set(["y"]))).toEqual(new Set(["x"]));
   });
 });
 
@@ -282,5 +294,80 @@ describe("kindsInTrace and failedSpanCount", () => {
       withKind("c", "http", "error"),
     ];
     expect(failedSpanCount(spans)).toBe(2);
+  });
+});
+
+describe("healthyParentIds", () => {
+  it("lists the parents whose subtree has no failed span", () => {
+    const spans: Span[] = [
+      makeSpan("root", null, 0, 100),
+      makeSpan("ok-parent", "root", 1, 10),
+      makeSpan("ok-leaf", "ok-parent", 2, 5),
+      makeSpan("error-path", "root", 20, 10),
+      { ...makeSpan("error-leaf", "error-path", 21, 5), status: "error" },
+      { ...makeSpan("failed-parent", "root", 40, 10), status: "error" },
+      makeSpan("under-failed", "failed-parent", 41, 5),
+    ];
+    expect(healthyParentIds(buildSpanTree(spans))).toEqual(new Set(["ok-parent"]));
+  });
+});
+
+describe("treeItemMeta", () => {
+  it("gives each span its position among siblings and how many spans sit under it", () => {
+    const roots = buildSpanTree([
+      makeSpan("root", null, 0, 100),
+      makeSpan("a", "root", 1, 10),
+      makeSpan("a1", "a", 2, 2),
+      makeSpan("a2", "a", 3, 2),
+      makeSpan("b", "root", 20, 10),
+    ]);
+    const meta = treeItemMeta(roots);
+    expect(meta.get("root")).toEqual({ posInSet: 1, setSize: 1, descendants: 4 });
+    expect(meta.get("a")).toEqual({ posInSet: 1, setSize: 2, descendants: 2 });
+    expect(meta.get("b")).toEqual({ posInSet: 2, setSize: 2, descendants: 0 });
+    expect(meta.get("a2")).toEqual({ posInSet: 2, setSize: 2, descendants: 0 });
+  });
+});
+
+describe("llmInputCandidates and llmOutputCandidates", () => {
+  function llm(id: string, parent: string, start: number, io: Partial<Span> = {}): Span {
+    return { ...makeSpan(id, parent, start, 5), kind: "llm", ...io };
+  }
+
+  const spans: Span[] = [
+    makeSpan("root", null, 0, 100),
+    makeSpan("plan", "root", 1, 30),
+    llm("plan-llm", "plan", 2, { input: [{ role: "user", content: "a" }], output: "x" }),
+    llm("no-io", "root", 40),
+    llm("answer", "root", 50, { payload_omitted: true }),
+    makeSpan("tool", "root", 60, 5),
+  ];
+  const roots = buildSpanTree(spans);
+  const rootChildren = findSpanNode(roots, "root")?.children ?? [];
+
+  it("lists LLM spans with an input depth first, skipping ones known to have none", () => {
+    expect(llmInputCandidates(rootChildren).map((span) => span.span_id)).toEqual([
+      "plan-llm",
+      "answer",
+    ]);
+  });
+
+  it("lists LLM spans with an output last first; an omitted payload is still a candidate", () => {
+    expect(llmOutputCandidates(rootChildren).map((span) => span.span_id)).toEqual([
+      "answer",
+      "plan-llm",
+    ]);
+  });
+
+  it("is empty when no LLM span carries a payload", () => {
+    const bare = buildSpanTree([makeSpan("root", null, 0, 10), llm("empty", "root", 1)]);
+    const children = findSpanNode(bare, "root")?.children ?? [];
+    expect(llmInputCandidates(children)).toEqual([]);
+    expect(llmOutputCandidates(children)).toEqual([]);
+  });
+
+  it("finds a nested node by id", () => {
+    expect(findSpanNode(roots, "plan-llm")?.span.span_id).toBe("plan-llm");
+    expect(findSpanNode(roots, "missing")).toBeNull();
   });
 });

@@ -9,6 +9,7 @@ import { ROLE_LABELS } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 import { INK_FOCUS, KEY_FIELD_CLASSES } from "./api-key-styles";
+import { ONBOARDING_COPY } from "./copy";
 import { CreateKeyForm } from "./create-key-form";
 
 interface ApiKeyCardProps {
@@ -18,6 +19,8 @@ interface ApiKeyCardProps {
   role: Role;
   createdKey: CreatedApiKey | null;
   onCreated: (key: CreatedApiKey) => void;
+  /** Shown under the secret: the "Send a test trace" button. */
+  testTrace: ReactNode;
 }
 
 /**
@@ -31,10 +34,11 @@ export function ApiKeyCard({
   role,
   createdKey,
   onCreated,
+  testTrace,
 }: ApiKeyCardProps) {
   let body: ReactNode;
   if (createdKey) {
-    body = <SecretReveal apiKey={createdKey} />;
+    body = <SecretReveal apiKey={createdKey} testTrace={testTrace} />;
   } else if (canCreateKeys) {
     body = <CreateKeyForm projectId={projectId} onCreated={onCreated} />;
   } else {
@@ -62,7 +66,9 @@ export function ApiKeyCard({
           >
             <Key className="size-4" strokeWidth={2} />
           </span>
-          <h2 className="text-sm font-semibold whitespace-nowrap text-rail-foreground">API key</h2>
+          <h2 className="text-sm font-semibold whitespace-nowrap text-rail-foreground">
+            {ONBOARDING_COPY.connect.cardTitle}
+          </h2>
           <p className="min-w-0 truncate text-xs font-medium text-rail-muted-foreground">
             {subtitle}
           </p>
@@ -76,7 +82,7 @@ export function ApiKeyCard({
 }
 
 /** The one and only time the secret is shown. */
-function SecretReveal({ apiKey }: { apiKey: CreatedApiKey }) {
+function SecretReveal({ apiKey, testTrace }: { apiKey: CreatedApiKey; testTrace: ReactNode }) {
   return (
     <div className="flex flex-col gap-3.5">
       <div className={KEY_FIELD_CLASSES}>
@@ -93,9 +99,10 @@ function SecretReveal({ apiKey }: { apiKey: CreatedApiKey }) {
           className={cn("w-full sm:w-auto [&_svg]:text-lime-foreground", INK_FOCUS)}
         />
       </div>
+      {testTrace}
       <p className="flex items-start gap-2 text-sm text-rail-muted-foreground">
         <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-lime" strokeWidth={2} />
-        This key is shown once. Store it in your secrets manager.
+        {ONBOARDING_COPY.connect.cardDescription}
       </p>
     </div>
   );

@@ -1,7 +1,8 @@
 import { Badge } from "@/components/ui/badge";
+import type { DiffLine } from "@/lib/text-diff";
 import { cn } from "@/lib/utils";
 
-import type { ConfigChange, DiffLine, MessageDiff, MessageStatus } from "./diff";
+import type { ConfigChange, MessageDiff, MessageStatus } from "./diff";
 import { HighlightedText } from "./highlighted-text";
 
 const LINE_TONES: Record<DiffLine["kind"], string> = {

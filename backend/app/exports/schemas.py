@@ -71,6 +71,10 @@ class ExportFilters(AttributionExportFilters):
     metadata_key: MetadataKey | None = None
     metadata_value: FilterText | None = None
     q: FilterText | None = None
+    # A selection from the trace list; it narrows the filtered set, the window still applies.
+    trace_ids: list[Annotated[str, StringConstraints(min_length=1, max_length=64)]] | None = Field(
+        default=None, min_length=1, max_length=200
+    )
 
     @model_validator(mode="after")
     def _check_metadata_pair(self) -> Self:

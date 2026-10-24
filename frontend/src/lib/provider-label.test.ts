@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { feedLabel, providerLabel } from "./provider-label";
+import { feedLabel, NO_PROVIDER_REASON, providerLabel } from "./provider-label";
 
 describe("providerLabel", () => {
   it("names known providers whatever their case and shows other slugs as sent", () => {
@@ -15,6 +15,12 @@ describe("providerLabel", () => {
   it("says No provider for a call that named none", () => {
     expect(providerLabel(null)).toBe("No provider");
     expect(providerLabel("  ")).toBe("No provider");
+  });
+
+  it("names every cause a row can have no provider", () => {
+    expect(NO_PROVIDER_REASON).toBe(
+      "Gateway cache hits, gateway refusals and spans sent without a provider",
+    );
   });
 });
 

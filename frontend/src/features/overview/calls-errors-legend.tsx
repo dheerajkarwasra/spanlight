@@ -30,6 +30,8 @@ interface CallsErrorsLegendProps {
   onViewChange: (view: ChartView) => void;
   /** The "Partial hour/day" key renders only when a partial bucket is drawn. */
   partialBucket: Bucket | null;
+  /** The "Release" key when a marker is drawn; `note` explains missing markers. */
+  releases: { shown: boolean; note: string | null };
 }
 
 /** The legend row: series keys, incident keys, then "Show table" and "Show incidents". */
@@ -38,6 +40,7 @@ export function CallsErrorsLegend({
   view,
   onViewChange,
   partialBucket,
+  releases,
 }: CallsErrorsLegendProps) {
   const switchId = useId();
   const { feed, shown, hasBands } = incidents;
@@ -63,6 +66,12 @@ export function CallsErrorsLegend({
             <span>Partial {partialBucket}</span>
           </li>
         ) : null}
+        {releases.shown ? (
+          <li className="flex items-center gap-1.5">
+            <span aria-hidden className="h-3 border-l border-dashed border-border-strong" />
+            <span>Release</span>
+          </li>
+        ) : null}
         {feed === "ready" && shown && hasBands ? (
           <IncidentLegendItems hasCritical={incidents.hasCritical} />
         ) : null}
@@ -79,6 +88,9 @@ export function CallsErrorsLegend({
           </label>
         ) : null}
       </div>
+      {releases.note ? (
+        <p className="w-full text-xs font-medium text-muted-foreground">{releases.note}</p>
+      ) : null}
       {feed === "polling-off" ? (
         <p className="w-full text-xs font-medium text-muted-foreground">
           Provider status feeds are off on this server (

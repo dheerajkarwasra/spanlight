@@ -9,13 +9,9 @@ import {
   CompletenessCardSkeleton,
 } from "./completeness-card";
 import { shortRangeLabel } from "./hero";
-import { DoctorCard, DoctorCardError, DoctorCardSkeleton } from "./doctor-card";
-import { providerStatusLine } from "./doctor-format";
 import { overviewBands, usedProviders } from "./incident-overlay";
-import { loadable } from "./loadable";
-import { LatestTraces, LatestTracesError, LatestTracesSkeleton } from "./latest-traces";
 import { ModelTable, ModelTableError, ModelTableSkeleton } from "./model-table";
-import { RecentErrors, RecentErrorsError, RecentErrorsSkeleton } from "./recent-errors";
+import { RELEASE_WINDOW_MAX_MS, RELEASE_WINDOW_NOTE, windowMarkers } from "./release-markers";
 import type { OverviewQueries } from "./use-overview-queries";
 
 interface SectionProps {
@@ -40,7 +36,7 @@ function incidentBands(queries: OverviewQueries) {
 }
 
 export function CallsSection({ queries, now, className }: SectionProps) {
-  const { timeseries, bucket, range, incidents } = queries;
+  const { timeseries, bucket, range, incidents, releases } = queries;
   if (timeseries.isPending) {
     return <CallsErrorsChartSkeleton className={className} />;
   }
@@ -66,6 +62,8 @@ export function CallsSection({ queries, now, className }: SectionProps) {
       }}
       bands={incidentBands(queries)}
       pollingOff={incidents.data?.polling === "disabled"}
+      releases={windowMarkers(releases.data, range, bucket)}
+      releasesNote={range.durationMs > RELEASE_WINDOW_MAX_MS ? RELEASE_WINDOW_NOTE : null}
       isRefreshing={timeseries.isPlaceholderData}
     />
   );
@@ -96,103 +94,6 @@ export function CompletenessSection({ queries, className }: Omit<SectionProps, "
       )}
       result={completeness.data}
       rangeLabel={shortRangeLabel(range)}
-    />
-  );
-}
-
-/**
- * The providers' status line: pending while the models (the providers in use) or the incidents
- * load; null when either failed (the Models card reports that error).
- */
-function providerStatus(queries: OverviewQueries) {
-  const { incidents, models } = queries;
-  if (incidents.isError || models.isError) {
-    return null;
-  }
-  if (!incidents.data || !models.data) {
-    return { status: "pending" } as const;
-  }
-  return {
-    status: "success",
-    data: providerStatusLine(incidents.data, usedProviders(models.data)),
-  } as const;
-}
-
-export function DoctorSection({ queries, now, className }: SectionProps) {
-  const { health, overview, detectorRuns, topInsight } = queries;
-  if (health.isPending || !overview.data) {
-    return <DoctorCardSkeleton className={className} />;
-  }
-  if (health.isError) {
-    return (
-      <DoctorCardError
-        className={className}
-        error={health.error}
-        onRetry={() => {
-          void health.refetch();
-        }}
-      />
-    );
-  }
-  return (
-    <DoctorCard
-      className={cn("transition-opacity", health.isPlaceholderData && "opacity-60", className)}
-      health={health.data}
-      metrics={overview.data.current}
-      runs={loadable(detectorRuns, (runs) => runs)}
-      topInsight={topInsight.data}
-      providers={providerStatus(queries)}
-      now={now}
-    />
-  );
-}
-
-export function LatestTracesSection({ queries, now }: SectionProps) {
-  const { latestTraces, isLive } = queries;
-  if (latestTraces.isPending) {
-    return <LatestTracesSkeleton />;
-  }
-  if (latestTraces.isError) {
-    return (
-      <LatestTracesError
-        error={latestTraces.error}
-        onRetry={() => {
-          void latestTraces.refetch();
-        }}
-      />
-    );
-  }
-  return (
-    <LatestTraces
-      traces={latestTraces.data.items}
-      isLive={isLive}
-      isRefreshing={latestTraces.isPlaceholderData}
-      now={now}
-    />
-  );
-}
-
-export function RecentErrorsSection({ queries, now }: SectionProps) {
-  const { recentErrors } = queries;
-  if (recentErrors.isPending) {
-    return <RecentErrorsSkeleton />;
-  }
-  if (recentErrors.isError) {
-    return (
-      <RecentErrorsError
-        error={recentErrors.error}
-        onRetry={() => {
-          void recentErrors.refetch();
-        }}
-      />
-    );
-  }
-  return (
-    <RecentErrors
-      traces={recentErrors.data.items}
-      hasMore={recentErrors.data.next_cursor !== null}
-      isRefreshing={recentErrors.isPlaceholderData}
-      now={now}
     />
   );
 }

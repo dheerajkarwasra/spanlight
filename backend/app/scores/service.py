@@ -158,10 +158,18 @@ async def configs_in_project(
 
 async def run_scores(
     db: AsyncSession, project_id: uuid.UUID, run_ids: Sequence[uuid.UUID]
-) -> dict[uuid.UUID, list[queries.ScoreSummary]]:
+) -> dict[uuid.UUID, list[queries.RunScore]]:
     """The scores of these evaluator runs, by run id (runs without scores are absent). For
     callers outside the scores domain; `db` is bound to the project."""
     return await queries.scores_by_run(db, project_id, run_ids)
+
+
+async def experiment_score_comments(
+    db: AsyncSession, project_id: uuid.UUID, trace_ids: Sequence[str]
+) -> dict[str, dict[str, str]]:
+    """The judge reasoning on experiment items' traces, `{trace id: {score name: comment}}`. For
+    callers outside the scores domain; `db` is bound to the project."""
+    return await queries.experiment_comments_by_trace(db, project_id, trace_ids)
 
 
 async def delete_score(

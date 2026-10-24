@@ -1,7 +1,12 @@
-import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
 import { useProjectParams } from "@/features/shell/project-context";
-import { attributionApi, queryKeys, type AttributionQuery } from "@/lib/api";
+import {
+  attributionApi,
+  queryKeys,
+  type AttributionQuery,
+  type AttributionSeriesQuery,
+} from "@/lib/api";
 
 /**
  * One dimension's groups over the window, page by page. Previous rows stay while the dimension or
@@ -17,5 +22,16 @@ export function useAttributionQuery(query: Omit<AttributionQuery, "cursor">, ena
     getNextPageParam: (lastPage) => lastPage.next_cursor,
     placeholderData: keepPreviousData,
     enabled,
+  });
+}
+
+/** The Spend chart's buckets: the window total, or one group's with `value`. */
+export function useAttributionSeriesQuery(query: AttributionSeriesQuery) {
+  const { projectId } = useProjectParams();
+
+  return useQuery({
+    queryKey: queryKeys.project(projectId).attributionSeries(query),
+    queryFn: () => attributionApi.series(projectId, query),
+    placeholderData: keepPreviousData,
   });
 }

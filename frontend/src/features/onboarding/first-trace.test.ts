@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { firstTraceWindow, formatArrival } from "./first-trace";
+import { firstTraceAction, firstTraceWindow, formatArrival } from "./first-trace";
 
 describe("formatArrival", () => {
   it("formats the date and the 24-hour time", () => {
@@ -30,4 +30,18 @@ describe("firstTraceWindow", () => {
   it("returns null for an unparseable time", () => {
     expect(firstTraceWindow("soon")).toBeNull();
   });
+});
+
+describe("firstTraceAction", () => {
+  it.each([
+    [false, true, "open"],
+    [true, true, "offer"],
+    [false, false, "offer"],
+    [true, false, "offer"],
+  ] as const)(
+    "secret on screen %s, arrived this visit %s → %s",
+    (secretOnScreen, arrivedThisVisit, action) => {
+      expect(firstTraceAction({ secretOnScreen, arrivedThisVisit })).toBe(action);
+    },
+  );
 });

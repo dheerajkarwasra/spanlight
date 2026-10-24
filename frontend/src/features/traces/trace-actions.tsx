@@ -1,57 +1,58 @@
-import { getRouteApi } from "@tanstack/react-router";
-import { ClipboardCheck, Database } from "lucide-react";
+import { ClipboardCheck, Database, type LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { TooltipContent, TooltipRoot, TooltipTrigger } from "@/components/ui/tooltip";
 import { AddToDatasetDialog, AddToQueueDialog } from "@/features/datasets";
 import { usePermission } from "@/features/shell";
-import type { TraceDetail } from "@/lib/api";
+import type { Span, TraceDetail } from "@/lib/api";
 
-import { buildSpanTree } from "./span-tree";
-
-const traceRoute = getRouteApi("/_authed/$orgId/$projectId/traces/$traceId");
+interface TraceActionsProps {
+  trace: TraceDetail;
+  /** The span selected in the tree; both dialogs offer it. */
+  selectedSpan: Span | null;
+}
 
 /**
- * Figma trace header actions: "Add to dataset" and "Add to queue". Both offer the span selected
- * in the waterfall (the same default the page shows: the first root span).
+ * The summary bar's "Add to dataset" and "Add to queue": icon-only buttons with a tooltip and an
+ * `aria-label`. Neither shows without its permission.
  */
-export function TraceActions({ trace }: { trace: TraceDetail }) {
-  const search = traceRoute.useSearch();
+export function TraceActions({ trace, selectedSpan }: TraceActionsProps) {
   const canAddToDataset = usePermission("datasets:write");
   const canAddToQueue = usePermission("annotations:write");
-  if (!canAddToDataset && !canAddToQueue) {
-    return null;
-  }
-  const selectedSpan =
-    trace.spans.find((span) => span.span_id === search.span) ??
-    buildSpanTree(trace.spans)[0]?.span ??
-    null;
   const ref = { trace_id: trace.trace_id, name: trace.name };
 
   return (
-    <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+    <>
       {canAddToDataset ? (
-        <AddToDatasetDialog
-          target={{ kind: "trace", trace, selectedSpan }}
-          trigger={
-            <Button size="sm">
-              <Database aria-hidden />
-              Add to dataset
-            </Button>
-          }
-        />
+        <TooltipRoot>
+          <AddToDatasetDialog
+            target={{ kind: "trace", trace, selectedSpan }}
+            trigger={<IconTrigger icon={Database} label="Add to dataset" />}
+          />
+          <TooltipContent>Add to dataset</TooltipContent>
+        </TooltipRoot>
       ) : null}
       {canAddToQueue ? (
-        <AddToQueueDialog
-          traces={[ref]}
-          selectedSpan={selectedSpan}
-          trigger={
-            <Button size="sm">
-              <ClipboardCheck aria-hidden />
-              Add to queue
-            </Button>
-          }
-        />
+        <TooltipRoot>
+          <AddToQueueDialog
+            traces={[ref]}
+            selectedSpan={selectedSpan}
+            trigger={<IconTrigger icon={ClipboardCheck} label="Add to queue" />}
+          />
+          <TooltipContent>Add to queue</TooltipContent>
+        </TooltipRoot>
       ) : null}
-    </div>
+    </>
+  );
+}
+
+/** A dialog trigger that is also its tooltip's trigger (the dialog's `asChild` passes through). */
+function IconTrigger({ icon: Icon, label, ...props }: { icon: LucideIcon; label: string }) {
+  return (
+    <TooltipTrigger asChild>
+      <Button size="icon-sm" aria-label={label} {...props}>
+        <Icon aria-hidden />
+      </Button>
+    </TooltipTrigger>
   );
 }

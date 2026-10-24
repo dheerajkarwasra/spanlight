@@ -22,7 +22,7 @@ from app.evals.config import (
 from app.evals.schemas import EvalResult
 from app.evals.service import BudgetStatus, BudgetSummary
 from app.ingest.schemas import TraceId
-from app.scores.queries import ScoreSummary
+from app.scores.queries import RunScore
 
 __all__ = [
     "EvalResultOut",
@@ -93,11 +93,12 @@ class EvaluatorOut(ApiModel):
 
 class RunScoreOut(ApiModel):
     """A score a run wrote: `value` for numeric and boolean (1/0) scores, `string_value` for
-    categorical ones."""
+    categorical ones; `comment` is the judge's reasoning (null when it gave none)."""
 
     name: str
     value: ScoreNumber | None
     string_value: str | None
+    comment: str | None
 
 
 class EvaluatorRunOut(ApiModel):
@@ -119,7 +120,7 @@ class EvaluatorRunOut(ApiModel):
     scores: list[RunScoreOut]
 
     @classmethod
-    def of(cls, run: EvaluatorRun, scores: Sequence[ScoreSummary]) -> "EvaluatorRunOut":
+    def of(cls, run: EvaluatorRun, scores: Sequence[RunScore]) -> "EvaluatorRunOut":
         return cls(
             id=run.id,
             trace_id=run.trace_id,
@@ -132,9 +133,7 @@ class EvaluatorRunOut(ApiModel):
             started_at=run.started_at,
             heartbeat_at=run.heartbeat_at,
             finished_at=run.finished_at,
-            scores=[
-                RunScoreOut(name=s.name, value=s.value, string_value=s.string_value) for s in scores
-            ],
+            scores=[RunScoreOut(**score._asdict()) for score in scores],
         )
 
 

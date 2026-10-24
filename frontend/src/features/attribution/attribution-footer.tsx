@@ -1,15 +1,12 @@
 import { Info } from "lucide-react";
-import type { ReactNode } from "react";
-
 import { Tooltip } from "@/components/ui/tooltip";
 import type { AttributionBucket } from "@/lib/api";
 import { formatInteger } from "@/lib/format";
-import { cn } from "@/lib/utils";
 
-import { ATTRIBUTION_GRID, CAP_REASON, type AttributionView } from "./attribution-grid";
-import { DrillLink, FigureCells, VALUE_LINK_CLASS } from "./attribution-row";
+import { CAP_REASON } from "./attribution-grid";
+import { DrillLink, VALUE_LINK_CLASS } from "./attribution-row";
 import { drillDownSearch, type DrillContext } from "./drill-down";
-import { noneText, shareOf } from "./footer-format";
+import { noneText } from "./footer-format";
 
 /** The none label: the key in mono; a link to the traces without the key when the list can filter so. */
 export function NoneLabel({ drill, linked }: { drill: DrillContext; linked: boolean }) {
@@ -60,42 +57,5 @@ export function OtherLabel({ other }: { other: AttributionBucket }) {
         </button>
       </Tooltip>
     </span>
-  );
-}
-
-function FooterRow({ className, children }: { className?: string; children: ReactNode }) {
-  return (
-    <div role="row" className={cn(ATTRIBUTION_GRID, "h-[52px] text-sm", className)}>
-      {children}
-    </div>
-  );
-}
-
-/** The table's last rows: the traces without the dimension, the folded values and the total. */
-export function AttributionFooterRows({ view }: { view: AttributionView }) {
-  const { none, other, totals } = view.page;
-  return (
-    <div role="rowgroup" className="flex flex-col gap-0.5 border-t border-border pt-0.5">
-      {none ? (
-        <FooterRow>
-          <div role="cell" className="flex min-w-0">
-            <NoneLabel drill={view.drill} linked />
-          </div>
-          <FigureCells figures={none} share={shareOf(none, view)} />
-        </FooterRow>
-      ) : null}
-      {other ? (
-        <FooterRow>
-          <div role="cell" className="flex min-w-0">
-            <OtherLabel other={other} />
-          </div>
-          <FigureCells figures={other} share={shareOf(other, view)} />
-        </FooterRow>
-      ) : null}
-      <FooterRow className="border-t border-border font-semibold">
-        <div role="rowheader">Total</div>
-        <FigureCells figures={totals} share="total" />
-      </FooterRow>
-    </div>
   );
 }

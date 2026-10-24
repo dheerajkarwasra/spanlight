@@ -1,17 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import type { Kpis } from "@/lib/api";
+import type { Health, Kpis } from "@/lib/api";
 
 import type { ChartPoint } from "./chart-data";
 import {
-  buildKpiCards,
   formatDeltaMagnitude,
-  kpiTrend,
   msDelta,
   percentDelta,
   pointsDelta,
   previousPeriodLabel,
-  type KpiCardModel,
+  ribbonKpis,
+  type RibbonKpi,
 } from "./kpis";
 
 function kpis(overrides: Partial<Kpis> = {}): Kpis {
@@ -27,14 +26,6 @@ function kpis(overrides: Partial<Kpis> = {}): Kpis {
     output_tokens: 2_000,
     ...overrides,
   };
-}
-
-function card(cards: KpiCardModel[], id: KpiCardModel["id"]): KpiCardModel {
-  const found = cards.find((candidate) => candidate.id === id);
-  if (!found) {
-    throw new Error(`missing card ${id}`);
-  }
-  return found;
 }
 
 describe("deltas", () => {
@@ -70,71 +61,9 @@ describe("deltas", () => {
   });
 });
 
-describe("buildKpiCards", () => {
-  it("returns the four cards in display order", () => {
-    const cards = buildKpiCards({ current: kpis(), previous: kpis(), approximate: false });
-    expect(cards.map((item) => item.id)).toEqual(["p95", "error_rate", "llm_calls", "tokens"]);
-  });
-
-  it("formats values and detail lines", () => {
-    const cards = buildKpiCards({
-      current: kpis({ traces: 12_900, llm_calls: 48_200, error_rate: 203 / 48_200 }),
-      previous: kpis(),
-      approximate: false,
-    });
-    expect(card(cards, "p95").value).toBe("1.20 s");
-    expect(card(cards, "p95").detail).toBe("p50 400 ms");
-    expect(card(cards, "error_rate").detail).toBe("203 of 48.2K calls");
-    expect(card(cards, "llm_calls").value).toBe("48.2K");
-    expect(card(cards, "llm_calls").detail).toBe("across 12.9K traces");
-    expect(card(cards, "tokens").value).toBe("12K");
-    expect(card(cards, "tokens").detail).toBe("10K in · 2,000 out");
-  });
-
-  it("uses the right unit and polarity for each delta", () => {
-    const cards = buildKpiCards({
-      current: kpis({ p95_ms: 1420, error_rate: 0.04, llm_calls: 220 }),
-      previous: kpis({ p95_ms: 1200, error_rate: 0.05, llm_calls: 200 }),
-      approximate: false,
-    });
-    expect(card(cards, "p95").delta).toEqual({ value: 220, unit: "ms", increaseIsGood: false });
-    expect(card(cards, "error_rate").delta).toEqual({
-      value: -1,
-      unit: "points",
-      increaseIsGood: false,
-    });
-    expect(card(cards, "llm_calls").delta).toEqual({
-      value: 10,
-      unit: "percent",
-      increaseIsGood: null,
-    });
-  });
-
-  it("leaves latency and error rate unknown without LLM calls", () => {
-    const cards = buildKpiCards({
-      current: kpis({ llm_calls: 0, error_rate: null, p50_ms: null, p95_ms: null }),
-      previous: kpis(),
-      approximate: false,
-    });
-    expect(card(cards, "p95").value).toBeNull();
-    expect(card(cards, "p95").detail).toBeNull();
-    expect(card(cards, "p95").delta).toBeNull();
-    expect(card(cards, "error_rate").value).toBeNull();
-    expect(card(cards, "error_rate").detail).toBeNull();
-  });
-
-  it("uses singular nouns for one call or one trace", () => {
-    const cards = buildKpiCards({
-      current: kpis({ traces: 1, llm_calls: 1, error_rate: 0 }),
-      previous: kpis(),
-      approximate: false,
-    });
-    expect(card(cards, "llm_calls").detail).toBe("across 1 trace");
-    expect(card(cards, "error_rate").detail).toBe("0 of 1 call");
-  });
-});
-
-describe("kpiTrend", () => {
+describe("ribbonKpis", () => {
+  const range = { value: "24h", durationMs: 24 * 3600_000 } as const;
+  const now = new Date("2026-10-21T12:00:00Z");
   const points: ChartPoint[] = [
     {
       bucketStart: "a",
@@ -146,37 +75,81 @@ describe("kpiTrend", () => {
       costUsd: 0.1,
       tokens: 300,
     },
-    {
-      bucketStart: "b",
-      llmCalls: 0,
-      errors: 0,
-      succeeded: 0,
-      partial: false,
-      p95Ms: null,
-      costUsd: null,
-      tokens: 0,
-    },
   ];
 
-  it("maps each card to its per-bucket series", () => {
-    expect(kpiTrend("p95", points)).toEqual([900, null]);
-    expect(kpiTrend("error_rate", points)).toEqual([0.25, null]);
-    expect(kpiTrend("llm_calls", points)).toEqual([4, 0]);
-    expect(kpiTrend("tokens", points)).toEqual([300, 0]);
+  function ribbon(overrides: Partial<Kpis> = {}, previous: Partial<Kpis> = {}) {
+    return ribbonKpis({
+      metrics: { current: kpis(overrides), previous: kpis(previous), approximate: true },
+      points,
+      health: { value: 72, open_critical: 1, open_warning: 2, approximate: false } as Health,
+      range,
+      now,
+    });
+  }
+
+  function find(cards: RibbonKpi[], id: RibbonKpi["id"]): RibbonKpi {
+    const found = cards.find((candidate) => candidate.id === id);
+    if (!found) {
+      throw new Error(`missing card ${id}`);
+    }
+    return found;
+  }
+
+  it("returns calls, p95, spend and Doctor in display order", () => {
+    expect(ribbon().map((item) => item.id)).toEqual(["calls", "p95", "spend", "doctor"]);
   });
 
-  it("covers every bucket of the window", () => {
-    const many: ChartPoint[] = Array.from({ length: 24 }, (_, index) => ({
-      bucketStart: String(index),
-      llmCalls: index,
-      errors: 0,
-      succeeded: index,
-      partial: false,
-      p95Ms: null,
-      costUsd: null,
-      tokens: 0,
-    }));
-    expect(kpiTrend("llm_calls", many)).toHaveLength(24);
+  it("counts calls with their errors and rate", () => {
+    const calls = find(
+      ribbon({ llm_calls: 432, error_rate: 15 / 432 }, { llm_calls: 400 }),
+      "calls",
+    );
+    expect(calls).toMatchObject({
+      label: "Calls · error rate",
+      value: "432",
+      denominator: "15 errors · 3.5%",
+      delta: { value: 8, unit: "percent", increaseIsGood: null },
+      trend: [4],
+    });
+  });
+
+  it("marks p95 and its p50 as estimates from rollups", () => {
+    const p95 = find(ribbon(), "p95");
+    expect(p95).toMatchObject({ value: "1.20 s", approximate: true, denominator: "p50 ≈ 400 ms" });
+    expect(p95.trend).toEqual([900]);
+  });
+
+  it("projects spend for short windows and flags a lower bound", () => {
+    const spend = find(ribbon({ cost_usd: "1.00", unpriced_calls: 3 }), "spend");
+    expect(spend).toMatchObject({ value: "$1.00", lowerBound: true, trend: null });
+    expect(spend.denominator).toBe("Projected $31.00 this month");
+  });
+
+  it("leaves spend unknown when no call was priced", () => {
+    const spend = find(ribbon({ cost_usd: null }), "spend");
+    expect(spend.value).toBeNull();
+    expect(spend.lowerBound).toBe(false);
+  });
+
+  it("scores the Doctor with its open findings", () => {
+    expect(find(ribbon(), "doctor")).toMatchObject({
+      value: "72",
+      denominator: "3 open findings",
+      critical: 1,
+    });
+  });
+
+  it("keeps every value short enough for a phone tile, the exact spend aside", () => {
+    const cards = ribbon({
+      llm_calls: 1_234_567,
+      cost_usd: "12345.678901",
+      p95_ms: 123_456,
+    });
+    for (const card of cards) {
+      expect(card.value?.length ?? 0).toBeLessThanOrEqual(8);
+    }
+    expect(find(cards, "spend")).toMatchObject({ value: "$12.3K", exact: "$12,345.68" });
+    expect(find(ribbon({ cost_usd: "0.000662" }), "spend").value).toBe("<$0.01");
   });
 });
 

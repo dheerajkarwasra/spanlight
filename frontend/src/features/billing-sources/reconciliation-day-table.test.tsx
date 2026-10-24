@@ -88,7 +88,7 @@ const REPORT: ReconciliationReport = {
 function renderTable() {
   render(
     <TooltipProvider delayDuration={0}>
-      <DayTable rows={flattenDays(REPORT)} />
+      <DayTable rows={flattenDays(REPORT, "p_other")} />
     </TooltipProvider>,
   );
 }

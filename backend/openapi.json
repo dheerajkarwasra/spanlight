@@ -936,8 +936,20 @@
         "type": "object"
       },
       "AttributionOut": {
-        "description": "A page of groups, with the `none` and `other` buckets and the totals on every page.\n\n`source` is `raw` (a window of 24 hours or less, read live from the traces: exact, any\nmetadata key, no `other`) or `rollup` (a longer window, read from the daily rollup rows of\npromoted keys: exact per day, up to `updated_within_minutes` behind). `none` and `other`\nare `None` when they hold no traces.",
+        "description": "A page of groups, with the `none` and `other` buckets and the totals on every page.\n\n`source` is `raw` (a window of 24 hours or less, read live from the traces: exact, any\nmetadata key, no `other`) or `rollup` (a longer window, read from the daily rollup rows of\npromoted keys: exact per day, up to `updated_within_minutes` behind). `none` and `other`\nare `None` when they hold no traces.\n\nOn the rollup source, `computed_at` is the latest recompute among the rows read (the last\nrefresh pass; `None` when no row was read) and `pending_traces` counts the traces of the\nwindow and environment started after the latest recompute of their own UTC day, every trace\nof a day without rows, up to 10,000. Both are `None` on the raw source, where nothing is\npending.",
         "properties": {
+          "computed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Computed At"
+          },
           "group_by": {
             "enum": [
               "metadata",
@@ -997,6 +1009,17 @@
               }
             ]
           },
+          "pending_traces": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Traces"
+          },
           "source": {
             "enum": [
               "raw",
@@ -1022,6 +1045,8 @@
           "window",
           "source",
           "updated_within_minutes",
+          "computed_at",
+          "pending_traces",
           "items",
           "next_cursor",
           "none",
@@ -1121,6 +1146,45 @@
           "share_of_cost"
         ],
         "title": "AttributionRowOut",
+        "type": "object"
+      },
+      "AttributionSeriesOut": {
+        "description": "The spend of the window per bucket, from the same source as the list: hourly on `raw` (a\nwindow of 24 hours or less), per UTC day on `rollup` (`window` widened to whole days). Every\nbucket of the window is present; the points add up to the list's `totals`, or to the group's\nrow when `value` was given.",
+        "properties": {
+          "bucket": {
+            "enum": [
+              "hour",
+              "day"
+            ],
+            "title": "Bucket",
+            "type": "string"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/SeriesPointOut"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "source": {
+            "enum": [
+              "raw",
+              "rollup"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "window": {
+            "$ref": "#/components/schemas/AttributionWindowOut"
+          }
+        },
+        "required": [
+          "bucket",
+          "source",
+          "window",
+          "points"
+        ],
+        "title": "AttributionSeriesOut",
         "type": "object"
       },
       "AttributionTotalsOut": {
@@ -2073,6 +2137,40 @@
         "title": "BudgetAction",
         "type": "string"
       },
+      "BudgetBurnOut": {
+        "description": "The budget's spend per day of the current period, up to now.",
+        "properties": {
+          "amount_usd": {
+            "title": "Amount Usd",
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date-time",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/BurnPointOut"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "resets_at": {
+            "format": "date-time",
+            "title": "Resets At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "period_start",
+          "resets_at",
+          "amount_usd",
+          "points"
+        ],
+        "title": "BudgetBurnOut",
+        "type": "object"
+      },
       "BudgetOut": {
         "properties": {
           "action": {
@@ -2416,6 +2514,74 @@
           "last_evaluated_at"
         ],
         "title": "BudgetStateOut",
+        "type": "object"
+      },
+      "BurnPointOut": {
+        "description": "One UTC day of the period; the first and the current day can be partial.",
+        "properties": {
+          "cumulative_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Usd"
+          },
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "spend_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spend Usd"
+          }
+        },
+        "required": [
+          "day",
+          "spend_usd",
+          "cumulative_usd"
+        ],
+        "title": "BurnPointOut",
+        "type": "object"
+      },
+      "CapabilitiesOut": {
+        "description": "What this server is set up to do, so the dashboard can explain a missing feature up front.\n\nBooleans and the gateway mode only: never a key, key id, bucket or other configured value.",
+        "properties": {
+          "credentials_configured": {
+            "title": "Credentials Configured",
+            "type": "boolean"
+          },
+          "exports_configured": {
+            "title": "Exports Configured",
+            "type": "boolean"
+          },
+          "gateway_mode": {
+            "enum": [
+              "embedded",
+              "standalone",
+              "disabled"
+            ],
+            "title": "Gateway Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "gateway_mode",
+          "credentials_configured",
+          "exports_configured"
+        ],
+        "title": "CapabilitiesOut",
         "type": "object"
       },
       "CategoryRateOut": {
@@ -5026,6 +5192,47 @@
         "title": "EvidenceOut",
         "type": "object"
       },
+      "EvidenceSpanOut": {
+        "description": "The span an evidence trace opens on: its first failed span (llm preferred), else its first\nllm span, else its first span.",
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "span_id": {
+            "title": "Span Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trace_id",
+          "span_id",
+          "name",
+          "status",
+          "model"
+        ],
+        "title": "EvidenceSpanOut",
+        "type": "object"
+      },
       "EvidenceWindowOut": {
         "properties": {
           "end": {
@@ -5259,6 +5466,20 @@
             "title": "Position",
             "type": "integer"
           },
+          "score_comments": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score Comments"
+          },
           "scores": {
             "additionalProperties": true,
             "title": "Scores",
@@ -5289,6 +5510,7 @@
           "cost_usd",
           "error",
           "evaluator_error",
+          "score_comments",
           "created_at"
         ],
         "title": "ExperimentItemOut",
@@ -5774,6 +5996,24 @@
             "format": "date-time",
             "title": "To",
             "type": "string"
+          },
+          "trace_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 200,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Ids"
           },
           "user_id": {
             "anyOf": [
@@ -7247,6 +7487,24 @@
             ],
             "title": "P95 Ttft Ms"
           },
+          "p95_upstream_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Upstream Ms"
+          },
+          "previous": {
+            "$ref": "#/components/schemas/GatewayTotalsOut"
+          },
+          "rate_limited": {
+            "title": "Rate Limited",
+            "type": "integer"
+          },
           "requests": {
             "title": "Requests",
             "type": "integer"
@@ -7254,6 +7512,9 @@
           "retries": {
             "title": "Retries",
             "type": "integer"
+          },
+          "series": {
+            "$ref": "#/components/schemas/GatewaySeriesOut"
           }
         },
         "required": [
@@ -7265,11 +7526,64 @@
           "retries",
           "p95_overhead_ms",
           "p95_ttft_ms",
+          "p95_upstream_ms",
+          "rate_limited",
+          "previous",
+          "series",
           "by_target",
           "by_key",
           "faults"
         ],
         "title": "GatewayOverviewOut",
+        "type": "object"
+      },
+      "GatewaySeriesOut": {
+        "properties": {
+          "bucket": {
+            "enum": [
+              "5m",
+              "hour"
+            ],
+            "title": "Bucket",
+            "type": "string"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/GatewaySeriesPointOut"
+            },
+            "title": "Points",
+            "type": "array"
+          }
+        },
+        "required": [
+          "bucket",
+          "points"
+        ],
+        "title": "GatewaySeriesOut",
+        "type": "object"
+      },
+      "GatewaySeriesPointOut": {
+        "properties": {
+          "bucket_start": {
+            "format": "date-time",
+            "title": "Bucket Start",
+            "type": "string"
+          },
+          "errors": {
+            "title": "Errors",
+            "type": "integer"
+          },
+          "requests": {
+            "title": "Requests",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bucket_start",
+          "requests",
+          "errors"
+        ],
+        "title": "GatewaySeriesPointOut",
         "type": "object"
       },
       "GatewayTargetUsageOut": {
@@ -7329,6 +7643,71 @@
           "p95_ms"
         ],
         "title": "GatewayTargetUsageOut",
+        "type": "object"
+      },
+      "GatewayTotalsOut": {
+        "description": "The previous window's totals, for the overview's deltas; each reads as the field of the\nsame name on `GatewayOverviewOut` (`cache_hit_rate` as `cache.hit_rate`).",
+        "properties": {
+          "cache_hit_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Hit Rate"
+          },
+          "error_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Rate"
+          },
+          "errors": {
+            "title": "Errors",
+            "type": "integer"
+          },
+          "fallbacks": {
+            "title": "Fallbacks",
+            "type": "integer"
+          },
+          "p95_overhead_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Overhead Ms"
+          },
+          "rate_limited": {
+            "title": "Rate Limited",
+            "type": "integer"
+          },
+          "requests": {
+            "title": "Requests",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "requests",
+          "errors",
+          "error_rate",
+          "p95_overhead_ms",
+          "cache_hit_rate",
+          "fallbacks",
+          "rate_limited"
+        ],
+        "title": "GatewayTotalsOut",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -7721,7 +8100,7 @@
         "type": "object"
       },
       "InsightDetailOut": {
-        "description": "The insight, its completed explanations (newest first) and the \"Was this right?\" votes.",
+        "description": "The insight, its completed explanations (newest first) and the \"Was this right?\" votes.\n\n`evidence_spans` has one span per evidence trace still stored, in `evidence.trace_ids` order.",
         "properties": {
           "acknowledged_at": {
             "anyOf": [
@@ -7741,6 +8120,13 @@
           },
           "evidence": {
             "$ref": "#/components/schemas/EvidenceOut"
+          },
+          "evidence_spans": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceSpanOut"
+            },
+            "title": "Evidence Spans",
+            "type": "array"
           },
           "explanations": {
             "items": {
@@ -7862,6 +8248,7 @@
           "mute_reason",
           "acknowledged_at",
           "explanations",
+          "evidence_spans",
           "feedback"
         ],
         "title": "InsightDetailOut",
@@ -9027,6 +9414,9 @@
       },
       "MeOut": {
         "properties": {
+          "capabilities": {
+            "$ref": "#/components/schemas/CapabilitiesOut"
+          },
           "email_verification_required": {
             "title": "Email Verification Required",
             "type": "boolean"
@@ -9055,7 +9445,8 @@
           "memberships",
           "has_password",
           "totp_enabled",
-          "email_verification_required"
+          "email_verification_required",
+          "capabilities"
         ],
         "title": "MeOut",
         "type": "object"
@@ -10259,11 +10650,11 @@
         "title": "Page[SelectionOut]",
         "type": "object"
       },
-      "Page_SessionSummaryOut_": {
+      "Page_SessionTurnOut_": {
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/SessionSummaryOut"
+              "$ref": "#/components/schemas/SessionTurnOut"
             },
             "title": "Items",
             "type": "array"
@@ -10284,7 +10675,7 @@
           "items",
           "next_cursor"
         ],
-        "title": "Page[SessionSummaryOut]",
+        "title": "Page[SessionTurnOut]",
         "type": "object"
       },
       "Page_TraceSummaryOut_": {
@@ -14150,8 +14541,19 @@
         "type": "object"
       },
       "RunScoreOut": {
-        "description": "A score a run wrote: `value` for numeric and boolean (1/0) scores, `string_value` for\ncategorical ones.",
+        "description": "A score a run wrote: `value` for numeric and boolean (1/0) scores, `string_value` for\ncategorical ones; `comment` is the judge's reasoning (null when it gave none).",
         "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -14182,7 +14584,8 @@
         "required": [
           "name",
           "value",
-          "string_value"
+          "string_value",
+          "comment"
         ],
         "title": "RunScoreOut",
         "type": "object"
@@ -15011,6 +15414,146 @@
         "title": "SelectionOut",
         "type": "object"
       },
+      "SeriesPointOut": {
+        "description": "One bucket of the series. `cost_usd` is `None` when its traces made calls and none was\npriced, a lower bound while `unpriced_calls` is above 0, and 0 for a bucket without traces.",
+        "properties": {
+          "bucket_start": {
+            "format": "date-time",
+            "title": "Bucket Start",
+            "type": "string"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "unpriced_calls": {
+            "title": "Unpriced Calls",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bucket_start",
+          "cost_usd",
+          "unpriced_calls"
+        ],
+        "title": "SeriesPointOut",
+        "type": "object"
+      },
+      "SessionListItemOut": {
+        "description": "A `GET /sessions` row: the summary a user's recent sessions show, and more.",
+        "properties": {
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "number"
+          },
+          "error_count": {
+            "title": "Error Count",
+            "type": "integer"
+          },
+          "external_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External User Id"
+          },
+          "first_at": {
+            "format": "date-time",
+            "title": "First At",
+            "type": "string"
+          },
+          "has_unpriced": {
+            "title": "Has Unpriced",
+            "type": "boolean"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "last_at": {
+            "format": "date-time",
+            "title": "Last At",
+            "type": "string"
+          },
+          "last_input_preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Input Preview"
+          },
+          "last_trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Trace Id"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "trace_count": {
+            "title": "Trace Count",
+            "type": "integer"
+          },
+          "user_count": {
+            "title": "User Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "trace_count",
+          "first_at",
+          "last_at",
+          "cost_usd",
+          "has_unpriced",
+          "error_count",
+          "external_user_id",
+          "user_count",
+          "input_tokens",
+          "output_tokens",
+          "duration_ms",
+          "last_trace_id"
+        ],
+        "title": "SessionListItemOut",
+        "type": "object"
+      },
       "SessionOut": {
         "properties": {
           "created_at": {
@@ -15066,6 +15609,46 @@
         "title": "SessionOut",
         "type": "object"
       },
+      "SessionPage": {
+        "properties": {
+          "cost_p99_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost P99 Usd"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SessionListItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "cost_p99_usd"
+        ],
+        "title": "SessionPage",
+        "type": "object"
+      },
       "SessionSummaryOut": {
         "properties": {
           "cost_usd": {
@@ -15116,6 +15699,32 @@
           "error_count"
         ],
         "title": "SessionSummaryOut",
+        "type": "object"
+      },
+      "SessionTurnOut": {
+        "description": "One trace of a session and the spans its conversation turn is read from.",
+        "properties": {
+          "spans": {
+            "items": {
+              "$ref": "#/components/schemas/SpanOut"
+            },
+            "title": "Spans",
+            "type": "array"
+          },
+          "tool_calls": {
+            "title": "Tool Calls",
+            "type": "integer"
+          },
+          "trace": {
+            "$ref": "#/components/schemas/TraceSummaryOut"
+          }
+        },
+        "required": [
+          "trace",
+          "spans",
+          "tool_calls"
+        ],
+        "title": "SessionTurnOut",
         "type": "object"
       },
       "Severity": {
@@ -15434,6 +16043,17 @@
               }
             ]
           },
+          "request_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Hash"
+          },
           "service_tier": {
             "anyOf": [
               {
@@ -15544,6 +16164,7 @@
           "finish_reason",
           "prompt_version_id",
           "usage_rollup",
+          "request_hash",
           "usage_state"
         ],
         "title": "SpanOut",
@@ -15967,6 +16588,99 @@
         "title": "TimeseriesPointOut",
         "type": "object"
       },
+      "TokenMixOut": {
+        "description": "LLM tokens by price class over the whole UTC days `first_day`..`last_day`, all\nenvironments. Every figure is null when the project has no cost rollup in those days.",
+        "properties": {
+          "cache_read_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read Tokens"
+          },
+          "cache_write_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write Tokens"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "fee_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fee Usd"
+          },
+          "first_day": {
+            "format": "date",
+            "title": "First Day",
+            "type": "string"
+          },
+          "last_day": {
+            "format": "date",
+            "title": "Last Day",
+            "type": "string"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
+          },
+          "uncached_input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uncached Input Tokens"
+          }
+        },
+        "required": [
+          "first_day",
+          "last_day",
+          "uncached_input_tokens",
+          "output_tokens",
+          "cache_read_tokens",
+          "cache_write_tokens",
+          "fee_usd",
+          "cost_usd"
+        ],
+        "title": "TokenMixOut",
+        "type": "object"
+      },
       "TokenScope": {
         "enum": [
           "read",
@@ -15990,6 +16704,10 @@
           },
           "errors": {
             "title": "Errors",
+            "type": "integer"
+          },
+          "evaluator_errors": {
+            "title": "Evaluator Errors",
             "type": "integer"
           },
           "has_unpriced": {
@@ -16033,6 +16751,7 @@
         "required": [
           "items",
           "errors",
+          "evaluator_errors",
           "cost_usd",
           "has_unpriced",
           "latency_p50_ms",
@@ -16202,6 +16921,30 @@
         "title": "TraceAddedOut",
         "type": "object"
       },
+      "TraceBucketOut": {
+        "properties": {
+          "bucket_start": {
+            "format": "date-time",
+            "title": "Bucket Start",
+            "type": "string"
+          },
+          "errors": {
+            "title": "Errors",
+            "type": "integer"
+          },
+          "traces": {
+            "title": "Traces",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bucket_start",
+          "traces",
+          "errors"
+        ],
+        "title": "TraceBucketOut",
+        "type": "object"
+      },
       "TraceCompareOut": {
         "properties": {
           "a": {
@@ -16312,6 +17055,17 @@
             "title": "Has Unpriced",
             "type": "boolean"
           },
+          "input_preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Preview"
+          },
           "input_tokens": {
             "title": "Input Tokens",
             "type": "integer"
@@ -16340,6 +17094,17 @@
               }
             ],
             "title": "Name"
+          },
+          "output_preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Preview"
           },
           "output_tokens": {
             "title": "Output Tokens",
@@ -16478,6 +17243,31 @@
         "title": "TraceExportIn",
         "type": "object"
       },
+      "TraceHistogramOut": {
+        "properties": {
+          "bucket": {
+            "enum": [
+              "hour",
+              "day"
+            ],
+            "title": "Bucket",
+            "type": "string"
+          },
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/TraceBucketOut"
+            },
+            "title": "Buckets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "bucket",
+          "buckets"
+        ],
+        "title": "TraceHistogramOut",
+        "type": "object"
+      },
       "TraceRejectedOut": {
         "properties": {
           "reason": {
@@ -16573,6 +17363,17 @@
             "title": "Has Unpriced",
             "type": "boolean"
           },
+          "input_preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Preview"
+          },
           "input_tokens": {
             "title": "Input Tokens",
             "type": "integer"
@@ -16601,6 +17402,17 @@
               }
             ],
             "title": "Name"
+          },
+          "output_preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Preview"
           },
           "output_tokens": {
             "title": "Output Tokens",
@@ -16984,7 +17796,7 @@
         "type": "object"
       },
       "UserListOut": {
-        "description": "`computed_at` is when the figures of the window were last recomputed (the latest of the\ndays summed), `None` when no day of the window has been computed yet.",
+        "description": "`computed_at` is when the figures of the window were last recomputed (the latest of the\ndays summed), `None` when no day of the window has been computed yet. `pending_traces` is\nhow many user traces of the window (and environment) are not counted yet: they started after\nthe latest recompute of their own UTC day, or their day has none yet. At most 10,000; 0 when\nnone is pending, `None` only when the window has neither computed figures nor traces.",
         "properties": {
           "computed_at": {
             "anyOf": [
@@ -17016,6 +17828,17 @@
             ],
             "title": "Next Cursor"
           },
+          "pending_traces": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Traces"
+          },
           "window": {
             "$ref": "#/components/schemas/StatsWindow"
           }
@@ -17024,7 +17847,8 @@
           "items",
           "next_cursor",
           "window",
-          "computed_at"
+          "computed_at",
+          "pending_traces"
         ],
         "title": "UserListOut",
         "type": "object"
@@ -17258,6 +18082,17 @@
             "additionalProperties": true,
             "title": "Template",
             "type": "object"
+          },
+          "usage_7d": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionUsageOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only filled by the versions list with `usage=true`; null otherwise."
           },
           "variables": {
             "items": {
@@ -22892,6 +23727,151 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/attribution/series": {
+      "get": {
+        "description": "The Spend chart: the window's cost per bucket, or one group's with `value`.",
+        "operationId": "read_attribution_series_api_v1_projects__project_id__attribution_series_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": true,
+            "schema": {
+              "enum": [
+                "metadata",
+                "trace_name",
+                "user",
+                "release"
+              ],
+              "title": "Group By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-z0-9_.-]{1,64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Key"
+            }
+          },
+          {
+            "in": "query",
+            "name": "environment",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[^\\x00]*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Environment"
+            }
+          },
+          {
+            "in": "query",
+            "name": "value",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Value"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttributionSeriesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Attribution Series",
+        "tags": [
+          "attribution"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/budgets": {
       "get": {
         "description": "By name. Unpaginated: a project has at most 50 budgets.",
@@ -23147,6 +24127,60 @@
           }
         },
         "summary": "Edit a budget",
+        "tags": [
+          "budgets"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/budgets/{budget_id}/burn": {
+      "get": {
+        "description": "Spend per UTC day of the current period up to now, with the running total. A day whose\nspans were all unpriced is `null`; the running total counts the known days only.",
+        "operationId": "get_budget_burn_api_v1_projects__project_id__budgets__budget_id__burn_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "budget_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Budget Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetBurnOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get a budget's burn",
         "tags": [
           "budgets"
         ]
@@ -27605,6 +28639,84 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/metrics/token-mix": {
+      "get": {
+        "description": "Tokens by price class over the UTC days the window touches, all environments.",
+        "operationId": "get_token_mix_api_v1_projects__project_id__metrics_token_mix_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenMixOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Token Mix",
+        "tags": [
+          "metrics"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/onboarding": {
       "get": {
         "operationId": "onboarding_status_api_v1_projects__project_id__onboarding_get",
@@ -28380,7 +29492,7 @@
     },
     "/api/v1/projects/{project_id}/prompts/{name}/versions": {
       "get": {
-        "description": "Newest first.",
+        "description": "Newest first. With `usage=true` each item carries `usage_7d`, read for the page at once.",
         "operationId": "list_versions_api_v1_projects__project_id__prompts__name__versions_get",
         "parameters": [
           {
@@ -28431,6 +29543,16 @@
                 }
               ],
               "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "usage",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Usage",
+              "type": "boolean"
             }
           }
         ],
@@ -30106,6 +31228,70 @@
             }
           },
           {
+            "description": "Sessions whose id starts with it (ignoring case) or with a trace of exactly this user id.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\x00]*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sessions whose id starts with it (ignoring case) or with a trace of exactly this user id.",
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "last",
+              "enum": [
+                "last",
+                "cost",
+                "turns",
+                "errors",
+                "tokens"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "title": "Order",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Fill `last_input_preview` (null otherwise).",
+            "in": "query",
+            "name": "preview",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Fill `last_input_preview` (null otherwise).",
+              "title": "Preview",
+              "type": "boolean"
+            }
+          },
+          {
             "in": "query",
             "name": "limit",
             "required": false,
@@ -30173,7 +31359,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page_SessionSummaryOut_"
+                  "$ref": "#/components/schemas/SessionPage"
                 }
               }
             },
@@ -30191,6 +31377,108 @@
           }
         },
         "summary": "List Sessions",
+        "tags": [
+          "traces"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/sessions/{session_id}/turns": {
+      "get": {
+        "description": "The session's traces as `GET /traces?session_id=` lists them (newest first, same cursor),\neach with the few spans its conversation turn is read from. No time window: the session's\ntraces as long as they are retained.",
+        "operationId": "list_session_turns_api_v1_projects__project_id__sessions__session_id__turns_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "maxLength": 257,
+              "minLength": 1,
+              "pattern": "^[^\\x00]*$",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "environment",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[^\\x00]*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Environment"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_SessionTurnOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Session Turns",
         "tags": [
           "traces"
         ]
@@ -30286,6 +31574,111 @@
               "format": "uuid",
               "title": "Project Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "started_at",
+              "enum": [
+                "started_at",
+                "duration",
+                "cost",
+                "tokens",
+                "retry_cost_usd"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "title": "Order",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Fill `input_preview` and `output_preview` (null otherwise).",
+            "in": "query",
+            "name": "preview",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Fill `input_preview` and `output_preview` (null otherwise).",
+              "title": "Preview",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
             }
           },
           {
@@ -30618,82 +32011,6 @@
               "description": "Matches the trace name (substring, ignoring case), an exact trace id, or, with 3+ characters, a preview of the input and output of a span started in the window.",
               "title": "Q"
             }
-          },
-          {
-            "in": "query",
-            "name": "sort",
-            "required": false,
-            "schema": {
-              "default": "started_at",
-              "enum": [
-                "started_at",
-                "retry_cost_usd"
-              ],
-              "title": "Sort",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "maximum": 200,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
-            }
-          },
-          {
-            "in": "query",
-            "name": "from",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "From"
-            }
-          },
-          {
-            "in": "query",
-            "name": "to",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "To"
-            }
           }
         ],
         "responses": {
@@ -30778,6 +32095,408 @@
           }
         },
         "summary": "Compare Traces",
+        "tags": [
+          "traces"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/traces/histogram": {
+      "get": {
+        "description": "Trace and error counts over time for the trace list's filters. Registered before\n`/traces/{trace_id}`, which would otherwise take `histogram` as an id.",
+        "operationId": "get_trace_histogram_api_v1_projects__project_id__traces_histogram_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Name"
+            }
+          },
+          {
+            "in": "query",
+            "name": "environment",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Environment"
+            }
+          },
+          {
+            "in": "query",
+            "name": "release",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Release"
+            }
+          },
+          {
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "ok",
+                    "error"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error_class",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ErrorClass"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Error Class"
+            }
+          },
+          {
+            "in": "query",
+            "name": "prompt_version_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Prompt Version Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "score_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Score Name"
+            }
+          },
+          {
+            "in": "query",
+            "name": "score_min",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Score Min"
+            }
+          },
+          {
+            "in": "query",
+            "name": "score_max",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Score Max"
+            }
+          },
+          {
+            "in": "query",
+            "name": "score_value",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Score Value"
+            }
+          },
+          {
+            "in": "query",
+            "name": "has_scores",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Scores"
+            }
+          },
+          {
+            "in": "query",
+            "name": "has_retries",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Retries"
+            }
+          },
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Session Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tag",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tag"
+            }
+          },
+          {
+            "in": "query",
+            "name": "metadata_key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-z0-9_.-]{1,64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metadata Key"
+            }
+          },
+          {
+            "in": "query",
+            "name": "metadata_value",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metadata Value"
+            }
+          },
+          {
+            "description": "Matches the trace name (substring, ignoring case), an exact trace id, or, with 3+ characters, a preview of the input and output of a span started in the window.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Matches the trace name (substring, ignoring case), an exact trace id, or, with 3+ characters, a preview of the input and output of a span started in the window.",
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceHistogramOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "As for `GET /traces`."
+          }
+        },
+        "summary": "Get Trace Histogram",
         "tags": [
           "traces"
         ]
@@ -31156,6 +32875,24 @@
           },
           {
             "in": "query",
+            "name": "environment",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[^\\x00]*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Environment"
+            }
+          },
+          {
+            "in": "query",
             "name": "from",
             "required": false,
             "schema": {
@@ -31280,6 +33017,59 @@
           },
           {
             "in": "query",
+            "name": "environment",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[^\\x00]*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Environment"
+            }
+          },
+          {
+            "description": "User id contains",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\x00]*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "User id contains",
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "title": "Order",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "from",
             "required": false,
             "schema": {
@@ -31365,6 +33155,24 @@
               "pattern": "^[^\\x00]*$",
               "title": "External User Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "environment",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[^\\x00]*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Environment"
             }
           },
           {

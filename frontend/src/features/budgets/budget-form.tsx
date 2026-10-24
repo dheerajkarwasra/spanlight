@@ -39,16 +39,18 @@ const ACTION_OPTIONS = [
 interface BudgetFormProps {
   /** Null to create a budget. */
   budget: Budget | null;
+  /** A create form's prefill, over the empty values. */
+  initial?: Partial<BudgetFormValues>;
   onPendingChange: (pending: boolean) => void;
   onSaved: () => void;
 }
 
 /** Figma "Budgets — Budget dialog": name, scope, period and amount, action, channels. */
-export function BudgetForm({ budget, onPendingChange, onSaved }: BudgetFormProps) {
+export function BudgetForm({ budget, initial, onPendingChange, onSaved }: BudgetFormProps) {
   const projectName = useProjectQuery().data?.name ?? "this project";
   const form = useForm<BudgetFormValues>({
     resolver: zodResolver(budgetFormSchema),
-    defaultValues: budget ? valuesFromBudget(budget) : EMPTY_BUDGET_VALUES,
+    defaultValues: budget ? valuesFromBudget(budget) : { ...EMPTY_BUDGET_VALUES, ...initial },
   });
   const action = useWatch({ control: form.control, name: "action" });
   const period = useWatch({ control: form.control, name: "period" });

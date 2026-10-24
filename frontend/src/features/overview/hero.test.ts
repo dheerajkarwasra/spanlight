@@ -97,6 +97,32 @@ describe("heroStatus", () => {
     });
   });
 
+  it("adds open Doctor findings after the errors", () => {
+    expect(
+      heroStatus({ traces: 50, errors: 15, findings: 1, hasEverReceivedTraces: true }),
+    ).toEqual({ kind: "errors", lead: "15 errors and 1 finding", accent: "need a look." });
+    expect(
+      heroStatus({ traces: 50, errors: 1, findings: 2, hasEverReceivedTraces: true }).lead,
+    ).toBe("1 error and 2 findings");
+  });
+
+  it("asks for a look at open findings when no call failed", () => {
+    expect(heroStatus({ traces: 50, errors: 0, findings: 1, hasEverReceivedTraces: true })).toEqual(
+      {
+        kind: "findings",
+        lead: "1 finding",
+        accent: "needs a look.",
+      },
+    );
+    expect(heroStatus({ traces: 50, errors: 0, findings: 3, hasEverReceivedTraces: true })).toEqual(
+      {
+        kind: "findings",
+        lead: "3 findings",
+        accent: "need a look.",
+      },
+    );
+  });
+
   it("says the models are behaving otherwise", () => {
     expect(heroStatus({ traces: 50, errors: 0, hasEverReceivedTraces: true })).toEqual({
       kind: "healthy",

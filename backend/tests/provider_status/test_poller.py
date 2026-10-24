@@ -4,6 +4,7 @@ Every test runs the real poller and the real status client over an `httpx.MockTr
 the real tables. The feeds are the recorded fixtures of the adapter tests.
 """
 
+import json
 from collections.abc import Callable
 from datetime import datetime, timedelta
 
@@ -368,6 +369,46 @@ async def test_reopened_incident_clears_resolved_at(session_factory: SessionFact
 
     [row] = await incidents(session_factory, "anthropic")
     assert (row["status"], row["resolved_at"]) == ("identified", None)
+
+
+async def test_a_backdated_incident_never_starts_after_it_resolved(
+    session_factory: SessionFactory,
+) -> None:
+    # incident.io's shape for an incident posted after it ended (seen live on 2026-10-21): no
+    # `started_at`, `created_at` is the post time, and the updates' `display_at` hold the real
+    # times. Without any `display_at` the start is clamped to the feed's own `resolved_at`.
+    document = json.loads(fixture(OPENAI_FEED))
+    updates = [
+        ("resolved", "2026-10-20T17:35:00Z"),
+        ("investigating", "2026-10-20T16:35:00Z"),
+    ]
+    backdated = {
+        **document["incidents"][0],
+        "id": "01M5G9QQ9V4CYDWFRYF9BWZ5GG",
+        "status": "resolved",
+        "created_at": "2026-10-21T22:36:29Z",
+        "resolved_at": "2026-10-20T17:35:00Z",
+        "incident_updates": [
+            {
+                "body": status,
+                "status": status,
+                "created_at": "2026-10-21T22:36:29Z",
+                "display_at": at,
+            }
+            for status, at in updates
+        ],
+    }
+    undated = {**backdated, "id": "01M5G9QQ9V4CYDWFRYF9BWZ5GH", "incident_updates": []}
+    document["incidents"] = [backdated, undated]
+    server = FeedServer()
+    server.answer(openai.url, httpx.Response(200, content=json.dumps(document).encode()))
+
+    await _poll(session_factory, server, openai)
+
+    real_start, clamped = await incidents(session_factory, "openai")
+    assert real_start["started_at"].isoformat() == "2026-10-20T16:35:00+00:00"
+    assert real_start["resolved_at"].isoformat() == "2026-10-20T17:35:00+00:00"
+    assert clamped["started_at"] == clamped["resolved_at"] == real_start["resolved_at"]
 
 
 async def test_duplicate_ids_in_one_feed_upsert_once(session_factory: SessionFactory) -> None:

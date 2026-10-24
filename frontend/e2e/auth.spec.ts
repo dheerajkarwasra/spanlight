@@ -20,6 +20,21 @@ test.describe("public pages", () => {
     await expectNoAxeViolations(page);
   });
 
+  test("a pasted password stays in the field", async ({ page }) => {
+    await page.goto("/login");
+    // Copy from the email field, then paste into the password field (password managers paste too).
+    const email = page.getByLabel("Email");
+    await email.fill("pasted-secret-123");
+    await email.selectText();
+    await page.keyboard.press("ControlOrMeta+C");
+    const password = page.getByLabel("Password", { exact: true });
+    await password.focus();
+    await page.keyboard.press("ControlOrMeta+V");
+    await expect(password).toHaveValue("pasted-secret-123");
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expectNoAxeViolations(page);
+  });
+
   test("unauthenticated visitors are sent to login", async ({ page }) => {
     // "/" is the public landing page (see landing.spec.ts); app pages still require a session.
     await page.goto("/onboarding");

@@ -75,6 +75,23 @@ describe("buildSnippets", () => {
     }
   });
 
+  it.each([
+    ["standalone", "This server runs the gateway standalone; use your gateway's own URL."],
+    ["disabled", "The gateway is off on this server; set GATEWAY_MODE to turn it on."],
+  ] as const)(
+    "never points the no-SDK tab at this origin when the gateway is %s",
+    (gatewayMode, note) => {
+      const gateway = buildSnippets({ apiKey: null, host: HOST, gatewayMode }).find(
+        (item) => item.id === "gateway",
+      );
+      const code = gateway?.blocks.map((block) => block.code).join("\n") ?? "";
+      expect(code).toContain('base_url="<your gateway URL>/gw/v1"');
+      expect(code).toContain('base_url="<your gateway URL>/gw"');
+      expect(code).not.toContain(HOST);
+      expect(gateway?.description).toContain(note);
+    },
+  );
+
   it("strips trailing slashes from the host", () => {
     const snippets = buildSnippets({ apiKey: SECRET, host: `${HOST}/` });
     expect(snippet(snippets, "curl")).toContain(`"${HOST}/v1/traces"`);

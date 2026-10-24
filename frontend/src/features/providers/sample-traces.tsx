@@ -1,9 +1,7 @@
-import { Info } from "lucide-react";
 import { useId, useState } from "react";
 
 import { ColumnLabels, TileList, TileListSkeleton } from "@/components/tile-list";
 import { ErrorState } from "@/components/error-state";
-import { Notice } from "@/components/notice";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import type { ErrorClass, RateLimitKind } from "@/lib/api";
@@ -17,6 +15,9 @@ import { useErrorSamples } from "./providers-queries";
 import { SAMPLE_COLUMNS } from "./sample-columns";
 import { SampleRow } from "./sample-row";
 
+/** The server reads samples from at most the window's last 24 hours (a scan-cost bound). */
+const SAMPLE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 /** Rows shown before "Show all". */
 const FIRST_ROWS = 6;
 
@@ -27,8 +28,8 @@ const KIND_OPTIONS = RATE_LIMIT_KIND_ORDER.map((value) => ({
 }));
 
 /**
- * Figma "Sample failures card": the newest failed LLM calls, each opening its trace. The server
- * reads samples from at most the window's last 24 hours and says so (`clamped`).
+ * Figma "Sample failures card": the newest failed LLM calls, each opening its trace. The title
+ * names the span the samples come from: the window, cut to its last 24 hours.
  */
 export function SampleTraces({ windowMs }: { windowMs: number }) {
   const titleId = useId();
@@ -43,10 +44,12 @@ export function SampleTraces({ windowMs }: { windowMs: number }) {
     <Card role="region" aria-labelledby={titleId} className="flex flex-col gap-4 p-5 sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <CardTitle id={titleId}>Sample failures</CardTitle>
+          <CardTitle id={titleId}>
+            {`Newest failures · last ${windowMs >= SAMPLE_WINDOW_MS ? "24 hours" : windowLength(windowMs)}`}
+          </CardTitle>
           <p className="text-xs font-medium text-muted-foreground">
-            The {items.length > 0 ? items.length : 20} newest failed LLM calls in the window, newest
-            first. Each row opens its trace.
+            The {items.length > 0 ? items.length : 20} newest failed LLM calls, newest first. Each
+            row opens its trace.
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-3">
@@ -59,12 +62,6 @@ export function SampleTraces({ windowMs }: { windowMs: number }) {
           <FilterPill label="Kind" value={kind} options={KIND_OPTIONS} onChange={setKind} />
         </div>
       </div>
-      {samples.data?.clamped ? (
-        <Notice tone="warning" icon={Info}>
-          Window is {windowLength(windowMs)}; samples from the last 24 hours. Counts and charts
-          above cover the whole window.
-        </Notice>
-      ) : null}
       {samples.isPending ? (
         <TileListSkeleton label="Loading sample failures" rows={4} className="h-[41px]" />
       ) : samples.isError ? (

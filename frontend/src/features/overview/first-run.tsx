@@ -1,34 +1,13 @@
 import { Link } from "@tanstack/react-router";
 import { Activity, Check } from "lucide-react";
-import { Fragment, useState } from "react";
 
-import { CopyButton } from "@/components/copy-button";
-import { StatusDot } from "@/components/status-dot";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useMe } from "@/features/auth/queries";
-import { useDemoSession } from "@/features/auth/use-demo-session";
-import { buildSnippets, DEFAULT_ENVIRONMENT, type Snippet } from "@/features/onboarding/snippets";
-import { useCurrentOrg, useProjectParams } from "@/features/shell/project-context";
-import type { CodeTokenKind } from "@/lib/highlight";
+import { LiveDemoButton } from "@/features/auth";
+import { useProjectParams } from "@/features/shell/project-context";
 
 import { EmptyKpiCards } from "./kpi-card-placeholders";
-import { snippetLines } from "./snippet-lines";
-
-/** The snippet tabs shown here; plain curl stays in the full onboarding flow. */
-const SNIPPET_TABS = ["python", "openai", "anthropic", "otel"] as const;
+import { SnippetPanel } from "./snippet-panel";
 
 interface FirstRunProps {
   projectName: string | null;
@@ -51,7 +30,6 @@ export function FirstRun({ projectName, environment }: FirstRunProps) {
 
 function ConnectCard({ projectName, environment }: FirstRunProps) {
   const { orgId, projectId } = useProjectParams();
-  const org = useCurrentOrg();
 
   return (
     <Card className="flex flex-col gap-8 overflow-hidden p-6 sm:p-9 xl:flex-row xl:gap-12">
@@ -72,7 +50,7 @@ function ConnectCard({ projectName, environment }: FirstRunProps) {
               Connect your app
             </Link>
           </Button>
-          {org && !org.is_demo ? <TryDemoButton /> : null}
+          <LiveDemoButton />
         </div>
       </div>
       <SnippetPanel environment={environment} />
@@ -158,150 +136,5 @@ function SetupSteps({ projectName, environment }: SetupStepsProps) {
         </span>
       </li>
     </ol>
-  );
-}
-
-/**
- * "Try the live demo" signs the browser in as the shared demo visitor, which ends the current
- * session, so it asks first.
- */
-function TryDemoButton() {
-  const me = useMe();
-  const demo = useDemoSession();
-  const [open, setOpen] = useState(false);
-
-  return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger asChild>
-        <Button size="lg">Try the live demo</Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Open the live demo?</AlertDialogTitle>
-          <AlertDialogDescription>
-            The demo is a shared, read-only workspace with sample traces. Opening it signs you out
-            of {me.user.email}; sign back in any time to return to this project.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Stay here</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={(event) => {
-              // Keep the dialog open with a spinner until the session switch finishes.
-              event.preventDefault();
-              demo.mutate(undefined, {
-                onSettled: () => {
-                  setOpen(false);
-                },
-              });
-            }}
-            disabled={demo.isPending}
-            aria-busy={demo.isPending || undefined}
-          >
-            {demo.isPending ? "Opening…" : "Open the demo"}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}
-
-/* ---------- Snippet panel ---------- */
-
-const TOKEN_CLASSES: Record<CodeTokenKind, string | undefined> = {
-  plain: undefined,
-  keyword: "text-rail-muted-foreground",
-  decorator: "text-code-string",
-  string: "text-code-string",
-  comment: "text-code-comment",
-  prompt: "text-code-comment select-none",
-};
-
-function SnippetPanel({ environment }: { environment: string | undefined }) {
-  const snippets = buildSnippets({
-    apiKey: null,
-    host: window.location.origin,
-    environment: environment ?? DEFAULT_ENVIRONMENT,
-  }).filter((snippet) => (SNIPPET_TABS as readonly string[]).includes(snippet.id));
-  const [active, setActive] = useState<string>(snippets[0]?.id ?? "python");
-  const activeSnippet = snippets.find((snippet) => snippet.id === active) ?? snippets[0];
-  const copyValue = activeSnippet?.blocks.at(-1)?.code ?? "";
-
-  return (
-    <Tabs
-      value={active}
-      onValueChange={setActive}
-      className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[22px] bg-hero-card text-hero-card-foreground shadow-lg xl:self-start dark:border dark:border-border"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rail-tile p-3">
-        <TabsList aria-label="Integration method" className="border-0 bg-rail-tile p-[3px]">
-          {snippets.map((snippet) => (
-            <TabsTrigger
-              key={snippet.id}
-              value={snippet.id}
-              className="h-auto px-3 py-1.5 text-xs text-rail-muted-foreground hover:text-rail-foreground focus-visible:outline-lime data-[state=active]:bg-lime data-[state=active]:font-medium data-[state=active]:text-lime-foreground data-[state=active]:shadow-none dark:data-[state=active]:bg-lime"
-            >
-              {snippet.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        <CopyButton
-          value={copyValue}
-          label="Copy"
-          aria-label={`Copy the ${activeSnippet?.label ?? ""} code`}
-          tone="ink"
-          showLabel
-          size="sm"
-          className="h-auto shrink-0 border border-rail-tile bg-transparent py-1.5 pr-3 pl-2.5 text-xs font-medium text-rail-muted-foreground [&_svg]:size-3.5"
-        />
-      </div>
-      {snippets.map((snippet) => (
-        <TabsContent key={snippet.id} value={snippet.id} className="pt-0">
-          <SnippetListing snippet={snippet} />
-        </TabsContent>
-      ))}
-      <div className="mt-auto flex items-center gap-2.5 border-t border-rail-tile px-5 py-3.5">
-        <StatusDot state="live" />
-        <p className="text-xs font-medium text-rail-muted-foreground">
-          Waiting for the first span{environment ? ` from ${environment}` : ""}…
-        </p>
-      </div>
-    </Tabs>
-  );
-}
-
-function SnippetListing({ snippet }: { snippet: Snippet }) {
-  const lines = snippetLines(snippet.blocks);
-  return (
-    <pre
-      tabIndex={0}
-      aria-label={`${snippet.label} setup code`}
-      className="max-h-[348px] overflow-auto px-5 py-[18px] font-mono text-code text-rail-foreground focus-visible:outline-offset-[-2px] focus-visible:outline-lime"
-    >
-      <code className="flex w-max min-w-full flex-col">
-        {lines.map((tokens, lineIndex) => (
-          <span key={lineIndex} className="flex gap-4">
-            <span
-              aria-hidden
-              className="w-[18px] shrink-0 text-right text-rail-subtle-foreground select-none"
-            >
-              {lineIndex + 1}
-            </span>
-            <span className="whitespace-pre">
-              {tokens.map((token, tokenIndex) => {
-                const tokenClass = TOKEN_CLASSES[token.kind];
-                return tokenClass ? (
-                  <span key={tokenIndex} className={tokenClass}>
-                    {token.text}
-                  </span>
-                ) : (
-                  <Fragment key={tokenIndex}>{token.text}</Fragment>
-                );
-              })}
-            </span>
-          </span>
-        ))}
-      </code>
-    </pre>
   );
 }

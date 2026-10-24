@@ -53,10 +53,14 @@ class StatsWindow(BaseModel):
 
 class UserListOut(Page[UserStats]):
     """`computed_at` is when the figures of the window were last recomputed (the latest of the
-    days summed), `None` when no day of the window has been computed yet."""
+    days summed), `None` when no day of the window has been computed yet. `pending_traces` is
+    how many user traces of the window (and environment) are not counted yet: they started after
+    the latest recompute of their own UTC day, or their day has none yet. At most 10,000; 0 when
+    none is pending, `None` only when the window has neither computed figures nor traces."""
 
     window: StatsWindow
     computed_at: datetime | None
+    pending_traces: int | None
 
 
 class UserDetailOut(BaseModel):

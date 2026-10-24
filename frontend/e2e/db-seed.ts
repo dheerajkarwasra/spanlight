@@ -119,3 +119,71 @@ export function insertProviderIncidentInsight(
   );
   return id;
 }
+
+/**
+ * Queues one `refresh_user_stats` pass (the worker runs it every 15 minutes) and waits for the
+ * worker to finish it, so the Users list shows the users of traces sent moments ago.
+ */
+export async function refreshUserStats(): Promise<void> {
+  const id = psql(
+    "INSERT INTO jobs (kind, max_attempts) VALUES ('refresh_user_stats', 1) RETURNING id;",
+    {},
+  );
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const status = psql("SELECT status FROM jobs WHERE id = :'id';", { id });
+    if (status === "failed") {
+      const error = psql("SELECT coalesce(last_error, '') FROM jobs WHERE id = :'id';", { id });
+      throw new Error(`refresh_user_stats job ${id} failed: ${error}`);
+    }
+    if (status !== "queued" && status !== "running") {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error(`refresh_user_stats job ${id} did not finish in 2 minutes`);
+}
+
+/**
+ * A threshold rule on the error rate of model `e2e-alert-model` (no trace uses it, so the worker
+ * never fires it) with one firing that started 40 minutes ago and resolved 30 minutes ago.
+ * Returns the rule's name.
+ */
+export function insertResolvedFiring(projectId: string): string {
+  const ruleId = randomUUID();
+  const name = `E2E error rate ${ruleId.slice(0, 6)}`;
+  psql(
+    `INSERT INTO alert_rules
+       (id, project_id, name, kind, metric, filters, window_minutes, comparator, threshold)
+     VALUES (:'rule_id', :'project_id', :'name', 'threshold', 'error_rate',
+             '{"model": "e2e-alert-model"}', 15, 'gt', 0.05);
+     INSERT INTO alert_events
+       (id, project_id, rule_id, state, value, threshold, started_at, resolved_at)
+     VALUES (:'event_id', :'project_id', :'rule_id', 'firing', 0.4, 0.05,
+             now() - interval '40 minutes', now() - interval '30 minutes');`,
+    { rule_id: ruleId, event_id: randomUUID(), project_id: projectId, name },
+  );
+  return name;
+}
+
+/**
+ * Makes the spans of a trace sent with `sendTrace` read as gateway traffic: a gateway key becomes
+ * their `source_key_id`. A real gateway call needs a provider; the overview only needs spans a key
+ * produced. The key is revoked (a live key needs a route, which needs a provider credential) and
+ * its secret hash is random bytes, so nobody can call with it.
+ */
+export function markAsGatewayTraffic(projectId: string, traceId: string): void {
+  const keyId = randomUUID();
+  psql(
+    `INSERT INTO gateway_keys (id, project_id, name, prefix, secret_hash, environment, revoked_at)
+     VALUES (:'key_id', :'project_id', 'e2e-key', :'prefix', decode(:'hash', 'hex'), 'e2e', now());
+     UPDATE spans SET source_key_id = :'key_id'
+     WHERE project_id = :'project_id' AND trace_id = :'trace_id';`,
+    {
+      key_id: keyId,
+      project_id: projectId,
+      trace_id: traceId,
+      prefix: `spl_gw_e2e${randomBytes(4).toString("hex")}`,
+      hash: randomBytes(32).toString("hex"),
+    },
+  );
+}

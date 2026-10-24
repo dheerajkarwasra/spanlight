@@ -19,7 +19,10 @@ export function FailureCategoriesRow({ configs, canWrite }: FailureCategoriesRow
   const config = configs.find((candidate) => candidate.name === FAILURE_CATEGORY_SCORE);
   const list = config?.categories.join(" · ") ?? "";
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-tile border border-border py-2.5 pr-3 pl-4 text-sm">
+    <div
+      id="failure-categories"
+      className="flex scroll-mt-6 flex-wrap items-center gap-x-3 gap-y-2 rounded-tile border border-border py-2.5 pr-3 pl-4 text-sm"
+    >
       <ListChecks aria-hidden className="size-4 shrink-0 text-muted-foreground" />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="font-semibold text-foreground">Failure categories</span>

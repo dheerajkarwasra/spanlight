@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 
+import { ReasoningDisclosure } from "@/components/reasoning-disclosure";
 import { RelativeTime } from "@/components/relative-time";
 import { ScoreBadge } from "@/components/score-badge";
 import { Badge } from "@/components/ui/badge";
@@ -21,26 +22,37 @@ const SOURCE_LABELS: Record<EvaluatorRunSource, string | null> = {
 };
 const SHOWN_SCORES = 3;
 
-/** The scores a done run wrote: the value in bold, then its name (a webhook may write several). */
+/**
+ * The scores a done run wrote: the value in bold, then its name (a webhook may write several),
+ * and the judge's reasoning under them when it gave any.
+ */
 function RunScores({ run, booleanScores }: { run: EvaluatorRun; booleanScores: boolean }) {
   if (run.scores.length === 0) {
     return <p className="text-xs font-medium text-muted-foreground">No score was written.</p>;
   }
+  const shown = run.scores.slice(0, SHOWN_SCORES);
   const extra = run.scores.length - SHOWN_SCORES;
   return (
-    <p className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-      {run.scores.slice(0, SHOWN_SCORES).map((score) => (
-        <span key={score.name} className="inline-flex items-baseline gap-1.5">
-          <ScoreBadge
-            score={toScoreParts(score)}
-            dataType={booleanScores ? "boolean" : null}
-            size="sm"
-          />
-          {score.name}
-        </span>
-      ))}
-      {extra > 0 ? <span>+{extra} more</span> : null}
-    </p>
+    <div className="flex min-w-0 flex-col gap-1">
+      <p className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+        {shown.map((score) => (
+          <span key={score.name} className="inline-flex items-baseline gap-1.5">
+            <ScoreBadge
+              score={toScoreParts(score)}
+              dataType={booleanScores ? "boolean" : null}
+              size="sm"
+            />
+            {score.name}
+          </span>
+        ))}
+        {extra > 0 ? <span>+{extra} more</span> : null}
+      </p>
+      {shown.map((score) =>
+        score.comment ? (
+          <ReasoningDisclosure key={score.name} text={score.comment} scoreName={score.name} />
+        ) : null,
+      )}
+    </div>
   );
 }
 

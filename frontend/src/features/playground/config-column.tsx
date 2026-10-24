@@ -1,11 +1,12 @@
 import { Link } from "@tanstack/react-router";
-import { CircleCheck, Copy, X } from "lucide-react";
+import { CircleCheck, Copy, FlaskConical, X } from "lucide-react";
 import { useState } from "react";
 
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { useProjectParams } from "@/features/shell";
+import { Tooltip } from "@/components/ui/tooltip";
+import { usePermission, useProjectParams } from "@/features/shell";
 import { toPathPromptName, type Credential, type Price } from "@/lib/api";
 
 import { ConfigForm } from "./config-form";
@@ -35,12 +36,12 @@ interface ConfigColumnProps {
   onDuplicate: () => void;
 }
 
-function SavedNote({ saved }: { saved: SavedVersion }) {
+function SavedNote({ saved, canRun }: { saved: SavedVersion; canRun: boolean }) {
   const { orgId, projectId } = useProjectParams();
   return (
     <p
       role="status"
-      className="flex items-center gap-2 rounded-input bg-success-subtle px-3 py-2.5 text-label font-medium text-success"
+      className="flex flex-wrap items-center gap-2 rounded-input bg-success-subtle px-3 py-2.5 text-label font-medium text-success"
     >
       <CircleCheck aria-hidden className="size-4 shrink-0" />
       Saved as v{saved.version}.
@@ -51,6 +52,16 @@ function SavedNote({ saved }: { saved: SavedVersion }) {
       >
         Open version
       </Link>
+      {canRun ? (
+        <Link
+          to="/$orgId/$projectId/experiments/new"
+          params={{ orgId, projectId }}
+          search={{ prompt: saved.name, version: saved.id }}
+          className="rounded-sm font-semibold text-accent hover:underline"
+        >
+          Create experiment
+        </Link>
+      ) : null}
     </p>
   );
 }
@@ -58,6 +69,8 @@ function SavedNote({ saved }: { saved: SavedVersion }) {
 /** One playground column (Figma "Run A"): header, source, credential, model, params, output. */
 export function ConfigColumn(props: ConfigColumnProps) {
   const { column, letter, state, onChange } = props;
+  const { orgId, projectId } = useProjectParams();
+  const canRun = usePermission("experiments:run");
   const [saved, setSaved] = useState<SavedVersion | null>(null);
   const messages = column.sourceKind === "messages";
 
@@ -92,6 +105,20 @@ export function ConfigColumn(props: ConfigColumnProps) {
               </Button>
             }
           />
+        ) : null}
+        {canRun && !messages && column.version ? (
+          <Tooltip content="Create experiment">
+            <Button size="icon-sm" asChild>
+              <Link
+                to="/$orgId/$projectId/experiments/new"
+                params={{ orgId, projectId }}
+                search={{ prompt: column.version.promptName, version: column.version.id }}
+                aria-label={`Create experiment from run ${letter}`}
+              >
+                <FlaskConical aria-hidden />
+              </Link>
+            </Button>
+          </Tooltip>
         ) : null}
         <Button
           variant="ghost"
@@ -132,7 +159,7 @@ export function ConfigColumn(props: ConfigColumnProps) {
         credentials={props.credentials}
         prices={props.prices}
       />
-      {saved ? <SavedNote saved={saved} /> : null}
+      {saved ? <SavedNote saved={saved} canRun={canRun} /> : null}
       <ResultCard state={state} />
     </Card>
   );

@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-{/* Sources: backend/app/review/calendar.py, backend/app/review/select.py, backend/app/review/outliers.py, backend/app/review/reasons.py, backend/app/review/schemas.py, backend/app/review/selection.py, backend/app/review/selection_sql.py, backend/app/review/jobs.py, backend/app/api/v1/review_policy.py, backend/app/api/review_problems.py, backend/app/api/annotation_problems.py, backend/app/api/v1/annotations.py, backend/app/api/v1/dataset_items.py, backend/app/scores/failure_category.py, backend/app/api/v1/scores.py, backend/app/releases/failure_categories.py, backend/app/api/v1/releases.py, backend/app/config.py, docs/api-deviations.md */}
+{/* Sources: backend/app/review/calendar.py, backend/app/review/select.py, backend/app/review/outliers.py, backend/app/review/reasons.py, backend/app/review/schemas.py, backend/app/review/selection.py, backend/app/review/selection_sql.py, backend/app/review/jobs.py, backend/app/api/v1/review_policy.py, backend/app/api/review_problems.py, backend/app/api/annotation_problems.py, backend/app/api/v1/annotations.py, backend/app/api/v1/dataset_items.py, backend/app/scores/failure_category.py, backend/app/api/v1/scores.py, backend/app/releases/failure_categories.py, backend/app/api/v1/releases.py, backend/app/config.py, frontend/src/features/annotations/agreement.ts, frontend/src/features/annotations/last-item-strip.tsx, frontend/src/features/annotations/use-work-session.ts, frontend/src/features/scores/score-settings-links.tsx, docs/api-deviations.md */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
@@ -79,9 +79,20 @@ Select **Start reviewing**. Above each trace, one line says why it is there, for
 
 `S` is still **Skip**. Both keys do nothing while you type in a field. The other keys are in [Keyboard shortcuts](/docs/scores/#keyboard-shortcuts).
 
+### Compare with the evaluator after you submit
+
+Evaluator scores stay hidden until you submit, so they cannot steer your answer. After you submit, the next item shows a **Last item** strip at the top of the scores card, with **Open trace** to go back to the trace you just reviewed. It has one line per score the queue asks for, for example "helpfulness · you 4 · evaluator 3", and a verdict:
+
+- **Agree** when the two values are equal.
+- **Disagree** when a yes/no or categorical value differs.
+- **Differs by** the gap when a number differs, for example "Differs by 1". There is no tolerance: 4 against 4.1 reads "Differs by 0.1".
+- **No evaluator score** when no evaluator has scored the trace under that name. Evaluators run in the background, so right after you submit their score may not exist yet.
+
+The evaluator's value is the score with source `eval` and the same name on that trace, from any evaluator; when there are several, the newest is compared. The strip stays until your next submit or skip, or until you release the item or leave the queue, and after the last item it shows on the **All done** card.
+
 ## Failure categories
 
-A **failure category** is an ordinary categorical [score](/docs/scores/) named `failure_category`. Nothing else is stored for it; the name is the convention. The set-up dialog creates its config with the list you approved, and you can edit the list later under **Settings, Project, Score configs**. The starting list is:
+A **failure category** is an ordinary categorical [score](/docs/scores/) named `failure_category`. Nothing else is stored for it; the name is the convention. The set-up dialog creates its config with the list you approved, and you can edit the list later under **Settings, Project, Score configs**. The description of the **Review** page and the dialog's **Failure categories** step link there: "Scores use the score configs and failure categories in Settings › Project." The starting list is:
 
 `none` · `wrong_answer` · `hallucination` · `ignored_instructions` · `format` · `refusal` · `tool_misuse` · `context_loss` · `truncated` · `too_slow` · `other`
 

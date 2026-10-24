@@ -20,6 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.window import TimeWindow
 from app.attribution.aggregate_sql import GroupKind, grouped_cte, money_sum, retry_cost_sum
+from app.end_users.days import midnight
+from app.end_users.queries import PENDING_CAP, pending_sql
 
 AttributionSort = Literal["cost", "calls", "errors", "retry_cost"]
 
@@ -49,6 +51,7 @@ _SORT_EXPRESSIONS: dict[AttributionSort, str] = {
 _RAW_SOURCE = """
     (SELECT CASE WHEN grouped.group_value IS NULL THEN 'none' ELSE 'value' END AS bucket,
             CAST(NULL AS integer) AS folded_values,
+            CAST(NULL AS timestamptz) AS computed_at,
             grouped.*
      FROM grouped) AS r"""
 
@@ -78,12 +81,25 @@ _AFTER_NUMBER = (
 _AFTER_NULL = "HAVING {sort} IS NULL AND r.group_value > :cursor_tiebreaker"
 
 # One row per bucket (`value`, `none`, `other`) and one for the whole window (`bucket` NULL):
-# the buckets of the envelope and the totals from one pass over the source.
+# the buckets of the envelope and the totals from one pass over the source. `computed_at` is the
+# latest recompute among the rows read (NULL on the raw source, or when no row was read).
 _TOTALS = """
     SELECT r.bucket,{sums},
-           sum(r.folded_values)::bigint AS folded_values
+           sum(r.folded_values)::bigint AS folded_values,
+           max(r.computed_at) AS computed_at
     FROM {source}
     GROUP BY GROUPING SETS ((r.bucket), ())
+"""
+
+# One row per hour (raw) or UTC day (rollup) that holds traces: the series of the Spend chart.
+# Summed as `_TOTALS` sums the window, so the points add up to its totals.
+_SERIES = f"""
+    SELECT r.{{bucket}} AS bucket_start,
+           sum(r.unpriced_calls)::bigint AS unpriced_calls,
+           {money_sum("r.cost_usd")} AS cost_usd
+    FROM {{source}}
+    {{value}}
+    GROUP BY r.{{bucket}}
 """
 
 Cursor = tuple[Decimal | None, str]
@@ -101,10 +117,16 @@ def _having(sort: AttributionSort, after: Cursor | None) -> tuple[str, dict[str,
 
 
 def _raw_source(
-    project_id: uuid.UUID, kind: GroupKind, key: str | None, window: TimeWindow, env: str | None
+    project_id: uuid.UUID,
+    kind: GroupKind,
+    key: str | None,
+    window: TimeWindow,
+    env: str | None,
+    by_hour: bool = False,
 ) -> tuple[str, str, dict[str, Any]]:
     """The `WITH` prefix, the source and the binds of the raw read."""
-    prefix = f"WITH {grouped_cte(kind, by_day=False, with_environment=env is not None)}"
+    cte = grouped_cte(kind, by_day=False, with_environment=env is not None, by_hour=by_hour)
+    prefix = f"WITH {cte}"
     params: dict[str, Any] = {
         "project_id": project_id,
         "start": window.start,
@@ -208,3 +230,50 @@ async def read_totals(
         raise ValueError("read_totals needs a window or days")
     result = await db.execute(text(prefix + _TOTALS.format(sums=_SUMS, source=source)), params)
     return list(result.all())
+
+
+async def read_series(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    kind: GroupKind,
+    key: str | None,
+    environment: str | None,
+    value: str | None,
+    *,
+    window: TimeWindow | None = None,
+    days: tuple[date, date] | None = None,
+) -> list[Row[Any]]:
+    """`bucket_start`, `unpriced_calls` and `cost_usd` per hour of the raw source (`window`) or
+    per day of the rollup source (`days`), for every trace or only the group `value` (never the
+    `none` bucket). Buckets without traces are left out."""
+    if window is not None:
+        prefix, source, params = _raw_source(project_id, kind, key, window, environment, True)
+        bucket, joiner = "hour", "WHERE "
+    elif days is not None:
+        prefix, bucket, joiner = "", "day", "AND "
+        source, params = _rollup_source(project_id, kind, key, days, environment)
+    else:
+        raise ValueError("read_series needs a window or days")
+    where = "" if value is None else f"{joiner}r.bucket = 'value' AND r.group_value = :value"
+    sql = prefix + _SERIES.format(bucket=bucket, source=source, value=where)
+    return list((await db.execute(text(sql), {**params, "value": value})).all())
+
+
+async def count_pending(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    kind: GroupKind,
+    key: str | None,
+    days: tuple[date, date],
+    environment: str | None,
+) -> int:
+    """The traces of `[first_day, end_day)` (and `environment`) started after the latest
+    recompute of their day's rollup rows, every trace of a day without rows, up to
+    `PENDING_CAP`; see `pending_sql`."""
+    source, params = _rollup_source(project_id, kind, key, days, environment)
+    refreshed = f"SELECT r.day, max(r.computed_at) AS computed_at FROM {source} GROUP BY r.day"
+    # `is not None`, as the rollup source: `environment=` names the empty environment.
+    env_filter = "" if environment is None else "\n      AND t.environment = :environment"
+    params = {**params, "start": midnight(days[0]), "cap": PENDING_CAP}
+    row = (await db.execute(text(pending_sql(refreshed, env_filter)), params)).one()
+    return int(row.pending_traces)

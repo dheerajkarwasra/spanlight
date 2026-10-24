@@ -4,7 +4,7 @@ import { useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { addCategoryProblem } from "@/features/scores";
+import { addCategoryProblem, ScoreSettingsLinks } from "@/features/scores";
 
 interface SetupCategoriesStepProps {
   categories: readonly string[];
@@ -40,7 +40,7 @@ export function SetupCategoriesStep({ categories, onChange }: SetupCategoriesSte
         </h3>
         <p className="text-sm text-muted-foreground">
           Reviewers label each trace with one category. Start from this list and change it to match
-          what your notes say.
+          what your notes say. <ScoreSettingsLinks />
         </p>
       </div>
       <ul className="flex flex-wrap gap-2" aria-label="Categories">
@@ -55,7 +55,7 @@ export function SetupCategoriesStep({ categories, onChange }: SetupCategoriesSte
               <button
                 type="button"
                 aria-label={`Remove ${category}`}
-                className="-mr-1 rounded-full p-0.5 text-muted-foreground hover:bg-surface-hover hover:text-foreground"
+                className="-my-1 -mr-1.5 flex size-6 items-center justify-center rounded-full text-muted-foreground hover:bg-surface-hover hover:text-foreground"
                 onClick={() => onChange(categories.filter((item) => item !== category))}
               >
                 <X aria-hidden className="size-3" />

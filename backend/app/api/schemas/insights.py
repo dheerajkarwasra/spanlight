@@ -16,6 +16,7 @@ from app.insights.schemas import InsightStatus, Severity
 __all__ = [
     "DetectorRunOut",
     "EvidenceOut",
+    "EvidenceSpanOut",
     "EvidenceWindowOut",
     "ExplanationOut",
     "HealthComponentOut",
@@ -86,10 +87,25 @@ class ExplanationOut(ApiModel):
     created_at: datetime
 
 
+class EvidenceSpanOut(BaseModel):
+    """The span an evidence trace opens on: its first failed span (llm preferred), else its first
+    llm span, else its first span."""
+
+    trace_id: str
+    span_id: str
+    name: str
+    status: str
+    model: str | None
+
+
 class InsightDetailOut(InsightOut):
-    """The insight, its completed explanations (newest first) and the "Was this right?" votes."""
+    """The insight, its completed explanations (newest first) and the "Was this right?" votes.
+
+    `evidence_spans` has one span per evidence trace still stored, in `evidence.trace_ids` order.
+    """
 
     explanations: list[ExplanationOut]
+    evidence_spans: list[EvidenceSpanOut]
     feedback: FeedbackSummaryOut
 
 

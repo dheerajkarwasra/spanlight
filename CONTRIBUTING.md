@@ -83,7 +83,7 @@ Reviewers check these. Modules already past a size limit are split when a change
 
 - Pages compose, parts render, hooks fetch, logic modules compute. A feature in `features/<feature>/` has a route page (layout only), presentational parts that do no fetching, a queries file with its TanStack Query hooks, and pure logic with a colocated test. No feature imports another feature's internals.
 - API client functions and types live in `lib/api/`, one file per domain. Primitives in `components/ui/` are Radix-based, one component per file, with variants through `cva`. Colours come from the tokens in `styles/globals.css`, never raw values.
-- Every list has loading, empty and error states. Every value that can be unknown goes through `UnknownValue`. Keyboard and screen-reader use must work (WCAG 2.1 AA) down to 375 px wide, and `prefers-reduced-motion` is respected.
+- Every list has loading, empty and error states. Every value that can be unknown goes through `UnknownValue`. Keyboard and screen-reader use must work (WCAG 2.2 AA) down to 375 px wide, and `prefers-reduced-motion` is respected.
 
 **SDK** (`sdks/python`)
 

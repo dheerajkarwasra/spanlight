@@ -1,7 +1,13 @@
+import { Link } from "@tanstack/react-router";
+
+import { useProjectParams } from "@/features/shell";
+import { pluralize } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import { FigureText, VarianceCell } from "./reconciliation-figure";
 import type { ExplainedRow, Figure, GroupRow, TokenRow } from "./reconciliation-table";
+import type { ResidualTracesLink } from "./residual-link";
+import { shortDay } from "./window-picker";
 
 const OVERLINE = "text-overline text-subtle-foreground uppercase";
 const MONO = "font-mono text-label text-foreground";
@@ -14,6 +20,30 @@ function GroupFigure({ label, figure }: { label: string; figure: Figure }) {
         <FigureText figure={figure} />
       </dd>
     </div>
+  );
+}
+
+/** Ruling 7: the day's traces of the group's first model; "+N models" when it has more. */
+function TracesLink({ name, traces }: { name: string; traces: ResidualTracesLink }) {
+  const params = useProjectParams();
+  const { search, extraModels } = traces;
+  const more = extraModels > 0 ? `+${pluralize(extraModels, "model")}` : null;
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 text-xs font-medium">
+      <Link
+        to="/$orgId/$projectId/traces"
+        params={params}
+        search={search}
+        className="inline-flex min-h-6 items-center rounded-sm text-accent hover:underline focus-visible:outline-[1.5px] focus-visible:outline-ring"
+      >
+        View traces{" "}
+        <span className="sr-only">
+          {`for ${name} on ${shortDay(search.from.slice(0, 10))}`}
+          {more ? `, ${search.model} only` : null}
+        </span>
+      </Link>
+      {more ? <span className="text-muted-foreground">{more}</span> : null}
+    </p>
   );
 }
 
@@ -35,6 +65,7 @@ function GroupHeader({ group }: { group: GroupRow }) {
           {group.note ? (
             <p className="text-xs font-medium text-warning first-letter:uppercase">{group.note}</p>
           ) : null}
+          {group.traces ? <TracesLink name={group.name} traces={group.traces} /> : null}
         </div>
         <span className="shrink-0 @[40rem]:hidden">{variance}</span>
       </div>

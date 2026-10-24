@@ -3,6 +3,7 @@
  * sign-up and account-recovery screens: import from this file, not from the modules behind it.
  */
 export { CodeInput, type CodeInputSize } from "./code-input";
+export { LiveDemoButton } from "./live-demo-button";
 export { isOAuthErrorCode, oauthErrorMessage } from "./login-flow";
 export { recallOAuthProvider, rememberOAuthProvider } from "./oauth-provider-hint";
 export { GithubMark, GoogleMark } from "./provider-icons";

@@ -2,7 +2,6 @@ import { Link } from "@tanstack/react-router";
 import { ArrowUpRight } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { PageHeader } from "@/components/page-header";
 import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
 import { useProjectParams } from "@/features/shell/project-context";
@@ -26,8 +25,9 @@ interface OverviewHeroProps {
 }
 
 /**
- * The page title (Figma "Hero"): date and filters, a greeting by time of day and one sentence
- * on how the window looks, with the serif accent on its last words.
+ * The page title (spec §4 O2): the date and filters, then one row with the greeting and the
+ * window's status sentence as a single 28 px line (24 px on phones), the serif accent on its last
+ * words, and the action on the right.
  */
 export function OverviewHero({
   eyebrow,
@@ -39,46 +39,48 @@ export function OverviewHero({
   const firstRun = status?.kind === "first-run";
 
   return (
-    <PageHeader
-      size="hero"
-      eyebrow={
-        <span className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
-          {firstRun ? null : (
-            <StatusDot
-              state="live"
-              pulse={false}
-              className="ring-[1.5px] ring-foreground ring-inset max-sm:hidden"
-            />
-          )}
-          <span className="sm:hidden">{eyebrow.compact}</span>
-          <span className="max-sm:hidden">{eyebrow.full}</span>
-          {eyebrow.trailing}
-        </span>
-      }
-      title={
-        <>
-          <span className="mb-1 block text-lg font-normal tracking-normal text-muted-foreground sm:mb-0.5 sm:text-display sm:font-extrabold sm:tracking-[-0.04em]">
-            {greeting}
-          </span>
-          {status ? status.lead : null}
+    <div className="flex flex-col gap-2">
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-overline text-muted-foreground uppercase">
+        {firstRun ? null : (
+          <StatusDot
+            state="live"
+            pulse={false}
+            className="ring-[1.5px] ring-foreground ring-inset max-sm:hidden"
+          />
+        )}
+        <span className="sm:hidden">{eyebrow.compact}</span>
+        <span className="max-sm:hidden">{eyebrow.full}</span>
+        {eyebrow.trailing}
+      </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+        <h1 className="min-w-0 text-[1.5rem] leading-tight font-extrabold tracking-[-0.03em] [overflow-wrap:anywhere] text-foreground sm:text-[1.75rem]">
+          <span className="font-semibold text-muted-foreground">{greeting}</span>
+          {status ? (
+            <>
+              {" "}
+              {status.lead}{" "}
+              <span className="font-serif-accent text-[1.75rem] leading-none font-normal tracking-normal text-accent sm:text-[2rem]">
+                {status.accent}
+              </span>
+            </>
+          ) : null}
           {isLoading ? (
             // A span, not <Skeleton> (a div): headings may only contain phrasing content.
             <span
               aria-hidden
-              className="inline-block h-9 w-72 max-w-full animate-shimmer rounded-md bg-surface-muted bg-linear-to-r from-surface-muted via-surface-hover to-surface-muted bg-size-[200%_100%] align-middle sm:h-11 sm:w-[28rem]"
+              className="ml-2 inline-block h-6 w-56 max-w-full animate-shimmer rounded-md bg-surface-muted bg-linear-to-r from-surface-muted via-surface-hover to-surface-muted bg-size-[200%_100%] align-middle sm:h-7 sm:w-72"
             />
           ) : null}
-        </>
-      }
-      accent={status?.accent}
-      actions={
-        firstRun ? (
-          <ListeningPill environment={listeningEnvironment ?? null} />
-        ) : (
-          <ExploreTracesButton />
-        )
-      }
-    />
+        </h1>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {firstRun ? (
+            <ListeningPill environment={listeningEnvironment ?? null} />
+          ) : (
+            <ExploreTracesButton />
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

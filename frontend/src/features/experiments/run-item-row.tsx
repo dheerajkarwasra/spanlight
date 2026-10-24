@@ -1,6 +1,7 @@
 import { CircleX } from "lucide-react";
 
 import { CostValue, UNPRICED_OR_NO_USAGE_REASON } from "@/components/cost-value";
+import { ReasoningDisclosure } from "@/components/reasoning-disclosure";
 import { UnknownValue } from "@/components/unknown-value";
 import type { ExperimentItem } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -53,20 +54,26 @@ export function ItemRow({ item, scores }: ItemRowProps) {
           <span className="line-clamp-3 text-muted-foreground">{item.output?.text ?? ""}</span>
         )}
       </div>
-      {scores.map((meta) => (
-        <span key={meta.name} className="flex flex-col gap-0.5">
-          <span className="text-overline text-subtle-foreground uppercase lg:sr-only">
-            {meta.name}
-          </span>
-          {problem ? null : (
-            <ItemScore
-              meta={meta}
-              value={item.scores[meta.name]}
-              evaluatorError={item.evaluator_error}
-            />
-          )}
-        </span>
-      ))}
+      {scores.map((meta) => {
+        const comment = item.score_comments?.[meta.name];
+        return (
+          <div key={meta.name} className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-overline text-subtle-foreground uppercase lg:sr-only">
+              {meta.name}
+            </span>
+            {problem ? null : (
+              <ItemScore
+                meta={meta}
+                value={item.scores[meta.name]}
+                evaluatorError={item.evaluator_error}
+              />
+            )}
+            {!problem && comment ? (
+              <ReasoningDisclosure text={comment} scoreName={meta.name} />
+            ) : null}
+          </div>
+        );
+      })}
       <span className="flex flex-col gap-0.5 font-mono text-xs text-foreground">
         <span className="font-sans text-overline text-subtle-foreground uppercase lg:sr-only">
           Latency

@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { Prompt, PromptVersion } from "@/lib/api";
 import { pluralize } from "@/lib/format";
 
-import { BackToPrompt } from "./back-link";
+import { PromptBreadcrumbs } from "./back-link";
 import { CardTitle } from "./card-title";
 import {
   configChanges,
@@ -55,7 +55,7 @@ export function VersionDiff({ prompt, from, to, canWrite }: VersionDiffProps) {
 
   return (
     <>
-      <BackToPrompt name={prompt.name} version={to} />
+      <PromptBreadcrumbs name={prompt.name} version={to} current="Version diff" />
       <PageHeader
         title="Version diff"
         description={

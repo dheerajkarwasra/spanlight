@@ -1,4 +1,6 @@
-import { BackLink } from "@/components/back-link";
+import { Link } from "@tanstack/react-router";
+
+import { Breadcrumbs, Crumb } from "@/components/breadcrumbs";
 import { Button } from "@/components/ui/button";
 import { useProjectParams } from "@/features/shell";
 import type { BillingSource } from "@/lib/api";
@@ -37,9 +39,10 @@ function FetchAction({ source }: { source: BillingSource }) {
 }
 
 /**
- * Figma "Header bar": back to the billing sources, the source's name and status, what it compares
- * since when, then the window picker, Refresh (or Upload CSV) and Download CSV. On a phone the
- * picker takes a row and the two buttons share the next (Figma "mobile 375").
+ * Figma "Header bar" (717:1236): breadcrumbs back to Cost › Reconciliation, the source's name and
+ * status, what it compares since when, then the window picker, Refresh (or Upload CSV), Download
+ * CSV and Manage source (Settings › Billing sources). On a phone the picker takes a row and the
+ * buttons share the next rows (Figma "mobile 375").
  */
 export function ReconciliationHeader({
   source,
@@ -52,13 +55,11 @@ export function ReconciliationHeader({
 
   return (
     <div className="@container flex flex-col gap-6">
-      <BackLink
-        to="/$orgId/$projectId/settings/billing-sources"
-        params={{ orgId, projectId }}
-        className="min-h-11 sm:min-h-6"
-      >
-        Billing sources
-      </BackLink>
+      <Breadcrumbs current={source.name}>
+        <Crumb to="/$orgId/$projectId/reconciliation" params={{ orgId, projectId }}>
+          Reconciliation
+        </Crumb>
+      </Breadcrumbs>
       <div className="flex flex-col gap-4 @[52rem]:flex-row @[52rem]:items-start @[52rem]:gap-6">
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
@@ -79,6 +80,11 @@ export function ReconciliationHeader({
               <a href={download.href} download>
                 Download CSV<span className="sr-only"> {download.windowText}</span>
               </a>
+            </Button>
+            <Button variant="secondary" asChild className="col-span-2 @max-[40rem]:h-12">
+              <Link to="/$orgId/$projectId/settings/billing-sources" params={{ orgId, projectId }}>
+                Manage source
+              </Link>
             </Button>
           </div>
         </div>

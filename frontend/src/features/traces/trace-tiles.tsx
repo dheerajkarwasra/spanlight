@@ -8,10 +8,11 @@ import { formatCost, formatDuration, formatRelativeTime, formatTimestamp } from 
 import { cn } from "@/lib/utils";
 
 import { MetadataChips } from "./metadata-chips";
+import { NO_INPUT_REASON, PreviewPending } from "./preview-cell";
 import { RetryBadge } from "./retry-cell";
 import { hasUnknownRetries, RETRY_TILES_FOOTNOTE } from "./retry-format";
 import { TraceStatusDot } from "./status";
-import { MonoBadge, TraceErrorLine } from "./trace-cells";
+import { TraceErrorLine } from "./trace-cells";
 
 interface TraceTilesProps {
   traces: TraceSummary[];
@@ -19,6 +20,8 @@ interface TraceTilesProps {
   stale?: boolean;
   /** The project's promoted metadata keys, shown as chips on each tile that carries them. */
   promotedKeys?: readonly string[];
+  /** The list asked for input previews: each tile shows one under its name. */
+  previews?: boolean;
 }
 
 /** Phone layout of the traces list (Figma "Traces/Mobile tile"): one tappable card per trace. */
@@ -27,6 +30,7 @@ export function TraceTiles({
   selectedTraceId = null,
   stale = false,
   promotedKeys = [],
+  previews = false,
 }: TraceTilesProps) {
   return (
     <div className="flex flex-col gap-3">
@@ -39,8 +43,10 @@ export function TraceTiles({
           <li key={trace.trace_id}>
             <TraceTile
               trace={trace}
+              stale={stale}
               selected={trace.trace_id === selectedTraceId}
               promotedKeys={promotedKeys}
+              previews={previews}
             />
           </li>
         ))}
@@ -55,18 +61,20 @@ export function TraceTiles({
 
 interface TraceTileProps {
   trace: TraceSummary;
+  /** Kept from an earlier request (maybe one without previews) until the new one lands. */
+  stale: boolean;
   selected: boolean;
   promotedKeys: readonly string[];
+  previews: boolean;
 }
 
-function TraceTile({ trace, selected, promotedKeys }: TraceTileProps) {
+/** Name and status; the input preview; duration and cost; when it started (spec §5 Phone). */
+function TraceTile({ trace, stale, selected, promotedKeys, previews }: TraceTileProps) {
   const { orgId, projectId } = useProjectParams();
   const hasName = trace.name !== null && trace.name !== "";
   const cost = formatCost(trace.cost_usd);
   const duration = formatDuration(trace.duration_ms);
   const started = formatRelativeTime(trace.started_at);
-  const model = trace.models[0];
-  const extraModels = trace.models.length - 1;
 
   return (
     <Link
@@ -87,32 +95,42 @@ function TraceTile({ trace, selected, promotedKeys }: TraceTileProps) {
         >
           {hasName ? trace.name : "Unnamed trace"}
         </span>
-        <span className="shrink-0 font-medium text-foreground tabular">
+      </span>
+      {previews ? (
+        <span className="truncate pl-4 text-xs text-muted-foreground">
+          {/* As in the table: kept rows show a placeholder, an empty preview reads as none. */}
+          {stale ? (
+            <PreviewPending />
+          ) : trace.input_preview ? (
+            trace.input_preview
+          ) : (
+            <UnknownInLink reason={NO_INPUT_REASON} />
+          )}
+        </span>
+      ) : null}
+      <span className="flex min-w-0 items-center gap-2 pl-4 text-xs font-medium text-muted-foreground">
+        <span className="shrink-0 text-foreground tabular">
+          {duration ?? <UnknownInLink reason="Duration isn't known yet" />}
+        </span>
+        <span aria-hidden className="text-subtle-foreground">
+          ·
+        </span>
+        <span className="shrink-0 font-semibold text-foreground tabular">
           {cost ?? <UnknownInLink reason={UNKNOWN_TOTAL_REASON} />}
         </span>
-      </span>
-      <span className="flex min-w-0 items-center gap-2 pl-4 text-xs font-medium text-muted-foreground">
-        {model ? <MonoBadge value={model} className="shrink" /> : <span>No LLM calls</span>}
-        {extraModels > 0 ? <span className="shrink-0">+{extraModels}</span> : null}
-        {duration ? <span className="shrink-0 tabular">{duration}</span> : null}
-        {started ? (
-          <>
-            <span aria-hidden className="text-subtle-foreground">
-              ·
-            </span>
-            <time
-              dateTime={trace.started_at}
-              title={formatTimestamp(trace.started_at) ?? undefined}
-              className="shrink-0 tabular"
-            >
-              {started}
-            </time>
-          </>
-        ) : null}
         <span className="ml-auto flex shrink-0">
           <RetryBadge trace={trace} />
         </span>
       </span>
+      {started ? (
+        <time
+          dateTime={trace.started_at}
+          title={formatTimestamp(trace.started_at) ?? undefined}
+          className="pl-4 text-xs font-medium text-muted-foreground tabular"
+        >
+          {started}
+        </time>
+      ) : null}
       <TraceErrorLine
         errorClass={trace.error_class}
         message={trace.error_message}

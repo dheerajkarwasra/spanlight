@@ -1,7 +1,7 @@
 import { getRouteApi, Link } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 
-import { BackLink } from "@/components/back-link";
+import { Breadcrumbs, Crumb } from "@/components/breadcrumbs";
 import { ErrorState } from "@/components/error-state";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { formatDate } from "@/lib/format";
 
 import { useQueueQuery, useScoreConfigsQuery } from "./annotation-queries";
 import { AddItemsDialog } from "./add-items-dialog";
+import { DeleteQueueDialog } from "./delete-queue-dialog";
 import { QueueItems } from "./queue-items";
 import { QueueSummary } from "./queue-summary";
 
@@ -24,16 +25,18 @@ export function QueueDetailPage() {
   const queue = useQueueQuery(queueId);
   const configs = useScoreConfigsQuery();
 
-  const back = (
-    <BackLink to="/$orgId/$projectId/queues" params={{ orgId, projectId }}>
-      Review
-    </BackLink>
+  const back = (current: string) => (
+    <Breadcrumbs current={current}>
+      <Crumb to="/$orgId/$projectId/queues" params={{ orgId, projectId }}>
+        Review
+      </Crumb>
+    </Breadcrumbs>
   );
 
   if (queue.isPending) {
     return (
       <div role="status" aria-label="Loading the queue" className="flex flex-col gap-6">
-        {back}
+        {back("Queue")}
         <Skeleton className="h-9 w-72 rounded-full" />
         <Skeleton className="h-40 rounded-card" />
         <Skeleton className="h-80 rounded-card" />
@@ -43,7 +46,7 @@ export function QueueDetailPage() {
   if (queue.isError) {
     return (
       <div className="flex flex-col gap-6">
-        {back}
+        {back("Queue")}
         <ErrorState
           error={queue.error}
           title="Couldn't load this queue"
@@ -72,12 +75,13 @@ export function QueueDetailPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {back}
+      {back(data.name)}
       <PageHeader
         title={data.name}
         description={`Created ${formatDate(data.created_at) ?? ""}`}
         actions={
           <>
+            {canWrite ? <DeleteQueueDialog queue={data} /> : null}
             {addButton}
             {canStart ? (
               <Button variant="primary" asChild>

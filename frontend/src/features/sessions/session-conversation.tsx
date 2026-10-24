@@ -3,21 +3,19 @@ import { useId, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
-import type { TraceSummary } from "@/lib/api";
+import type { SessionTurn as Turn } from "@/lib/api";
 import { pluralize } from "@/lib/format";
 
 import { turnRangeLabel } from "./session-format";
 import { SessionTurn } from "./session-turn";
+import { systemPromptOf } from "./system-prompt";
 
-/**
- * Turns shown at first and per "Show more". Each turn loads its own trace for the message
- * text, so revealing them in batches keeps a long session from firing a request per turn.
- */
+/** Turns shown at first and per "Show more", so a long session doesn't render all at once. */
 const TURN_BATCH_SIZE = 10;
 
 interface SessionConversationProps {
   /** Loaded turns, oldest first. */
-  traces: TraceSummary[];
+  turns: readonly Turn[];
   /** Older turns exist that aren't loaded yet. */
   hasEarlierTurns: boolean;
   isLoadingEarlier: boolean;
@@ -27,7 +25,7 @@ interface SessionConversationProps {
 
 /** The centred conversation column: one turn group per trace, oldest first. */
 export function SessionConversation({
-  traces,
+  turns,
   hasEarlierTurns,
   isLoadingEarlier,
   loadEarlierFailed,
@@ -35,9 +33,12 @@ export function SessionConversation({
 }: SessionConversationProps) {
   const titleId = useId();
   const [visibleCount, setVisibleCount] = useState(TURN_BATCH_SIZE);
-  const visible = traces.slice(0, visibleCount);
-  const remaining = traces.length - visible.length;
+  const visible = turns.slice(0, visibleCount);
+  const remaining = turns.length - visible.length;
   const nextBatch = Math.min(remaining, TURN_BATCH_SIZE);
+  // shortcut: a turn 1 over the payload budget has no inputs here, so later turns show no badge;
+  // lift the loaded spans up if that turns out common.
+  const firstPrompt = hasEarlierTurns ? null : systemPromptOf(turns[0]?.spans ?? []);
 
   return (
     <Card role="region" aria-labelledby={titleId} className="flex flex-col gap-7 p-5 sm:p-7">
@@ -49,7 +50,7 @@ export function SessionConversation({
           </CardDescription>
         </div>
         <Badge className="shrink-0 tabular">
-          {turnRangeLabel(visible.length, traces.length, hasEarlierTurns)}
+          {turnRangeLabel(visible.length, turns.length, hasEarlierTurns)}
         </Badge>
       </div>
 
@@ -65,9 +66,13 @@ export function SessionConversation({
       ) : null}
 
       <ol className="flex flex-col gap-7">
-        {visible.map((trace, index) => (
-          <li key={trace.trace_id}>
-            <SessionTurn trace={trace} turnNumber={hasEarlierTurns ? null : index + 1} />
+        {visible.map((turn, index) => (
+          <li key={turn.trace.trace_id}>
+            <SessionTurn
+              turn={turn}
+              turnNumber={hasEarlierTurns ? null : index + 1}
+              firstPrompt={firstPrompt}
+            />
           </li>
         ))}
       </ol>

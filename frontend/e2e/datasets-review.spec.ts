@@ -45,6 +45,23 @@ test("CSV upload: the preview counts what the server accepts", async ({ page }) 
   await page.keyboard.press("Escape");
   await expect(page.getByRole("cell", { name: "Where is my order?" })).toBeVisible();
   await expect(page.getByRole("cell", { name: "Refund, please" })).toBeVisible();
+
+  // "Run experiment" opens the new-experiment form with this dataset already picked.
+  await page.getByRole("link", { name: "Run experiment" }).click();
+  await expect(page).toHaveURL(/\/experiments\/new\?dataset=/);
+  await expect(page.getByRole("combobox", { name: "Dataset" })).toHaveText(
+    "support-golden · 2 items",
+  );
+  await expectNoAxeViolations(page);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expectNoAxeViolations(page);
+  await page.goBack();
+  await expect(page.getByRole("heading", { level: 1, name: "support-golden" })).toBeVisible();
+  await expectNoAxeViolations(page);
+  await page.goto(`${base}/datasets`);
+  // Phones get the tile list; the table is hidden below md.
+  await expect(page.getByText("support-golden").filter({ visible: true })).toBeVisible();
+  await expectNoAxeViolations(page);
 });
 
 // Finding T9-02: the upload dialog's file input is visually hidden but still focusable, so it
@@ -108,9 +125,20 @@ test("review queue: add a trace → claim → score with the keyboard → done",
   await expect(page.getByRole("button", { name: /Yes/, pressed: true })).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "All done" })).toBeVisible();
+  // After the submit, the "Last item" strip compares the score with the evaluator's (none here).
+  const lastItem = page.getByRole("status").filter({ hasText: "Last item" });
+  await expect(lastItem).toContainText("No evaluator score");
+  await expect(lastItem.getByRole("link", { name: "Open trace" })).toHaveAttribute(
+    "href",
+    new RegExp(`/traces/${traceId}$`),
+  );
   await expectNoAxeViolations(page);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expectNoAxeViolations(page);
+  await page.setViewportSize({ width: 1280, height: 720 });
 
-  // The score is on the trace.
+  // The score is on the trace, in the inspector's Scores tab.
   await page.goto(`${base}/traces/${traceId}`);
+  await page.getByRole("tab", { name: "Scores" }).click();
   await expect(page.getByText("helpful", { exact: true }).first()).toBeVisible();
 });

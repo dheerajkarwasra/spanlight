@@ -8,7 +8,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useProjectParams } from "@/features/shell";
 import { toPathPromptName, type PromptKind, type PromptTemplate } from "@/lib/api";
 
-import { BackToPrompts } from "./back-link";
+import { PromptsBreadcrumbs } from "./back-link";
 import { CardTitle } from "./card-title";
 import { emptyDraft, MAX_DESCRIPTION, promptNameProblem, toAdvice, type Draft } from "./draft";
 import { EditorSide } from "./editor-side";
@@ -86,7 +86,7 @@ export function NewPromptEditor() {
 
   return (
     <EditorFrame
-      back={<BackToPrompts />}
+      back={<PromptsBreadcrumbs current="New prompt" />}
       title="New prompt"
       description="Name it, pick a kind and write version 1."
       onSubmit={() => void save()}

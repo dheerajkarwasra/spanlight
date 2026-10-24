@@ -1,46 +1,60 @@
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, MessageSquare } from "lucide-react";
+import { ChevronRight, Flame, MessageSquare } from "lucide-react";
 
 import { CostValue } from "@/components/cost-value";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TooltipContent, TooltipRoot, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProjectParams } from "@/features/shell/project-context";
-import { toPathId, type SessionSummary } from "@/lib/api";
-import { formatInteger, formatTimestamp, pluralize } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { toPathId, type SessionListItem } from "@/lib/api";
+import { formatTimestamp, pluralize } from "@/lib/format";
 
-import { formatCompactDuration, formatSessionWindow } from "./session-format";
-import { spanBetween } from "./session-summary";
+import { formatCompactDuration, formatSessionWindow, isCostOutlier } from "./session-format";
 
-/** Column widths shared by the labels row and every tile (Figma "Session/Tile"). */
-const TRACES_COLUMN = "w-20";
-const COST_COLUMN = "md:w-[84px]";
-const ERRORS_COLUMN = "md:w-[92px]";
+export const ABOVE_P99 = "Above the 99th percentile of session cost in this window";
 
-/** The column labels above the tiles. Decorative: each tile labels its values for screen readers. */
-export function SessionColumnLabels() {
+/** The session's cost, with a flame and its tooltip when the cost is an outlier (spec §8). */
+export function SessionCost({
+  session,
+  costP99,
+}: {
+  session: SessionListItem;
+  costP99: string | null;
+}) {
   return (
-    <div
-      aria-hidden
-      className="hidden items-center gap-6 pt-3 pr-5 pb-1.5 pl-[70px] text-overline text-subtle-foreground uppercase md:flex"
-    >
-      <span className="min-w-0 flex-1">Session</span>
-      <span className={TRACES_COLUMN}>Traces</span>
-      <span className={cn(COST_COLUMN, "text-right")}>Cost</span>
-      <span className={cn(ERRORS_COLUMN, "text-right")}>Errors</span>
-      <span className="w-4" />
-    </div>
+    <span className="inline-flex items-center gap-1">
+      {isCostOutlier(session.cost_usd, costP99) ? (
+        <TooltipRoot>
+          <TooltipTrigger asChild>
+            <span tabIndex={0} aria-label={ABOVE_P99} className="inline-flex rounded-xs">
+              <Flame aria-hidden className="size-3.5 text-warning" />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{ABOVE_P99}</TooltipContent>
+        </TooltipRoot>
+      ) : null}
+      <CostValue
+        cost={session.cost_usd}
+        hasUnpriced={session.has_unpriced}
+        unknownReason="No price for the models used"
+      />
+    </span>
   );
 }
 
+interface SessionTileProps {
+  session: SessionListItem;
+  costP99: string | null;
+}
+
 /**
- * One session as a tile. The session ID is the link; it stretches over the whole tile so the
- * tile is clickable while tooltips inside it stay reachable.
+ * One session as a tile, the list below `md` (the table takes over above). The session ID is the
+ * link; it stretches over the whole tile so the tile is clickable while tooltips stay reachable.
  */
-export function SessionTile({ session }: { session: SessionSummary }) {
+export function SessionTile({ session, costP99 }: SessionTileProps) {
   const { orgId, projectId } = useProjectParams();
   const timeWindow = formatSessionWindow(session.first_at, session.last_at);
-  const duration = formatCompactDuration(spanBetween(session.first_at, session.last_at));
+  const duration = formatCompactDuration(session.duration_ms);
   const meta = [timeWindow, duration].filter(Boolean).join(" · ");
 
   return (
@@ -69,40 +83,20 @@ export function SessionTile({ session }: { session: SessionSummary }) {
               {meta}
             </p>
           ) : null}
-          <p className="text-xs font-medium text-muted-foreground tabular md:hidden">
-            {pluralize(session.trace_count, "trace")}
+          <p className="truncate text-xs font-medium text-muted-foreground tabular">
+            {pluralize(session.trace_count, "turn")}
+            {session.external_user_id !== null ? ` · ${session.external_user_id}` : null}
           </p>
         </div>
       </div>
 
-      <p
-        className={cn(
-          TRACES_COLUMN,
-          "hidden text-sm font-semibold text-foreground tabular md:block",
-        )}
-      >
-        <span className="sr-only">Traces: </span>
-        {formatInteger(session.trace_count)}
-      </p>
-
-      <div className="flex shrink-0 flex-col items-end gap-1 md:contents">
+      <div className="flex shrink-0 flex-col items-end gap-1">
         {/* Above the stretched link so the cost tooltips work; plain text still clicks through. */}
-        <p
-          className={cn(
-            "pointer-events-none relative z-10 text-right text-sm font-semibold text-foreground [&_[tabindex]]:pointer-events-auto",
-            COST_COLUMN,
-          )}
-        >
+        <p className="pointer-events-none relative z-10 text-right text-sm font-semibold text-foreground [&_[tabindex]]:pointer-events-auto">
           <span className="sr-only">Cost: </span>
-          <CostValue
-            cost={session.cost_usd}
-            hasUnpriced={session.has_unpriced}
-            unknownReason="No price for the models used"
-          />
+          <SessionCost session={session} costP99={costP99} />
         </p>
-        <div className={cn("flex justify-end", ERRORS_COLUMN)}>
-          <ErrorsBadge count={session.error_count} />
-        </div>
+        <ErrorsBadge count={session.error_count} />
       </div>
 
       <ChevronRight
@@ -134,9 +128,7 @@ export function SessionTileSkeleton() {
           <Skeleton className="h-3 w-36 max-w-full" />
         </div>
       </div>
-      <Skeleton className={cn(TRACES_COLUMN, "hidden h-4 md:block")} />
-      <Skeleton className={cn(COST_COLUMN, "h-4 w-16")} />
-      <Skeleton className={cn(ERRORS_COLUMN, "hidden h-6 rounded-full md:block")} />
+      <Skeleton className="h-4 w-16" />
       <span className="w-4" />
     </div>
   );

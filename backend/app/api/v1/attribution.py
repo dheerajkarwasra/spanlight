@@ -10,8 +10,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import DbSession, ReadAccess, require
-from app.api.params import NO_NUL
-from app.api.schemas import AttributionOut
+from app.api.params import Environment
+from app.api.schemas import AttributionOut, AttributionSeriesOut
 from app.api.window import Window
 from app.attribution import service
 from app.attribution.aggregate_sql import GroupKind
@@ -26,7 +26,6 @@ router = APIRouter(prefix="/projects/{project_id}/attribution", tags=["attributi
 
 # Also readable by an API key with `traces:read`, for the project it belongs to.
 ProjectReader = Annotated[ReadAccess, Depends(require(Permission.PROJECT_READ, allow_api_key=True))]
-Environment = Annotated[str | None, Query(max_length=64, pattern=NO_NUL)]
 
 
 @router.get("", response_model=AttributionOut)
@@ -47,3 +46,22 @@ async def read_attribution(
     out = await service.read_attribution(db, project.id, project.promoted_metadata_keys, request)
     feature_used("attribution_view")
     return out
+
+
+@router.get("/series", response_model=AttributionSeriesOut)
+async def read_attribution_series(
+    project_id: uuid.UUID,
+    access: ProjectReader,
+    db: DbSession,
+    window: Window,
+    group_by: GroupKind,
+    key: Annotated[MetadataKey | None, Query()] = None,
+    environment: Environment = None,
+    value: Annotated[str | None, Query(max_length=512)] = None,
+) -> AttributionSeriesOut:
+    """The Spend chart: the window's cost per bucket, or one group's with `value`."""
+    project = access.require_project()
+    keys = project.promoted_metadata_keys
+    return await service.read_attribution_series(
+        db, project.id, keys, group_by, key, window, environment, value
+    )

@@ -1,10 +1,19 @@
 import { CalendarDays } from "lucide-react";
 
+import { FreshnessChip } from "@/components/freshness-chip";
 import { Badge } from "@/components/ui/badge";
 import type { AttributionResponse } from "@/lib/api";
 import { describeRange, type ResolvedRange } from "@/lib/time-range";
 
 const DAY_MS = 24 * 3_600_000;
+
+/** The rollup refresh schedule (`REFRESH_ATTRIBUTION` in `app/jobs/scheduler.py`). */
+const ROLLUP_EXPLANATION = {
+  computed:
+    "Longer windows read a daily rollup, recomputed every 15 minutes for yesterday and today and once a day for the week before.",
+  notComputed:
+    "Not computed yet. The daily rollup is recomputed every 15 minutes; the first pass for this window has not run.",
+};
 
 const UTC_DAY = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -14,7 +23,7 @@ const UTC_DAY = new Intl.DateTimeFormat("en-US", {
 
 /**
  * "Sep 16 – Oct 15 · 30 days" for the rollup's UTC days (`to` is exclusive, so the last day shown
- * is the day before it); the shell's label for a live window.
+ * is the day before it); the shell's label for a live window. A rollup page adds how fresh it is.
  */
 export function WindowNote({
   range,
@@ -40,9 +49,13 @@ export function WindowNote({
         <Badge variant="success" size="sm">
           Live
         </Badge>
-      ) : (
-        <Badge size="sm">Updated every 15 min</Badge>
-      )}
+      ) : page ? (
+        <FreshnessChip
+          value={page.computed_at}
+          pendingTraces={page.pending_traces}
+          explanation={ROLLUP_EXPLANATION}
+        />
+      ) : null}
     </span>
   );
 }

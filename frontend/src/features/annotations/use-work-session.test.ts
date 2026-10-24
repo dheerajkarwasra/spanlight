@@ -158,3 +158,82 @@ describe("useWorkSession claim on entry", () => {
     expect(api.release).toHaveBeenCalledWith("proj_1", "queue_a", "item_queue_a");
   });
 });
+
+describe("useWorkSession last completed item", () => {
+  /** Claims answer with `ids` in turn, then find nothing. */
+  function serveItems(...ids: string[]) {
+    const queue = [...ids];
+    api.claim.mockImplementation(() => {
+      const id = queue.shift();
+      return Promise.resolve(id === undefined ? undefined : makeItem(id));
+    });
+  }
+
+  it("keeps the submitted values of the item completed last", async () => {
+    serveItems("a", "b");
+    api.complete.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useWorkSession("queue_a"));
+    await waitFor(() => expect(result.current.state.phase).toBe("working"));
+    expect(result.current.lastCompleted).toBeNull();
+
+    await act(() => result.current.complete([{ name: "format", value: true }]));
+
+    expect(result.current.lastCompleted).toEqual({
+      traceId: "trace_a",
+      values: { format: { value: 1, string_value: null } },
+    });
+    const state = result.current.state;
+    expect(state.phase === "working" ? state.item.id : null).toBe("b");
+  });
+
+  it("keeps it for the All done card after the final item", async () => {
+    serveItems("a");
+    api.complete.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useWorkSession("queue_a"));
+    await waitFor(() => expect(result.current.state.phase).toBe("working"));
+
+    await act(() => result.current.complete([{ name: "tone", string_value: "good" }]));
+
+    expect(result.current.state.phase).toBe("empty");
+    expect(result.current.lastCompleted?.traceId).toBe("trace_a");
+  });
+
+  it("drops it on a skip, so it never names an item that was not the last one", async () => {
+    serveItems("a", "b", "c");
+    api.complete.mockResolvedValue(undefined);
+    api.skip.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useWorkSession("queue_a"));
+    await waitFor(() => expect(result.current.state.phase).toBe("working"));
+    await act(() => result.current.complete([{ name: "format", value: true }]));
+
+    await act(() => result.current.skip());
+
+    expect(result.current.lastCompleted).toBeNull();
+  });
+
+  it("keeps it when the submit fails", async () => {
+    serveItems("a", "b");
+    api.complete.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("offline"));
+    const { result } = renderHook(() => useWorkSession("queue_a"));
+    await waitFor(() => expect(result.current.state.phase).toBe("working"));
+    await act(() => result.current.complete([{ name: "format", value: true }]));
+
+    await act(() => result.current.complete([{ name: "format", value: false }]));
+
+    expect(result.current.lastCompleted?.traceId).toBe("trace_a");
+  });
+
+  it("drops it when the page moves to another queue", async () => {
+    serveItems("a", "b");
+    api.complete.mockResolvedValue(undefined);
+    const { result, rerender } = renderHook(({ queueId }) => useWorkSession(queueId), {
+      initialProps: { queueId: "queue_a" },
+    });
+    await waitFor(() => expect(result.current.state.phase).toBe("working"));
+    await act(() => result.current.complete([{ name: "format", value: true }]));
+
+    rerender({ queueId: "queue_b" });
+
+    expect(result.current.lastCompleted).toBeNull();
+  });
+});

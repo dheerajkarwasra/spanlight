@@ -62,6 +62,10 @@ Three filters have no pill. The **Environment** from the top bar appears as an `
 
 When nothing matches, the list says "No traces match these filters" and offers **Clear filters**. When the window is empty, it offers **Connect your app**.
 
+### See when traces happened
+
+Above the table, on screens from 768 px wide, a strip of bars counts the traces that match the current filters per hour (per day for a window over 48 hours), with the failed ones in red. Hover or focus a bar for its time, traces and errors; click it, or press Enter on it, to narrow the list to that hour or day. The arrow keys move between bars.
+
 ### Read a row
 
 On a wide screen each row shows these columns. As the card narrows, columns drop away: **Tokens** goes first, then **User / session**, then **Scores** and **Tags**. Status, name, started, duration, models and cost always stay. Phones show each trace as a tile.
@@ -70,6 +74,8 @@ On a wide screen each row shows these columns. As the card narrows, columns drop
 | --- | --- |
 | Status dot | Green for OK, red when a span failed. Hover or focus the red dot for the first error message. |
 | **Name** | The trace name in bold (or "Unnamed trace"), with the trace ID under it. A failed trace shows the error class and first error message instead of the ID. |
+| **Input** | A one-line preview of what the trace was asked: the root span's input, else the first model call's, such as the last user message. An image or other base64 data reads as `[binary]`. **—** means no input was captured. |
+| **Output** | A one-line preview of the answer: the root span's output, else the last model call's. **—** means no output was captured. |
 | **Started** | How long ago the trace started. |
 | **Duration** | End to end. |
 | **Models** | The first model, with `+N` for more. "No LLM calls" if the trace made none. |
@@ -83,6 +89,8 @@ On a wide screen each row shows these columns. As the card narrows, columns drop
 | **User / session** | The user ID and session ID, if the trace has them. |
 
 A **—** in the cost column is never a zero. See [how cost is calculated](/docs/concepts/cost/).
+
+The list starts with the newest trace; click **Started** to show the oldest first, and again to go back. Click **Duration**, **Tokens**, **Cost** or **Retry cost** to sort by it, largest first, and again to reverse the order. Unknown values come last either way. **Table settings** at the end of the header row shows or hides columns and switches between comfortable and compact rows; this browser remembers both. From 1280 px wide, clicking a row opens the trace in a side sheet over the list instead of leaving it: **J** and **K** step to the next or previous loaded trace, **Esc** or the browser's Back closes the sheet, and **Open full page** opens the trace page on the span and tab you were looking at. Cmd- or Ctrl-click a trace's name to open its page in a new tab.
 
 Click a row to open the trace. When you come back with the **Traces** link, you return to the same filters and the row you opened is highlighted. Reloading the page starts from a clean list.
 

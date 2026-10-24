@@ -3,7 +3,10 @@ import { FilterX, Radio, RefreshCw } from "lucide-react";
 
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
+import { LiveDemoButton } from "@/features/auth";
+import { KeySnippet } from "@/features/onboarding";
 import { useProjectFilters, useProjectParams } from "@/features/shell/project-context";
+import { useHasTraces } from "@/features/shell/use-has-traces";
 import { describeRange } from "@/lib/time-range";
 
 interface TracesEmptyStateProps {
@@ -14,8 +17,8 @@ interface TracesEmptyStateProps {
 }
 
 /**
- * What the list shows when nothing matches: no trace with retries, a filtered-out list, or a
- * window with no traces.
+ * What the list shows when nothing matches: no trace with retries, a filtered-out list, a project
+ * that has never received a trace, or a window with no traces.
  */
 export function TracesEmptyState({
   hasFacetFilters,
@@ -25,6 +28,14 @@ export function TracesEmptyState({
   const { orgId, projectId } = useProjectParams();
   const { range, environment } = useProjectFilters();
   const period = describeRange(range).toLowerCase();
+  const hasTraces = useHasTraces();
+  const connect = (
+    <Button asChild size="sm" variant="primary">
+      <Link to="/onboarding" search={{ org: orgId, project: projectId }}>
+        Connect your app
+      </Link>
+    </Button>
+  );
 
   if (onClearRetries) {
     return (
@@ -56,6 +67,23 @@ export function TracesEmptyState({
     );
   }
 
+  if (hasTraces === false) {
+    return (
+      <EmptyState
+        icon={Radio}
+        title="No traces yet"
+        description="Send your first trace from the SDK or over OTLP, and every LLM call shows up here with its prompt, latency and cost."
+        action={connect}
+        setup={
+          <>
+            <KeySnippet code={(keyLine) => `${keyLine}  # your key from Settings › API keys`} />
+            <LiveDemoButton />
+          </>
+        }
+      />
+    );
+  }
+
   return (
     <EmptyState
       icon={Radio}
@@ -65,13 +93,7 @@ export function TracesEmptyState({
           ? `No traces from the "${environment}" environment in the ${period}. Pick a wider time range or another environment.`
           : `No traces were received in the ${period}. Pick a wider time range, or connect your app to start sending traces.`
       }
-      action={
-        <Button asChild size="sm" variant="primary">
-          <Link to="/onboarding" search={{ org: orgId, project: projectId }}>
-            Connect your app
-          </Link>
-        </Button>
-      }
+      action={connect}
     />
   );
 }

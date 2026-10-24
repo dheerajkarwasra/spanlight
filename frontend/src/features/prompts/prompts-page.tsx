@@ -9,6 +9,8 @@ import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { LiveDemoButton } from "@/features/auth";
+import { KeySnippet } from "@/features/onboarding";
 import { usePermission } from "@/features/shell";
 import { formatInteger, pluralNoun } from "@/lib/format";
 
@@ -132,6 +134,12 @@ function PromptListPage({ canWrite }: { canWrite: boolean }) {
                     <span className="sr-only"> (opens in a new tab)</span>
                   </a>
                 </Button>
+              </>
+            }
+            setup={
+              <>
+                <KeySnippet code={(keyLine) => `${keyLine}  # your key from Settings › API keys`} />
+                <LiveDemoButton />
               </>
             }
           />

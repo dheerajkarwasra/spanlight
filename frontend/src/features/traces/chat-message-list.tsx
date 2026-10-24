@@ -15,6 +15,7 @@ import {
   type ChatPart,
   type ChatRole,
 } from "./chat-messages";
+import { ReasoningCard, RedactedReasoningNote } from "./reasoning-card";
 
 /** Long texts (system prompts, retrieved context) start clamped to keep the panel scannable. */
 const CLAMP_CHARS = 1200;
@@ -121,19 +122,10 @@ function ChatPartView({ part, onInk }: { part: ChatPart; onInk: boolean }) {
     case "text":
       return <ClampedText text={part.text} onInk={onInk} />;
     case "image":
-      return (
-        <span
-          title={part.description}
-          className={cn(
-            "inline-flex max-w-full items-center gap-1.5 self-start rounded-md border px-2 py-1 text-xs",
-            onInk
-              ? "border-rail-tile text-rail-muted-foreground"
-              : "border-border bg-surface text-muted-foreground",
-          )}
-        >
-          <ImageIcon aria-hidden className="size-3.5 shrink-0" />
-          <span className="truncate">{part.description}</span>
-        </span>
+      return part.src ? (
+        <ImageThumbnail src={part.src} description={part.description} onInk={onInk} />
+      ) : (
+        <ImageLabel description={part.description} onInk={onInk} />
       );
     case "tool_call":
       return (
@@ -158,9 +150,62 @@ function ChatPartView({ part, onInk }: { part: ChatPart; onInk: boolean }) {
           )}
         </div>
       );
+    case "thinking":
+      return (
+        <ReasoningCard>
+          <ClampedText text={part.text} onInk={false} />
+        </ReasoningCard>
+      );
+    case "redacted_thinking":
+      return <RedactedReasoningNote />;
     case "json":
       return <JsonViewer value={part.value} className={jsonClass} />;
   }
+}
+
+interface ImageProps {
+  description: string;
+  onInk: boolean;
+}
+
+function ImageLabel({ description, onInk }: ImageProps) {
+  return (
+    <span
+      title={description}
+      className={cn(
+        "inline-flex max-w-full items-center gap-1.5 self-start rounded-md border px-2 py-1 text-xs",
+        onInk
+          ? "border-rail-tile text-rail-muted-foreground"
+          : "border-border bg-surface text-muted-foreground",
+      )}
+    >
+      <ImageIcon aria-hidden className="size-3.5 shrink-0" />
+      <span className="truncate">{description}</span>
+    </span>
+  );
+}
+
+/**
+ * An inline `data:` image as a lazy thumbnail (the CSP allows `img-src data:`). A payload cut by
+ * ingestion leaves broken base64, so a failed load falls back to the label.
+ */
+function ImageThumbnail({ src, description, onInk }: ImageProps & { src: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return <ImageLabel description={description} onInk={onInk} />;
+  }
+  return (
+    <img
+      src={src}
+      alt={description}
+      title={description}
+      loading="lazy"
+      onError={() => {
+        setFailed(true);
+      }}
+      className="max-h-40 max-w-40 self-start rounded-md border border-border bg-surface object-contain"
+    />
+  );
 }
 
 interface ToolLabelProps {

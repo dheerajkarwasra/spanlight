@@ -1,21 +1,25 @@
 import { Link } from "@tanstack/react-router";
 import { GitCompareArrows, X } from "lucide-react";
 
+import { DisabledReason } from "@/components/disabled-reason";
 import { Button } from "@/components/ui/button";
 import { AddToDatasetDialog, AddToQueueDialog } from "@/features/datasets";
 import { usePermission } from "@/features/shell";
 import { pluralize } from "@/lib/format";
 
+import { ExportDialog } from "./export-dialog";
+import { MAX_SELECTED_EXPORT } from "./use-export-draft";
 import type { TraceSelection } from "./use-trace-selection";
 
 /**
  * Figma "Traces — Bulk selection": a floating ink bar while rows are ticked, with "Add to
- * dataset", "Add to queue", "Compare" (exactly two traces; the earlier one is the baseline) and
+ * dataset", "Add to queue", "Export selection" (at most 200 traces), "Compare" (exactly two traces; the earlier one is the baseline) and
  * "Clear". The table (and so the selection) exists from `md` up.
  */
 export function BulkSelectionBar({ selection }: { selection: TraceSelection }) {
   const canAddToDataset = usePermission("datasets:write");
   const canAddToQueue = usePermission("annotations:write");
+  const canExport = usePermission("export:create");
   const count = selection.selected.length;
   if (count === 0) {
     return null;
@@ -58,6 +62,15 @@ export function BulkSelectionBar({ selection }: { selection: TraceSelection }) {
           onAdded={finish}
           trigger={<Button>Add to queue</Button>}
         />
+      ) : null}
+      {canExport && count > MAX_SELECTED_EXPORT ? (
+        <DisabledReason
+          reason={`Exports take at most ${String(MAX_SELECTED_EXPORT)} selected traces.`}
+        >
+          <Button disabled>Export selection</Button>
+        </DisabledReason>
+      ) : canExport ? (
+        <ExportDialog selection={selection.selected} trigger={<Button>Export selection</Button>} />
       ) : null}
       {count === 2 && a && b ? (
         <Button asChild>

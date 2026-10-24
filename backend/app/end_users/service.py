@@ -3,7 +3,8 @@
 The figures are the per-user daily stats the `refresh_user_stats` jobs keep (`refresh.py`), summed
 over whole UTC days. A window is widened to whole days and the response says which; it spans at
 most 90 days (the shared window limit), so a day series is at most 91 entries. `computed_at` is
-the latest recompute of the rows summed, `None` when there are none.
+the latest recompute of the rows summed, `None` when there are none. `environment` narrows every
+figure to one environment; `None` sums them all, the traces without one included.
 """
 
 import uuid
@@ -23,6 +24,7 @@ from app.core.wire import unescape_path_name
 from app.end_users import queries
 from app.end_users.days import DayTotals, UserTotals, day_bounds, fill_days, midnight, total
 from app.end_users.queries import UserSort
+from app.explorer.trace_sort import SortOrder
 
 RECENT_SESSIONS = 20
 
@@ -62,11 +64,25 @@ async def list_users(
     sort: UserSort,
     limit: int,
     cursor: str | None,
+    environment: str | None = None,
+    q: str | None = None,
+    order: SortOrder = "desc",
 ) -> UserListOut:
-    """Users with activity in the window, `sort` descending with unknowns last (keyset)."""
+    """Users with activity in the window whose id contains `q` (case-insensitive), `sort` in
+    `order` with unknowns last in both directions (keyset).
+
+    `computed_at` is the latest recompute of any row of the window, whatever the page;
+    `pending_traces` counts the window's user traces that started after the latest recompute of
+    their own day (every trace of a day not computed yet), `None` only when there is neither a
+    row nor a trace.
+    """
     first_day, end_day = day_bounds(window)
     after = decode_value_cursor(cursor) if cursor else None
-    rows = await queries.read_users(db, project_id, first_day, end_day, sort, limit + 1, after)
+    rows = await queries.read_users(
+        db, project_id, first_day, end_day, sort, limit + 1, after, environment, q, order
+    )
+    fresh = await queries.read_freshness(db, project_id, first_day, end_day, environment)
+    pending = int(fresh.pending_traces)
     items = [_user_stats(row) for row in rows[:limit]]
     next_cursor = None
     if len(rows) > limit:
@@ -76,7 +92,8 @@ async def list_users(
         items=items,
         next_cursor=next_cursor,
         window=_stats_window(first_day, end_day),
-        computed_at=_computed_at(rows),
+        computed_at=fresh.computed_at,
+        pending_traces=None if fresh.computed_at is None and pending == 0 else pending,
     )
 
 
@@ -144,7 +161,11 @@ def unescape_user_id(wire_id: str) -> str:
 
 
 async def user_detail(
-    db: AsyncSession, project_id: uuid.UUID, wire_id: str, window: TimeWindow
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    wire_id: str,
+    window: TimeWindow,
+    environment: str | None = None,
 ) -> UserDetailOut:
     """The user's totals, a gapless day series and their latest sessions. `wire_id` is the id
     as the URL carries it (see `unescape_user_id`). 404 when the user has no activity in the
@@ -153,12 +174,16 @@ async def user_detail(
     if not external_user_id:
         raise not_found("No end user with this id has activity in the window.")
     first_day, end_day = day_bounds(window)
-    rows = await queries.read_daily(db, project_id, external_user_id, first_day, end_day)
+    rows = await queries.read_daily(
+        db, project_id, external_user_id, first_day, end_day, environment
+    )
     stored = [_stored_day(row) for row in rows]
     totals = total(stored)
     if totals is None:
         raise not_found("No end user with this id has activity in the window.")
-    sessions = await queries.read_recent_sessions(db, project_id, external_user_id, RECENT_SESSIONS)
+    sessions = await queries.read_recent_sessions(
+        db, project_id, external_user_id, RECENT_SESSIONS, environment
+    )
     return UserDetailOut(
         user=_totals_stats(external_user_id, totals),
         daily=[_day_stats(day) for day in fill_days(first_day, end_day, stored)],

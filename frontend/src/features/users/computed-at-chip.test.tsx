@@ -6,16 +6,15 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { COMPUTED_AT_EXPLANATION, NOT_COMPUTED_EXPLANATION } from "./computed-at";
 import { ComputedAtChip } from "./computed-at-chip";
 
-function renderChip(value: string | null) {
+const AT_1405 = new Date(new Date().setHours(14, 5, 0, 0)).toISOString();
+const UPDATED = "Updated 14:05 · 37 traces since then aren't included yet";
+
+function renderChip(value: string | null, pendingTraces: number | null = 37) {
   render(
     <TooltipProvider>
-      <ComputedAtChip value={value} />
+      <ComputedAtChip value={value} pendingTraces={pendingTraces} />
     </TooltipProvider>,
   );
-}
-
-function minutesAgo(minutes: number): string {
-  return new Date(Date.now() - minutes * 60_000).toISOString();
 }
 
 function tap(element: HTMLElement) {
@@ -24,20 +23,22 @@ function tap(element: HTMLElement) {
 }
 
 describe("ComputedAtChip", () => {
-  it("names the button after the visible label", () => {
-    renderChip(minutesAgo(4));
-    expect(screen.getByRole("button", { name: "Updated 4 min ago" })).toBeInTheDocument();
+  it("shows the freshness line and names the button after it", () => {
+    renderChip(AT_1405);
+    expect(screen.getByText(UPDATED)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: UPDATED })).toBeInTheDocument();
   });
 
-  it("reads 'Updated —' and names the button 'not computed yet' when the value is null", () => {
-    renderChip(null);
-    expect(screen.getByRole("button", { name: "Updated: not computed yet" })).toBeInTheDocument();
-    expect(screen.getByText("—")).toBeInTheDocument();
+  it("says 'Not computed yet' with the pending traces when the value is null", () => {
+    renderChip(null, 432);
+    const label = "Not computed yet · 432 traces in this window aren't included yet";
+    expect(screen.getByText(label)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
   });
 
   it("toggles the explanation on a touch tap", () => {
-    renderChip(minutesAgo(4));
-    const button = screen.getByRole("button", { name: "Updated 4 min ago" });
+    renderChip(AT_1405);
+    const button = screen.getByRole("button", { name: UPDATED });
 
     tap(button);
     expect(screen.getByRole("tooltip")).toHaveTextContent(COMPUTED_AT_EXPLANATION);
@@ -48,14 +49,14 @@ describe("ComputedAtChip", () => {
   });
 
   it("explains the missing value on a touch tap when nothing is computed yet", () => {
-    renderChip(null);
-    tap(screen.getByRole("button", { name: "Updated: not computed yet" }));
+    renderChip(null, null);
+    tap(screen.getByRole("button", { name: "Not computed yet" }));
     expect(screen.getByRole("tooltip")).toHaveTextContent(NOT_COMPUTED_EXPLANATION);
   });
 
   it("does not toggle on a mouse click", () => {
-    renderChip(minutesAgo(4));
-    const button = screen.getByRole("button", { name: "Updated 4 min ago" });
+    renderChip(AT_1405);
+    const button = screen.getByRole("button", { name: UPDATED });
     fireEvent.pointerDown(button, { pointerType: "mouse" });
     fireEvent.click(button);
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();

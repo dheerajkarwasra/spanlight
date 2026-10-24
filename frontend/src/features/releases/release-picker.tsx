@@ -15,6 +15,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatInteger, formatRelativeTime } from "@/lib/format";
 import type { ReleaseStats } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 export const SAME_RELEASE_NOTICE =
   "Baseline and candidate are the same release. Choose two different releases to compare.";
@@ -172,11 +173,20 @@ function ReleaseOption({ name, meta }: { name: string; meta: string | null }) {
   return (
     <span className="flex min-w-0 items-center gap-2">
       <Tag aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-      <span title={name} className="truncate font-mono text-label">
+      <span
+        title={name}
+        // Beside the hint (sm up) the name keeps up to 60 % and the hint truncates first.
+        className={cn(
+          "min-w-0 truncate font-mono text-label",
+          meta && "sm:max-w-[60%] sm:shrink-0",
+        )}
+      >
         {name}
       </span>
       {meta ? (
-        <span className="truncate text-xs text-muted-foreground max-sm:hidden">{meta}</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground max-sm:hidden">
+          {meta}
+        </span>
       ) : null}
     </span>
   );

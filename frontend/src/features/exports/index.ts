@@ -6,7 +6,12 @@
  * this file, not from the modules behind it.
  */
 export { EXPORT_DIALOG_CLASS, blockWhile } from "./export-dialog-frame";
-export { DialogHeading, SubmitError, SummaryRow } from "./export-dialog-parts";
+export {
+  DialogHeading,
+  ExportsNotConfigured,
+  SubmitError,
+  SummaryRow,
+} from "./export-dialog-parts";
 export { exportFormatLabel, formatExportInstant, formatTraceCount } from "./export-display";
 export {
   MAX_EXPORT_DAYS,

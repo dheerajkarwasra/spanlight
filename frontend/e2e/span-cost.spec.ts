@@ -22,9 +22,11 @@ test("a priced span's cost breakdown matches its stored cost", async ({ page }) 
   });
 
   await page.goto(`${base}/traces/${traceId}`);
+  // The inspector's Cost tab opens the card expanded.
+  await page.getByRole("tab", { name: "Cost" }).click();
+  await expect(page).toHaveURL(/[?&]tab=cost/);
   const heading = page.getByRole("heading", { name: "Cost breakdown" });
   await expect(heading).toBeVisible();
-  await page.getByRole("button", { name: "Show cost breakdown" }).click();
   const body = page.getByTestId("span-cost-body");
   await expect(body.getByText(/^Recomputed from stored usage and price row/)).toBeVisible();
   // The card header: the stored cost and its status. $3 / $15 per million tokens and $10 per

@@ -138,11 +138,11 @@ function NoChannelsYet() {
     <p className="text-sm text-muted-foreground">
       No channels yet. Add one under{" "}
       <Link
-        to="/$orgId/$projectId/alerts/channels"
+        to="/$orgId/$projectId/settings/channels"
         params={{ orgId, projectId }}
         className="rounded-xs font-semibold text-accent underline-offset-4 hover:underline"
       >
-        Alerts › Channels
+        Settings › Notification channels
       </Link>
       , then pick it here.
     </p>

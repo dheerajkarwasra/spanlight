@@ -2,8 +2,8 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, exportsApi, type TraceExport } from "@/lib/api";
-import { mockSignedIn, renderApp } from "@/test/render-app";
+import { ApiError, authApi, exportsApi, type TraceExport } from "@/lib/api";
+import { ME, mockSignedIn, renderApp } from "@/test/render-app";
 
 import { mockAttribution, PAGE, PROJECT_ID, project, response } from "./attribution-test-data";
 
@@ -133,7 +133,25 @@ describe("AttributionExportDialog", () => {
     const dialog = await openDialog();
     await userEvent.click(dialog.getByRole("button", { name: "Start export" }));
 
-    expect(await dialog.findByText("Not available on this server")).toBeInTheDocument();
+    expect(await dialog.findByText("Not configured on this server")).toBeInTheDocument();
     expect(dialog.getByRole("button", { name: "Start export" })).toBeEnabled();
+  });
+
+  it("says up front that exports aren't configured and disables Start export", async () => {
+    vi.spyOn(authApi, "me").mockResolvedValue({
+      ...ME,
+      capabilities: { ...ME.capabilities, exports_configured: false },
+    });
+    mockAttribution(() => Promise.resolve(response()));
+    const create = vi.spyOn(exportsApi, "create");
+    renderApp(ROLLUP);
+
+    const dialog = await openDialog();
+    expect(dialog.getByText("Not configured on this server")).toBeInTheDocument();
+    expect(dialog.getByText(/Exports need object storage/)).toHaveTextContent(
+      "Exports need object storage. Ask your administrator to set S3_BUCKET, S3_ACCESS_KEY and S3_SECRET_KEY.",
+    );
+    expect(dialog.getByRole("button", { name: "Start export" })).toBeDisabled();
+    expect(create).not.toHaveBeenCalled();
   });
 });

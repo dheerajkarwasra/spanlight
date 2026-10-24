@@ -54,3 +54,29 @@ describe("AddFilterPopover's metadata entry", () => {
     expect(screen.getByRole("textbox", { name: "Metadata value" })).toBeDisabled();
   });
 });
+
+describe("AddFilterPopover's name and prompt version entry", () => {
+  const VERSION_ID = "0192f3a4-5b6c-7d8e-9f01-23456789abcd";
+
+  it("applies the trace name and prompt version", async () => {
+    const onApply = await openWith(undefined);
+    await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "answer_ticket");
+    await userEvent.type(screen.getByRole("textbox", { name: "Prompt version" }), VERSION_ID);
+    await userEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+
+    expect(onApply).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "answer_ticket", prompt_version: VERSION_ID }),
+    );
+  });
+
+  it("refuses a prompt version that isn't a version ID", async () => {
+    const onApply = await openWith(undefined);
+    const input = screen.getByRole("textbox", { name: "Prompt version" });
+    await userEvent.type(input, "v3");
+    await userEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveAccessibleDescription("A version ID is a UUID.");
+    expect(onApply).not.toHaveBeenCalled();
+  });
+});

@@ -13,6 +13,7 @@ import {
   formatScoreDelta,
   formatTradeOff,
   itemChange,
+  regressionsOnly,
   scoreKind,
   sortByChange,
 } from "./compare-view";
@@ -146,6 +147,24 @@ describe("item changes", () => {
       scoredBoth: 4,
       inBoth: 4,
     });
+  });
+});
+
+describe("regressionsOnly", () => {
+  it("keeps numeric decreases and yes to no, drops gains, ties and items that cannot be compared", () => {
+    const items = [
+      item("drop", { quality: 0.9 }, { quality: 0.4 }, -0.5),
+      item("gain", { quality: 0.4 }, { quality: 0.9 }, 0.5),
+      item("same", { quality: 1 }, { quality: 1 }, 0),
+      item("yes-no", { quality: true }, { quality: false }, -1),
+      item("no-yes", { quality: false }, { quality: true }, 1),
+      item("missing", null, { quality: 1 }, null),
+      { ...item("edited", { quality: 1 }, { quality: 0 }, -1), changed: true },
+    ];
+    expect(regressionsOnly(items, "quality").map((entry) => entry.dataset_item_id)).toEqual([
+      "drop",
+      "yes-no",
+    ]);
   });
 });
 

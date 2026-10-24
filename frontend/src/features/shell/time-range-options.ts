@@ -1,9 +1,14 @@
 import { RANGE_PRESETS, type RangePreset } from "@/lib/time-range";
 
-/** Which windows a page's time-range control offers. */
+/**
+ * How a page uses the header's range and environment controls. Every project page shows both; a
+ * control the page can't honour is drawn disabled with the reason, and the URL keeps the shared
+ * value for the other pages.
+ */
 export interface TimeRangeOptions {
+  /** The presets the page offers; the picker draws every preset and disables the rest. */
   presets: readonly RangePreset[];
-  /** Whether the calendar pill for a custom from/to range is shown. */
+  /** Whether the calendar pill for a custom from/to range is enabled. */
   allowCustom: boolean;
   /**
    * The preset the page reads when the shared range is one it doesn't offer (30 d or custom from
@@ -11,8 +16,12 @@ export interface TimeRangeOptions {
    * pages.
    */
   fallback?: RangePreset;
-  /** Whether the environment filter is shown next to the range. Defaults to true. */
-  environment?: boolean;
+  /** The whole range control is disabled; the reason. */
+  rangeDisabled?: string;
+  /** The environment pill is disabled; the reason. */
+  environmentDisabled?: string;
+  /** Why the presets the page doesn't offer are disabled. */
+  presetNote?: string;
 }
 
 export const DEFAULT_TIME_RANGE_OPTIONS: TimeRangeOptions = {
@@ -28,11 +37,5 @@ export const GATEWAY_TIME_RANGE_OPTIONS = {
   presets: ["1h", "24h", "7d"],
   allowCustom: false,
   fallback: "7d",
-} as const satisfies TimeRangeOptions;
-
-/** End-user pages filter by time only: their endpoints take no environment. */
-export const USERS_TIME_RANGE_OPTIONS = {
-  presets: RANGE_PRESETS,
-  allowCustom: true,
-  environment: false,
+  presetNote: "The gateway overview covers at most 7 days.",
 } as const satisfies TimeRangeOptions;

@@ -14,6 +14,7 @@ import { useUncachedAction } from "@/lib/use-uncached-action";
 import { cn } from "@/lib/utils";
 
 import { INK_FOCUS, KEY_FIELD_CLASSES } from "./api-key-styles";
+import { ONBOARDING_COPY } from "./copy";
 
 const KEY_NAME_MAX_LENGTH = 100;
 
@@ -108,7 +109,7 @@ export function CreateKeyForm({
         </p>
       ) : (
         <p id={hintId} className="text-sm text-rail-muted-foreground">
-          Shown in Settings → API keys so you can revoke it later.
+          {ONBOARDING_COPY.connect.cardDescription}
         </p>
       )}
       {formError ? (

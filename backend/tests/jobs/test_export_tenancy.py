@@ -106,7 +106,7 @@ async def _queued_export(
     session_factory: SessionFactory,
     project_id: uuid.UUID,
     export_format: ExportFormat,
-    **extra_filters: str,
+    **extra_filters: object,
 ) -> uuid.UUID:
     now = datetime.now(UTC)
     row = await seed_row(session_factory, "exports", project_id)
@@ -234,3 +234,40 @@ async def test_trace_export_csv_has_a_metadata_column_and_filters_by_metadata(
     assert sorted(trace["trace_id"] for trace in traces) == SHARED_TRACE_IDS
     assert {trace["name"] for trace in traces} == {"trace-A"}
     assert {trace["metadata"] for trace in traces} == {'{"a.b-c": "x", "région": "Île-de-France"}'}
+
+
+async def test_trace_export_by_ids_keeps_only_the_selected_traces_in_the_window(
+    session_factory: SessionFactory, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`trace_ids` narrows the filtered set: the count, the file and the window all apply.
+
+    The ids are sent upper-case (stored ids are lower-case); the old trace is selected but
+    started before the window, so it stays out.
+    """
+    a, c = SHARED_TRACE_IDS[0], SHARED_TRACE_IDS[2]
+    old = "c" * 32
+    (project,) = await new_projects(session_factory, 1)
+    await _seed_traces(session_factory, project, "A", SHARED_TRACE_IDS)
+    await _seed_traces(session_factory, project, "A", [old])
+    await execute(
+        session_factory,
+        "UPDATE traces SET started_at = started_at - interval '3 days', "
+        "ended_at = ended_at - interval '3 days' WHERE trace_id = :trace",
+        {"trace": old},
+    )
+    store = StreamingMemoryStore()
+    monkeypatch.setattr(export_jobs, "get_object_store", lambda _settings: store)
+    export_id = await _queued_export(
+        session_factory, project, ExportFormat.CSV, trace_ids=[a.upper(), c, old]
+    )
+
+    await _run_export(session_factory, settings, project, export_id)
+
+    (row,) = await fetch(
+        session_factory,
+        "SELECT status::text AS status, storage_key, row_count FROM exports WHERE id = :id",
+        {"id": export_id},
+    )
+    assert (row["status"], row["row_count"]) == ("done", 2)
+    traces = _exported_traces(store.objects[row["storage_key"]], ExportFormat.CSV)
+    assert sorted(trace["trace_id"] for trace in traces) == [a, c]

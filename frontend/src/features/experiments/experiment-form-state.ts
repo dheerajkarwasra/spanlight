@@ -6,8 +6,11 @@ import {
   type ExperimentCreate,
   type ExperimentParams,
   type ExperimentTarget,
+  type PromptVersion,
 } from "@/lib/api";
 import { roleBlockedCopy } from "@/lib/permissions";
+
+import type { NewExperimentSearch } from "./search";
 
 export type TargetSource = "prompt_version" | "messages";
 
@@ -68,6 +71,26 @@ export const INITIAL_STATE: FormState = {
   maxCost: "",
   maxItems: "",
 };
+
+/**
+ * What a link to the new-experiment page fills in. The version counts only when it is one of the
+ * prompt's `versions` (the picker's list), and then brings its model exactly like picking it does.
+ */
+export function prefillState(
+  search: Pick<NewExperimentSearch, "dataset" | "prompt" | "version">,
+  versions: PromptVersion[] | undefined,
+): Partial<FormState> {
+  const patch: Partial<FormState> = {};
+  if (search.dataset) patch.datasetId = search.dataset;
+  if (search.prompt) patch.promptName = search.prompt;
+  const version = search.prompt ? versions?.find((item) => item.id === search.version) : undefined;
+  if (version) {
+    patch.source = "prompt_version";
+    patch.versionId = version.id;
+    if (version.model_config.model) patch.model = version.model_config.model;
+  }
+  return patch;
+}
 
 interface NumberRule {
   min: number;

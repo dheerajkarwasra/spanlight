@@ -10,7 +10,7 @@
 | `settle.sh` | Waits (at most 2 minutes) until no application query and no job is running. The workflow calls it before each k6 script. |
 | `ingest.js` | 500 spans a second (5 requests of 100 spans) to `POST /v1/traces`. Threshold: p95 below 200 ms. |
 | `overview.js` | 20 requests a second to the overview metrics, rotating through 1 hour, 24 hours, 7 days and 30 days. Threshold: p95 below 300 ms. |
-| `traces.js` | 20 requests a second to the trace list: the first page, one model, failed traces only. Threshold: p95 below 300 ms. |
+| `traces.js` | 20 requests a second to the trace list: the first page, one model, failed traces only, and the first page sorted by duration, cost, tokens or retry cost; the summary gives each variant's median and p95. Threshold: p95 below 300 ms. |
 | `gateway.js` | The LLM gateway's overhead. Two scenarios of 50 requests a second for 60 s, one after the other: a chat completion through `/gw/v1/chat/completions`, then the same request straight to the fake provider. Thresholds: p95 through the gateway below 25 ms, p95 direct below 5 ms; the overhead (the difference of the two p95 values) must be below 20 ms. |
 | `fake_provider.py` | A small ASGI app that answers `POST /v1/chat/completions` and `GET /v1/models` with fixed bodies after `FAKE_PROVIDER_DELAY_MS` (default 0). Run by `compose.load.yaml`. |
 | `seed_gateway.py` | Creates a workspace, an `openai_compatible` credential on the fake provider, a route and a gateway key without limits, and writes the key to a JSON file. Needs no spans. |

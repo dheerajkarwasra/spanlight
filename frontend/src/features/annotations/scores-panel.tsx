@@ -32,6 +32,8 @@ interface ScoresPanelProps {
   instructions: string | null;
   draft: ReturnType<typeof useItemDraft>;
   work: WorkControls;
+  /** The "Last item" strip after a submit, at the top of the card. */
+  lastItem: ReactNode;
 }
 
 /**
@@ -40,7 +42,7 @@ interface ScoresPanelProps {
  * is set and valid. Each new item moves focus to the panel's heading, so keyboard and screen
  * reader users start the next item where they finished the last.
  */
-export function ScoresPanel({ configs, instructions, draft, work }: ScoresPanelProps) {
+export function ScoresPanel({ configs, instructions, draft, work, lastItem }: ScoresPanelProps) {
   const { notice, busy, onSubmit, onSkip, onRelease, moreActions } = work;
   const headingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
@@ -57,6 +59,7 @@ export function ScoresPanel({ configs, instructions, draft, work }: ScoresPanelP
       aria-label="Scores"
       className="flex w-full shrink-0 flex-col gap-4 p-5 sm:p-[22px] lg:w-[410px]"
     >
+      {lastItem}
       <div className="flex items-center gap-2">
         <h2
           ref={headingRef}
@@ -69,43 +72,46 @@ export function ScoresPanel({ configs, instructions, draft, work }: ScoresPanelP
           {setCount(configs, draft.values)} of {configs.length} set
         </span>
       </div>
-      {instructions ? <Instructions text={instructions} /> : null}
-      {configs.map((config) => (
-        <ScoreInput
-          key={config.id}
-          config={config}
-          value={draft.values[config.name] ?? null}
-          onChange={(value) => draft.setValue(config.name, value)}
-          keyed={keyed?.name === config.name}
-          onFocusWithin={() => draft.setFocused(config.name)}
-        />
-      ))}
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-center">
-          <label htmlFor={commentId} className="flex-1 text-xs font-semibold text-foreground">
-            Comment (optional)
-          </label>
-          <span className="text-2xs font-medium text-muted-foreground tabular">
-            {draft.comment.length.toLocaleString()} of {COMMENT_LIMIT.toLocaleString()}
-          </span>
+      {/* Below lg the action stack is sticky (about 13rem): focused fields scroll clear of it. */}
+      <div className="flex flex-col gap-4 max-lg:[&_*]:scroll-mb-52">
+        {instructions ? <Instructions text={instructions} /> : null}
+        {configs.map((config) => (
+          <ScoreInput
+            key={config.id}
+            config={config}
+            value={draft.values[config.name] ?? null}
+            onChange={(value) => draft.setValue(config.name, value)}
+            keyed={keyed?.name === config.name}
+            onFocusWithin={() => draft.setFocused(config.name)}
+          />
+        ))}
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center">
+            <label htmlFor={commentId} className="flex-1 text-xs font-semibold text-foreground">
+              Comment (optional)
+            </label>
+            <span className="text-2xs font-medium text-muted-foreground tabular">
+              {draft.comment.length.toLocaleString()} of {COMMENT_LIMIT.toLocaleString()}
+            </span>
+          </div>
+          <Textarea
+            id={commentId}
+            value={draft.comment}
+            maxLength={COMMENT_LIMIT}
+            placeholder="Anything the next reviewer should know"
+            aria-describedby={`${commentId}-hint`}
+            onFocus={() => draft.setFocused(null)}
+            onChange={(event) => draft.setComment(event.target.value)}
+            className="min-h-[72px]"
+          />
+          <p
+            id={`${commentId}-hint`}
+            className="flex gap-1.5 text-xs font-medium text-muted-foreground"
+          >
+            <Info aria-hidden className="mt-px size-3.5 shrink-0" />
+            Shortcuts are paused while you type in this field.
+          </p>
         </div>
-        <Textarea
-          id={commentId}
-          value={draft.comment}
-          maxLength={COMMENT_LIMIT}
-          placeholder="Anything the next reviewer should know"
-          aria-describedby={`${commentId}-hint`}
-          onFocus={() => draft.setFocused(null)}
-          onChange={(event) => draft.setComment(event.target.value)}
-          className="min-h-[72px]"
-        />
-        <p
-          id={`${commentId}-hint`}
-          className="flex gap-1.5 text-xs font-medium text-muted-foreground"
-        >
-          <Info aria-hidden className="mt-px size-3.5 shrink-0" />
-          Shortcuts are paused while you type in this field.
-        </p>
       </div>
       {notice === null ? null : (
         <Callout tone="danger" role="alert" title={notice.title}>

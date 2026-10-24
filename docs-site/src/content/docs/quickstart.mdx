@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-{/* Sources: deploy/compose.yaml, deploy/.env.example, frontend/src/features/onboarding/first-trace-status.tsx, frontend/src/features/traces/traces-empty-state.tsx, sdks/python/src/spanlight/_client.py, sdks/python/src/spanlight/_exporter_delivery.py, docs/api-deviations.md */}
+{/* Sources: deploy/compose.yaml, deploy/.env.example, frontend/src/features/onboarding/first-trace-status.tsx, frontend/src/features/onboarding/connect-step.tsx, frontend/src/features/onboarding/test-trace.ts, frontend/src/features/traces/traces-empty-state.tsx, sdks/python/src/spanlight/_client.py, sdks/python/src/spanlight/_exporter_delivery.py, docs/api-deviations.md */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
@@ -71,7 +71,7 @@ Instead of passing them to `init`, you can set `SPANLIGHT_API_KEY` and `SPANLIGH
 
 ## Check it worked
 
-The setup wizard waits on "Waiting for your first trace…" and checks every 2 seconds. When your script has run, it changes to a card titled "First trace received" with the text "Your app is connected." Select **View traces**: the list has one trace named `answer`, the name of the traced function. Open it to see the model call as a span with its tokens and cost.
+The setup wizard waits on "Waiting for your first trace…" and checks every 2 seconds. When your script has run, it changes to a card titled "First trace received" with the text "Your app is connected." While the key you created is still on screen, the page stays so you can copy it: select **Open your first trace**. The page opens the trace by itself, with the message "Your first trace arrived.", only when the trace arrives while you wait there and no new key is on screen. If the trace had already arrived, for example when you reload the page, it offers **Open your first trace** instead. The trace is named `answer`, the name of the traced function, and shows the model call as a span with its tokens and cost.
 
 From there you have an [overview](/docs/guides/overview/) of latency, tokens, cost and errors, a [trace explorer](/docs/guides/traces/) with a span waterfall, and [session views](/docs/guides/traces/) of multi-turn conversations. A model with no known price shows its cost as unknown, never as $0.
 
@@ -79,7 +79,7 @@ From there you have an [overview](/docs/guides/overview/) of latency, tokens, co
 
 - **`docker compose up` stops with "required variable … is missing a value".** A secret in `deploy/.env` is empty. The message names it: `SECRET_KEY`, `APP_DB_PASSWORD` or `POSTGRES_PASSWORD`. Fill all three, then run the command again.
 - **`/health/ready` does not answer `200`.** The API, the database or the worker is not ready yet, or a migration is pending. Read the fields of the answer in [Read the readiness check first](/docs/troubleshooting/#read-the-readiness-check-first).
-- **The wizard keeps waiting.** The SDK sends to `http://localhost:8000` unless told otherwise, and the stack serves on `8080`. Pass `host="http://localhost:8080"` as shown above. See [The SDK points at the wrong host](/docs/troubleshooting/#the-sdk-points-at-the-wrong-host).
+- **The wizard keeps waiting.** The SDK sends to `http://localhost:8000` unless told otherwise, and the stack serves on `8080`. Pass `host="http://localhost:8080"` as shown above. See [The SDK points at the wrong host](/docs/troubleshooting/#the-sdk-points-at-the-wrong-host). To check the key and the server without your code, select **Send a test trace** under the new key in the wizard: the row then reads "Test trace sent. Waiting for it to arrive…", and the test trace, named "Test trace from setup", becomes your first trace.
 - **The script logs "no API key configured".** Without a key the SDK does nothing. Pass the `spl_live_` key you copied in the wizard. See [The SDK has no API key, or is switched off](/docs/troubleshooting/#the-sdk-has-no-api-key-or-is-switched-off).
 - **The script ends and no trace arrives.** The last spans were still queued when the process exited. Keep the `spanlight.flush()` call at the end. See [A short script exits before the spans are sent](/docs/troubleshooting/#a-short-script-exits-before-the-spans-are-sent).
 

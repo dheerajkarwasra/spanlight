@@ -7,7 +7,7 @@ not be measured is `null`, never `"0"`.
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Self
 
 from app.alerts.payload import DecimalStr
@@ -18,7 +18,14 @@ from app.budgets.schemas import BudgetPatch, BudgetSpec
 from app.budgets.types import BudgetAction, BudgetPeriod, BudgetScope
 from app.db.models import AlertState, Budget
 
-__all__ = ["BudgetOut", "BudgetPatch", "BudgetSpec", "BudgetStateOut"]
+__all__ = [
+    "BudgetBurnOut",
+    "BudgetOut",
+    "BudgetPatch",
+    "BudgetSpec",
+    "BudgetStateOut",
+    "BurnPointOut",
+]
 
 
 class BudgetStateOut(ApiModel):
@@ -80,3 +87,22 @@ class BudgetOut(ApiModel):
         return cls.model_validate(budget).model_copy(
             update={"state": BudgetStateOut.of(budget, state, now)}
         )
+
+
+class BurnPointOut(ApiModel):
+    """One UTC day of the period; the first and the current day can be partial."""
+
+    day: date
+    # The day's spend; null when it had spans and none could be priced.
+    spend_usd: DecimalStr | None
+    # The known days' spend so far, this one included; null until the first known day.
+    cumulative_usd: DecimalStr | None
+
+
+class BudgetBurnOut(ApiModel):
+    """The budget's spend per day of the current period, up to now."""
+
+    period_start: datetime
+    resets_at: datetime
+    amount_usd: DecimalStr
+    points: list[BurnPointOut]

@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
+import { NO_PRICE_REASON } from "@/components/cost-value";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { Span } from "@/lib/api";
 
@@ -42,6 +43,7 @@ const base: Span = {
   prompt_version_id: null,
   usage_rollup: false,
   usage_state: "priced",
+  request_hash: null,
 };
 
 function renderCard(overrides: Partial<Span>) {
@@ -171,7 +173,7 @@ describe("SpanUsageCard unknown reasons", () => {
 
   it("blames the price only when both token counts are known", () => {
     renderCard({ cost_usd: null, pricing_version: null, usage_state: "no_price" });
-    expect(unknownLabel("Cost")).toBe("Unknown: No price for this model");
+    expect(unknownLabel("Cost")).toBe(`Unknown: ${NO_PRICE_REASON}`);
   });
 
   it("does not credit the SDK with a count nobody reported", () => {

@@ -12,6 +12,7 @@ import { orgsApi, queryKeys, type Membership, type OnboardingStatus } from "@/li
 import { readLastProject, type LastProject } from "@/lib/last-project";
 
 import { ConnectStep } from "./connect-step";
+import { ONBOARDING_COPY } from "./copy";
 import { OnboardingLayout } from "./onboarding-layout";
 import { OnboardingStepper } from "./onboarding-stepper";
 import { OrgStep } from "./org-step";
@@ -32,8 +33,6 @@ const HEADING_ID = "onboarding-step-heading";
 export function OnboardingPage() {
   const search = onboardingRoute.useSearch();
   const me = useMe();
-  // Only an organization created on this page gets "Organization created." in step 2.
-  const [createdOrgId, setCreatedOrgId] = useState<string | null>(null);
 
   const isOrgMember = me.memberships.some((membership) => membership.org.id === search.org);
   const projects = useQuery({
@@ -66,13 +65,7 @@ export function OnboardingPage() {
           }}
         />
       ) : (
-        <OnboardingStep
-          state={state}
-          memberships={me.memberships}
-          status={status}
-          createdOrgId={createdOrgId}
-          onOrgCreated={setCreatedOrgId}
-        />
+        <OnboardingStep state={state} memberships={me.memberships} status={status} />
       )}
     </OnboardingLayout>
   );
@@ -91,17 +84,9 @@ interface OnboardingStepProps {
   state: OnboardingState;
   memberships: readonly Membership[];
   status: UseQueryResult<OnboardingStatus>;
-  createdOrgId: string | null;
-  onOrgCreated: (orgId: string) => void;
 }
 
-function OnboardingStep({
-  state,
-  memberships,
-  status,
-  createdOrgId,
-  onOrgCreated,
-}: OnboardingStepProps) {
+function OnboardingStep({ state, memberships, status }: OnboardingStepProps) {
   switch (state.step) {
     case "loading":
       return <StepSkeleton />;
@@ -114,15 +99,14 @@ function OnboardingStep({
           hero={{
             title: "Set up in three",
             accent: "steps.",
-            description: "Create an organization, add a project, then send your first trace.",
+            description: ONBOARDING_COPY.org.heroDescription,
           }}
         >
-          <OrgStep memberships={memberships} onCreated={onOrgCreated} />
+          <OrgStep memberships={memberships} />
         </StepSection>
       );
 
-    case "project": {
-      const justCreated = createdOrgId === state.membership.org.id;
+    case "project":
       return (
         <StepSection
           step="project"
@@ -130,15 +114,12 @@ function OnboardingStep({
           hero={{
             title: `${state.membership.org.name} is`,
             accent: "ready.",
-            description: justCreated
-              ? "Organization created. Next, add the app or service you want to observe."
-              : "Next, add the app or service you want to observe.",
+            description: ONBOARDING_COPY.project.heroDescription,
           }}
         >
           <ProjectStep membership={state.membership} />
         </StepSection>
       );
-    }
 
     case "connect": {
       const received = status.data?.has_traces === true;

@@ -82,7 +82,8 @@ export async function createWorkspace(
   let apiKey: string | null = null;
   if (options.apiKey) {
     await page.getByRole("button", { name: "Create API key" }).click();
-    await expect(page.getByText("This key is shown once.", { exact: false })).toBeVisible();
+    // Only the one-time reveal has this button, so the secret is on screen once it shows.
+    await expect(page.getByRole("button", { name: "Copy API key" })).toBeVisible();
     apiKey = SECRET_PATTERN.exec(await page.locator("main").innerText())?.[0] ?? null;
     expect(apiKey, "the new API key secret is displayed").toBeTruthy();
   }
@@ -108,8 +109,12 @@ export interface SpanInput {
   provider?: string;
   model?: string;
   usage?: UsageInput;
-  /** When the call ended; now by default. It started 1.2 s earlier. */
+  /** When the call ended; now by default. */
   endTime?: Date;
+  /** How long the call took; 1.2 s by default. */
+  durationMs?: number;
+  /** The trace's session (`trace.session_id`), read from a trace's first span. */
+  sessionId?: string;
   status?: "ok" | "error";
   release?: string;
   userId?: string;
@@ -155,6 +160,7 @@ function spanBody(traceId: string, span: SpanInput, first: SpanInput): Record<st
   };
   if (first.release !== undefined) trace.release = first.release;
   if (first.userId !== undefined) trace.user_id = first.userId;
+  if (first.sessionId !== undefined) trace.session_id = first.sessionId;
   if (first.metadata !== undefined) trace.metadata = first.metadata;
   const body: Record<string, unknown> = {
     trace_id: traceId,
@@ -163,7 +169,7 @@ function spanBody(traceId: string, span: SpanInput, first: SpanInput): Record<st
     name: span.name ?? "e2e chat",
     kind: "llm",
     status: span.status ?? "ok",
-    start_time: new Date(end - 1200).toISOString(),
+    start_time: new Date(end - (span.durationMs ?? 1200)).toISOString(),
     end_time: new Date(end).toISOString(),
     provider: span.provider ?? "openai",
     model: span.model ?? "gpt-4o-mini",

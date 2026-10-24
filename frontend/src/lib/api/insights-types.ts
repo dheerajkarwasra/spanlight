@@ -80,9 +80,23 @@ export interface InsightFeedback {
   wrong: number;
 }
 
+/**
+ * The span an evidence trace opens on: its first failed span (LLM preferred), else its first LLM
+ * span, else its first span. `status` is the span's stored status (`ok`, `error`, `unset`).
+ */
+export interface EvidenceSpan {
+  trace_id: string;
+  span_id: string;
+  name: string;
+  status: string;
+  model: string | null;
+}
+
 /** The insight and its completed explanations, newest first (at most 20). */
 export interface InsightDetail extends Insight {
   explanations: Explanation[];
+  /** One per evidence trace still stored, in `evidence.trace_ids` order. */
+  evidence_spans: EvidenceSpan[];
   feedback: InsightFeedback;
 }
 

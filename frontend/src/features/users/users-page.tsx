@@ -1,8 +1,7 @@
 import { getRouteApi } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { Users } from "lucide-react";
 
-import { EmptyState } from "@/components/empty-state";
+import { DataTable, type SortOrder } from "@/components/data-table";
 import { ErrorState } from "@/components/error-state";
 import { FieldSelect } from "@/components/field-select";
 import { ListFooter } from "@/components/list-footer";
@@ -10,13 +9,17 @@ import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { useProjectFilters } from "@/features/shell/project-context";
-import type { UserSort } from "@/lib/api";
+import { useHasTraces } from "@/features/shell/use-has-traces";
+import type { UserSort, UserStats } from "@/lib/api";
 import { formatInteger } from "@/lib/format";
 import { rangePhrase } from "@/lib/time-range";
 
 import { ComputedAtChip } from "./computed-at-chip";
-import { rememberUsersSort, SORT_COLUMNS, sortPhrase, withSort } from "./user-sort";
-import { UserTiles, UserTilesSkeleton, UsersTable, UsersTableSkeleton } from "./users-table";
+import { UserSearchInput } from "./user-search-input";
+import { rememberUsersList, SORT_COLUMNS, sortPhrase, withSort } from "./user-sort";
+import { UserTiles, UserTilesSkeleton } from "./user-row";
+import { USER_COLUMNS, useUserHref } from "./users-columns";
+import { UsersEmptyState } from "./users-empty-state";
 import { useUserListQuery } from "./users-queries";
 
 const usersRoute = getRouteApi("/_authed/$orgId/$projectId/users");
@@ -26,19 +29,23 @@ function isUserSort(value: string): value is UserSort {
 }
 
 export function UsersPage() {
-  const { sort } = usersRoute.useSearch();
+  const search = usersRoute.useSearch();
+  const { sort = "cost", order = "desc", q } = search;
   const navigate = usersRoute.useNavigate();
   const { range } = useProjectFilters();
-  const usersQuery = useUserListQuery(sort);
+  const hasTraces = useHasTraces();
+  const userHref = useUserHref();
+  const usersQuery = useUserListQuery({ sort, order, q });
   const users = usersQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const stale = usersQuery.isPlaceholderData;
 
   useEffect(() => {
-    rememberUsersSort(sort);
-  }, [sort]);
+    // The URL's own values, so "Back to users" keeps a default sort out of the URL too.
+    rememberUsersList({ sort: search.sort, order: search.order, q });
+  }, [search.sort, search.order, q]);
 
-  function onSort(next: UserSort) {
-    void navigate({ search: (previous) => withSort(previous, next) });
+  function onSort(next: UserSort, nextOrder: SortOrder = "desc") {
+    void navigate({ search: (previous) => withSort(previous, next, nextOrder) });
   }
   function loadMore() {
     void usersQuery.fetchNextPage();
@@ -47,8 +54,9 @@ export function UsersPage() {
   const count = formatInteger(users.length) ?? String(users.length);
   const noun = users.length === 1 ? "user" : "users";
   const footerProps = {
-    summary: `Showing ${count} ${noun} · ${sortPhrase(sort)}`,
-    // Stale rows (a sort just changed) would fetch a page of the new key from placeholder state.
+    summary: `Showing ${count} ${noun} · ${sortPhrase(sort, order)}`,
+    // Stale rows (a sort or search just changed) would fetch a page of the new key from
+    // placeholder state.
     hasNextPage: usersQuery.hasNextPage && !stale,
     isFetchingNextPage: usersQuery.isFetchingNextPage,
     onLoadMore: loadMore,
@@ -69,27 +77,21 @@ export function UsersPage() {
     if (usersQuery.isError && users.length === 0) {
       return "Count unavailable";
     }
+    const first = usersQuery.data?.pages[0];
+    const computedAt = first?.computed_at ?? null;
+    const pendingTraces = first?.pending_traces ?? null;
     return (
       <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <span>{`${usersQuery.hasNextPage ? "Top " : ""}${count} end ${noun} ${rangePhrase(range)}`}</span>
-        <ComputedAtChip value={usersQuery.data?.pages[0]?.computed_at ?? null} />
+        {/* Nothing computed and nothing pending: the window is empty, not behind. */}
+        {computedAt === null && pendingTraces === null ? null : (
+          <ComputedAtChip value={computedAt} pendingTraces={pendingTraces} />
+        )}
       </span>
     );
   }
 
   function renderBody() {
-    if (usersQuery.isPending) {
-      return (
-        <Card role="status" aria-label="Loading users" className="p-2">
-          <div className="hidden md:block">
-            <UsersTableSkeleton />
-          </div>
-          <div className="md:hidden">
-            <UserTilesSkeleton />
-          </div>
-        </Card>
-      );
-    }
     if (usersQuery.isError && users.length === 0) {
       return (
         <Card>
@@ -103,25 +105,52 @@ export function UsersPage() {
         </Card>
       );
     }
-    if (users.length === 0) {
+    if (!usersQuery.isPending && users.length === 0) {
       return (
         <Card>
-          <UsersEmptyState />
+          <UsersEmptyState q={q} unconfigured={hasTraces === false} />
         </Card>
       );
     }
+    const pending = usersQuery.isPending;
     return (
       <>
-        <Card className="@container hidden flex-col p-2 md:flex">
-          <UsersTable users={users} sort={sort} onSort={onSort} stale={stale} />
-          {loadMoreError ?? <ListFooter layout="card" {...footerProps} />}
+        {/* One announcement for both layouts; the skeletons themselves are aria-hidden. */}
+        <p className="sr-only" role="status" aria-live="polite">
+          {pending ? "Loading users" : ""}
+        </p>
+        <Card className="hidden flex-col p-2 md:flex">
+          <DataTable<UserStats>
+            id="users"
+            label="End users"
+            columns={USER_COLUMNS}
+            rows={users}
+            rowKey={(user) => user.external_user_id}
+            rowHref={userHref}
+            sort={{
+              key: sort,
+              order,
+              onChange: (key, nextOrder) => {
+                if (isUserSort(key)) onSort(key, nextOrder);
+              },
+            }}
+            empty={null}
+            loading={pending || stale}
+          />
+          {pending ? null : (loadMoreError ?? <ListFooter layout="card" {...footerProps} />)}
         </Card>
         <div className="flex flex-col gap-4 md:hidden">
-          <UserTiles users={users} stale={stale} />
-          {loadMoreError ? (
-            <Card>{loadMoreError}</Card>
+          {pending ? (
+            <UserTilesSkeleton />
           ) : (
-            <ListFooter layout="stacked" {...footerProps} />
+            <>
+              <UserTiles users={users} stale={stale} />
+              {loadMoreError ? (
+                <Card>{loadMoreError}</Card>
+              ) : (
+                <ListFooter layout="stacked" {...footerProps} />
+              )}
+            </>
           )}
         </div>
       </>
@@ -131,6 +160,7 @@ export function UsersPage() {
   return (
     <div className="flex flex-col gap-4 md:gap-6">
       <PageHeader title="Users" description={headerDescription()} />
+      <UserSearchInput />
       <div className="flex flex-col gap-1.5 md:hidden">
         <Label htmlFor="users-sort">Sort by</Label>
         <FieldSelect
@@ -146,29 +176,5 @@ export function UsersPage() {
       </div>
       {renderBody()}
     </div>
-  );
-}
-
-function UsersEmptyState() {
-  return (
-    <EmptyState
-      icon={Users}
-      title="No end users in this window"
-      description={
-        <p>
-          No end users in this window. Set <Code>user_id</Code> on your traces (SDK{" "}
-          <Code>user_id=</Code>, OTLP <Code>user.id</Code>, gateway header{" "}
-          <Code>x-spanlight-user</Code>).
-        </p>
-      }
-    />
-  );
-}
-
-function Code({ children }: { children: string }) {
-  return (
-    <code className="rounded-xs border border-border bg-surface-muted px-1.5 py-0.5 font-mono text-label text-foreground">
-      {children}
-    </code>
   );
 }

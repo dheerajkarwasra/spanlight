@@ -1,3 +1,4 @@
+import { NO_PRICE_REASON } from "@/components/cost-value";
 import { ValueOrUnknown } from "@/components/unknown-value";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -19,8 +20,6 @@ const CARD = {
   description: "Requests and cost per gateway key",
   link: { to: "/$orgId/$projectId/gateway/keys", label: "All keys" },
 } as const;
-
-const NO_PRICE = "No price for this model";
 
 /** Requests, errors and cost per gateway key. A cost of "—" means a model had no price. */
 export function KeyTable({ keys }: { keys: readonly GatewayKeyUsage[] }) {
@@ -55,7 +54,7 @@ export function KeyTable({ keys }: { keys: readonly GatewayKeyUsage[] }) {
                       <ErrorCount errors={key.errors} requests={key.requests} />
                     </TableCell>
                     <TableCell className="text-right tabular">
-                      <ValueOrUnknown value={formatCost(key.cost_usd)} reason={NO_PRICE} />
+                      <ValueOrUnknown value={formatCost(key.cost_usd)} reason={NO_PRICE_REASON} />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -76,7 +75,7 @@ export function KeyTable({ keys }: { keys: readonly GatewayKeyUsage[] }) {
                     <ErrorCount errors={key.errors} requests={key.requests} /> errors
                   </span>
                   <span aria-hidden>·</span>
-                  <ValueOrUnknown value={formatCost(key.cost_usd)} reason={NO_PRICE} />
+                  <ValueOrUnknown value={formatCost(key.cost_usd)} reason={NO_PRICE_REASON} />
                 </p>
               </li>
             ))}

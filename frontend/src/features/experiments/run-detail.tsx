@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { Experiment, ExperimentRun } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/format";
 
-import { BackToExperiment } from "./back-link";
+import { ExperimentBreadcrumbs } from "./back-link";
 import {
   useEvaluatorsQuery,
   useExperimentQuery,
@@ -86,7 +86,11 @@ function RunView({ experiment, run }: { experiment: Experiment; run: ExperimentR
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <BackToExperiment experimentId={experiment.id} name={experiment.name} />
+        <ExperimentBreadcrumbs
+          experimentId={experiment.id}
+          name={experiment.name}
+          current={runName(run.number)}
+        />
         <PageHeader
           title={
             <span className="inline-flex flex-wrap items-center gap-3">

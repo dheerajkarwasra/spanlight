@@ -26,7 +26,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 /** Why a call has no provider: the gateway answered it itself, or the sender named none. */
 export const NO_PROVIDER_REASON =
-  "No provider answered or was reported: a gateway cache hit, a call the gateway refused, or a span sent without a provider.";
+  "Gateway cache hits, gateway refusals and spans sent without a provider";
 
 /** A provider's display name; "No provider" for a call that named none. */
 export function providerLabel(provider: string | null): string {

@@ -28,3 +28,17 @@ export function SettingsSaveBar({ hint, dirty, saving }: SettingsSaveBarProps) {
     </div>
   );
 }
+
+/** Sits after the save bar, above cards that save on their own (score configs, org security). */
+export function SelfSavingHeading({ id }: { id?: string }) {
+  return (
+    <div className="flex flex-col gap-0.5 pt-1">
+      <h2 id={id} className="text-xl font-bold tracking-tight text-foreground">
+        Saved as you change them
+      </h2>
+      <p className="text-xs font-medium text-muted-foreground">
+        These settings save on their own; the bar above doesn&rsquo;t cover them.
+      </p>
+    </div>
+  );
+}

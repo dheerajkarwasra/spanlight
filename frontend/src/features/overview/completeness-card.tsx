@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, Info } from "lucide-react";
+import { ChevronRight, CircleCheck, Info } from "lucide-react";
 import { useId, type ReactNode } from "react";
 
 import { ErrorState } from "@/components/error-state";
@@ -23,6 +23,7 @@ import {
   completenessText,
   lossTiles,
   storedLine,
+  totalLost,
 } from "./completeness-format";
 
 const CARD_CLASSES = "@container flex min-w-0 flex-col gap-4 p-5 sm:p-6";
@@ -44,6 +45,21 @@ interface CompletenessCardProps {
 export function CompletenessCard({ result, rangeLabel, className }: CompletenessCardProps) {
   const titleId = useId();
   const ratio = completenessText(result);
+  if (totalLost(result.losses) === 0) {
+    // Nothing lost: one line (spec O8); the zero is a lower bound, as most senders report nothing.
+    return (
+      <Card
+        className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3 sm:px-6", className)}
+      >
+        <CircleCheck aria-hidden className="size-4 shrink-0 text-success" />
+        <p className="text-sm font-semibold text-foreground">No spans lost in this window.</p>
+        <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          ≈ lower bound
+          <InfoButton label="Why this is a lower bound" content={SDK_UNREPORTED_REASON} />
+        </span>
+      </Card>
+    );
+  }
   return (
     <Card role="region" aria-labelledby={titleId} className={cn(CARD_CLASSES, className)}>
       <div className="flex flex-col gap-4 @4xl:flex-row @4xl:items-center @4xl:gap-6">

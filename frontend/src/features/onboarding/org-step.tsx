@@ -8,6 +8,7 @@ import { refreshMe } from "@/features/auth/queries";
 import { orgsApi, type Membership } from "@/lib/api";
 import { ROLE_LABELS } from "@/lib/permissions";
 
+import { ONBOARDING_COPY } from "./copy";
 import { NameForm } from "./name-form";
 import { StepCard } from "./step-card";
 
@@ -15,11 +16,9 @@ const onboardingRoute = getRouteApi("/_authed/onboarding");
 
 interface OrgStepProps {
   memberships: readonly Membership[];
-  /** Called with the new organization's id once it exists, before moving to step 2. */
-  onCreated: (orgId: string) => void;
 }
 
-export function OrgStep({ memberships, onCreated }: OrgStepProps) {
+export function OrgStep({ memberships }: OrgStepProps) {
   const navigate = onboardingRoute.useNavigate();
   const queryClient = useQueryClient();
 
@@ -28,7 +27,6 @@ export function OrgStep({ memberships, onCreated }: OrgStepProps) {
     // Wait for /me to include the new membership so step 2 can verify it.
     await refreshMe(queryClient);
     toast.success(`Created ${org.name}`);
-    onCreated(org.id);
     await navigate({ search: { org: org.id } });
   }
 
@@ -36,8 +34,8 @@ export function OrgStep({ memberships, onCreated }: OrgStepProps) {
     <div className="flex flex-col gap-8">
       <StepCard
         icon={Building2}
-        title="Create your organization"
-        description="Usually your company or team. You can invite teammates later."
+        title={ONBOARDING_COPY.org.cardTitle}
+        description={ONBOARDING_COPY.org.cardDescription}
       >
         <NameForm
           noun="organization"

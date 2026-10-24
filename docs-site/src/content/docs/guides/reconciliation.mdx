@@ -78,13 +78,15 @@ The projects you tick are Spanlight's side of the comparison: the report adds up
 
 ### In the app
 
-On **Billing sources**, select a source's name to open its reconciliation page. Every member can read it.
+**Cost, Reconciliation** lists the billing sources that cover the project, with each source's provider, projects, window, provider and Spanlight totals, variance and last fetch; select one to open its reconciliation page. **Billing sources** in Settings opens the same pages from a source's name. Every member can read them; a member who cannot list the organization's sources is asked to ask an admin.
+
+The report's header has **Manage source**, which opens the source in Settings.
 
 - The header shows the source's status and what it compares, with the window picker, **Refresh** (for an API source) or **Upload CSV** (for a CSV source), and **Download CSV**. Only admins and owners see Refresh and Upload CSV.
 - The window picker names the window in whole UTC days. Pick **Last 7 days**, **Last 14 days** or **Last 31 days**, or set a **First day** and a **Last day** and press **Apply window**. The page opens on the last 14 days.
 - Five summary tiles total the window: **Provider USD**, **Spanlight USD**, **Explained**, **Residual** with its variance, and **Settled days**, such as "12 of 14".
 - **Daily reconciliation** lists the days, newest first, with the columns **Day**, **Status**, **Provider**, **Spanlight**, **Explained**, **Residual** and **Variance**. A day can carry the chips **Provisional**, **Rollup pending** or **Spans no longer retained**. Each variance badge names its band, in words as well as colour: **≤ 2 %**, **2–10 %** or **> 10 %**.
-- Expand a day to see its model groups. Each group shows the four figures, the token classes on both sides, and its **Explained** lines, such as **Batch spend** or **Usage not reported**. **Credits** and **Other provider charges** follow, listed apart and never subtracted.
+- Expand a day to see its model groups. Each group shows the four figures, the token classes on both sides, and its **Explained** lines, such as **Batch spend** or **Usage not reported**. **View traces** on a group opens that day's traces of the group's first Spanlight model in this project. **Credits** and **Other provider charges** follow, listed apart and never subtracted.
 - A figure Spanlight does not have shows "—". Hover or focus it for the reason, such as "Not fetched yet" or "Rollup pending".
 - When the source has no provider data yet, or its last fetch failed, a notice above the tiles says so and which days it leaves open. If the provider refused the key, it offers admins and owners **Rotate key**.
 

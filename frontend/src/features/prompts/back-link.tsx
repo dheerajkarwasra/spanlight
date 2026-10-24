@@ -1,20 +1,40 @@
-import { BackLink } from "@/components/back-link";
+import { Breadcrumbs, Crumb } from "@/components/breadcrumbs";
 import { useProjectParams } from "@/features/shell";
 
 import { usePromptLink } from "./use-prompt-links";
 
-/** Back to the prompt list. */
-export function BackToPrompts() {
+/** "Prompts › <current>": back to the prompt list. */
+export function PromptsBreadcrumbs({ current }: { current: string }) {
   const { orgId, projectId } = useProjectParams();
   return (
-    <BackLink to="/$orgId/$projectId/prompts" params={{ orgId, projectId }}>
-      Prompts
-    </BackLink>
+    <Breadcrumbs current={current}>
+      <Crumb to="/$orgId/$projectId/prompts" params={{ orgId, projectId }}>
+        Prompts
+      </Crumb>
+    </Breadcrumbs>
   );
 }
 
-/** Back to one prompt's versions, from the editor or the diff. */
-export function BackToPrompt({ name, version }: { name: string; version?: number }) {
+/** "Prompts › <name> › <current>": back to one prompt's versions, from the editor or the diff. */
+export function PromptBreadcrumbs({
+  name,
+  version,
+  current,
+}: {
+  name: string;
+  version?: number;
+  current: string;
+}) {
+  const { orgId, projectId } = useProjectParams();
   const link = usePromptLink(name, { v: version });
-  return <BackLink {...link}>{name}</BackLink>;
+  return (
+    <Breadcrumbs current={current}>
+      <Crumb to="/$orgId/$projectId/prompts" params={{ orgId, projectId }}>
+        Prompts
+      </Crumb>
+      <Crumb {...link} title={name} className="max-w-40 sm:max-w-64">
+        <span className="truncate">{name}</span>
+      </Crumb>
+    </Breadcrumbs>
+  );
 }

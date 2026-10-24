@@ -108,6 +108,52 @@ describe("ProvidersPage", () => {
     expect(screen.getByText("$1.94")).toBeInTheDocument();
   });
 
+  it("shows the window once, in the top bar", async () => {
+    mockProviders(() => Promise.resolve(report([ANTHROPIC])));
+    renderApp(PATH);
+
+    expect(await screen.findByRole("region", { name: "Anthropic" })).toBeInTheDocument();
+    expect(screen.queryByText(/· to /)).not.toBeInTheDocument();
+  });
+
+  it("collapses a window without failed calls to one line and keeps incidents", async () => {
+    mockProviders(() =>
+      Promise.resolve(
+        report([{ ...ANTHROPIC, errors: 0, error_rate: "0", by_class: [], rate_limit_kinds: [] }]),
+      ),
+    );
+    renderApp(PATH);
+
+    expect(await screen.findByText("No failed calls in this window.")).toBeInTheDocument();
+    expect(screen.queryByText("Errors by class")).not.toBeInTheDocument();
+    expect(screen.getByText("Provider incidents")).toBeInTheDocument();
+  });
+
+  it("labels the provider-less row No provider and names its causes", async () => {
+    mockProviders(() =>
+      Promise.resolve(
+        report([
+          {
+            ...ANTHROPIC,
+            provider: null,
+            rate_limit_kinds: [{ kind: "gateway", count: 4, with_retry_after: 0 }],
+          },
+        ]),
+      ),
+    );
+    renderApp(PATH);
+
+    const card = await screen.findByRole("region", { name: "No provider" });
+    expect(
+      within(card).getByText(
+        "Gateway cache hits, gateway refusals and spans sent without a provider",
+      ),
+    ).toBeInTheDocument();
+    // The rate-limit kinds table says "No provider" too, never "unknown".
+    expect(screen.queryByText("unknown")).not.toBeInTheDocument();
+    expect(screen.getAllByText("No provider").length).toBeGreaterThan(1);
+  });
+
   it("formats a tiny known retry cost like every other cost, never as $0", async () => {
     mockProviders(() => Promise.resolve(report([{ ...ANTHROPIC, retry_cost_usd: "0.00003" }])));
     renderApp(PATH);
@@ -234,7 +280,9 @@ describe("ProvidersPage", () => {
     expect(sample).toHaveAccessibleName(expect.stringContaining("kind Token limit"));
     expect(within(sample).getByText("Token limit")).toBeInTheDocument();
     expect(within(sample).getByText("tokens")).toHaveClass("font-mono");
-    expect(screen.getByText(/samples from the last 24 hours/)).toBeInTheDocument();
+    // The section title states its own 24-hour scan window; no warning callout.
+    expect(screen.getByText("Newest failures · last 24 hours")).toBeInTheDocument();
+    expect(screen.queryByText(/samples from the last 24 hours/)).not.toBeInTheDocument();
     // A start time that does not parse renders a dash instead of throwing.
     expect(screen.getByRole("link", { name: /^Open trace: time unknown/ })).toBeInTheDocument();
 

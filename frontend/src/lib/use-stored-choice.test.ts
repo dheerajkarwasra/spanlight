@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { useChartView, useStoredChoice } from "./use-stored-choice";
+import { useChartView, useStoredChoice, useStoredValue } from "./use-stored-choice";
 
 afterEach(() => {
   window.localStorage.clear();
@@ -43,5 +43,16 @@ describe("useStoredChoice", () => {
       result.current[1]("table");
     });
     expect(result.current[0]).toBe("table");
+  });
+});
+
+describe("useStoredValue", () => {
+  it("keeps two readers of one key in step", () => {
+    const first = renderHook(() => useStoredValue("shared", "a"));
+    const second = renderHook(() => useStoredValue("shared", "a"));
+    act(() => {
+      first.result.current[1]("b");
+    });
+    expect(second.result.current[0]).toBe("b");
   });
 });

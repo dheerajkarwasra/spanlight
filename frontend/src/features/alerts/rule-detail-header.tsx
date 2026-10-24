@@ -1,7 +1,6 @@
-import { Link } from "@tanstack/react-router";
-import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
 
+import { Breadcrumbs, Crumb } from "@/components/breadcrumbs";
 import { DisabledReason } from "@/components/disabled-reason";
 import { Button } from "@/components/ui/button";
 import { useProjectParams } from "@/features/shell";
@@ -14,18 +13,15 @@ import { RuleEditorDialog } from "./rule-editor-dialog";
 import { isFiring } from "./rule-state";
 import { ruleSummary } from "./rule-summary";
 
-/** "← Alerts": back to the rules list. */
-export function BackToAlerts() {
+/** "Alerts › <current>": the trail back to the rules list. */
+export function AlertsBreadcrumbs({ current }: { current: string }) {
   const { orgId, projectId } = useProjectParams();
   return (
-    <Link
-      to="/$orgId/$projectId/alerts"
-      params={{ orgId, projectId }}
-      className="inline-flex w-fit items-center gap-1.5 rounded-sm text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-[1.5px] focus-visible:outline-offset-2 focus-visible:outline-ring"
-    >
-      <ArrowLeft aria-hidden className="size-4" strokeWidth={2} />
-      Alerts
-    </Link>
+    <Breadcrumbs current={current}>
+      <Crumb to="/$orgId/$projectId/alerts" params={{ orgId, projectId }}>
+        Alerts
+      </Crumb>
+    </Breadcrumbs>
   );
 }
 
@@ -40,7 +36,7 @@ interface RuleDetailHeaderProps {
 }
 
 /**
- * Figma "Rule header": back link, name, summary line and the actions: Edit, "…", Mute or
+ * Figma "Rule header": breadcrumbs, name, summary line and the actions: Edit, "…", Mute or
  * Unmute, and Acknowledge while an event is open. Without `alerts:write` they are hidden; the
  * page's banner says why.
  */
@@ -56,7 +52,7 @@ export function RuleDetailHeader({
 
   return (
     <div className="flex flex-col gap-6">
-      <BackToAlerts />
+      <AlertsBreadcrumbs current={rule.name} />
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-8">
         <div className="flex min-w-0 flex-col gap-2">
           <h1 className="text-h1 [overflow-wrap:anywhere] text-foreground">{rule.name}</h1>

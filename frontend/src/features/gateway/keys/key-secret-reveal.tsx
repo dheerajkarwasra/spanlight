@@ -7,11 +7,13 @@ import { SecretBox } from "@/components/secret-box";
 import { Button } from "@/components/ui/button";
 import { DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { useMe } from "@/features/auth";
 import { formatInteger } from "@/lib/format";
 import type { CreatedGatewayKey } from "@/lib/api";
 import { REVEAL_COPY } from "@/lib/reveal-copy";
 
 import { EnvironmentBadge } from "../environment-badge";
+import { GATEWAY_MODE_NOTES } from "../gateway-url";
 import { cacheLabel } from "./key-form";
 import { sdkSnippet, type SdkChoice } from "./key-snippets";
 
@@ -29,6 +31,7 @@ interface KeySecretRevealProps {
 export function KeySecretReveal({ created, routeName }: KeySecretRevealProps) {
   const copy = REVEAL_COPY.gateway_key;
   const [sdk, setSdk] = useState<SdkChoice>("openai");
+  const mode = useMe().capabilities.gateway_mode;
   const rpm = formatInteger(created.rpm_limit);
   const tpm = formatInteger(created.tpm_limit);
 
@@ -74,6 +77,7 @@ export function KeySecretReveal({ created, routeName }: KeySecretRevealProps) {
       <div className="grid gap-2.5">
         <p className="text-xs font-medium text-muted-foreground">
           Point your SDK at the gateway with this key.
+          {mode === "embedded" ? null : ` ${GATEWAY_MODE_NOTES[mode]}`}
         </p>
         <SegmentedControl
           aria-label="SDK"
@@ -87,7 +91,7 @@ export function KeySecretReveal({ created, routeName }: KeySecretRevealProps) {
           className="self-start"
         />
         <CodeBlock
-          code={sdkSnippet(sdk)}
+          code={sdkSnippet(sdk, mode)}
           label={sdk === "openai" ? "OpenAI SDK setup" : "Anthropic SDK setup"}
           title={sdk === "openai" ? "openai_client.py" : "anthropic_client.py"}
           language="python"

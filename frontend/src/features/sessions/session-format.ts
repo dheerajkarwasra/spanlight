@@ -2,79 +2,11 @@
  * Display helpers for session times and counts. Pure functions only; every
  * clock time is shown in the viewer's local time zone.
  */
-import { pluralize } from "@/lib/format";
+import { formatClock, formatDayTime, isSameDay, parseDate } from "@/lib/clock-format";
+import type { SessionTurn } from "@/lib/api";
+import { formatCost, formatDuration, parseMoney, pluralize } from "@/lib/format";
 
-const clockFormat = new Intl.DateTimeFormat("en-US", {
-  hour: "2-digit",
-  minute: "2-digit",
-  hourCycle: "h23",
-});
-
-const clockWithSecondsFormat = new Intl.DateTimeFormat("en-US", {
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hourCycle: "h23",
-});
-
-const monthDayFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
-
-const monthDayYearFormat = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-});
-
-function parseDate(iso: string): Date | null {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function isSameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-
-/** "Today", "Yesterday", "Oct 6", or "Oct 6, 2025" outside the current year. */
-export function dayLabel(date: Date, now: Date = new Date()): string {
-  if (isSameDay(date, now)) {
-    return "Today";
-  }
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  if (isSameDay(date, yesterday)) {
-    return "Yesterday";
-  }
-  return date.getFullYear() === now.getFullYear()
-    ? monthDayFormat.format(date)
-    : monthDayYearFormat.format(date);
-}
-
-/** "09:12", or "09:12:04" with seconds. Null for an invalid timestamp. */
-export function formatClock(iso: string, options: { seconds?: boolean } = {}): string | null {
-  const date = parseDate(iso);
-  if (date === null) {
-    return null;
-  }
-  return (options.seconds ? clockWithSecondsFormat : clockFormat).format(date);
-}
-
-/** "Today 09:12:04", "Oct 6 22:14". Null for an invalid timestamp. */
-export function formatDayTime(
-  iso: string,
-  now: Date = new Date(),
-  options: { seconds?: boolean } = {},
-): string | null {
-  const date = parseDate(iso);
-  const clock = formatClock(iso, options);
-  if (date === null || clock === null) {
-    return null;
-  }
-  return `${dayLabel(date, now)} ${clock}`;
-}
+export { dayLabel, formatClock, formatDayTime } from "@/lib/clock-format";
 
 /**
  * First → last activity, e.g. "Today 09:12 → 09:41". The day is repeated only
@@ -126,4 +58,36 @@ export function turnRangeLabel(visible: number, loaded: number, hasEarlierTurns:
     return `Turns 1–${visible.toLocaleString("en-US")} of ${loadedLabel}`;
   }
   return pluralize(loaded, "turn");
+}
+
+/** A session's cost above the window's 99th percentile; never when either figure is unknown. */
+export function isCostOutlier(cost: string | null, p99: string | null): boolean {
+  const value = parseMoney(cost);
+  const limit = parseMoney(p99);
+  return value !== null && limit !== null && value > limit;
+}
+
+/**
+ * "4 steps · 2 tool calls · 1.8 s · $0.014"; an unknown duration or cost shows "—", and `reason`
+ * says why (null when every figure is known).
+ */
+export function turnPillText({ trace, tool_calls }: SessionTurn): {
+  text: string;
+  reason: string | null;
+} {
+  const duration = formatDuration(trace.duration_ms);
+  const cost = formatCost(trace.cost_usd);
+  const reasons = [
+    duration === null ? "No timing data" : null,
+    cost === null ? "No price for the models used" : null,
+  ].filter((reason) => reason !== null);
+  return {
+    text: [
+      pluralize(trace.span_count, "step"),
+      pluralize(tool_calls, "tool call"),
+      duration ?? "—",
+      cost ?? "—",
+    ].join(" · "),
+    reason: reasons.length > 0 ? reasons.join("; ") : null,
+  };
 }

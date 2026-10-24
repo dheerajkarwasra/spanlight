@@ -32,6 +32,18 @@ export interface Membership {
   role: Role;
 }
 
+/** How the gateway runs: inside the api, as its own service, or not at all (`GATEWAY_MODE`). */
+export type GatewayMode = "embedded" | "standalone" | "disabled";
+
+/** What this server is set up for, so the dashboard can say why a feature is off up front. */
+export interface ServerCapabilities {
+  gateway_mode: GatewayMode;
+  /** `CREDENTIALS_KEYS` is set, so provider credentials can be stored. */
+  credentials_configured: boolean;
+  /** Object storage (bucket and both keys) is set, so exports have somewhere to go. */
+  exports_configured: boolean;
+}
+
 export interface Me {
   user: User;
   memberships: Membership[];
@@ -44,6 +56,7 @@ export interface Me {
    * on a server without email, where nothing could be verified, so no prompt is shown there.
    */
   email_verification_required: boolean;
+  capabilities: ServerCapabilities;
 }
 
 /** `POST /auth/login` when the password was enough: the session cookies are set. */

@@ -49,6 +49,7 @@ class ItemRow:
     latency_ms: float | None
     cost_usd: Decimal | None
     error: str | None
+    evaluator_error: str | None
     # The item as the run saw it; `has_copy` is False on a legacy row stored before runs kept one.
     input: Any = None
     expected_output: Any = None
@@ -197,7 +198,10 @@ def _score_delta(
 
 
 def _facts(rows: Sequence[ItemRow]) -> list[ItemFacts]:
-    return [ItemFacts(row.latency_ms, row.cost_usd, row.error, row.scores) for row in rows]
+    return [
+        ItemFacts(row.latency_ms, row.cost_usd, row.error, row.scores, row.evaluator_error)
+        for row in rows
+    ]
 
 
 def _difference[T: (Decimal, float)](a: T | None, b: T | None) -> T | None:

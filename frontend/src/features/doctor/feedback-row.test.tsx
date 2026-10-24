@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -15,10 +15,10 @@ const NONE: InsightFeedback = { mine: null, right: 2, wrong: 0 };
 // This year's 14 Oct, so the label never needs the year whenever the suite runs.
 const VOTED_AT = `${String(new Date().getFullYear())}-10-14T12:00:00Z`;
 
-function renderRow(feedback: InsightFeedback = NONE, canVote = true) {
+function renderRow(feedback: InsightFeedback = NONE, canVote = true, canManage = false) {
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <FeedbackRow insightId="ins_1" feedback={feedback} canVote={canVote} />
+      <FeedbackRow insightId="ins_1" feedback={feedback} canVote={canVote} canManage={canManage} />
     </QueryClientProvider>,
   );
 }
@@ -119,5 +119,48 @@ describe("FeedbackRow", () => {
     );
     expect(screen.getByRole("button", { name: "Right" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByLabelText("Add a note (optional)")).not.toBeInTheDocument();
+  });
+
+  it("offers to mute the finding after a Wrong vote, with the note as the reason", async () => {
+    vi.spyOn(insightsApi, "putFeedback").mockResolvedValue({
+      verdict: "wrong",
+      note: null,
+      updated_at: "2026-10-14T12:00:00Z",
+    });
+    renderRow(NONE, true, true);
+    await userEvent.click(screen.getByRole("button", { name: "Wrong" }));
+    await userEvent.type(
+      await screen.findByLabelText("Add a note (optional)"),
+      "Batch backfill retries",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Mute this finding" }));
+    const dialog = await screen.findByRole("dialog", { name: "Mute this insight" });
+    expect(within(dialog).getByRole("textbox", { name: "Reason" })).toHaveValue(
+      "Marked wrong: Batch backfill retries",
+    );
+  });
+
+  it("offers no mute after a Right vote", async () => {
+    vi.spyOn(insightsApi, "putFeedback").mockResolvedValue({
+      verdict: "right",
+      note: null,
+      updated_at: "2026-10-14T12:00:00Z",
+    });
+    renderRow(NONE, true, true);
+    await userEvent.click(screen.getByRole("button", { name: "Right" }));
+    await screen.findByLabelText("Add a note (optional)");
+    expect(screen.queryByRole("button", { name: "Mute this finding" })).not.toBeInTheDocument();
+  });
+
+  it("hides the mute from a member after a Wrong vote", async () => {
+    vi.spyOn(insightsApi, "putFeedback").mockResolvedValue({
+      verdict: "wrong",
+      note: null,
+      updated_at: "2026-10-14T12:00:00Z",
+    });
+    renderRow(NONE, true, false);
+    await userEvent.click(screen.getByRole("button", { name: "Wrong" }));
+    await screen.findByLabelText("Add a note (optional)");
+    expect(screen.queryByRole("button", { name: "Mute this finding" })).not.toBeInTheDocument();
   });
 });

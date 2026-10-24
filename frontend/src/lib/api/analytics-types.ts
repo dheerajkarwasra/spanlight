@@ -143,6 +143,11 @@ export interface UserList extends Page<UserStats> {
   window: UserStatsWindow;
   /** When the window's figures were last recomputed; null when no day has been computed yet. */
   computed_at: string | null;
+  /**
+   * The window's user traces the figures don't include yet (started after their day's last
+   * recompute), capped at 10,000. Null only when the window has neither figures nor traces.
+   */
+  pending_traces: number | null;
 }
 
 export interface UserDetail {
@@ -157,7 +162,13 @@ export interface UserDetail {
 export interface UserListQuery {
   from?: string | undefined;
   to?: string | undefined;
+  /** Without it every environment is summed; `""` names the empty environment. */
+  environment?: string | undefined;
   sort?: UserSort | undefined;
+  /** The server's default is `desc`; users without a value sort last either way. */
+  order?: "asc" | "desc" | undefined;
+  /** Case-insensitive substring of the user ID (1 to 256 characters). */
+  q?: string | undefined;
   limit?: number | undefined;
   cursor?: string | null | undefined;
 }
@@ -165,4 +176,5 @@ export interface UserListQuery {
 export interface UserDetailQuery {
   from?: string | undefined;
   to?: string | undefined;
+  environment?: string | undefined;
 }

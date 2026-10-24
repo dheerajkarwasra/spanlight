@@ -1,3 +1,5 @@
+import { Link } from "@tanstack/react-router";
+
 import type { ChartDataTable } from "@/components/chart-data-table";
 import {
   Table,
@@ -8,8 +10,11 @@ import {
   TableRow,
   TableRowHeader,
 } from "@/components/ui/table";
+import { useProjectFilters, useProjectParams } from "@/features/shell/project-context";
+import type { Bucket } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+import { bucketSearch } from "./bucket-link";
 import { NO_INCIDENT } from "./calls-table";
 
 /** Numbers right-aligned, the partial mark centred; the label and incidents columns read as text. */
@@ -20,8 +25,11 @@ const PARTIAL_COLUMN = 4;
  * The card's "Show table" view: every bucket with its calls, errors, error rate, partial mark and,
  * when the overlay is on, the overlapping provider incidents. It carries everything the bands show.
  * The box is the only scroller (both axes) and takes keyboard focus, so it can be scrolled without a mouse.
+ * Each bucket's label links to its traces: the keyboard twin of clicking a bar.
  */
-export function CallsErrorsTable({ table }: { table: ChartDataTable }) {
+export function CallsErrorsTable({ table, bucket }: { table: ChartDataTable; bucket: Bucket }) {
+  const { orgId, projectId } = useProjectParams();
+  const { environment } = useProjectFilters();
   const [labelColumn, ...valueColumns] = table.columns;
   const hasIncidents = table.columns.length > PARTIAL_COLUMN + 1;
   return (
@@ -57,7 +65,15 @@ export function CallsErrorsTable({ table }: { table: ChartDataTable }) {
               return (
                 <TableRow key={row.key}>
                   <TableRowHeader scope="row" className="h-10 text-xs">
-                    {label}
+                    <Link
+                      to="/$orgId/$projectId/traces"
+                      params={{ orgId, projectId }}
+                      search={bucketSearch(row.key, bucket, environment)}
+                      className="inline-flex min-h-6 items-center rounded-sm text-accent hover:underline"
+                    >
+                      {label}
+                      <span className="sr-only">: open its traces</span>
+                    </Link>
                   </TableRowHeader>
                   {values.map((value, index) => (
                     <TableCell

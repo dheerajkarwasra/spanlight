@@ -108,3 +108,14 @@ async def test_api_cannot_read_other_tenants_trace(two_tenants: Any) -> None:
     assert response.status_code == 404
     listed = (await alice.get(f"/api/v1/projects/{alice_ws.project_id}/traces")).json()["items"]
     assert bob_trace not in {item["trace_id"] for item in listed}
+
+
+async def test_trace_histogram_counts_only_own_project(two_tenants: Any) -> None:
+    alice_ws, bob_ws, _, _ = two_tenants
+    alice = alice_ws.owner
+    # Each tenant holds one trace: Alice's histogram counts hers, never Bob's.
+    own = await alice.get(f"/api/v1/projects/{alice_ws.project_id}/traces/histogram")
+    assert own.status_code == 200
+    assert sum(bucket["traces"] for bucket in own.json()["buckets"]) == 1
+    other = await alice.get(f"/api/v1/projects/{bob_ws.project_id}/traces/histogram")
+    assert other.status_code == 404

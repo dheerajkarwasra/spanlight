@@ -11,8 +11,11 @@ test("webhook channel → rule with preview → mute → budget", async ({ page 
   test.setTimeout(240_000);
   const { base } = await createWorkspace(page);
 
-  // 1. A webhook channel; its signing secret is shown once.
+  // 1. A webhook channel; its signing secret is shown once. The old Alerts URL redirects to
+  // Settings › Notification channels.
   await page.goto(`${base}/alerts/channels`);
+  await expect(page).toHaveURL(`${base}/settings/channels`);
+  await expect(page.getByRole("heading", { name: "Notification channels" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "No channels" })).toBeVisible();
   await expectNoAxeViolations(page);
   await page.getByRole("button", { name: "Add channel" }).first().click();

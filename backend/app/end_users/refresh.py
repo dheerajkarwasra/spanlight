@@ -1,6 +1,7 @@
 """Recompute the per-user daily stats of a project from its raw traces and spans.
 
-A trace counts for the UTC day it started and an end user is the trace's `external_user_id`.
+A trace counts for the UTC day it started, under its environment (NULL when it has none), and
+an end user is the trace's `external_user_id`.
 The figures of a trace are those of its LLM spans, whatever day they started: `llm_calls` and
 `errors` count them (an error is a span with status `error`), `unpriced_calls` counts those
 without a cost, `tokens` adds input and output
@@ -33,6 +34,7 @@ _REFRESH = text(
     """
     WITH fresh AS (
         SELECT (t.started_at AT TIME ZONE 'UTC')::date                      AS day,
+               t.environment,
                t.external_user_id,
                count(DISTINCT t.trace_id)                                    AS traces,
                count(s.span_id)                                              AS llm_calls,
@@ -52,18 +54,18 @@ _REFRESH = text(
           AND t.external_user_id IS NOT NULL
           AND t.started_at >= :start
           AND t.started_at < :end
-        GROUP BY 1, 2
+        GROUP BY 1, 2, 3
     ),
     upserted AS (
         INSERT INTO user_stats_daily
-            (project_id, day, external_user_id, traces, llm_calls, errors, unpriced_calls,
-             cost_usd, tokens, computed_at)
-        SELECT CAST(:project_id AS uuid), fresh.day, fresh.external_user_id, fresh.traces,
-               fresh.llm_calls, fresh.errors, fresh.unpriced_calls, fresh.cost_usd, fresh.tokens,
-               now()
+            (project_id, day, environment, external_user_id, traces, llm_calls, errors,
+             unpriced_calls, cost_usd, tokens, computed_at)
+        SELECT CAST(:project_id AS uuid), fresh.day, fresh.environment, fresh.external_user_id,
+               fresh.traces, fresh.llm_calls, fresh.errors, fresh.unpriced_calls, fresh.cost_usd,
+               fresh.tokens, now()
         FROM fresh
         WHERE true
-        ON CONFLICT (project_id, day, external_user_id) DO UPDATE
+        ON CONFLICT (project_id, day, environment, external_user_id) DO UPDATE
         SET traces = EXCLUDED.traces,
             llm_calls = EXCLUDED.llm_calls,
             errors = EXCLUDED.errors,
@@ -80,6 +82,7 @@ _REFRESH = text(
           AND NOT EXISTS (
               SELECT 1 FROM fresh
               WHERE fresh.day = u.day AND fresh.external_user_id = u.external_user_id
+                AND fresh.environment IS NOT DISTINCT FROM u.environment
           )
         RETURNING 1
     )

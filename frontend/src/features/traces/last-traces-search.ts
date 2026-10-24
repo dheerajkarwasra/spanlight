@@ -11,7 +11,9 @@ let lastSearch: TraceFilters | null = null;
 let lastOpenedTraceId: string | null = null;
 
 export function rememberTracesSearch(search: TraceFilters): void {
-  lastSearch = search;
+  // "Back to traces" returns to the list, not to the peek it had open.
+  const { peek: _peek, ...list } = search;
+  lastSearch = list;
 }
 
 export function recallTracesSearch(): TraceFilters {

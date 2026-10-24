@@ -1,11 +1,13 @@
 import { getRouteApi, Link } from "@tanstack/react-router";
-import { ArrowLeft, SearchX } from "lucide-react";
+import { List, SearchX } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { Breadcrumbs, Crumb } from "@/components/breadcrumbs";
 import { CopyButton } from "@/components/copy-button";
 import { CostValue } from "@/components/cost-value";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectParams } from "@/features/shell/project-context";
@@ -18,11 +20,11 @@ import {
   formatUtcDay,
   lastSeenLabel,
   lastSeenPhrase,
+  NO_USER_PRICE,
   toDailyPoints,
   windowLabel,
 } from "./user-format";
-import { keepWindow, recallUsersSort } from "./user-sort";
-import { NO_USER_PRICE } from "./user-grid";
+import { keepWindow, recallUsersList } from "./user-sort";
 import { UserSessions, UserSessionsSkeleton } from "./user-sessions";
 import { useUserDetailQuery } from "./users-queries";
 
@@ -41,7 +43,7 @@ export function UserDetailPage() {
         <span className="sr-only" role="status">
           Loading user
         </span>
-        <BackToUsersLink />
+        <UsersBreadcrumbs userId={userId} />
         <UserHeaderSkeleton />
         <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <UserDailyChartSkeleton />
@@ -55,7 +57,7 @@ export function UserDetailPage() {
     if (isApiError(detailQuery.error) && detailQuery.error.isNotFound) {
       return (
         <div className={PAGE_CLASSES}>
-          <BackToUsersLink />
+          <UsersBreadcrumbs userId={userId} />
           <Card>
             <EmptyState
               icon={SearchX}
@@ -68,7 +70,7 @@ export function UserDetailPage() {
     }
     return (
       <div className={PAGE_CLASSES}>
-        <BackToUsersLink />
+        <UsersBreadcrumbs userId={userId} />
         <Card>
           <ErrorState
             error={detailQuery.error}
@@ -85,7 +87,7 @@ export function UserDetailPage() {
   const detail = detailQuery.data;
   return (
     <div className={PAGE_CLASSES}>
-      <BackToUsersLink />
+      <UsersBreadcrumbs userId={userId} />
       <UserHeader detail={detail} userId={userId} />
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <UserDailyChart points={toDailyPoints(detail.daily)} />
@@ -95,19 +97,22 @@ export function UserDetailPage() {
   );
 }
 
-/** Back to the list, keeping the sort, the time range and the environment. */
-function BackToUsersLink() {
+/**
+ * "Users › <user ID>": back to the list, keeping its sort, direction and search, the time range and
+ * the environment.
+ */
+function UsersBreadcrumbs({ userId }: { userId: string }) {
   const { orgId, projectId } = useProjectParams();
   return (
-    <Link
-      to="/$orgId/$projectId/users"
-      params={{ orgId, projectId }}
-      search={(previous) => ({ ...keepWindow(previous), sort: recallUsersSort() })}
-      className="inline-flex min-h-6 w-fit items-center gap-1.5 rounded-sm text-sm text-muted-foreground transition-colors hover:text-foreground"
-    >
-      <ArrowLeft aria-hidden className="size-4" />
-      Users
-    </Link>
+    <Breadcrumbs current={userId}>
+      <Crumb
+        to="/$orgId/$projectId/users"
+        params={{ orgId, projectId }}
+        search={(previous) => ({ ...keepWindow(previous), ...recallUsersList() })}
+      >
+        Users
+      </Crumb>
+    </Breadcrumbs>
   );
 }
 
@@ -117,13 +122,24 @@ function BackToUsersLink() {
  */
 function UserHeader({ detail, userId }: { detail: UserDetail; userId: string }) {
   const { user } = detail;
+  const { orgId, projectId } = useProjectParams();
   return (
     <header className="flex flex-col gap-3">
-      <div className="flex min-w-0 items-center gap-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
         <h1 title={userId} className="min-w-0 text-h1 [overflow-wrap:anywhere] text-foreground">
           {userId}
         </h1>
         <CopyButton value={userId} label="Copy user ID" className="size-7 shrink-0" />
+        <Button asChild size="sm" className="ml-auto">
+          <Link
+            to="/$orgId/$projectId/traces"
+            params={{ orgId, projectId }}
+            search={(previous) => ({ ...keepWindow(previous), user: userId })}
+          >
+            <List aria-hidden />
+            View traces
+          </Link>
+        </Button>
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <p className="text-sm text-muted-foreground">

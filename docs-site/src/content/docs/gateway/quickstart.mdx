@@ -127,20 +127,20 @@ For streaming OpenAI chat completions that do not set `stream_options`, the gate
 
 The time-range control offers the last 1 hour, 24 hours and 7 days. There is no 30-day or custom range here, because the page reads at most 7 days. If another page has set one of those, the Overview reads the last 7 days and leaves the other page's range alone. The environment filter limits the page to traces in one environment.
 
-A project with no gateway key shows "No gateway traffic yet" and a **Create a gateway key** button. After the first key, the page has three parts.
+A project with no gateway key shows "No gateway traffic yet" and a **Create a gateway key** button. After the first key, the page has four parts.
 
-**Six tiles** under "Gateway metrics":
+**Four cards** under "Gateway metrics", each with its change against the previous window of the same length ("vs previous 24 h"). A card has no change when the previous window had no gateway traffic.
 
-| Tile | Value | Line under it |
+| Card | Value | Lines under it |
 | --- | --- | --- |
-| **Requests** | Calls in the window | "across N keys" and the window |
-| **Error rate** | Calls that ended in an error, as a share of all calls | "N of M requests", and "N from Lab" when Lab faults caused some of the errors on purpose |
+| **Requests** | Calls in the window | The success rate and the number of errors, and "N errors from Lab" when Lab faults caused some of them on purpose |
+| **Latency** | The 95th percentile of the time Spanlight adds on top of the provider | "Upstream p95", the provider's own time (calls answered without a provider attempt, such as cache hits, are left out), and "TTFT p95" for streaming calls |
 | **Cache hit rate** | Hits divided by hits plus misses | "N hits · N misses" |
-| **Fallbacks** | How many times a call moved on to another target of its route | "plus N retries" |
-| **p95 overhead** | The 95th percentile of the time Spanlight adds on top of the provider | "added by Spanlight, per request" |
-| **p95 time to first token** | The 95th percentile for streaming calls | "streaming requests only", or "0 streaming requests" when there are none |
+| **Fallbacks** | How many times a call moved on to another target of its route | "N rate-limited · N retries" |
 
 A value that cannot be worked out shows **—** with a tooltip that says why, for example "No requests in this window.", "No cache lookups in this window." or "No streaming requests in this window." It never shows 0 for an unknown value.
+
+**Requests over time** charts the calls per 5 minutes (1-hour window) or per hour, with errors stacked on top, and has a table view.
 
 Retries are the extra attempts that were not a move to another target. See [Retries](/docs/gateway/routing/#retries) and [Fallbacks](/docs/gateway/routing/#fallbacks).
 

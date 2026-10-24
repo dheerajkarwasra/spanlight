@@ -116,6 +116,8 @@ export interface EvaluatorRunScore {
   name: string;
   value: number | null;
   string_value: string | null;
+  /** The judge's reasoning as stored on the score; null when it gave none. */
+  comment: string | null;
 }
 
 export interface EvaluatorRun {

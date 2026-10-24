@@ -54,7 +54,7 @@ export function BudgetChannelsField({ value, onChange, error }: BudgetChannelsFi
       label="Channels"
       hint={
         empty
-          ? "No channels yet. Add one under Alerts → Channels to get budget alerts."
+          ? "No channels yet. Add one under Settings › Notification channels to get budget alerts."
           : `Where budget alerts go. Pick up to ${MAX_BUDGET_CHANNELS}.`
       }
       error={error ?? loadProblem}

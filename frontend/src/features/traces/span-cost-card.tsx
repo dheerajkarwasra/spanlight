@@ -16,14 +16,17 @@ import { StatusChip } from "./span-cost-status";
 interface SpanCostCardProps {
   span: Span;
   traceId: string;
+  /** Open on mount (the inspector's Cost tab), which fetches the explanation at once. */
+  defaultExpanded?: boolean;
 }
 
 /**
- * Figma "Span cost card / *": the lines behind a span's stored cost. Collapsed by default; the
- * explanation is fetched the first time the card is expanded and kept for the session.
+ * Figma "Span cost card / *": the lines behind a span's stored cost. Collapsed unless
+ * `defaultExpanded`; the explanation is fetched the first time the card is expanded and kept for
+ * the session.
  */
-export function SpanCostCard({ span, traceId }: SpanCostCardProps) {
-  const [expanded, setExpanded] = useState(false);
+export function SpanCostCard({ span, traceId, defaultExpanded = false }: SpanCostCardProps) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const panelId = useId();
   const query = useCostExplanationQuery(traceId, span.span_id, { enabled: expanded });
   const loading = expanded && query.isPending;

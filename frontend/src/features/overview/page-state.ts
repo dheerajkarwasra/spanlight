@@ -33,9 +33,15 @@ export function statusFor(state: PageState, queries: OverviewQueries): HeroStatu
     case "empty-window":
       return heroStatus({ traces: 0, errors: 0, hasEverReceivedTraces: true });
     case "ready":
+      // Unknown findings must not read as "behaving"; a failed health check counts none.
+      if (queries.health.isPending) {
+        return null;
+      }
       return heroStatus({
         traces: current?.traces ?? 0,
         errors: current ? (errorCountFrom(current.error_rate, current.llm_calls) ?? 0) : 0,
+        findings:
+          (queries.health.data?.open_critical ?? 0) + (queries.health.data?.open_warning ?? 0),
         hasEverReceivedTraces: true,
       });
   }

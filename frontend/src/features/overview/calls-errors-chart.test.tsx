@@ -1,5 +1,13 @@
-import { render, screen, within } from "@testing-library/react";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
+import { render as renderDom, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Band } from "@/lib/incident-bands";
@@ -7,6 +15,23 @@ import type { Band } from "@/lib/incident-bands";
 import { CallsErrorsChart } from "./calls-errors-chart";
 import type { ChartPoint } from "./chart-data";
 import { INCIDENT_OVERLAY_KEY } from "./use-incident-overlay";
+
+vi.mock("@/features/shell/project-context", () => ({
+  useProjectParams: () => ({ orgId: "o", projectId: "p" }),
+  useProjectFilters: () => ({ environment: "production" }),
+}));
+
+/** The chart links buckets to the traces list, so it renders inside a loaded router. */
+async function render(ui: ReactNode) {
+  const rootRoute = createRootRoute({ component: () => ui });
+  const anyPath = createRoute({ getParentRoute: () => rootRoute, path: "$" });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([anyPath]),
+    history: createMemoryHistory({ initialEntries: ["/o/p/overview"] }),
+  });
+  await router.load();
+  return { ...renderDom(<RouterProvider router={router as never} />), router };
+}
 
 const POINTS: ChartPoint[] = ["00", "01", "02", "03"].map((hour, index) => ({
   bucketStart: `2026-10-16T${hour}:00:00Z`,
@@ -90,8 +115,8 @@ describe("CallsErrorsChart incident overlay", () => {
     giveElementsASize();
   });
 
-  it("draws one band per incident, hatching the critical one, with legend and summary", () => {
-    const { container } = render(
+  it("draws one band per incident, hatching the critical one, with legend and summary", async () => {
+    const { container } = await render(
       <CallsErrorsChart data={DATA} bands={BANDS} isRefreshing={false} />,
     );
 
@@ -107,7 +132,7 @@ describe("CallsErrorsChart incident overlay", () => {
 
   it("hides the bands when switched off and remembers it", async () => {
     const user = userEvent.setup();
-    const { container } = render(
+    const { container } = await render(
       <CallsErrorsChart data={DATA} bands={BANDS} isRefreshing={false} />,
     );
 
@@ -118,9 +143,9 @@ describe("CallsErrorsChart incident overlay", () => {
     expect(window.localStorage.getItem(INCIDENT_OVERLAY_KEY)).toBe("off");
   });
 
-  it("opens with the bands off when the viewer turned them off before", () => {
+  it("opens with the bands off when the viewer turned them off before", async () => {
     window.localStorage.setItem(INCIDENT_OVERLAY_KEY, "off");
-    const { container } = render(
+    const { container } = await render(
       <CallsErrorsChart data={DATA} bands={BANDS} isRefreshing={false} />,
     );
 
@@ -136,7 +161,7 @@ describe("CallsErrorsChart incident overlay", () => {
       throw new Error("blocked");
     });
     const user = userEvent.setup();
-    const { container } = render(
+    const { container } = await render(
       <CallsErrorsChart data={DATA} bands={BANDS} isRefreshing={false} />,
     );
 
@@ -145,21 +170,23 @@ describe("CallsErrorsChart incident overlay", () => {
     expect(bandRects(container)).toHaveLength(0);
   });
 
-  it("fades the bands in, but not under reduced motion", () => {
+  it("fades the bands in, but not under reduced motion", async () => {
     prefersReducedMotion(false);
-    const first = render(<CallsErrorsChart data={DATA} bands={BANDS} isRefreshing={false} />);
+    const first = await render(<CallsErrorsChart data={DATA} bands={BANDS} isRefreshing={false} />);
     expect(bandRects(first.container)[0]).toHaveClass("animate-fade-in");
     first.unmount();
 
     prefersReducedMotion(true);
-    const second = render(<CallsErrorsChart data={DATA} bands={BANDS} isRefreshing={false} />);
+    const second = await render(
+      <CallsErrorsChart data={DATA} bands={BANDS} isRefreshing={false} />,
+    );
     expect(bandRects(second.container)).toHaveLength(2);
     expect(bandRects(second.container)[0]).not.toHaveClass("animate-fade-in");
   });
 
   it("lists the overlapping incidents per hour in the table view", async () => {
     const user = userEvent.setup();
-    render(<CallsErrorsChart data={DATA} bands={BANDS} isRefreshing={false} />);
+    await render(<CallsErrorsChart data={DATA} bands={BANDS} isRefreshing={false} />);
 
     await user.click(screen.getByRole("button", { name: "Show table" }));
 
@@ -173,8 +200,54 @@ describe("CallsErrorsChart incident overlay", () => {
     expect(screen.getByRole("button", { name: "Show chart" })).not.toHaveAttribute("aria-pressed");
   });
 
-  it("replaces the switch with the server note when status polling is off", () => {
-    const { container } = render(
+  it("links each table row to that hour's traces in the page's environment", async () => {
+    const user = userEvent.setup();
+    await render(<CallsErrorsChart data={DATA} isRefreshing={false} />);
+
+    await user.click(screen.getByRole("button", { name: "Show table" }));
+
+    const links = screen.getAllByRole("link", { name: /: open its traces$/ });
+    expect(links).toHaveLength(4);
+    const href = new URL(links[0]?.getAttribute("href") ?? "", "http://x");
+    expect(href.pathname).toBe("/o/p/traces");
+    expect(Object.fromEntries(href.searchParams)).toEqual({
+      range: "custom",
+      from: "2026-10-16T00:00:00.000Z",
+      to: "2026-10-16T01:00:00.000Z",
+      env: "production",
+    });
+  });
+
+  it("draws a dashed release marker with its name and a legend key", async () => {
+    const { container } = await render(
+      <CallsErrorsChart
+        data={DATA}
+        releases={[{ release: "v2.4.0", at: "2026-10-16T02:20:00Z" }]}
+        isRefreshing={false}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelectorAll(".recharts-reference-line")).toHaveLength(1);
+    });
+    expect(screen.getByText("v2.4.0")).toBeInTheDocument();
+    expect(within(screen.getByRole("list", { name: "Legend" })).getByText("Release")).toBeVisible();
+  });
+
+  it("explains missing release markers on long windows", async () => {
+    await render(
+      <CallsErrorsChart
+        data={DATA}
+        releasesNote="Release markers cover 30 days or less."
+        isRefreshing={false}
+      />,
+    );
+
+    expect(screen.getByText("Release markers cover 30 days or less.")).toBeInTheDocument();
+  });
+
+  it("replaces the switch with the server note when status polling is off", async () => {
+    const { container } = await render(
       <CallsErrorsChart data={DATA} bands={[]} pollingOff isRefreshing={false} />,
     );
 
@@ -183,8 +256,8 @@ describe("CallsErrorsChart incident overlay", () => {
     expect(bandRects(container)).toHaveLength(0);
   });
 
-  it("offers no switch while incidents are unknown", () => {
-    render(<CallsErrorsChart data={DATA} isRefreshing={false} />);
+  it("offers no switch while incidents are unknown", async () => {
+    await render(<CallsErrorsChart data={DATA} isRefreshing={false} />);
 
     expect(screen.queryByRole("switch")).not.toBeInTheDocument();
   });

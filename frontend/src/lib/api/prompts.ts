@@ -48,6 +48,8 @@ export interface PromptVersion {
   commit_message: string | null;
   created_by: string | null;
   created_at: string;
+  /** Seven days of traffic; only in a version list asked for with `usage: true`, else null. */
+  usage_7d?: PromptVersionUsage | null;
 }
 
 export interface Prompt {
@@ -90,6 +92,8 @@ export interface PromptListQuery {
 export interface VersionListQuery {
   limit?: number | undefined;
   cursor?: string | null | undefined;
+  /** Adds `usage_7d` to each item, read for the whole page at once. */
+  usage?: boolean | undefined;
 }
 
 export interface PromptCreate {

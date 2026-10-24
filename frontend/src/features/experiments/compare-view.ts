@@ -149,6 +149,11 @@ export function itemChange(item: ItemDelta, score: string): ItemChange {
   return delta < 0 ? "regressed" : "unchanged";
 }
 
+/** The items that got worse on `score`: a lower number, or Yes → No (booleans carry deltas). */
+export function regressionsOnly(items: readonly ItemDelta[], score: string): ItemDelta[] {
+  return items.filter((item) => itemChange(item, score) === "regressed");
+}
+
 function rank(change: ItemChange): number {
   if (change === "not_comparable") {
     return 2;

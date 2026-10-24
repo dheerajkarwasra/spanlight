@@ -17,9 +17,13 @@ KEY_READABLE: frozenset[Route] = frozenset(
         ("GET", "/api/v1/projects/{project_id}/traces/{trace_id}/spans/{span_id}"),
         # Phase 2.5: two traces step by step, as readable as each trace on its own.
         ("GET", "/api/v1/projects/{project_id}/traces/compare"),
+        # UX Phase 3: counts over time for the list's filters, as readable as the list.
+        ("GET", "/api/v1/projects/{project_id}/traces/histogram"),
         # Bet 1: the lines behind one span's cost, as readable as the trace that holds it.
         ("GET", "/api/v1/projects/{project_id}/traces/{trace_id}/spans/{span_id}/cost-explanation"),
         ("GET", "/api/v1/projects/{project_id}/sessions"),
+        # UX Phase 1: a session's turns, as readable as the trace list it pages like.
+        ("GET", "/api/v1/projects/{project_id}/sessions/{session_id:path}/turns"),
         ("GET", "/api/v1/projects/{project_id}/filters"),
         ("GET", "/api/v1/projects/{project_id}/metrics/overview"),
         ("GET", "/api/v1/projects/{project_id}/metrics/timeseries"),
@@ -37,5 +41,9 @@ KEY_READABLE: frozenset[Route] = frozenset(
         ("GET", "/api/v1/projects/{project_id}/users/{external_user_id:path}"),
         # Bet 3: spend by metadata, trace name, user or release, for the same CI job.
         ("GET", "/api/v1/projects/{project_id}/attribution"),
+        # UX Phase 4: tokens by price class, as readable as the metrics routes beside it.
+        ("GET", "/api/v1/projects/{project_id}/metrics/token-mix"),
+        # UX Phase 4: the Spend chart's series, as readable as the attribution list.
+        ("GET", "/api/v1/projects/{project_id}/attribution/series"),
     }
 )

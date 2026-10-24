@@ -94,7 +94,10 @@ export interface ScoreStat {
 
 export interface RunTotals {
   items: number;
+  /** Items whose call failed. */
   errors: number;
+  /** Answered items whose scoring broke (`evaluator_error` set); never overlaps `errors`. */
+  evaluator_errors: number;
   /** The sum of the known item costs; null when no item's cost is known. */
   cost_usd: string | null;
   /** An item that made a call has no known cost: `cost_usd` is then a lower bound. */
@@ -138,6 +141,8 @@ export interface ExperimentItem {
   output: { text?: string | null; finish_reason?: string | null } | null;
   /** An evaluator that did not score the item is absent. */
   scores: Record<string, ItemScore>;
+  /** The judge's reasoning per score name; null without a trace or any comment. */
+  score_comments: Record<string, string> | null;
   latency_ms: number | null;
   cost_usd: string | null;
   /** `missing_variables: a, b`, `BUDGET_EXCEEDED` or the provider's failure. */

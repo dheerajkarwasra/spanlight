@@ -112,8 +112,22 @@ _TOTALS = _statement(
            coalesce(sum({fallbacks}), 0)::bigint                 AS fallbacks,
            coalesce(sum(greatest({attempts} - {fallbacks} - 1, 0)), 0)::bigint AS retries,
            percentile_cont(0.95) WITHIN GROUP (ORDER BY ({overhead})::float8) AS p95_overhead_ms,
-           percentile_cont(0.95) WITHIN GROUP (ORDER BY s.time_to_first_token_ms) AS p95_ttft_ms
+           percentile_cont(0.95) WITHIN GROUP (ORDER BY s.time_to_first_token_ms) AS p95_ttft_ms,
+           percentile_cont(0.95) WITHIN GROUP (ORDER BY s.duration_ms - ({overhead})::float8)
+               FILTER (WHERE {overhead} IS NOT NULL AND {attempts} > 0) AS p95_upstream_ms,
+           count(*) FILTER (WHERE s.rate_limit_kind IS NOT NULL)  AS rate_limited
     {spans}
+    """
+)
+
+# Clock-aligned buckets of `step` (whole hours, :00/:05/...), so the first and last may be partial.
+_SERIES = _statement(
+    """
+    SELECT date_bin(:step, s.started_at, TIMESTAMPTZ '2001-01-01 00:00:00+00') AS bucket_start,
+           count(*)                                              AS requests,
+           count(*) FILTER (WHERE s.status = 'error')            AS errors
+    {spans}
+    GROUP BY 1
     """
 )
 
@@ -192,6 +206,18 @@ async def read_totals(
     """One row of aggregates over every gateway call of the window."""
     params = _params(project_id, window, environment)
     return (await db.execute(_TOTALS.pick(environment), params)).one()
+
+
+async def read_series(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    window: TimeWindow,
+    environment: str | None,
+    step: timedelta,
+) -> Sequence[Row[Any]]:
+    """Requests and errors per non-empty bucket of `step`; empty buckets have no row."""
+    params = _params(project_id, window, environment, step=step)
+    return (await db.execute(_SERIES.pick(environment), params)).all()
 
 
 async def read_by_target(

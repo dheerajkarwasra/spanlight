@@ -1,4 +1,6 @@
-"""Trace explorer: trace list and detail, sessions and filter values.
+"""Trace explorer: trace list, histogram, compare and detail, and filter values.
+
+Sessions are in `app.api.v1.sessions`.
 
 All queries run in a transaction bound to the project (row-level security)
 and also filter on `project_id` explicitly, which keeps index usage obvious.
@@ -6,17 +8,15 @@ and also filter on `project_id` explicitly, which keeps index usage obvious.
 
 import uuid
 from decimal import Decimal
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select, tuple_
-from sqlalchemy.exc import OperationalError
+from sqlalchemy import select
 
 from app.api.deps import DbSession, ReadAccess, require
 from app.api.schemas import (
     FiltersOut,
     Page,
-    SessionSummaryOut,
     SpanOut,
     StepOut,
     StepSpanOut,
@@ -25,49 +25,40 @@ from app.api.schemas import (
     TraceSummaryOut,
 )
 from app.api.schemas.scores import ScoreSummaryOut
-from app.api.schemas.traces import TraceTotalsDeltaOut
+from app.api.schemas.traces import TraceHistogramOut, TraceTotalsDeltaOut
+from app.api.trace_filters import TraceFilters
 from app.api.window import Window
-from app.core.db_errors import is_statement_timeout
 from app.core.errors import not_found
-from app.core.pagination import DEFAULT_PAGE_SIZE, PageLimit, decode_cursor, encode_cursor
+from app.core.pagination import DEFAULT_PAGE_SIZE, PageLimit
 from app.core.permissions import Permission
 from app.db.models import Trace
-from app.db.timeouts import set_statement_limit
 from app.explorer import trace_sort
-from app.explorer.content_search import (
-    SEARCH_TIMEOUT_MS,
-    content_start,
-    search_too_broad,
-    text_search,
-)
 from app.explorer.filter_values import filter_values
-from app.explorer.metadata_filters import check_metadata_filter
-from app.explorer.score_filters import check_score_filters
 from app.explorer.trace_compare import align, compare_spans, payload_changed
-from app.explorer.trace_filters import apply_filters
+from app.explorer.trace_histogram import trace_histogram
+from app.explorer.trace_previews import trace_previews
 from app.explorer.trace_queries import SummaryDetails, summary_details, trace_span, trace_spans
-from app.explorer.trace_sort import TraceSort
+from app.explorer.trace_sort import SortOrder, TraceSort
 from app.ingest.error_class import ErrorClass
-from app.ingest.metadata import MetadataKey
 from app.scores.queries import ScoreSummary, latest_scores_by_name
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["traces"])
 
 # Also readable by an API key with `traces:read`, for the project it belongs to.
 ProjectReader = Annotated[ReadAccess, Depends(require(Permission.PROJECT_READ, allow_api_key=True))]
-OptionalText = Annotated[str | None, Query(max_length=256)]
 TraceIdQuery = Annotated[str, Query(min_length=1, max_length=256)]
 
 MAX_ERROR_MESSAGE_LENGTH = 500
-_NO_DETAILS = SummaryDetails(None, None, None)
+NO_DETAILS = SummaryDetails(None, None, None)
 
 
-def _summary(
+def trace_summary(
     trace: Trace,
     models: list[str] | None,
     error_message: str | None,
     error_class: str | None,
     scores: list[ScoreSummary],
+    previews: tuple[str | None, str | None] = (None, None),
 ) -> TraceSummaryOut:
     return TraceSummaryOut(
         trace_id=trace.trace_id,
@@ -94,6 +85,8 @@ def _summary(
         retry_calls=trace.retry_calls,
         retry_cost_usd=trace.retry_cost_usd,
         scores=[ScoreSummaryOut(**score._asdict()) for score in scores],
+        input_preview=previews[0],
+        output_preview=previews[1],
     )
 
 
@@ -112,79 +105,23 @@ async def list_traces(
     access: ProjectReader,
     db: DbSession,
     window: Window,
-    name: OptionalText = None,
-    environment: OptionalText = None,
-    release: OptionalText = None,
-    model: OptionalText = None,
-    status: Literal["ok", "error"] | None = None,
-    error_class: ErrorClass | None = None,
-    prompt_version_id: uuid.UUID | None = None,
-    score_name: OptionalText = None,
-    score_min: Decimal | None = None,
-    score_max: Decimal | None = None,
-    score_value: OptionalText = None,
-    has_scores: bool | None = None,
-    has_retries: bool | None = None,
-    user_id: OptionalText = None,
-    session_id: OptionalText = None,
-    tag: OptionalText = None,
-    metadata_key: Annotated[MetadataKey | None, Query()] = None,
-    metadata_value: OptionalText = None,
-    q: Annotated[
-        str | None,
-        Query(
-            max_length=256,
-            description=(
-                "Matches the trace name (substring, ignoring case), an exact trace id, or, with 3+ "
-                "characters, a preview of the input and output of a span started in the window."
-            ),
-        ),
-    ] = None,
+    filters: TraceFilters,
     sort: TraceSort = "started_at",
+    order: SortOrder = "desc",
+    preview: Annotated[
+        bool,
+        Query(description="Fill `input_preview` and `output_preview` (null otherwise)."),
+    ] = False,
     limit: PageLimit = DEFAULT_PAGE_SIZE,
     cursor: Annotated[str | None, Query()] = None,
 ) -> Page[TraceSummaryOut]:
     project = access.require_project()
-    check_score_filters(score_name, score_min, score_max, score_value)
-    check_metadata_filter(metadata_key, metadata_value)
-    page_query = select(Trace).where(
-        Trace.project_id == project.id,
-        Trace.started_at >= window.start,
-        Trace.started_at < window.end,
+    page_query = await filters.narrow(db, select(Trace), project.id, window)
+    page_query = trace_sort.apply(page_query, sort=sort, order=order, cursor=cursor).limit(
+        limit + 1
     )
-    page_query = apply_filters(
-        page_query,
-        name=name,
-        environment=environment,
-        release=release,
-        user_id=user_id,
-        session_id=session_id,
-        tag=tag,
-        metadata_key=metadata_key,
-        metadata_value=metadata_value,
-        status=status,
-        model=model,
-        error_class=error_class,
-        prompt_version_id=prompt_version_id,
-        score_name=score_name,
-        score_min=score_min,
-        score_max=score_max,
-        score_value=score_value,
-        has_scores=has_scores,
-        has_retries=has_retries,
-    )
-    if q:
-        await set_statement_limit(db, SEARCH_TIMEOUT_MS)
-        content_from = await content_start(db, window.start, window.end)
-        page_query = page_query.where(text_search(q, project.id, content_from, window.end))
-    page_query = trace_sort.apply(page_query, sort=sort, cursor=cursor).limit(limit + 1)
-
-    try:
+    with filters.too_broad_on_timeout():
         rows = (await db.scalars(page_query)).all()
-    except OperationalError as error:
-        if q and is_statement_timeout(error.orig):
-            raise search_too_broad() from None
-        raise
     page = rows[:limit]
     next_cursor = None
     if len(rows) > limit:
@@ -192,17 +129,36 @@ async def list_traces(
     trace_ids = [trace.trace_id for trace in page]
     details = await summary_details(db, project.id, trace_ids)
     scores = await latest_scores_by_name(db, project.id, trace_ids)
+    previews = await trace_previews(db, project.id, trace_ids) if preview else {}
     return Page[TraceSummaryOut](
         items=[
-            _summary(
+            trace_summary(
                 trace,
-                *details.get(trace.trace_id, _NO_DETAILS),
+                *details.get(trace.trace_id, NO_DETAILS),
                 scores.get(trace.trace_id, []),
+                previews.get(trace.trace_id, (None, None)),
             )
             for trace in page
         ],
         next_cursor=next_cursor,
     )
+
+
+@router.get(
+    "/traces/histogram",
+    response_model=TraceHistogramOut,
+    responses={422: {"description": "As for `GET /traces`."}},
+)
+async def get_trace_histogram(
+    project_id: uuid.UUID,
+    access: ProjectReader,
+    db: DbSession,
+    window: Window,
+    filters: TraceFilters,
+) -> TraceHistogramOut:
+    """Trace and error counts over time for the trace list's filters. Registered before
+    `/traces/{trace_id}`, which would otherwise take `histogram` as an id."""
+    return await trace_histogram(db, access.require_project().id, window, filters)
 
 
 @router.get("/traces/compare", response_model=TraceCompareOut)
@@ -226,8 +182,8 @@ async def compare_traces(
         raise not_found()
     details = await summary_details(db, project.id, list(found))
     scores = await latest_scores_by_name(db, project.id, list(found))
-    summary_a = _summary(found[a], *details.get(a, _NO_DETAILS), scores.get(a, []))
-    summary_b = _summary(found[b], *details.get(b, _NO_DETAILS), scores.get(b, []))
+    summary_a = trace_summary(found[a], *details.get(a, NO_DETAILS), scores.get(a, []))
+    summary_b = trace_summary(found[b], *details.get(b, NO_DETAILS), scores.get(b, []))
     spans_a, cut_a = await compare_spans(db, project.id, a)
     spans_b, cut_b = await compare_spans(db, project.id, b)
 
@@ -277,8 +233,8 @@ async def get_trace(
         raise not_found()
     details = await summary_details(db, project.id, [trace.trace_id])
     scores = await latest_scores_by_name(db, project.id, [trace.trace_id])
-    summary = _summary(
-        trace, *details.get(trace.trace_id, _NO_DETAILS), scores.get(trace.trace_id, [])
+    summary = trace_summary(
+        trace, *details.get(trace.trace_id, NO_DETAILS), scores.get(trace.trace_id, [])
     )
     spans = await trace_spans(db, project.id, summary.trace_id)
     return TraceDetailOut(
@@ -302,68 +258,6 @@ async def get_span(
     if span is None:
         raise not_found()
     return SpanOut.model_validate(span, from_attributes=True)
-
-
-@router.get("/sessions", response_model=Page[SessionSummaryOut])
-async def list_sessions(
-    project_id: uuid.UUID,
-    access: ProjectReader,
-    db: DbSession,
-    window: Window,
-    environment: OptionalText = None,
-    limit: PageLimit = DEFAULT_PAGE_SIZE,
-    cursor: Annotated[str | None, Query()] = None,
-) -> Page[SessionSummaryOut]:
-    project = access.require_project()
-    last_at = func.max(Trace.ended_at)
-    query = (
-        select(
-            Trace.session_id,
-            func.count().label("trace_count"),
-            func.min(Trace.started_at).label("first_at"),
-            last_at.label("last_at"),
-            func.sum(Trace.cost_usd).label("cost_usd"),
-            func.bool_or(Trace.has_unpriced).label("has_unpriced"),
-            func.sum(Trace.error_count).label("error_count"),
-        )
-        .where(
-            Trace.project_id == project.id,
-            Trace.session_id.is_not(None),
-            Trace.started_at >= window.start,
-            Trace.started_at < window.end,
-        )
-        .group_by(Trace.session_id)
-        .order_by(last_at.desc(), Trace.session_id.desc())
-        .limit(limit + 1)
-    )
-    if environment is not None:
-        # Applied before the grouping: counts, cost and errors cover this environment's traces only.
-        query = query.where(Trace.environment == environment)
-    if cursor:
-        cursor_last_at, cursor_session_id = decode_cursor(cursor)
-        query = query.having(
-            tuple_(last_at, Trace.session_id) < tuple_(cursor_last_at, cursor_session_id)
-        )
-
-    rows = (await db.execute(query)).all()
-    page = rows[:limit]
-    next_cursor = None
-    if len(rows) > limit:
-        last = page[-1]
-        next_cursor = encode_cursor(last.last_at, last.session_id)
-    items = [
-        SessionSummaryOut(
-            session_id=row.session_id,
-            trace_count=row.trace_count,
-            first_at=row.first_at,
-            last_at=row.last_at,
-            cost_usd=row.cost_usd,
-            has_unpriced=row.has_unpriced,
-            error_count=row.error_count,
-        )
-        for row in page
-    ]
-    return Page[SessionSummaryOut](items=items, next_cursor=next_cursor)
 
 
 @router.get("/filters", response_model=FiltersOut)

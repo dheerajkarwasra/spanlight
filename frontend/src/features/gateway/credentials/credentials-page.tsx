@@ -8,6 +8,7 @@ import { ReadOnlyNote } from "@/components/read-only-note";
 import { SectionCard } from "@/components/section-card";
 import { TileListSkeleton } from "@/components/tile-list";
 import { Button } from "@/components/ui/button";
+import { useMe } from "@/features/auth";
 import { useCurrentOrg, usePermission } from "@/features/shell";
 import type { Route } from "@/lib/api";
 import { viewOnlyCopy } from "@/lib/permissions";
@@ -21,8 +22,9 @@ import { useCredentialsQuery } from "./credentials-queries";
 
 /**
  * Figma "Gateway — Credentials" and its states. Org-level: every member reads the list, only
- * owners add, check, rotate or delete. The page learns the server has no `CREDENTIALS_KEYS` only
- * from a `409 NOT_CONFIGURED` answer, then shows the notice and stops offering Add.
+ * owners add, check, rotate or delete. A server without `CREDENTIALS_KEYS` says so in `/me`, so the
+ * notice shows up front and Add is off; a `409 NOT_CONFIGURED` answer (the setting removed since
+ * `/me` loaded) does the same.
  */
 export function GatewayCredentialsPage() {
   const org = useCurrentOrg();
@@ -31,7 +33,9 @@ export function GatewayCredentialsPage() {
   const credentialsQuery = useCredentialsQuery();
   // Best effort: it only adds "Used by route" hints, so a failure here never blocks the list.
   const routes = useGatewayRoutesQuery().data ?? [];
-  const [notConfigured, setNotConfigured] = useState(false);
+  const serverNotConfigured = !useMe().capabilities.credentials_configured;
+  const [refused, setRefused] = useState(false);
+  const notConfigured = serverNotConfigured || refused;
   const notConfiguredId = useId();
 
   // `aria-disabled`, not `disabled`: the button keeps focus when the dialog closes into the
@@ -41,7 +45,7 @@ export function GatewayCredentialsPage() {
       disabled={notConfigured}
       orgName={orgName}
       onNotConfigured={() => {
-        setNotConfigured(true);
+        setRefused(true);
       }}
       trigger={
         <Button
@@ -74,7 +78,11 @@ export function GatewayCredentialsPage() {
         )}
         {notConfigured ? (
           <div id={notConfiguredId}>
-            <Callout tone="warning" role="alert">
+            <Callout
+              tone="warning"
+              role={refused ? "alert" : undefined}
+              title="Not configured on this server"
+            >
               {NOT_CONFIGURED_COPY}
             </Callout>
           </div>
@@ -86,7 +94,7 @@ export function GatewayCredentialsPage() {
           notConfigured={notConfigured}
           addAction={addAction}
           onNotConfigured={() => {
-            setNotConfigured(true);
+            setRefused(true);
           }}
         />
         <p className="px-1 text-xs font-medium text-subtle-foreground">

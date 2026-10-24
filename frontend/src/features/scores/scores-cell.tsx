@@ -56,7 +56,7 @@ export function ScoresCell({ scores, typeOf, max = 1 }: ScoresCellProps) {
             variant="outline"
             size="sm"
             tabIndex={0}
-            className="cursor-help"
+            className="relative cursor-help after:absolute after:-inset-0.5"
             aria-label={`${String(hidden.length)} more: ${hiddenText}`}
           >
             +{hidden.length}

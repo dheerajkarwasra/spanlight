@@ -1,29 +1,46 @@
 import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
-import { useState } from "react";
 
 import { useProjectFilters, useProjectParams } from "@/features/shell/project-context";
-import { projectsApi, queryKeys, type SessionListQuery, type TraceListQuery } from "@/lib/api";
-import { MAX_WINDOW_MS } from "@/lib/time-range";
+import { projectsApi, queryKeys, type SessionListQuery } from "@/lib/api";
+
+import type { SessionsSearch } from "./sessions-search";
 
 export const SESSION_PAGE_SIZE = 50;
-const SESSION_TRACES_PAGE_SIZE = 100;
+const SESSION_TURNS_PAGE_SIZE = 100;
 
-/** The sessions endpoint's query parameters for a time window and an optional environment. */
+/** The list state the URL carries besides the window. */
+export type SessionsListState = Pick<SessionsSearch, "sort" | "order" | "q">;
+
+/**
+ * The sessions endpoint's query parameters for the URL's list state, a time window and an optional
+ * environment. Previews are asked for only while the Last turn column shows (spec ruling 4).
+ */
 export function toSessionListQuery(
+  { sort, order, q }: SessionsListState,
   window: { from: string; to: string },
   environment: string | undefined,
+  preview: boolean,
 ): Omit<SessionListQuery, "cursor"> {
-  return { from: window.from, to: window.to, environment, limit: SESSION_PAGE_SIZE };
+  return {
+    from: window.from,
+    to: window.to,
+    environment,
+    q,
+    sort,
+    order,
+    preview: preview || undefined,
+    limit: SESSION_PAGE_SIZE,
+  };
 }
 
 /**
- * Sessions active in the selected time range and environment. A session that spans
- * environments counts only the traces of the selected one.
+ * Sessions active in the selected time range and environment, matching `q` and ranked by `sort`
+ * and `order`. A session that spans environments counts only the traces of the selected one.
  */
-export function useSessionListQuery() {
+export function useSessionListQuery(list: SessionsListState, preview: boolean) {
   const { projectId } = useProjectParams();
   const { range, environment } = useProjectFilters();
-  const query = toSessionListQuery(range, environment);
+  const query = toSessionListQuery(list, range, environment, preview);
 
   return useInfiniteQuery({
     queryKey: queryKeys.project(projectId).sessions(query),
@@ -34,34 +51,19 @@ export function useSessionListQuery() {
   });
 }
 
-function lookbackWindow(): { from: string; to: string } {
-  const to = new Date();
-  to.setSeconds(0, 0);
-  return {
-    from: new Date(to.getTime() - MAX_WINDOW_MS).toISOString(),
-    to: to.toISOString(),
-  };
-}
-
 /**
- * Every trace in one session. There is no session endpoint, so this lists
- * traces by `session_id` over the longest window the API allows (90 days),
- * independent of the page's time range. Pages arrive newest first.
+ * Every trace of one session with the spans its conversation needs, newest first, one request per
+ * page. Independent of the page's time range: a session's traces are listed for as long as
+ * they are retained.
  */
-export function useSessionTracesQuery(sessionId: string) {
+export function useSessionTurnsQuery(sessionId: string) {
   const { projectId } = useProjectParams();
-  // Fixed when the page mounts so the query key (and loaded pages) stay stable.
-  const [window] = useState(lookbackWindow);
-  const query: Omit<TraceListQuery, "cursor"> = {
-    from: window.from,
-    to: window.to,
-    session_id: sessionId,
-    limit: SESSION_TRACES_PAGE_SIZE,
-  };
+  const query = { limit: SESSION_TURNS_PAGE_SIZE };
 
   return useInfiniteQuery({
-    queryKey: queryKeys.project(projectId).traces(query),
-    queryFn: ({ pageParam }) => projectsApi.traces(projectId, { ...query, cursor: pageParam }),
+    queryKey: queryKeys.project(projectId).sessionTurns(sessionId, query),
+    queryFn: ({ pageParam }) =>
+      projectsApi.sessionTurns(projectId, sessionId, { ...query, cursor: pageParam }),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor,
   });
