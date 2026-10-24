@@ -105,7 +105,9 @@ export function ConnectStep({ membership, project, status }: ConnectStepProps) {
 
       {snippetId === "gateway" ? (
         <GatewaySetupCard orgId={membership.org.id} projectId={project.id} />
-      ) : received && createdKey === null ? null : (
+      ) : received && waitedHere && createdKey === null ? null : (
+        // A project that was already connected keeps the key card: "Connect your app" from the
+        // user menu is how its owner adds another key or app.
         keyCard
       )}
 

@@ -102,6 +102,34 @@ describe("AppShell", () => {
     expect(workMode.mounts).toBe(1);
   });
 
+  it("truncates a long project name in the phone app bar, beside the search and menu buttons", async () => {
+    const longName = "A very long project name for the phone header truncation chk";
+    mockSignedIn([{ ...makeProject("proj_1", longName), slug: "long-name" }]);
+    renderApp(`/${ORG_ID}/proj_1/settings/project`);
+
+    const bar = await screen.findByRole("banner");
+    expect(bar).toHaveAttribute("data-app-bar");
+    const name = await within(bar).findByText(longName);
+    expect(name).toHaveClass("min-w-0", "truncate");
+    expect(name).toHaveAttribute("title", longName);
+    // Stretched, not `items-start`: a fit-content row would size to the whole name and overflow.
+    const trigger = within(bar).getByRole("button", { name: new RegExp(`^Project ${longName}`) });
+    expect(trigger).toHaveClass("min-w-0", "items-stretch");
+    expect(trigger).not.toHaveClass("items-start");
+    // The buttons sit in their own non-shrinking group, a sibling of the switcher's group.
+    const buttons = within(bar).getByRole("button", { name: "Search" }).parentElement;
+    expect(buttons).toHaveClass("shrink-0");
+    for (const button of within(buttons as HTMLElement).getAllByRole("button")) {
+      expect(button).toHaveClass("size-11");
+    }
+    expect(buttons?.parentElement).toBe(bar);
+    expect(within(bar).getByRole("button", { name: "Open navigation" }).parentElement).toBe(
+      buttons,
+    );
+    expect(trigger.parentElement).toHaveClass("min-w-0");
+    expect(trigger.parentElement?.parentElement).toBe(bar);
+  });
+
   describe("rail", () => {
     it("collapses to the icon rail and remembers it", async () => {
       wideWindow();

@@ -75,7 +75,9 @@ function SegmentedControl<T extends string>({
             "data-[state=checked]:font-semibold",
             tone === "ink"
               ? "data-[state=checked]:bg-ink data-[state=checked]:text-ink-foreground"
-              : "data-[state=checked]:bg-surface data-[state=checked]:text-foreground data-[state=checked]:shadow-card dark:data-[state=checked]:bg-surface-hover",
+              : // Dark: the fill is ~1.07:1 on the track, so a ring (3.4:1) marks it. shadow-none, since
+                // the dark card shadow is `none`, which would void the composed ring box-shadow.
+                "data-[state=checked]:bg-surface data-[state=checked]:text-foreground data-[state=checked]:shadow-card dark:data-[state=checked]:bg-surface-hover dark:data-[state=checked]:shadow-none dark:data-[state=checked]:ring-1 dark:data-[state=checked]:ring-border-strong dark:data-[state=checked]:ring-inset",
           )}
         >
           {option.label}

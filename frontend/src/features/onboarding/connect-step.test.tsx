@@ -187,4 +187,10 @@ describe("ConnectStep first trace", () => {
     expect(navigate).not.toHaveBeenCalled();
     expect(toastSuccess).not.toHaveBeenCalled();
   });
+
+  it("still offers a new API key to a project that was already connected", async () => {
+    renderStep(ARRIVED);
+    await screen.findByRole("link", { name: "Open your first trace" });
+    expect(screen.getByRole("button", { name: "Create API key" })).toBeInTheDocument();
+  });
 });

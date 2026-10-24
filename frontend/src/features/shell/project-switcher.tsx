@@ -70,7 +70,8 @@ export function ProjectSwitcher({ variant }: ProjectSwitcherProps) {
           "flex min-w-0 items-center text-left transition-colors duration-200",
           variant === "rail"
             ? "w-full flex-col items-stretch gap-0.5 rounded-2xl bg-rail-tile px-3.5 py-3 hover:bg-rail-tile-hover focus-visible:outline-lime data-[state=open]:bg-rail-tile-hover"
-            : "flex-col items-start rounded-md",
+            : // Stretch, not items-start: a fit-content row sizes to the whole name and never truncates.
+              "flex-col items-stretch rounded-md",
         )}
         aria-label={`Project ${projectQuery.data?.name ?? ""}. Switch project or organization`}
       >
@@ -90,8 +91,9 @@ export function ProjectSwitcher({ variant }: ProjectSwitcherProps) {
         <span className="flex min-w-0 items-center justify-between gap-1">
           {projectQuery.data ? (
             <span
+              title={projectQuery.data.name}
               className={cn(
-                "truncate text-sm font-semibold",
+                "min-w-0 truncate text-sm font-semibold",
                 variant === "rail" ? "text-rail-foreground" : "text-foreground",
               )}
             >

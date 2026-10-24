@@ -42,6 +42,29 @@ describe("SegmentedControl", () => {
     expect(screen.getByRole("radio", { name: /^1h/ })).toBeChecked();
   });
 
+  it("rings the selected surface pill in dark mode, where its fill matches the track", () => {
+    render(
+      <SegmentedControl
+        aria-label="Group by"
+        tone="surface"
+        value="24h"
+        options={OPTIONS}
+        onValueChange={vi.fn()}
+      />,
+    );
+    const selected = screen.getByRole("radio", { name: /^24h/ });
+    expect(selected).toHaveAttribute("data-state", "checked");
+    // Ring classes are state-gated, so only the checked item shows them.
+    // shadow-none: the dark card shadow is `none`, which would void the composed ring.
+    expect(selected).toHaveClass(
+      "dark:data-[state=checked]:shadow-none",
+      "dark:data-[state=checked]:ring-1",
+      "dark:data-[state=checked]:ring-border-strong",
+      "dark:data-[state=checked]:ring-inset",
+    );
+    expect(screen.getByRole("radio", { name: /^1h/ })).toHaveAttribute("data-state", "unchecked");
+  });
+
   it("can show no selection", () => {
     render(
       <SegmentedControl

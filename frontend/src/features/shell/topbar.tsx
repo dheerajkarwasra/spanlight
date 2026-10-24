@@ -80,12 +80,14 @@ export function MobileAppBar({
         <ProjectSwitcher variant="appbar" />
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <Button size="icon" aria-label="Search" onClick={onOpenCommandPalette}>
+        {/* size-11: 44 px touch targets on phones. */}
+        <Button size="icon" className="size-11" aria-label="Search" onClick={onOpenCommandPalette}>
           <Search aria-hidden />
         </Button>
         <Button
           variant="primary"
           size="icon"
+          className="size-11"
           aria-label="Open navigation"
           onClick={onOpenNavigation}
         >

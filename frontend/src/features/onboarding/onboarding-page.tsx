@@ -54,7 +54,9 @@ export function OnboardingPage() {
   return (
     <OnboardingLayout
       stepper={loadFailed ? null : <Stepper state={state} complete={firstTraceReceived} />}
-      exitLink={firstTraceReceived ? null : <ExitLink state={state} memberships={me.memberships} />}
+      exitLink={
+        <ExitLink state={state} memberships={me.memberships} connected={firstTraceReceived} />
+      }
     >
       {loadFailed ? (
         <ErrorState
@@ -190,16 +192,17 @@ function StepSkeleton() {
 }
 
 /**
- * "Skip to dashboard" once this flow has a project, or "Back to dashboard"
- * when the user arrived here from an existing project. Hidden once the first trace arrived:
- * the success card links into the app instead.
+ * "Skip to dashboard" once this flow has a project, "Back to dashboard" once that project is
+ * connected, or "Back to dashboard" when the user arrived here from an existing project.
  */
 function ExitLink({
   state,
   memberships,
+  connected,
 }: {
   state: OnboardingState;
   memberships: readonly Membership[];
+  connected: boolean;
 }) {
   const [lastProject] = useState<LastProject | null>(readLastProject);
 
@@ -210,7 +213,7 @@ function ExitLink({
           to="/$orgId/$projectId/overview"
           params={{ orgId: state.membership.org.id, projectId: state.project.id }}
         >
-          Skip to dashboard
+          {connected ? "Back to dashboard" : "Skip to dashboard"}
         </Link>
       </Button>
     );
