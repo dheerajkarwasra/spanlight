@@ -30,8 +30,9 @@ class TraceSummaryOut(BaseModel):
     duration_ms: float
     span_count: int
     error_count: int
-    input_tokens: int
-    output_tokens: int
+    input_tokens: int | None
+    """Summed over the trace's calls; null when none of them reported it."""
+    output_tokens: int | None
     cost_usd: Money | None
     has_unpriced: bool
     models: list[str]
@@ -159,8 +160,9 @@ class TraceTotalsDeltaOut(BaseModel):
     """Trace B minus trace A."""
 
     duration_ms: float
-    input_tokens: int
-    output_tokens: int
+    input_tokens: int | None
+    """Null when either trace's total is unknown; so is `output_tokens`."""
+    output_tokens: int | None
     cost_usd: Money | None
     """Null when either trace has an unpriced call or no cost."""
     span_count: int
@@ -233,8 +235,9 @@ class SessionListItemOut(SessionSummaryOut):
     left out), else null."""
     user_count: int
     """Distinct user ids among the session's traces."""
-    input_tokens: int
-    output_tokens: int
+    input_tokens: int | None
+    """Null when no trace of the session reported it; so is `output_tokens`."""
+    output_tokens: int | None
     duration_ms: float
     """From the first trace's start to the last trace's end."""
     last_trace_id: str | None

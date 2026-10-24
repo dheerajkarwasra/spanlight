@@ -1,4 +1,5 @@
 import { CostValue, UNPRICED_OR_NO_USAGE_REASON } from "@/components/cost-value";
+import { UnknownValue } from "@/components/unknown-value";
 import { CompareTile } from "@/features/experiments/compare-tiles";
 import {
   formatLatency,
@@ -32,14 +33,14 @@ export function CompareTotals({ comparison }: { comparison: TraceComparison }) {
         />
         <CompareTile
           label="Input tokens"
-          before={formatInteger(a.input_tokens)}
-          after={formatInteger(b.input_tokens)}
+          before={tokens(a.input_tokens)}
+          after={tokens(b.input_tokens)}
           change={countChange(totals.input_tokens, ["more", "fewer"])}
         />
         <CompareTile
           label="Output tokens"
-          before={formatInteger(a.output_tokens)}
-          after={formatInteger(b.output_tokens)}
+          before={tokens(a.output_tokens)}
+          after={tokens(b.output_tokens)}
           change={countChange(totals.output_tokens, ["more", "fewer"])}
         />
         <CompareTile
@@ -81,12 +82,16 @@ export function CompareTotals({ comparison }: { comparison: TraceComparison }) {
   );
 }
 
-function countChange(delta: number, words: [string, string]) {
+function countChange(delta: number | null, words: [string, string]) {
   return {
     delta,
-    text: `${delta > 0 ? "+" : "−"}${formatInteger(Math.abs(delta))}`,
+    text: delta === null ? null : `${delta > 0 ? "+" : "−"}${formatInteger(Math.abs(delta))}`,
     words,
   };
+}
+
+function tokens(count: number | null) {
+  return formatInteger(count) ?? <UnknownValue reason="No call in this trace reported the count" />;
 }
 
 function cost(trace: TraceSummary) {

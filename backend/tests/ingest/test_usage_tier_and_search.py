@@ -186,7 +186,7 @@ async def test_output_null_with_reason_marks_trace_unpriced(
     trace = await _stored_trace(session_factory, trace_id)
     assert trace.has_unpriced is True
     assert trace.cost_usd is None
-    assert trace.output_tokens == 0
+    assert trace.output_tokens is None  # no call reported it: unknown, not 0
 
 
 async def test_cut_stream_with_searches_keeps_fee_without_cost(

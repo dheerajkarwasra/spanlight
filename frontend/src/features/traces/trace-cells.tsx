@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { ErrorClassChip } from "@/components/error-class-chip";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip } from "@/components/ui/tooltip";
+import { UnknownValue } from "@/components/unknown-value";
 import type { ErrorClass } from "@/lib/api";
 import { formatCompact, formatInteger } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -109,14 +110,18 @@ export function TagBadges({ tags, max = 2 }: { tags: string[]; max?: number }) {
 }
 
 /** Exact below 10,000, compact above, so the column stays narrow. */
-function formatTokenCount(value: number): string {
+function formatTokenCount(value: number | null): string {
+  if (value === null) return "—";
   const formatted = value < 10_000 ? formatInteger(value) : formatCompact(value);
   return formatted ?? "0";
 }
 
-/** "1,312 → 528" with the full wording for screen readers. */
-export function TokenPair({ input, output }: { input: number; output: number }) {
-  const full = `${formatInteger(input) ?? "0"} input → ${formatInteger(output) ?? "0"} output tokens`;
+/** "1,312 → 528" with the full wording for screen readers; unknown when neither was reported. */
+export function TokenPair({ input, output }: { input: number | null; output: number | null }) {
+  if (input === null && output === null) {
+    return <UnknownValue reason="No call in this trace reported token usage" />;
+  }
+  const full = `${formatInteger(input) ?? "unknown"} input → ${formatInteger(output) ?? "unknown"} output tokens`;
   return (
     <span title={full} className="whitespace-nowrap tabular">
       <span className="sr-only">{full}</span>

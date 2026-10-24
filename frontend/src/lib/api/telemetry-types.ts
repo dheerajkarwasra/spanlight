@@ -111,8 +111,8 @@ export interface TraceSummary {
   duration_ms: number;
   span_count: number;
   error_count: number;
-  input_tokens: number;
-  output_tokens: number;
+  input_tokens: number | null;
+  output_tokens: number | null;
   cost_usd: string | null;
   has_unpriced: boolean;
   models: string[];
@@ -252,8 +252,8 @@ export interface TraceComparison {
   /** B minus A over the whole traces; `cost_usd` null when either has an unpriced call. */
   totals: {
     duration_ms: number;
-    input_tokens: number;
-    output_tokens: number;
+    input_tokens: number | null;
+    output_tokens: number | null;
     cost_usd: string | null;
     span_count: number;
     error_count: number;
@@ -295,8 +295,8 @@ export interface SessionListItem extends SessionSummary {
   external_user_id: string | null;
   /** Distinct user ids among the session's traces. */
   user_count: number;
-  input_tokens: number;
-  output_tokens: number;
+  input_tokens: number | null;
+  output_tokens: number | null;
   /** From the first trace's start to the last trace's end. */
   duration_ms: number;
   /** The newest trace; null only when the session's traces were deleted while the page was read. */

@@ -1,12 +1,13 @@
-import { useId, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { DisabledReason } from "@/components/disabled-reason";
-import { ReadOnlyLine } from "@/components/read-only-line";
-import { Button, type ButtonProps } from "@/components/ui/button";
+import { ReadOnlyNote } from "@/components/read-only-note";
+import { Button } from "@/components/ui/button";
 import type { InsightStatus } from "@/lib/api";
 
-import { availableActions, READ_ONLY_REASON } from "./action-rules";
+import { viewOnlyCopy } from "@/lib/permissions";
+
+import { availableActions } from "./action-rules";
 import { useAcknowledgeInsight, useResolveInsight, useUnmuteInsight } from "./doctor-queries";
 import { actionErrorMessage } from "./insight-errors";
 import { MuteDialog } from "./mute-dialog";
@@ -18,11 +19,18 @@ interface InsightActionsProps {
 }
 
 /**
- * Figma "Doctor/Actions": Mute…, Resolve, Unmute and Acknowledge by status. Members and viewers
- * see them disabled, with the reason as visible text. A failed action says why, inline.
+ * Figma "Doctor/Actions": Mute…, Resolve, Unmute and Acknowledge by status. Without
+ * `insights:manage` they are hidden and one view-only note says who can act (the §7ag rule).
+ * A failed action says why, inline.
  */
 export function InsightActions({ insightId, status, canManage }: InsightActionsProps) {
-  const reasonId = useId();
+  if (!canManage) {
+    return <ReadOnlyNote>{viewOnlyCopy("insights", "insights:manage")}</ReadOnlyNote>;
+  }
+  return <ManageActions insightId={insightId} status={status} />;
+}
+
+function ManageActions({ insightId, status }: Omit<InsightActionsProps, "canManage">) {
   const [muting, setMuting] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const container = useRef<HTMLDivElement>(null);
@@ -53,9 +61,7 @@ export function InsightActions({ insightId, status, canManage }: InsightActionsP
     <div ref={container} tabIndex={-1} className="flex flex-col gap-2 outline-none lg:items-end">
       <div className="flex flex-wrap items-center gap-2.5 lg:flex-nowrap">
         {available.mute ? (
-          <ActionButton
-            canManage={canManage}
-            reasonId={reasonId}
+          <Button
             disabled={busy}
             onClick={() => {
               setFailure(null);
@@ -63,12 +69,10 @@ export function InsightActions({ insightId, status, canManage }: InsightActionsP
             }}
           >
             Mute…
-          </ActionButton>
+          </Button>
         ) : null}
         {available.unmute ? (
-          <ActionButton
-            canManage={canManage}
-            reasonId={reasonId}
+          <Button
             disabled={busy}
             loading={unmute.isPending}
             onClick={() => {
@@ -76,12 +80,10 @@ export function InsightActions({ insightId, status, canManage }: InsightActionsP
             }}
           >
             Unmute
-          </ActionButton>
+          </Button>
         ) : null}
         {available.resolve ? (
-          <ActionButton
-            canManage={canManage}
-            reasonId={reasonId}
+          <Button
             disabled={busy}
             loading={resolve.isPending}
             onClick={() => {
@@ -89,12 +91,10 @@ export function InsightActions({ insightId, status, canManage }: InsightActionsP
             }}
           >
             Resolve
-          </ActionButton>
+          </Button>
         ) : null}
         {available.acknowledge ? (
-          <ActionButton
-            canManage={canManage}
-            reasonId={reasonId}
+          <Button
             variant="primary"
             disabled={busy}
             loading={acknowledge.isPending}
@@ -103,10 +103,9 @@ export function InsightActions({ insightId, status, canManage }: InsightActionsP
             }}
           >
             Acknowledge
-          </ActionButton>
+          </Button>
         ) : null}
       </div>
-      {canManage ? null : <ReadOnlyLine id={reasonId}>{READ_ONLY_REASON}</ReadOnlyLine>}
       {failure === null ? null : (
         <p role="alert" className="max-w-sm text-xs font-medium text-danger-text lg:text-right">
           {failure}
@@ -120,26 +119,4 @@ export function InsightActions({ insightId, status, canManage }: InsightActionsP
 interface MutateOptions {
   onSuccess: () => void;
   onError: (error: unknown) => void;
-}
-
-interface ActionButtonProps extends ButtonProps {
-  canManage: boolean;
-  /** The visible read-only line; the disabled button is described by it. */
-  reasonId: string;
-}
-
-/**
- * An action button. Without `insights:manage` it is disabled and wrapped so the reason is
- * reachable by keyboard (tooltip) and described by the visible read-only line, read once per
- * button rather than as a second hidden copy.
- */
-function ActionButton({ canManage, reasonId, disabled, ...props }: ActionButtonProps) {
-  if (canManage) {
-    return <Button disabled={disabled} {...props} />;
-  }
-  return (
-    <DisabledReason reason={READ_ONLY_REASON} describedBy={reasonId}>
-      <Button disabled {...props} />
-    </DisabledReason>
-  );
 }

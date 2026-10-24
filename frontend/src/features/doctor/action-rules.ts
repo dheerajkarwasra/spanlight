@@ -1,8 +1,5 @@
 import type { InsightStatus } from "@/lib/api";
 
-/** The reason a member or viewer sees beside the disabled actions. */
-export const READ_ONLY_REASON = "Only admins and owners can change insights";
-
 /** The reason a viewer sees under the disabled "Was this right?" buttons (`insights:feedback`). */
 export const FEEDBACK_READ_ONLY_REASON = "Only members, admins and owners can give feedback";
 

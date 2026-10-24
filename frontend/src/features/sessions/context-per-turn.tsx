@@ -19,13 +19,19 @@ const INSIGHT_LIMIT = 50;
  * context-growth finding that cites one of the session's traces.
  */
 export function ContextPerTurn({ traces }: { traces: readonly TraceSummary[] }) {
-  const max = Math.max(0, ...traces.map((trace) => trace.input_tokens));
+  const max = Math.max(0, ...traces.map((trace) => trace.input_tokens ?? 0));
   const costs = cumulativeCost(traces);
   const peak = traces.findIndex((trace) => trace.input_tokens === max);
   const summary =
     max === 0
       ? "No input tokens recorded"
       : `Input tokens per turn: ${formatInteger(traces[0]?.input_tokens ?? 0) ?? ""} on the first, ${formatInteger(traces.at(-1)?.input_tokens ?? 0) ?? ""} on the last, peak ${formatInteger(max) ?? ""} on turn ${peak + 1}`;
+
+  // The values the bars encode, visible without hovering: first → last, and the peak.
+  const caption =
+    max === 0
+      ? null
+      : `${formatInteger(traces[0]?.input_tokens) ?? "—"} → ${formatInteger(traces.at(-1)?.input_tokens) ?? "—"} input tokens · peak ${formatInteger(max) ?? ""} on turn ${peak + 1}`;
 
   const reached = costs.findLastIndex((cost) => cost !== null);
   const costLine =
@@ -37,10 +43,10 @@ export function ContextPerTurn({ traces }: { traces: readonly TraceSummary[] }) 
     <div className="flex flex-col gap-3">
       <div role="list" aria-label={summary} className="flex h-12 items-end gap-0.5">
         {traces.map((trace, index) => {
-          const label = `Turn ${index + 1} · ${formatInteger(trace.input_tokens) ?? ""} input tokens`;
-          // A zero-token turn draws no bar; any other keeps a sliver so it stays visible.
+          const label = `Turn ${index + 1} · ${formatInteger(trace.input_tokens) ?? "unknown"} input tokens`;
+          // A zero-token or unknown turn draws no bar; any other keeps a sliver so it stays visible.
           const height =
-            max === 0 || trace.input_tokens === 0
+            max === 0 || !trace.input_tokens
               ? 0
               : `${Math.max((trace.input_tokens / max) * 100, 2)}%`;
           return (
@@ -61,6 +67,11 @@ export function ContextPerTurn({ traces }: { traces: readonly TraceSummary[] }) 
           );
         })}
       </div>
+      {caption ? (
+        <p aria-hidden className="-mt-1 text-xs text-muted-foreground tabular-nums">
+          {caption}
+        </p>
+      ) : null}
       <div className="flex flex-col gap-1">
         {/* The total sits in "Total cost" above; the line shows how it built up. */}
         <p className="text-xs font-medium text-muted-foreground">Cumulative cost</p>

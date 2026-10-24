@@ -94,17 +94,20 @@ export function spanBetween(fromIso: string, toIso: string): number | null {
 export interface TokenTotals {
   input: number;
   output: number;
-  total: number;
+  /** Null when no turn reported token usage. */
+  total: number | null;
 }
 
 export function sumTokens(traces: readonly TraceSummary[]): TokenTotals {
   let input = 0;
   let output = 0;
+  let reported = false;
   for (const trace of traces) {
-    input += trace.input_tokens;
-    output += trace.output_tokens;
+    input += trace.input_tokens ?? 0;
+    output += trace.output_tokens ?? 0;
+    reported ||= trace.input_tokens !== null || trace.output_tokens !== null;
   }
-  return { input, output, total: input + output };
+  return { input, output, total: reported ? input + output : null };
 }
 
 export interface ModelUsage {

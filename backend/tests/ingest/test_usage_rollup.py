@@ -175,7 +175,7 @@ async def test_child_with_only_input_tokens_makes_the_parent_a_rollup(
     assert await _flags(session_factory) == {"a": True, "c": False}
     totals = await _totals(session_factory, trace_id)
     # The parent's output count is not summed in the child's place; the child is unpriced.
-    assert (totals["input_tokens"], totals["output_tokens"]) == (400, 0)
+    assert (totals["input_tokens"], totals["output_tokens"]) == (400, None)
     assert (totals["cost_usd"], totals["has_unpriced"]) == (None, True)
 
 
@@ -271,7 +271,11 @@ async def test_cycle_is_capped_and_both_flagged(
 
     assert await _flags(session_factory) == {"a": True, "b": True}
     totals = await _totals(session_factory, trace_id)
-    assert (totals["span_count"], totals["input_tokens"], totals["output_tokens"]) == (2, 0, 0)
+    assert (totals["span_count"], totals["input_tokens"], totals["output_tokens"]) == (
+        2,
+        None,
+        None,
+    )
 
 
 async def test_rejected_child_does_not_flag_parent(

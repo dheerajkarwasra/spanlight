@@ -56,8 +56,8 @@ _INSERT_ROLLUPS = text(
          retry_cost_usd)
     SELECT project_id, (started_at AT TIME ZONE 'UTC')::date, environment, 'metadata',
            :key, CASE WHEN metadata ->> :key IS NULL THEN 'none' ELSE 'value' END,
-           metadata ->> :key, count(*), 0, 0, 0, sum(input_tokens), sum(output_tokens),
-           sum(cost_usd), NULL, NULL
+           metadata ->> :key, count(*), 0, 0, 0, coalesce(sum(input_tokens), 0),
+           coalesce(sum(output_tokens), 0), sum(cost_usd), NULL, NULL
     FROM traces
     WHERE project_id = :project_id AND started_at >= :start AND started_at < :end
     GROUP BY project_id, (started_at AT TIME ZONE 'UTC')::date, environment, metadata ->> :key

@@ -52,6 +52,8 @@ describe("trace row labels", () => {
     expect(tokenLabel({ input_tokens: 1500, output_tokens: 340, models: ["m"] })).toBe("1,840 tok");
     expect(tokenLabel({ input_tokens: 0, output_tokens: 0, models: ["m"] })).toBe("0 tok");
     expect(tokenLabel({ input_tokens: 0, output_tokens: 0, models: [] })).toBeNull();
+    // No call reported usage: unknown, not "0 tok".
+    expect(tokenLabel({ input_tokens: null, output_tokens: null, models: ["m"] })).toBeNull();
   });
 
   it("counts failed spans", () => {

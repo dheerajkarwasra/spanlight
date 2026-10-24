@@ -149,6 +149,17 @@ describe("sumTokens", () => {
 
     expect(tokens).toEqual({ input: 150, output: 25, total: 175 });
   });
+
+  it("has no total when no turn reported token usage", () => {
+    const tokens = sumTokens([
+      makeTrace("a", "2026-10-07T12:00:00Z", "2026-10-07T12:00:01Z", {
+        input_tokens: null,
+        output_tokens: null,
+      }),
+    ]);
+
+    expect(tokens.total).toBeNull();
+  });
 });
 
 describe("modelUsage", () => {

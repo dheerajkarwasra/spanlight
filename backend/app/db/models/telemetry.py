@@ -75,8 +75,9 @@ class Trace(Base):
     ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     span_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     error_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
-    input_tokens: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
-    output_tokens: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
+    # NULL when none of the trace's spans reported the count (migration 1016).
+    input_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    output_tokens: Mapped[int | None] = mapped_column(BigInteger)
     cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 8))
     has_unpriced: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     # Set by the score write path once the trace has a score (migration 0502); never cleared.

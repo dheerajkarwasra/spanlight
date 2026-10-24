@@ -15489,8 +15489,15 @@
             "type": "boolean"
           },
           "input_tokens": {
-            "title": "Input Tokens",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
           },
           "last_at": {
             "format": "date-time",
@@ -15520,8 +15527,15 @@
             "title": "Last Trace Id"
           },
           "output_tokens": {
-            "title": "Output Tokens",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
           },
           "session_id": {
             "title": "Session Id",
@@ -17067,8 +17081,15 @@
             "title": "Input Preview"
           },
           "input_tokens": {
-            "title": "Input Tokens",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
           },
           "metadata": {
             "additionalProperties": {
@@ -17107,8 +17128,15 @@
             "title": "Output Preview"
           },
           "output_tokens": {
-            "title": "Output Tokens",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
           },
           "release": {
             "anyOf": [
@@ -17375,8 +17403,15 @@
             "title": "Input Preview"
           },
           "input_tokens": {
-            "title": "Input Tokens",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
           },
           "metadata": {
             "additionalProperties": {
@@ -17415,8 +17450,15 @@
             "title": "Output Preview"
           },
           "output_tokens": {
-            "title": "Output Tokens",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
           },
           "release": {
             "anyOf": [
@@ -17542,12 +17584,26 @@
             "type": "integer"
           },
           "input_tokens": {
-            "title": "Input Tokens",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
           },
           "output_tokens": {
-            "title": "Output Tokens",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
           },
           "span_count": {
             "title": "Span Count",

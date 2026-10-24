@@ -263,4 +263,20 @@ describe("SessionDetailPage turns", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent("Turn 2 · 10 input tokens");
     expect(screen.getByText(/^Reached \$.+ by turn 2$/)).toBeInTheDocument();
   });
+
+  it("shows the input tokens of the first and last turn and the peak as text, not only on hover", async () => {
+    vi.spyOn(projectsApi, "sessionTurns").mockResolvedValue({
+      items: [
+        { ...turn(0), trace: { ...trace(0), input_tokens: 5104 } },
+        { ...turn(1), trace: { ...trace(1), input_tokens: 20935 } },
+        { ...turn(2), trace: { ...trace(2), input_tokens: 8000 } },
+      ],
+      next_cursor: null,
+    });
+    renderApp(`/${ORG_ID}/proj_1/sessions/chat_1`);
+
+    expect(
+      await screen.findByText("5,104 → 8,000 input tokens · peak 20,935 on turn 2"),
+    ).toBeVisible();
+  });
 });

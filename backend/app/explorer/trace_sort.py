@@ -6,11 +6,11 @@ Every sort takes a direction (`desc`, the default, or `asc`).
 direction; the cursor is `(started_at, trace_id)`.
 
 The value sorts, `duration` (`ended_at - started_at`), `cost` (`cost_usd`), `tokens`
-(`input_tokens + output_tokens`) and `retry_cost_usd`: the value in the sort's direction with
-unknown (NULL) values last in both directions, then `started_at` and `trace_id` in the same
-direction; the cursor is `(value, started_at, trace_id)` (a duration in milliseconds), its value
-`None` once the page reached the unknown values. The direction is not in the cursor: the request
-repeats it.
+(`input_tokens + output_tokens`, the reported one alone when the other is unknown) and
+`retry_cost_usd`: the value in the sort's direction with unknown (NULL) values last in both
+directions, then `started_at` and `trace_id` in the same direction; the cursor is
+`(value, started_at, trace_id)` (a duration in milliseconds), its value `None` once the page
+reached the unknown values. The direction is not in the cursor: the request repeats it.
 """
 
 import operator
@@ -18,7 +18,7 @@ from datetime import timedelta
 from decimal import Decimal
 from typing import Any, Literal
 
-from sqlalchemy import Select, and_, or_, tuple_
+from sqlalchemy import Select, and_, func, or_, tuple_
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement, UnaryExpression
 
@@ -28,6 +28,10 @@ from app.db.models import Trace
 TraceSort = Literal["started_at", "duration", "cost", "tokens", "retry_cost_usd"]
 SortOrder = Literal["asc", "desc"]
 
+# A trace's tokens: both counts, or the one reported, or NULL when neither was.
+TOKENS = func.coalesce(
+    Trace.input_tokens + Trace.output_tokens, Trace.input_tokens, Trace.output_tokens
+)
 _MICROSECOND = timedelta(microseconds=1)
 # The durations a cursor can name; no stored trace comes near either end, so clamping a forged
 # cursor to them leaves the page where it was.
@@ -43,7 +47,7 @@ def _value(sort: TraceSort) -> ColumnElement[Any] | InstrumentedAttribute[Any]:
     if sort == "cost":
         return Trace.cost_usd
     if sort == "tokens":
-        return Trace.input_tokens + Trace.output_tokens
+        return TOKENS
     return Trace.retry_cost_usd
 
 
@@ -54,7 +58,9 @@ def _value_of(trace: Trace, sort: TraceSort) -> Decimal | None:
     if sort == "cost":
         return trace.cost_usd
     if sort == "tokens":
-        return Decimal(trace.input_tokens + trace.output_tokens)
+        if trace.input_tokens is None and trace.output_tokens is None:
+            return None
+        return Decimal((trace.input_tokens or 0) + (trace.output_tokens or 0))
     return trace.retry_cost_usd
 
 

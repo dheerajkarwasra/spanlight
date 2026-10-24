@@ -28,6 +28,15 @@ function keepWindow(previous: ProjectSearch): ProjectSearch {
   return { range: previous.range, from: previous.from, to: previous.to, env: previous.env };
 }
 
+/**
+ * Table widths (px) below which a column starts hidden, so the table never scrolls sideways: the
+ * sum of the visible tracks' minimums plus the 40 px Table settings track. The last-turn preview
+ * goes first, then the user, then the duration; all stay in Table settings.
+ */
+const SHOW_LAST_TURN = 1024;
+const SHOW_USER = 844;
+const SHOW_DURATION = 724;
+
 /** Spec §8 S2: Session (sticky), User, Turns, Duration, Tokens, Cost, Errors, Last turn. */
 export function sessionColumns({
   orgId,
@@ -63,6 +72,7 @@ export function sessionColumns({
       header: "User",
       width: "minmax(120px,0.8fr)",
       hideable: true,
+      minContainer: SHOW_USER,
       cell: (session) =>
         session.external_user_id !== null ? (
           <span title={session.external_user_id} className="truncate font-mono text-label">
@@ -90,6 +100,7 @@ export function sessionColumns({
       width: "96px",
       align: "end",
       hideable: true,
+      minContainer: SHOW_DURATION,
       cell: (session) => (
         <span className="text-muted-foreground">
           <ValueOrUnknown value={formatDuration(session.duration_ms)} reason="No timing data" />
@@ -102,14 +113,17 @@ export function sessionColumns({
       width: "96px",
       align: "end",
       sortKey: "tokens",
-      cell: (session) => (
-        <span
-          title={`${formatInteger(session.input_tokens) ?? ""} input · ${formatInteger(session.output_tokens) ?? ""} output`}
-          className="text-muted-foreground"
-        >
-          {formatInteger(session.input_tokens + session.output_tokens)}
-        </span>
-      ),
+      cell: (session) =>
+        session.input_tokens === null && session.output_tokens === null ? (
+          <UnknownValue reason="No call in this session reported token usage" />
+        ) : (
+          <span
+            title={`${formatInteger(session.input_tokens) ?? "—"} input · ${formatInteger(session.output_tokens) ?? "—"} output`}
+            className="text-muted-foreground"
+          >
+            {formatInteger((session.input_tokens ?? 0) + (session.output_tokens ?? 0))}
+          </span>
+        ),
     },
     {
       id: "cost",
@@ -138,6 +152,7 @@ export function sessionColumns({
       header: "Last turn",
       width: "minmax(180px,1.4fr)",
       hideable: true,
+      minContainer: SHOW_LAST_TURN,
       sortKey: "last",
       cell: (session) => (
         <LastTurnCell

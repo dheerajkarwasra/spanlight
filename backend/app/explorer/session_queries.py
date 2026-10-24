@@ -47,7 +47,7 @@ from app.core.pagination import (
 )
 from app.db.models import Trace
 from app.explorer.trace_queries import escape_like
-from app.explorer.trace_sort import SortOrder
+from app.explorer.trace_sort import TOKENS, SortOrder
 
 SessionSort = Literal["last", "cost", "turns", "errors", "tokens"]
 
@@ -59,7 +59,7 @@ _VALUES: dict[SessionSort, ColumnElement[Any]] = {
     "cost": func.sum(Trace.cost_usd),
     "turns": func.count(),
     "errors": func.sum(Trace.error_count),
-    "tokens": func.sum(Trace.input_tokens + Trace.output_tokens),
+    "tokens": func.sum(TOKENS),
 }
 # Only aggregates Postgres can hash: a distinct count or an ordered aggregate here made it sort
 # the window's traces on disk, twice the time over 30 days (measured). Those come per page.

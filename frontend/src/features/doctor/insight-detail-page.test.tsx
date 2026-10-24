@@ -2,8 +2,14 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { insightsApi, type Explanation, type InsightDetail, type PrecisionKind } from "@/lib/api";
-import { makeProject, mockSignedIn, ORG_ID, renderApp } from "@/test/render-app";
+import {
+  authApi,
+  insightsApi,
+  type Explanation,
+  type InsightDetail,
+  type PrecisionKind,
+} from "@/lib/api";
+import { makeProject, ME, mockSignedIn, ORG_ID, renderApp } from "@/test/render-app";
 
 const PATH = `/${ORG_ID}/proj_1/doctor/ins_1`;
 
@@ -180,5 +186,19 @@ describe("InsightDetailPage", () => {
     await vi.waitFor(() => {
       expect(toggle).toHaveAttribute("aria-expanded", "true");
     });
+  });
+  it("hides the insight actions from a viewer and says why once", async () => {
+    const membership = ME.memberships[0];
+    if (membership === undefined) throw new Error("ME has no membership");
+    vi.spyOn(authApi, "me").mockResolvedValue({
+      ...ME,
+      memberships: [{ ...membership, role: "viewer" }],
+    });
+    renderApp(PATH);
+
+    expect(await screen.findByText(/^You have view-only access\./)).toBeInTheDocument();
+    for (const name of [/^Mute/, "Resolve", "Acknowledge", "Unmute"]) {
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
   });
 });

@@ -69,7 +69,12 @@ export function SessionSummaryCard({
             {formatInteger(totals.errors)}
           </span>
         </StatTile>
-        <StatTile label="Tokens">{formatInteger(tokens.total)}</StatTile>
+        <StatTile label="Tokens">
+          <ValueOrUnknown
+            value={formatInteger(tokens.total)}
+            reason="No call in this session reported token usage"
+          />
+        </StatTile>
         <StatTile label="Time span">
           <ValueOrUnknown value={formatDuration(totals.durationMs)} reason="No timing data" />
         </StatTile>

@@ -268,8 +268,9 @@ _RECOMPUTE_ROLLUPS = text(
                count(*)                                   AS span_count,
                count(*) FILTER (WHERE status = 'error')   AS error_count,
                -- A usage rollup repeats a descendant's usage: counted as a span, never summed.
-               coalesce(sum(input_tokens) FILTER (WHERE NOT usage_rollup), 0)  AS input_tokens,
-               coalesce(sum(output_tokens) FILTER (WHERE NOT usage_rollup), 0) AS output_tokens,
+               -- NULL when no span reported the count: unknown, not 0.
+               sum(input_tokens) FILTER (WHERE NOT usage_rollup)  AS input_tokens,
+               sum(output_tokens) FILTER (WHERE NOT usage_rollup) AS output_tokens,
                -- traces.cost_usd is numeric(14, 8), like each span's cost. A total of a
                -- million dollars or more cannot be stored and is unknown (NULL), rather
                -- than an overflow that would fail every batch touching the trace.

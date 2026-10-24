@@ -52,13 +52,16 @@ export function primaryModelLabel(models: readonly string[]): string | null {
 }
 
 /**
- * "1,840 tok", or null when the trace made no LLM calls (then there is no token count to show,
- * as opposed to a real zero).
+ * "1,840 tok", or null when no call reported token usage or the trace made no LLM calls (then
+ * there is no token count to show, as opposed to a real zero).
  */
 export function tokenLabel(
   trace: Pick<TraceSummary, "input_tokens" | "output_tokens" | "models">,
 ): string | null {
-  const total = trace.input_tokens + trace.output_tokens;
+  if (trace.input_tokens === null && trace.output_tokens === null) {
+    return null;
+  }
+  const total = (trace.input_tokens ?? 0) + (trace.output_tokens ?? 0);
   if (total === 0 && trace.models.length === 0) {
     return null;
   }

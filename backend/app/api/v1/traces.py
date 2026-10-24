@@ -190,8 +190,8 @@ async def compare_traces(
     unpriced = summary_a.has_unpriced or summary_b.has_unpriced
     totals = TraceTotalsDeltaOut(
         duration_ms=summary_b.duration_ms - summary_a.duration_ms,
-        input_tokens=summary_b.input_tokens - summary_a.input_tokens,
-        output_tokens=summary_b.output_tokens - summary_a.output_tokens,
+        input_tokens=_change(summary_a.input_tokens, summary_b.input_tokens),
+        output_tokens=_change(summary_a.output_tokens, summary_b.output_tokens),
         cost_usd=None if unpriced else _change(summary_a.cost_usd, summary_b.cost_usd),
         span_count=summary_b.span_count - summary_a.span_count,
         error_count=summary_b.error_count - summary_a.error_count,

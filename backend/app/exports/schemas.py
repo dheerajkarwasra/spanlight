@@ -208,8 +208,8 @@ class TraceExportRow:
     session_id: str | None
     span_count: int
     error_count: int
-    input_tokens: int
-    output_tokens: int
+    input_tokens: int | None
+    output_tokens: int | None
     cost_usd: Decimal | None
     has_unpriced: bool
     tags: Sequence[str]

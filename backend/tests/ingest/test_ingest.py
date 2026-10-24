@@ -431,6 +431,27 @@ async def test_cost_is_computed_from_seeded_prices(
     assert stored.pricing_version == max(in_force, key=lambda s: s.effective_from).version
 
 
+async def test_trace_tokens_are_null_until_a_span_reports_usage(
+    client: httpx.AsyncClient,
+    workspace: Workspace,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    trace_id = new_trace_id()
+    start = datetime.now(UTC) - timedelta(minutes=10)
+    failed = span(trace_id=trace_id, status="error", usage=None, start=start)
+    for _ in range(2):  # a replay keeps the totals unknown
+        assert (await _ingest(client, workspace, [failed])).status_code == 200
+        (row,) = await _trace_rows(session_factory)
+        assert row[8:10] == (None, None)  # input, output tokens: unknown, never 0
+
+    reported = span(
+        trace_id=trace_id, usage={"input_tokens": 7}, start=start + timedelta(seconds=1)
+    )
+    await _ingest(client, workspace, [reported])
+    (row,) = await _trace_rows(session_factory)
+    assert row[8:10] == (7, None)  # each total sums only what the calls reported
+
+
 async def test_unknown_model_or_missing_usage_has_null_cost(
     client: httpx.AsyncClient,
     workspace: Workspace,

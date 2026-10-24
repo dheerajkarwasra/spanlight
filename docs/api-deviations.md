@@ -3223,3 +3223,13 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
   Lab fault holds, and for a stream the whole body. The spec counts every span with an overhead attribute; calls
   without a provider attempt (`spanlight.gateway.attempts` 0: cache hits and rate-limit refusals) are left out too,
   since their difference is 0 and is not upstream time. `null` when no call qualifies.
+
+## Unknown trace token totals (added 2026-10-24)
+
+- **A trace's `input_tokens` and `output_tokens` are nullable.** Each is the sum of what the trace's calls reported
+  (usage rollups left out), and `null` when none of them reported it (a failed call, say), never 0. This covers trace
+  summaries and details, `GET /sessions` rows (`null` when no trace of the session reported it), the trace-compare
+  `totals` delta (`null` when either trace's total is unknown) and trace exports (an empty CSV cell, a JSON `null`).
+  Migration 1016 turns the stored zeros that stood for "no usage reported" into `null`. The `tokens` sort of the
+  trace and session lists adds the two counts, takes the reported one alone when the other is unknown, and puts a
+  trace with neither among the unknown values, last in both directions.
