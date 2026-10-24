@@ -8,6 +8,9 @@ import { createRoot } from "react-dom/client";
 import { Providers } from "@/app/providers";
 import { createQueryClient } from "@/app/query-client";
 import { createAppRouter } from "@/app/router";
+import { reloadOnStaleChunk } from "@/lib/stale-chunk-reload";
+
+reloadOnStaleChunk();
 
 const queryClient = createQueryClient();
 const router = createAppRouter(queryClient);
