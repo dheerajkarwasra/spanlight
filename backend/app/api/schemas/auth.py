@@ -49,7 +49,15 @@ class MeOut(BaseModel):
     # asked and cannot receive email. False on a server without email, where no link can arrive,
     # so the dashboard shows no verification prompt there. Self-only, like `has_password`.
     email_verification_required: bool
+    # Whether the caller hid the setup checklist. Per user, across projects; self-only.
+    activation_checklist_dismissed: bool
     capabilities: CapabilitiesOut
+
+
+class ActivationChecklistIn(BaseModel):
+    """Hide the setup checklist (`true`) or show it again (`false`), for the caller only."""
+
+    dismissed: bool
 
 
 class SessionOut(BaseModel):

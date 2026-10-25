@@ -13,6 +13,7 @@ import {
   pricesApi,
   projectsApi,
   queryKeys,
+  type AgreementSummary,
   type Evaluator,
   type EvaluatorCreate,
   type EvaluatorRunStatus,
@@ -64,6 +65,33 @@ export function useEvaluatorBudgetQuery(evaluatorId: string, enabled = true) {
     enabled,
     refetchInterval: REFRESH_MS,
   });
+}
+
+/** Judge versus reviewer scores on the same traces, computed on read. */
+export function useEvaluatorAgreement(evaluatorId: string) {
+  const { projectId } = useProjectParams();
+  return useQuery({
+    queryKey: queryKeys.project(projectId).evaluators.agreement(evaluatorId),
+    queryFn: () => evaluatorsApi.agreement(projectId, evaluatorId),
+  });
+}
+
+/** Every judge's agreement in one request, for the badges beside judge means. */
+export function useEvaluatorAgreementSummary() {
+  const { projectId } = useProjectParams();
+  return useQuery({
+    queryKey: queryKeys.project(projectId).evaluators.agreementSummary,
+    queryFn: () => evaluatorsApi.agreementSummary(projectId),
+    select: (data) => data.items,
+  });
+}
+
+/** The judge whose score is `scoreName` (scores are named after evaluators); undefined if none. */
+export function agreementForScore(
+  summary: readonly AgreementSummary[] | undefined,
+  scoreName: string,
+): AgreementSummary | undefined {
+  return summary?.find((item) => item.score_name === scoreName);
 }
 
 export function useEvaluatorRunsQuery(evaluatorId: string, status: EvaluatorRunStatus | undefined) {

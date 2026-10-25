@@ -23,6 +23,7 @@ async def test_signup_sets_cookies_and_me_returns_user(browser_factory: Any) -> 
         "totp_enabled": False,
         # The test server sends no email, so no verification link could ever arrive.
         "email_verification_required": False,
+        "activation_checklist_dismissed": False,
         "capabilities": {
             "gateway_mode": "embedded",
             "credentials_configured": False,

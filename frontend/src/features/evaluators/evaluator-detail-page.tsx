@@ -5,6 +5,7 @@ import { ReadOnlyNote } from "@/components/read-only-note";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePermission } from "@/features/shell";
 
+import { AgreementCard } from "./agreement-card";
 import { BudgetCard } from "./budget-card";
 import { ConfigCard } from "./config-card";
 import { EvaluatorHeader } from "./evaluator-header";
@@ -20,8 +21,8 @@ import { RunsTable } from "./runs-table";
 const detailRoute = getRouteApi("/_authed/$orgId/$projectId/evaluators/$evaluatorId");
 
 /**
- * Figma "Evaluators — Detail" (budget 80 %, budget spent, member read-only, 375 px): the runs,
- * a judge's budget, and the configuration. Members see everything without the actions.
+ * Figma "Evaluators — Detail" (budget 80 %, budget spent, member read-only, 375 px): a judge's
+ * agreement with reviewers, the runs, a judge's budget, and the configuration. Members see everything without the actions.
  */
 export function EvaluatorDetailPage() {
   const { evaluatorId } = detailRoute.useParams();
@@ -64,7 +65,8 @@ export function EvaluatorDetailPage() {
       <EvaluatorHeader evaluator={evaluator} channelName={channelName} canWrite={canWrite} />
       {canWrite ? null : <ReadOnlyNote>{EVALUATORS_READ_ONLY}</ReadOnlyNote>}
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="min-w-0">
+        <div className="flex min-w-0 flex-col gap-5">
+          {evaluator.kind === "llm_judge" ? <AgreementCard evaluatorId={evaluator.id} /> : null}
           <RunsTable evaluatorId={evaluator.id} booleanScores={scoresAreBoolean(evaluator)} />
         </div>
         <div className="flex flex-col gap-5 max-lg:order-first">

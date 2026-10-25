@@ -5,13 +5,14 @@ import { PageHeader } from "@/components/page-header";
 import { InsightsTab } from "./insights-tab";
 import { LastCheckedPill } from "./last-checked-pill";
 import { PrecisionTab } from "./precision-tab";
+import { SensitivityTab } from "./sensitivity-tab";
 import { StatusTabs, type DoctorTab } from "./status-tabs";
 
 const doctorRoute = getRouteApi("/_authed/$orgId/$projectId/doctor");
 
 /**
- * Figma "Doctor — Insights list" and "Doctor/Precision": status tabs, filters and the project's
- * insights, or how often each check was right.
+ * Figma "Doctor — Insights list", "Doctor/Precision" and "Doctor/Sensitivity": status tabs,
+ * filters and the project's insights, how often each check was right, or how sensitive each is.
  */
 export function DoctorPage() {
   const search = doctorRoute.useSearch();
@@ -20,8 +21,8 @@ export function DoctorPage() {
   function setTab(tab: DoctorTab) {
     void navigate({
       search: (prev) =>
-        tab === "precision"
-          ? { ...prev, tab: "precision" as const }
+        tab === "precision" || tab === "sensitivity"
+          ? { ...prev, tab }
           : { ...prev, tab: "insights" as const, status: tab },
     });
   }
@@ -34,7 +35,7 @@ export function DoctorPage() {
         actions={<LastCheckedPill />}
       />
       <StatusTabs
-        value={search.tab === "precision" ? "precision" : search.status}
+        value={search.tab === "insights" ? search.status : search.tab}
         onChange={setTab}
       />
       {search.tab === "precision" ? (
@@ -43,6 +44,8 @@ export function DoctorPage() {
             setTab("open");
           }}
         />
+      ) : search.tab === "sensitivity" ? (
+        <SensitivityTab />
       ) : (
         <InsightsTab />
       )}

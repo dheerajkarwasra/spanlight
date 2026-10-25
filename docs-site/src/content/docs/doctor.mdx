@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-{/* Sources: frontend/src/features/doctor/last-checked-pill.tsx, frontend/src/features/doctor/insight-format.ts, frontend/src/features/doctor/insight-empty.tsx, frontend/src/features/doctor/feedback-state.ts, frontend/src/features/doctor/precision-format.ts, frontend/src/features/doctor/incident-citation.ts, backend/app/api/v1/insight_feedback.py, backend/app/insights/precision.py, backend/app/insights/detectors/provider_incident.py, backend/app/insights/detectors/baselines.py, backend/app/ingest/error_class.py, backend/app/cli_doctor.py, docs/runbooks/detectors.md */}
+{/* Sources: frontend/src/features/doctor/last-checked-pill.tsx, frontend/src/features/doctor/insight-format.ts, frontend/src/features/doctor/insight-empty.tsx, frontend/src/features/doctor/feedback-state.ts, frontend/src/features/doctor/precision-format.ts, frontend/src/features/doctor/incident-citation.ts, backend/app/api/v1/insight_feedback.py, backend/app/insights/precision.py, backend/app/insights/detectors/provider_incident.py, backend/app/insights/detectors/baselines.py, backend/app/ingest/error_class.py, backend/app/cli_doctor.py, docs/runbooks/detectors.md, backend/app/insights/sensitivity.py, frontend/src/features/doctor/sensitivity-tab.tsx, frontend/src/features/doctor/sensitivity-dialog.tsx */}
 
 import CatalogueRedirect from '../../components/CatalogueRedirect.astro';
 import NextSteps from '../../components/NextSteps.astro';
@@ -127,6 +127,42 @@ A detector meets the target when its precision is at least 0.8, the lower end of
 Operators can read the same table across every project with [`spanlight doctor precision`](/docs/reference/cli/#doctor-precision).
 
 Each insight page also shows its check's **track record** from the same votes, for example "This check was right 9 of 10 times (precision 0.90, 0.60–0.98)", or "Not enough votes yet (3 of 20)". After a **Wrong** vote, admins and owners get **Mute this finding**, which opens the mute dialog with your note as the reason.
+
+## Sensitivity
+
+When a check opens too many findings you consider wrong, you can ask it for stronger signals instead of muting each one. The **Sensitivity** tab of the Doctor (`?tab=sensitivity`), also linked from the foot of the Precision tab as "Too many wrong findings? Change sensitivity", lists all fifteen checks with their setting and the number of their findings seen in the last 30 days at that setting.
+
+Eleven checks have three settings:
+
+| Setting | Means |
+| --- | --- |
+| **High recall** (the default) | The check's own rule, as described in the [catalogue](/docs/reference/detectors/). Catch every pattern; dismiss the wrong ones. |
+| **Balanced** | A finding opens only when its key reading reaches a higher bar, so small spikes are skipped. |
+| **High precision** | Only strong signals open a finding; early problems may be missed. |
+
+Each setting is a minimum on one reading the check already records:
+
+| Check | Reading | Balanced | High precision |
+| --- | --- | --- | --- |
+| `error_spike` | Error rate | 10 % or more | 25 % or more |
+| `rate_limit_pressure` | Rate-limited share of calls | 20 % or more | 30 % or more |
+| `truncated_outputs` | Truncated share of calls | 20 % or more | 30 % or more |
+| `cost_spike` | Spend against its baseline | 5× or more | 10× or more |
+| `latency_regression` | p95 against its baseline | 2× or more | 3× or more |
+| `retry_storm` | Largest retry burst | 10 or more | 20 or more |
+| `tool_loop` | Repeats of one tool call | 6 or more | 10 or more |
+| `context_growth` | Input tokens of the last call | 50,000 or more | 100,000 or more |
+| `cache_opportunity` | Repeated calls | 25 or more | 50 or more |
+| `client_timeout_misconfigured` | Aborted calls | 25 or more | 50 or more |
+| `retry_after_ignored` | Early retries | 5 or more | 10 or more |
+
+A stricter setting can only remove findings: the check's own rule still decides first. A finding whose reading is missing is never hidden. The other four checks show **Fixed** ("One setting"): `provider_incident` is organization-wide, `unpriced_spend` must never be hidden or cost would look complete, and for `truncated_stream_accepted` and `unsupported_parameter_retried` one occurrence is the whole signal.
+
+**Changing a setting.** Admins and owners select **Change** on a check. The dialog lists the three settings with their minimums and a preview table of how many of the findings seen in the last 7 and 30 days each setting would have kept. The preview counts the findings the check saw in that window, whatever their status, at the strongest reading each one reached, so it shows what a stricter setting would have kept. When the preview cannot load you can still save. Members and viewers see the settings with the note "Only admins and owners can change sensitivity."
+
+A new setting applies from the next detector run. Open findings of that check that fall below it are no longer detected and resolve through the usual quiet rule, after 24 hours without a detection, not at once; the dialog says so when you choose a stricter setting. Each change is recorded in the [audit log](/docs/audit-log/) as `insight.sensitivity_change`, with the old and new setting. Saving the setting a check already has records nothing.
+
+The same settings are available over the API under `/api/v1/projects/{project_id}/detector-sensitivity`: `GET` lists every check (`project:read`), `GET /{detector}/preview` returns the 7- and 30-day counts per setting (`project:read`), and `PUT /{detector}` with `{"level": "high_recall" | "balanced" | "high_precision"}` changes one (`insights:manage`). A fixed or unknown check answers `404 DETECTOR_NOT_TUNABLE`.
 
 ## Provider incidents and status pages
 

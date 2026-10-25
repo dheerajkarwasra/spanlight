@@ -16,6 +16,49 @@
         "title": "AcceptedOut",
         "type": "object"
       },
+      "ActivationChecklistIn": {
+        "description": "Hide the setup checklist (`true`) or show it again (`false`), for the caller only.",
+        "properties": {
+          "dismissed": {
+            "title": "Dismissed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "dismissed"
+        ],
+        "title": "ActivationChecklistIn",
+        "type": "object"
+      },
+      "ActivationOut": {
+        "description": "Which setup checklist steps the project has done, each read from its own rows.",
+        "properties": {
+          "budget": {
+            "title": "Budget",
+            "type": "boolean"
+          },
+          "evaluation": {
+            "title": "Evaluation",
+            "type": "boolean"
+          },
+          "first_trace": {
+            "title": "First Trace",
+            "type": "boolean"
+          },
+          "session": {
+            "title": "Session",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "first_trace",
+          "session",
+          "budget",
+          "evaluation"
+        ],
+        "title": "ActivationOut",
+        "type": "object"
+      },
       "AdHocTarget": {
         "additionalProperties": false,
         "description": "Typed messages, sent the same for every item (the item's input is not used).",
@@ -56,6 +99,206 @@
           "messages"
         ],
         "title": "AdHocTarget",
+        "type": "object"
+      },
+      "AgreementOut": {
+        "properties": {
+          "capped": {
+            "title": "Capped",
+            "type": "boolean"
+          },
+          "data_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScoreDataType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evaluator_id": {
+            "format": "uuid",
+            "title": "Evaluator Id",
+            "type": "string"
+          },
+          "f1": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "F1"
+          },
+          "flagged": {
+            "title": "Flagged",
+            "type": "boolean"
+          },
+          "kappa": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kappa"
+          },
+          "kappa_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "quadratic_weighted",
+                  "cohen"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kappa Kind"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "matrix": {
+            "items": {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "title": "Matrix",
+            "type": "array"
+          },
+          "min_pairs": {
+            "title": "Min Pairs",
+            "type": "integer"
+          },
+          "pairs": {
+            "title": "Pairs",
+            "type": "integer"
+          },
+          "pass_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pass Threshold"
+          },
+          "score_name": {
+            "title": "Score Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "not_enough_pairs",
+              "undefined",
+              "unsupported"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evaluator_id",
+          "score_name",
+          "data_type",
+          "status",
+          "pairs",
+          "min_pairs",
+          "capped",
+          "kappa",
+          "kappa_kind",
+          "f1",
+          "pass_threshold",
+          "labels",
+          "matrix",
+          "flagged"
+        ],
+        "title": "AgreementOut",
+        "type": "object"
+      },
+      "AgreementSummaryList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgreementSummaryOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AgreementSummaryList",
+        "type": "object"
+      },
+      "AgreementSummaryOut": {
+        "properties": {
+          "evaluator_id": {
+            "format": "uuid",
+            "title": "Evaluator Id",
+            "type": "string"
+          },
+          "flagged": {
+            "title": "Flagged",
+            "type": "boolean"
+          },
+          "kappa": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kappa"
+          },
+          "pairs": {
+            "title": "Pairs",
+            "type": "integer"
+          },
+          "score_name": {
+            "title": "Score Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "not_enough_pairs",
+              "undefined",
+              "unsupported"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evaluator_id",
+          "score_name",
+          "status",
+          "pairs",
+          "kappa",
+          "flagged"
+        ],
+        "title": "AgreementSummaryOut",
         "type": "object"
       },
       "AlertChannelKind": {
@@ -6814,6 +7057,24 @@
         "title": "FiltersOut",
         "type": "object"
       },
+      "GatesOut": {
+        "properties": {
+          "balanced": {
+            "title": "Balanced",
+            "type": "string"
+          },
+          "high_precision": {
+            "title": "High Precision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "balanced",
+          "high_precision"
+        ],
+        "title": "GatesOut",
+        "type": "object"
+      },
       "GatewayCacheOut": {
         "properties": {
           "hit_rate": {
@@ -9414,6 +9675,10 @@
       },
       "MeOut": {
         "properties": {
+          "activation_checklist_dismissed": {
+            "title": "Activation Checklist Dismissed",
+            "type": "boolean"
+          },
           "capabilities": {
             "$ref": "#/components/schemas/CapabilitiesOut"
           },
@@ -9446,6 +9711,7 @@
           "has_password",
           "totp_enabled",
           "email_verification_required",
+          "activation_checklist_dismissed",
           "capabilities"
         ],
         "title": "MeOut",
@@ -15414,6 +15680,131 @@
         "title": "SelectionOut",
         "type": "object"
       },
+      "SensitivityIn": {
+        "additionalProperties": false,
+        "properties": {
+          "level": {
+            "enum": [
+              "high_recall",
+              "balanced",
+              "high_precision"
+            ],
+            "title": "Level",
+            "type": "string"
+          }
+        },
+        "required": [
+          "level"
+        ],
+        "title": "SensitivityIn",
+        "type": "object"
+      },
+      "SensitivityListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SensitivityOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SensitivityListOut",
+        "type": "object"
+      },
+      "SensitivityOut": {
+        "properties": {
+          "detector": {
+            "title": "Detector",
+            "type": "string"
+          },
+          "findings_30d": {
+            "title": "Findings 30D",
+            "type": "integer"
+          },
+          "gates": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GatesOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "level": {
+            "enum": [
+              "high_recall",
+              "balanced",
+              "high_precision"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "metric_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Label"
+          },
+          "tunable": {
+            "title": "Tunable",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "detector",
+          "tunable",
+          "level",
+          "metric_label",
+          "gates",
+          "findings_30d",
+          "updated_at"
+        ],
+        "title": "SensitivityOut",
+        "type": "object"
+      },
+      "SensitivityPreviewOut": {
+        "properties": {
+          "detector": {
+            "title": "Detector",
+            "type": "string"
+          },
+          "windows": {
+            "items": {
+              "$ref": "#/components/schemas/WindowCountsOut"
+            },
+            "title": "Windows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "detector",
+          "windows"
+        ],
+        "title": "SensitivityPreviewOut",
+        "type": "object"
+      },
       "SeriesPointOut": {
         "description": "One bucket of the series. `cost_usd` is `None` when its traces made calls and none was\npriced, a lower bound while `unpriced_calls` is above 0, and 0 for a bucket without traces.",
         "properties": {
@@ -18262,6 +18653,34 @@
         "title": "WebhookEvaluatorConfig",
         "type": "object"
       },
+      "WindowCountsOut": {
+        "properties": {
+          "balanced": {
+            "title": "Balanced",
+            "type": "integer"
+          },
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "high_precision": {
+            "title": "High Precision",
+            "type": "integer"
+          },
+          "high_recall": {
+            "title": "High Recall",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "days",
+          "high_recall",
+          "balanced",
+          "high_precision"
+        ],
+        "title": "WindowCountsOut",
+        "type": "object"
+      },
       "WindowOut": {
         "properties": {
           "end": {
@@ -18442,6 +18861,41 @@
           }
         },
         "summary": "Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/me/activation-checklist": {
+      "put": {
+        "description": "Hide or show the setup checklist for the caller, in every project. Idempotent: hiding it\nagain keeps the time it was first hidden. A session or a `write` token; the row is always the\ncaller's own.",
+        "operationId": "set_activation_checklist_api_v1_auth_me_activation_checklist_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivationChecklistIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Activation Checklist",
         "tags": [
           "auth"
         ]
@@ -22412,6 +22866,50 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/activation": {
+      "get": {
+        "description": "Which setup checklist steps are done: a first trace (not the setup test trace), a trace\nwith a session, a budget, and a score from an evaluator or a person.",
+        "operationId": "activation_status_api_v1_projects__project_id__activation_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Activation Status",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/alert-events": {
       "get": {
         "description": "Newest first. `state=firing` keeps open events, `state=resolved` resolved ones.",
@@ -25115,6 +25613,214 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/detector-sensitivity": {
+      "get": {
+        "description": "All fifteen checks in catalogue order; a fixed check has `tunable: false` and no gates.",
+        "operationId": "list_sensitivity_api_v1_projects__project_id__detector_sensitivity_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SensitivityListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Doctor sensitivity settings",
+        "tags": [
+          "insights"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/detector-sensitivity/{detector}": {
+      "put": {
+        "description": "Applies from the next detector run; open findings below the new setting resolve through\nthe 24-hour quiet rule. Setting the current level changes nothing.\n`404 DETECTOR_NOT_TUNABLE` for a fixed or unknown check.",
+        "operationId": "set_sensitivity_api_v1_projects__project_id__detector_sensitivity__detector__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "detector",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Detector",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SensitivityIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SensitivityOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set a check's sensitivity",
+        "tags": [
+          "insights"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/detector-sensitivity/{detector}/preview": {
+      "get": {
+        "description": "Findings each setting would have shown over 7 and 30 days, from stored findings.\n`404 DETECTOR_NOT_TUNABLE` for a fixed or unknown check.",
+        "operationId": "preview_sensitivity_api_v1_projects__project_id__detector_sensitivity__detector__preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "detector",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Detector",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SensitivityPreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview each sensitivity setting",
+        "tags": [
+          "insights"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/evaluator-agreement": {
+      "get": {
+        "description": "One row per LLM-judge evaluator, by name; heuristic and webhook evaluators have none.",
+        "operationId": "list_agreement_api_v1_projects__project_id__evaluator_agreement_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgreementSummaryList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List agreement for every LLM judge",
+        "tags": [
+          "evaluators"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/evaluators": {
       "get": {
         "description": "Newest first. A judge's `budget` carries its month so far.",
@@ -25395,6 +26101,60 @@
           }
         },
         "summary": "Edit an evaluator",
+        "tags": [
+          "evaluators"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/evaluators/{evaluator_id}/agreement": {
+      "get": {
+        "description": "Agreement over the newest 2,000 traces that both a reviewer and this evaluator scored.\n`kappa` and `f1` are `null` below `min_pairs` or when they are undefined.",
+        "operationId": "get_agreement_api_v1_projects__project_id__evaluators__evaluator_id__agreement_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "evaluator_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evaluator Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgreementOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get an evaluator's agreement with reviewers",
         "tags": [
           "evaluators"
         ]

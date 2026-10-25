@@ -1,7 +1,7 @@
 /**
- * Evaluators: automatic scorers of a project's traces (rules, LLM judges under a budget,
- * webhooks). The routes load the pages directly; nothing else is shared with other features yet.
+ * What other features may use from `features/evaluators` (automatic scorers of a project's
+ * traces: rules, LLM judges under a budget, webhooks): the judges' agreement with reviewers. No
+ * page components here, so importing a helper never pulls a page into another feature's chunk;
+ * the router loads the pages directly.
  */
-export { EvaluatorDetailPage } from "./evaluator-detail-page";
-export { EditEvaluatorPage, NewEvaluatorPage } from "./evaluator-form-page";
-export { EvaluatorsPage } from "./evaluators-page";
+export { agreementForScore, useEvaluatorAgreementSummary } from "./evaluator-queries";

@@ -21,6 +21,8 @@ export const ME: Me = {
   has_password: true,
   totp_enabled: false,
   email_verification_required: false,
+  // Dismissed, so shell tests don't depend on the activation call; checklist tests set it false.
+  activation_checklist_dismissed: true,
   capabilities: {
     gateway_mode: "embedded",
     credentials_configured: true,

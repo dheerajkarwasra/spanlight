@@ -5,6 +5,10 @@ insights its findings open or bump, the quiet insights of its kind that resolve,
 notifications for critical openings commit together in one transaction per detector. A detector
 that raises is recorded with its error, its kind is not auto-resolved in that run (nothing says
 the problem went away), and the next detector still runs.
+
+The project's sensitivity (`app.insights.sensitivity`) is read once per run with the context. A
+finding below its check's setting is dropped before anything is stored, so the run row counts
+only the findings kept, and an open insight that falls below the setting resolves as quiet.
 """
 
 import time
@@ -42,6 +46,8 @@ from app.insights.detectors import (
 from app.insights.detectors.base import Detector
 from app.insights.notify import notify_opened
 from app.insights.schemas import Finding, Window
+from app.insights.sensitivity import DEFAULT_LEVEL, Level, passes
+from app.insights.sensitivity_queries import load_levels
 from app.insights.service import apply_findings
 
 if TYPE_CHECKING:
@@ -99,12 +105,14 @@ async def run_project(
     the run (a time bound) knows which detectors already recorded theirs.
     """
     ctx = await load_context(db, project_id, now)
+    levels = {} if ctx is None else await load_levels(db, project_id)
     await db.commit()
     results = progress if progress is not None else []
     if ctx is None:
         return results
     for detector in detectors:
-        results.append(await _run_detector(db, ctx, detector, settings=settings))
+        level = levels.get(detector.kind, DEFAULT_LEVEL)
+        results.append(await _run_detector(db, ctx, detector, level, settings=settings))
     return results
 
 
@@ -129,14 +137,23 @@ async def record_failed_runs(
 
 
 async def _run_detector(
-    db: AsyncSession, ctx: DetectorContext, detector: Detector, *, settings: "Settings"
+    db: AsyncSession,
+    ctx: DetectorContext,
+    detector: Detector,
+    level: Level,
+    *,
+    settings: "Settings",
 ) -> DetectorRunResult:
     window = Window(start=ctx.now - detector.window, end=ctx.now)
     started = time.perf_counter()
     findings: list[Finding] | None = None
     error: str | None = None
     try:
-        findings = detector.run(ctx.sliced(window))
+        findings = [
+            finding
+            for finding in detector.run(ctx.sliced(window))
+            if passes(detector.kind, level, finding.evidence.metrics)
+        ]
     except Exception as exc:  # a detector bug must not stop the others
         error = error_text(exc)
         logger.error("detector_failed", **_log_fields(ctx, detector, exc), exc_info=exc)

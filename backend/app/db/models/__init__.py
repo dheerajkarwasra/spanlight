@@ -75,7 +75,13 @@ from app.db.models.identity import (
     Session,
     User,
 )
-from app.db.models.insights import DetectorRun, Insight, InsightExplanation, InsightFeedback
+from app.db.models.insights import (
+    DetectorRun,
+    DetectorSensitivity,
+    Insight,
+    InsightExplanation,
+    InsightFeedback,
+)
 from app.db.models.notifications import NotificationOutbox, NotificationStatus
 from app.db.models.platform import (
     IdempotencyKey,
@@ -125,6 +131,7 @@ __all__ = [
     "Dataset",
     "DatasetItem",
     "DetectorRun",
+    "DetectorSensitivity",
     "EmailToken",
     "EmailTokenKind",
     "ErrorRollupHourly",

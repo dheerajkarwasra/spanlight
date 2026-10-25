@@ -10,6 +10,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { AgreementBadge, AgreementUnavailableBadge } from "@/components/agreement-badge";
+import { agreementForScore, useEvaluatorAgreementSummary } from "@/features/evaluators";
 import type { EvaluatorKind } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -81,4 +83,25 @@ export function ChangePill({ change, className }: { change: ItemChange; classNam
       {label}
     </span>
   );
+}
+
+interface JudgeAgreementProps {
+  scoreName: string;
+  inLink?: boolean;
+  /** The caller knows the score is an LLM judge's, so a failed summary can be named. */
+  judge?: boolean;
+}
+
+/**
+ * The agreement badge beside a judge's mean (spec UX Phase 6 ruling 5); nothing when the score is
+ * not an LLM judge's. Every badge shares the one project-wide summary request. When that request
+ * fails with no earlier data, only a caller that passes `judge` shows "Agreement unavailable":
+ * the summary itself is what tells the other callers which scores are judges'.
+ */
+export function JudgeAgreement({ scoreName, inLink, judge = false }: JudgeAgreementProps) {
+  const { data: summary, isError } = useEvaluatorAgreementSummary();
+  if (summary === undefined && isError && judge) {
+    return <AgreementUnavailableBadge inLink={inLink} />;
+  }
+  return <AgreementBadge summary={agreementForScore(summary, scoreName)} inLink={inLink} />;
 }

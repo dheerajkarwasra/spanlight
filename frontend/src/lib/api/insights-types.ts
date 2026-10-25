@@ -192,3 +192,34 @@ export interface DetectorRun {
   error: string | null;
   ran_at: string;
 }
+
+/** How strict a Doctor check is; a check with no saved setting is `high_recall`. */
+export type SensitivityLevel = "high_recall" | "balanced" | "high_precision";
+
+/** One check's setting. A fixed check has `tunable: false`, `metric_label: null`, `gates: null`. */
+export interface Sensitivity {
+  detector: string;
+  tunable: boolean;
+  level: SensitivityLevel;
+  metric_label: string | null;
+  /** The metric each stricter level requires, as decimal strings (e.g. `"0.10"`). */
+  gates: { balanced: string; high_precision: string } | null;
+  /** This check's insights seen in the last 30 days, counted at its current level. */
+  findings_30d: number;
+  /** Null until the setting is first changed. */
+  updated_at: string | null;
+}
+
+/** Findings the check would have raised at each level over one window. */
+export interface SensitivityWindowCounts {
+  days: number;
+  high_recall: number;
+  balanced: number;
+  high_precision: number;
+}
+
+/** A 7-day and a 30-day window. */
+export interface SensitivityPreview {
+  detector: string;
+  windows: SensitivityWindowCounts[];
+}

@@ -3,3 +3,5 @@
  * onboarding flow: import from this file, not from the modules behind it.
  */
 export { KeySnippet } from "./key-snippet";
+export { ActivationChecklist } from "./activation-checklist";
+export { useCanRestoreChecklist, useSetActivationChecklist } from "./activation-queries";

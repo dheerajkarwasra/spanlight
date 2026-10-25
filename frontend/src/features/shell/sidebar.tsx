@@ -1,8 +1,9 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import { PanelLeftClose } from "lucide-react";
-import { Fragment, type ComponentProps, type ReactNode } from "react";
+import { Fragment, useRef, type ComponentProps, type ReactNode } from "react";
 
 import { Logo } from "@/components/logo";
+import { ActivationChecklist } from "@/features/onboarding";
 import { cn } from "@/lib/utils";
 
 import { OpenCriticalBadge } from "./nav-badge";
@@ -82,7 +83,8 @@ export function HubLink({ hub, active, settingsLocked, ...rest }: HubLinkProps) 
 
 /**
  * The floating dark rail (Figma "App/Rail"): logo, project switcher, the hubs in two runs split by a
- * hairline with a quiet active row and a lime dot, the "Connect your app" tile (until the first trace) and the account tile. The header and footer stay
+ * hairline with a quiet active row and a lime dot, the "Connect your app" tile (until the first trace)
+ * or the "Get set up" checklist (after it), and the account tile. The header and footer stay
  * put and only the navigation scrolls, with the current page kept in view (Figma "Fixes
  * 2026-10-13"). On a window too short for that (600 px or less) the whole rail scrolls instead.
  */
@@ -100,6 +102,7 @@ export function Sidebar({
   const settingsLocked = isBlockedByTwoFactor(useProjectQuery());
   const activeHub = hubForPath(pathname)?.id;
   const hasTraces = useHasTraces();
+  const accountMenu = useRef<HTMLButtonElement>(null);
 
   return (
     <div
@@ -174,7 +177,14 @@ export function Sidebar({
             </span>
           </Link>
         ) : null}
-        <UserMenu onOpenShortcuts={onOpenShortcuts} />
+        <ActivationChecklist
+          variant="tile"
+          // `onNavigate` is given only in the navigation sheet, too narrow for a popover beside it.
+          side={onNavigate ? "top" : "right"}
+          onNavigate={onNavigate}
+          onHidden={() => accountMenu.current?.focus()}
+        />
+        <UserMenu ref={accountMenu} onOpenShortcuts={onOpenShortcuts} />
       </div>
     </div>
   );

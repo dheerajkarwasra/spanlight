@@ -48,6 +48,14 @@ export interface TokenMix {
   cost_usd: string | null;
 }
 
+/** Which setup checklist steps the project has done (`GET …/activation`), read on request. */
+export interface Activation {
+  first_trace: boolean;
+  session: boolean;
+  budget: boolean;
+  evaluation: boolean;
+}
+
 export interface MetricsQuery extends TimeWindow {
   environment?: string | undefined;
 }
@@ -143,6 +151,8 @@ export const projectsApi = {
 
   onboarding: (projectId: string): Promise<OnboardingStatus> =>
     api.get<OnboardingStatus>(`${projectPath(projectId)}/onboarding`),
+  activation: (projectId: string): Promise<Activation> =>
+    api.get<Activation>(`${projectPath(projectId)}/activation`),
 
   filters: (projectId: string): Promise<FilterOptions> =>
     api.get<FilterOptions>(`${projectPath(projectId)}/filters`),

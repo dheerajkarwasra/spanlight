@@ -97,6 +97,11 @@ INSIGHT_ROWS = (
     Row("POST", f"{PRJ}/insights/{{insight_id}}/unmute", P.INSIGHTS_MANAGE),
     Row("POST", f"{PRJ}/insights/{{insight_id}}/explain", P.INSIGHTS_MANAGE),
     Row("GET", f"{PRJ}/detector-runs", P.PROJECT_READ),
+    # UX Phase 6: Doctor sensitivity. A check named by the path that is not tunable is the
+    # handler's 404 `DETECTOR_NOT_TUNABLE`, the resource 404 the matrix already allows.
+    Row("GET", f"{PRJ}/detector-sensitivity", P.PROJECT_READ),
+    Row("GET", f"{PRJ}/detector-sensitivity/{{detector}}/preview", P.PROJECT_READ),
+    Row("PUT", f"{PRJ}/detector-sensitivity/{{detector}}", P.INSIGHTS_MANAGE),
     Row("GET", f"{PRJ}/health", P.PROJECT_READ),
 )
 
@@ -109,6 +114,8 @@ PROJECT_DATA_ROWS = (
     Row("GET", f"{PRJ}/users/{{external_user_id:path}}", P.PROJECT_READ),
     Row("GET", f"{PRJ}/attribution", P.PROJECT_READ),
     Row("GET", f"{PRJ}/unpriced-models", P.PROJECT_READ),
+    # UX Phase 6: the setup checklist's steps.
+    Row("GET", f"{PRJ}/activation", P.PROJECT_READ),
     Row("POST", f"{PRJ}/exports", P.EXPORT_CREATE),
     Row("GET", f"{PRJ}/exports", P.PROJECT_READ),
     Row("GET", f"{PRJ}/exports/{{export_id}}", P.PROJECT_READ),

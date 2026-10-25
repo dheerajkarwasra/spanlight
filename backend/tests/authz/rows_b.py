@@ -124,6 +124,9 @@ EVALUATOR_ROWS = (
     Row("DELETE", EVALUATOR, P.EVALUATORS_WRITE),
     Row("GET", f"{EVALUATOR}/runs", P.PROJECT_READ),
     Row("GET", f"{EVALUATOR}/budget", P.PROJECT_READ),
+    # UX Phase 6: human-judge agreement, computed on read.
+    Row("GET", f"{EVALUATOR}/agreement", P.PROJECT_READ),
+    Row("GET", f"{PRJ}/evaluator-agreement", P.PROJECT_READ),
     # Calls a judge model, so it is a write: it spends the organization's provider credit.
     Row("POST", f"{EVALUATOR}/test", P.EVALUATORS_WRITE),
 )

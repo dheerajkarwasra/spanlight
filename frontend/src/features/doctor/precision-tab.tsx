@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { ThumbsUp } from "lucide-react";
 import { useMemo } from "react";
 
@@ -103,6 +104,15 @@ function PrecisionCard({ rows }: { rows: readonly PrecisionKind[] }) {
         Rows under {PRECISION_TARGET.minAnswers} answers are greyed and never marked. “—”: no
         answers, so no precision.
       </p>
+      {/* Spec ruling 9: the dial for a check that is wrong too often. */}
+      <Link
+        from="/$orgId/$projectId/doctor"
+        to="."
+        search={(prev) => ({ ...prev, tab: "sensitivity" as const })}
+        className="inline-flex min-h-6 items-center self-start rounded-sm text-sm font-semibold text-accent hover:underline max-md:min-h-11"
+      >
+        Too many wrong findings? Change sensitivity
+      </Link>
     </SectionCard>
   );
 }

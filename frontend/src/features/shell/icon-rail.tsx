@@ -1,9 +1,10 @@
 import { useLocation } from "@tanstack/react-router";
 import { PanelLeftOpen } from "lucide-react";
-import { Fragment } from "react";
+import { Fragment, useRef } from "react";
 
 import { Logo } from "@/components/logo";
 import { Tooltip } from "@/components/ui/tooltip";
+import { ActivationChecklist } from "@/features/onboarding";
 import { cn } from "@/lib/utils";
 
 import { useOpenCriticalCount } from "./use-open-critical-count";
@@ -42,13 +43,15 @@ function linkName(hub: Hub, openCritical: number | undefined) {
 
 /**
  * The 56 px rail (Figma "Rail / Icon 56"): logo mark, "Expand sidebar", the hubs as icons with
- * tooltips in the same two runs, and the user avatar opening the same menu as the full rail.
+ * tooltips in the same two runs, the "Get set up" count tile, and the user avatar opening the same
+ * menu as the full rail.
  */
 export function IconRail({ onExpand, expandOpensSheet, onOpenShortcuts }: IconRailProps) {
   const pathname = useLocation({ select: (location) => location.pathname });
   const settingsLocked = isBlockedByTwoFactor(useProjectQuery());
   const activeHub = hubForPath(pathname)?.id;
   const openCritical = useOpenCriticalCount();
+  const accountMenu = useRef<HTMLButtonElement>(null);
 
   return (
     <div className="flex h-full flex-col items-center gap-4 overflow-y-auto rounded-card bg-rail py-4 text-rail-foreground dark:border dark:border-border">
@@ -101,7 +104,8 @@ export function IconRail({ onExpand, expandOpensSheet, onOpenShortcuts }: IconRa
         </ul>
       </nav>
 
-      <UserMenu variant="avatar" onOpenShortcuts={onOpenShortcuts} />
+      <ActivationChecklist variant="icon" onHidden={() => accountMenu.current?.focus()} />
+      <UserMenu ref={accountMenu} variant="avatar" onOpenShortcuts={onOpenShortcuts} />
     </div>
   );
 }

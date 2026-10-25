@@ -7,7 +7,7 @@ from datetime import timedelta
 
 import structlog
 from fastapi import APIRouter, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import (
@@ -22,7 +22,7 @@ from app.api.deps import (
     client_ip,
     utcnow,
 )
-from app.api.principals import SessionPrincipal
+from app.api.principals import SessionPrincipal, TokenPrincipal
 from app.api.schemas import (
     AcceptedOut,
     EmailVerifyConfirmIn,
@@ -39,7 +39,7 @@ from app.api.schemas import (
     SignupIn,
     UserOut,
 )
-from app.api.schemas.auth import CapabilitiesOut
+from app.api.schemas.auth import ActivationChecklistIn, CapabilitiesOut
 from app.auth.email_tokens import consume_token
 from app.auth.login_challenge import issue_challenge
 from app.auth.login_throttle import enforce_login_throttle
@@ -56,6 +56,7 @@ from app.core.errors import (
     forbidden,
     not_configured,
     not_found,
+    token_scope,
     too_many_requests,
 )
 from app.core.security import (
@@ -72,6 +73,7 @@ from app.db.models import (
     Membership,
     Organization,
     Session,
+    TokenScope,
     User,
 )
 from app.services.audit import record_user_audit_in_each_org
@@ -308,12 +310,40 @@ async def me(
             and not auth.user.email_verified
             and not is_demo_user(auth.user)
         ),
+        activation_checklist_dismissed=auth.user.activation_checklist_dismissed_at is not None,
         capabilities=CapabilitiesOut(
             gateway_mode=settings.gateway_mode,
             credentials_configured=settings.is_crypto_configured,
             exports_configured=settings.is_object_storage_configured,
         ),
     )
+
+
+@router.put("/me/activation-checklist", status_code=status.HTTP_204_NO_CONTENT)
+async def set_activation_checklist(
+    body: ActivationChecklistIn, auth: CurrentUser, db: DbSession
+) -> None:
+    """Hide or show the setup checklist for the caller, in every project. Idempotent: hiding it
+    again keeps the time it was first hidden. A session or a `write` token; the row is always the
+    caller's own."""
+    if isinstance(auth, TokenPrincipal) and auth.scope is TokenScope.READ:
+        raise token_scope(
+            "This access token is read-only. Create a token with the `write` scope to do this."
+        )
+    if is_demo_user(auth.user):
+        # Every visitor is this one user: one visitor hiding it would hide it for all of them.
+        raise forbidden("The demo account can't hide the setup checklist.")
+    dismissed_at = (
+        func.coalesce(User.activation_checklist_dismissed_at, func.now())
+        if body.dismissed
+        else None
+    )
+    await db.execute(
+        update(User)
+        .where(User.id == auth.user.id)
+        .values(activation_checklist_dismissed_at=dismissed_at)
+    )
+    await db.commit()
 
 
 def _reissue_csrf_cookie(

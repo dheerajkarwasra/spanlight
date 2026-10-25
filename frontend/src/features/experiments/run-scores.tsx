@@ -7,7 +7,7 @@ import { formatInteger, pluralize } from "@/lib/format";
 
 import { categoryOrder, FEW_ITEMS, formatInterval, formatMean } from "./compare-view";
 import { DistributionBar, DistributionLegend, type Segment } from "./distribution-bar";
-import { FewItemsChip, KindChip } from "./score-chips";
+import { FewItemsChip, JudgeAgreement, KindChip } from "./score-chips";
 import type { ScoreMeta } from "./score-meta";
 
 interface RunScoresProps {
@@ -58,6 +58,9 @@ function ScoreTile({
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[15px] font-bold text-foreground">{meta.name}</span>
         {meta.evaluatorKind ? <KindChip kind={meta.evaluatorKind} /> : null}
+        <span className="ml-auto">
+          <JudgeAgreement scoreName={meta.name} judge={meta.evaluatorKind === "llm_judge"} />
+        </span>
       </div>
       <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[32px] leading-none font-extrabold tracking-[-0.04em] text-foreground tabular">
         {content.value ?? <UnknownValue reason="No item of this run has this score." />}

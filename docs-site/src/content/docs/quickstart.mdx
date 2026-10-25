@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-{/* Sources: deploy/compose.yaml, deploy/.env.example, frontend/src/features/onboarding/first-trace-status.tsx, frontend/src/features/onboarding/connect-step.tsx, frontend/src/features/onboarding/test-trace.ts, frontend/src/features/traces/traces-empty-state.tsx, sdks/python/src/spanlight/_client.py, sdks/python/src/spanlight/_exporter_delivery.py, docs/api-deviations.md */}
+{/* Sources: deploy/compose.yaml, deploy/.env.example, frontend/src/features/onboarding/first-trace-status.tsx, frontend/src/features/onboarding/connect-step.tsx, frontend/src/features/onboarding/test-trace.ts, frontend/src/features/traces/traces-empty-state.tsx, sdks/python/src/spanlight/_client.py, sdks/python/src/spanlight/_exporter_delivery.py, docs/api-deviations.md, frontend/src/features/onboarding/activation-steps.ts, frontend/src/features/onboarding/activation-checklist.tsx */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
@@ -74,6 +74,8 @@ Instead of passing them to `init`, you can set `SPANLIGHT_API_KEY` and `SPANLIGH
 The setup wizard waits on "Waiting for your first trace…" and checks every 2 seconds. When your script has run, it changes to a card titled "First trace received" with the text "Your app is connected." While the key you created is still on screen, the page stays so you can copy it: select **Open your first trace**. The page opens the trace by itself, with the message "Your first trace arrived.", only when the trace arrives while you wait there and no new key is on screen. If the trace had already arrived, for example when you reload the page, it offers **Open your first trace** instead. The trace is named `answer`, the name of the traced function, and shows the model call as a span with its tokens and cost.
 
 From there you have an [overview](/docs/guides/overview/) of latency, tokens, cost and errors, a [trace explorer](/docs/guides/traces/) with a span waterfall, and [session views](/docs/guides/traces/) of multi-turn conversations. A model with no known price shows its cost as unknown, never as $0.
+
+Once the project has a trace, a **Get set up** tile at the foot of the sidebar tracks four next steps: send a trace from your app (the setup test trace does not count), group traces into a session, set a budget and run an eval or a review. Each step is ticked from your project's own data, and selecting one shows a short guide with links. **Hide checklist** removes it for your account in every project; **Show setup checklist** in the account menu brings it back.
 
 ## Troubleshooting
 

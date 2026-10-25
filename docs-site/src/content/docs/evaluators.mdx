@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-{/* Sources: backend/app/evals/validation.py, backend/app/api/v1/evaluators.py, backend/app/config.py, backend/app/jobs/scheduler.py, frontend/src/features/evaluators/run-copy.ts, frontend/src/features/evaluators/run-status.tsx, frontend/src/features/evaluators/evaluator-header.tsx, frontend/src/features/evaluators/runs-table.tsx */}
+{/* Sources: backend/app/evals/validation.py, backend/app/api/v1/evaluators.py, backend/app/config.py, backend/app/jobs/scheduler.py, frontend/src/features/evaluators/run-copy.ts, frontend/src/features/evaluators/run-status.tsx, frontend/src/features/evaluators/evaluator-header.tsx, frontend/src/features/evaluators/runs-table.tsx, backend/app/evals/agreement.py, frontend/src/features/evaluators/agreement-card.tsx, frontend/src/components/agreement-badge.tsx */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
@@ -124,6 +124,33 @@ The budget is a **reservation**, not a check made after the fact:
 Because the estimate is a ceiling and not a measurement, spend normally stays under the budget; a prompt the estimate undercounts could end a month over by about one call.
 
 The budget meter shows spent, reserved and remaining for the month, and turns to a warning at 80 %. `GET .../evaluators/{evaluator_id}/budget` returns the same.
+
+### Agreement with reviewers
+
+A judge's mean says what the judge thinks, not whether it is right. The **Agreement with reviewers** card on a judge's page compares its scores with the scores people gave in [Review](/docs/review/) on the same traces, so you can see how far to trust it before you rely on its mean.
+
+**What is paired.** A pair is one trace that has both a score from this judge and a human review score with the judge's name. For each trace the newest score on each side is used; span ids are ignored. Judge scores from online runs, test runs and experiments all count. Scores sent with an API key never count, and scores without a numeric value are skipped. When more than 2,000 traces are paired, the 2,000 with the newest review scores are used and the card says so.
+
+**What it shows.** With at least **30 paired traces** the card shows:
+
+| Figure | Meaning |
+| --- | --- |
+| κ (kappa) | How far the judge agrees with reviewers beyond chance: 1 is perfect agreement, 0 is no better than chance. 0.80 or more reads as strong, 0.60 to 0.79 as moderate, below 0.60 as weak. |
+| F1 | How well the judge's passes match the reviewers' passes, with the reviewer as the reference. |
+| Paired traces | How many traces the figures are computed from. |
+| Confusion matrix | Rows are the reviewer's scores and columns the judge's; the diagonal is where they agree, and cells off it show where the judge drifts. |
+
+How the scores are compared depends on the [score config](/docs/scores/) with the judge's name:
+
+- **Numeric** (and a judge with no score config yet, read as 0 to 1): scores are clamped to the config's range and put in 5 equal-width bins, such as `0–0.2`. κ is quadratic-weighted, so a near miss counts against the judge less than a far one. A pass for F1 is a score at or above the middle of the range, for example 0.5.
+- **Boolean**: a 2 × 2 table of Yes and No, Cohen's κ, and Yes as a pass.
+- **Categorical**, or a numeric config whose minimum equals its maximum: agreement cannot be computed, and the card says so.
+
+Below 30 pairs the card reads "Not enough paired traces yet" with the count so far, and links to Review; κ and F1 are not shown. When every pair falls in one class, κ cannot be computed and shows as "—". F1 is "—" when neither side has a pass.
+
+**A weak judge is flagged.** When κ is below 0.60, the card warns: "Weak agreement (κ below 0.60). Check the judge's prompt against reviewed traces before relying on its mean." Wherever an experiment shows a judge's mean (run score cards, compare cards and run rows), a badge beside it gives the same reading: `κ 0.72 · 48 pairs`, `κ 0.41 · weak` with a warning icon, or `Not calibrated · 12/30` below 30 pairs. Heuristic and webhook evaluators get no badge, since their scores are a rule's output, not a model's opinion.
+
+Agreement is computed when the page is read; nothing is stored. `GET .../evaluators/{evaluator_id}/agreement` returns one evaluator's figures, and `GET /api/v1/projects/{project_id}/evaluator-agreement` a summary for every judge of the project. Both need `project:read`.
 
 ## Webhook evaluators
 
@@ -251,6 +278,7 @@ Under `/api/v1/projects/{project_id}/evaluators`.
 | `GET`, `PATCH`, `DELETE /{evaluator_id}` | read, `evaluators:write` | Read, change, delete (scores already written stay) |
 | `GET /{evaluator_id}/runs` | `project:read` | Runs, newest first |
 | `GET /{evaluator_id}/budget` | `project:read` | The month's spend, reservations and remaining amount |
+| `GET /{evaluator_id}/agreement` | `project:read` | Agreement with review scores (see [Agreement with reviewers](#agreement-with-reviewers)) |
 | `POST /{evaluator_id}/test` | `evaluators:write` | Evaluate `{"trace_id"}` now, without storing scores |
 
 A create body is `{"name", "config", "sampling_rate"?, "filters"?, "monthly_budget_usd"?, "enabled"?}`. The `config` has a `kind` of `heuristic` (with a `check`), `llm_judge` (with `credential_id`, `model` and either `judge_template` or `prompt_version_id`) or `webhook` (with `channel_id`). `PATCH` takes the members to change, and a `config` with only the fields to change. Creation can also answer `422 BUDGET_REQUIRED` (a judge without a budget), `RULE_NEEDS_EXPECTED_OUTPUT`, `JUDGE_TEMPLATE_VARIABLES`, `EVALUATOR_MODEL_UNPRICED` or `CHANNEL_KIND` (a webhook evaluator on a channel that is not a webhook channel of the organization), and `404` for a prompt version, credential or channel the project or organization does not have.

@@ -156,6 +156,7 @@ from app.api.schemas.prices import (
     UnpricedModelOut,
 )
 from app.api.schemas.projects import (
+    ActivationOut,
     OnboardingOut,
     ProjectCreateIn,
     ProjectDeleteIn,
@@ -205,6 +206,7 @@ from app.api.schemas.traces import (
 
 __all__ = [
     "AcceptedOut",
+    "ActivationOut",
     "AlertChannelOut",
     "AlertChannelSecretOut",
     "AlertEventOut",

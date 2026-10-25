@@ -144,6 +144,7 @@ WRITE_GUARDED: set[Route] = {
     ("POST", "/api/v1/projects/{project_id}/score-configs"),
     ("POST", "/api/v1/projects/{project_id}/score-configs/failure-category"),
     ("POST", "/api/v1/projects/{project_id}/traces/{trace_id}/scores"),
+    ("PUT", "/api/v1/projects/{project_id}/detector-sensitivity/{detector}"),
     ("PUT", "/api/v1/projects/{project_id}/gateway/routes/{route_id}"),
     ("PUT", "/api/v1/projects/{project_id}/insights/{insight_id}/feedback"),
     ("PUT", "/api/v1/projects/{project_id}/prompts/{name:path}/labels/{label}"),
@@ -201,8 +202,13 @@ def test_every_route_has_exactly_one_kind() -> None:
     # Together the kinds are every route, and no route is in two of them.
     assert set().union(*KINDS.values()) == _declared_routes()
     assert sum(len(routes) for routes in KINDS.values()) == len(_declared_routes())
-    # The caller's own account, and the global price table any signed-in user may read.
-    assert KINDS["user"] == {("GET", "/api/v1/auth/me"), ("GET", "/api/v1/prices")}
+    # The caller's own account (and its setup checklist preference, which the handler refuses to
+    # a read token), and the global price table any signed-in user may read.
+    assert KINDS["user"] == {
+        ("GET", "/api/v1/auth/me"),
+        ("PUT", "/api/v1/auth/me/activation-checklist"),
+        ("GET", "/api/v1/prices"),
+    }
     assert KINDS["guarded"] >= WRITE_GUARDED
     assert KINDS["guarded"] - WRITE_GUARDED >= KEY_READABLE
     # A broken walk must not pass by finding nothing.

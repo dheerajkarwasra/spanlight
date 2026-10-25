@@ -85,6 +85,7 @@ class AuditAction(enum.StrEnum):
     INSIGHT_MUTE = "insight.mute"
     INSIGHT_UNMUTE = "insight.unmute"
     INSIGHT_EXPLAIN = "insight.explain"
+    INSIGHT_SENSITIVITY_CHANGE = "insight.sensitivity_change"
     PROMPT_CREATE = "prompt.create"
     PROMPT_VERSION_CREATE = "prompt.version_create"
     PROMPT_LABEL_SET = "prompt.label_set"
@@ -156,6 +157,10 @@ class User(Base):
     totp_enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # The 30-second step of the last code accepted; a code is only valid for a later step.
     totp_last_step: Mapped[int | None] = mapped_column(BigInteger)
+    # When the user hid the setup checklist; NULL while it shows. Per user, across projects.
+    activation_checklist_dismissed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
     @property
     def email_verified(self) -> bool:

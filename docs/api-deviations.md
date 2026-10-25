@@ -3233,3 +3233,81 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
   Migration 1016 turns the stored zeros that stood for "no usage reported" into `null`. The `tokens` sort of the
   trace and session lists adds the two counts, takes the reported one alone when the other is unknown, and puts a
   trace with neither among the unknown values, last in both directions.
+
+## UX Phase 6 (added 2026-10-25)
+
+### Agreement
+
+- **Routes.** `GET /projects/{p}/evaluators/{e}/agreement` returns `AgreementOut` for one evaluator, and
+  `GET /projects/{p}/evaluator-agreement` returns `{items}` of `AgreementSummaryOut` (`evaluator_id`, `score_name`,
+  `status`, `pairs`, `kappa`, `flagged`) for every `llm_judge` evaluator of the project, ordered by name. Both need
+  `project:read`; a non-member gets 404 and API keys are refused (`403 KEY_SCOPE`), like the other evaluator reads.
+  An evaluator that is not in the path's project is 404 `NOT_FOUND`. The single-evaluator route answers for any
+  evaluator kind (a heuristic's score is compared the same way); only the summary is limited to judges. Both are
+  computed on read; nothing is stored.
+- **Pairing.** A pair is one trace with a judge score and a human score under the evaluator's name. The judge side
+  is the newest score (by `created_at`, then id) with `source = 'eval'` whose `evaluator_run_id` is a run of this
+  evaluator, of any run source (`online`, `test` or `experiment`); the human side is the newest `source = 'human'`
+  score with that name on the same trace. Span ids are ignored. API-key scores (`source = 'api'`) never count.
+  Scores without a numeric `value` (categorical ones) are skipped before "newest" is chosen.
+- **Cap.** The newest 2,000 pairs by human score time are used; `capped` is `true` when older pairs were left out.
+- **Scales and bins.** Numeric scores are clamped to the score config's `[min_value, max_value]` and put in 5
+  equal-width bins (`labels` such as `"0–0.2"`); κ is quadratic-weighted (`kappa_kind: "quadratic_weighted"`) and
+  `pass_threshold` is the scale midpoint used for F1. Boolean scores use a 2×2 table (`labels` `["No", "Yes"]`),
+  Cohen's κ (`kappa_kind: "cohen"`) and `pass_threshold: null`. Categorical scores, and a numeric config whose
+  `min_value` equals its `max_value`, are `status: "unsupported"`.
+- **A missing score config** (`data_type: null`) is scored as numeric over `[0, 1]`, since a judge's verdict is a
+  number from 0 to 1.
+- **`kappa_kind` is set even when `kappa` is `null`** (`not_enough_pairs`, `undefined`), so the dashboard can name the
+  statistic it would show.
+- **`flagged` is decided on κ rounded to 4 places** (`κ < 0.60`), so the value shown and the flag always agree.
+- **Numbers.** `kappa`, `f1` and `pass_threshold` are JSON numbers with at most 4 decimals, like score values, and
+  `null` when they cannot be computed, never 0. `matrix` is `int[][]`, rows the reviewer and columns the judge; it is
+  `[]` when there are no pairs.
+
+### Doctor sensitivity
+
+- **Routes.** `GET /projects/{p}/detector-sensitivity` returns `{items}` for all fifteen checks in catalogue order:
+  `detector`, `tunable`, `level` (`high_recall`, `balanced` or `high_precision`; a check with no saved row is
+  `high_recall`), `metric_label`, `gates` (`{balanced, high_precision}` as decimal strings, such as `"0.10"` or
+  `"50000"`), `findings_30d` and `updated_at`. A fixed check (`provider_incident`, `unpriced_spend`,
+  `truncated_stream_accepted`, `unsupported_parameter_retried`) has `tunable: false`, `metric_label: null` and
+  `gates: null`; `updated_at` is `null` until the setting is first changed. `GET …/{detector}/preview` returns
+  `{detector, windows: [{days: 7, high_recall, balanced, high_precision}, {days: 30, …}]}`. Both need `project:read`;
+  API keys are refused (`403 KEY_SCOPE`). `PUT …/{detector}` with `{level}` (no other field: `422`) needs
+  `insights:manage`, so owners and admins; members and viewers get `403`, a non-member `404`. It returns the item.
+  A fixed or unknown check on the preview or the PUT is `404 DETECTOR_NOT_TUNABLE`.
+- **Gates.** The values are the spec's §4.1 table (`app.insights.sensitivity.GATES`). The gate compares the metric
+  the detector stored, which the detector has already rounded: a cost ratio of 9.95× stored as `10.0` passes High
+  precision's `≥ 10`. A finding whose metric is missing or `null` passes at every level.
+- **Counting.** `findings_30d` and the preview count this project's insights of the check with `last_seen_at` in
+  the window, any status, one per insight row (not per detection). A row counts at a level when its strongest
+  reading meets the gate: the larger of `peak_strength` and the strength of its stored evidence (rows from before
+  `peak_strength` have only the evidence); a row with neither counts at every level. `peak_strength` is the
+  strongest reading over the row's whole life, including before a resolve and reopen, so a finding that reopened
+  weak still counts at a stricter level if it was once strong. `findings_30d` counts at the check's current level.
+- **Changing a setting** applies from the next detector run. Open findings of the check that fall below the new
+  setting are no longer detected and resolve through the existing quiet rule (24 hours without a detection), not at
+  the next run. The change writes the audit event `insight.sensitivity_change` (target `detector_sensitivity`, the
+  check's name) with metadata `{"from": <old level>, "to": <new level>}`, `from` being `high_recall` when there was no
+  saved row, in the same transaction. Setting the level a check already has writes nothing, audits nothing and
+  leaves `updated_at` as it was, so a repeated PUT is one event.
+
+### Activation
+
+- **Steps.** `GET /projects/{p}/activation` returns `ActivationOut` `{first_trace, session, budget, evaluation}`,
+  four booleans, each an `EXISTS` over the project's rows read on request; nothing is stored. `first_trace` is a
+  trace without the `spanlight:setup-test` tag (the setup page's test trace proves the pipeline, not the app);
+  `session` is a trace with a `session_id`, tagged or not; `budget` is a budget of any scope, enabled or not;
+  `evaluation` is a score with `source` `eval` or `human`. Scores sent with an API key (`source = 'api'`) do not
+  count. It needs `project:read`; a non-member gets 404 and API keys are refused (`403 KEY_SCOPE`).
+- **Dismissal.** `PUT /auth/me/activation-checklist` with `{dismissed: bool}` (an unknown field is ignored; a
+  missing or non-boolean `dismissed` is `422`) answers `204` and writes only the caller's own
+  `users.activation_checklist_dismissed_at`; there is no user id to send. It is per user, across every project.
+  `MeOut.activation_checklist_dismissed` reads it back. `true` stamps the time once: dismissing again keeps the first
+  time. `false` clears it. Nothing is audited: it is a display preference, not a change to any organization.
+- **Who may call it.** A browser session (CSRF token and an allowed `Origin`, like every state-changing `/api`
+  request) or a personal access token with the `write` scope. A `read` token is `403 TOKEN_SCOPE`, as on every
+  write; API keys are `403 KEY_SCOPE`. The shared demo account is `403 FORBIDDEN` "The demo account can't hide the
+  setup checklist.", since one visitor would hide it for every visitor. `GET /auth/me` and this PUT are the only
+  `/auth` routes a token may call.

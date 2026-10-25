@@ -146,4 +146,12 @@ TELEMETRY = (
         ),
         touch="duration_ms",
     ),
+    RowFactory(
+        table="detector_sensitivity",
+        sql=(
+            "INSERT INTO detector_sensitivity (project_id, detector, level) "
+            "VALUES (:project_id, 'error_spike', 'balanced') RETURNING *"
+        ),
+        touch="level",
+    ),
 )

@@ -17,7 +17,7 @@ import {
 } from "./compare-view";
 import { sideReason, type RunSide, type SidePair } from "./compare-sides";
 import { DistributionBar, DistributionLegend } from "./distribution-bar";
-import { ChangePill, KindChip } from "./score-chips";
+import { ChangePill, JudgeAgreement, KindChip } from "./score-chips";
 import type { ScoreMeta } from "./score-meta";
 
 interface CompareScoreCardProps {
@@ -73,6 +73,9 @@ export function CompareScoreCard(props: CompareScoreCardProps) {
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="text-[15px] font-bold text-foreground">{meta.name}</h3>
         {meta.evaluatorKind ? <KindChip kind={meta.evaluatorKind} /> : null}
+        <span className="ml-auto">
+          <JudgeAgreement scoreName={meta.name} judge={meta.evaluatorKind === "llm_judge"} />
+        </span>
       </div>
       {meta.kind === "categorical" ? <Categorical {...props} /> : <Numeric {...props} />}
     </Card>

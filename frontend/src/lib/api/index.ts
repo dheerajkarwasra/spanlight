@@ -46,6 +46,7 @@ export { pricesApi } from "./prices";
 export { projectsApi } from "./projects";
 export { providersApi } from "./providers";
 export type {
+  Activation,
   CreateApiKeyInput,
   MetricsQuery,
   SessionListQuery,

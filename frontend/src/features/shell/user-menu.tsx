@@ -1,5 +1,14 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowUpRight, BookOpen, Cable, Keyboard, LogOut, UserRound } from "lucide-react";
+import {
+  ArrowUpRight,
+  BookOpen,
+  Cable,
+  Keyboard,
+  ListChecks,
+  LogOut,
+  UserRound,
+} from "lucide-react";
+import { useState, type Ref } from "react";
 
 import {
   DropdownMenu,
@@ -10,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useMe } from "@/features/auth";
+import { useCanRestoreChecklist, useSetActivationChecklist } from "@/features/onboarding";
 import { docsLink } from "@/lib/docs-links";
 import { ROLE_LABELS } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -22,11 +32,16 @@ interface UserMenuProps {
   variant?: "tile" | "avatar";
   /** Opens the keyboard shortcuts help; the item shows only when given. */
   onOpenShortcuts?: () => void;
+  /** The menu's trigger, which takes focus when the setup checklist above it is hidden. */
+  ref?: Ref<HTMLButtonElement>;
 }
 
 /** The account menu at the bottom of the rail, also the steady home of help and setup links. */
-export function UserMenu({ variant = "tile", onOpenShortcuts }: UserMenuProps) {
+export function UserMenu({ variant = "tile", onOpenShortcuts, ref }: UserMenuProps) {
   const { user } = useMe();
+  const [open, setOpen] = useState(false);
+  const canRestoreChecklist = useCanRestoreChecklist(open);
+  const setChecklist = useSetActivationChecklist();
   const params = useProjectParams();
   const role = useCurrentRole();
   const org = useCurrentOrg();
@@ -35,8 +50,9 @@ export function UserMenu({ variant = "tile", onOpenShortcuts }: UserMenuProps) {
   const context = [role ? ROLE_LABELS[role] : null, org?.name].filter(Boolean).join(" · ");
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger
+        ref={ref}
         className={cn(
           "shrink-0 transition-colors duration-200 focus-visible:outline-lime",
           variant === "tile"
@@ -100,6 +116,16 @@ export function UserMenu({ variant = "tile", onOpenShortcuts }: UserMenuProps) {
             Connect your app
           </Link>
         </DropdownMenuItem>
+        {canRestoreChecklist ? (
+          <DropdownMenuItem
+            onSelect={() => {
+              setChecklist.mutate(false);
+            }}
+          >
+            <ListChecks aria-hidden />
+            Show setup checklist
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={() => {

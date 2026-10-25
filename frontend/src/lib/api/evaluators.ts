@@ -1,5 +1,6 @@
 import { api } from "./client";
 import { projectPath } from "./paths";
+import type { ScoreDataType } from "./scores";
 import type { Page } from "./types";
 
 /** Where a heuristic rule looks. */
@@ -163,6 +164,46 @@ export interface EvaluatorTestResult {
   reasoning: string | null;
 }
 
+/** `not_enough_pairs` below `min_pairs`; `undefined` when κ cannot be computed (one label only). */
+export type AgreementStatus = "ok" | "not_enough_pairs" | "undefined" | "unsupported";
+
+/**
+ * How far a judge agrees with human reviewers on one trace's score (computed on read). `kappa`,
+ * `f1` and `pass_threshold` are JSON numbers, `null` when they cannot be computed (never 0).
+ */
+export interface Agreement {
+  evaluator_id: string;
+  score_name: string;
+  /** Null without a score config (scored as numeric over 0–1). */
+  data_type: ScoreDataType | null;
+  status: AgreementStatus;
+  pairs: number;
+  min_pairs: number;
+  /** True when older pairs beyond the newest 2,000 were left out. */
+  capped: boolean;
+  kappa: number | null;
+  /** Set even when `kappa` is null, so the statistic can still be named. */
+  kappa_kind: "quadratic_weighted" | "cohen" | null;
+  f1: number | null;
+  /** The numeric scale's midpoint used for F1; null for boolean scores. */
+  pass_threshold: number | null;
+  labels: string[];
+  /** Rows are the reviewer, columns the judge; `[]` without pairs. */
+  matrix: number[][];
+  /** κ (rounded to 4 places) below 0.60. */
+  flagged: boolean;
+}
+
+/** One judge's agreement for the project-wide list. */
+export interface AgreementSummary {
+  evaluator_id: string;
+  score_name: string;
+  status: AgreementStatus;
+  pairs: number;
+  kappa: number | null;
+  flagged: boolean;
+}
+
 export interface EvaluatorListQuery {
   limit?: number | undefined;
   cursor?: string | null | undefined;
@@ -217,4 +258,10 @@ export const evaluatorsApi = {
     api.post<EvaluatorTestResult>(`${evaluatorPath(projectId, evaluatorId)}/test`, {
       trace_id: traceId,
     }),
+  /** Judge versus human scores on the same traces; any evaluator kind. */
+  agreement: (projectId: string, evaluatorId: string): Promise<Agreement> =>
+    api.get<Agreement>(`${evaluatorPath(projectId, evaluatorId)}/agreement`),
+  /** Every `llm_judge` evaluator of the project, ordered by name. */
+  agreementSummary: (projectId: string): Promise<{ items: AgreementSummary[] }> =>
+    api.get<{ items: AgreementSummary[] }>(`${projectPath(projectId)}/evaluator-agreement`),
 };

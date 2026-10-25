@@ -20,6 +20,7 @@ import {
   type VersionIndex,
 } from "./run-label";
 import { RunStatusPill } from "./run-status-pill";
+import { JudgeAgreement } from "./score-chips";
 
 /** The grid shared by the runs table's labels and rows (Figma "Experiments — Detail"). */
 export const RUN_GRID =
@@ -135,10 +136,15 @@ function RunCells({ run, context }: { run: ExperimentRun; context: RunContext })
           : null}
       </Cell>
       <Cell label={score?.name ?? "Score"} strong>
-        {score === null ? null : stat?.mean !== undefined && stat.mean !== null ? (
-          formatMean(stat.mean, score.kind)
-        ) : (
-          <UnknownValue reason="No item of this run has this score yet." />
+        {score === null ? null : (
+          <span className="flex flex-wrap items-center gap-1.5">
+            {stat?.mean !== undefined && stat.mean !== null ? (
+              formatMean(stat.mean, score.kind)
+            ) : (
+              <UnknownValue reason="No item of this run has this score yet." />
+            )}
+            <JudgeAgreement scoreName={score.name} inLink />
+          </span>
         )}
       </Cell>
       <span className="text-muted-foreground">

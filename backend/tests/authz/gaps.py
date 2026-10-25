@@ -19,6 +19,7 @@ NOT_IN_MATRIX: dict[Route, str] = {
     ("POST", "/api/v1/auth/login"): _SIGN_IN,
     ("POST", "/api/v1/auth/logout"): _ACCOUNT,
     ("GET", "/api/v1/auth/me"): _ACCOUNT,
+    ("PUT", "/api/v1/auth/me/activation-checklist"): _ACCOUNT,
     ("GET", "/api/v1/auth/sessions"): _ACCOUNT,
     ("DELETE", "/api/v1/auth/sessions"): _ACCOUNT,
     ("DELETE", "/api/v1/auth/sessions/{session_id}"): _ACCOUNT,

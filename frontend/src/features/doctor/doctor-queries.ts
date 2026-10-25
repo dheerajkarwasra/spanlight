@@ -10,6 +10,7 @@ import {
   type InsightDetail,
   type InsightFeedback,
   type MuteInput,
+  type SensitivityLevel,
 } from "@/lib/api";
 
 import type { InsightQuery } from "./insight-filters";
@@ -145,6 +146,41 @@ export function usePrecision() {
   return useQuery({
     queryKey: queryKeys.project(projectId).precision(query),
     queryFn: () => insightsApi.precision(projectId, query),
+  });
+}
+
+/** Every check's sensitivity setting, in catalogue order. */
+export function useSensitivity() {
+  const { projectId } = useProjectParams();
+  return useQuery({
+    queryKey: queryKeys.project(projectId).sensitivity,
+    queryFn: () => insightsApi.sensitivity(projectId),
+  });
+}
+
+/** What each setting would have opened over 7 and 30 days; asked only while the dialog is open. */
+export function useSensitivityPreview(detector: string, enabled: boolean) {
+  const { projectId } = useProjectParams();
+  return useQuery({
+    queryKey: queryKeys.project(projectId).sensitivityPreview(detector),
+    queryFn: () => insightsApi.sensitivityPreview(projectId, detector),
+    enabled,
+  });
+}
+
+/**
+ * Applies from the next detector run; the settings and their previews refetch after, without
+ * holding the dialog open until they have.
+ */
+export function useSetSensitivity() {
+  const { projectId } = useProjectParams();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ detector, level }: { detector: string; level: SensitivityLevel }) =>
+      insightsApi.setSensitivity(projectId, detector, level),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.project(projectId).sensitivity });
+    },
   });
 }
 

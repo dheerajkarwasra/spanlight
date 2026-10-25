@@ -15,10 +15,17 @@ import type {
   Page,
   PrecisionOut,
   PrecisionQuery,
+  Sensitivity,
+  SensitivityLevel,
+  SensitivityPreview,
 } from "./types";
 
 function insightsPath(projectId: string): string {
   return `${projectPath(projectId)}/insights`;
+}
+
+function sensitivityPath(projectId: string, detector: string): string {
+  return `${projectPath(projectId)}/detector-sensitivity/${encodeURIComponent(detector)}`;
 }
 
 function insightPath(projectId: string, insightId: string): string {
@@ -70,4 +77,16 @@ export const insightsApi = {
   /** The health score over the window; `value` is `null` without LLM calls. */
   health: (projectId: string, query: HealthQuery = {}): Promise<Health> =>
     api.get<Health>(`${projectPath(projectId)}/health`, { ...query }),
+  /** Every check in catalogue order. */
+  sensitivity: (projectId: string): Promise<{ items: Sensitivity[] }> =>
+    api.get<{ items: Sensitivity[] }>(`${projectPath(projectId)}/detector-sensitivity`),
+  /** `404 DETECTOR_NOT_TUNABLE` for a fixed or unknown check. */
+  sensitivityPreview: (projectId: string, detector: string): Promise<SensitivityPreview> =>
+    api.get<SensitivityPreview>(`${sensitivityPath(projectId, detector)}/preview`),
+  /** Needs `insights:manage` (admin); applies from the next detector run. `404 DETECTOR_NOT_TUNABLE`. */
+  setSensitivity: (
+    projectId: string,
+    detector: string,
+    level: SensitivityLevel,
+  ): Promise<Sensitivity> => api.put<Sensitivity>(sensitivityPath(projectId, detector), { level }),
 };

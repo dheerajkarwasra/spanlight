@@ -64,3 +64,16 @@ class ProjectDeleteIn(BaseModel):
 class OnboardingOut(BaseModel):
     has_traces: bool
     first_trace_at: datetime | None
+
+
+class ActivationOut(BaseModel):
+    """Which setup checklist steps the project has done, each read from its own rows."""
+
+    # A trace other than the one "Send a test trace" sends (tagged `spanlight:setup-test`).
+    first_trace: bool
+    # A trace with a `session_id`.
+    session: bool
+    # A budget of any scope.
+    budget: bool
+    # A score from an evaluator or a person; scores sent with an API key do not count.
+    evaluation: bool

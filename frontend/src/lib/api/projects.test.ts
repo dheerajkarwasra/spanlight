@@ -40,3 +40,24 @@ describe("projectsApi.sessionTurns", () => {
     expect(lastUrl()).toBe(`/api/v1/projects/proj_1/sessions/${segment}/turns?limit=100&cursor=c1`);
   });
 });
+
+describe("projectsApi.activation", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("reads the project's activation steps", async () => {
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ first_trace: true, session: false, budget: false, evaluation: false }),
+          { headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    setUnauthorizedHandler(vi.fn());
+    await expect(projectsApi.activation("proj_1")).resolves.toMatchObject({ first_trace: true });
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe("/api/v1/projects/proj_1/activation");
+  });
+});

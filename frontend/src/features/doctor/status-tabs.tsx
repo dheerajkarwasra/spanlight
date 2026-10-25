@@ -6,8 +6,8 @@ import { revealInScroller } from "@/lib/reveal-in-scroller";
 
 import { STATUS_LABELS, STATUSES } from "./insight-format";
 
-/** A status tab of the insights list, or the Precision tab. */
-export type DoctorTab = InsightStatus | "precision";
+/** A status tab of the insights list, or the Precision or Sensitivity tab. */
+export type DoctorTab = InsightStatus | "precision" | "sensitivity";
 
 interface StatusTabsProps {
   value: DoctorTab;
@@ -17,10 +17,11 @@ interface StatusTabsProps {
 const OPTIONS: { value: DoctorTab; label: string }[] = [
   ...STATUSES.map((status) => ({ value: status, label: STATUS_LABELS[status] })),
   { value: "precision", label: "Precision" },
+  { value: "sensitivity", label: "Sensitivity" },
 ];
 
 /**
- * Figma "Doctor/Status tabs": Open, Acknowledged, Muted and Resolved, then Precision, as one
+ * Figma "Doctor/Status tabs": Open, Acknowledged, Muted and Resolved, then Precision and Sensitivity, as one
  * choice. The row scrolls sideways on a phone so the last tab is always reachable, and the
  * selected tab is scrolled into view, on a change of tab and when the row gets narrower.
  */

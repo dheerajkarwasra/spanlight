@@ -56,6 +56,8 @@ export interface Me {
    * on a server without email, where nothing could be verified, so no prompt is shown there.
    */
   email_verification_required: boolean;
+  /** The caller hid the setup checklist; per user, across every project. */
+  activation_checklist_dismissed: boolean;
   capabilities: ServerCapabilities;
 }
 

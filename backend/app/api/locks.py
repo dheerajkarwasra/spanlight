@@ -10,7 +10,7 @@ from app.services.deletion import lock_project_for_write
 
 
 async def lock_project_of(access: Access, db: AsyncSession) -> uuid.UUID:
-    """The route's project, share-locked after its organization, for a write that audits.
+    """The route's project, `FOR NO KEY UPDATE` after its organization, for a write that audits.
 
     `404` when either is gone: a concurrent deletion won. See the lock order in
     `app.services.deletion`.

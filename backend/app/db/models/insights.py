@@ -1,5 +1,5 @@
-"""The Doctor: the insights detectors found in a project, the record of each detector run, and
-the explanations Claude wrote for them."""
+"""The Doctor: the insights detectors found in a project, the record of each detector run, the
+explanations Claude wrote for them, and each project's sensitivity per check."""
 
 import uuid
 from datetime import datetime
@@ -71,6 +71,9 @@ class Insight(Base):
         ForeignKey("users.id", ondelete="SET NULL")
     )
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The strongest sensitivity reading of any detection (`app.insights.sensitivity.strength`),
+    # NULL when none had one. Migration 1018; older rows fall back to their stored evidence.
+    peak_strength: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
 
 
 class DetectorRun(Base):
@@ -155,4 +158,21 @@ class InsightFeedback(Base):
     verdict: Mapped[str] = mapped_column(Text)
     note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DetectorSensitivity(Base):
+    """A project's sensitivity for one check (`app.insights.sensitivity`). Row-level security
+    applies. No row means High recall; `level` is checked by the migration (1018)."""
+
+    __tablename__ = "detector_sensitivity"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
+    )
+    detector: Mapped[str] = mapped_column(Text, primary_key=True)
+    level: Mapped[str] = mapped_column(Text)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

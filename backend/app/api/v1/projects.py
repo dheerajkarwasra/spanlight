@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import Access, DbSession, client_ip, require
 from app.api.schemas import (
+    ActivationOut,
     OnboardingOut,
     ProjectCreateIn,
     ProjectDeleteIn,
@@ -19,6 +20,7 @@ from app.core.errors import confirmation_mismatch, conflict, forbidden, not_foun
 from app.core.permissions import Permission
 from app.db.models import AuditAction, Project, Trace
 from app.insights.channels import check_insight_channels
+from app.services.activation import activation_steps
 from app.services.audit import record_audit
 from app.services.deletion import (
     delete_project_rows,
@@ -186,3 +188,12 @@ async def onboarding_status(
         select(func.min(Trace.started_at)).where(Trace.project_id == project.id)
     )
     return OnboardingOut(has_traces=first_trace_at is not None, first_trace_at=first_trace_at)
+
+
+@router.get("/projects/{project_id}/activation", response_model=ActivationOut)
+async def activation_status(
+    project_id: uuid.UUID, access: ProjectReader, db: DbSession
+) -> ActivationOut:
+    """Which setup checklist steps are done: a first trace (not the setup test trace), a trace
+    with a session, a budget, and a score from an evaluator or a person."""
+    return ActivationOut(**await activation_steps(db, access.require_project().id))

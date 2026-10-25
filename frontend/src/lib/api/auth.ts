@@ -51,6 +51,10 @@ export const authApi = {
   confirmEmailVerification: (token: string): Promise<User> =>
     api.post<User>(`${API_PREFIX}/auth/email/verify/confirm`, { token }),
 
+  /** The caller's own setting, across every project; the demo account is `403 FORBIDDEN`. */
+  setActivationChecklist: (dismissed: boolean): Promise<void> =>
+    api.put<undefined>(`${API_PREFIX}/auth/me/activation-checklist`, { dismissed }),
+
   sessions: (): Promise<AuthSession[]> => api.get<AuthSession[]>(`${API_PREFIX}/auth/sessions`),
   revokeSession: (sessionId: string): Promise<void> =>
     api.delete(`${API_PREFIX}/auth/sessions/${encodeURIComponent(sessionId)}`),

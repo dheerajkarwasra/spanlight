@@ -19,4 +19,6 @@ export {
   GATEWAY_TIME_RANGE_OPTIONS,
   type TimeRangeOptions,
 } from "./time-range-options";
+export { RAIL_FOCUS } from "./sidebar";
+export { useHasTraces } from "./use-has-traces";
 export { useSignOut } from "./use-sign-out";

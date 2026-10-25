@@ -184,6 +184,13 @@ describe("AppShell", () => {
         has_traces: true,
         first_trace_at: "2026-10-01T00:00:00Z",
       });
+      // Opening the account menu reads the setup steps for "Show setup checklist".
+      vi.spyOn(projectsApi, "activation").mockResolvedValue({
+        first_trace: true,
+        session: false,
+        budget: false,
+        evaluation: false,
+      });
       renderApp(`/${ORG_ID}/proj_1/settings/project`);
       await waitFor(() => {
         expect(projectsApi.onboarding).toHaveBeenCalledWith("proj_1");

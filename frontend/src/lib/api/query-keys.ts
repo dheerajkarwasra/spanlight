@@ -94,6 +94,7 @@ export const queryKeys = {
       unpricedModels: (window: TimeWindow, environment: string | undefined) =>
         [...all, "unpriced-models", { ...window, environment }] as const,
       onboarding: [...all, "onboarding"] as const,
+      activation: [...all, "activation"] as const,
       filters: [...all, "filters"] as const,
       traces: (query: Omit<TraceListQuery, "cursor">) => [...all, "traces", query] as const,
       traceHistogram: (query: TraceHistogramQuery) => [...all, "trace-histogram", query] as const,
@@ -132,6 +133,10 @@ export const queryKeys = {
       health: (query: HealthQuery) => [...doctor, "health", query] as const,
       detectorRuns: [...doctor, "detector-runs"] as const,
       precision: (query: PrecisionQuery) => [...doctor, "precision", query] as const,
+      sensitivity: [...doctor, "sensitivity"] as const,
+      /** Under `sensitivity`, so a level change refreshes the preview too. */
+      sensitivityPreview: (detector: string) =>
+        [...doctor, "sensitivity", detector, "preview"] as const,
       /** Every provider health query of the project: invalidate with this. */
       providers,
       providerHealth: (query: ProviderHealthQuery) => [...providers, "health", query] as const,
@@ -223,6 +228,9 @@ export const queryKeys = {
           [...evaluators, "evaluator", evaluatorId, "runs", query] as const,
         budget: (evaluatorId: string) =>
           [...evaluators, "evaluator", evaluatorId, "budget"] as const,
+        agreement: (evaluatorId: string) =>
+          [...evaluators, "evaluator", evaluatorId, "agreement"] as const,
+        agreementSummary: [...evaluators, "agreement-summary"] as const,
       },
       experiments: {
         /** Every experiment query of the project: invalidate with this. */

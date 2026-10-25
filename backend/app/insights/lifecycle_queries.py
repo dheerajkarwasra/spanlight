@@ -12,7 +12,18 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Boolean, and_, case, literal, literal_column, null, or_, select, update
+from sqlalchemy import (
+    Boolean,
+    and_,
+    case,
+    func,
+    literal,
+    literal_column,
+    null,
+    or_,
+    select,
+    update,
+)
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
@@ -84,6 +95,8 @@ def _detection_updates(excluded: Any, now: datetime) -> dict[str, Any]:
         "verification": excluded.verification,
         "last_seen_at": excluded.last_seen_at,
         "occurrences": Insight.occurrences + 1,
+        # GREATEST ignores NULLs: a detection without a reading keeps the stored peak.
+        "peak_strength": func.greatest(Insight.peak_strength, excluded.peak_strength),
         "resolved_at": null(),
         "muted_until": case((keeps_mute, Insight.muted_until), else_=null()),
         "mute_reason": case((keeps_mute, Insight.mute_reason), else_=null()),
@@ -100,7 +113,8 @@ async def upsert_detections(
     `rows` are full `insights` rows for a first detection (status `open`, `occurrences` 1,
     both seen times `now`), one per fingerprint. On a conflict the stored row keeps its id,
     `first_seen_at` and, unless it reopens, its status; everything the detection measured
-    (severity, evidence, copy, `last_seen_at`) is replaced and `occurrences` goes up by one.
+    (severity, evidence, copy, `last_seen_at`) is replaced, `occurrences` goes up by one and
+    `peak_strength` keeps the larger reading.
     A reopened insight loses its mute and its acknowledgement.
     """
     if not rows:
