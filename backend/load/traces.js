@@ -112,8 +112,9 @@ export default function () {
   }
 }
 
-// Not a threshold: each variant's time, to compare the sorts with the first page.
-function variantRows(data) {
+// Not a threshold: each variant's time, to compare the sorts with the first page. mixed.js
+// reuses it.
+export function variantRows(data) {
   return VARIANT_NAMES.map((variantName) => {
     const metric = data.metrics[metricName(variantName)];
     const values = metric && metric.values ? metric.values : {};

@@ -45,7 +45,7 @@ cp deploy/.env.example deploy/.env       # fill in POSTGRES_PASSWORD, APP_DB_PAS
 docker compose -f deploy/compose.yaml --env-file deploy/.env up -d
 ```
 
-The stack runs the released images named in `deploy/.env`: `SPANLIGHT_IMAGE` (api, worker and the optional gateway) and `SPANLIGHT_WEB_IMAGE` (web), published on GHCR for every release. To build from the checkout instead, comment out both lines and start with `--build`; the images are then tagged `spanlight:local` and `spanlight-web:local`.
+The stack runs the released images named in `deploy/.env`: `SPANLIGHT_IMAGE` (api, worker and the optional gateway) and `SPANLIGHT_WEB_IMAGE` (web), published on GHCR for every release and signed with cosign ([verify a release](/docs/self-hosting/upgrades/#verify-a-release)). To build from the checkout instead, comment out both lines and start with `--build`; the images are then tagged `spanlight:local` and `spanlight-web:local`.
 
 The dashboard is at `http://localhost:8080` (change the port with `WEB_PORT`). Confirm that the stack is healthy as described in [Check it worked](#check-it-worked).
 

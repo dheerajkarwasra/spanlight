@@ -5,7 +5,7 @@ sidebar:
   order: 5
 ---
 
-{/* Sources: backend/app/core/redact.py, backend/app/core/security.py, backend/app/ingest/normalize.py, backend/app/ingest/pipeline.py, backend/app/gateway/key_context.py, backend/app/gateway/recorder.py, backend/app/api/schemas/projects.py, backend/app/db/models/projects.py, backend/app/api/v1/projects.py, backend/app/core/permissions.py, backend/app/jobs/tasks/retention.py, backend/app/jobs/scheduler.py, backend/app/services/deletion.py, backend/app/exports/purge.py, backend/app/exports/service.py, frontend/src/features/settings/project-settings-form.tsx, frontend/src/features/settings/project-settings-parts.tsx, frontend/src/features/settings/project-settings-schema.ts, frontend/src/features/settings/project-settings-page.tsx, frontend/src/features/settings/project-danger-zone.tsx, frontend/src/features/settings/danger-copy.ts, frontend/src/features/settings/settings-nav-items.ts, frontend/src/features/traces/payload-view.tsx */}
+{/* Sources: backend/app/core/redact.py, backend/app/core/security.py, backend/app/ingest/normalize.py, backend/app/ingest/pipeline.py, backend/app/gateway/key_context.py, backend/app/gateway/recorder.py, backend/app/api/schemas/projects.py, backend/app/db/models/projects.py, backend/app/api/v1/projects.py, backend/app/core/permissions.py, backend/app/jobs/tasks/retention.py, backend/app/jobs/scheduler.py, backend/app/services/deletion.py, backend/app/exports/purge.py, backend/app/exports/service.py, backend/app/gateway/execute.py, backend/app/gateway/key_schemas.py, frontend/src/features/settings/project-settings-form.tsx, frontend/src/features/settings/project-settings-parts.tsx, frontend/src/features/settings/project-settings-schema.ts, frontend/src/features/settings/project-settings-page.tsx, frontend/src/features/settings/project-danger-zone.tsx, frontend/src/features/settings/danger-copy.ts, frontend/src/features/settings/settings-nav-items.ts, frontend/src/features/traces/payload-view.tsx */}
 
 import NextSteps from '../../../components/NextSteps.astro';
 import Prerequisites from '../../../components/Prerequisites.astro';
@@ -45,6 +45,7 @@ From then on, spans are stored without their input and output. Tokens, cost, lat
 
 - The change applies to spans ingested after you save. Traces already stored keep their prompts and completions.
 - It covers every way of sending data, including spans the gateway records.
+- It does not cover the gateway cache. A gateway key with a cache TTL stores the provider's response body for up to that TTL (at most 24 hours) even with capture off, because a cache hit needs it; see [Gateway cache](/docs/gateway/cache/#privacy).
 - To remove what is already stored, shorten the retention period or delete the project.
 
 Only the admin and owner roles can change it. For anyone else the switch is disabled.
@@ -64,6 +65,8 @@ The same job removes data that is derived from those traces or quotes them, on t
 - hourly rollups behind the long-window charts;
 - resolved insights, by the time they were resolved, and per-user daily statistics;
 - scores, review-queue items and finished online evaluator runs. Online runs from the current month stay, because the evaluator's monthly budget counts them.
+
+Spanlight keeps traces for at most 90 days. For record-keeping that must last longer, such as a regulatory duty to keep logs, schedule JSONL [exports](/docs/guides/exports/) to your own storage, for example a daily job that calls the exports API, and copy each file elsewhere within seven days, before Spanlight deletes it.
 
 Detector runs are kept for seven days whatever the setting. Datasets, experiments and their items are curated by people and are kept, so delete any that hold text you copied from traces. The [Limits reference](/docs/reference/limits/#retention) lists the retention limits.
 

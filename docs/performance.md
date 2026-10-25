@@ -60,7 +60,7 @@ All three profiles run on a GitHub-hosted standard `ubuntu-latest` runner: 4 vCP
 
 ## Run it
 
-**On GitHub.** Open the Actions tab, choose **Load test** ([`load-smoke.yml`](../.github/workflows/load-smoke.yml)) and **Run workflow**. The profile `realistic` (the default) seeds 1 million spans, about 33 000 LLM calls a day for 30 days, which is a small production team, and runs every scenario for 1 minute. The profile `smoke` seeds 100 000 spans and runs every scenario for 30 seconds, to check the setup. The profile `full` is the stress run: it seeds 10 million spans and runs each scenario for 2 minutes (ingestion for 3), and takes several hours, almost all of it seeding; the seeder prints its rate and stops early if it projects the seeding to overrun its time budget. After the three scenarios on the seeded data it runs the gateway overhead scenario. The run's summary page shows the environment (date, runner, versions, number of spans seeded) and a table for each script, the raw k6 summaries are attached as an artifact, and the job is red if any threshold was missed.
+**On GitHub.** Open the Actions tab, choose **Load test** ([`load-smoke.yml`](../.github/workflows/load-smoke.yml)) and **Run workflow**. The profile `realistic` (the default) seeds 1 million spans, about 33 000 LLM calls a day for 30 days, which is a small production team, and runs every scenario for 1 minute. The profile `smoke` seeds 100 000 spans and runs every scenario for 30 seconds, to check the setup. The profile `full` is the stress run: it seeds 10 million spans and runs each scenario for 2 minutes (ingestion for 3), and takes several hours, almost all of it seeding; the seeder prints its rate and stops early if it projects the seeding to overrun its time budget. After the three scenarios on the seeded data it runs the three stages of [reads during ingestion](#reads-during-ingestion), then the gateway overhead scenario. The run's summary page shows the environment (date, runner, versions, number of spans seeded) and a table for each script, the raw k6 summaries are attached as an artifact, and the job is red if any threshold was missed.
 
 **On your machine.** See [`backend/load/README.md`](../backend/load/README.md): start the stack with the override file, seed it, and run the scripts with k6.
 
@@ -87,6 +87,38 @@ Run [37997565780](https://github.com/dheerajkarwasra/spanlight/actions/runs/3799
 The overhead includes the Caddy hop and the gateway's own request to the provider, which the direct scenario does not make, so it reads slightly high. The same run measured the dashboard again: ingestion p95 114.7 ms, overview p95 47.5 ms, trace list p95 15.1 ms.
 
 The `full` stress run with 10 million spans has not been recorded yet.
+
+## Reads during ingestion
+
+The scenarios above run one after another, so none of them shows what the dashboard feels like while spans are arriving. [`backend/load/mixed.js`](../backend/load/mixed.js) runs ingestion and reads at the same time.
+
+**Method.**
+
+- **Three scenarios in parallel** in one k6 run, each `constant-arrival-rate` for the profile's read duration: `ingest` sends `INGEST_RPS` requests a second of 100 spans (the request of `ingest.js`, with the seeded ingest key), and `overview` and `traces` each send `READ_RPS` requests a second, 10 by default (the requests of `overview.js` and `traces.js`: the four overview windows ending at `data_end`, and the trace list's first page, filters and sorts, spread over the ten read keys). The two read scenarios together make 20 reads a second, the rate of one read script run alone.
+- **Thresholds per scenario**, the same as each script alone: ingestion p95 below 200 ms, overview and trace list p95 below 300 ms, under 1 % failed requests, more than 99 % of checks passed, and no dropped iteration in any scenario.
+- **Three stages**, each a separate k6 run with [`settle.sh`](../backend/load/settle.sh) before it, written to `mixed-<stage>.json` and `mixed-<stage>.md`:
+  - `baseline`: no ingestion, so the reads alone at the same rate;
+  - `half`: 5 requests a second, 500 spans a second, the ingestion target above;
+  - `near-knee`: 10 requests a second, 1 000 spans a second, about twice the target. It is reported and not gated: its latency on a shared runner varies from run to run, and its purpose is to show the trade-off, not to fail the job.
+- **Profiles.** Every profile runs the three stages after the trace list script. With `full`, the rows are also the query stage at 10 million stored spans.
+
+**Results.** None yet. The table is filled from the first workflow run that records the stages, with that run's commit, runner, PostgreSQL and k6 versions, the number of spans stored, the trace size (3.5 spans on average) and the retention (30 days) in a lead line, as for the results above. Figures are never extrapolated from a smaller run.
+
+| Stored spans | Stage     | Ingest (requests/s · spans/s) | Overview p50 / p95 | Trace list p50 / p95 | Ingest p95 | Failed % | Dropped |
+| ------------ | --------- | ----------------------------- | ------------------ | -------------------- | ---------- | -------- | ------- |
+| 1 M          | baseline  | 0 · 0                         | not yet run        | not yet run          | –          |          |         |
+| 1 M          | half      | 5 · 500                       | not yet run        | not yet run          |            |          |         |
+| 1 M          | near-knee | 10 · 1 000                    | not yet run        | not yet run          |            |          |         |
+| 10 M         | baseline  | 0 · 0                         | not yet run        | not yet run          | –          |          |         |
+| 10 M         | half      | 5 · 500                       | not yet run        | not yet run          |            |          |         |
+| 10 M         | near-knee | 10 · 1 000                    | not yet run        | not yet run          |            |          |         |
+| 50 M         | all three | not yet run                   |                    |                      |            |          |         |
+
+The columns: the spans stored when the stage ran; the stage; the ingest rate held, in requests and spans a second; the median and p95 of the overview and of the trace list requests; the p95 of the ingest requests (none in `baseline`); the share of failed requests over all three scenarios; and the dropped iterations. Below the table, each stage's markdown file also gives the overview p95 per window and the trace list p95 per variant.
+
+**50 million spans.** About 96 GB of data, which does not fit the disk of a hosted standard runner, and seeding it takes longer than a job may run. This stage needs a self-hosted or larger runner, and it is marked "not yet run" until one has run it; its row will name that runner's hardware.
+
+All of these figures are for one `api` replica on 4 shared vCPU, with the load generator on the same cores.
 
 ## Alert evaluation
 

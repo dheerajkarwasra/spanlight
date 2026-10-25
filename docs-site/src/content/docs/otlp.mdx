@@ -1,6 +1,6 @@
 ---
 title: OTLP ingestion
-description: Send OpenTelemetry traces to Spanlight over OTLP/HTTP, in JSON or protobuf, from OpenTelemetry GenAI, OpenInference, Vercel AI SDK or Traceloop instrumentation, and send the same data from a language without an SDK.
+description: Send OpenTelemetry traces to Spanlight over OTLP/HTTP, in JSON or protobuf (or gRPC through a Collector), from OpenTelemetry GenAI, OpenInference, Vercel AI SDK or Traceloop instrumentation, and send the same data from a language without an SDK.
 sidebar:
   order: 3
 ---
@@ -101,6 +101,46 @@ EOF
 
 A successful call prints `{}`. Spans that started more than 90 days ago are rejected, so use a current timestamp.
 
+## Sending from a gRPC exporter
+
+Spanlight accepts OTLP over HTTP only; it has no gRPC listener. An exporter that can only speak gRPC, or a fleet that already sends gRPC to port 4317, can reach it through an [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/): the Collector receives gRPC and forwards the same spans to `/v1/otlp/traces` as OTLP/HTTP protobuf. The spans go through the same pipeline, key scope, rate limit and size limits as any other OTLP request.
+
+A Collector configuration (`otelcol` or `otelcol-contrib`) that does this:
+
+```yaml
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+    send_batch_size: 200
+    send_batch_max_size: 200
+
+exporters:
+  otlphttp/spanlight:
+    traces_endpoint: https://<your-host>/v1/otlp/traces
+    encoding: proto
+    headers:
+      Authorization: "Bearer ${env:SPANLIGHT_API_KEY}"
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/spanlight]
+```
+
+Start the Collector with the project API key in its environment, for example `SPANLIGHT_API_KEY=spl_live_... otelcol-contrib --config spanlight.yaml`, and point your gRPC exporter at the Collector on port 4317. Keep the key out of the file; `${env:SPANLIGHT_API_KEY}` reads it when the Collector starts.
+
+- **Batch size.** One request may hold at most 1000 spans and 5 MiB after decompression, otherwise the whole request is `413`. `send_batch_max_size` caps the spans per request. The batch processor does not limit bytes, so lower it if your spans carry long prompts and completions: 200 spans of up to about 25 KB each stay under 5 MiB.
+- **Rejected spans.** When some spans in a request are rejected, the answer is `200` with `partialSuccess`. The OTLP specification says those spans must not be sent again, so the Collector does not retry them. See [Spans are rejected](/docs/troubleshooting/#spans-are-rejected).
+- **Rate limit.** Every Collector that uses the same key shares its limit of 50 requests per second. A `429` is retried by the exporter after `Retry-After`.
+- **Exposure.** This receiver has no TLS and no authentication: anything that can reach port 4317 can write spans into your project with your key. Bind it to `localhost` or a private network, or configure TLS on the receiver, and never publish 4317 to the internet.
+
 ## How attributes map
 
 Spanlight reads four conventions: the OpenTelemetry GenAI attributes (`gen_ai.*`, also written by LiteLLM and by Traceloop's provider spans), OpenInference (`llm.*`), the Vercel AI SDK (`ai.*`) and Traceloop's workflow spans (`traceloop.*`). It works out for each span on its own which one the span speaks, so one trace may mix them, and fills the gaps of the other three from any `gen_ai.*` attributes on the same span. The convention it used is stored on the span as `spanlight.convention`, and the attributes it did not read are kept on the span. Every attribute, fallback and error rule is listed in [OTLP attribute mapping](/docs/reference/otlp-mapping/). [OTLP compatibility](/docs/reference/otlp-compatibility/) shows, for each recorded exporter library and version, which fields it fills and which it does not send, and the integration guides for the [Vercel AI SDK](/docs/integrations/vercel-ai/), [LiteLLM](/docs/integrations/litellm/), [OpenLLMetry](/docs/integrations/openllmetry/) and [OpenInference](/docs/integrations/openinference/) show the setups those recordings were made with.
@@ -177,7 +217,7 @@ Run the request by hand from [Configure an exporter](#configure-an-exporter). A 
 
 - **The exporter gets `422 VALIDATION_ERROR` or `400 INVALID_JSON`.** It sent to `/v1/traces`, the native endpoint, because it appended the path to a base URL. Set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` to the full URL. See [The exporter appends `/v1/traces`](/docs/troubleshooting/#the-exporter-appends-v1traces).
 - **`401 UNAUTHORIZED`.** The `Authorization` header did not arrive, the key is wrong or revoked, or you used a personal access token. Encode the space as `%20` in `OTEL_EXPORTER_OTLP_HEADERS` and use a project API key. See [The `Authorization` header does not reach Spanlight](/docs/troubleshooting/#the-authorization-header-does-not-reach-spanlight).
-- **`415 UNSUPPORTED_MEDIA_TYPE`, or a gRPC exporter cannot connect.** Spanlight accepts OTLP over HTTP only, as protobuf or JSON. Set `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf`. See [The protocol is not OTLP over HTTP](/docs/troubleshooting/#the-protocol-is-not-otlp-over-http).
+- **`415 UNSUPPORTED_MEDIA_TYPE`, or a gRPC exporter cannot connect.** Spanlight accepts OTLP over HTTP only, as protobuf or JSON. Set `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf`, or send gRPC through a Collector as in [Sending from a gRPC exporter](#sending-from-a-grpc-exporter). See [The protocol is not OTLP over HTTP](/docs/troubleshooting/#the-protocol-is-not-otlp-over-http).
 - **`403 KEY_SCOPE`.** The key was created without the `ingest:write` scope. Scopes are fixed at creation, so create a new key. See [The key lacks the `ingest:write` scope](/docs/troubleshooting/#the-key-lacks-the-ingestwrite-scope).
 - **My agent's cost is doubled.** Spanlight counts a call's usage once when the outer span and the provider call are in the same trace and linked by their parent span ids: the outer span is then a usage rollup and is left out of totals. Check that your instrumentation passes the trace context from the step to the provider call. Traces stored before your server had usage rollups are corrected when one of their spans arrives again, or by an operator with `spanlight recompute-usage-rollups --since 30d`. See [Usage counted once](/docs/reference/otlp-mapping/#usage-counted-once).
 - **The answer is `200` but a trace is missing.** The response body holds `partialSuccess` with `rejectedSpans`. Read the `errorMessage`, then see [Spans are rejected](/docs/troubleshooting/#spans-are-rejected).

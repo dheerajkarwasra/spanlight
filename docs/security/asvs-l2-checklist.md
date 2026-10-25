@@ -70,7 +70,7 @@ Assessed in October 2026 against the code before the first `1.0` release.
 | 1.11.2 | High-value flows are thread safe | Met | Row locks, conditional updates and advisory locks on sign-in, reset, tokens, invites, throttles and deletion | `services/credentials.py`, `auth/email_tokens.py`, `core/throttle.py`, `services/deletion.py` |
 | 1.12.2 | User files served as downloads or from another origin | Met | Export files are downloaded from the object store's own origin through presigned links | `exports/service.py`, `storage/s3.py` |
 | 1.14.1 | Segregation of components by trust | Met | Only the web port is published; the api and Postgres sit on the private network | `deploy/compose.yaml` |
-| 1.14.2 | Signed binaries and verified deployment | Met | Release images are signed with cosign and shipped with signed SBOMs | `.github/workflows/release.yml` |
+| 1.14.2 | Signed binaries and verified deployment | Met | Release images are signed with cosign and shipped with signed SBOMs; operators verify the signature and pin the digest before they deploy | `.github/workflows/release.yml`, [Verify a release](../../docs-site/src/content/docs/self-hosting/upgrades.mdx#verify-a-release) |
 | 1.14.3 | Build pipeline flags outdated or insecure components | Met | Trivy fails the release on fixable HIGH or CRITICAL findings; Dependabot opens updates weekly | `.github/workflows/release.yml`, `.github/dependabot.yml` |
 | 1.14.4 | Build verifies a secure deployment | Met | CI runs the compose smoke test, which asserts the security headers and the CSP | `.github/workflows/ci.yml`, `deploy/smoke.sh` |
 | 1.14.5 | Deployment sandboxed and isolated | Met | Containers with a private network | `deploy/compose.yaml`, `deploy/Dockerfile` |

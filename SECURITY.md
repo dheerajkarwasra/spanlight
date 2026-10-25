@@ -34,6 +34,8 @@ If you plan to publish your own write-up, please wait until the fix is released 
 
 Spanlight is pre-1.0. Only the latest `0.x` release is supported, for the server images (`ghcr.io/dheerajkarwasra/spanlight` and `ghcr.io/dheerajkarwasra/spanlight-web`) and for the `spanlight` Python SDK on PyPI. Fixes are released as a new version; they are not backported to older `0.x` releases.
 
+Both images and their SBOMs are signed with Sigstore keyless signing by the release workflow. [Verify a release](docs-site/src/content/docs/self-hosting/upgrades.mdx#verify-a-release) has the `cosign verify` commands and how to pin the verified digest.
+
 | Version | Supported |
 |---|---|
 | latest `0.x` release | yes |

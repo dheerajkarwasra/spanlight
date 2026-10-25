@@ -1,11 +1,11 @@
 ---
 title: Upgrade Spanlight
-description: Upgrade a Docker Compose deployment to a new version. Pin the version, read the changelog, back up first, rebuild, check the migrations and know how to go back.
+description: Upgrade a Docker Compose deployment to a new version. Pin and verify the version, read the changelog, back up first, rebuild, check the migrations and know how to go back.
 sidebar:
   order: 23
 ---
 
-{/* Sources: deploy/compose.yaml, deploy/Dockerfile, deploy/.env.example, deploy/smoke.sh, docs/runbooks/deploy.md, docs/runbooks/rollback.md, docs/runbooks/restore.md, backend/app/cli.py, backend/app/api/health.py, backend/app/pricing/cost.py, backend/alembic/versions/0508_add_cache_write_and_price_tiers.py, CHANGELOG.md, sdks/python/src/spanlight/_exporter_delivery.py, sdks/python/src/spanlight/_client.py, sdks/python/pyproject.toml */}
+{/* Sources: deploy/compose.yaml, deploy/Dockerfile, deploy/.env.example, deploy/smoke.sh, docs/runbooks/deploy.md, docs/runbooks/rollback.md, docs/runbooks/restore.md, backend/app/cli.py, backend/app/api/health.py, backend/app/pricing/cost.py, backend/alembic/versions/0508_add_cache_write_and_price_tiers.py, CHANGELOG.md, .github/workflows/release.yml, sdks/python/src/spanlight/_exporter_delivery.py, sdks/python/src/spanlight/_client.py, sdks/python/pyproject.toml */}
 
 import { Aside, Steps } from '@astrojs/starlight/components';
 import NextSteps from '../../../components/NextSteps.astro';
@@ -38,6 +38,56 @@ By default the stack runs the released images named in `deploy/.env`, `SPANLIGHT
 If you build from the checkout instead, comment out both variables: the images are then built on your host (`spanlight:local`, `spanlight-web:local`) and the `--build` steps on this page and in the runbooks apply. Do not build with the variables set, or a local build is tagged with a release version.
 
 The Python SDK has its own version. Upgrade it in your applications with `pip install --upgrade spanlight` when you are ready. It does not need to move in step with the server.
+
+## Verify a release
+
+Every release signs both images and both SBOMs with [Sigstore](https://docs.sigstore.dev/) keyless signing, from the release workflow of this repository. Before you run a new version, check those signatures with [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) v2 or later. Replace the version:
+
+```bash
+VERSION=0.7.0
+for image in spanlight spanlight-web; do
+  cosign verify "ghcr.io/dheerajkarwasra/${image}:${VERSION}" \
+    --certificate-identity "https://github.com/dheerajkarwasra/spanlight/.github/workflows/release.yml@refs/tags/v${VERSION}" \
+    --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+done
+```
+
+The identity says the signature was made by `.github/workflows/release.yml` in `dheerajkarwasra/spanlight`, running for the tag `v<version>`; the issuer is GitHub Actions. If a verify fails, do not run that image.
+
+The JSON output names the verified digest (`"docker-manifest-digest": "sha256:..."`). Pin that digest in `deploy/.env`, so the stack runs exactly the bytes you verified even if a tag is moved later:
+
+```dotenv
+SPANLIGHT_IMAGE=ghcr.io/dheerajkarwasra/spanlight:0.7.0@sha256:<backend digest>
+SPANLIGHT_WEB_IMAGE=ghcr.io/dheerajkarwasra/spanlight-web:0.7.0@sha256:<web digest>
+```
+
+Then verify the pinned reference itself:
+
+```bash
+cosign verify "ghcr.io/dheerajkarwasra/spanlight@sha256:<backend digest>" \
+  --certificate-identity "https://github.com/dheerajkarwasra/spanlight/.github/workflows/release.yml@refs/tags/v0.7.0" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+```
+
+To accept any stable release from this workflow, for example in automation, use the regular-expression form of the identity. It rejects pre-release tags and any other workflow or repository:
+
+```bash
+--certificate-identity-regexp '^https://github\.com/dheerajkarwasra/spanlight/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' \
+--certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+```
+
+The SBOMs (`sbom-spanlight.cdx.json`, `sbom-spanlight-web.cdx.json`) and their Sigstore bundles are attached to each GitHub Release. Verify one with:
+
+```bash
+cosign verify-blob sbom-spanlight.cdx.json \
+  --bundle sbom-spanlight.cdx.json.sigstore.json \
+  --certificate-identity "https://github.com/dheerajkarwasra/spanlight/.github/workflows/release.yml@refs/tags/v0.7.0" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+```
+
+- `latest` carries the same signature as the version it points to, but pin a version and a digest instead.
+- `latest` never moves on a pre-release, and the regular expression above excludes pre-release tags.
+- With a digest pinned, upgrades are manual: change the version and the digest together, verify again, then follow the steps below.
 
 ## Upgrade
 

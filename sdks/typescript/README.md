@@ -14,7 +14,13 @@ tokens, cost, errors and the full prompt and completion.
 
 ## Install
 
-The package is not on npm yet. Build it from the repository:
+The package is published to npm by the release workflow when an `sdk-typescript-v*` tag is pushed. Once the first such tag is released, install it with:
+
+```bash
+npm install spanlight
+```
+
+Until then, build it from the repository:
 
 ```bash
 git clone https://github.com/dheerajkarwasra/spanlight

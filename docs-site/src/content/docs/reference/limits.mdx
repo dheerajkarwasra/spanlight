@@ -174,6 +174,8 @@ Each project keeps its spans for a number of days. The default is 30. You can se
 
 Time windows in the trace and metrics API are limited to 90 days as well.
 
+To keep records longer than 90 days, schedule JSONL [exports](/docs/guides/exports/) to your own storage, and copy each file out before it is deleted seven days after it is made.
+
 Per-user figures on the Users page are recomputed every 15 minutes for the last three UTC days and nightly for the last eight. A trace counts for the UTC day it started, and the last pass that covers that day is the nightly one seven days later, so a span that arrives after it, about a week after the trace's day, is not counted in them. Send spans soon after the call. See [Releases and users](/docs/releases-and-users/#users).
 
 ## Related pages

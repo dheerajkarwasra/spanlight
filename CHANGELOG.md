@@ -33,6 +33,13 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 - **Doctor sensitivity per check.** A new **Sensitivity** tab sets each of eleven checks to High recall (the check's own rule, the default), Balanced or High precision, each a minimum on one reading the check records; the other four checks stay fixed. Before saving, the dialog shows how many of the findings seen in the last 7 and 30 days each setting would have kept. Only admins and owners change it, and each change is audit-logged as `insight.sensitivity_change`. A new setting applies from the next detector run; open findings below it resolve after 24 hours without a detection. `GET`, `GET …/{detector}/preview` and `PUT …/{detector}` under `/api/v1/projects/{project_id}/detector-sensitivity`.
 - **A setup checklist in the sidebar.** After the first trace, a **Get set up** tile tracks four steps from the project's own data (a trace from your app rather than the setup test trace, a session, a budget, an eval or review score), and each step opens a short guide on a click. **Hide checklist** hides it for your account across projects and **Show setup checklist** in the account menu brings it back; the demo never shows it. `GET /api/v1/projects/{project_id}/activation`, `PUT /api/v1/auth/me/activation-checklist`, and `activation_checklist_dismissed` on `GET /api/v1/auth/me`.
 
+- **Doctor: retiring-model warning.** A new `model_retiring` check warns when a project still calls a model whose provider has announced a retirement date (for example `claude-sonnet-4-5-20250929` on 2026-11-30, the `gpt-5` and `o3` families on 2026-12-11). One call in 24 hours is enough: the insight opens 60 days before the date as a warning, turns critical 14 days before, and stays critical after it. It names the provider's recommended replacement and the gateway routes and trace names with the most calls. Dates come from a table of the providers' announced dates bundled with each release; Anthropic's "not sooner than" dates are never used, and calls through Amazon Bedrock or Google Cloud never match.
+- **Verify a release.** The upgrade guide shows the `cosign verify` and `cosign verify-blob` commands for the signed images and SBOMs, and how to pin the verified digest. Linked from SECURITY.md and `deploy/.env.example`.
+- **gRPC exporters through a Collector.** The OTLP guide shows an OpenTelemetry Collector config that receives OTLP/gRPC and forwards it to Spanlight's OTLP/HTTP endpoint.
+- **Gemini and Amazon Bedrock through `openai_compatible`.** The credentials guide has worked examples, and the routing guide an OpenAI-to-Gemini fallback with `model_aliases`. Their cost stays unknown until a price override exists; the Bedrock credential check fails because `bedrock-runtime` has no model list.
+- **Reads during ingestion load test.** `backend/load/mixed.js` measures overview and trace list reads while ingestion runs (no ingest, 500 and 1,000 spans/s), in the Load test workflow. The 1,000 spans/s stage is reported, not gated.
+- **TypeScript SDK release job.** An `sdk-typescript` job publishes the TypeScript SDK to npm with provenance on `sdk-typescript-v*` tags, through trusted publishing. No version is published yet.
+
 ### Changed
 
 - **A run scores a fixed set of items.** It takes the ids of the dataset's first `max_items` items when it starts: items added while it runs are not scored, and items deleted while it runs are skipped. Before, a run read the dataset page by page and could pick up items added mid-run.
@@ -46,12 +53,18 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 - **Settings › Project has a Data card.** Retention, payload capture and the weekly digest sit together, each saying what it changes; settings that save on their own are grouped under "Saved as you change them".
 - **A span's no-price links open Cost › Pricing.** **See unpriced models** opens the Pricing page and **Add a price override** opens its form filled with the span's provider and model; both linked to the docs before.
 
+- **Judge–reviewer agreement starts again when the judge changes.** Agreement counts only the judge's scores from runs started since its model, prompt version or temperature last changed, so a new judge no longer blends with the old one. A new credential, output limit, sampling rate, name or filter does not reset it. The agreement response has a new `since` field with that time (`null` when the judge never changed).
+- **Privacy guide: records beyond 90 days and the gateway cache.** It says how to keep records past the 90-day retention (scheduled JSONL exports), and that a gateway key with a cache keeps response bodies for up to its TTL (at most 24 hours) even with prompt capture off.
+
 ### Fixed
 
 - **A Doctor reading too large to store no longer drops the finding.** A reading above 10^16 (for example spend against a near-zero baseline) failed the insight write; the stored peak is now capped there, below every sensitivity gate.
 - **The setup checklist reads only the project's own rows through indexes.** Its first-trace and session checks could scan the whole `traces` table for a project with no sessions, and its evaluation check read every project's human scores and evaluator runs.
 - **A refused "Hide checklist" brings the tile back closed**, not with its popover open again.
 - **Item metadata is kept when adding items as JSON or uploading a file.** Both paths stored `{}` instead of the metadata sent; editing an item's metadata afterwards already worked.
+
+- **A provider error inside a stream marks the gateway span as an error.** An Anthropic `error` event, an OpenAI chat chunk with an `error` object or `finish_reason: "error"`, or a Responses `error` or `response.failed` event after a `200` used to leave a green `ok` span. The span is now an error with `stream_error: the provider sent an error event (<type>: <message>)`; the client still receives the provider's bytes unchanged.
+- **OTLP tool spans keep their arguments and results as payloads.** `gen_ai` `execute_tool` spans store `gen_ai.tool.call.arguments` as the span input and `gen_ai.tool.call.result` as its output. Before, both stayed in the span attributes, where a tool result over 64 KB rejected the whole span, and tool content escaped the payload size cap, truncation and the payload capture setting. Spans ingested earlier keep their attributes.
 
 ### Upgrading
 
@@ -62,6 +75,8 @@ Run `spanlight migrate` after upgrading. 1010 adds the copy columns to `experime
 1018 creates `detector_sensitivity` (one row per project and check whose setting is not the default, with row-level security), adds the nullable `insights.peak_strength` (catalog only; findings from before it are counted from their stored evidence) and the `insight.sensitivity_change` audit action. 1019 adds the nullable `users.activation_checklist_dismissed_at` (catalog only). The table and column changes touch only the catalog, and each migration runs in one transaction under a 5 s lock timeout. Re-adding the audit action CHECK in 1018 scans `audit_events` once under an ACCESS EXCLUSIVE lock, so audited writes (logins included) wait until the scan finishes; on a large audit log, plan the upgrade off-peak. The 1018 downgrade drops the table and the column, losing every setting, and keeps existing `insight.sensitivity_change` audit events by restoring the previous action list as `NOT VALID`, since the audit log is append-only; the 1019 downgrade forgets every dismissal, so the checklist shows again.
 
 1020 builds the partial index `scores_project_source_idx` (human and evaluator scores, by project) `CONCURRENTLY`, which does not block reads or writes but waits for transactions already open on `scores` to finish; if the build is interrupted, running `spanlight migrate` again recovers. Its downgrade drops the index, and the setup checklist's evaluation check then reads the whole `scores` table again.
+
+1021 adds the nullable `evaluators.config_changed_at` (catalog only, no rewrite).
 
 ## [0.7.0] - 2026-10-20
 

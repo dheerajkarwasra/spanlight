@@ -3249,6 +3249,8 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
   is the newest score (by `created_at`, then id) with `source = 'eval'` whose `evaluator_run_id` is a run of this
   evaluator, of any run source (`online`, `test` or `experiment`); the human side is the newest `source = 'human'`
   score with that name on the same trace. Span ids are ignored. API-key scores (`source = 'api'`) never count.
+  Only runs started at or after the evaluator's `config_changed_at` count on the judge side (see "Hardening
+  wave 1" below).
   Scores without a numeric `value` (categorical ones) are skipped before "newest" is chosen.
 - **Cap.** The newest 2,000 pairs by human score time are used; `capped` is `true` when older pairs were left out.
 - **Scales and bins.** Numeric scores are clamped to the score config's `[min_value, max_value]` and put in 5
@@ -3267,7 +3269,7 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
 
 ### Doctor sensitivity
 
-- **Routes.** `GET /projects/{p}/detector-sensitivity` returns `{items}` for all fifteen checks in catalogue order:
+- **Routes.** `GET /projects/{p}/detector-sensitivity` returns `{items}` for all sixteen checks in catalogue order:
   `detector`, `tunable`, `level` (`high_recall`, `balanced` or `high_precision`; a check with no saved row is
   `high_recall`), `metric_label`, `gates` (`{balanced, high_precision}` as decimal strings, such as `"0.10"` or
   `"50000"`), `findings_30d` and `updated_at`. A fixed check (`provider_incident`, `unpriced_spend`,
@@ -3311,3 +3313,43 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
   write; API keys are `403 KEY_SCOPE`. The shared demo account is `403 FORBIDDEN` "The demo account can't hide the
   setup checklist.", since one visitor would hide it for every visitor. `GET /auth/me` and this PUT are the only
   `/auth` routes a token may call.
+
+## Hardening wave 1 (added 2026-10-25)
+
+### Gateway
+
+- **Provider errors inside a stream.** A provider error event after a `200` (`event: error` on Messages, a chunk
+  with an `error` object or `finish_reason: "error"` on chat completions, an `error` or `response.failed` event on
+  Responses) makes the span an error with `status_message` `"<status> stream_error: the provider sent an error
+  event (<type>: <message>)"`. A transport error or timeout that ended the same stream wins. The client still
+  receives the provider's bytes unchanged. The error class comes from the existing message rules (Anthropic's
+  `overloaded_error` is `provider_5xx`); `usage.unreported_reason` is `stream_error` when no final usage arrived.
+
+### OTLP
+
+- **`gen_ai` tool calls.** On `execute_tool` spans, `gen_ai.tool.call.arguments` becomes `input` and
+  `gen_ai.tool.call.result` becomes `output`, parsed like `gen_ai.*.messages`, and only for a side the messages
+  left empty. Both keys are consumed whenever present, on any span, so tool content never stays in `attributes`
+  (ruling C-1) and goes through the payload rules (size cap, truncation, payload capture setting). Spans stored
+  before this change are not rewritten.
+
+### Insights
+
+- **`model_retiring`.** A new insight kind. The retirement dates are a bundled, hand-maintained, current-only table
+  (`app/pricing/retirements.py`), kept out of the immutable price snapshots. They are the providers' announced
+  dates (Anthropic "Deprecated" rows, OpenAI shutdown dates), never Anthropic's "Not sooner than" dates. Matching:
+  the span's provider is folded with `canonical_provider` and only the first-party `anthropic` and `openai` rows
+  match (Bedrock and Google Cloud set their own schedules); the model matches with `matches_model` (exact, or a
+  `-YYYYMMDD` / `-YYYY-MM-DD` suffix) and the longest pattern wins; a model ending in `-latest` matches only a row
+  published under that exact name. Fault-injected spans and gateway cache hits are excluded, `min_samples` is 1,
+  and the finding opens when `days_left <= 60`: `warning`, `critical` when `days_left <= 14` or the date has
+  passed. Key `{provider}:{model_pattern}`; metrics `calls` and `days_left`. It is a fixed check for sensitivity
+  (no gate).
+
+### Agreement
+
+- **Judge changes reset agreement.** Only runs started at or after the evaluator's `config_changed_at` count on the
+  judge side. A change here means a change of the judge config's `model`, `prompt_version_id` or `temperature`,
+  compared by value; a credential, `max_tokens`, `sampling_rate`, name, filter or `enabled` change does not count.
+  `since` on `GET .../evaluators/{evaluator_id}/agreement` is that time, `null` when the config never changed.
+  The project-wide summary applies the same rule but does not return `since`.

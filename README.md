@@ -27,9 +27,9 @@ Spanlight records every LLM call your application makes: prompts and completions
 - **Checked against the bill.** Connect an Anthropic or OpenAI admin key, or upload a CSV, and Spanlight compares traced spend with what the provider billed, every day.
 - **Attribution and budgets.** Tag traces with up to 32 metadata pairs (customer, feature, team) and see spend, calls and errors per value. Budgets can alert on, or block, spend per project, gateway key, user, model, metadata pair or trace name.
 - **The Doctor and provider health.** Fifteen deterministic detectors flag known failure patterns (retry storms, ignored `Retry-After`, truncated outputs, tool loops, cost and latency spikes and more), each with its evidence and a suggested fix. Provider health tells a provider outage or rate limit apart from your own bug, with the provider's status page incidents alongside.
-- **A gateway for OpenAI and Anthropic.** The official SDKs work against it unchanged, streaming and tool calls included. It adds sealed provider credentials, routes with retries and fallbacks, per-key rate limits, an exact-match cache, and an Integration Lab that injects real provider failures on non-production keys.
-- **Prompts, evals and a daily review.** Versioned prompts with labels, a playground, exact replay of any recorded call, datasets, experiments with 95% confidence intervals on pass rates, and a nightly queue of the traces worth reading.
-- **OpenTelemetry native.** `POST /v1/otlp/traces` (OTLP over HTTP, as JSON or protobuf; gRPC is not accepted) reads the GenAI conventions (`gen_ai.*`, also written by LiteLLM), OpenInference, OpenLLMetry (Traceloop) and the Vercel AI SDK, and counts usage once across nested spans. Recorded fixtures cover LangChain, LangGraph, LlamaIndex, Pydantic AI and the OpenAI Agents SDK. A Python SDK is on PyPI; a TypeScript SDK for Node.js is in [`sdks/typescript/`](sdks/typescript/) (not on npm yet).
+- **A gateway for OpenAI and Anthropic.** Gemini and Bedrock work through their OpenAI-compatible endpoints, with cost unknown until you add a price for their models. The official SDKs work against it unchanged, streaming and tool calls included. It adds sealed provider credentials, routes with retries and fallbacks, per-key rate limits, an exact-match cache, and an Integration Lab that injects real provider failures on non-production keys.
+- **Prompts, evals and a daily review.** Versioned prompts with labels, a playground, exact replay of any recorded call, datasets, experiments with 95% confidence intervals on pass rates, and a nightly queue of the traces worth reading. LLM judges show their agreement with your reviewers (κ, F1, confusion matrix).
+- **OpenTelemetry native.** `POST /v1/otlp/traces` (OTLP over HTTP, as JSON or protobuf; gRPC through an [OpenTelemetry Collector](https://spanlight.dev/docs/otlp/#sending-from-a-grpc-exporter)) reads the GenAI conventions (`gen_ai.*`, also written by LiteLLM), OpenInference, OpenLLMetry (Traceloop) and the Vercel AI SDK, and counts usage once across nested spans. Recorded fixtures cover LangChain, LangGraph, LlamaIndex, Pydantic AI and the OpenAI Agents SDK. A Python SDK is on PyPI; a TypeScript SDK for Node.js is in [`sdks/typescript/`](sdks/typescript/) (its npm release job is ready; install it from a tarball until the first release).
 - **Built for teams, private by design.** Organizations, projects, roles, scoped API keys and an audit log. Postgres row-level security isolates every project's data, and secrets are redacted from payloads before storage.
 - **Self-hosted on one database.** Postgres is the only datastore, the job queue included. The core is MIT licensed.
 
@@ -125,7 +125,7 @@ flowchart LR
         worker["worker<br/>background jobs"]
         pg[("Postgres<br/>the only database")]
     end
-    llm["OpenAI / Anthropic /<br/>OpenAI-compatible"]
+    llm["OpenAI / Anthropic /<br/>OpenAI-compatible<br/>(Gemini, Bedrock)"]
 
     app -- "SDK or OpenTelemetry" --> api
     app -- "or change base_url" --> gw

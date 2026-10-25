@@ -2,7 +2,8 @@ name: Load test
 
 # Run by hand only. A run builds the self-host stack from the dispatched commit, fills it with
 # spans through the real ingestion pipeline and drives it with k6 at the thresholds in
-# docs/performance.md. After the three scenarios on the seeded data it measures the overhead of the
+# docs/performance.md. After the three scenarios on the seeded data, and the mixed scenario (reads
+# while ingestion runs, in three stages), it measures the overhead of the
 # LLM gateway against a fake provider (the same in every profile, it needs no big seed). The result
 # tables are on the run's summary page and the raw k6 summaries are an artifact. `realistic` (the
 # default) is a run at the size of a small production team, about 1 million spans. `smoke` is a
@@ -194,7 +195,9 @@ jobs:
           EOF
 
       # Every script runs even when an earlier one misses its thresholds, so one run records all
-      # four. The step, and with it the job, still ends red if any of them did, or if a script
+      # of them. `mixed-<stage>` runs mixed.js with the stage's ingest rate (baseline 0, half 5,
+      # near-knee 10 requests of 100 spans a second); near-knee is reported but does not fail the
+      # job, since its latency on a shared runner varies from run to run. The step, and with it the job, still ends red if any of them did, or if a script
       # did not write its results: when handleSummary throws, k6 prints its default summary and
       # exits 0, so the exit status alone cannot tell. Before each script the database is given up
       # to two minutes to finish the work of the one before (see backend/load/settle.sh).
@@ -204,9 +207,15 @@ jobs:
       - name: Run the k6 scenarios
         run: |
           status=0
-          for script in overview traces ingest gateway; do
+          for script in overview traces mixed-baseline mixed-half mixed-near-knee ingest gateway; do
             duration=$READ_DURATION
             if [ "$script" = ingest ]; then duration=$INGEST_DURATION; fi
+            file=$script ingest_rps=0 gated=true
+            case "$script" in
+              mixed-baseline) file=mixed ingest_rps=0 ;;
+              mixed-half) file=mixed ingest_rps=5 ;;
+              mixed-near-knee) file=mixed ingest_rps=10 gated=false ;;
+            esac
             bash backend/load/settle.sh
             echo "::group::k6 $script"
             docker run --rm --network host --user "$(id -u):$(id -g)" \
@@ -215,11 +224,11 @@ jobs:
               -e FAKE_PROVIDER_URL="http://localhost:$FAKE_PROVIDER_PORT" \
               -e CREDENTIALS_FILE=/creds/credentials.json \
               -e GATEWAY_CREDENTIALS_FILE=/creds/gateway-credentials.json \
-              -e RESULTS_DIR=/results \
+              -e RESULTS_DIR=/results -e NAME="$script" -e INGEST_RPS="$ingest_rps" \
               -v "$GITHUB_WORKSPACE/backend/load:/load:ro" \
               -v "$(dirname "$CREDENTIALS_FILE"):/creds:ro" \
               -v "$RESULTS_DIR:/results" \
-              "$K6_IMAGE" run "/load/$script.js" || status=1
+              "$K6_IMAGE" run "/load/$file.js" || { [ "$gated" = false ] || status=1; }
             echo "::endgroup::"
             for extension in json md; do
               if [ ! -s "$RESULTS_DIR/$script.$extension" ]; then
@@ -241,7 +250,7 @@ jobs:
         if: always()
         run: |
           status=0
-          for name in environment overview traces ingest gateway; do
+          for name in environment overview traces mixed-baseline mixed-half mixed-near-knee ingest gateway; do
             if [ -s "$RESULTS_DIR/$name.md" ]; then
               cat "$RESULTS_DIR/$name.md" >> "$GITHUB_STEP_SUMMARY"
               echo >> "$GITHUB_STEP_SUMMARY"

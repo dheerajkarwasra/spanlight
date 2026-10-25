@@ -11,10 +11,11 @@
 | `ingest.js` | 500 spans a second (5 requests of 100 spans) to `POST /v1/traces`. Threshold: p95 below 200 ms. |
 | `overview.js` | 20 requests a second to the overview metrics, rotating through 1 hour, 24 hours, 7 days and 30 days. Threshold: p95 below 300 ms. |
 | `traces.js` | 20 requests a second to the trace list: the first page, one model, failed traces only, and the first page sorted by duration, cost, tokens or retry cost; the summary gives each variant's median and p95. Threshold: p95 below 300 ms. |
+| `mixed.js` | Reads during ingestion: `INGEST_RPS` requests a second of 100 spans (default 5; 0 leaves ingestion out) while the overview and the trace list are each read `READ_RPS` times a second (default 10), all in parallel, with the requests of `ingest.js`, `overview.js` and `traces.js`. Each scenario has its own thresholds: ingest p95 below 200 ms, reads p95 below 300 ms. Writes `<NAME>.json` and `<NAME>.md` (default `mixed`). |
 | `gateway.js` | The LLM gateway's overhead. Two scenarios of 50 requests a second for 60 s, one after the other: a chat completion through `/gw/v1/chat/completions`, then the same request straight to the fake provider. Thresholds: p95 through the gateway below 25 ms, p95 direct below 5 ms; the overhead (the difference of the two p95 values) must be below 20 ms. |
 | `fake_provider.py` | A small ASGI app that answers `POST /v1/chat/completions` and `GET /v1/models` with fixed bodies after `FAKE_PROVIDER_DELAY_MS` (default 0). Run by `compose.load.yaml`. |
 | `seed_gateway.py` | Creates a workspace, an `openai_compatible` credential on the fake provider, a route and a gateway key without limits, and writes the key to a JSON file. Needs no spans. |
-| `summary.js` | Used by the four scripts: turns the k6 results into the Markdown table and the JSON summary. |
+| `summary.js` | Used by the scripts: turns the k6 results into the Markdown table and the JSON summary. |
 | `compose.load.yaml` | The only change to `deploy/compose.yaml`: publishes Postgres on `127.0.0.1` for the seeder, turns the demo traffic job off and, for the gateway test, adds the fake provider (published on `127.0.0.1:9000`), sets `GATEWAY_ALLOW_INSECURE_BASE_URLS` and gives the api and worker a throwaway `CREDENTIALS_KEYS`. |
 
 Run `settle.sh` between two scripts on your machine too, so the second does not start on the leftovers of the first: `LOAD_ENV_FILE=deploy/.env COMPOSE_PROJECT_NAME=spanlight-load COMPOSE_FILE=deploy/compose.yaml:backend/load/compose.load.yaml backend/load/settle.sh`.
@@ -29,7 +30,7 @@ Open the repository's Actions tab, choose **Load test** and **Run workflow**.
 - `smoke` seeds 100 000 spans and runs each scenario for 30 seconds. It checks that the setup works and has a limit of 30 minutes.
 - `full` is the stress run: it seeds 10 million spans and runs each scenario for 2 minutes (ingestion 3 minutes). It takes several hours, almost all of it seeding.
 
-After the three scenarios on the seeded data, every profile runs the gateway overhead script for 60 seconds a scenario. All three use the same thresholds and run on a GitHub-hosted `ubuntu-latest` runner. The run's summary page shows the run's environment and one table per script; the raw k6 summaries are attached as the artifact `load-results-<profile>`. The job is red when any threshold is missed or the gateway overhead is not under 20 ms, and all four scripts run either way.
+After the three scenarios on the seeded data, every profile runs `mixed.js` in three stages, `mixed-baseline` (no ingestion), `mixed-half` (5 ingest requests a second) and `mixed-near-knee` (10), then the gateway overhead script for 60 seconds a scenario. A missed threshold in `mixed-near-knee` is reported in its table but does not fail the job. All three use the same thresholds and run on a GitHub-hosted `ubuntu-latest` runner. The run's summary page shows the run's environment and one table per script; the raw k6 summaries are attached as the artifact `load-results-<profile>`. The job is red when any threshold is missed or the gateway overhead is not under 20 ms, and all the scripts run either way.
 
 ## On your machine
 
@@ -93,7 +94,23 @@ You need Docker with the Compose plugin, [uv](https://docs.astral.sh/uv/) and, t
 
    `LOAD_DATABASE_URL` is the one from step 2. The script writes `gateway.json` and `gateway.md`. Unlike the other scripts it does not use `DURATION`: each scenario lasts `GATEWAY_DURATION_SECONDS` (default 60). k6 cannot fail a run on the difference of two thresholds, so the script puts `overhead` with `ok` in `gateway.json`; the workflow checks it with `jq -e '.overhead.ok == true'`, and so can you.
 
-5. Remove the stack and its volumes when you are done:
+5. To measure reads during ingestion, run `mixed.js` once per stage, with `settle.sh` before each, on the stack and credentials from steps 1 and 2:
+
+   ```bash
+   for stage in baseline:0 half:5 near-knee:10; do
+     LOAD_ENV_FILE=deploy/.env COMPOSE_PROJECT_NAME=spanlight-load \
+       COMPOSE_FILE=deploy/compose.yaml:backend/load/compose.load.yaml backend/load/settle.sh
+     k6 run \
+       -e CREDENTIALS_FILE="$PWD/.local/load/credentials.json" \
+       -e RESULTS_DIR=/tmp/spanlight-load-results \
+       -e DURATION=30s -e INGEST_RPS="${stage#*:}" -e NAME="mixed-${stage%%:*}" \
+       backend/load/mixed.js
+   done
+   ```
+
+   Each stage writes `mixed-<stage>.json` and `mixed-<stage>.md`: the thresholds per scenario, then the overview p95 per window and the trace list p95 per variant. k6 exits non-zero for any stage that misses a threshold; the workflow ignores that only for `near-knee`.
+
+6. Remove the stack and its volumes when you are done:
 
    ```bash
    docker compose -p spanlight-load -f deploy/compose.yaml -f backend/load/compose.load.yaml \
@@ -108,7 +125,10 @@ You need Docker with the Compose plugin, [uv](https://docs.astral.sh/uv/) and, t
 | `DURATION` | `30s` | How long the arrival rate is held. |
 | `CREDENTIALS_FILE` | `/creds/credentials.json` | The file `seed.py` wrote. |
 | `RESULTS_DIR` | `/results` | Where the JSON and Markdown summaries are written. It must exist. |
-| `FILTER_MODEL` | `claude-haiku-4-5` | `traces.js` only: the model of the filtered requests. It is the most common seeded one. |
+| `INGEST_RPS` | `5` | `mixed.js` only: ingest requests a second, 100 spans each. `0` runs the reads alone. |
+| `READ_RPS` | `10` | `mixed.js` only: requests a second of each of its two read scenarios. |
+| `NAME` | `mixed` | `mixed.js` only: the name of its result files. |
+| `FILTER_MODEL` | `claude-haiku-4-5` | `traces.js` and `mixed.js`: the model of the filtered requests. It is the most common seeded one. |
 | `GATEWAY_CREDENTIALS_FILE` | `/creds/gateway-credentials.json` | `gateway.js` only: the file `seed_gateway.py` wrote. |
 | `FAKE_PROVIDER_URL` | `http://localhost:9000` | `gateway.js` only: where the fake provider is published, for the direct scenario. |
 | `GATEWAY_DURATION_SECONDS` | `60` | `gateway.js` only: how long each of its two scenarios holds the rate. |

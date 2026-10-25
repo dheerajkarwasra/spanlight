@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Pin the release workflow's tag routing, permissions, action pins and publish order.
 
-A `v*` tag must only ever release the server images and an `sdk-python-v*` tag must only
-ever publish the SDK. Workflow YAML cannot be unit-tested on GitHub, so this reads
-.github/workflows/release.yml and asserts those guarantees, with no expression evaluator:
-the two `startsWith(github.ref, '...')` guards are pulled out and applied to sample refs.
+A `v*` tag must only ever release the server images, an `sdk-python-v*` tag must only ever
+publish the Python SDK and an `sdk-typescript-v*` tag must only ever publish the TypeScript SDK.
+Workflow YAML cannot be unit-tested on GitHub, so this reads .github/workflows/release.yml and
+asserts those guarantees, with no expression evaluator: the `startsWith(github.ref, '...')`
+guards are pulled out and applied to sample refs.
 
 Every `uses:` must name a full 40-character commit SHA followed by a `# vX.Y.Z` comment. These
 jobs hold `id-token: write`, `packages: write` and `contents: write`, and a tag such as `@v3`
@@ -24,19 +25,24 @@ import yaml
 
 DEFAULT_WORKFLOW = Path(__file__).resolve().parent.parent / ".github/workflows/release.yml"
 
-TAG_PATTERNS = {"v*", "sdk-python-v*"}
+TAG_PATTERNS = {"v*", "sdk-python-v*", "sdk-typescript-v*"}
 # job -> the ref prefix its `if:` must test
-GUARDS = {"server": "refs/tags/v", "sdk-python": "refs/tags/sdk-python-v"}
+GUARDS = {
+    "server": "refs/tags/v",
+    "sdk-python": "refs/tags/sdk-python-v",
+    "sdk-typescript": "refs/tags/sdk-typescript-v",
+}
 # ref -> the jobs that must run for it
 EXPECTED_JOBS = {
     "refs/tags/v1.2.3": {"server"},
     "refs/tags/v1.2.3-rc.1": {"server"},
     "refs/tags/sdk-python-v1.2.3": {"sdk-python"},
+    "refs/tags/sdk-typescript-v1.2.3": {"sdk-typescript"},
     "refs/heads/main": set(),
     "refs/heads/v1.2.3": set(),
     "refs/tags/latest": set(),
 }
-ID_TOKEN_JOBS = {"server", "sdk-python"}  # cosign keyless / PyPI trusted publishing
+ID_TOKEN_JOBS = {"server", "sdk-python", "sdk-typescript"}  # cosign keyless / trusted publishing
 PACKAGES_JOBS = {"server"}  # GHCR push
 
 GUARD = re.compile(r"^(?:\$\{\{\s*)?startsWith\(github\.ref,\s*'([^']+)'\)(?:\s*\}\})?$")
@@ -188,14 +194,20 @@ def check_server_order(steps: list[dict]) -> list[str]:
 def check_isolation(jobs: dict) -> list[str]:
     """No step of one release train can perform the other's publish."""
     errors = []
-    for step in jobs["server"].get("steps", []):
-        if step.get("uses", "").startswith("pypa/gh-action-pypi-publish@"):
-            errors.append("job server: must not publish to PyPI")
-    for step in jobs["sdk-python"].get("steps", []):
-        text = step.get("run", "") + step.get("uses", "")
-        for needle in ("docker push", "docker/login-action", "docker/build-push-action"):
-            if needle in text:
-                errors.append(f"job sdk-python: must not push images ({needle})")
+    publishes = {
+        "server": ("docker push", "docker/login-action", "docker/build-push-action"),
+        "sdk-python": ("pypa/gh-action-pypi-publish@",),
+        "sdk-typescript": ("npm publish",),
+    }
+    for name, job in jobs.items():
+        for step in job.get("steps", []):
+            text = step.get("run", "") + step.get("uses", "")
+            for owner, needles in publishes.items():
+                if owner == name:
+                    continue
+                for needle in needles:
+                    if needle in text:
+                        errors.append(f"job {name}: must not do {owner}'s publish ({needle})")
     return errors
 
 

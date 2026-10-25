@@ -103,6 +103,26 @@ A retry only happens when the wait fits inside the time budget with at least one
 
 An empty list means never fall back. By default the first four are on, and `auth_error` is off. Other client errors never fall back, because another provider would not fix a bad request.
 
+### Falling back to Gemini
+
+A chat completions route can survive an OpenAI outage on Gemini: list the OpenAI credential first and a Gemini [`openai_compatible` credential](/docs/gateway/credentials/#gemini-and-bedrock) second, and map the model your application asks for to a Gemini model on the second target:
+
+```json
+{
+  "targets": [
+    { "credential_id": "<openai credential id>", "weight": 100 },
+    {
+      "credential_id": "<gemini credential id>",
+      "weight": 1,
+      "model_aliases": { "gpt-4.1-mini": "gemini-2.5-flash" }
+    }
+  ],
+  "fallback": { "on": ["status_5xx", "rate_limited", "timeout", "connection_error"] }
+}
+```
+
+The first try is a weighted random pick and the lowest weight is 1, so with these weights 100 of every 101 calls try OpenAI first; the others try Gemini first and fall back to OpenAI. When OpenAI answers `5xx` or `429`, times out or cannot be reached, the call is sent to Gemini with the model `gemini-2.5-flash`, and the span records the attempt on each target. A fallback span has an unknown cost ("—") until the organization has a [price override](/docs/concepts/cost/#price-overrides) for the Gemini model under provider `openai_compatible`. Use the chat completions API: Gemini's compatibility layer has no Responses endpoint.
+
 ### Falling back on a rejected key
 
 `auth_error` (**Auth errors (401/403)** in the route editor) is opt-in on purpose. When another credential quietly answers for a key the provider rejected, a revoked or expired key goes unnoticed and its traffic, and its spend, moves to the other credential. List it only when that is what you want:

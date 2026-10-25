@@ -97,8 +97,8 @@ export default function () {
     console.error(`overview: HTTP ${response.status} ${String(response.body).slice(0, 300)}`);
   }
 }
-// Not a threshold: how each window did, to show where the time goes.
-function windowRows(data) {
+// Not a threshold: how each window did, to show where the time goes. mixed.js reuses it.
+export function windowRows(data) {
   return WINDOWS.map((timeWindow) => {
     const metric = data.metrics[`overview_duration_${timeWindow.name}`];
     const values = metric && metric.values ? metric.values : {};

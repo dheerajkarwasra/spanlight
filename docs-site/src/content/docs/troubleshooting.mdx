@@ -173,7 +173,7 @@ export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20spl_live_..."
 
 **Cause.** Spanlight accepts OTLP over HTTP only, as `application/x-protobuf` or `application/json`. Any other content type is `415 UNSUPPORTED_MEDIA_TYPE`. A gRPC exporter, which usually targets port 4317, cannot connect. A body that is not valid OTLP is `400 INVALID_OTLP`.
 
-**Fix.** Set `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf` (or `http/json`).
+**Fix.** Set `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf` (or `http/json`). If the exporter can only send gRPC, put an OpenTelemetry Collector in between: see [Sending from a gRPC exporter](/docs/otlp/#sending-from-a-grpc-exporter).
 
 ### You used a personal access token
 
