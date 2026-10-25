@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 
 import type { Page } from "@playwright/test";
 
@@ -35,6 +35,18 @@ export const test = baseTest.extend<object, { accountState: string }>({
     async ({ browser }, provide, workerInfo) => {
       if (SAVED_ACCOUNT_STATE && existsSync(SAVED_ACCOUNT_STATE)) {
         await provide(SAVED_ACCOUNT_STATE);
+        return;
+      }
+      // Playwright starts a new worker after every failed test; reuse an account this run
+      // already signed up rather than spend the sign-up allowance once per restart.
+      const outputDir = workerInfo.project.outputDir;
+      const runAccount = existsSync(outputDir)
+        ? readdirSync(outputDir, { withFileTypes: true }).find(
+            (entry) => entry.isFile() && /^account-\d+\.json$/.test(entry.name),
+          )
+        : undefined;
+      if (runAccount) {
+        await provide(`${outputDir}/${runAccount.name}`);
         return;
       }
       const context = await browser.newContext({ baseURL: workerInfo.project.use.baseURL });

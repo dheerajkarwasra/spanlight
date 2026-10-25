@@ -72,7 +72,11 @@ export function WaterfallToolbar(props: WaterfallToolbarProps) {
       <h2 className="text-sm font-semibold whitespace-nowrap text-foreground tabular">
         {pluralize(props.spanCount, "span")}
         {props.failedCount > 0 ? (
-          <span className="text-danger-text"> · {formatInteger(props.failedCount)} failed</span>
+          // Visible once the pane has room; until then the failed rows carry their own icon.
+          <span className="sr-only text-danger-text @min-[32rem]:not-sr-only">
+            {" "}
+            · {formatInteger(props.failedCount)} failed
+          </span>
         ) : null}
       </h2>
       <div className="relative min-w-16 flex-1">

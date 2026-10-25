@@ -264,6 +264,8 @@ describe("SpanWaterfall toolbar", () => {
     );
 
     expect(within(row("a3")).getByText("3 attempts · 2 failed")).toBeInTheDocument();
+    // On screen the badge is short, so a narrow name column still shows the span's name.
+    expect(within(row("a3")).getByText("3× · 2 failed")).toHaveAttribute("aria-hidden", "true");
     // The failed count sits in the toolbar heading, not in a badge that would wrap the row.
     expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("4 spans · 2 failed");
     expect(document.getElementById("span-row-a1")).toBeNull();

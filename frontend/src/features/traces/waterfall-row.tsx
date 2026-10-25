@@ -94,7 +94,8 @@ export function WaterfallRow(props: WaterfallRowProps) {
         <span
           title={span.name}
           className={cn(
-            "min-w-0 flex-1 truncate",
+            // Keeps a few characters of the name beside a long badge in a narrow tree pane.
+            "min-w-16 flex-1 truncate",
             dimmed ? "text-muted-foreground" : isError ? "text-danger-text" : "text-foreground",
             selected && "font-semibold",
           )}
@@ -102,9 +103,18 @@ export function WaterfallRow(props: WaterfallRowProps) {
           {span.name}
         </span>
         {retries ? (
-          <Badge size="sm" variant={retries.failed > 0 ? "danger" : "neutral"} className="shrink-0">
-            {formatInteger(retries.attempts)} attempts
-            {retries.failed > 0 ? ` · ${formatInteger(retries.failed)} failed` : ""}
+          <Badge
+            size="sm"
+            variant={retries.failed > 0 ? "danger" : "neutral"}
+            className="shrink-0"
+            title={retryLabel(retries)}
+          >
+            {/* Short on screen so a narrow name column keeps the span's name; read in full. */}
+            <span aria-hidden="true">
+              {formatInteger(retries.attempts)}×
+              {retries.failed > 0 ? ` · ${formatInteger(retries.failed)} failed` : ""}
+            </span>
+            <span className="sr-only">{retryLabel(retries)}</span>
           </Badge>
         ) : null}
         {row.hasChildren && !row.expanded && meta && !retries ? (
@@ -171,4 +181,9 @@ export function WaterfallRow(props: WaterfallRowProps) {
       </span>
     </div>
   );
+}
+
+function retryLabel(retries: { attempts: number; failed: number }): string {
+  const failed = retries.failed > 0 ? ` · ${formatInteger(retries.failed)} failed` : "";
+  return `${formatInteger(retries.attempts)} attempts${failed}`;
 }

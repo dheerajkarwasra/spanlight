@@ -206,6 +206,8 @@ Taking the last user message in SQL was measured against cutting the whole input
 
 **Result.** Over the 24 hours the trace list opens with, the histogram takes about 6 ms, and every filtered 30-day case is within the budget. A 30-day window without a filter misses it on this machine: the planner cannot estimate how few buckets there are, so it sorts all 300 000 rows (spilling past the 4 MB `work_mem`) in one process instead of aggregating in parallel workers. `date_trunc('day', started_at, 'UTC')` took about 1.5 times as long as `date_bin` and was not used. A larger `work_mem` (hash aggregate, still in one process), a join to `generate_series` of the buckets (parallel, but a sort before the join) and `parallel_tuple_cost = 0` gained 0 to 40 % under the same load and were not kept. The unfiltered 30-day case is to be measured again on a quiet machine; until then it is recorded as over the budget.
 
+**Re-measured 2026-10-24** (load average 6.6 to 7.2 on 10 cores): the unfiltered 30-day case still took 210 ms median and 283 ms slowest over nine warm runs, so the miss was the plan, not the machine; a plain `count(*)` of the same rows took 48 ms. Migration 1017 adds expression statistics on the day bucket (`traces_started_day_bin`) and the histogram now writes that bucket with literal constants so the planner matches it: the planner expects 31 groups instead of about 250 000 and aggregates in parallel without a sort. After 1017 the same case takes **58 ms median and 83 ms slowest**, within the budget. Raising `work_mem` alone gave 156 ms median.
+
 **Watch.** The cost is linear in the traces of the window, as for the sorts.
 
 ### Sessions list

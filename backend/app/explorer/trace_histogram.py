@@ -1,10 +1,11 @@
 """Trace and error counts over time, for exactly the traces the trace list shows."""
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
-from sqlalchemy import DateTime, func, select
+from sqlalchemy import DateTime, Interval, func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnClause, ColumnElement
 
 from app.api.schemas.traces import TraceBucketOut, TraceHistogramOut
 from app.api.trace_filters import TraceListFilters
@@ -13,7 +14,19 @@ from app.db.models import Trace
 
 HOURLY_UP_TO = timedelta(hours=48)
 # Any UTC midnight: bins of whole hours or days from it start where `date_trunc` in UTC would.
-UTC_ORIGIN = datetime(2000, 1, 1, tzinfo=UTC)
+# Written as literals, not bind parameters: the planner uses the `traces_started_day_bin`
+# statistics (migration 1017) only for this exact expression, and without them it expects one
+# group per few traces and sorts the whole window.
+_ORIGIN: ColumnClause[datetime] = literal_column(
+    "timestamptz '2000-01-01 00:00:00+00'", DateTime(timezone=True)
+)
+_DAY: ColumnClause[timedelta] = literal_column("interval '1 day'", Interval())
+_HOUR: ColumnClause[timedelta] = literal_column("interval '1 hour'", Interval())
+
+
+def day_bucket() -> ColumnElement[datetime]:
+    """The day a trace started in, as the statistics of migration 1017 know it."""
+    return func.date_bin(_DAY, Trace.started_at, _ORIGIN, type_=DateTime(timezone=True))
 
 
 async def trace_histogram(
@@ -23,11 +36,10 @@ async def trace_histogram(
     trace are left out; `errors` counts traces with at least one failed span."""
     hourly = window.length <= HOURLY_UP_TO
     # date_bin is arithmetic on the instant; date_trunc in a time zone took about 1.5 times as long.
-    bucket_start = func.date_bin(
-        timedelta(hours=1) if hourly else timedelta(days=1),
-        Trace.started_at,
-        UTC_ORIGIN,
-        type_=DateTime(timezone=True),
+    bucket_start = (
+        func.date_bin(_HOUR, Trace.started_at, _ORIGIN, type_=DateTime(timezone=True))
+        if hourly
+        else day_bucket()
     )
     query = select(
         bucket_start.label("bucket_start"),
