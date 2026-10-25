@@ -5,7 +5,7 @@ sidebar:
   order: 4
 ---
 
-{/* Sources: backend/app/pricing/cost.py, backend/app/pricing/prices.py, backend/app/pricing/price_row.py, backend/app/pricing/tiers.py, backend/app/pricing/fees.py, backend/app/pricing/provider_alias.py, backend/app/pricing/explain.py, backend/app/pricing/explain_copy.py, backend/app/pricing/explain_service.py, backend/app/pricing/unreported.py, backend/app/api/v1/cost_explanation.py, backend/app/api/schemas/cost_explanation.py, backend/app/gateway/stream_forward.py, backend/app/gateway/tracing.py, sdks/python/src/spanlight/integrations/_streams.py, sdks/python/src/spanlight/integrations/_modifiers.py, sdks/python/src/spanlight/integrations/openai.py, frontend/src/features/traces/span-cost-card.tsx, backend/app/pricing/queries.py, backend/app/pricing/tokens.py, backend/app/pricing/overrides_service.py, backend/app/core/model_match.py, backend/app/ingest/normalize.py, backend/app/ingest/otlp.py, backend/app/ingest/store.py, backend/app/gateway/usage.py, backend/app/insights/detectors/unpriced_spend.py, sdks/python/src/spanlight/integrations/anthropic.py, frontend/src/components/cost-value.tsx, docs/api-deviations.md */}
+{/* Sources: backend/app/pricing/cost.py, backend/app/pricing/prices.py, backend/app/pricing/price_row.py, backend/app/pricing/tiers.py, backend/app/pricing/modifiers.py, backend/app/pricing/fees.py, backend/app/pricing/provider_alias.py, backend/app/pricing/explain.py, backend/app/pricing/explain_copy.py, backend/app/pricing/explain_service.py, backend/app/pricing/unreported.py, backend/app/api/v1/cost_explanation.py, backend/app/api/schemas/cost_explanation.py, backend/app/gateway/stream_forward.py, backend/app/gateway/tracing.py, sdks/python/src/spanlight/integrations/_streams.py, sdks/python/src/spanlight/integrations/_modifiers.py, sdks/python/src/spanlight/integrations/openai.py, frontend/src/features/traces/span-cost-card.tsx, backend/app/pricing/queries.py, backend/app/pricing/tokens.py, backend/app/pricing/overrides_service.py, backend/app/core/model_match.py, backend/app/ingest/normalize.py, backend/app/ingest/otlp.py, backend/app/ingest/store.py, backend/app/gateway/usage.py, backend/app/insights/detectors/unpriced_spend.py, sdks/python/src/spanlight/integrations/anthropic.py, frontend/src/components/cost-value.tsx, docs/api-deviations.md */}
 
 import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
@@ -32,14 +32,14 @@ tokens = ( uncached  × input_rate
          + reads     × cached_rate
          + writes_5m × cache_write_5m_rate
          + writes_1h × cache_write_1h_rate
-         + output_tokens × output_rate ) / 1,000,000 × tier_factor
+         + output_tokens × output_rate ) / 1,000,000 × tier_factor × modifier_factors
 
 fee    = web_search_requests × search_rate / 1,000
 
 cost   = tokens + fee
 ```
 
-The sum is rounded once, half up, to 8 decimal places. A count the span does not report is 0. The tier factor is 1 for a standard call; [Service tiers](#service-tiers) lists the others. The fee is 0 for a call that made no web search; see [Fees (web search)](#fees-web-search). The span stores the whole figure in `cost_usd` and the fee part again in `fee_usd`. When a model has no published cached rate, cached tokens are billed at the input rate; when it has no cache-write rates, cache writes are billed at the input rate too. So a model without published write rates costs what it did before Spanlight priced cache writes.
+The sum is rounded once, half up, to 8 decimal places. A count the span does not report is 0. The tier factor is 1 for a standard call; [Service tiers](#service-tiers) lists the others. The modifier factors are 1 unless the provider reported data residency or fast mode; see [Data residency and fast mode](#data-residency-and-fast-mode). The fee is 0 for a call that made no web search; see [Fees (web search)](#fees-web-search). The span stores the whole figure in `cost_usd` and the fee part again in `fee_usd`. When a model has no published cached rate, cached tokens are billed at the input rate; when it has no cache-write rates, cache writes are billed at the input rate too. So a model without published write rates costs what it did before Spanlight priced cache writes.
 
 ### The token convention
 
@@ -98,9 +98,19 @@ Where the tier comes from:
 - **OTLP.** `openai.response.service_tier`, `gen_ai.openai.response.service_tier` or `spanlight.usage.service_tier`; see [OTLP attribute mapping](/docs/reference/otlp-mapping/#service-tier-and-web-searches).
 - **Native JSON.** `usage.service_tier`, which must be one of the four values; any other value rejects the span.
 
-The SDK, the gateway and OTLP map the provider's own spelling first (`priority_on_demand`, `default`, `scale`, ...). A spelling Spanlight does not know is not an error: the span is priced at the standard rate and the value (its first 64 characters) is kept in the attribute `usage.service_tier_raw`. A span stored before the `2026-10-16` snapshot has no tier and was priced at the standard rate.
+The SDK, the gateway and OTLP map the provider's own spelling first (`priority_on_demand`, `default`, `scale`, ...). A spelling Spanlight does not know is not an error: the span is priced at the standard rate and the value (its first 64 characters) is kept in the attribute `usage.service_tier_raw`. OpenAI `ultrafast` is one of them: OpenAI bills it at about 6 times the standard rate, so the reconciliation counts such a call as an unmodelled modifier. A span stored before the `2026-10-16` snapshot has no tier and was priced at the standard rate.
 
-Two request options change the bill and are not priced yet: Anthropic data residency (`inference_geo`, which costs more for `us`) and fast mode (`speed: "fast"`). When the Python SDK or the gateway sees one in the request and usage comes back, it prices the call at the standard rate and sets the attribute `usage.pricing_modifier_unknown` to `inference_geo_<value>` (for example `inference_geo_us`) or `fast_mode`, so you can find those calls. When both are present the data-residency value is used. `inference_geo: "global"` is the default routing at the standard price and sets nothing.
+### Data residency and fast mode
+
+Two Anthropic options change the bill on top of the tier: US-only inference (`inference_geo: "us"`) costs 1.1 times the standard rate, and fast mode (`speed: "fast"`, on Claude Opus 5.5, Opus 5 and Opus 4.8) costs 2 times. Both apply to every token class, cache reads and writes included, and they stack with each other, with prompt caching and with the tier: a fast call with US-only inference costs 2.2 times the standard rate. They are priced from the price snapshot `2026-10-25` on.
+
+Spanlight reads them from the answer, not from the request, because the answer says what was billed: a workspace's default inference geo applies when the request names none, and a request for fast mode can run at standard speed. The Python SDK and the gateway record the answer's `usage.inference_geo` and `usage.speed` as span attributes of the same names; a span you send yourself can carry them too. `inference_geo: "global"` and `speed: "standard"` are the standard price.
+
+A modifier Spanlight cannot price is flagged instead. The span is priced at the standard rate and gets the attribute `usage.pricing_modifier_unknown`, so you can find those calls and the reconciliation counts them as unmodelled modifiers:
+
+- `inference_geo_<value>` or `fast_mode` when the request asked for data residency or fast mode but the answer did not report where or how it ran, or when the call started before the `2026-10-25` snapshot. When both were requested the data-residency value is used.
+- `inference_geo_<value>` for a reported geo the table has no factor for.
+- `regional_endpoint` for an OpenAI call sent to a regional host such as `eu.api.openai.com` (the Python SDK's client `base_url`, or an OpenAI-compatible gateway credential). OpenAI bills a 10% uplift there on models released on or after March 5, 2026, and the answer does not say so; an OTLP span is never flagged, because Spanlight cannot see the host.
 
 ### Fees (web search)
 
@@ -184,7 +194,7 @@ The provider is stored as it was sent: the folding is used only to find the pric
 
 ### The price table is versioned
 
-The built-in prices are a dated snapshot of the providers' published rates for standard use, including the prompt-cache read and write rates and the prompt-size tiers the providers publish. Since the `2026-10-16` snapshot, a snapshot also holds the service-tier factors and the web search fees. It leaves out regional modifiers, fast mode and taxes. Only models whose prices are known with confidence are listed.
+The built-in prices are a dated snapshot of the providers' published rates for standard use, including the prompt-cache read and write rates and the prompt-size tiers the providers publish. Since the `2026-10-16` snapshot, a snapshot also holds the service-tier factors and the web search fees. Since the `2026-10-25` snapshot it holds the Anthropic data-residency and fast-mode factors too. It leaves out OpenAI regional and fast-mode rates and taxes. Only models whose prices are known with confidence are listed.
 
 Every priced span stores the version of the price it used in `pricing_version`, so a stored cost says which table made it. A span is priced by the snapshot in force when it started, and Spanlight keeps each earlier snapshot exactly as it was released, so a span up to 90 days old is priced the same on a fresh install as on an upgraded one. The server loads new prices with `spanlight sync-prices`. A span keeps the cost it was priced with; a new table affects spans ingested afterwards, and a span you send again is priced again with the table in force then. You can read the whole table at `GET /api/v1/prices`.
 
@@ -211,7 +221,7 @@ Every span of a model call can show where its figure comes from. On the trace pa
 GET /api/v1/projects/{project_id}/traces/{trace_id}/spans/{span_id}/cost-explanation
 ```
 
-Members of the project can read it, and so can a project API key with the `traces:read` scope. The lines are `uncached_input`, `cache_read`, `cache_write_5m`, `cache_write_1h`, `output` and `web_search`. Reasoning tokens are part of `output` and are shown as a split of that line, never as a line of their own. The explanation also returns the price row that was used (`price`, with its version and start date), the tier factor and its note (`commitment_billed` or `unmodelled`), and the usage as stored.
+Members of the project can read it, and so can a project API key with the `traces:read` scope. The lines are `uncached_input`, `cache_read`, `cache_write_5m`, `cache_write_1h`, `output` and `web_search`. A token line's multiplier is the tier factor times the data-residency and fast-mode factors, and the `message` names them, for example "Data residency ×1.1 and Fast mode ×2 apply to every token class."; `tier_multiplier` stays the tier's own factor. Reasoning tokens are part of `output` and are shown as a split of that line, never as a line of their own. The explanation also returns the price row that was used (`price`, with its version and start date), the tier factor and its note (`commitment_billed` or `unmodelled`), and the usage as stored.
 
 The explanation rebuilds the figure from the price row, tier factor and fee rate that priced the span when it was stored. It never prices the span again with today's table, so a later price change does not hide or rewrite anything. Its `status` says how the rebuilt figure compares with the stored one:
 

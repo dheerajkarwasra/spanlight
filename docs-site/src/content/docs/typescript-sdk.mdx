@@ -5,8 +5,9 @@ sidebar:
   order: 3
 ---
 
-{/* Sources: sdks/typescript/src/client.ts, sdks/typescript/src/span.ts, sdks/typescript/src/exporter.ts, sdks/typescript/src/providers/common.ts, sdks/typescript/src/providers/openai.ts, sdks/typescript/src/providers/anthropic.ts, sdks/typescript/README.md */}
+{/* Sources: sdks/typescript/src/client.ts, sdks/typescript/src/span.ts, sdks/typescript/src/propagation.ts, sdks/typescript/src/exporter.ts, sdks/typescript/src/providers/common.ts, sdks/typescript/src/providers/openai.ts, sdks/typescript/src/providers/anthropic.ts, sdks/typescript/README.md */}
 
+import { Aside } from '@astrojs/starlight/components';
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
 
@@ -112,6 +113,40 @@ const handle = observe(
 ```
 
 `observe(fn, options)` returns a function that traces every call: the arguments are the span input, the return value (or the value a returned promise resolves to) the output. `withSpan(name, callback, options)` runs the callback in a new span. A thrown error or a rejected promise marks the span failed and is re-thrown unchanged. The current span lives in an `AsyncLocalStorage`, so wrapped provider calls made inside `handle` are its children. `getCurrentTraceId()` returns the current trace id for your logs.
+
+## Propagate across MCP and services
+
+`inject()` and `continueTrace()` carry a trace from one process to another as a W3C `traceparent`, so an MCP server, an agent you call over HTTP or a queue worker records its spans as children of the caller's span.
+
+`inject(carrier?)` returns a copy of `carrier` with `traceparent` set to the current span; a `traceparent` already in the carrier is kept, and outside a span the copy is returned unchanged. `continueTrace(carrier, fn)` runs `fn` so that spans opened inside it become children of the span the `traceparent` names, and returns what `fn` returns. A missing or invalid `traceparent` is ignored and the next span starts a new trace. Every span is recorded whatever the W3C sampled flag says, and `tracestate` and `baggage` are not used.
+
+MCP carries trace context in `params._meta` under the key `traceparent` ([SEP-414](https://modelcontextprotocol.io/seps/414-request-meta)):
+
+```ts
+// Client: before sending a request
+params._meta = inject(params._meta);
+
+// Server: while handling it
+const result = await continueTrace(request.params._meta, () => runTool(request.params.arguments));
+```
+
+HTTP headers work the same way. Node's `req.headers` is a plain object; turn a fetch `Headers` into one first:
+
+```ts
+// Client
+await withSpan('ask-billing-agent', () =>
+  fetch(url, { method: 'POST', body, headers: inject({ 'content-type': 'application/json' }) }),
+);
+
+// Server
+await continueTrace(Object.fromEntries(request.headers), () => withSpan('answer', () => answer()));
+```
+
+The server's spans carry no trace name, environment or release, so they never overwrite the caller's. The remote parent is a placeholder that is never sent: inside `fn`, `currentSpan()` returns it and setters called on it are lost, so open a span of your own first. When the client and the server send to different projects, each project shows its half of the trace with a parent it does not have.
+
+<Aside type="caution" title="Only continue traces from callers you trust">
+The caller chooses the trace id, so it can attach your spans to another trace of the same project. Your spans still land in the project of your own API key.
+</Aside>
 
 ## What is recorded
 

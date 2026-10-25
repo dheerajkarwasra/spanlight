@@ -150,6 +150,19 @@ The Grafana dashboard (`deploy/grafana/spanlight-dashboard.json`) has an **LLM g
 | Gateway cache hits | `spanlight_gateway_requests_total{outcome="cache_hit"}` | Hits per second and their share of all calls. A share near zero on a key that has a cache TTL means clients vary the request (a changing timestamp in the prompt, for example). |
 | Gateway spans not recorded | `spanlight_gateway_record_failures_total` | Calls that were answered but whose trace was not written. `overflow` means the write backlog was full: raise `GATEWAY_RECORD_CONCURRENCY` (each write holds a database connection, so check the pool in [scale.md](scale.md) first) or `GATEWAY_RECORD_BACKLOG`. `error` means the write failed for good; look at the api log, where each `gateway.record_failed` line names the error type, the SQLSTATE of a database error and the number of tries, never the message. A transient failure (a lost connection, a timeout, a deadlock) is retried up to four tries over about 2.6 seconds, each retry logging `gateway.record_retry`. A failure a retry would meet again is not retried: a value or constraint the database refuses (`DataError`, `IntegrityError`, `ProgrammingError`; a bug to report), a deleted project, a span whose input or output could not be prepared for the queue, or a span that could not even be built (logged as `gateway.span_failed` with `stage=build` and the error type; a bug to report). `rejected` means ingestion refused the span (see the api log for the reason). Anything above zero for long is a gap in the traces. Without Prometheus, `gateway_spans_lost` on `/health/ready` is the same count for that process since it started. |
 
+## Budget reservations
+
+A gateway call that matches a `block` budget reserves its estimated cost before it is forwarded and settles the real cost when its span is written ([ADR 0017](../decisions/0017-gateway-budgets-reserve-before-forwarding.md)). Watch these metrics:
+
+| Metric | What to look for |
+|---|---|
+| `spanlight_budget_blocks_total{reason}` | `reserved` is a call refused because its estimate did not fit; `firing` is a budget the evaluator measured as exhausted (SDK or OTLP spend counts there). |
+| `spanlight_budget_reserve_seconds` | Time of the reserve step. Calls on one budget wait for each other's row lock, so a burst on one budget shows a long tail. A p95 over 5 ms at normal load is the signal to act. |
+| `spanlight_budget_reservations_held` | Reservations in flight. It should follow the number of calls running; a steady climb means spans are not being written (see **Gateway spans not recorded** above). |
+| `spanlight_budget_reservations_reaped_total` | Reservations the worker counted at their estimate after 12 minutes without a settle: a crash, or a span dropped because the write backlog was full (a span whose write failed for good is settled at once). Spend then reads high until a late settle corrects it. |
+
+The reaper (`reap_budget_reservations`) runs every minute on the worker; with the worker stopped, expired reservations keep holding budget until it runs again.
+
 ## Roll back
 
 Standalone to embedded: see above. A key revocation cannot be undone from the dashboard; create a new key. A purged cache refills by itself as requests arrive. A `CREDENTIALS_KEYS` rotation is undone by putting the old key first again, as long as the old key is still in the list.

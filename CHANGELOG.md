@@ -40,6 +40,8 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 - **Reads during ingestion load test.** `backend/load/mixed.js` measures overview and trace list reads while ingestion runs (no ingest, 500 and 1,000 spans/s), in the Load test workflow. The 1,000 spans/s stage is reported, not gated.
 - **TypeScript SDK release job.** An `sdk-typescript` job publishes the TypeScript SDK to npm with provenance on `sdk-typescript-v*` tags, through trusted publishing. No version is published yet.
 
+- **Trace context across MCP and services.** The Python and TypeScript SDKs have `inject()` and `continue_trace()` / `continueTrace()`, which carry a trace across processes as a W3C `traceparent` in MCP `params._meta` (SEP-414), HTTP headers or queue messages. Spans opened inside `continue_trace` become children of the caller's span and never overwrite the caller's trace name, environment or release. An invalid or missing `traceparent` starts a new trace; the sampled flag is not honoured, and `tracestate` and `baggage` are not used. Only continue traces from callers you trust: a caller chooses the trace id.
+
 ### Changed
 
 - **A run scores a fixed set of items.** It takes the ids of the dataset's first `max_items` items when it starts: items added while it runs are not scored, and items deleted while it runs are skipped. Before, a run read the dataset page by page and could pick up items added mid-run.
@@ -56,6 +58,9 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 - **Judge–reviewer agreement starts again when the judge changes.** Agreement counts only the judge's scores from runs started since its model, prompt version or temperature last changed, so a new judge no longer blends with the old one. A new credential, output limit, sampling rate, name or filter does not reset it. The agreement response has a new `since` field with that time (`null` when the judge never changed).
 - **Privacy guide: records beyond 90 days and the gateway cache.** It says how to keep records past the 90-day retention (scheduled JSONL exports), and that a gateway key with a cache keeps response bodies for up to its TTL (at most 24 hours) even with prompt capture off.
 
+- **Gateway `block` budgets are hard for gateway spend.** Each call reserves its estimated cost before it is forwarded and settles the real cost with its span, so concurrent calls on any number of api replicas can no longer pass the cap together: the gateway spend admitted against a budget exceeds its amount by at most one estimate's error (ADR 0017). The estimate counts the request's text and its largest output cap (16,384 output tokens when none is set) at the price of the dearest model the route may call, for its service tier. A refusal says what is spent or in flight, what the call would add and the amount, and that a lower `max_tokens` lowers the reservation. A budget blocked by the evaluator's measurement keeps the soft-limit wording, since SDK and OTLP spend is measured, not stopped. A worker job counts reservations that never settled after 12 minutes, and the cleanup job prunes old counters. `spanlight_budget_blocks_total` gains a `reason` label; new metrics `spanlight_budget_reserve_seconds`, `spanlight_budget_reservations_reaped_total` and `spanlight_budget_reservations_held`.
+- **Cost includes Anthropic data residency and fast mode.** US-only inference (`inference_geo: "us"`) is priced at 1.1 times and fast mode (`speed: "fast"`) at 2 times the standard rate on every token class, stacking with each other, prompt caching and the service tier. Both are read from the provider's answer (`usage.inference_geo`, `usage.speed`), which the gateway and the Python SDK now record, so a workspace's default inference geo is priced too. New price snapshot `2026-10-25`; spans priced under earlier snapshots keep their stored cost. The cost breakdown's token lines show the combined factor (for example ×2.2) and say which modifiers apply.
+
 ### Fixed
 
 - **A Doctor reading too large to store no longer drops the finding.** A reading above 10^16 (for example spend against a near-zero baseline) failed the insight write; the stored peak is now capped there, below every sensitivity gate.
@@ -65,6 +70,9 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 - **A provider error inside a stream marks the gateway span as an error.** An Anthropic `error` event, an OpenAI chat chunk with an `error` object or `finish_reason: "error"`, or a Responses `error` or `response.failed` event after a `200` used to leave a green `ok` span. The span is now an error with `stream_error: the provider sent an error event (<type>: <message>)`; the client still receives the provider's bytes unchanged.
 - **OTLP tool spans keep their arguments and results as payloads.** `gen_ai` `execute_tool` spans store `gen_ai.tool.call.arguments` as the span input and `gen_ai.tool.call.result` as its output. Before, both stayed in the span attributes, where a tool result over 64 KB rejected the whole span, and tool content escaped the payload size cap, truncation and the payload capture setting. Spans ingested earlier keep their attributes.
+
+- **OpenAI Ultrafast and other unknown tiers are counted in reconciliation.** A call at a service tier Spanlight does not know was priced at the standard rate without being counted; it is now an unmodelled modifier call.
+- **Calls through an OpenAI regional host are flagged.** A call through `eu.api.openai.com` and the like (the Python SDK's `base_url` or an OpenAI-compatible gateway credential) gets `usage.pricing_modifier_unknown: regional_endpoint`, since OpenAI's regional uplift is not reported in the answer.
 
 ### Upgrading
 
@@ -77,6 +85,8 @@ Run `spanlight migrate` after upgrading. 1010 adds the copy columns to `experime
 1020 builds the partial index `scores_project_source_idx` (human and evaluator scores, by project) `CONCURRENTLY`, which does not block reads or writes but waits for transactions already open on `scores` to finish; if the build is interrupted, running `spanlight migrate` again recovers. Its downgrade drops the index, and the setup checklist's evaluation check then reads the whole `scores` table again.
 
 1021 adds the nullable `evaluators.config_changed_at` (catalog only, no rewrite).
+
+1022 creates `budget_counters` and `budget_reservations` (row-level security, project isolation and worker bypass policies). Its downgrade drops both, which this release's gateway needs, so downgrade only together with the previous release.
 
 ## [0.7.0] - 2026-10-20
 

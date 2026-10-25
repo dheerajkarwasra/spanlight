@@ -129,14 +129,14 @@ An explained line names one known cause of a difference. Only some causes have a
 | `priority_commitment` | Negative, when known | Anthropic Priority Tier calls. Anthropic bills them under a capacity commitment, not in the cost report, so the standard-rate cost Spanlight recorded for them is taken back out. The token total comes from the usage report. When the provider does bill a priority line, both sides hold the calls and the line has no amount. |
 | `unpriced_spans` | No | Calls with a model and token counts but no price. |
 | `usage_not_reported` | No | Calls whose output tokens were never reported, such as streams cut before the final usage. The note says how many were cut streams. |
-| `unmodelled_modifiers` | No | Calls priced at the standard rate with a modifier Spanlight does not price: OpenAI priority, fast mode, data residency. |
+| `unmodelled_modifiers` | No | Calls priced at the standard rate with a modifier Spanlight does not price: OpenAI priority, a service tier Spanlight does not know (such as OpenAI `ultrafast`), an OpenAI regional endpoint, and data residency or fast mode the provider's answer did not report. |
 | `beyond_retention` | No | Spans of the day are past the retention of a mapped project. The day is marked `incomplete`, and the batch, fee and untraced lines lose their amounts, because the spans behind them may have been deleted. |
 
 See [Explaining a cost](/docs/concepts/cost/#explaining-a-cost) for how Spanlight priced a single span.
 
 ### Credits and other charges
 
-Credits and refunds are listed in the day's `credits`, with their total in `credits_usd`. Charges Spanlight cannot see, such as code execution, Anthropic session usage and OpenAI line items that are not a model (`assistants api | file search`), are listed in `other`, with the total in `other_usd`. Neither is part of `provider_usd`, the residual or the variance.
+Credits and refunds are listed in the day's `credits`, with their total in `credits_usd`. Charges Spanlight cannot see, such as code execution, Anthropic session usage and OpenAI line items that are not a model (`assistants api | file search`), are listed in `other`, with the total in `other_usd`. Anthropic's Managed Agents session-hour fee is one of them: Spanlight records no span for session runtime, so it never prices it. Neither is part of `provider_usd`, the residual or the variance.
 
 ### Provisional and unknown days
 

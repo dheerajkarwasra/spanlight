@@ -314,6 +314,23 @@ spanlight.get_current_trace_id() -> str | None
 
 Returns the trace id of the current span, or `None`. A trace id is 32 lowercase hex characters and a span id is 16, both compatible with W3C Trace Context. Put the trace id in your logs, or pass it to `score`.
 
+### `inject`
+
+```python
+spanlight.inject(carrier: Mapping[str, Any] | None = None) -> dict[str, Any]
+```
+
+Returns a copy of `carrier` with the current span as a W3C `traceparent` (`00-<trace id>-<span id>-01`). A `traceparent` already in the carrier is kept, and outside a recording span the copy comes back unchanged. Use it for MCP `params._meta`, HTTP headers or queue messages; see [Propagate across MCP and services](/docs/python-sdk/#propagate-across-mcp-and-services).
+
+### `continue_trace`
+
+```python
+with spanlight.continue_trace(carrier): ...
+async with spanlight.continue_trace(carrier): ...
+```
+
+Spans opened inside the block become children of the span the carrier's `traceparent` names. The carrier is anything with `.get` (a dict, request headers) or an object with a `traceparent` attribute. A missing or invalid `traceparent` is ignored, so the next span starts a new trace. The sampled flag is not honoured, and `tracestate` and `baggage` are not used. The remote parent is a placeholder that is never sent and sets no trace name, environment or release. Only continue traces from callers you trust: a caller chooses the trace id.
+
 ### `Span`
 
 A timed unit of work. You receive spans from `span`, `observe`-decorated code that calls `get_current_span`, and `Spanlight.start_span`. Every setter is safe to call at any time and never raises. After the span has ended, setters are ignored. A span created while the SDK is disabled is non-recording, and each of its methods does nothing.
@@ -478,7 +495,7 @@ Each call becomes an `llm` span named after the operation and the model, for exa
 - Extra attributes where the provider supplies them: `response.id`, `response.finish_reasons`, `response.stop_reason`, `response.status`, `request.stream` and `usage.reasoning_tokens`.
 - The service tier the provider billed, and the number of web searches it ran (from SDK 0.2.0). See [How cost is calculated](/docs/concepts/cost/#service-tiers).
 - For a stream that ends before the provider's final usage event: the counts that arrived, an unknown output count and the attribute `usage.unreported_reason`, which is `client_disconnected` (you closed the stream early), `stream_error` (it failed), `include_usage_not_set` (an OpenAI Chat Completions stream that ran to its end with no usage, usually because `include_usage` was not set) or `no_final_usage` (an Anthropic or Responses stream that ran to its end without the event). The cost is then unknown.
-- `usage.pricing_modifier_unknown` when the call passes an option Spanlight does not price: `inference_geo_<value>` for a data-residency value other than `global`, or `fast_mode` for `speed="fast"`. The call is priced at the standard rate.
+- `usage.inference_geo` and `usage.speed` from an Anthropic answer, which the server prices (1.1 times for `us`, 2 times for `fast`). `usage.pricing_modifier_unknown` when the call passed an option the answer did not report (`inference_geo_<value>` or `fast_mode`), or went through an OpenAI regional host (`regional_endpoint`); that call is priced at the standard rate.
 
 API keys, `extra_headers`, `extra_query`, `extra_body`, `timeout` and `http_client` are never recorded.
 

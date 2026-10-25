@@ -1853,15 +1853,28 @@ Calls made after the full test pass on behaviour the spec left open.
   per-model rates, not a multiplier (the ratio to standard runs from 1.67 to 2.0, and none of the OpenAI models the
   snapshot prices is 2.0). Generally, a non-standard tier with no factor in the snapshot that is not commitment-billed
   is priced at the standard rate and its cost explanation carries `tier_note: "unmodelled"`.
-- **Unpriced request options.** Data residency (`inference_geo`) and fast mode (`speed: "fast"`) are not priced. When the
-  Python SDK (keywords or `extra_body`) or the gateway (request body) sees one, the span is priced at the standard
-  rate and `attributes["usage.pricing_modifier_unknown"]` is `inference_geo_<value>` (trimmed and lower-cased; a value
-  that is not 1 to 32 characters of `a-z`, `0-9`, `_` or `-` is reported as `inference_geo_other`) or `fast_mode`.
-  Data residency wins when both are sent. `inference_geo: "global"` is the default routing at the standard price and
-  sets nothing. The SDK and the gateway set the attribute only on spans with usage: a call that failed before any
-  usage came back was not priced at any rate, so the SDK drops the attribute it set when the call started. The daily
-  cost rollup counts the attribute (`unmodelled_modifier_calls`) only on spans with an input token count, so a span
-  sent by another client obeys the same rule.
+- **Pricing modifiers (data residency, fast mode)** (changed 2026-10-25). The provider's answer is the source of
+  truth: the `usage.inference_geo` and `usage.speed` span attributes (recorded by the gateway and the Python SDK
+  from Anthropic's response `usage`) are priced by the snapshot's modifier factors, from `2026-10-25`: (anthropic,
+  `inference_geo_us`) 1.1 and (anthropic, `fast`) 2.0. They multiply the tier factor and apply to every token class;
+  `cost_explanation` lines carry the combined `multiplier` and the `ok` message names the modifiers, while
+  `tier_multiplier` stays the tier's own factor. Eligibility (Claude 4.6 and later for geo; Opus 5.5, 5 and 4.8 for
+  fast) is not encoded: the provider refuses an ineligible request with a 400. At ingestion a reported option
+  replaces the request-side `usage.pricing_modifier_unknown` guess (`inference_geo_<value>` or `fast_mode`, set as
+  before by the SDK and the gateway); the guess stays only when the answer lacks the field. A reported modifier
+  without a factor (an unknown geo, or a span priced by a snapshot before `2026-10-25`) is priced at the standard
+  rate and flagged `usage.pricing_modifier_unknown` (`inference_geo_<value>`, `fast_mode` or `speed_<value>`). The flag
+  is set only on spans with usage, and the daily cost rollup counts it (`unmodelled_modifier_calls`) only on spans
+  with an input token count.
+- **OpenAI regional endpoints** (added 2026-10-25). A call whose host is `<prefix>.api.openai.com` (the Python SDK
+  client's `base_url`, or an OpenAI-compatible gateway credential) is flagged `usage.pricing_modifier_unknown:
+  regional_endpoint` and priced at the standard rate: the 10 % uplift depends on the model's release date, and the
+  answer does not report the region. OTLP spans are never flagged (no host is known).
+- **Unknown service tiers** (added 2026-10-25). A span whose tier did not normalize (`usage.service_tier_raw` set,
+  for example OpenAI `ultrafast`) is counted in `unmodelled_modifier_calls`; no stored tier is added (the
+  `service_tier` CHECK keeps four values).
+- **Session-hour fees** (Anthropic Managed Agents) are not priced: Spanlight records no span for session runtime,
+  and the provider's line stays in `other`.
 - **Provider aliases for pricing only.** For the price and fee lookup, the provider is trimmed, lower-cased and folded:
   `gemini`, `google_genai`, `google-genai`, `google_ai`, `vertex_ai`, `vertexai`, `gcp.gemini`, `gcp.vertex_ai` and
   `gcp.gen_ai` to `google`; `claude` to `anthropic`. Any other name is compared lower-cased as it is. `azure` and
@@ -3353,3 +3366,29 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
   compared by value; a credential, `max_tokens`, `sampling_rate`, name, filter or `enabled` change does not count.
   `since` on `GET .../evaluators/{evaluator_id}/agreement` is that time, `null` when the config never changed.
   The project-wide summary applies the same rule but does not return `since`.
+
+## Hardening wave 2 (added 2026-10-25)
+
+### Budgets
+
+- **Hard admission for gateway calls.** Before a gateway call is forwarded, every enabled `block` budget that matches
+  it must hold the call's estimated cost. With M the spend the alert evaluator last measured this period, G the
+  gateway spend settled into the budget's counter this period, R the reservations in flight and E the call's
+  estimate, the call is admitted when `max(M, G) + R + E <= amount_usd` for every matching budget, else refused with
+  `402 BUDGET_EXCEEDED` and no upstream call. E is the request's text (`messages`, `input`, `system`,
+  `instructions`, `tools`; image, file and audio parts are not counted) at one token per three ASCII characters, plus
+  the largest of `max_tokens`, `max_completion_tokens` and `max_output_tokens` times `n` as output (16,384 output
+  tokens when none is set), priced for the requested `service_tier` at the dearest of the model asked for and the
+  route's targets (each with its provider's tier factor), without data-residency or fast-mode factors; token counts
+  are clamped to the largest count the price book prices. A model the price book cannot price gives no estimate, and
+  a zero estimate (a $0 price override) reserves nothing: such a call is admitted, as before. A reservation is settled by the call's span write
+  at the stored span's cost (nothing for a call never sent or refused with an HTTP error status; the estimate when the
+  cost is otherwise unknown); it expires after 12 minutes (the 10-minute stream cap plus slack) and is then counted
+  at its estimate until a late settle corrects it. A span the recorder cannot write is settled at once in its own
+  transaction (at the estimate when the provider may have billed); a span dropped because the write backlog is full
+  is counted by the reaper. The budget's period for a call is taken from the call's clock, so a call admitted at 23:59:59 settles
+  into its own day. Changing a budget's scope or period discards its counted gateway spend; changing the amount keeps
+  it. The `BUDGET_EXCEEDED` message of a refusal by the counter reads `Budget "<name>" would be exceeded: $X spent or
+  in flight plus $Y for this call is over the $Z limit today|this month; a lower max_tokens lowers the
+  reservation.`; a refusal by a firing state keeps the soft-limit wording, since spend sent from the SDK or over OTLP
+  is measured once a minute and never stopped. In-process callers keep the project, model and user scopes only.

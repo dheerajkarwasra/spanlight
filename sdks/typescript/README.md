@@ -229,6 +229,50 @@ calls.
 once every span ended so far has been delivered, or `false` when the timeout passes first.
 `shutdown()` flushes and then stops the exporter.
 
+### `inject(carrier?)` and `continueTrace(carrier, fn)`
+
+These carry a trace from one process to another as a W3C `traceparent`, so an MCP server, an
+agent you call over HTTP or a queue worker records its spans as children of the caller's span.
+
+`inject` returns a copy of `carrier` with `traceparent` set to the current span. A `traceparent`
+already in the carrier is kept, and outside a span the copy is returned unchanged.
+`continueTrace` runs `fn` so that spans opened inside it become children of the span the
+`traceparent` names, and returns what `fn` returns. A missing or invalid `traceparent` is ignored
+and the next span starts a new trace. The W3C sampled flag is not honoured (every span is
+recorded), and `tracestate` and `baggage` are not used.
+
+MCP carries trace context in `params._meta` under the key `traceparent`
+([SEP-414](https://modelcontextprotocol.io/seps/414-request-meta)):
+
+```ts
+// Client: before sending a request
+params._meta = inject(params._meta);
+
+// Server: while handling it
+const result = await continueTrace(request.params._meta, () => runTool(request.params.arguments));
+```
+
+HTTP headers work the same way. Node's `req.headers` is a plain object; turn a fetch `Headers`
+into one first:
+
+```ts
+// Client
+await withSpan("ask-billing-agent", () =>
+  fetch(url, { method: "POST", body, headers: inject({ "content-type": "application/json" }) }),
+);
+
+// Server
+await continueTrace(Object.fromEntries(request.headers), () => withSpan("answer", () => answer()));
+```
+
+Spans the server records carry no trace name, environment or release, so they never overwrite the
+caller's. The remote parent is a placeholder that is never sent: inside `fn`, `currentSpan()`
+returns it and setters called on it are lost, so open a span of your own first.
+
+Only continue traces from callers you trust. The caller chooses the trace id, so it can attach your
+spans to another trace of the same project. Your spans still land in the project of your own API
+key.
+
 ## Delivery guarantees
 
 A batch goes out when it reaches `batchSize` spans or after `flushIntervalMs`. Failed requests are

@@ -140,9 +140,11 @@ event, `client_disconnected` when your code closed it early, and
   annotations, which are not a count of searches. No count is recorded and the
   span gets `usage.fee_unknown = "openai_chat_web_search"`, so the search fee
   shows as unknown rather than zero.
-- Requests that set `inference_geo` (other than `global`) or `speed: "fast"`
-  are priced at the standard rate and tagged with
-  `usage.pricing_modifier_unknown`, because those modifiers are not modelled.
+- Anthropic data residency and fast mode are priced from the answer's
+  `usage.inference_geo` and `usage.speed` (1.1 times and 2 times the standard
+  rate). When the answer lacks them, the requested option is tagged
+  `usage.pricing_modifier_unknown` and priced at the standard rate, as is an
+  OpenAI call through a regional host (`regional_endpoint`).
 
 ### Batch output
 
@@ -477,6 +479,51 @@ executor.submit(context.run, do_work, item)
 Trace ids are 32 lowercase hex characters and span ids are 16, both
 W3C Trace Context compatible. `spanlight.get_current_trace_id()` returns the
 current trace id so you can put it in your logs.
+
+### `inject(carrier=None) -> dict` and `continue_trace(carrier)`
+
+These carry a trace from one process to another as a W3C `traceparent`, so an MCP server, an
+agent you call over HTTP or a queue worker records its spans as children of the caller's span.
+
+`inject` returns a copy of `carrier` with `traceparent` set to the current span. A
+`traceparent` already in the carrier is kept, and outside a span the copy is returned
+unchanged. `continue_trace` is a `with` and `async with` block: spans opened inside it become
+children of the span the `traceparent` names. A missing or invalid `traceparent` is ignored and
+the next span starts a new trace. The W3C sampled flag is not honoured (every span is recorded),
+and `tracestate` and `baggage` are not used.
+
+MCP carries trace context in `params._meta` under the key `traceparent`
+([SEP-414](https://modelcontextprotocol.io/seps/414-request-meta)):
+
+```python
+# Client: before sending a request
+params["_meta"] = spanlight.inject(params.get("_meta"))
+
+# Server: while handling it
+with spanlight.continue_trace(request.params.meta):
+    result = run_tool(request.params.arguments)
+```
+
+HTTP headers work the same way:
+
+```python
+# Client
+with spanlight.span("ask-billing-agent"):
+    response = httpx.post(url, json=body, headers=spanlight.inject())
+
+# Server (any headers object with .get, such as Starlette's or Flask's)
+with spanlight.continue_trace(request.headers), spanlight.span("answer"):
+    ...
+```
+
+Spans the server records carry no trace name, environment or release, so they never overwrite the
+caller's. The remote parent is a placeholder that is never sent: inside the block
+`get_current_span()` returns it, and setters called on it are lost, so open a span of your own
+first.
+
+Only continue traces from callers you trust. The caller chooses the trace id, so it can attach
+your spans to another trace of the same project. Your spans still land in the project of your
+own API key.
 
 ## Delivery guarantees
 
