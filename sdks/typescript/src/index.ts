@@ -14,6 +14,7 @@ export {
   updateTrace,
   withSpan,
 } from "./client.js";
+export { continueTrace, inject } from "./propagation.js";
 export { wrapAnthropic } from "./providers/anthropic.js";
 export { wrapOpenAI, type WrapOpenAIOptions } from "./providers/openai.js";
 export { Span, type SpanKind, type SpanStatus, type Usage } from "./span.js";

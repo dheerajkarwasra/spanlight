@@ -67,7 +67,8 @@ export interface TraceUpdate {
 }
 
 const DISABLED_VALUES: ReadonlySet<string> = new Set(["false", "0", "no", "off"]);
-const context = new AsyncLocalStorage<Span>();
+/** The current span. Exported for `propagation.ts`; not part of the public API. */
+export const context = new AsyncLocalStorage<Span>();
 
 export class Client {
   readonly exporter: Exporter | undefined;

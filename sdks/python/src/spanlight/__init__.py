@@ -22,6 +22,7 @@ from ._context import get_current_span, get_current_trace_id
 from ._globals import flush, get_client, init, observe, prompts, score, shutdown, span
 from ._prompt_client import PromptClient
 from ._prompts import CompiledPrompt, Prompt, PromptUnavailableError, no_prompt
+from ._propagation import continue_trace, inject
 from ._span import Span, SpanKind, SpanStatus
 from ._templates import InvalidTemplateError, MissingVariablesError, TemplateTooLargeError
 from ._version import __version__
@@ -43,11 +44,13 @@ __all__ = [
     "Spanlight",
     "TemplateTooLargeError",
     "__version__",
+    "continue_trace",
     "flush",
     "get_client",
     "get_current_span",
     "get_current_trace_id",
     "init",
+    "inject",
     "no_prompt",
     "observe",
     "prompts",
