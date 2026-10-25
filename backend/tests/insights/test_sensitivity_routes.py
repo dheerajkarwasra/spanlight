@@ -89,7 +89,7 @@ async def test_list_has_every_check_with_fixed_ones_ungated(
     assert response.status_code == 200, response.text
     items = {item["detector"]: item for item in response.json()["items"]}
     assert list(items) == list(ALL_DETECTORS)
-    assert len(items) == 15
+    assert len(items) == 16
     assert items["error_spike"] == {
         "detector": "error_spike",
         "tunable": True,

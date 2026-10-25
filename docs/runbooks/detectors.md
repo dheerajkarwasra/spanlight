@@ -2,7 +2,7 @@
 
 ## Purpose and when to use
 
-The Doctor's detectors run in the worker every 15 minutes. For each project with a span in the last 24 hours they read the recent spans, apply 15 fixed rules, and open, update or resolve insights (what an insight is and how it is opened, muted and resolved is in [the Doctor guide](../../docs-site/src/content/docs/doctor.mdx); what each detector looks for is in [the detector catalogue](../../docs-site/src/content/docs/reference/detectors.md)). Use this page when:
+The Doctor's detectors run in the worker every 15 minutes. For each project with a span in the last 24 hours they read the recent spans, apply 16 fixed rules, and open, update or resolve insights (what an insight is and how it is opened, muted and resolved is in [the Doctor guide](../../docs-site/src/content/docs/doctor.mdx); what each detector looks for is in [the detector catalogue](../../docs-site/src/content/docs/reference/detectors.md)). Use this page when:
 
 - no insights appear and you expect some, or the Doctor looks late;
 - a detector shows errors in `GET /detector-runs`, or `spanlight_detector_runs_total{outcome="error"}` grows;
@@ -73,7 +73,7 @@ How to read a row:
 | --- | --- |
 | `findings` | How many findings the detector returned, `0` for a clean run. `null` when the run failed. |
 | `error` | `null` on success; otherwise the exception class and the first line of its message, at most 500 characters. A failed detector opens nothing and resolves nothing in that pass, so its insights keep their state. |
-| `truncated` | The project had more than 50 000 LLM spans (or tool spans) in 24 hours, so the detectors saw only the newest 50 000. Short-window detectors are unaffected; the 24-hour ones (`context_growth`, `cache_opportunity`, `client_timeout_misconfigured`, `unpriced_spend`) may miss older calls. |
+| `truncated` | The project had more than 50 000 LLM spans (or tool spans) in 24 hours, so the detectors saw only the newest 50 000. Short-window detectors are unaffected; the 24-hour ones (`context_growth`, `cache_opportunity`, `client_timeout_misconfigured`, `unpriced_spend`, `model_retiring`) may miss older calls. |
 | `duration_ms` | The detector's own time over the loaded data. Every detector should take milliseconds; seconds means a very large project. |
 | `ran_at` | When the row was written. A project with no recent `ran_at` has not been reached: see below. |
 
@@ -147,6 +147,8 @@ Detector thresholds are constants in the code, not settings, so every installati
 A mute applies to one insight, which is one kind for one key (for example `error_spike` for one environment and model). There is no way to turn off one detector for a project. If a whole kind is wrong for you, mute its insights, or tell us why the rule is wrong.
 
 If a detector keeps firing where you believe it should not (the evidence traces do not show the problem), keep the example traces and the insight's evidence and report it: the rule, not your data, may need to change.
+
+`model_retiring` reads a table of the retirement dates Anthropic and OpenAI have announced, bundled with each release (`backend/app/pricing/retirements.py`). A new announcement reaches it with the next upgrade. If a finding names a date the provider has since moved, or a model the provider has not retired, check the source page named in the table and report it. Calls to a model past its date keep the insight critical until they stop.
 
 ## Disable the detectors
 

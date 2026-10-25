@@ -48,6 +48,9 @@ The docs site builds its Prices page from the current snapshot only
 and the `_fee(...)` calls of `SEED_FEES`. Keep them literal so the parser can
 read them; historical snapshots are not rendered.
 
+When refreshing prices, refresh the announced retirement dates in `app.pricing.retirements`
+from the providers' deprecation pages too (the `model_retiring` detector reads them).
+
 Sources: https://platform.claude.com/docs/en/about-claude/pricing (and the
 owner's copy of the pricing table, 2026-10-15), https://ai.google.dev/gemini-api/docs/pricing
 (checked 2026-10-15) and https://developers.openai.com/api/docs/pricing with the

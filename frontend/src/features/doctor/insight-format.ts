@@ -47,6 +47,7 @@ const KIND_LABELS: Record<string, string> = {
   client_timeout_misconfigured: "Client timeout too short",
   unpriced_spend: "Unpriced spend",
   provider_incident: "Provider incident",
+  model_retiring: "Model retiring",
 };
 
 export const INSIGHT_KINDS: readonly string[] = Object.keys(KIND_LABELS);

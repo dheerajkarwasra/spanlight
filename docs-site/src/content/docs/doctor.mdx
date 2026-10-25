@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-{/* Sources: frontend/src/features/doctor/last-checked-pill.tsx, frontend/src/features/doctor/insight-format.ts, frontend/src/features/doctor/insight-empty.tsx, frontend/src/features/doctor/feedback-state.ts, frontend/src/features/doctor/precision-format.ts, frontend/src/features/doctor/incident-citation.ts, backend/app/api/v1/insight_feedback.py, backend/app/insights/precision.py, backend/app/insights/detectors/provider_incident.py, backend/app/insights/detectors/baselines.py, backend/app/ingest/error_class.py, backend/app/cli_doctor.py, docs/runbooks/detectors.md, backend/app/insights/sensitivity.py, frontend/src/features/doctor/sensitivity-tab.tsx, frontend/src/features/doctor/sensitivity-dialog.tsx */}
+{/* Sources: frontend/src/features/doctor/last-checked-pill.tsx, frontend/src/features/doctor/insight-format.ts, frontend/src/features/doctor/insight-empty.tsx, frontend/src/features/doctor/feedback-state.ts, frontend/src/features/doctor/precision-format.ts, frontend/src/features/doctor/incident-citation.ts, backend/app/api/v1/insight_feedback.py, backend/app/insights/precision.py, backend/app/insights/detectors/provider_incident.py, backend/app/insights/detectors/baselines.py, backend/app/ingest/error_class.py, backend/app/cli_doctor.py, docs/runbooks/detectors.md, backend/app/insights/sensitivity.py, backend/app/insights/detectors/model_retiring.py, backend/app/pricing/retirements.py, frontend/src/features/doctor/sensitivity-tab.tsx, frontend/src/features/doctor/sensitivity-dialog.tsx */}
 
 import CatalogueRedirect from '../../components/CatalogueRedirect.astro';
 import NextSteps from '../../components/NextSteps.astro';
@@ -15,7 +15,7 @@ import Prerequisites from '../../components/Prerequisites.astro';
 
 The **Doctor** reads the traces Spanlight already stores and opens an **insight** when it finds a pattern that usually costs money, time or correctness: a client that hammers a failing endpoint, a timeout that cuts off healthy calls, a conversation that grows without bound. Every insight carries the measured evidence, the layer where the problem lives, a suggested fix and a way to check that the fix worked.
 
-The Doctor is deterministic. Fifteen detectors apply fixed rules to your spans; no language model decides whether something is a problem. An optional, clearly labelled [explanation from Claude](#explain-with-claude) can be asked for on demand, and that is the only place a model is involved.
+The Doctor is deterministic. Sixteen detectors apply fixed rules to your spans; no language model decides whether something is a problem. An optional, clearly labelled [explanation from Claude](#explain-with-claude) can be asked for on demand, and that is the only place a model is involved.
 
 The thresholds are constants in the code, the same for every project and not tuned to yours, so a finding can be a false alarm for your traffic; the evidence traces are there so you can check.
 
@@ -63,7 +63,7 @@ The worker runs every detector over every project that received a span in the la
 
 - **A run is bounded.** One pass starts no new project after 40 seconds, and one project may take at most 30 seconds. A project the pass did not reach goes first in the next one. A detector that raises an error is recorded and skipped; the others still run.
 - **Nothing is invented from thin data.** Every detector has a minimum sample size and returns nothing below it. A baseline needs at least 100 calls in the same slice; without one, the spike detectors say nothing.
-- **Faults and cache hits are not traffic.** Calls that the [Integration Lab](/docs/gateway/lab/) faulted on purpose are left out of the detectors that judge the health of your traffic or your provider (`error_spike`, `latency_regression`, `cost_spike`, `rate_limit_pressure`, `provider_incident`, `unpriced_spend`). Gateway cache hits never reached a provider and are left out of `retry_storm`, `cache_opportunity` and `unpriced_spend`. The detectors that judge client behaviour (the lab findings) use the faulted calls on purpose. Calls refused by your gateway key's own rate limit never reached a provider, so `error_spike` and `rate_limit_pressure` leave them out too.
+- **Faults and cache hits are not traffic.** Calls that the [Integration Lab](/docs/gateway/lab/) faulted on purpose are left out of the detectors that judge the health of your traffic or your provider (`error_spike`, `latency_regression`, `cost_spike`, `rate_limit_pressure`, `provider_incident`, `unpriced_spend`, `model_retiring`). Gateway cache hits never reached a provider and are left out of `retry_storm`, `cache_opportunity`, `unpriced_spend` and `model_retiring`. The detectors that judge client behaviour (the lab findings) use the faulted calls on purpose. Calls refused by your gateway key's own rate limit never reached a provider, so `error_spike` and `rate_limit_pressure` leave them out too.
 - **Evidence is real traces.** Each insight lists up to 20 trace ids that contributed to the finding, most recent first, and the numbers behind it. Open them to confirm the finding.
 
 Operators can switch the schedule off with `DETECTORS_ENABLED` (see [Configuration](/docs/configuration/)) and read each run's outcome at `GET /api/v1/projects/{project_id}/detector-runs`; see the [detectors runbook](/docs/runbooks/detectors/).
@@ -130,7 +130,7 @@ Each insight page also shows its check's **track record** from the same votes, f
 
 ## Sensitivity
 
-When a check opens too many findings you consider wrong, you can ask it for stronger signals instead of muting each one. The **Sensitivity** tab of the Doctor (`?tab=sensitivity`), also linked from the foot of the Precision tab as "Too many wrong findings? Change sensitivity", lists all fifteen checks with their setting and the number of their findings seen in the last 30 days at that setting.
+When a check opens too many findings you consider wrong, you can ask it for stronger signals instead of muting each one. The **Sensitivity** tab of the Doctor (`?tab=sensitivity`), also linked from the foot of the Precision tab as "Too many wrong findings? Change sensitivity", lists all sixteen checks with their setting and the number of their findings seen in the last 30 days at that setting.
 
 Eleven checks have three settings:
 
@@ -156,7 +156,7 @@ Each setting is a minimum on one reading the check already records:
 | `client_timeout_misconfigured` | Aborted calls | 25 or more | 50 or more |
 | `retry_after_ignored` | Early retries | 5 or more | 10 or more |
 
-A stricter setting can only remove findings: the check's own rule still decides first. A finding whose reading is missing is never hidden. The other four checks show **Fixed** ("One setting"): `provider_incident` is organization-wide, `unpriced_spend` must never be hidden or cost would look complete, and for `truncated_stream_accepted` and `unsupported_parameter_retried` one occurrence is the whole signal.
+A stricter setting can only remove findings: the check's own rule still decides first. A finding whose reading is missing is never hidden. The other five checks show **Fixed** ("One setting"): `provider_incident` is organization-wide, `unpriced_spend` must never be hidden or cost would look complete, for `truncated_stream_accepted` and `unsupported_parameter_retried` one occurrence is the whole signal, and for `model_retiring` one call to a model that is about to stop working is enough.
 
 **Changing a setting.** Admins and owners select **Change** on a check. The dialog lists the three settings with their minimums and a preview table of how many of the findings seen in the last 7 and 30 days each setting would have kept. The preview counts the findings the check saw in that window, whatever their status, at the strongest reading each one reached, so it shows what a stricter setting would have kept. When the preview cannot load you can still save. Members and viewers see the settings with the note "Only admins and owners can change sensitivity."
 
@@ -167,6 +167,14 @@ The same settings are available over the API under `/api/v1/projects/{project_id
 ## Provider incidents and status pages
 
 When `provider_incident` fires, it looks for an incident on the provider's own status page that overlaps its 30-minute window (allowing 15 minutes after the provider marked it resolved) and that touched the provider's API. The summary then ends with "Matches the provider's status page incident" and the incident's title and impact, and the insight page shows a line "Matches the provider’s status page incident:" with the title linked to the provider's page. Without one the summary ends with "No matching incident on the provider's status page." When the server does not poll status pages, the insight page says the feeds are off, so no incident could be matched. The citation only explains a finding: the thresholds, the severity and when the insight opens or resolves are the same with or without it. See [Status page incidents](/docs/guides/provider-health/#status-page-incidents).
+
+## Retiring models
+
+`model_retiring` warns when a project still calls a model whose provider has announced a retirement date. It reads the LLM calls of the last 24 hours and looks each model up in a table of the dates Anthropic and OpenAI have announced on their deprecation pages, bundled with Spanlight and refreshed with each release. One call is enough. The insight opens when the date is 60 days away or less, as a warning, and turns critical 14 days before the date; it stays critical after the date, when calls to the model fail. The summary names the replacement the provider recommends, and the gateway routes and trace names with the most calls to the model (up to five of each).
+
+- Only announced dates count. Anthropic's "Not sooner than" dates for active models are not retirement dates and never open an insight.
+- A dated snapshot matches its own row (`claude-sonnet-4-5-20250929`), and an alias matches the provider's alias row, with a snapshot suffix (`-20250929`, `-2025-08-07`) as in pricing. A name ending in `-latest` moves to newer snapshots, so it matches only a row published under that exact name.
+- Only calls to the provider's own API match. Amazon Bedrock and Google Cloud set their own retirement schedules, so calls through them never open this insight.
 
 ## The health score
 
@@ -197,7 +205,7 @@ Each insight page has an **Explain with Claude** section, closed by default, who
 
 ## The catalogue
 
-The fifteen detectors, with the layer, certainty and severity of each and the fix and check for every finding, are listed in the [detector catalogue](/docs/reference/detectors/).
+The sixteen detectors, with the layer, certainty and severity of each and the fix and check for every finding, are listed in the [detector catalogue](/docs/reference/detectors/).
 
 ## Trying it on purpose
 
@@ -245,7 +253,7 @@ Open **Doctor** after your project has had traffic for 15 minutes or more. The p
 
 <NextSteps
   links={[
-    { title: 'Detector catalogue', href: '/docs/reference/detectors/', description: 'What each of the fifteen detectors reads and the fix it suggests.' },
+    { title: 'Detector catalogue', href: '/docs/reference/detectors/', description: 'What each of the sixteen detectors reads and the fix it suggests.' },
     { title: 'Alert rules and channels', href: '/docs/alerts/', description: 'Get told when error rate, latency, volume or cost crosses a line.' },
     { title: 'Alert webhooks', href: '/docs/webhooks/', description: 'Signed requests for alerts, budgets and critical insights.' },
     { title: 'Run the Doctor', href: '/docs/runbooks/detectors/', description: 'Detector runs, stuck projects and the explanation budget.' },

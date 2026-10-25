@@ -46,6 +46,7 @@ def test_fixed_checks_are_not_tunable() -> None:
         "unpriced_spend",
         "truncated_stream_accepted",
         "unsupported_parameter_retried",
+        "model_retiring",
     }
     assert set(ALL_DETECTORS) - TUNABLE == fixed
     assert set(GATES) == TUNABLE

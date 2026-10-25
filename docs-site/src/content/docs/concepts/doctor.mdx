@@ -25,7 +25,7 @@ Three choices shape it.
 
 ### Detectors, windows and baselines
 
-There are fifteen detectors, one per kind of problem. A detector is a pure function: it receives the spans of its **window** and returns findings. It runs no queries, reads no clock and calls no model, which is why each one can be tested on a handful of rows.
+There are sixteen detectors, one per kind of problem. A detector is a pure function: it receives the spans of its **window** and returns findings. It runs no queries, reads no clock and calls no model, which is why each one can be tested on a handful of rows.
 
 Every 15 minutes the worker takes each project that received a span in the last 24 hours, loads the last 24 hours of its LLM and tool spans once, and gives each detector the slice that is its window. The windows range from 15 minutes to 24 hours.
 
@@ -88,7 +88,7 @@ Only in one place, and only when someone asks. **Explain with Claude** sends an 
 
 <CardGrid>
   <LinkCard title="The Doctor guide" href="/docs/doctor/" description="Run it, read an insight, mute it and ask for an explanation." />
-  <LinkCard title="Detector catalogue" href="/docs/reference/detectors/" description="All fifteen detectors, their thresholds, fixes and checks." />
+  <LinkCard title="Detector catalogue" href="/docs/reference/detectors/" description="All sixteen detectors, their thresholds, fixes and checks." />
   <LinkCard title="Integration Lab" href="/docs/gateway/lab/" description="Reproduce client failures on purpose." />
   <LinkCard title="Detectors runbook" href="/docs/runbooks/detectors/" description="Detector runs, stuck projects and the explanation budget." />
 </CardGrid>

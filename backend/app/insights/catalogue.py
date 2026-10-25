@@ -260,6 +260,20 @@ KIND_INFO: dict[str, KindInfo] = {
             "The 5xx share for the provider falls under 20 %; the insight resolves after 24 "
             "hours without a recurrence.",
         ),
+        KindInfo(
+            "model_retiring",
+            "Model retiring",
+            L.PROVIDER,
+            C.MEASURED,
+            S.WARNING,
+            "{model} retires on {retires_on}",
+            "{calls} in 24 hours went to {model}, which {provider} retires on {retires_on} "
+            "({retires_in}); calls to it fail after that date. The provider recommends "
+            "{replacement}. Routes: {routes}. Traces: {trace_names}.",
+            "Move these calls to the recommended replacement before the date, and run an "
+            "experiment on a dataset first to compare quality and cost.",
+            "No calls to the model in the next 24 hours.",
+        ),
     )
 }
 

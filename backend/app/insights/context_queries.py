@@ -57,9 +57,9 @@ _GATEWAY_COLUMNS = ",\n".join(
 _LLM_SPANS = text(
     f"""
     SELECT s.trace_id, s.span_id, t.session_id, t.external_user_id, t.environment, t.release,
-           s.started_at, s.duration_ms, s.status, s.error_class, s.provider, s.model,
-           s.input_tokens, s.output_tokens, s.cached_tokens, s.cost_usd, s.request_hash,
-           s.finish_reason, s.status_message, s.rate_limit_kind,
+           t.name AS trace_name, s.started_at, s.duration_ms, s.status, s.error_class,
+           s.provider, s.model, s.input_tokens, s.output_tokens, s.cached_tokens, s.cost_usd,
+           s.request_hash, s.finish_reason, s.status_message, s.rate_limit_kind,
            {_GATEWAY_COLUMNS},
            EXISTS (
                SELECT 1 FROM jsonb_object_keys(s.attributes) AS attribute_key
@@ -210,6 +210,7 @@ def _llm_row(values: RowMapping) -> LlmSpanRow:
         status_message=values["status_message"],
         gateway=gateway_attrs(gateway_values, is_gateway=bool(values["is_gateway"])),
         rate_limit_kind=values["rate_limit_kind"],
+        trace_name=blank_to_none(values["trace_name"]),
     )
 
 

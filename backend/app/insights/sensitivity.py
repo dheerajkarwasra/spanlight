@@ -2,11 +2,12 @@
 
 A gate runs after the detector's own rule, so High recall (no row, the default) is exactly the
 detector's behaviour and the stricter settings only drop findings. The value gated on is one the
-detector already writes into `Finding.evidence.metrics`. Four checks have no dial and stay fixed:
+detector already writes into `Finding.evidence.metrics`. Five checks have no dial and stay fixed:
 `provider_incident` (organization-wide), `unpriced_spend` (hiding it would make cost look
 complete), `truncated_stream_accepted` and `unsupported_parameter_retried` (one round is the
-whole signal). A finding whose metric is missing, `None` or unreadable always passes: nothing is
-hidden on missing data.
+whole signal), and `model_retiring` (one call to a model about to stop working is enough). A
+finding whose metric is missing, `None` or unreadable always passes: nothing is hidden on missing
+data.
 
 Metrics arrive as `Decimal` and `int` from a detector, and as strings and ints from stored
 evidence (decimals are stored as strings), so `strength` reads both.

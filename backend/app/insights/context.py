@@ -53,6 +53,7 @@ class LlmSpanRow:
     gateway: GatewayAttrs | None = None
     # `gateway` when Spanlight's own key limiter refused the call: no provider was asked.
     rate_limit_kind: str | None = None
+    trace_name: str | None = None
 
     @property
     def fault_scenario(self) -> str | None:

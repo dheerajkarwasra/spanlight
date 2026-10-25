@@ -33,6 +33,7 @@ from app.insights.detectors import (
     cost_spike,
     error_spike,
     latency_regression,
+    model_retiring,
     provider_incident,
     rate_limit_pressure,
     retry_after_ignored,
@@ -71,6 +72,7 @@ DETECTORS: tuple[Detector, ...] = (
     client_timeout_misconfigured.detector,
     unpriced_spend.detector,
     provider_incident.detector,
+    model_retiring.detector,
 )
 """Every detector, in catalogue order."""
 

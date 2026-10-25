@@ -1,11 +1,11 @@
 ---
 title: Detector catalogue
-description: The Doctor's fifteen detectors, with the layer, certainty and severity of each, what triggers it, and the fix and check for every finding.
+description: The Doctor's sixteen detectors, with the layer, certainty and severity of each, what triggers it, and the fix and check for every finding.
 ---
 
 The [Doctor](/docs/doctor/) runs these detectors over your traces. This page lists each one with what it reads, when it fires, and the fix and check it suggests.
 
-Fifteen kinds, in five groups. **Where it fails** names the layer an insight points at: `client` is how your code calls the API, `request` is what it sends, `agent` is tool orchestration, `provider` is the model provider, `platform` is Spanlight's own setup, and `traffic` is a symptom whose cause is still open. **Certainty** is *Measured* when the insight restates numbers Spanlight observed and *Inferred* when a pattern strongly suggests a cause that you should confirm in the traces.
+Sixteen kinds, in five groups. **Where it fails** names the layer an insight points at: `client` is how your code calls the API, `request` is what it sends, `agent` is tool orchestration, `provider` is the model provider, `platform` is Spanlight's own setup, and `traffic` is a symptom whose cause is still open. **Certainty** is *Measured* when the insight restates numbers Spanlight observed and *Inferred* when a pattern strongly suggests a cause that you should confirm in the traces.
 
 | Kind | Label | Layer | Certainty | Severity |
 | --- | --- | --- | --- | --- |
@@ -24,6 +24,7 @@ Fifteen kinds, in five groups. **Where it fails** names the layer an insight poi
 | `client_timeout_misconfigured` | Client timeout too short | client | Inferred | warning |
 | `unpriced_spend` | Unpriced spend | platform | Measured | info |
 | `provider_incident` | Provider incident | provider | Measured | warning, critical at 50 % |
+| `model_retiring` | Model retiring | provider | Measured | warning, critical 14 days before the date |
 
 In the entries below, "calls" means LLM spans, a "window" ends at the moment the detector runs, and shares and rates are shown to one decimal place in the insight text.
 
@@ -218,6 +219,14 @@ slow = client.with_options(timeout=180.0)
 - **Status page:** the summary names the provider's status page incident that overlaps the window and touched its API (with 15 minutes of grace after it was resolved), or says there is none. The citation never changes when the insight opens, its severity or when it resolves. The provider is matched by its exact name, such as `openai`; see [Status page incidents](/docs/guides/provider-health/#status-page-incidents).
 - **Fix:** check the provider's status page, add a fallback target on another provider to the gateway route, and keep retries bounded.
 - **Verify:** the 5xx share for the provider falls under 20 %; the insight resolves after 24 hours without a recurrence.
+
+### `model_retiring`: calls go to a model that is about to retire
+
+- **Reads:** calls of the last 24 hours, matched against a table of the retirement dates Anthropic and OpenAI have announced, bundled with each Spanlight release.
+- **Fires when:** at least one call went to a model that retires within 60 days. Warning; critical from 14 days before the date, and after it, when calls to the model fail.
+- **Guards:** lab faults and cache hits are not counted. Only the provider's own API matches: a model served through Amazon Bedrock or Google Cloud follows that platform's schedule. A model name ending in `-latest` moves to newer snapshots, so it never matches a dated snapshot's date. Anthropic's "not sooner than" dates for active models are not retirement dates and are never used.
+- **Fix:** move the calls to the replacement the provider recommends (named in the insight, with the routes and trace names that send the most calls), and run an [experiment](/docs/experiments/) on a dataset first to compare quality and cost.
+- **Verify:** no calls to the model in the next 24 hours.
 
 ## The request itself
 
