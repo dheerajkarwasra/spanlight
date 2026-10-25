@@ -152,6 +152,29 @@ describe("ActivationChecklist on the full rail", () => {
     });
   });
 
+  it("brings the tile back closed when the server refuses the hide", async () => {
+    const setChecklist = signIn();
+    let refuse: (error: Error) => void = () => undefined;
+    setChecklist.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        refuse = reject;
+      }),
+    );
+    renderApp(`/${ORG_ID}/proj_1/alerts`);
+    const rail = await railOf();
+    await userEvent.click(await within(rail).findByRole("button", { name: /Get set up/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Get set up" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Hide checklist" }));
+    await waitFor(() => {
+      expect(within(rail).queryByRole("button", { name: /Get set up/ })).toBeNull();
+    });
+
+    refuse(new Error("Forbidden"));
+
+    expect(await within(rail).findByRole("button", { name: /Get set up/ })).toBeVisible();
+    expect(screen.queryByRole("dialog", { name: "Get set up" })).toBeNull();
+  });
+
   it("moves focus to the account menu when the read on open finds every step done", async () => {
     signIn();
     vi.mocked(projectsApi.activation).mockResolvedValueOnce(HALF).mockResolvedValue(ALL);

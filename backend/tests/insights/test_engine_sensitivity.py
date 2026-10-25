@@ -108,3 +108,17 @@ async def test_peak_strength_keeps_the_maximum(
         await bind_project(db, project_id)
         row = (await db.execute(select(Insight.peak_strength, Insight.occurrences))).one()
     assert row == (Decimal("0.3000"), 2)
+
+
+async def test_peak_strength_caps_a_reading_too_large_to_store(
+    session_factory: Sessions, settings: Settings
+) -> None:
+    # numeric(20, 4) overflows above 1e16; the cap keeps the insight instead of failing the pass.
+    project_id = await _project(session_factory)
+    huge = FakeErrorSpike({"a": "1e20"})
+    assert await _run(session_factory, settings, project_id, huge, NOW) == 1
+
+    async with session_factory() as db, db.begin():
+        await bind_project(db, project_id)
+        peak = await db.scalar(select(Insight.peak_strength))
+    assert peak == Decimal("9999999999999999")

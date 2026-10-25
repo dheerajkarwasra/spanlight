@@ -30,6 +30,10 @@ export function isStricter(from: SensitivityLevel, to: SensitivityLevel): boolea
 }
 
 const BASELINE = " vs baseline";
+// Each gate's unit, pinned to the check's id (backend `app/insights/sensitivity.py` GATES) so a
+// reworded label can't change how its gate reads.
+const PERCENT = new Set(["error_spike", "rate_limit_pressure", "truncated_outputs"]);
+const VS_BASELINE = new Set(["cost_spike", "latency_regression"]);
 
 /** The gate as a value and as a phrase; null at High recall and for a fixed check. */
 function gateParts(item: Sensitivity, level: SensitivityLevel) {
@@ -39,13 +43,14 @@ function gateParts(item: Sensitivity, level: SensitivityLevel) {
   const label = item.metric_label;
   const gate = Number(item.gates[level]);
   // Shares and rates are stored as fractions (0.25); ratios are against the detector's baseline.
-  if (/\b(rate|share)\b/.test(label)) {
+  if (PERCENT.has(item.detector)) {
     const value = `${formatInteger(gate * 100) ?? ""}\u00a0%`;
     return { value, phrase: `${label} ${value}` };
   }
-  if (label.endsWith(BASELINE)) {
+  if (VS_BASELINE.has(item.detector)) {
     const value = `${String(gate)}× baseline`;
-    return { value, phrase: `${label.slice(0, -BASELINE.length)} ${value}` };
+    const metric = label.endsWith(BASELINE) ? label.slice(0, -BASELINE.length) : label;
+    return { value, phrase: `${metric} ${value}` };
   }
   const count = formatInteger(gate) ?? String(gate);
   return { value: `${count} ${label}`, phrase: `${label} ${count}` };

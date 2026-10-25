@@ -55,6 +55,10 @@ export function ActivationChecklist({
 
   const activation = activationQuery.data;
   if (!activation || !checklistVisible({ ...gate, activation })) {
+    // Close with the tile, so a refused hide that brings the tile back doesn't reopen it.
+    if (open) {
+      setOpen(false);
+    }
     return null;
   }
   const done = doneCount(activation);

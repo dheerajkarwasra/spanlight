@@ -178,6 +178,42 @@ async def test_an_eval_score_is_an_evaluation(
     assert await activation(workspace) == {**NOTHING_DONE, "evaluation": True}
 
 
+async def test_orphaned_scores_and_another_projects_scores_are_not_an_evaluation(
+    session_factory: async_sessionmaker[AsyncSession],
+    browser_factory: BrowserFactory,
+    workspace: Workspace,
+) -> None:
+    # A human score whose author was deleted, an eval score whose run was pruned (both SET NULL),
+    # and a real human score in someone else's project.
+    other = await create_workspace(await browser_factory("grace@example.com"))
+    grace_id = uuid.UUID((await other.owner.get("/api/v1/auth/me")).json()["user"]["id"])
+    async with session_factory() as db:
+        await bypass_rls(db)
+        for project_id, source, author in (
+            (workspace.project_id, "human", None),
+            (workspace.project_id, "eval", None),
+            (other.project_id, "human", grace_id),
+        ):
+            await db.execute(
+                text(
+                    "INSERT INTO scores (id, project_id, trace_id, name, data_type, value, "
+                    "source, author_user_id) VALUES (:id, :project_id, :trace_id, 'tone', "
+                    "'numeric', 1, CAST(:source AS score_source), :author)"
+                ),
+                {
+                    "id": uuid.uuid4(),
+                    "project_id": uuid.UUID(project_id),
+                    "trace_id": new_trace_id(),
+                    "source": source,
+                    "author": author,
+                },
+            )
+        await db.commit()
+
+    assert await activation(workspace) == NOTHING_DONE
+    assert (await activation(other))["evaluation"] is True
+
+
 async def test_another_tenants_project_is_a_404(
     browser_factory: BrowserFactory, workspace: Workspace
 ) -> None:

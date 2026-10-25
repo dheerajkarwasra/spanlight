@@ -94,6 +94,17 @@ def strength(kind: str, metrics: Mapping[str, Any]) -> Decimal | None:
     return None if key is None else _decimal(metrics.get(key))
 
 
+# The largest value `insights.peak_strength numeric(20, 4)` holds; a larger reading would fail
+# the upsert and drop the detector's findings. Every gate is far below it, so the cap hides nothing.
+PEAK_STRENGTH_MAX = Decimal("9999999999999999")
+
+
+def stored_strength(kind: str, metrics: Mapping[str, Any]) -> Decimal | None:
+    """`strength` capped to what `insights.peak_strength` can store."""
+    reading = strength(kind, metrics)
+    return None if reading is None else min(reading, PEAK_STRENGTH_MAX)
+
+
 def gate_for(kind: str, level: Level) -> Decimal | None:
     """The kind's gate at `level`; None at High recall and for a fixed or unknown check."""
     gate = GATES.get(kind)

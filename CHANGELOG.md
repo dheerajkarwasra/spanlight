@@ -48,6 +48,9 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 ### Fixed
 
+- **A Doctor reading too large to store no longer drops the finding.** A reading above 10^16 (for example spend against a near-zero baseline) failed the insight write; the stored peak is now capped there, below every sensitivity gate.
+- **The setup checklist reads only the project's own rows through indexes.** Its first-trace and session checks could scan the whole `traces` table for a project with no sessions, and its evaluation check read every project's human scores and evaluator runs.
+- **A refused "Hide checklist" brings the tile back closed**, not with its popover open again.
 - **Item metadata is kept when adding items as JSON or uploading a file.** Both paths stored `{}` instead of the metadata sent; editing an item's metadata afterwards already worked.
 
 ### Upgrading
@@ -57,6 +60,8 @@ Run `spanlight migrate` after upgrading. 1010 adds the copy columns to `experime
 1015 keeps the per-user daily stats (`user_stats_daily`) per environment: it adds a nullable `environment` column, swaps the primary key for a `UNIQUE NULLS NOT DISTINCT` key and re-derives every stored day that still has traces, per environment. The re-derive runs inside the migration and holds the `user_stats_daily` lock until it finishes, which can take minutes on a large install: the Users page waits meanwhile, and ingestion keeps running. During a rolling deploy, an older worker's user stats refresh fails for one pass (the next pass on the new version writes the day), and an older api can show a user's day once per environment until the new api is live. Its downgrade sums each user's day back into one row.
 
 1018 creates `detector_sensitivity` (one row per project and check whose setting is not the default, with row-level security), adds the nullable `insights.peak_strength` (catalog only; findings from before it are counted from their stored evidence) and the `insight.sensitivity_change` audit action. 1019 adds the nullable `users.activation_checklist_dismissed_at` (catalog only). The table and column changes touch only the catalog, and each migration runs in one transaction under a 5 s lock timeout. Re-adding the audit action CHECK in 1018 scans `audit_events` once under an ACCESS EXCLUSIVE lock, so audited writes (logins included) wait until the scan finishes; on a large audit log, plan the upgrade off-peak. The 1018 downgrade drops the table and the column, losing every setting, and keeps existing `insight.sensitivity_change` audit events by restoring the previous action list as `NOT VALID`, since the audit log is append-only; the 1019 downgrade forgets every dismissal, so the checklist shows again.
+
+1020 builds the partial index `scores_project_source_idx` (human and evaluator scores, by project) `CONCURRENTLY`, which does not block reads or writes but waits for transactions already open on `scores` to finish; if the build is interrupted, running `spanlight migrate` again recovers. Its downgrade drops the index, and the setup checklist's evaluation check then reads the whole `scores` table again.
 
 ## [0.7.0] - 2026-10-20
 

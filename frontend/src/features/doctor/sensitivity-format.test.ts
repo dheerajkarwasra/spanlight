@@ -78,6 +78,22 @@ describe("gateText", () => {
     expect(gateValue(context, "balanced")).toBe("50,000 last call input tokens");
   });
 
+  it("takes the unit from the check, not from words in its label", () => {
+    // A count whose label says "rate" stays a count; a share reworded without "share" stays a %.
+    const retries = item({
+      detector: "retry_storm",
+      metric_label: "retry rate burst",
+      gates: { balanced: "10", high_precision: "20" },
+    });
+    expect(gateValue(retries, "balanced")).toBe("10 retry rate burst");
+    const truncated = item({
+      detector: "truncated_outputs",
+      metric_label: "calls cut short",
+      gates: { balanced: "0.20", high_precision: "0.30" },
+    });
+    expect(gateValue(truncated, "high_precision")).toBe("30 %");
+  });
+
   it("says a fixed check has one setting", () => {
     const fixed = item({
       detector: "unpriced_spend",

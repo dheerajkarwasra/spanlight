@@ -39,7 +39,7 @@ from app.insights import lifecycle_queries as queries
 from app.insights.catalogue import render
 from app.insights.fingerprint import fingerprint
 from app.insights.schemas import Finding, InsightStatus
-from app.insights.sensitivity import strength
+from app.insights.sensitivity import stored_strength
 from app.services.audit import record_audit
 
 MAX_MUTE = timedelta(days=90)
@@ -120,7 +120,7 @@ def _new_row(project_id: uuid.UUID, finding: Finding, now: datetime) -> dict[str
         "first_seen_at": now,
         "last_seen_at": now,
         "occurrences": 1,
-        "peak_strength": strength(finding.kind, finding.evidence.metrics),
+        "peak_strength": stored_strength(finding.kind, finding.evidence.metrics),
     }
 
 
