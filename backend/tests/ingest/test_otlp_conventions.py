@@ -241,6 +241,31 @@ async def test_gen_ai_execute_tool_is_tool_not_llm(
     assert "usage.unreported_reason" not in stored["tool"].attributes
 
 
+async def test_gen_ai_tool_call_arguments_and_result_are_the_payloads(
+    client: httpx.AsyncClient,
+    workspace: Workspace,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # A 100 KB result left in attributes broke the 64 KB attributes cap and rejected the span.
+    result = {"page": "x" * 100_000}
+    span = otlp_json_span(
+        {
+            "gen_ai.operation.name": "execute_tool",
+            "gen_ai.tool.name": "fetch",
+            "gen_ai.tool.call.arguments": json.dumps({"url": "https://example.com"}),
+            "gen_ai.tool.call.result": json.dumps(result),
+        },
+        name="tool",
+    )
+
+    stored = await _stored(client, workspace, session_factory, span)
+
+    assert stored["tool"].input == {"url": "https://example.com"}
+    assert stored["tool"].output == result
+    assert "gen_ai.tool.call.arguments" not in stored["tool"].attributes
+    assert "gen_ai.tool.call.result" not in stored["tool"].attributes
+
+
 async def test_embeddings_output_implied_attribute(
     client: httpx.AsyncClient,
     workspace: Workspace,

@@ -66,6 +66,7 @@ These are read the same way whatever the convention.
 | Web searches | `spanlight.usage.web_search_requests`. OpenTelemetry has no attribute for it. |
 | Input | `gen_ai.input.messages`, else `gen_ai.prompt`; when neither holds a value, the flattened `gen_ai.prompt.<N>.*` attributes that older exporter releases write (see [Flattened messages](#flattened-messages)). When the input is a list of messages and the span has `gen_ai.system_instructions`, the instructions are added first, as `{"role": "system", "parts": …}`, so the stored input is complete. |
 | Output | `gen_ai.output.messages`, else `gen_ai.completion`; when neither holds a value, the flattened `gen_ai.completion.<N>.*` attributes |
+| Tool call input and output | On an `execute_tool` span with no input or output from the messages above: `gen_ai.tool.call.arguments` as the input and `gen_ai.tool.call.result` as the output |
 | Operation (`spanlight.operation`) | `gen_ai.operation.name`, as sent |
 | Finish reason | `gen_ai.completion.0.finish_reason`, the first flattened completion's reason (Traceloop). The other `gen_ai.*` finish reason attributes are read as described in [Finish reason](#finish-reason). |
 | Time to first token | `gen_ai.client.operation.time_to_first_chunk`, else `gen_ai.response.time_to_first_chunk`, both in seconds, multiplied by 1000 |
@@ -181,7 +182,7 @@ A content attribute that holds JSON text, such as `gen_ai.input.messages`, `inpu
 
 Every content attribute a convention defines is removed from the span's attributes when it is present, whether or not it was the one read. For example, an OpenInference span with both `llm.input_messages.*` and `input.value` stores the messages as its input and keeps neither attribute. The prompt text is therefore stored only as the span's input and output, where secrets are redacted, large values are cut and the project's payload capture setting applies; see [Limits](/docs/reference/limits/). The content attributes are:
 
-- `gen_ai`: `gen_ai.input.messages`, `gen_ai.prompt`, `gen_ai.output.messages`, `gen_ai.completion` and `gen_ai.system_instructions`, and the flattened `gen_ai.prompt.*` and `gen_ai.completion.*` attributes when they are read.
+- `gen_ai`: `gen_ai.input.messages`, `gen_ai.prompt`, `gen_ai.output.messages`, `gen_ai.completion` and `gen_ai.system_instructions`, the flattened `gen_ai.prompt.*` and `gen_ai.completion.*` attributes when they are read, and `gen_ai.tool.call.arguments` and `gen_ai.tool.call.result`.
 - `openinference`: `input.value`, `output.value` and the flattened `llm.input_messages.*` and `llm.output_messages.*` attributes. `input.mime_type` and `output.mime_type` are kept.
 - `vercel_ai`: `ai.prompt.messages`, `ai.prompt`, `ai.toolCall.args`, `ai.value`, `ai.values`, `ai.response.text`, `ai.response.toolCalls`, `ai.response.object` and `ai.toolCall.result`.
 - `traceloop`: `traceloop.entity.input` and `traceloop.entity.output`.

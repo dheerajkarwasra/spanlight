@@ -11,6 +11,7 @@ owns the tier spellings and the web search count. `spanlight.metadata.*` is not 
 from collections.abc import Mapping
 from typing import Any
 
+from app.db.models.telemetry import SpanKind
 from app.ingest.conventions.flatten import unflatten
 from app.ingest.conventions.kinds import operation_kind
 from app.ingest.conventions.read import as_text, first, has_prefix
@@ -23,8 +24,9 @@ def map_gen_ai(attributes: Mapping[str, Any]) -> MappedFields:
     provider = as_text(first(attributes, "gen_ai.provider.name", "gen_ai.system"))
     # Read before unflattening consumes the key; `raw_finish_reason` sees stored attributes only.
     finish_reason = as_text(first(attributes, "gen_ai.completion.0.finish_reason"))
-    content, consumed, dropped = _content(attributes)
     operation = first(attributes, "gen_ai.operation.name")
+    kind = operation_kind(as_text(operation))
+    content, consumed, dropped = _content(attributes, tool=kind is SpanKind.TOOL)
     return MappedFields(
         provider=provider,
         # The response model is the concrete snapshot that was billed.
@@ -32,7 +34,7 @@ def map_gen_ai(attributes: Mapping[str, Any]) -> MappedFields:
         usage=_usage(attributes, provider),
         input=content.get("input"),
         output=content.get("output"),
-        kind=operation_kind(as_text(operation)),
+        kind=kind,
         operation=as_text(operation),
         finish_reason_raw=finish_reason,
         time_to_first_token_ms=_ttft_ms(
@@ -47,11 +49,12 @@ def map_gen_ai(attributes: Mapping[str, Any]) -> MappedFields:
     )
 
 
-def _content(attributes: Mapping[str, Any]) -> tuple[dict[str, Any], set[str], int]:
+def _content(attributes: Mapping[str, Any], *, tool: bool) -> tuple[dict[str, Any], set[str], int]:
     """Input and output, the keys consumed, and the flattened messages dropped past the limits.
 
     Every content key present is consumed, read or not (ruling C-1): a losing key left in the
-    stored attributes would hold prompt text outside the payload rules.
+    stored attributes would hold prompt text outside the payload rules. An `execute_tool` span's
+    `gen_ai.tool.call.arguments` / `.result` fill whichever side the messages left empty.
     """
     consumed: set[str] = set()
     dropped = 0
@@ -74,6 +77,15 @@ def _content(attributes: Mapping[str, Any]) -> tuple[dict[str, Any], set[str], i
     system = first(attributes, "gen_ai.system_instructions")
     if system is not None and isinstance(content.get("input"), list):
         content["input"].insert(0, {"role": "system", "parts": parse_content(system)})
+    for field_name, key in (
+        ("input", "gen_ai.tool.call.arguments"),
+        ("output", "gen_ai.tool.call.result"),
+    ):
+        if key in attributes:
+            consumed.add(key)
+        value = first(attributes, key)
+        if tool and value is not None and field_name not in content:
+            content[field_name] = parse_content(value)
     return content, consumed, dropped
 
 
