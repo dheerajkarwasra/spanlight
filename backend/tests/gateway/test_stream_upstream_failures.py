@@ -145,3 +145,35 @@ async def test_oversized_sse_frame_detaches_the_observer_but_not_the_client(
     assert (span["status"], span["status_message"]) == ("ok", None)
     # The usage chunk came after the observer detached: unknown usage, so no cost (never 0).
     assert (span["input_tokens"], span["output_tokens"], span["cost_usd"]) == (None, None, None)
+
+
+async def test_anthropic_error_event_mid_stream_makes_the_span_an_error(
+    gateway_context: GatewayContextFactory,
+    gateway_workspace: GatewayWorkspace,
+    fake_provider: FakeProvider,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # An error can arrive after the 200; the provider then closes the stream normally.
+    frames = [
+        anthropic_frame("message_start", {"message": CUT_MESSAGE}),
+        anthropic_frame("content_block_start", {"index": 0, "content_block": {"type": "text"}}),
+        anthropic_frame(
+            "content_block_delta", {"index": 0, "delta": {"type": "text_delta", "text": "Hel"}}
+        ),
+        anthropic_frame("error", {"error": {"type": "overloaded_error", "message": "Overloaded"}}),
+    ]
+    fake_provider.reply_stream(frames)
+    context = await gateway_context(credential="anthropic")
+
+    result = await execute(messages_request(), context)
+    assert result.stream is not None
+    received = await read_to_end(result.stream)
+
+    assert received == frames  # the client gets the provider's error frame unchanged
+    span = await read_gateway_span(session_factory, gateway_workspace.project_id)
+    assert span["status"] == "error"
+    assert span["status_message"] == (
+        "200 stream_error: the provider sent an error event (overloaded_error: Overloaded)"
+    )
+    assert span["error_class"] == "provider_5xx"
+    assert span["attributes"]["usage.unreported_reason"] == "stream_error"

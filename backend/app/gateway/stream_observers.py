@@ -17,6 +17,7 @@ from app.gateway.sse import (
     as_int,
     as_str,
     dict_at,
+    error_text,
     json_object,
 )
 from app.gateway.usage import anthropic_usage, chat_usage
@@ -54,6 +55,7 @@ class OpenAiChatObserver:
         self._finish: dict[int, str] = {}
         self._tool_calls: dict[int, dict[int, dict[str, Any]]] = {}
         self._choices: set[int] = set()
+        self._error: str | None = None
 
     def on_frame(self, frame: SseFrame) -> None:
         chunk = json_object(frame.data)
@@ -64,6 +66,9 @@ class OpenAiChatObserver:
         self._service_tier = as_str(chunk.get("service_tier")) or self._service_tier
         usage = chat_usage(dict_at(chunk, "usage"), service_tier=self._service_tier)
         self._usage = usage or self._usage
+        error = dict_at(chunk, "error")
+        if self._error is None and (as_str(error.get("message")) or as_str(error.get("type"))):
+            self._error = error_text(error.get("type") or error.get("code"), error.get("message"))
         choices = chunk.get("choices")
         for choice in choices if isinstance(choices, list) else []:
             if isinstance(choice, dict):
@@ -124,6 +129,8 @@ class OpenAiChatObserver:
     def summary(self) -> StreamSummary:
         known = self._content.keys() | self._tool_calls.keys() | self._finish.keys()
         first = min(known, default=None)
+        # OpenAI-compatible servers (OpenRouter) may only say `finish_reason: "error"`.
+        error = self._error or ("error" if "error" in self._finish.values() else None)
         return StreamSummary(
             usage=self._usage,
             model=self._model,
@@ -133,6 +140,7 @@ class OpenAiChatObserver:
             output_truncated=self._budget.truncated,
             usage_complete=self._usage is not None and self._usage.output_tokens is not None,
             saw_output=first is not None,
+            error=error,
         )
 
 
@@ -153,6 +161,7 @@ class AnthropicMessagesObserver:
         self._budget = OutputBudget()
         self._blocks: dict[int, dict[str, Any]] = {}
         self._parts: dict[tuple[int, str], list[str]] = {}
+        self._error: str | None = None
 
     def on_frame(self, frame: SseFrame) -> None:
         event = json_object(frame.data)
@@ -178,6 +187,9 @@ class AnthropicMessagesObserver:
                 self._blocks[index] = dict(block)
         elif kind == "content_block_delta":
             self._on_delta(index, dict_at(event, "delta"))
+        elif kind == "error" and self._error is None:
+            error = dict_at(event, "error")
+            self._error = error_text(error.get("type"), error.get("message"))
 
     def _merge_usage(self, usage: dict[str, Any]) -> None:
         """Keep the latest value of each count: the events report totals, never increments.
@@ -252,4 +264,5 @@ class AnthropicMessagesObserver:
             output_truncated=self._budget.truncated,
             usage_complete=self._final_usage_seen and usage is not None,
             saw_output=bool(self._blocks),
+            error=self._error,
         )

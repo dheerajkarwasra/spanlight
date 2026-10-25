@@ -68,6 +68,7 @@ class StreamSummary:
     ``usage_complete`` is True only when the provider's final usage was seen, so a stream cut
     short is told from one that never reports usage. ``saw_output`` says whether any part of
     an answer arrived, which is what makes a missing final usage a cut rather than an empty call.
+    ``error`` is set when the provider sent an error event inside the stream: ``<type>: <message>``.
     """
 
     usage: Usage | None = None
@@ -78,6 +79,7 @@ class StreamSummary:
     output_truncated: bool = False  # output stopped growing at the observer's memory cap
     usage_complete: bool = False
     saw_output: bool = False
+    error: str | None = None
 
 
 class StreamObserver(Protocol):
@@ -161,6 +163,13 @@ def as_int(value: object) -> int | None:
 
 def as_str(value: object) -> str | None:
     return value if isinstance(value, str) else None
+
+
+def error_text(kind: object, message: object) -> str:
+    """``<type or code>: <message>`` of a provider's in-stream error, with the parts it sent."""
+    code = as_int(kind)
+    parts = (as_str(kind) or (str(code) if code is not None else None), as_str(message))
+    return ": ".join(part for part in parts if part) or "error"
 
 
 def dict_at(obj: object, *path: str) -> dict[str, Any]:

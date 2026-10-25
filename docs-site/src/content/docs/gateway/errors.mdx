@@ -85,6 +85,8 @@ When the provider itself answers with an error that the route does not retry, th
 
 Only a short allowlist of provider headers is passed back: `content-type`, `retry-after`, `retry-after-ms`, `x-ratelimit-*`, `anthropic-ratelimit-*`, `anthropic-priority-*` and `openai-processing-ms`; the provider's `request-id` becomes `x-upstream-request-id`.
 
+A provider can also send an error inside a stream after answering `200`: an `error` event on Messages, a chunk with an `error` object or `finish_reason: "error"` on chat completions, an `error` or `response.failed` event on Responses. Your client receives the provider's bytes unchanged, and the span is an error with the status message `stream_error: the provider sent an error event (<type>: <message>)`, classed from that message (Anthropic's `overloaded_error` is `provider_5xx`).
+
 ## Errors from the Lab
 
 A [Lab fault](/docs/gateway/lab/) is returned in the provider's shape and wording, with `spanlight_code` and `X-Spanlight-Code` set to `FAULT_<SCENARIO>` and the header `X-Spanlight-Fault: <scenario>`:

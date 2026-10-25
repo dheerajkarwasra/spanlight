@@ -6,7 +6,15 @@ raises: a frame it cannot make sense of is skipped and the summary simply carrie
 
 from typing import Any
 
-from app.gateway.sse import SseFrame, StreamSummary, Usage, as_str, dict_at, json_object
+from app.gateway.sse import (
+    SseFrame,
+    StreamSummary,
+    Usage,
+    as_str,
+    dict_at,
+    error_text,
+    json_object,
+)
 from app.gateway.usage import completed_web_searches, responses_usage
 
 _RESPONSES_TERMINAL = frozenset({"response.completed", "response.incomplete", "response.failed"})
@@ -27,6 +35,7 @@ class OpenAiResponsesObserver:
         self._status: str | None = None
         self._output: list[Any] | None = None
         self._saw_output = False
+        self._error: str | None = None
 
     def on_frame(self, frame: SseFrame) -> None:
         event = json_object(frame.data)
@@ -38,6 +47,11 @@ class OpenAiResponsesObserver:
         kind = as_str(event.get("type")) or ""
         if kind.startswith("response.output"):
             self._saw_output = True  # an output item or a delta of one
+        if kind == "error" and self._error is None:
+            self._error = error_text(event.get("code"), event.get("message"))
+        elif kind == "response.failed" and self._error is None:
+            error = dict_at(response, "error")
+            self._error = error_text(error.get("code"), error.get("message"))
         if kind not in _RESPONSES_TERMINAL:
             return
         self._status = as_str(response.get("status")) or self._status
@@ -63,4 +77,5 @@ class OpenAiResponsesObserver:
             response_id=self._response_id,
             usage_complete=self._usage is not None and self._usage.output_tokens is not None,
             saw_output=self._saw_output,
+            error=self._error,
         )

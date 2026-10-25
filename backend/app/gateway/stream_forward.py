@@ -9,6 +9,9 @@ The span is written once the stream ends, whichever way it ends (`GatewayStream`
 stream nobody started reading):
 
 - the provider finished: a normal span;
+- the provider sent an error event inside the stream (Messages `error`, a chat chunk with an
+  `error` object or `finish_reason: "error"`, Responses `error` or `response.failed`): the
+  client gets the provider's bytes unchanged and the span is an error with its type and message;
 - the provider went quiet for the idle timeout or its connection broke: an error span with the
   reason, and the client's stream simply ends;
 - a lab `truncated_stream` fault withheld the rest (`StreamCutByFault`): the client's stream
@@ -166,6 +169,8 @@ def _take_summary(result: GatewayResult, observer: StreamObserver) -> None:
     result.usage = summary.usage
     result.finish_reason = summary.finish_reason
     result.output = summary.output
+    if summary.error is not None and result.stream_error is None:  # a transport error wins
+        result.stream_error = f"the provider sent an error event ({summary.error})"
     if result.model is not None and (summary.usage is None or not summary.usage_complete):
         result.usage_unreported_reason = _unreported_reason(result)
 
