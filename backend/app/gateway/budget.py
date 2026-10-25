@@ -10,7 +10,7 @@ implementation is ``app.budgets.guard.StateBudgetGuard``.
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,7 +39,11 @@ class BudgetGuard(Protocol):
     (after their aliases), so a ``scope=model`` budget can match either. ``metadata`` and
     ``trace_name`` are the call's trace dimensions as the gateway knows them (the headers,
     merged with the stored trace when the call joins one); None for in-process callers, which
-    keep the project, model and user check only.
+    keep the project, model and user check only. ``body`` is the request body the call's cost
+    is estimated from, ``trace_id`` and ``span_id`` name the span the reservation settles with,
+    and ``org_id`` picks the organization's price overrides; without them the guard only reads
+    the evaluated state and reserves nothing. ``target_providers`` are the providers of
+    ``target_models``, in the same order, for the service tier's price factor.
     """
 
     async def check(
@@ -54,6 +58,11 @@ class BudgetGuard(Protocol):
         *,
         metadata: Mapping[str, str] | None = None,
         trace_name: str | None = None,
+        target_providers: Sequence[str | None] = (),
+        body: Mapping[str, Any] | None = None,
+        trace_id: str | None = None,
+        span_id: str | None = None,
+        org_id: UUID | None = None,
     ) -> BudgetDecision: ...
 
 

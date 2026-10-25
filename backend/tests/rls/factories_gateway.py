@@ -1,6 +1,6 @@
 """Row factories for the gateway, alert and budget tables."""
 
-from tests.rls.row_spec import HEX32, SLUG, RowFactory, parent
+from tests.rls.row_spec import HEX16, HEX32, SLUG, RowFactory, parent
 
 # A stored gateway key prefix: `spl_gw_` and 12 characters of lowercase base32 (`[a-z2-7]`).
 GATEWAY_PREFIX = "'spl_gw_' || translate(left(md5(random()::text), 12), '0189', 'wxyz')"
@@ -101,5 +101,25 @@ GATEWAY = (
         ),
         touch="enabled",
         parents=(parent("alert_rules", rule_id="id"),),
+    ),
+    RowFactory(
+        table="budget_counters",
+        sql=(
+            "INSERT INTO budget_counters (budget_id, period_start, project_id) "
+            "VALUES (:budget_id, now(), :project_id) RETURNING *"
+        ),
+        touch="updated_at",
+        parents=(parent("budgets", budget_id="id"),),
+    ),
+    RowFactory(
+        table="budget_reservations",
+        sql=(
+            "INSERT INTO budget_reservations (id, project_id, budget_id, period_start, trace_id, "
+            "span_id, amount_usd, expires_at) "
+            f"VALUES (gen_random_uuid(), :project_id, :budget_id, now(), {HEX32}, {HEX16}, 1, "
+            "now()) RETURNING *"
+        ),
+        touch="status",
+        parents=(parent("budgets", budget_id="id"),),
     ),
 )

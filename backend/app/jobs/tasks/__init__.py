@@ -4,6 +4,7 @@ from app.alerts.digest_job import run_weekly_digest
 from app.alerts.jobs import run_evaluate_alerts
 from app.attribution.jobs import run_refresh_attribution
 from app.backups.jobs import run_backup_database
+from app.budgets.jobs import REAP_JOB, run_reap_budget_reservations
 from app.end_users.jobs import run_refresh_user_stats, run_refresh_user_stats_deep
 from app.evals.experiment_queries import RUN_JOB as EXPERIMENT_RUN_JOB
 from app.evals.experiment_run import run_run_experiment
@@ -62,4 +63,5 @@ TASKS: dict[str, TaskHandler] = {
     SELECT_JOB: run_select_for_review,
     SELECT_PROJECT_JOB: run_select_for_review_project,
     "deliver_audit_streams": run_deliver_audit_streams,
+    REAP_JOB: run_reap_budget_reservations,
 }

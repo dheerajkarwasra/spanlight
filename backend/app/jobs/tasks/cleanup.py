@@ -1,5 +1,5 @@
 """Housekeeping for auth and throttle tables, idempotency keys, rate limit buckets, jobs, outbox,
-SDK exporter counters and the explain budget's stale reservations."""
+SDK exporter counters, the explain budget's stale reservations and old budget counters."""
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -8,6 +8,7 @@ import structlog
 from sqlalchemy import delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.budgets.jobs import prune_budget_counters
 from app.db.models import (
     EmailToken,
     IdempotencyKey,
@@ -54,6 +55,10 @@ async def run_cleanup_sessions(context: TaskContext, _: dict[str, Any]) -> None:
     # Separate as well: `insight_explanations` is row-level secured.
     counts["explain_reservations_completed"] = await complete_stale_reservations(
         context.session_factory, before=now - STALE_RESERVATION_AGE, now=now
+    )
+    # Also row-level secured: the gateway's budget counters of periods long over.
+    counts["budget_counters_deleted"] = await prune_budget_counters(
+        context.session_factory, now=now
     )
     logger.info("cleanup_done", **counts)
 

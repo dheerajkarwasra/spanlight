@@ -27,6 +27,7 @@ from app.gateway.execute import execute
 from app.gateway.trace_headers import TraceHeaders
 from tests.budgets.clock import next_pass
 from tests.budgets.support import (
+    CHAT_BODY,
     PRICED_MODEL,
     STEP_TOKENS,
     BudgetRef,
@@ -95,8 +96,9 @@ async def call(
         headers[TRACE_NAME_HEADER] = trace_name
     if joining is not None:
         headers[TRACE_ID_HEADER] = joining
-    body = {"model": PRICED_MODEL, "messages": [{"role": "user", "content": "Hello"}]}
-    response = await world.workspace.gw.post("/gw/v1/chat/completions", json=body, headers=headers)
+    response = await world.workspace.gw.post(
+        "/gw/v1/chat/completions", json=CHAT_BODY, headers=headers
+    )
     assert response.status_code == (200 if allowed else 402), (headers, response.text)
     return response
 
@@ -178,10 +180,7 @@ async def test_a_budget_on_the_requested_model_name_holds_when_the_provider_echo
     world = budget_world
     budget = await create_budget(world, scope="trace_name", scope_id=DEFAULT_NAME, name="Chat")
     world.fake.reply_json({**chat_completion(STEP_TOKENS), "model": SNAPSHOT})
-    first = await world.workspace.gw.post(
-        "/gw/v1/chat/completions",
-        json={"model": PRICED_MODEL, "messages": [{"role": "user", "content": "Hello"}]},
-    )
+    first = await world.workspace.gw.post("/gw/v1/chat/completions", json=CHAT_BODY)
     assert first.status_code == 200, first.text
     [stored] = await read_gateway_traces(world.sessions, world.workspace.project_id)
     [span_row] = await read_gateway_spans(world.sessions, world.workspace.project_id)
@@ -250,10 +249,11 @@ class _Spy:
         *,
         metadata: Mapping[str, str] | None = None,
         trace_name: str | None = None,
+        **call: Any,
     ) -> BudgetDecision:
         self.calls.append({"metadata": metadata, "trace_name": trace_name})
         return await StateBudgetGuard().check(
-            db, project_id, key_id, model, external_user_id, now, target_models
+            db, project_id, key_id, model, external_user_id, now, target_models, **call
         )
 
 

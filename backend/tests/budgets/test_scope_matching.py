@@ -23,6 +23,7 @@ from app.gateway.execute import execute
 from app.gateway.trace_headers import TraceHeaders
 from tests.budgets.clock import next_pass
 from tests.budgets.support import (
+    CHAT_BODY,
     PRICED_MODEL,
     STEP_TOKENS,
     BudgetRef,
@@ -74,7 +75,7 @@ async def call(
     if allowed:
         world.fake.reply_json(chat_completion(0))
     headers = {USER_HEADER: user} if user is not None else {}
-    body = {"model": model, "messages": [{"role": "user", "content": "Hello"}]}
+    body = {**CHAT_BODY, "model": model}
     response = await (client or world.workspace.gw).post(
         "/gw/v1/chat/completions", json=body, headers=headers
     )
@@ -159,7 +160,7 @@ async def in_process_call(
     assert context.key is None
     request = GatewayRequest(
         surface="chat_completions",
-        body={"model": MODEL, "messages": [{"role": "user", "content": "Hello"}]},
+        body={**CHAT_BODY, "model": MODEL},
         stream=False,
         trace=TraceHeaders(user_id="u1"),
     )

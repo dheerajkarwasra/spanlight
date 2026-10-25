@@ -34,7 +34,7 @@ from app.db.models.billing import (
     SourceStatus,
     TokenType,
 )
-from app.db.models.budgets import Budget
+from app.db.models.budgets import Budget, BudgetCounter, BudgetReservation
 from app.db.models.datasets import Dataset, DatasetItem
 from app.db.models.end_users import UserStatsDaily
 from app.db.models.evals import (
@@ -127,6 +127,8 @@ __all__ = [
     "BillingSourceKind",
     "BillingSourceProject",
     "Budget",
+    "BudgetCounter",
+    "BudgetReservation",
     "CostRollupDaily",
     "Dataset",
     "DatasetItem",

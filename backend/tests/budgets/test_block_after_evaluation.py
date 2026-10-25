@@ -1,13 +1,12 @@
-"""A `block` budget blocks once the alert evaluator has seen the spend, not before (ADR 0012).
+"""Where a `block` budget's two refusals come from (ADR 0012 and ADR 0017).
 
-The gateway's guard reads the state the evaluation job wrote; it never sums spend per call. Calls
-over the cap still go through until the next pass, so a budget can overrun, and the overrun
-grows with every pass that does not run. Blocked calls reach no provider, cost nothing and leave
-the budget firing. Ingestion never asks the guard.
+Spend the gateway did not make (the SDK's) blocks only once the alert evaluator has measured it:
+the guard reads the state the evaluation job wrote and never sums spans per call, so SDK spend
+over the cap still lets calls through until the next pass. Spend the gateway made itself is
+settled into the budget's counter with the span, and the next call's estimate is checked against
+it before any upstream call, so gateway spend blocks before any pass. Blocked calls reach no
+provider, cost nothing and leave the budget firing. Ingestion never asks the guard.
 """
-
-from datetime import timedelta
-from decimal import Decimal
 
 import httpx
 
@@ -24,16 +23,12 @@ from tests.budgets.support import (
     evaluate,
     events_of,
     firing_budget,
-    guard_decision,
     ingest_spend,
     message,
     outbox_events,
     state_of,
 )
-from tests.gateway_support import metric_delta
-
-CALLS_PER_INTERVAL = 5
-INTERVAL = timedelta(minutes=1)
+from tests.gateway_support import drain_recorder, metric_delta
 
 
 def assert_blocked(response: httpx.Response) -> None:
@@ -68,7 +63,7 @@ async def test_block_budget_is_enforced_only_after_evaluation(budget_world: Budg
     assert [event["event"] for event in await events_of(world, budget)] == ["budget.exceeded"]
     assert await outbox_events(world) == ["budget.exceeded"]
 
-    blocks = metric_delta(BUDGET_BLOCKS)
+    blocks = metric_delta(BUDGET_BLOCKS, reason="firing")
     assert_blocked(await chat(world))
     assert_blocked(await message(world))
     assert blocks.value == 2
@@ -79,54 +74,34 @@ async def test_block_budget_is_enforced_only_after_evaluation(budget_world: Budg
     await ingest_spend(world)  # ingestion is never blocked
 
 
-async def test_overrun_lasts_until_the_next_evaluation_pass(budget_world: BudgetWorld) -> None:
+async def test_gateway_spend_blocks_before_the_next_evaluation_pass(
+    budget_world: BudgetWorld,
+) -> None:
     world = budget_world
     budget = await create_budget(world)
     await evaluate(world, next_pass(world.clock))  # nothing spent yet: evaluated, not firing
 
-    # Each call spends $0.002: the first crosses the cap, and nothing stops the rest yet.
-    allowed = [await chat(world, scripted_tokens=STEP_TOKENS) for _ in range(CALLS_PER_INTERVAL)]
-    assert [response.status_code for response in allowed] == [200] * CALLS_PER_INTERVAL
+    # The first call fits and spends $0.002, over the cap; its span settles that into the counter.
+    assert (await chat(world, scripted_tokens=STEP_TOKENS)).status_code == 200
+    await drain_recorder()
 
-    await evaluate(world, next_pass(world.clock))
-    state = await state_of(world, budget)
-    assert state is not None and state["state"] == "firing"
-    assert state["last_value"] == CALLS_PER_INTERVAL * STEP_COST > CAP
-
-    refused = [await chat(world) for _ in range(CALLS_PER_INTERVAL)]
-    for response in refused:
-        assert_blocked(response)
-    assert len(world.fake.requests) == CALLS_PER_INTERVAL
-    assert refused[0].json()["error"]["message"] == (
-        'Blocked by a Spanlight budget: Budget "Daily cap" is exhausted: '
-        "$0.01 of $0.0010 spent today (soft limit, measured every 60 s)."
+    blocks = metric_delta(BUDGET_BLOCKS, reason="reserved")
+    refused = await chat(world)
+    assert_blocked(refused)
+    assert blocks.value == 1
+    assert len(world.fake.requests) == 1
+    assert refused.json()["error"]["message"] == (
+        'Blocked by a Spanlight budget: Budget "Daily cap" would be exceeded: $0.0020 spent or '
+        "in flight plus $0.0001 for this call is over the $0.0010 limit today; a lower "
+        "max_tokens lowers the reservation."
     )
-
-
-async def test_overrun_grows_when_evaluation_is_late(budget_world: BudgetWorld) -> None:
-    """Two passes do not run: three intervals of calls go through, not one. The 60 s in the
-    docs is the evaluation interval, not a bound on how long a budget can overrun."""
-    world = budget_world
-    budget = await create_budget(world)
-    await evaluate(world, next_pass(world.clock))
-
-    intervals = 3  # the passes after the first two never run
-    for _ in range(intervals):
-        for _ in range(CALLS_PER_INTERVAL):
-            assert (await chat(world, scripted_tokens=STEP_TOKENS)).status_code == 200
-        world.clock.advance(INTERVAL.total_seconds())
-
-    # Time passing alone never blocks: two minutes on, with no pass, the guard still allows.
-    later = world.clock.wall() + 2 * INTERVAL
-    assert (await guard_decision(world, later)).allowed
-    world.clock.advance((later - world.clock.wall()).total_seconds())
+    state = await state_of(world, budget)
+    assert state is not None and state["state"] == "ok"  # no pass has measured it yet
 
     await evaluate(world, next_pass(world.clock))
     state = await state_of(world, budget)
     assert state is not None and state["state"] == "firing"
-    overrun: Decimal = state["last_value"] - CAP
-    one_interval_overrun = CALLS_PER_INTERVAL * STEP_COST - CAP
-    assert overrun == intervals * CALLS_PER_INTERVAL * STEP_COST - CAP > one_interval_overrun
+    assert state["last_value"] == STEP_COST > CAP
     assert_blocked(await chat(world))
 
 

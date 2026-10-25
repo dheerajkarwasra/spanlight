@@ -8,7 +8,8 @@ reads them.
 
 Spend comes in steps of exactly $0.002: an ingested span with 5,000 input tokens of
 `gpt-4.1-mini`, or a gateway answer with 5,000 prompt tokens, at the seed rate of $0.40 per
-million input tokens.
+million input tokens. The gateway bodies set a small `max_tokens`, so a call's reservation
+(about $0.0001) fits the $0.001 cap and only measured or settled spend decides a block.
 """
 
 import secrets
@@ -39,7 +40,11 @@ STEP_COST = Decimal("0.002")
 STEP_TOKENS = 5000
 CAP = Decimal("0.001")
 BUDGET_NAME = "Daily cap"
-CHAT_BODY = {"model": PRICED_MODEL, "messages": [{"role": "user", "content": "Hello"}]}
+CHAT_BODY = {
+    "model": PRICED_MODEL,
+    "max_tokens": 64,
+    "messages": [{"role": "user", "content": "Hello"}],
+}
 MESSAGE_BODY = {
     "model": "claude-haiku-4-5",
     "max_tokens": 64,

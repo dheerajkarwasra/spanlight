@@ -149,10 +149,18 @@ def upstream_body(request: GatewayRequest) -> dict[str, Any]:
 
 
 async def _check_budget(call: Call, plan: RoutePlan) -> BudgetDecision:
-    """Step 2, in a short transaction of its own under the project binding."""
+    """Step 2, in a short transaction of its own under the project binding.
+
+    The guard reserves the call's estimated cost against its blocking budgets, keyed by the
+    span the call will write; the transaction commits before any upstream call and the span
+    write settles it (ADR 0017).
+    """
     context = call.context
-    target_models = [
-        resolve_model(context.route.targets[index], plan.model) for index in plan.order
+    targets = [context.route.targets[index] for index in plan.order]
+    target_models = [resolve_model(target, plan.model) for target in targets]
+    target_providers = [
+        credential.provider.value if credential is not None else None
+        for credential in (context.credentials.get(target.credential_id) for target in targets)
     ]
     async with context.sessions() as db, db.begin():
         await bind_project(db, context.project_id)
@@ -169,6 +177,11 @@ async def _check_budget(call: Call, plan: RoutePlan) -> BudgetDecision:
             target_models=target_models,
             metadata=metadata,
             trace_name=trace_name,
+            target_providers=target_providers,
+            body=call.request.body,
+            trace_id=call.trace_id,
+            span_id=call.span_id,
+            org_id=context.org_id,
         )
 
 

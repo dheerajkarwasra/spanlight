@@ -11,13 +11,14 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.alerts.types import AlertRuleKind, Comparator, Metric
 from app.budgets.schemas import BudgetSpec
 from app.budgets.scope_parse import parse_metadata_scope
 from app.budgets.types import BudgetScope
-from app.db.models import AlertRule
+from app.db.models import AlertRule, BudgetCounter, BudgetReservation
 
 # The filter key each one-value scope sets on the rule (`app.alerts.rules.metric_filters` reads
 # them). A `metadata` scope sets `metadata_key` and `metadata_value` instead, split from its
@@ -93,3 +94,15 @@ def sync_budget_rule(rule: AlertRule, spec: BudgetSpec, *, now: datetime) -> boo
     if changed:
         rule.updated_at = now
     return changed
+
+
+async def forget_counters(db: AsyncSession, budget_id: uuid.UUID) -> None:
+    """Drop the budget's gateway counters and reservations (`app.budgets.reserve`) when its scope
+    or period changes: the spend they count belonged to the old one, as `forget_state` does for
+    the rule's last measured value."""
+    for table in (BudgetReservation, BudgetCounter):
+        await db.execute(
+            delete(table)
+            .where(table.budget_id == budget_id)
+            .execution_options(synchronize_session=False)
+        )

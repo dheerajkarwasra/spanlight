@@ -29,6 +29,7 @@ ALLOWED = {
     "app.alerts.digest_queries",
     "app.alerts.job_queries",
     "app.attribution.job_queries",  # the refresh job's list of projects
+    "app.budgets.jobs",  # reaps expired gateway budget reservations across projects
     "app.end_users.job_queries",
     "app.evals.jobs",
     "app.exports.expiry",

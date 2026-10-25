@@ -119,7 +119,24 @@ ALERT_EVALUATION_DURATION = Histogram(
 )
 BUDGET_BLOCKS = Counter(
     "spanlight_budget_blocks_total",
-    "Gateway calls refused because a blocking budget was exhausted.",
+    "Gateway calls refused by a blocking budget, by reason: reserved (the call's estimate did "
+    "not fit next to the spend committed this period) or firing (the evaluated state).",
+    ["reason"],
+)
+BUDGET_RESERVE_DURATION = Histogram(
+    "spanlight_budget_reserve_seconds",
+    "Time the gateway took to reserve a call's estimate against its blocking budgets "
+    "(the price lookup, the counter row locks and the writes), admitted or refused.",
+    buckets=(0.001, 0.0025, 0.005, 0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1.0),
+)
+BUDGET_RESERVATIONS_REAPED = Counter(
+    "spanlight_budget_reservations_reaped_total",
+    "Budget reservations whose lease expired before their call settled, counted at the "
+    "estimate by the reaper; a high rate means span writes or settles are failing.",
+)
+BUDGET_RESERVATIONS_HELD = Gauge(
+    "spanlight_budget_reservations_held",
+    "Budget reservations in flight across every project, set after each reaper pass.",
 )
 DETECTOR_RUNS = Counter(
     "spanlight_detector_runs_total",

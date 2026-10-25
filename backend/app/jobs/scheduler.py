@@ -91,6 +91,13 @@ ROLLUP_COST_DAILY_DEEP = PeriodicJob(
     run_after_offset=timedelta(hours=2, minutes=30),
 )
 
+# Counts gateway budget reservations whose lease expired at their estimate (ADR 0017). Always
+# scheduled: a `block` budget reserves whatever the other jobs are set to. A single attempt: the
+# next pass a minute later is the retry.
+REAP_BUDGET_RESERVATIONS = PeriodicJob(
+    "reap_budget_reservations", timedelta(minutes=1), max_attempts=1
+)
+
 # Enqueues one `select_for_review_project` per enabled review policy once a UTC day, runnable
 # from 01:00 UTC, for the day that just ended. Only with REVIEW_SELECTION_ENABLED; off, a policy
 # can still be run by hand. Three attempts: the listing is cheap and the children dedupe.
@@ -134,6 +141,7 @@ def periodic_jobs(settings: Settings) -> list[PeriodicJob]:
         ROLLUP_COST_DAILY,
         ROLLUP_COST_DAILY_DEEP,
         DELIVER_AUDIT_STREAMS,
+        REAP_BUDGET_RESERVATIONS,
     ]
     if settings.is_demo_enabled:
         jobs.append(DEMO_TRAFFIC)

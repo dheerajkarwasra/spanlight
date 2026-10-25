@@ -31,7 +31,7 @@ from app.budgets.errors import (
     BudgetNotFoundError,
     UnknownScopeError,
 )
-from app.budgets.rule_sync import create_budget_rule, sync_budget_rule
+from app.budgets.rule_sync import create_budget_rule, forget_counters, sync_budget_rule
 from app.budgets.schemas import BudgetPatch, BudgetSpec
 from app.budgets.scope_parse import parse_metadata_scope, parse_trace_name_scope
 from app.budgets.types import BudgetScope
@@ -112,6 +112,8 @@ async def update_budget(
     if not changed:
         return budget
     await _settle_alert(db, rule, spec, changed, now=now, settings=settings)
+    if REMEASURING_COLUMNS.intersection(changed):
+        await forget_counters(db, budget.id)
     for column in changed:
         setattr(budget, column, values[column])
     budget.updated_at = now

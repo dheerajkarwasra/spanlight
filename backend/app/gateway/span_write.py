@@ -1,12 +1,13 @@
 """One try at writing a gateway call's span and what the call used, in one transaction.
 
-`write_span` writes the span through `ingest_spans` (with the key as `source_key_id`), counts the
-call and its tokens in the key's current minute (`record_minute`; a cache hit counts zero
-tokens; a call the key limiter refused was not served and is not counted), and moves the
-`last_used_at` of the key and of each provider credential the call used, each at most once a
-minute. A call without a key (an in-process caller) writes only the span and
-the credentials' `last_used_at`. It raises what the database raises; `app.gateway.recorder`
-decides about retries.
+`write_span` writes the span through `ingest_spans` (with the key as `source_key_id`), settles
+the budget reservations the call holds against the span's cost (`app.budgets.reserve.settle`,
+nothing for a call that reserved nothing), counts the call and its tokens in the key's current
+minute (`record_minute`; a cache hit counts zero tokens; a call the key limiter refused was not
+served and is not counted), and moves the `last_used_at` of the key and of each provider
+credential the call used, each at most once a minute. A call without a key (an in-process
+caller) writes only the span, its settle and the credentials' `last_used_at`. It raises what the
+database raises; `app.gateway.recorder` decides about retries.
 """
 
 import uuid
@@ -17,6 +18,7 @@ from typing import Any
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.budgets.reserve import settle
 from app.db.models import GatewayKey, ProviderCredential, Span
 from app.db.rls import bind_project
 from app.gateway.context import GatewayContext
@@ -53,6 +55,8 @@ async def write_span(
                 )
             await _touch_key(db, context.key.key, now)
         await _touch_credentials(db, context, credential_ids, now)
+        # Last: the budget's counter row is the hottest lock of the transaction.
+        await settle(db, context.project_id, span, now)
     return outcome
 
 

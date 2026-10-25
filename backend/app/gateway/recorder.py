@@ -47,6 +47,7 @@ from typing import Any
 
 import structlog
 
+from app.budgets.reserve import settle_unstored
 from app.core.db_errors import is_transient, sqlstate
 from app.core.observability import INGESTED_SPANS, REJECTED_SPANS
 from app.gateway.context import GatewayContext, GatewayResult
@@ -146,6 +147,7 @@ async def _write_with_retries(
         except Exception as failure:  # noqa: BLE001 - counted and logged, the client was answered
             if retry_in_s is None or not is_transient(failure):
                 _write_lost(context.project_id, span, failure, tries=tries + 1)
+                await settle_unstored(context.sessions, context.project_id, span)
                 return None
             logger.warning(
                 "gateway.record_retry",
@@ -206,6 +208,7 @@ def record_soon(
             stage="prepare",
             error_type=type(failure).__name__,
         )
+        _settle_lost(writers, context, span)
         return
     byte_limit = writers.backlog_bytes // 2 if low_priority else writers.backlog_bytes
     # The first waiting span is always taken, so one span larger than the budget is not lost.
@@ -290,6 +293,15 @@ def _writers_for(context: GatewayContext) -> _Writers:
             backlog_bytes=settings.gateway_record_backlog_mb * 1024 * 1024,
         )
     return _writers
+
+
+def _settle_lost(writers: _Writers, context: GatewayContext, span: dict[str, Any]) -> None:
+    """Release the budget reservations of a span that will never be written, in the background
+    (one short transaction; `drain` waits for it like a write). Not for an overflow: the backlog
+    is full because the database is slow, so that settle waits for the reaper instead."""
+    task = writers.loop.create_task(settle_unstored(context.sessions, context.project_id, span))
+    writers.pending.add(task)
+    task.add_done_callback(writers.pending.discard)
 
 
 def _overflow(writers: _Writers, project_id: uuid.UUID) -> None:

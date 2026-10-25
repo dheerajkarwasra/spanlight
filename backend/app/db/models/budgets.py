@@ -59,3 +59,44 @@ class Budget(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BudgetCounter(Base):
+    """One budget's gateway spend this period: what settled and what is reserved in flight.
+
+    The gateway reserves an estimate before forwarding a call and settles the real cost with
+    the span (ADR 0017). One hot row per (budget, period); `period_start` is the budget's UTC
+    day or month. Row-level security applies.
+    """
+
+    __tablename__ = "budget_counters"
+
+    budget_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("budgets.id", ondelete="CASCADE"), primary_key=True
+    )
+    period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    settled_usd: Mapped[Decimal] = mapped_column(Numeric(18, 8), server_default=text("0"))
+    reserved_usd: Mapped[Decimal] = mapped_column(Numeric(18, 8), server_default=text("0"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BudgetReservation(Base):
+    """A gateway call's estimate held against one budget until its span settles it.
+
+    `held` until the span write settles it (and deletes the row); `reaped` once the worker has
+    counted an expired one at its estimate, kept so a late settle can replace that with the
+    real cost. Row-level security applies.
+    """
+
+    __tablename__ = "budget_reservations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, default=new_id)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    budget_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("budgets.id", ondelete="CASCADE"))
+    period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    trace_id: Mapped[str] = mapped_column(Text)
+    span_id: Mapped[str] = mapped_column(Text)
+    amount_usd: Mapped[Decimal] = mapped_column(Numeric(18, 8))
+    status: Mapped[str] = mapped_column(Text, server_default=text("'held'"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
