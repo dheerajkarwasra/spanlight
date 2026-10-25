@@ -40,6 +40,7 @@ from app.pricing.explain import (
     SpanCostInputs,
     explain_span,
 )
+from app.pricing.modifiers import reported_modifiers
 from app.pricing.provider_alias import canonical_provider
 from app.pricing.tiers import multipliers_for, normalize_tier
 
@@ -104,6 +105,7 @@ def span_cost_inputs(row: Span) -> SpanCostInputs:
         pricing_version=row.pricing_version,
         is_cache_hit=attributes.get("spanlight.cache") == "hit",
         usage_rollup=row.usage_rollup,
+        modifiers=reported_modifiers(attributes),
     )
 
 

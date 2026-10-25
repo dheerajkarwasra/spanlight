@@ -13,9 +13,15 @@ modelled (2026-10-01, 2026-10-15) carries no table of its own and is never edite
 are provider facts that predate those releases (batch and flex were half price then too), so a
 span priced under it takes the table of the oldest snapshot that carries one. The oldest, not
 the newest: a later change of a factor must not reach back to spans it never applied to.
+
+A snapshot's modifier factors (`modifier_multipliers`, data residency and fast mode) multiply the
+tier's. They come from the snapshot itself, never from an older one: a snapshot without them
+priced every modifier at the standard rate. OpenAI `ultrafast` has no stored tier (the column
+holds four values), so it normalizes to `None`, keeps its spelling in `usage.service_tier_raw`
+and is counted as unmodelled by the cost rollups.
 """
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -94,9 +100,25 @@ class TierMultipliers:
 
     table: Mapping[tuple[str, str], Decimal] = field(default_factory=_empty_table)
     commitment_billed: frozenset[tuple[str, str]] = frozenset()
+    modifiers: Mapping[tuple[str, str], Decimal] = field(default_factory=_empty_table)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "table", MappingProxyType(dict(self.table)))
+        object.__setattr__(self, "modifiers", MappingProxyType(dict(self.modifiers)))
+
+    def modifier(self, provider: str | None, name: str) -> Decimal | None:
+        """The factor of a pricing modifier (`inference_geo_us`, `fast`), or None when the
+        snapshot has none: the modifier is then priced at the standard rate and flagged."""
+        return self.modifiers.get((canonical_provider(provider) or "", name))
+
+    def factor(
+        self, provider: str | None, tier: str | None, modifiers: Iterable[str] = ()
+    ) -> Decimal:
+        """The tier's factor times each modifier's; a modifier without one counts as 1."""
+        result = self.for_(provider, tier)
+        for name in modifiers:
+            result *= self.modifier(provider, name) or _ONE
+        return result
 
     def for_(self, provider: str | None, tier: str | None) -> Decimal:
         """The factor applied to the standard token cost; 1 whenever the table has no row."""
@@ -141,10 +163,13 @@ def multipliers_for(version: str | None, at: datetime) -> TierMultipliers:
     snapshot = _by_version(version) or _in_force(at)
     if snapshot is None:
         return TierMultipliers()
+    modifiers = snapshot.modifier_multipliers
     if not snapshot.tier_multipliers:
         snapshot = _oldest_modelled() or snapshot
     return TierMultipliers(
-        table=snapshot.tier_multipliers, commitment_billed=snapshot.commitment_billed
+        table=snapshot.tier_multipliers,
+        commitment_billed=snapshot.commitment_billed,
+        modifiers=modifiers,
     )
 
 

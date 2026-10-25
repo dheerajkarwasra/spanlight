@@ -59,6 +59,9 @@ class Usage:
     service_tier: str | None = None
     web_search_requests: int | None = None
     service_tier_raw: str | None = None
+    # Anthropic's `usage.inference_geo` and `usage.speed`: where and how fast it ran, as billed.
+    inference_geo: str | None = None
+    speed: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

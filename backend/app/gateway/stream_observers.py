@@ -211,9 +211,10 @@ class AnthropicMessagesObserver:
                 value = as_int(nested.get(name))
                 if value is not None:
                     self._usage.setdefault(group, {})[name] = value
-        tier = as_str(usage.get("service_tier"))
-        if tier is not None:
-            self._usage["service_tier"] = tier
+        for name in ("service_tier", "inference_geo", "speed"):
+            text = as_str(usage.get(name))
+            if text is not None:
+                self._usage[name] = text
 
     def _on_delta(self, index: int, delta: dict[str, Any]) -> None:
         block = self._blocks.get(index)

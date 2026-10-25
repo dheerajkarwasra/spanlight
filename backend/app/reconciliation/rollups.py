@@ -13,8 +13,10 @@ price:
   cheap: they are neither priced nor unpriced.
 * `cache_hit_calls` were answered from the gateway cache.
 * `unmodelled_modifier_calls` carry a pricing modifier Spanlight does not price: the span says so
-  (`usage.pricing_modifier_unknown`) and has usage (a call that failed before any usage came back
-  was never priced at any rate, whatever wrote the attribute), or the row's tier has no factor in
+  (`usage.pricing_modifier_unknown`) or reported a tier that normalized to none
+  (`usage.service_tier_raw`, OpenAI `ultrafast` among them, priced at the standard rate), and has
+  usage (a call that failed before any usage came back was never priced at any rate, whatever
+  wrote the attribute), or the row's tier has no factor in
   the snapshot in force at the start of its day and is not commitment-billed (OpenAI priority), in
   which case every call of the row counts once.
 
@@ -102,7 +104,8 @@ _REFRESH = text(
                ) AS cut_stream_calls,
                count(*) FILTER (WHERE attributes->>'spanlight.cache' = 'hit') AS cache_hit_calls,
                count(*) FILTER (
-                   WHERE attributes ? 'usage.pricing_modifier_unknown'
+                   WHERE (attributes ? 'usage.pricing_modifier_unknown'
+                          OR attributes ? 'usage.service_tier_raw')
                      AND input_tokens IS NOT NULL
                ) AS unmodelled_modifier_calls,
                coalesce(sum(uncached) FILTER (WHERE NOT usage_rollup), 0)

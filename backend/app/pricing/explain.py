@@ -11,10 +11,12 @@ by line, and compares the sum with the figure ingestion stored. The classes come
     uncached = input - reads - writes
 
 Each token line is `quantity x rate x multiplier / 1_000_000`, a fee line `quantity x rate /
-1_000`, both unrounded; the total is quantized once, half-up at eight decimals, as the price
-book does. The explanation never re-prices with today's snapshot: the caller passes the row
-that was in force when the span was priced, and a row that no longer exists is reported as
-such with the stored figure, never replaced.
+1_000`, both unrounded. A token line's multiplier is the tier's times every priced modifier's
+(`TierMultipliers.factor`, as `PriceBook.cost` applies it); the message names the modifiers,
+while `tier_multiplier` stays the tier's alone. The total is quantized once, half-up at eight
+decimals, as the price book does. The explanation never re-prices with today's snapshot: the
+caller passes the row that was in force when the span was priced, and a row that no longer
+exists is reported as such with the stored figure, never replaced.
 
 Status precedence: `usage_rollup`, then `cache_hit`, `no_usage`, `no_price`,
 `price_version_missing`, `override_deleted`, then `ok` or `mismatch`. Token counts over
@@ -91,6 +93,7 @@ class SpanCostInputs:
     pricing_version: str | None
     is_cache_hit: bool
     usage_rollup: bool = False  # `spans.usage_rollup`: the span repeats a descendant's usage
+    modifiers: tuple[str, ...] = ()  # `app.pricing.modifiers.reported_modifiers` of the span
 
 
 @dataclass(frozen=True)
@@ -130,9 +133,10 @@ def explain_span(
     `price` is the row named by the span's `pricing_version` (None when the lookup failed, as
     `price_lookup_status` says); `fee` is the web search rate in force at the span's start.
     """
-    multiplier = multipliers.for_(span.provider, span.service_tier)
+    multiplier = multipliers.factor(span.provider, span.service_tier, span.modifiers)
     fee_lines = _fee_lines(span, fee)
-    frame = _Frame(span, multiplier, multipliers.note(span.provider, span.service_tier))
+    tier_multiplier = multipliers.for_(span.provider, span.service_tier)
+    frame = _Frame(span, tier_multiplier, multipliers.note(span.provider, span.service_tier))
 
     if span.usage_rollup:
         token_lines = _token_lines(span, price, multiplier)
@@ -158,7 +162,13 @@ def explain_span(
     lines = _token_lines(span, price, multiplier) + fee_lines
     recomputed = _total(lines)
     if recomputed == span.stored_cost_usd:
-        return frame.build("ok", lines, recomputed, _missing_fee_message(span, fee))
+        priced = [(m, f) for m in span.modifiers if (f := multipliers.modifier(span.provider, m))]
+        message = " ".join(
+            part
+            for part in (copy.modifiers_message(priced), _missing_fee_message(span, fee))
+            if part is not None
+        )
+        return frame.build("ok", lines, recomputed, message or None)
     mismatch = copy.mismatch_message(recomputed, span.stored_cost_usd)
     return frame.build("mismatch", lines, recomputed, mismatch)
 

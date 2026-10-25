@@ -22,7 +22,7 @@ from ._common import (
     patch_copies,
     patch_method,
 )
-from ._modifiers import has_request_option
+from ._modifiers import has_request_option, regional_endpoint
 from ._openai_response import (
     chat_output,
     first_str,
@@ -90,9 +90,10 @@ def _instrument(client: Any, spanlight: Spanlight | None, provider: str) -> None
 
     get_client = client_getter(spanlight)
     stream_types = (Stream, AsyncStream)
+    regional = regional_endpoint(client)
     endpoints: list[tuple[Any, Endpoint]] = [
-        (client.chat.completions, ChatCompletionsEndpoint(provider, stream_types)),
-        (client.responses, ResponsesEndpoint(provider, stream_types)),
+        (client.chat.completions, ChatCompletionsEndpoint(provider, stream_types, regional)),
+        (client.responses, ResponsesEndpoint(provider, stream_types, regional)),
     ]
     async_resources = (AsyncCompletions, AsyncResponses)
     for resource, endpoint in endpoints:
@@ -123,9 +124,15 @@ class ChatCompletionsEndpoint(Endpoint):
 
     operation = "chat"
 
-    def __init__(self, provider: str, stream_types: tuple[type, ...]) -> None:
+    def __init__(
+        self,
+        provider: str,
+        stream_types: tuple[type, ...],
+        client_attributes: Mapping[str, Any],
+    ) -> None:
         super().__init__(provider)
         self._stream_types = stream_types
+        self._client_attributes = dict(client_attributes)
 
     def is_stream(self, result: Any) -> bool:
         return isinstance(result, self._stream_types)
@@ -137,8 +144,8 @@ class ChatCompletionsEndpoint(Endpoint):
         # Chat completions report search results as message annotations, which are not
         # a count of billed searches, so the fee cannot be priced from the response.
         if has_request_option(request, "web_search_options"):
-            return {"usage.fee_unknown": "openai_chat_web_search"}
-        return {}
+            return {**self._client_attributes, "usage.fee_unknown": "openai_chat_web_search"}
+        return dict(self._client_attributes)
 
     def record_response(self, span: Span, response: Any) -> None:
         span.set_model(get_field(response, "model"), provider=self.provider)
@@ -163,15 +170,25 @@ class ResponsesEndpoint(Endpoint):
 
     operation = "responses"
 
-    def __init__(self, provider: str, stream_types: tuple[type, ...]) -> None:
+    def __init__(
+        self,
+        provider: str,
+        stream_types: tuple[type, ...],
+        client_attributes: Mapping[str, Any],
+    ) -> None:
         super().__init__(provider)
         self._stream_types = stream_types
+        self._client_attributes = dict(client_attributes)
 
     def is_stream(self, result: Any) -> bool:
         return isinstance(result, self._stream_types)
 
     def new_accumulator(self) -> StreamAccumulator:
         return ResponsesStreamAccumulator(self)
+
+    def request_attributes(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        # The client's base URL, e.g. a regional host flagged as an unpriced modifier.
+        return dict(self._client_attributes)
 
     def record_response(self, span: Span, response: Any) -> None:
         span.set_model(get_field(response, "model"), provider=self.provider)

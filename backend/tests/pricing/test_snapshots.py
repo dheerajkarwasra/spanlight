@@ -23,6 +23,7 @@ from app.pricing.prices import (
     SNAPSHOT_2026_10_01,
     SNAPSHOT_2026_10_15,
     SNAPSHOT_2026_10_16,
+    SNAPSHOT_2026_10_19,
     SeedFee,
     SeedPrice,
     seed_price_book,
@@ -84,6 +85,7 @@ ADDED_ANTHROPIC_ROWS: list[tuple[str, str, str, str, str, str]] = [
 ]
 
 OCT_16 = datetime(2026, 10, 16, tzinfo=UTC)
+OCT_19 = datetime(2026, 10, 19, tzinfo=UTC)
 
 TIER_MULTIPLIERS = {
     ("anthropic", "batch"): Decimal("0.5"),
@@ -118,7 +120,12 @@ def _rows(snapshot_prices: tuple[SeedPrice, ...], provider: str, pattern: str) -
 
 def test_snapshots_are_ordered_and_frozen() -> None:
     assert (*HISTORICAL_SNAPSHOTS, CURRENT_SNAPSHOT) == ALL_SNAPSHOTS
-    assert HISTORICAL_SNAPSHOTS == (SNAPSHOT_2026_10_01, SNAPSHOT_2026_10_15, SNAPSHOT_2026_10_16)
+    assert HISTORICAL_SNAPSHOTS == (
+        SNAPSHOT_2026_10_01,
+        SNAPSHOT_2026_10_15,
+        SNAPSHOT_2026_10_16,
+        SNAPSHOT_2026_10_19,
+    )
     dates = [snapshot.effective_from for snapshot in ALL_SNAPSHOTS]
     assert dates == sorted(dates) and len(set(dates)) == len(dates)
     # A released snapshot never learns a later rate.
@@ -201,17 +208,17 @@ def test_2026_10_16_adds_gemini_fees_and_multipliers() -> None:
 
 
 def test_2026_10_19_adds_openai_models() -> None:
-    assert PRICING_VERSION == CURRENT_SNAPSHOT.version == "2026-10-19"
-    assert EFFECTIVE_FROM == CURRENT_SNAPSHOT.effective_from == datetime(2026, 10, 19, tzinfo=UTC)
-    prices = CURRENT_SNAPSHOT.prices
+    assert SNAPSHOT_2026_10_19.version == "2026-10-19"
+    assert SNAPSHOT_2026_10_19.effective_from == datetime(2026, 10, 19, tzinfo=UTC)
+    prices = SNAPSHOT_2026_10_19.prices
 
     # Only OpenAI changed: every other 2026-10-16 row carries over verbatim, and so do the
     # multipliers, commitment flags and fees.
     previous = [_as_tuple(p) for p in SNAPSHOT_2026_10_16.prices if p.provider != "openai"]
     assert [_as_tuple(p) for p in prices if p.provider != "openai"] == previous
-    assert CURRENT_SNAPSHOT.tier_multipliers == SNAPSHOT_2026_10_16.tier_multipliers
-    assert CURRENT_SNAPSHOT.commitment_billed == SNAPSHOT_2026_10_16.commitment_billed
-    assert CURRENT_SNAPSHOT.fees == SNAPSHOT_2026_10_16.fees
+    assert SNAPSHOT_2026_10_19.tier_multipliers == SNAPSHOT_2026_10_16.tier_multipliers
+    assert SNAPSHOT_2026_10_19.commitment_billed == SNAPSHOT_2026_10_16.commitment_billed
+    assert SNAPSHOT_2026_10_19.fees == SNAPSHOT_2026_10_16.fees
     openai = {_as_tuple(p)[1:] for p in prices if p.provider == "openai"}
     assert len(openai) == 56
     # The six earlier OpenAI rows keep their rates.
@@ -236,7 +243,7 @@ def test_2026_10_19_adds_openai_models() -> None:
 
 def test_2026_10_19_prices_openai_cache_writes_and_long_prompts() -> None:
     book = seed_price_book()
-    at = datetime(2026, 10, 19, 12, tzinfo=UTC)
+    at = datetime(2026, 10, 25, 12, tzinfo=UTC)  # the 2026-10-19 rows, carried into 2026-10-25
 
     def cost(model: str, **usage: int) -> Decimal | None:
         result = book.cost(provider="openai", model=model, at=at, **usage)  # type: ignore[arg-type]
@@ -273,8 +280,8 @@ async def test_sync_writes_every_snapshot_once(
         book = await load_price_book(db)
     expected_rows = sum(len(snapshot.prices) for snapshot in ALL_SNAPSHOTS)
     # 2026-10-01 (18), 2026-10-15 (19), 2026-10-16 (19 carried + 8 Anthropic + 11 Gemini),
-    # 2026-10-19 (the 32 non-OpenAI rows carried + 56 OpenAI).
-    assert expected_rows == 18 + 19 + (19 + 8 + 11) + (32 + 56)
+    # 2026-10-19 (the 32 non-OpenAI rows carried + 56 OpenAI), 2026-10-25 (all 88 carried).
+    assert expected_rows == 18 + 19 + (19 + 8 + 11) + (32 + 56) + 88
     assert len(book._prices) == expected_rows
 
 
@@ -295,9 +302,11 @@ async def test_sync_writes_fees_once(
         for row in rows
     ] == [
         ("anthropic", "web_search", Decimal("10.000000"), OCT_16, "2026-10-16"),
-        ("anthropic", "web_search", Decimal("10.000000"), EFFECTIVE_FROM, "2026-10-19"),
+        ("anthropic", "web_search", Decimal("10.000000"), OCT_19, "2026-10-19"),
+        ("anthropic", "web_search", Decimal("10.000000"), EFFECTIVE_FROM, PRICING_VERSION),
         ("openai", "web_search", Decimal("10.000000"), OCT_16, "2026-10-16"),
-        ("openai", "web_search", Decimal("10.000000"), EFFECTIVE_FROM, "2026-10-19"),
+        ("openai", "web_search", Decimal("10.000000"), OCT_19, "2026-10-19"),
+        ("openai", "web_search", Decimal("10.000000"), EFFECTIVE_FROM, PRICING_VERSION),
     ]
 
 

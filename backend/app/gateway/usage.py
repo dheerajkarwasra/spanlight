@@ -17,7 +17,7 @@ from typing import Any
 import structlog
 
 from app.gateway.sse import Usage, as_int, as_str, dict_at
-from app.pricing.tiers import normalize_tier, unknown_tier_spelling
+from app.pricing.tiers import MAX_RAW_TIER_LENGTH, normalize_tier, unknown_tier_spelling
 
 logger = structlog.get_logger(__name__)
 
@@ -106,7 +106,8 @@ def anthropic_usage(usage: Mapping[str, Any]) -> Usage | None:
     """Messages usage; input tokens include the cached ones, read and written.
 
     `output_tokens` is None when the field is absent: `message_start` without a `message_delta`.
-    The tier is `usage.service_tier` and the search count `server_tool_use.web_search_requests`.
+    The tier is `usage.service_tier` and the search count `server_tool_use.web_search_requests`;
+    `inference_geo` and `speed` say where and at which speed the call ran, which is what was billed.
     """
     uncached = as_int(usage.get("input_tokens"))
     if uncached is None:
@@ -123,7 +124,15 @@ def anthropic_usage(usage: Mapping[str, Any]) -> Usage | None:
         service_tier=tier,
         web_search_requests=as_int(dict_at(usage, "server_tool_use").get("web_search_requests")),
         service_tier_raw=raw,
+        inference_geo=_bounded(usage.get("inference_geo")),
+        speed=_bounded(usage.get("speed")),
     )
+
+
+def _bounded(value: Any) -> str | None:
+    """A reported string cut to 64 characters, as a raw tier is: it ends up in span attributes."""
+    text = as_str(value)
+    return text[:MAX_RAW_TIER_LENGTH] if text is not None else None
 
 
 def _cache_writes(usage: Mapping[str, Any]) -> tuple[int | None, int | None]:

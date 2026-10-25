@@ -23,8 +23,10 @@ def pricing_modifier_unknown(request: Mapping[str, Any]) -> str | None:
     """Name the request option whose price Spanlight does not model, if any.
 
     Data residency (Anthropic ``inference_geo``, a surcharge for ``us``) and
-    fast mode (``speed: "fast"``) change the bill, but no price snapshot
-    carries their multipliers yet. The span is priced at the standard rate and
+    fast mode (``speed: "fast"``) change the bill. This request-side guess is
+    a fallback: the server prices both from the response's ``usage.inference_geo``
+    and ``usage.speed`` attributes and drops the guess when they are reported.
+    Without them the span is priced at the standard rate and
     tagged with ``usage.pricing_modifier_unknown`` set to
     ``inference_geo_<value>`` or ``fast_mode``, so the rollups count it apart
     and the reconciliation report can explain the residual. When both are
@@ -62,3 +64,17 @@ def _raw_request_option(request: Mapping[str, Any], name: str) -> Any:
         extra_body = request.get("extra_body")
         value = extra_body.get(name) if isinstance(extra_body, Mapping) else None
     return value
+
+
+def regional_endpoint(client: Any) -> dict[str, str]:
+    """Flag a client whose base URL is an OpenAI regional host.
+
+    Returns ``usage.pricing_modifier_unknown: regional_endpoint`` for a host
+    such as ``eu.api.openai.com``, else nothing. OpenAI bills an uplift there
+    on some models and no response reports the region, so the call is priced
+    at the standard rate and flagged.
+    """
+    host = getattr(getattr(client, "base_url", None), "host", None)
+    if isinstance(host, str) and host.lower().removesuffix(".").endswith(".api.openai.com"):
+        return {"usage.pricing_modifier_unknown": "regional_endpoint"}
+    return {}

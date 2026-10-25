@@ -80,9 +80,10 @@ class MessagesStreamAccumulator(StreamAccumulator):
         cache_write_1h = as_int(get_field(usage, "cache_creation", "ephemeral_1h_input_tokens"))
         if cache_write_1h is not None:
             self._usage["cache_creation"] = {"ephemeral_1h_input_tokens": cache_write_1h}
-        service_tier = get_field(usage, "service_tier")
-        if isinstance(service_tier, str):
-            self._usage["service_tier"] = service_tier
+        for name in ("service_tier", "inference_geo", "speed"):
+            value = get_field(usage, name)
+            if isinstance(value, str):
+                self._usage[name] = value
         # The web search count is cumulative too; usually only ``message_delta`` has it.
         web_searches = as_int(get_field(usage, "server_tool_use", "web_search_requests"))
         if web_searches is not None:

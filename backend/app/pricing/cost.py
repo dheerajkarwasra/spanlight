@@ -3,7 +3,7 @@
 The token cost of one price row is computed in `app.pricing.price_row`; `PriceBook.cost` adds
 the tier factor and the fee:
 
-    tokens = token_cost(row, usage) * tier_multiplier
+    tokens = token_cost(row, usage) * tier_multiplier * modifier_multipliers
     fee = web_search_requests * fee_rate / 1e3
     cost = quantize(tokens + (fee or 0))
 
@@ -11,7 +11,9 @@ The service tier scales the token cost by the factor of the snapshot that priced
 (`app.pricing.tiers.multipliers_for`): batch halves it, and a tier the snapshot carries no factor
 for (OpenAI priority among them) is billed at the standard rate. An override row uses the
 snapshot in force at the span's start time; a snapshot released before tiers were modelled
-resolves to the oldest tier table (`tiers` module docstring).
+resolves to the oldest tier table (`tiers` module docstring). The modifiers the response
+reported (`app.pricing.modifiers`: Anthropic data residency, fast mode) multiply it further, by
+the same snapshot's factors; one without a factor counts as 1.
 
 A server-side tool such as web search adds a fee per request from the fee book
 (`app.pricing.fees`). The fee is never scaled by the tier. The token cost and the fee are summed
@@ -128,6 +130,7 @@ class PriceBook:
         cache_write_1h_tokens: int | None = None,
         service_tier: str | None = None,
         web_search_requests: int | None = None,
+        modifiers: Iterable[str] = (),
     ) -> CostResult | None:
         """The span's cost and fee, or None when neither can be priced.
 
@@ -155,7 +158,7 @@ class PriceBook:
             cache_write_tokens,
             cache_write_1h_tokens,
         )
-        multiplier = multipliers_for(price.version, at).for_(provider, service_tier)
+        multiplier = multipliers_for(price.version, at).factor(provider, service_tier, modifiers)
         total = tokens * multiplier + (fee if fee is not None else Decimal(0))
         return CostResult(_quantize(total), fee_usd, price.version)
 

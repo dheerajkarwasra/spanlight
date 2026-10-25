@@ -1,6 +1,6 @@
 """Service tier, web search counts and fees on the native API: stored, priced, read back.
 
-A Claude Sonnet 4.6 call priced by the 2026-10-19 snapshot: $3 / $15 per million tokens, the
+A Claude Sonnet 4.6 call priced by the 2026-10-25 snapshot: $3 / $15 per million tokens, the
 Anthropic batch multiplier 0.5 and the Anthropic web search fee of $10 per 1,000 requests. The
 pipeline's clock is pinned after that snapshot takes effect, so every span here can start in it.
 """
@@ -29,7 +29,7 @@ STANDARD_COST = Decimal("0.07500000")
 BATCH_TOKEN_COST = Decimal("0.03750000")
 THREE_SEARCHES_FEE = Decimal("0.03000000")
 
-SPAN_START = EFFECTIVE_FROM + timedelta(hours=12)  # 2026-10-19T12:00Z
+SPAN_START = EFFECTIVE_FROM + timedelta(hours=12)  # 2026-10-25T12:00Z
 PINNED_NOW = SPAN_START + timedelta(hours=1)
 
 
@@ -88,7 +88,7 @@ async def test_native_span_with_batch_tier_and_searches_is_priced(
     assert stored.web_search_requests == 3
     assert stored.fee_usd == THREE_SEARCHES_FEE
     assert stored.cost_usd == BATCH_TOKEN_COST + THREE_SEARCHES_FEE
-    assert stored.pricing_version == PRICING_VERSION == "2026-10-19"
+    assert stored.pricing_version == PRICING_VERSION == "2026-10-25"
 
 
 async def test_invalid_tier_rejects_that_span_only(

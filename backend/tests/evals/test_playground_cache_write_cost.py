@@ -15,7 +15,7 @@ from app.pricing.cost import Price, PriceBook
 from app.pricing.prices import EFFECTIVE_FROM, PRICING_VERSION, SEED_PRICES
 from tests.gateway_support import PILOT_COST, PILOT_NATIVE
 
-AT = datetime(2026, 10, 19, 12, tzinfo=UTC)
+AT = datetime(2026, 10, 25, 12, tzinfo=UTC)
 
 
 def _seed_book() -> PriceBook:

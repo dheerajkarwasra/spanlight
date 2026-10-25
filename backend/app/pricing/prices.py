@@ -29,6 +29,18 @@ standard rate and flagged as an unmodelled modifier (`docs/api-deviations.md`).
 Server-tool fees are USD per 1,000 requests of a provider's built-in tool
 (web search today) and are added to the token cost.
 
+Modifier multipliers scale the token cost by (provider, modifier) on top of
+the tier factor, every token class alike, and stack: Anthropic US-only
+inference (`inference_geo: "us"`) at 1.1x and fast mode (`speed: "fast"`) at
+2x, both read from the response (`usage.inference_geo`, `usage.speed`). The
+fast-mode page lists exactly 2x the standard rates for every model it
+supports (Opus 5.5 $8 / $40, Opus 5 and 4.8 $10 / $50), and the caching and
+residency multipliers apply on top of it. Anthropic answers `inference_geo`
+on a model released before Claude 4.6 with a 400, so no eligibility is kept
+here. A modifier without a factor (OpenAI regional endpoints, a snapshot
+released before modifiers were priced) is priced at the standard rate and
+flagged `usage.pricing_modifier_unknown`.
+
 `SEED_PRICES` is the current snapshot, in force from `EFFECTIVE_FROM` under
 `PRICING_VERSION`. A span is priced by the snapshot in force when it started,
 and ingestion accepts spans up to 90 days old, so `HISTORICAL_SNAPSHOTS` keeps
@@ -52,7 +64,9 @@ When refreshing prices, refresh the announced retirement dates in `app.pricing.r
 from the providers' deprecation pages too (the `model_retiring` detector reads them).
 
 Sources: https://platform.claude.com/docs/en/about-claude/pricing (and the
-owner's copy of the pricing table, 2026-10-15), https://ai.google.dev/gemini-api/docs/pricing
+owner's copy of the pricing table, 2026-10-15; the data residency and fast mode
+sections and https://platform.claude.com/docs/en/manage-claude/data-residency and
+https://platform.claude.com/docs/en/build-with-claude/fast-mode checked 2026-10-25), https://ai.google.dev/gemini-api/docs/pricing
 (checked 2026-10-15) and https://developers.openai.com/api/docs/pricing with the
 model pages and the prompt-caching guide (checked 2026-10-19).
 """
@@ -67,8 +81,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.pricing.cost import PriceBook
 
-PRICING_VERSION = "2026-10-19"
-EFFECTIVE_FROM = datetime(2026, 10, 19, tzinfo=UTC)
+PRICING_VERSION = "2026-10-25"
+EFFECTIVE_FROM = datetime(2026, 10, 25, tzinfo=UTC)
 
 
 @dataclass(frozen=True)
@@ -98,7 +112,8 @@ class PriceSnapshot:
 
     `tier_multipliers` maps (provider, tier) to the factor applied to the token cost;
     `commitment_billed` names the pairs a provider bills outside the per-token rate; `fees` are
-    the server-tool fees released with the snapshot.
+    the server-tool fees released with the snapshot; `modifier_multipliers` maps (provider,
+    modifier) to a factor applied on top of the tier's.
     """
 
     version: str
@@ -107,6 +122,7 @@ class PriceSnapshot:
     tier_multipliers: Mapping[tuple[str, str], Decimal] = field(default_factory=dict)
     commitment_billed: frozenset[tuple[str, str]] = frozenset()
     fees: tuple[SeedFee, ...] = ()
+    modifier_multipliers: Mapping[tuple[str, str], Decimal] = field(default_factory=dict)
 
 
 def _price(
@@ -352,9 +368,33 @@ SEED_FEES: tuple[SeedFee, ...] = (
     _fee("openai", "web_search", "10.00"),
 )
 
+# (provider, modifier) -> factor on top of the tier's. A modifier missing here is priced at the
+# standard rate and flagged (`usage.pricing_modifier_unknown`).
+MODIFIER_MULTIPLIERS: Mapping[tuple[str, str], Decimal] = MappingProxyType(
+    {
+        ("anthropic", "inference_geo_us"): Decimal("1.1"),
+        ("anthropic", "fast"): Decimal("2.0"),
+    }
+)
+
 CURRENT_SNAPSHOT = PriceSnapshot(
     version=PRICING_VERSION,
     effective_from=EFFECTIVE_FROM,
+    prices=SEED_PRICES,
+    tier_multipliers=TIER_MULTIPLIERS,
+    commitment_billed=COMMITMENT_BILLED,
+    fees=SEED_FEES,
+    modifier_multipliers=MODIFIER_MULTIPLIERS,
+)
+
+
+# Released 2026-10-19 (sources checked that day). Its rows, multipliers, commitment flags and fees
+# are the current ones, unchanged in 2026-10-25, which only adds the modifier multipliers; a
+# snapshot that changes them must freeze a copy here. It priced every modifier at the standard
+# rate, so it carries none.
+SNAPSHOT_2026_10_19 = PriceSnapshot(
+    version="2026-10-19",
+    effective_from=datetime(2026, 10, 19, tzinfo=UTC),
     prices=SEED_PRICES,
     tier_multipliers=TIER_MULTIPLIERS,
     commitment_billed=COMMITMENT_BILLED,
@@ -584,6 +624,7 @@ HISTORICAL_SNAPSHOTS: tuple[PriceSnapshot, ...] = (
     SNAPSHOT_2026_10_01,
     SNAPSHOT_2026_10_15,
     SNAPSHOT_2026_10_16,
+    SNAPSHOT_2026_10_19,
 )
 ALL_SNAPSHOTS: tuple[PriceSnapshot, ...] = (*HISTORICAL_SNAPSHOTS, CURRENT_SNAPSHOT)
 

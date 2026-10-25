@@ -49,7 +49,7 @@ from tests.helpers import (
 )
 from tests.ingest.support import ingest_native, workspace_for_project
 
-SPAN_START = EFFECTIVE_FROM + timedelta(hours=12)  # 2026-10-19T12:00Z
+SPAN_START = EFFECTIVE_FROM + timedelta(hours=12)  # 2026-10-25T12:00Z
 PINNED_NOW = SPAN_START + timedelta(hours=1)
 
 # Spec §8.1: Claude Sonnet 4.6 at $3 / $15 per million, cache reads at $0.30.
@@ -160,9 +160,9 @@ async def test_ok_shape_matches_spec_example(
         "tier_note": None,
         "price": {
             "source": "seed",
-            "version": "2026-10-19",
+            "version": "2026-10-25",
             "model_pattern": "claude-sonnet-4-6",
-            "effective_from": "2026-10-19T00:00:00Z",
+            "effective_from": "2026-10-25T00:00:00Z",
             "min_prompt_tokens": 0,
             "override_id": None,
         },
@@ -447,7 +447,7 @@ async def test_price_version_without_a_row_for_the_model(
     assert explained["recomputed_usd"] is None
     assert explained["stored_usd"] == "0.06357000"
     assert explained["message"] == (
-        "The price row that priced this span (version 2026-10-19) is no longer in the price "
+        "The price row that priced this span (version 2026-10-25) is no longer in the price "
         "table; the stored figure is shown as it was priced."
     )
 

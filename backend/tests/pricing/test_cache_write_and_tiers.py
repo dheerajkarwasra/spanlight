@@ -12,7 +12,7 @@ import pytest
 from app.pricing.cost import OVERRIDE_VERSION_PREFIX, Price, PriceBook
 from app.pricing.prices import EFFECTIVE_FROM, PRICING_VERSION, SEED_PRICES
 
-AT = datetime(2026, 10, 19, 12, tzinfo=UTC)
+AT = datetime(2026, 10, 25, 12, tzinfo=UTC)
 
 HAIKU_45 = "claude-haiku-4-5"
 HAIKU_55 = "claude-haiku-5-5"

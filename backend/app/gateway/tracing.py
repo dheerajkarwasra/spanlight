@@ -15,6 +15,7 @@ import secrets
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 from app.core.text import storable_json
 from app.db.models import FaultScenario, ProviderCredential
@@ -212,7 +213,7 @@ def _attributes(
         "finish_reason": result.finish_reason,
     }
     attributes.update(provider_attributes.build(result, context))
-    attributes.update(_usage_attributes(request, result))
+    attributes.update(_usage_attributes(request, result, credential))
     if result.fault is not None:
         attributes["spanlight.fault.scenario"] = result.fault.scenario.value
         attributes["spanlight.fault.profile_id"] = str(result.fault.profile_id)
@@ -223,8 +224,11 @@ def _attributes(
     return attributes
 
 
-def _usage_attributes(request: GatewayRequest, result: GatewayResult) -> dict[str, Any]:
-    """What the span's usage leaves out: why it is unknown, a raw tier, an unmodelled option.
+def _usage_attributes(
+    request: GatewayRequest, result: GatewayResult, credential: ProviderCredential | None
+) -> dict[str, Any]:
+    """What the span's usage leaves out: why it is unknown, a raw tier, the reported pricing
+    modifiers (`usage.inference_geo`, `usage.speed`) and an unmodelled option.
 
     Each key is present only when it applies. A cache hit was not billed, so it names no
     pricing modifier; its stored usage is kept as `spanlight.cache.original_usage` instead.
@@ -236,24 +240,45 @@ def _usage_attributes(request: GatewayRequest, result: GatewayResult) -> dict[st
         return attributes
     if result.usage_unreported_reason is not None:
         attributes["usage.unreported_reason"] = result.usage_unreported_reason
-    if result.usage is not None and result.usage.service_tier_raw is not None:
+    if result.usage is None:
+        # Only a call that reported usage was billed; one that never reached the provider, or
+        # that it refused, must not count as priced at a modifier Spanlight does not model.
+        return attributes
+    if result.usage.service_tier_raw is not None:
         attributes["usage.service_tier_raw"] = result.usage.service_tier_raw
-    # Only a call that reported usage was billed; one that never reached the provider, or that
-    # it refused, must not count as priced at a modifier Spanlight does not model.
-    modifier = pricing_modifier_unknown(request.body) if result.usage is not None else None
+    if result.usage.inference_geo is not None:
+        attributes["usage.inference_geo"] = result.usage.inference_geo
+    if result.usage.speed is not None:
+        attributes["usage.speed"] = result.usage.speed
+    modifier = pricing_modifier_unknown(request.body) or _regional_endpoint(credential)
     if modifier is not None:
         attributes["usage.pricing_modifier_unknown"] = modifier
     return attributes
+
+
+def _regional_endpoint(credential: ProviderCredential | None) -> str | None:
+    """`regional_endpoint` for an OpenAI regional host (`eu.api.openai.com`), which bills an
+    uplift on some models that no response reports; only an OpenAI-compatible credential has a
+    base URL. Not priced: the uplift depends on the model's release date."""
+    if credential is None or credential.base_url is None:
+        return None
+    try:
+        host = (urlsplit(credential.base_url).hostname or "").removesuffix(".")
+    except ValueError:  # validated when saved; a span is never lost to a malformed URL
+        return None
+    return "regional_endpoint" if host.endswith(".api.openai.com") else None
 
 
 def pricing_modifier_unknown(body: Mapping[str, Any]) -> str | None:
     """The request option whose price Spanlight does not model, if any.
 
     Data residency (`inference_geo`, a surcharge for `us`) and fast mode (`speed: "fast"`)
-    change the bill, but no price snapshot carries their multipliers yet. The span is priced at
-    the standard rate and named `inference_geo_<value>` or `fast_mode`, so the rollups count it
-    apart. Values are trimmed and lower-cased; `inference_geo: "global"` is the default routing
-    at the standard price and names nothing; when both are present the data residency wins.
+    change the bill. This is the request-side guess, a fallback only: ingestion replaces it with
+    the response's `usage.inference_geo` / `usage.speed` when they are reported, and prices those
+    (`app.pricing.modifiers`). Without them the span is priced at the standard rate and named
+    `inference_geo_<value>` or `fast_mode`, so the rollups count it apart. Values are trimmed
+    and lower-cased; `inference_geo: "global"` is the default routing at the standard price and
+    names nothing; when both are present the data residency wins.
     A value that is not 1-32 of `a-z 0-9 _ -` is named `inference_geo_other`. The same rule as
     the Python SDK's `pricing_modifier_unknown`.
     """

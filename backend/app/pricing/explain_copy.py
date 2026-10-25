@@ -33,6 +33,23 @@ CACHE_HIT_MESSAGE: Final = (
 )
 
 
+_MODIFIER_LABELS: Final = {"inference_geo_us": "Data residency", "fast": "Fast mode"}
+_TIMES: Final = "\N{MULTIPLICATION SIGN}"
+
+
+def modifiers_message(priced: list[tuple[str, Decimal]]) -> str | None:
+    """'Data residency x1.1 and Fast mode x2 apply to every token class.' (with the
+    multiplication sign); None without any priced modifier."""
+    if not priced:
+        return None
+    parts = [
+        f"{_MODIFIER_LABELS.get(name, name)} {_TIMES}{factor.normalize():f}"
+        for name, factor in priced
+    ]
+    verb = "applies" if len(parts) == 1 else "apply"
+    return f"{' and '.join(parts)} {verb} to every token class."
+
+
 def no_usage_message(reason: str | None, *, input_missing: bool, fee_priced: bool) -> str:
     """Why the token cost is unknown: the reported reason when there is one."""
     sentence = UNREPORTED_REASON_COPY.get(reason) if reason is not None else None

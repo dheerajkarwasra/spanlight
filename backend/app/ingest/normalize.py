@@ -23,6 +23,8 @@ from app.ingest.request_hash import request_hash
 from app.ingest.schemas import SpanIn
 from app.ingest.trace_fields import TraceFields, trace_fields
 from app.pricing.cost import PriceBook
+from app.pricing.modifiers import flag_unpriced_modifiers, reported_modifiers
+from app.pricing.tiers import multipliers_for
 
 MAX_PAYLOAD_BYTES = 1024 * 1024
 # The most two payloads held under the old 32 KB cap: the size read for a span stored before
@@ -90,7 +92,10 @@ def normalize_span(
     usage = _usage(span)
     attributes = _attributes(span)
     stored_input, stored_output, truncated, payload_bytes = _payloads(span, capture_payloads)
-    cost_usd, fee_usd, pricing_version = _cost(span, prices, usage)
+    modifiers = reported_modifiers(attributes)
+    cost_usd, fee_usd, pricing_version = _cost(span, prices, usage, modifiers)
+    multipliers = multipliers_for(pricing_version, span.start_time)
+    flag_unpriced_modifiers(attributes, span.provider, modifiers, multipliers)
     status_message = redact_text(span.status_message) if span.status_message else None
     error_class = classify_error(span.status, status_message, attributes)
     return NormalizedSpan(
@@ -185,7 +190,7 @@ def _usage(span: SpanIn) -> _Usage:
 
 
 def _cost(
-    span: SpanIn, prices: PriceBook, usage: _Usage
+    span: SpanIn, prices: PriceBook, usage: _Usage, modifiers: tuple[str, ...]
 ) -> tuple[Decimal | None, Decimal | None, str | None]:
     """The span's cost, its fee part and the price version used; each None when unknown.
 
@@ -203,6 +208,7 @@ def _cost(
         cache_write_1h_tokens=usage.cache_write_1h_tokens,
         service_tier=usage.service_tier,
         web_search_requests=usage.web_search_requests,
+        modifiers=modifiers,
     )
     if cost is None:
         return None, None, None

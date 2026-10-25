@@ -148,4 +148,6 @@ async def test_the_price_catalogue_lists_the_haiku_55_tier_row(workspace: Worksp
         ("2026-10-16", 100001),
         ("2026-10-19", 0),
         ("2026-10-19", 100001),
+        ("2026-10-25", 0),
+        ("2026-10-25", 100001),
     ]
