@@ -20,7 +20,7 @@ from app.db.errors import violated_constraint
 from app.db.models import AuditAction, Evaluator
 from app.evals import queries
 from app.evals.budget import month_start, remaining
-from app.evals.config import EvaluatorPatch, EvaluatorSpec
+from app.evals.config import EvaluatorPatch, EvaluatorSpec, parse_config
 from app.evals.config_resolve import patched_config_in, resolve_config
 from app.evals.errors import EvaluatorNameTakenError, EvaluatorNotFoundError
 from app.evals.reservation import MonthSpend, month_spend, month_spends
@@ -30,6 +30,8 @@ from app.services.audit import record_audit
 NAME_CONSTRAINT = "evaluators_project_name_key"
 # The members whose change re-runs the config checks (references, prices, budget rules).
 CHECKED_MEMBERS = frozenset({"config", "sampling_rate", "monthly_budget_usd"})
+# The config fields that make a judge a different judge: changing one resets its agreement.
+JUDGE_IDENTITY = ("model", "prompt_version_id", "temperature")
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,7 +128,8 @@ async def update_evaluator(
 async def _apply_checked(
     db: AsyncSession, evaluator: Evaluator, actor: Actor, patch: EvaluatorPatch, now: datetime
 ) -> None:
-    """Merge the config, sampling rate and budget of `patch`, check the result, and store it."""
+    """Merge the config, sampling rate and budget of `patch`, check the result, and store it.
+    A change to the judge itself (`JUDGE_IDENTITY`) stamps `config_changed_at`."""
     config = await resolve_config(
         db,
         actor.org_id,
@@ -150,6 +153,9 @@ async def _apply_checked(
         monthly_budget_usd=budget,
         now=now,
     )
+    before = parse_config(evaluator.config)
+    if any(getattr(before, f, None) != getattr(config, f, None) for f in JUDGE_IDENTITY):
+        evaluator.config_changed_at = now
     evaluator.config = config.model_dump(mode="json")
     evaluator.sampling_rate = sampling_rate
     evaluator.monthly_budget_usd = budget

@@ -3,11 +3,13 @@
 A pair is one trace with both a judge score and a human score under the evaluator's name. The
 judge side is the newest `source = 'eval'` score written by a run of this evaluator (any run
 source: online, test or experiment); the human side is the newest `source = 'human'` score on the
-same trace. Span ids are ignored. API-key scores (`source = 'api'`) never count. Each evaluator
-keeps its newest `limit` pairs by human score time; one row more is read to tell whether the cap
-applied. The human side reads `scores_project_name_created_idx`; the judge side starts from this
-evaluator's runs (`evaluator_runs_evaluator_started_idx`) and reads their scores through
-`scores_evaluator_run_idx`, so neither side grows with other projects' scores or runs.
+same trace. Only runs started at or after the evaluator's `config_changed_at` count on the judge
+side, so a model, prompt or temperature change starts agreement afresh. Span ids are ignored.
+API-key scores (`source = 'api'`) never count. Each evaluator keeps its newest `limit` pairs by
+human score time; one row more is read to tell whether the cap applied. The human side reads
+`scores_project_name_created_idx`; the judge side starts from this evaluator's runs
+(`evaluator_runs_evaluator_started_idx`) and reads their scores through `scores_evaluator_run_idx`,
+so neither side grows with other projects' scores or runs.
 """
 
 import uuid
@@ -32,7 +34,7 @@ class PairSet:
 _PAIRS = text(
     """
     WITH ev AS (
-        SELECT id, name FROM evaluators
+        SELECT id, name, config_changed_at FROM evaluators
         WHERE project_id = :project_id AND id = ANY(:evaluator_ids)
     ),
     judge AS (
@@ -41,6 +43,7 @@ _PAIRS = text(
         -- Repeating the ids as a parameter lets the planner estimate these evaluators' runs and
         -- take the evaluator_id index instead of hashing every tenant's runs (no prepared plans).
         JOIN evaluator_runs r ON r.evaluator_id = ev.id AND r.evaluator_id = ANY(:evaluator_ids)
+         AND (ev.config_changed_at IS NULL OR r.started_at >= ev.config_changed_at)
         JOIN scores s
           ON s.evaluator_run_id = r.id
          AND s.project_id = :project_id AND s.name = ev.name AND s.source = 'eval'

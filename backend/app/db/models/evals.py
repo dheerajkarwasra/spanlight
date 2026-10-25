@@ -40,6 +40,8 @@ class Evaluator(Base):
 
     `config` is the validated discriminated union of `app.evals.config` and its `kind` always
     equals the `kind` column (CHECK). Judges must have a positive `monthly_budget_usd`.
+    `config_changed_at` is when an edit last changed the judge's model, prompt version or
+    temperature (migration 1021); NULL when none did.
     """
 
     __tablename__ = "evaluators"
@@ -58,6 +60,7 @@ class Evaluator(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    config_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class EvaluatorRun(Base):

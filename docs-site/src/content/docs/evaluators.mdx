@@ -129,7 +129,7 @@ The budget meter shows spent, reserved and remaining for the month, and turns to
 
 A judge's mean says what the judge thinks, not whether it is right. The **Agreement with reviewers** card on a judge's page compares its scores with the scores people gave in [Review](/docs/review/) on the same traces, so you can see how far to trust it before you rely on its mean.
 
-**What is paired.** A pair is one trace that has both a score from this judge and a human review score with the judge's name. For each trace the newest score on each side is used; span ids are ignored. Judge scores from online runs, test runs and experiments all count. Scores sent with an API key never count, and scores without a numeric value are skipped. When more than 2,000 traces are paired, the 2,000 with the newest review scores are used and the card says so.
+**What is paired.** A pair is one trace that has both a score from this judge and a human review score with the judge's name. For each trace the newest score on each side is used; span ids are ignored. Judge scores from online runs, test runs and experiments all count, but only from runs started since the judge last changed: a new model, prompt version or temperature starts agreement afresh (a new credential, output limit, sampling rate, name or filter does not), and the API's `since` field gives that time. Scores sent with an API key never count, and scores without a numeric value are skipped. When more than 2,000 traces are paired, the 2,000 with the newest review scores are used and the card says so.
 
 **What it shows.** With at least **30 paired traces** the card shows:
 

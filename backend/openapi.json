@@ -203,6 +203,18 @@
             "title": "Score Name",
             "type": "string"
           },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
           "status": {
             "enum": [
               "ok",
@@ -228,7 +240,8 @@
           "pass_threshold",
           "labels",
           "matrix",
-          "flagged"
+          "flagged",
+          "since"
         ],
         "title": "AgreementOut",
         "type": "object"

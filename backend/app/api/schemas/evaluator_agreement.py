@@ -1,10 +1,13 @@
 """Agreement between human reviewers and an LLM judge (UX Phase 6).
 
 `kappa`, `f1` and `pass_threshold` are JSON numbers (4 places), like score values; each is `null`
-when it cannot be computed, never zero. Matrix rows are the reviewer, columns the judge.
+when it cannot be computed, never zero. Matrix rows are the reviewer, columns the judge. `since`
+is when the judge last changed (model, prompt version or temperature); only verdicts from runs
+started then or later count, and it is `null` when the judge never changed.
 """
 
 import uuid
+from datetime import datetime
 from typing import Self
 
 from app.api.schemas.common import ApiModel
@@ -29,6 +32,7 @@ class AgreementOut(ApiModel):
     labels: list[str]
     matrix: list[list[int]]
     flagged: bool
+    since: datetime | None
 
     @classmethod
     def of(
@@ -54,6 +58,7 @@ class AgreementOut(ApiModel):
             labels=list(result.labels),
             matrix=[list(row) for row in result.matrix],
             flagged=result.flagged,
+            since=evaluator.config_changed_at,
         )
 
 

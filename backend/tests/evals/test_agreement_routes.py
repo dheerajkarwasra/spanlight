@@ -3,11 +3,12 @@
 Failure modes: a stale score on either side pairs instead of the newest one; an API-key score or a
 score under another name counts as a review or a verdict; a judge's test-run scores are left out;
 the 2,000-pair cap drops the newest pairs or hides that it applied; a heuristic evaluator gets a
-badge; another project's evaluator answers instead of 404.
+badge; another project's evaluator answers instead of 404; a judge's verdicts from before its
+model changed still pair.
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import text
@@ -16,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.db.rls import bypass_rls
 from app.evals.agreement import MAX_PAIRS
 from tests.conftest import BrowserFactory
+from tests.evals.judges import JudgeWorld, create_judge
 from tests.evals.runs import insert_run
 from tests.helpers import Workspace, create_workspace, new_trace_id
 
@@ -118,6 +120,7 @@ async def test_agreement_pairs_newest_score_per_side(
         "labels": ["0–0.2", "0.2–0.4", "0.4–0.6", "0.6–0.8", "0.8–1"],  # noqa: RUF001
         "matrix": [[0] * 5] * 4 + [[0, 0, 0, 0, 1]],
         "flagged": False,
+        "since": None,
     }
 
 
@@ -207,6 +210,42 @@ async def test_agreement_caps_at_2000_pairs_and_says_so(
     assert (body["pairs"], body["capped"]) == (MAX_PAIRS, True)
     assert body["matrix"][0][0] == 0
     assert body["matrix"][4][4] == MAX_PAIRS
+
+
+async def test_agreement_counts_only_verdicts_since_the_judge_changed(
+    judge_world: JudgeWorld,
+) -> None:
+    """A model change resets the judge side; a sampling-rate change does not."""
+    world, sessions = judge_world, judge_world.sessions
+    judge = await create_judge(world, budget="5")
+    project = world.workspace.project_id
+    url = f"/api/v1/projects/{project}/evaluators/{judge.evaluator_id}"
+    old_run = await insert_run(
+        sessions, judge.evaluator_id, started_at=world.clock.wall() - timedelta(hours=1)
+    )
+    old_trace, new_trace = new_trace_id(), new_trace_id()
+    await add_score(sessions, str(project), old_trace, 1, name="relevance")
+    await add_score(
+        sessions, str(project), old_trace, 1, name="relevance", source="eval", run_id=old_run
+    )
+
+    changed = await world.workspace.owner.patch(url, json={"config": {"model": "gpt-4.1"}})
+    assert changed.status_code == 200, changed.text
+    since = world.clock.wall()
+    new_run = await insert_run(sessions, judge.evaluator_id, started_at=since)
+    await add_score(sessions, str(project), new_trace, 0, name="relevance")
+    await add_score(
+        sessions, str(project), new_trace, 0, name="relevance", source="eval", run_id=new_run
+    )
+    world.clock.advance(60)
+    resampled = await world.workspace.owner.patch(url, json={"sampling_rate": 0.5})
+    assert resampled.status_code == 200, resampled.text
+
+    body = (await world.workspace.owner.get(f"{url}/agreement")).json()
+
+    assert body["pairs"] == 1
+    assert body["matrix"][0][0] == 1
+    assert datetime.fromisoformat(body["since"]) == since
 
 
 async def test_summary_lists_only_judges(
