@@ -3466,3 +3466,61 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
   insight channels. A later scheduled run with no regression resolves an open or acknowledged one; a muted one keeps
   its mute. The detector engine never resolves this kind. It has no catalogue entry, so its `label` is the kind
   string, and it is not in the sensitivity settings.
+
+## Hardening wave 4 (added 2026-10-26)
+
+### Clustered intervals and tests (`cluster_key`)
+
+- **Grouping.** `ExperimentConfig.cluster_key` (optional, 1 to 100 characters, set at create) names a dataset item
+  metadata key. Items are grouped by that key's value (compared as JSON text) in the run's frozen copy; an item whose
+  copy lacks the key, or a legacy row without a copy, is a cluster of its own. An unset key is not stored in the
+  experiment's config. The standard error is CR0, `SE = sqrt(Σ_c (Σ_{i∈c}(s_i − s̄))²) / n` (Miller 2024, Eq. 4 and
+  Eq. 8, with the CLT term over n, so all-singleton clusters give exactly `sqrt(p(1−p)/n)`).
+- **Run totals.** Boolean scores gain `ci_clustered_low`, `ci_clustered_high` (`s̄ ± 1.959964·SE`, clamped to [0, 1],
+  4 places) and `clusters`. They are null without a key, on totals stored before this change, and (the interval only)
+  with fewer than two clusters. There is no other minimum cluster count; the count is shown.
+- **Compare.** Each score with a `test` gains `clustered_test` when the experiment has a key: `kind: "clustered_z"`,
+  `n`, `clusters`, `mean_difference`, `standard_error`, `z`, `p_value` and `significant`, on `d_i = b_i − a_i` over
+  the unchanged matched pairs, clustered by run a's copy, two-sided p = `erfc(|z|/√2)`, alpha 0.05. `SE_d = 0` gives
+  `z` and `p_value` null, never 0. With a key, `clustered_test` is the test of record; `test` (McNemar or sign) stays
+  for reference.
+- **Weekly regression.** With a key, a score regressed when its clustered `z < 0` and its p is below 0.05 / m.
+  Without a key the exact rule is unchanged.
+
+### `root_received` on trace summaries
+
+- `TraceSummaryOut` (and so `TraceDetailOut`, `TraceCompareOut.a` / `.b` and `SessionTurnOut.trace`) has
+  `root_received: bool | null`, read at query time: `true` when the trace has a stored span with `parent_span_id`
+  null, `false` when every stored span has a parent. Spanlight never says a trace is "in progress": a `false` trace
+  may still be running, or its root was sent to another backend, sampled out or lost, and Spanlight cannot tell
+  which. Duration, tokens and cost cover the spans received. `null` only when the summary details could not be read
+  for the trace (never `false` in that case). The trace list has no filter on it.
+
+### First failing span
+
+- **Completion `span_id`.** `POST .../annotation-queues/{queue_id}/items/{item_id}/complete` accepts an optional
+  `span_id` on each score. On a trace-level item it must be a stored span of the item's trace; on a span-scoped item
+  it may only be that item's span. Anything else is `422 SPAN_NOT_IN_TRACE` (errors name `scores.<score name>`) and
+  nothing is written. A score without `span_id`, or with the item's own span, keeps the item's span as before.
+- **`GET /review/failing-spans`.** Takes `from` / `to` (the shared window, default the last 24 hours), at most 30
+  days (`422 WINDOW_TOO_LARGE`). Sessions and personal access tokens with `project:read`; not an API key, like the
+  other review routes. Each trace that started in the window counts once, under its latest `failure_category` score
+  with a string value (by `created_at`, then id, the release read's rule). `reviewed` counts those traces whether or
+  not the label names a span. Groups keep labels that name a span and are not `none`, keyed by (span name, span kind,
+  category); a label whose span is not stored groups under `span_name` / `span_kind` null rather than being dropped.
+  `rate` is `count / reviewed` at 4 places with Wilson 95 % bounds. The largest 200 groups are returned, ordered by
+  count, then name (nulls last), kind and category; `truncated` is true when more exist. Without any labels in the
+  window the answer is `reviewed: 0` and an empty list (no 404).
+
+### Budget burn forecast
+
+- `BudgetBurnOut` gains `forecast_usd` (decimal string or `null`), `forecast_basis_days` (int) and
+  `forecast_crosses_on` (UTC date or `null`). Method: the running total of known days plus the mean spend of the last 7
+  complete UTC days before today (read in the same `metric_series` call; they may fall in the previous period) times
+  `resets_at − now` in days, the rest of today included, rounded to 8 decimals. Days that ended before the project's
+  `created_at` are no history and are left out; every later day counts, a $0 day included; `forecast_basis_days` is
+  that count. `forecast_usd` is `null` for daily budgets, with fewer than 3 basis days, when any basis day is unknown,
+  or while the period's total is unknown. It forecasts traced spend (what the budget measures), not reconciled spend,
+  and is display only (no alert). `forecast_crosses_on` is the first UTC day the spend passes the amount (strictly
+  greater, like the budget rule): the measured day if it already has, else the day the projection reaches it before
+  `resets_at`, else `null`. The list endpoint is unchanged (no per-row metric read).
