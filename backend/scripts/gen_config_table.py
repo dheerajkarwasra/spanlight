@@ -153,7 +153,12 @@ GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "of the organization's provider credentials under each evaluator's monthly budget, and "
         "webhooks ask your own service. Online evaluation samples recent spans every minute; "
         "experiments run a dataset through a prompt and score every item.",
-        ("evals_enabled", "eval_sampler_max_runs_per_cycle", "experiment_max_items"),
+        (
+            "evals_enabled",
+            "eval_sampler_max_runs_per_cycle",
+            "experiment_max_items",
+            "experiment_schedules_enabled",
+        ),
     ),
     (
         "Review loop",
@@ -422,6 +427,11 @@ DESCRIPTIONS: dict[str, str] = {
     "experiment_max_items": (
         "Ceiling for an experiment's `max_items`: the most dataset items one experiment run "
         "processes."
+    ),
+    "experiment_schedules_enabled": (
+        "Schedule the daily job that reruns every experiment marked `weekly` once per ISO week, "
+        "unattended, each run under its own cost limit. Off, a saved schedule starts nothing. See "
+        "[weekly reruns](/docs/experiments/#weekly-reruns)."
     ),
     "review_selection_enabled": (
         "Schedule the nightly selection of traces into each project's review queue. Off, a "
