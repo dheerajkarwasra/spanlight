@@ -19,6 +19,10 @@
   interval and the exact McNemar test on the matched items; a numeric score carries the paired
   sign test; a categorical score has no test. Fewer than two matched items carrying the score
   give no test either.
+* When the experiment groups items by a metadata key (each `ItemRow` carries a `cluster`), a
+  boolean or numeric score also carries the clustered paired z test on `b - a` over the same
+  unchanged matched pairs, clustered by run a's copy; it is then the test of record, and McNemar or
+  the sign test stays alongside for reference.
 * `cost_delta_usd` and `latency_p95_delta_ms` are `b - a` of the runs' totals and are None when
   either side is unknown (unknown is never 0).
 
@@ -33,7 +37,14 @@ from typing import Any
 from uuid import UUID
 
 from app.evals.experiment_totals import ItemFacts, ScoreStat, Totals, summarize_items
-from app.evals.stats import Interval, PairedTest, mcnemar_exact, sign_test
+from app.evals.stats import (
+    ClusteredTest,
+    Interval,
+    PairedTest,
+    clustered_paired_test,
+    mcnemar_exact,
+    sign_test,
+)
 
 PLACES = Decimal("0.0001")
 
@@ -54,6 +65,8 @@ class ItemRow:
     input: Any = None
     expected_output: Any = None
     has_copy: bool = False
+    # `experiment_totals.cluster_label` with the experiment's cluster key; None without one.
+    cluster: str | UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +96,8 @@ class ScoreDelta:
     # McNemar for a boolean score, the sign test for a numeric one; None for a categorical score
     # or fewer than two matched items.
     test: PairedTest | None = None
+    # With a cluster key, where `test` exists: the clustered paired z test, the test of record.
+    clustered_test: ClusteredTest | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,21 +182,33 @@ def _score_delta(
     # A changed pair is no pair: leaving it out of `by_id` skips it below.
     by_id = {row.dataset_item_id: row for row in b if row.dataset_item_id not in changed}
     improved = regressed = unchanged = 0
+    before_values: list[Decimal] = []
+    after_values: list[Decimal] = []
+    clusters: list[str | UUID | None] = []
     for row in a:
         other = by_id.get(row.dataset_item_id)
         if other is None or name not in row.scores or name not in other.scores:
             continue
         before, after = row.scores[name], other.scores[name]
-        delta = _delta(before, after)
-        if delta is None:  # categorical: equal is unchanged, different is neither
+        low, high = _number(before), _number(after)
+        if low is None or high is None:  # categorical: equal is unchanged, different is neither
             if before == after:
                 unchanged += 1
-        elif delta > 0:
+            continue
+        before_values.append(low)
+        after_values.append(high)
+        clusters.append(row.cluster)
+        delta = (high - low).quantize(PLACES)
+        if delta > 0:
             improved += 1
         elif delta < 0:
             regressed += 1
         else:
             unchanged += 1
+    test = _paired_test(
+        [s for s in (stat_a, stat_b) if s is not None], improved, regressed, unchanged
+    )
+    clustered = test is not None and all(cluster is not None for cluster in clusters)
     return ScoreDelta(
         mean_a=mean_a,
         mean_b=mean_b,
@@ -191,8 +218,9 @@ def _score_delta(
         unchanged=unchanged,
         ci_a=_interval(stat_a),
         ci_b=_interval(stat_b),
-        test=_paired_test(
-            [s for s in (stat_a, stat_b) if s is not None], improved, regressed, unchanged
+        test=test,
+        clustered_test=(
+            clustered_paired_test(before_values, after_values, clusters) if clustered else None
         ),
     )
 

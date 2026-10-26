@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Text as SqlText
-from sqlalchemy import and_, cast, func, or_, select, update
+from sqlalchemy import and_, cast, func, null, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -25,7 +25,7 @@ from app.db.models import (
     ExperimentRunStatus,
     Project,
 )
-from app.evals.experiment_totals import ItemFacts
+from app.evals.experiment_totals import ItemFacts, cluster_label
 from app.jobs.queue import job_may_still_run
 
 RUN_JOB = "run_experiment"
@@ -237,7 +237,13 @@ async def evaluator_error_counts(
 
 
 async def item_facts(db: AsyncSession, run_id: uuid.UUID) -> list[ItemFacts]:
-    """What the totals need of every stored item of the run (no outputs are read)."""
+    """What the totals need of every stored item of the run (no outputs are read), with each
+    item's cluster when the run's experiment has a `cluster_key`."""
+    key = await db.scalar(
+        select(Experiment.config["cluster_key"].astext)
+        .join(ExperimentRun, ExperimentRun.experiment_id == Experiment.id)
+        .where(ExperimentRun.id == run_id)
+    )
     rows = await db.execute(
         select(
             ExperimentItem.latency_ms,
@@ -245,10 +251,19 @@ async def item_facts(db: AsyncSession, run_id: uuid.UUID) -> list[ItemFacts]:
             ExperimentItem.error,
             ExperimentItem.scores,
             ExperimentItem.evaluator_error,
+            ExperimentItem.dataset_item_id,
+            (null() if key is None else ExperimentItem.item_metadata[key]).label("cluster"),
         ).where(ExperimentItem.run_id == run_id)
     )
     return [
-        ItemFacts(row.latency_ms, row.cost_usd, row.error, row.scores or {}, row.evaluator_error)
+        ItemFacts(
+            row.latency_ms,
+            row.cost_usd,
+            row.error,
+            row.scores or {},
+            row.evaluator_error,
+            None if key is None else cluster_label(row.cluster, row.dataset_item_id),
+        )
         for row in rows
     ]
 

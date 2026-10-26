@@ -63,6 +63,12 @@ class ScoreStatOut(ApiModel):
     passed: int | None = None
     ci_low: Rate | None = None
     ci_high: Rate | None = None
+    # Boolean scores of an experiment with a `cluster_key` only: the clustered (CR0) 95% interval
+    # on the pass rate and the number of clusters it rests on. Null otherwise, and on totals
+    # stored before clustering existed; the interval is null with fewer than two clusters.
+    ci_clustered_low: Rate | None = None
+    ci_clustered_high: Rate | None = None
+    clusters: int | None = None
 
 
 class TotalsOut(ApiModel):
@@ -98,6 +104,9 @@ class TotalsOut(ApiModel):
                     passed=stat.passed,
                     ci_low=stat.ci_low,
                     ci_high=stat.ci_high,
+                    ci_clustered_low=stat.ci_clustered_low,
+                    ci_clustered_high=stat.ci_clustered_high,
+                    clusters=stat.clusters,
                 )
                 for name, stat in totals.scores.items()
             },

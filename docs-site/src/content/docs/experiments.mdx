@@ -92,7 +92,7 @@ The answer is the experiment with `"schedule": "weekly"`; `{"schedule": null}` c
 
 **The baseline.** When a scheduled run ends `done`, it is compared with the **previous `done` run of the same experiment with the same target**: a run of another prompt version is not a baseline, and the first run has none. The comparison is the one on the compare page, paired on the items unchanged between the two runs.
 
-**When a finding opens.** With several scores, each is tested at a stricter level so that the chance of a false alarm across all of them stays near one in twenty: a score counts as regressed only when more items went down than up and its exact p-value is below 0.05 divided by the number of scores tested (the Bonferroni rule). A regression opens one critical **Experiment regression** finding per experiment in the [Doctor](/docs/doctor/), sent to the project's insight channels like any critical finding; its evidence names the two runs and each regressed score's test and p-value. A later scheduled run with no regression resolves it. A failed scheduled run opens nothing.
+**When a finding opens.** With several scores, each is tested at a stricter level so that the chance of a false alarm across all of them stays near one in twenty: a score counts as regressed only when more items went down than up and its exact p-value is below 0.05 divided by the number of scores tested (the Bonferroni rule). An experiment that [groups items by a metadata key](#group-items-by-a-metadata-key) uses the clustered test instead: a score counts as regressed when its mean went down and the clustered p-value is below the same level. A regression opens one critical **Experiment regression** finding per experiment in the [Doctor](/docs/doctor/), sent to the project's insight channels like any critical finding; its evidence names the two runs and each regressed score's test and p-value. A later scheduled run with no regression resolves it. A failed scheduled run opens nothing.
 
 **A regression can be the judge.** When a judge scores the answers, a worse score can mean the judge's own model changed rather than the target. A heuristic evaluator on the same experiment separates the two: if it regressed too, the target changed; if only the judge did, suspect the judge.
 
@@ -304,6 +304,18 @@ Fifty items is a small sample. A pass rate of 78 % on 50 items could well be 65 
 
 Both tests are exact (no approximation and no continuity correction), and 0.05 is not a setting. A yes/no score stored as the numbers 0 and 1, as an old SDK does, is treated as yes/no when its score config says so. In the API, a run's `totals.scores.<name>` gains `passed`, `ci_low` and `ci_high`, and each score of a comparison gains `ci_a`, `ci_b` and `test` (`kind` `mcnemar` or `sign`, `n`, `improved`, `regressed`, `unchanged`, `p_value`, `significant`); a value that does not apply is `null`. Each compared item carries `input` and `expected_output` (run A's copy, else run B's), `position` (its number in run A, else in run B) and `changed`, and the comparison carries `changed_items`.
 
+### Group items by a metadata key
+
+The tests above assume every item is independent. Often they are not: several questions about one document, several turns of one conversation, several requests from one user. Such items tend to pass or fail together, so 50 items from 5 documents carry far less evidence than 50 unrelated ones, and the plain interval and test look more certain than they are.
+
+When your items share a source like this, put its id in each dataset item's `metadata` (for example `{"doc_id": "handbook-7"}`) and create the experiment with `"cluster_key": "doc_id"` in its `config` (1 to 100 characters). Until the create form has the field, set it through the API. Like the rest of an experiment, it cannot be changed later. What changes:
+
+- **Items are grouped by that key's value** in the copy each run keeps. An item whose copy lacks the key, or a run item made before runs kept a copy, is a group of its own.
+- **A run's yes/no scores gain a clustered 95 % interval** (`ci_clustered_low`, `ci_clustered_high`) and the number of groups it rests on (`clusters`), next to the Wilson interval. It is wider than the Wilson interval when items in a group agree. It needs at least two groups; with one it is `null`.
+- **A comparison gains `clustered_test`** for each yes/no or numeric score that has a `test`: the clustered paired z test on the per-item differences B minus A (`n`, `clusters`, `mean_difference`, `standard_error`, `z`, `p_value`, `significant`). It is the test of record; McNemar or the sign test stays in `test` for reference. When every group's differences cancel exactly, the standard error is 0 and `p_value` is `null`, never 0.
+
+The standard error is the cluster-robust (CR0) one: deviations from the mean are summed within each group before squaring. With every item in its own group it is the usual standard error of a mean, and the test is a normal approximation, so treat it as rough with few groups and look at `clusters`. Without a `cluster_key` nothing changes, and the new fields are `null`. Runs that ended before this existed show `null` too.
+
 ## The demo seed
 
 The live demo ships a ready-made experiment. `spanlight demo seed-evals` creates, in the demo project:
@@ -330,7 +342,7 @@ Under `/api/v1/projects/{project_id}/experiments`.
 | `GET /{experiment_id}/runs/{run_id}/items` | `project:read` | The run's items in dataset order, each with its copy of the dataset item |
 | `GET /{experiment_id}/runs/{run_a}/compare/{run_b}` | `project:read` | The comparison, B minus A |
 
-A create body is `{"name", "dataset_id", "config": {"target", "max_cost_usd"?, "max_items"?}, "evaluator_ids"?}`. A `404` means the dataset, an evaluator or the prompt version is not in the project, or the credential is not in the organization.
+A create body is `{"name", "dataset_id", "config": {"target", "max_cost_usd"?, "max_items"?, "cluster_key"?}, "evaluator_ids"?}`. A `404` means the dataset, an evaluator or the prompt version is not in the project, or the credential is not in the organization.
 
 ## Check it worked
 

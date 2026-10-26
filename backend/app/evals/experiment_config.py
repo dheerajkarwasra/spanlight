@@ -72,6 +72,10 @@ class ExperimentConfig(_Config):
         DEFAULT_MAX_COST_USD
     )
     max_items: Annotated[int, Field(ge=1)] = DEFAULT_MAX_ITEMS
+    # A dataset item metadata key whose value groups items that are not independent (one source
+    # document, conversation or user): intervals and the paired test are then clustered on it.
+    # An item without the key is a cluster of its own. Configs stored before it read as None.
+    cluster_key: Annotated[str, StringConstraints(min_length=1, max_length=100)] | None = None
 
 
 class TargetOverride(_Config):

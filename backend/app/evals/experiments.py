@@ -93,7 +93,10 @@ async def create_experiment(
         project_id=project_id,
         name=spec.name,
         dataset_id=spec.dataset_id,
-        config=spec.config.model_dump(mode="json"),
+        # An unset cluster key is not stored, so code from before it still reads the config.
+        config=spec.config.model_dump(
+            mode="json", exclude={"cluster_key"} if spec.config.cluster_key is None else None
+        ),
         evaluator_ids=list(dict.fromkeys(spec.evaluator_ids)),
         created_by=actor.user_id,
         created_at=now,

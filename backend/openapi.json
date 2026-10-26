@@ -3089,6 +3089,68 @@
         "title": "ChatTemplateIn",
         "type": "object"
       },
+      "ClusteredTestOut": {
+        "properties": {
+          "clusters": {
+            "title": "Clusters",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "mean_difference": {
+            "title": "Mean Difference",
+            "type": "number"
+          },
+          "n": {
+            "title": "N",
+            "type": "integer"
+          },
+          "p_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P Value"
+          },
+          "significant": {
+            "title": "Significant",
+            "type": "boolean"
+          },
+          "standard_error": {
+            "title": "Standard Error",
+            "type": "number"
+          },
+          "z": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Z"
+          }
+        },
+        "required": [
+          "kind",
+          "n",
+          "clusters",
+          "mean_difference",
+          "standard_error",
+          "z",
+          "p_value",
+          "significant"
+        ],
+        "title": "ClusteredTestOut",
+        "type": "object"
+      },
       "Comparator": {
         "enum": [
           "gt",
@@ -5618,6 +5680,19 @@
       "ExperimentConfig-Input": {
         "additionalProperties": false,
         "properties": {
+          "cluster_key": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Key"
+          },
           "max_cost_usd": {
             "anyOf": [
               {
@@ -5667,6 +5742,19 @@
       "ExperimentConfig-Output": {
         "additionalProperties": false,
         "properties": {
+          "cluster_key": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Key"
+          },
           "max_cost_usd": {
             "default": "5",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,4}0*$",
@@ -15511,6 +15599,16 @@
               }
             ]
           },
+          "clustered_test": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClusteredTestOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "delta": {
             "anyOf": [
               {
@@ -15752,6 +15850,28 @@
             ],
             "title": "Categories"
           },
+          "ci_clustered_high": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Clustered High"
+          },
+          "ci_clustered_low": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Clustered Low"
+          },
           "ci_high": {
             "anyOf": [
               {
@@ -15773,6 +15893,17 @@
               }
             ],
             "title": "Ci Low"
+          },
+          "clusters": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clusters"
           },
           "count": {
             "title": "Count",

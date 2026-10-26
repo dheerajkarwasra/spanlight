@@ -10,17 +10,28 @@
   have it; a categorical score reports how many items fell in each category, and no mean;
 * a boolean score (its config says so, or every value is a `bool`) also reports how many items
   passed and the Wilson 95 % interval on that rate; numeric and categorical scores carry None.
+  When the experiment groups items by a metadata key (`cluster_key`), a boolean score also carries
+  the clustered 95 % interval (`stats.clustered_mean_interval`) and its number of clusters; without
+  a key, and on totals stored before these fields, they are None.
 
 The run stores its totals when it ends; they can be recomputed from the items at any time.
 """
 
+import json
 import math
+import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from app.evals.stats import wilson_interval
+from app.evals.stats import Interval, clustered_mean_interval, wilson_interval
+
+
+def cluster_label(value: Any, item_id: uuid.UUID) -> str | uuid.UUID:
+    """An item's cluster under the experiment's cluster key: the key's value in the item's frozen
+    metadata as JSON text, or the item's own id (a cluster of one) when the copy lacks the key."""
+    return item_id if value is None else json.dumps(value, sort_keys=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +43,8 @@ class ItemFacts:
     error: str | None
     scores: Mapping[str, Any]
     evaluator_error: str | None
+    # `cluster_label` when the experiment has a cluster key; None when it has none.
+    cluster: str | uuid.UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +56,10 @@ class ScoreStat:
     passed: int | None = None
     ci_low: Decimal | None = None
     ci_high: Decimal | None = None
+    # Boolean scores with a cluster key only: the clustered interval and its number of clusters.
+    ci_clustered_low: Decimal | None = None
+    ci_clustered_high: Decimal | None = None
+    clusters: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,19 +104,28 @@ def summarize_items(
     )
 
 
-def _numeric_stat(values: Sequence[Any], *, boolean: bool) -> ScoreStat:
+def _numeric_stat(
+    values: Sequence[Any], clusters: Sequence[str | uuid.UUID | None], *, boolean: bool
+) -> ScoreStat:
     numbers = [float(value) for value in values]
     mean = sum(numbers) / len(numbers)
     if not boolean:
         return ScoreStat(mean=mean, count=len(numbers))
     passed = sum(1 for number in numbers if number == 1)
     interval = wilson_interval(passed, len(numbers))
+    clustered: Interval | None = None
+    count: int | None = None
+    if all(cluster is not None for cluster in clusters):
+        clustered, count = clustered_mean_interval(numbers, clusters)
     return ScoreStat(
         mean=mean,
         count=len(numbers),
         passed=passed,
         ci_low=None if interval is None else interval.low,
         ci_high=None if interval is None else interval.high,
+        ci_clustered_low=None if clustered is None else clustered.low,
+        ci_clustered_high=None if clustered is None else clustered.high,
+        clusters=count,
     )
 
 
@@ -107,6 +133,7 @@ def _score_stats(
     items: Sequence[ItemFacts], boolean_scores: frozenset[str]
 ) -> dict[str, ScoreStat]:
     numbers: dict[str, list[Any]] = {}
+    clusters: dict[str, list[str | uuid.UUID | None]] = {}
     categories: dict[str, dict[str, int]] = {}
     for item in items:
         for name, value in item.scores.items():
@@ -115,9 +142,11 @@ def _score_stats(
                 counts[value] = counts.get(value, 0) + 1
             elif isinstance(value, bool | int | float | Decimal):
                 numbers.setdefault(name, []).append(value)
+                clusters.setdefault(name, []).append(item.cluster)
     stats = {
         name: _numeric_stat(
             values,
+            clusters[name],
             boolean=name in boolean_scores or all(isinstance(v, bool) for v in values),
         )
         for name, values in numbers.items()
@@ -146,6 +175,13 @@ def totals_json(totals: Totals) -> dict[str, Any]:
                 "passed": stat.passed,
                 "ci_low": None if stat.ci_low is None else str(stat.ci_low),
                 "ci_high": None if stat.ci_high is None else str(stat.ci_high),
+                "ci_clustered_low": (
+                    None if stat.ci_clustered_low is None else str(stat.ci_clustered_low)
+                ),
+                "ci_clustered_high": (
+                    None if stat.ci_clustered_high is None else str(stat.ci_clustered_high)
+                ),
+                "clusters": stat.clusters,
             }
             for name, stat in totals.scores.items()
         },
@@ -157,9 +193,10 @@ def _rate(value: Any) -> Decimal | None:
 
 
 def totals_from_json(stored: Mapping[str, Any], evaluator_errors: int | None = None) -> Totals:
-    """The inverse of `totals_json`. Totals stored before the pass count and interval existed
-    lack those keys and read as None. Totals stored before `evaluator_errors` existed lack it: the
-    caller counts it from the run's items (`needs_evaluator_errors`) and passes it in."""
+    """The inverse of `totals_json`. Totals stored before the pass count and the intervals (Wilson,
+    clustered) existed lack those keys and read as None. Totals stored before `evaluator_errors`
+    existed lack it: the caller counts it from the run's items (`needs_evaluator_errors`) and
+    passes it in."""
     if "evaluator_errors" in stored:
         evaluator_errors = int(stored["evaluator_errors"])
     elif evaluator_errors is None:
@@ -180,6 +217,9 @@ def totals_from_json(stored: Mapping[str, Any], evaluator_errors: int | None = N
                 passed=stat.get("passed"),
                 ci_low=_rate(stat.get("ci_low")),
                 ci_high=_rate(stat.get("ci_high")),
+                ci_clustered_low=_rate(stat.get("ci_clustered_low")),
+                ci_clustered_high=_rate(stat.get("ci_clustered_high")),
+                clusters=stat.get("clusters"),
             )
             for name, stat in (stored.get("scores") or {}).items()
         },

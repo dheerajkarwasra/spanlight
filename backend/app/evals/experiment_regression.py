@@ -3,10 +3,12 @@ project's `experiment_regression` insight in step.
 
 The baseline is the previous `done` run of the same experiment with the same target
 (`experiment_queries.baseline_run`); without one there is nothing to compare and nothing changes.
-The comparison is the product's own (`experiment_compare`): exact McNemar for yes/no scores, the
-sign test for numeric ones, on the items unchanged between the runs. With `m` tested scores, a
-score regressed when more items went down than up and its exact two-sided p is below 0.05 / m
-(Bonferroni over the scores), decided on the exact `Fraction`, never the rounded value.
+The comparison is the product's own (`experiment_compare`) and each score is judged on its test of
+record, on the items unchanged between the runs: exact McNemar for yes/no scores and the sign test
+for numeric ones, or the clustered paired z test when the experiment has a `cluster_key`. With `m`
+tested scores, a score regressed when it went down (more items down than up; a negative mean
+change for the clustered test) and its two-sided p is below 0.05 / m (Bonferroni over the scores).
+An exact test is decided on the exact `Fraction`, never the rounded value.
 
 A regression opens (or re-detects) one critical insight per experiment, fingerprinted on the
 experiment id, and notifies the project's insight channels on the transition into `open`
@@ -33,7 +35,7 @@ from app.evals import experiment_queries as queries
 from app.evals.compare import ScoreDelta
 from app.evals.experiment_compare import compare_experiment_runs
 from app.evals.runner_build import RunnerDeps
-from app.evals.stats import PairedTest, exact_binomial_two_sided, quantize_rate
+from app.evals.stats import ClusteredTest, PairedTest, exact_binomial_two_sided, quantize_rate
 from app.insights import lifecycle_queries
 from app.insights.fingerprint import fingerprint
 from app.insights.notify import notify_opened
@@ -46,19 +48,46 @@ SCHEDULE_TRIGGER = "schedule"
 _ALPHA = Fraction(1, 20)
 
 
-def regressed_scores(aggregate: dict[str, ScoreDelta]) -> dict[str, PairedTest]:
-    """The scores that got significantly worse: more items down than up, exact two-sided p below
+def test_of_record(delta: ScoreDelta) -> PairedTest | ClusteredTest | None:
+    """The clustered test when the experiment has a cluster key, else McNemar or the sign test."""
+    return delta.clustered_test or delta.test
+
+
+def _p_value(test: PairedTest | ClusteredTest) -> Decimal | None:
+    if isinstance(test, ClusteredTest):
+        return None if test.p_value is None else quantize_rate(test.p_value)
+    return quantize_rate(exact_binomial_two_sided(test.regressed, test.n))
+
+
+def _went_down(test: PairedTest | ClusteredTest, threshold: Fraction) -> bool:
+    if isinstance(test, ClusteredTest):
+        return (
+            test.z is not None
+            and test.z < 0
+            and test.p_value is not None
+            and test.p_value < float(threshold)
+        )
+    return (
+        test.regressed > test.improved
+        and exact_binomial_two_sided(test.regressed, test.n) < threshold
+    )
+
+
+type Regression = tuple[ScoreDelta, PairedTest | ClusteredTest]
+
+
+def regressed_scores(aggregate: dict[str, ScoreDelta]) -> dict[str, Regression]:
+    """The scores that got significantly worse on their test of record, with that test: p below
     0.05 / m where m is the number of scores with a test."""
-    tested = {name: d.test for name, d in aggregate.items() if d.test is not None}
+    tested = {
+        name: (delta, test)
+        for name, delta in aggregate.items()
+        if (test := test_of_record(delta)) is not None
+    }
     if not tested:
         return {}
     threshold = _ALPHA / len(tested)
-    return {
-        name: test
-        for name, test in tested.items()
-        if test.regressed > test.improved
-        and exact_binomial_two_sided(test.regressed, test.n) < threshold
-    }
+    return {name: pair for name, pair in tested.items() if _went_down(pair[1], threshold)}
 
 
 async def check_scheduled_run(deps: RunnerDeps, run_id: uuid.UUID, project_id: uuid.UUID) -> None:
@@ -153,16 +182,15 @@ def _row(
     experiment: Experiment,
     baseline: ExperimentRun,
     run: ExperimentRun,
-    regressions: dict[str, PairedTest],
+    regressions: dict[str, Regression],
     now: datetime,
 ) -> dict[str, Any]:
     """The `insights` row of a first detection, shaped as `insights.service._new_row` shapes a
     detector's (this kind has no catalogue entry: the sensitivity settings list detectors only)."""
     names = ", ".join(sorted(regressions))
     sentences = [
-        f"{name}: {test.regressed} items down, {test.improved} up "
-        f"(exact {'McNemar' if test.kind == 'mcnemar' else 'sign test'}, p = {test.p_value})"
-        for name, test in sorted(regressions.items())
+        f"{name}: {delta.regressed} items down, {delta.improved} up ({_named(test)})"
+        for name, (delta, test) in sorted(regressions.items())
     ]
     metrics: dict[str, Decimal | int | str | None] = {
         "experiment_id": str(experiment.id),
@@ -170,11 +198,13 @@ def _row(
         "run_b": str(run.id),
         "scores_regressed": len(regressions),
     }
-    for name, test in regressions.items():
+    for name, (delta, test) in regressions.items():
         metrics[f"{name}.test"] = test.kind
-        metrics[f"{name}.improved"] = test.improved
-        metrics[f"{name}.regressed"] = test.regressed
-        metrics[f"{name}.p_value"] = quantize_rate(exact_binomial_two_sided(test.regressed, test.n))
+        metrics[f"{name}.improved"] = delta.improved
+        metrics[f"{name}.regressed"] = delta.regressed
+        metrics[f"{name}.p_value"] = _p_value(test)
+        if isinstance(test, ClusteredTest):
+            metrics[f"{name}.clusters"] = test.clusters
     evidence = Evidence(
         metrics=metrics,
         window=Window(start=baseline.started_at, end=run.finished_at or now),
@@ -208,3 +238,9 @@ def _row(
         "occurrences": 1,
         "peak_strength": None,
     }
+
+
+def _named(test: PairedTest | ClusteredTest) -> str:
+    if isinstance(test, ClusteredTest):
+        return f"clustered z over {test.clusters} clusters, p = {_p_value(test)}"
+    return f"exact {'McNemar' if test.kind == 'mcnemar' else 'sign test'}, p = {test.p_value}"

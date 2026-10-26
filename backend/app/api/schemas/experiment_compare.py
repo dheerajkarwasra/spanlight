@@ -9,7 +9,7 @@ from typing import Any
 from app.api.schemas.common import ApiModel, Money
 from app.api.schemas.experiments import Rate
 from app.evals.compare import Comparison, ItemDelta, ItemRow, ScoreDelta
-from app.evals.stats import Interval, PairedTest
+from app.evals.stats import ClusteredTest, Interval, PairedTest, quantize_rate
 
 
 def _number(value: Decimal | None) -> float | None:
@@ -104,6 +104,36 @@ class PairedTestOut(ApiModel):
         )
 
 
+class ClusteredTestOut(ApiModel):
+    kind: str  # `clustered_z`
+    # Unchanged matched items carrying the score, and the clusters they fall in.
+    n: int
+    clusters: int
+    # The mean of `b - a` per item, its clustered (CR0) standard error and `z` = their ratio.
+    mean_difference: float
+    standard_error: float
+    # Null when the standard error is 0: the p-value is then undefined, never 0.
+    z: float | None
+    # Two-sided p from the normal approximation; `significant` is decided at alpha 0.05.
+    p_value: Rate | None
+    significant: bool
+
+    @classmethod
+    def of(cls, test: ClusteredTest | None) -> "ClusteredTestOut | None":
+        if test is None:
+            return None
+        return cls(
+            kind=test.kind,
+            n=test.n,
+            clusters=test.clusters,
+            mean_difference=round(test.mean_difference, 4),
+            standard_error=round(test.standard_error, 4),
+            z=None if test.z is None else round(test.z, 4),
+            p_value=None if test.p_value is None else quantize_rate(test.p_value),
+            significant=test.significant,
+        )
+
+
 class ScoreDeltaOut(ApiModel):
     # Means over all of each run's scored items (booleans count 1 or 0); null for a categorical
     # score. Higher is better, so a positive delta is an improvement.
@@ -121,6 +151,9 @@ class ScoreDeltaOut(ApiModel):
     # Exact McNemar (boolean) or the sign test (numeric); null for a categorical score or when
     # fewer than two matched items carry the score.
     test: PairedTestOut | None
+    # Only when the experiment has a `cluster_key` and `test` exists: the clustered paired z test,
+    # which is then the test of record (`test` stays for reference). Null otherwise.
+    clustered_test: ClusteredTestOut | None = None
 
     @classmethod
     def of(cls, score: ScoreDelta) -> "ScoreDeltaOut":
@@ -134,6 +167,7 @@ class ScoreDeltaOut(ApiModel):
             ci_a=IntervalOut.of(score.ci_a),
             ci_b=IntervalOut.of(score.ci_b),
             test=PairedTestOut.of(score.test),
+            clustered_test=ClusteredTestOut.of(score.clustered_test),
         )
 
 
