@@ -40,6 +40,10 @@ class TraceSummaryOut(BaseModel):
     """Earliest failed span's status message; null if nothing failed or no message was sent."""
     error_class: ErrorClass | None
     """The same span's error class; null if nothing failed or it failed before classification."""
+    root_received: bool | None
+    """Whether a span without a parent was stored. False while only child spans have arrived: the
+    root may still be running, or was sent elsewhere; duration, tokens and cost cover the spans
+    received. Null when it could not be read."""
     has_scores: bool
     retry_calls: int | None
     """The trace's superseded llm calls: calls of the same request (request hash) that a later

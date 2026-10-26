@@ -94,6 +94,12 @@ The list starts with the newest trace; click **Started** to show the oldest firs
 
 Click a row to open the trace. When you come back with the **Traces** link, you return to the same filters and the row you opened is highlighted. Reloading the page starts from a clean list.
 
+### A trace whose root span has not arrived
+
+Spans are stored as they arrive, so a trace can be listed before its root span (the span without a parent) arrives. The trace list and trace detail in the API carry `root_received`: `false` means no stored span of the trace lacks a parent. The trace may still be running, or its root span was sent somewhere else; Spanlight cannot tell which. Its duration, tokens and cost cover the spans received so far. On the trace page, spans whose parent has not arrived sit under a dashed "Missing parent span" row.
+
+OpenTelemetry SDKs never send a span that has not ended, so a long-running agent's root span arrives only when the run finishes. To follow a long agent while it runs, split its work into child spans that end, such as one per step or tool call.
+
 ## Select traces in bulk
 
 From the medium screen width up, each row has a checkbox, and the header checkbox selects every trace loaded. A bar appears at the bottom of the page with the count and these actions:

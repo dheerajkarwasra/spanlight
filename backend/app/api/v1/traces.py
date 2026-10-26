@@ -49,7 +49,7 @@ ProjectReader = Annotated[ReadAccess, Depends(require(Permission.PROJECT_READ, a
 TraceIdQuery = Annotated[str, Query(min_length=1, max_length=256)]
 
 MAX_ERROR_MESSAGE_LENGTH = 500
-NO_DETAILS = SummaryDetails(None, None, None)
+NO_DETAILS = SummaryDetails(None, None, None, None)
 
 
 def trace_summary(
@@ -57,6 +57,7 @@ def trace_summary(
     models: list[str] | None,
     error_message: str | None,
     error_class: str | None,
+    root_received: bool | None,
     scores: list[ScoreSummary],
     previews: tuple[str | None, str | None] = (None, None),
 ) -> TraceSummaryOut:
@@ -81,6 +82,7 @@ def trace_summary(
         models=sorted(models or []),
         error_message=error_message[:MAX_ERROR_MESSAGE_LENGTH] if error_message else None,
         error_class=ErrorClass(error_class) if error_class else None,
+        root_received=root_received,
         has_scores=trace.has_scores,
         retry_calls=trace.retry_calls,
         retry_cost_usd=trace.retry_cost_usd,

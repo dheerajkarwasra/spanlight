@@ -17667,6 +17667,17 @@
             ],
             "title": "Retry Cost Usd"
           },
+          "root_received": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Received"
+          },
           "scores": {
             "items": {
               "$ref": "#/components/schemas/ScoreSummaryOut"
@@ -17734,6 +17745,7 @@
           "models",
           "error_message",
           "error_class",
+          "root_received",
           "has_scores",
           "retry_calls",
           "retry_cost_usd",
@@ -17989,6 +18001,17 @@
             ],
             "title": "Retry Cost Usd"
           },
+          "root_received": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Received"
+          },
           "scores": {
             "items": {
               "$ref": "#/components/schemas/ScoreSummaryOut"
@@ -18049,6 +18072,7 @@
           "models",
           "error_message",
           "error_class",
+          "root_received",
           "has_scores",
           "retry_calls",
           "retry_cost_usd",

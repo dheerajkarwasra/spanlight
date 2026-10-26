@@ -406,3 +406,26 @@ async def test_trace_detail_leaves_out_payloads_past_its_budget(
     assert response.json()["payload_omitted"] is False
     missing = await workspace.owner.get(f"{base}/spans/{new_span_id()}")
     assert missing.status_code == 404
+
+
+async def test_trace_without_its_root_span_lists_as_root_not_received(
+    client: httpx.AsyncClient, workspace: Workspace
+) -> None:
+    trace_id, root_id = new_trace_id(), new_span_id()
+    start = WINDOW_START + timedelta(minutes=20)
+    root = _llm(trace_id, start, 500, span_id=root_id)
+    child = _llm(trace_id, start + timedelta(milliseconds=10), 50, parent_span_id=root_id)
+    base = f"/api/v1/projects/{workspace.project_id}/traces"
+
+    async def root_received() -> tuple[bool | None, bool | None]:
+        items = (await workspace.owner.get(base, params=_window())).json()["items"]
+        listed = next(item for item in items if item["trace_id"] == trace_id)
+        detail = (await workspace.owner.get(f"{base}/{trace_id}")).json()
+        return listed["root_received"], detail["root_received"]
+
+    await _ingest(client, workspace, [child])
+    assert await root_received() == (False, False)
+
+    await _ingest(client, workspace, [root])
+    await _ingest(client, workspace, [root, child])
+    assert await root_received() == (True, True)

@@ -28,13 +28,15 @@ class SummaryDetails(NamedTuple):
     models: list[str] | None
     error_message: str | None
     error_class: str | None
+    root_received: bool | None
 
 
-# Each trace's distinct models and its earliest failed span's status message and error class
-# (ties broken by span id). The earliest failed span is one `LEFT JOIN LATERAL … LIMIT 1` on the
-# spans primary key (project_id, trace_id, …), so the message and the class are always the same
-# span's. One array parameter, not one per id: psycopg caches the parsed query only up to 50
-# parameters, and a page is 50 traces.
+# Each trace's distinct models, its earliest failed span's status message and error class
+# (ties broken by span id), and whether a span without a parent (the root) was stored. The
+# earliest failed span is one `LEFT JOIN LATERAL … LIMIT 1` on the spans primary key
+# (project_id, trace_id, …), so the message and the class are always the same span's; the root
+# check is an `EXISTS` probe on the same key. One array parameter, not one per id: psycopg caches
+# the parsed query only up to 50 parameters, and a page is 50 traces.
 SUMMARY_DETAILS = text(
     """
     SELECT t.trace_id,
@@ -42,7 +44,11 @@ SUMMARY_DETAILS = text(
               FROM spans AS s
              WHERE s.project_id = :project_id AND s.trace_id = t.trace_id) AS models,
            f.status_message,
-           f.error_class
+           f.error_class,
+           EXISTS (SELECT 1
+                     FROM spans AS s
+                    WHERE s.project_id = :project_id AND s.trace_id = t.trace_id
+                      AND s.parent_span_id IS NULL) AS root_received
     FROM unnest(:trace_ids) AS t(trace_id)
     LEFT JOIN LATERAL (
         SELECT s.status_message, s.error_class
