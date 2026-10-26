@@ -11,6 +11,7 @@ from app.annotations.errors import (
     ScoreNotInQueueError,
     ScoreRejectedError,
     ScoreRequiredError,
+    SpanNotInTraceError,
     UnknownScoreConfigError,
     UnknownTraceError,
 )
@@ -28,6 +29,7 @@ QUEUE_ERRORS = (
     ScoreNotInQueueError,
     ScoreRequiredError,
     ScoreRejectedError,
+    SpanNotInTraceError,
 )
 
 
@@ -69,6 +71,10 @@ def queue_problem(error: Exception) -> ProblemError:
         )
     if isinstance(error, ScoreRequiredError):
         return _scores_problem("SCORE_REQUIRED", "This score is required.", error.names)
+    if isinstance(error, SpanNotInTraceError):
+        return _scores_problem(
+            "SPAN_NOT_IN_TRACE", "This span is not one of the item's trace.", error.names
+        )
     if isinstance(error, ScoreRejectedError):
         field, _, message = error.reason.partition(": ")
         if not message:

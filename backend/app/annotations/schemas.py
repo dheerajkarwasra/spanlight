@@ -42,11 +42,14 @@ class ItemsIn(BaseModel):
 
 
 class CompletedScore(BaseModel):
-    """One score a reviewer gives; exactly one of `value` and `string_value`."""
+    """One score a reviewer gives; exactly one of `value` and `string_value`. `span_id` names
+    the span of the item's trace where it first went wrong; without it the score takes the
+    item's span (none for a trace-level item)."""
 
     model_config = ConfigDict(extra="forbid")
 
     name: ScoreName
+    span_id: SpanRef | None = None
     value: ScoreValue | None = None
     string_value: StringValue | None = None
     comment: Comment | None = None

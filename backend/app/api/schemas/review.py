@@ -17,6 +17,8 @@ from app.db.models import ReviewPolicy, ReviewSelection
 from app.review.schemas import ReviewPolicyIn, RunRequest
 
 __all__ = [
+    "FailingSpanOut",
+    "FailingSpansOut",
     "ReviewPolicyIn",
     "ReviewPolicyOut",
     "RunRequest",
@@ -92,3 +94,27 @@ class ReviewPolicyOut(ApiModel):
 class RunRequestedOut(ApiModel):
     day: date
     job_id: int
+
+
+class FailingSpanOut(ApiModel):
+    """Reviewed traces whose latest failure category names a span of this name and kind, as a
+    share of `reviewed` with its Wilson 95 % bounds. `span_name` and `span_kind` are null when
+    the span is not stored (never sent, or deleted by retention)."""
+
+    span_name: str | None
+    span_kind: str | None
+    category: str
+    count: int
+    rate: Rate
+    ci_low: Rate
+    ci_high: Rate
+
+
+class FailingSpansOut(ApiModel):
+    """`reviewed` counts the window's traces that carry a failure category at all; `spans` is
+    empty when there are none. `truncated` is true when more than the groups shown exist."""
+
+    score_name: str
+    reviewed: int
+    spans: list[FailingSpanOut]
+    truncated: bool

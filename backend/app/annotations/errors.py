@@ -60,3 +60,11 @@ class ScoreRejectedError(Exception):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
+
+
+class SpanNotInTraceError(Exception):
+    """A score names a span that is not of the item's trace, or not the span-scoped item's."""
+
+    def __init__(self, names: list[str]) -> None:
+        super().__init__("span not in the item's trace")
+        self.names = names

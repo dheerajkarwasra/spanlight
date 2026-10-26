@@ -10,7 +10,7 @@ from sqlalchemy import bindparam, delete, exists, func, or_, select, text
 from sqlalchemy.dialects.postgresql import ARRAY, TEXT, UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AnnotationQueue, AnnotationQueueItem, Trace
+from app.db.models import AnnotationQueue, AnnotationQueueItem, Span, Trace
 from app.db.models.annotations import QueueItemStatus, ReviewReason
 
 CLAIM_TIMEOUT = timedelta(minutes=30)
@@ -113,6 +113,20 @@ async def known_trace_ids(
         select(Trace.trace_id).where(Trace.project_id == project_id, Trace.trace_id.in_(trace_ids))
     )
     return set(rows)
+
+
+async def span_in_trace(
+    db: AsyncSession, project_id: uuid.UUID, trace_id: str, span_id: str
+) -> bool:
+    """Whether the span is stored as one of the trace's (a primary-key lookup)."""
+    found = await db.scalar(
+        select(
+            exists().where(
+                Span.project_id == project_id, Span.trace_id == trace_id, Span.span_id == span_id
+            )
+        )
+    )
+    return bool(found)
 
 
 async def insert_items(

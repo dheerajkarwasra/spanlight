@@ -3254,7 +3254,7 @@
       },
       "CompletedScore": {
         "additionalProperties": false,
-        "description": "One score a reviewer gives; exactly one of `value` and `string_value`.",
+        "description": "One score a reviewer gives; exactly one of `value` and `string_value`. `span_id` names\nthe span of the item's trace where it first went wrong; without it the score takes the\nitem's span (none for a trace-level item).",
         "properties": {
           "comment": {
             "anyOf": [
@@ -3273,6 +3273,19 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "span_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Span Id"
           },
           "string_value": {
             "anyOf": [
@@ -6520,6 +6533,96 @@
         ],
         "title": "ExportStatus",
         "type": "string"
+      },
+      "FailingSpanOut": {
+        "description": "Reviewed traces whose latest failure category names a span of this name and kind, as a\nshare of `reviewed` with its Wilson 95 % bounds. `span_name` and `span_kind` are null when\nthe span is not stored (never sent, or deleted by retention).",
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "ci_high": {
+            "title": "Ci High",
+            "type": "string"
+          },
+          "ci_low": {
+            "title": "Ci Low",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "rate": {
+            "title": "Rate",
+            "type": "string"
+          },
+          "span_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Span Kind"
+          },
+          "span_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Span Name"
+          }
+        },
+        "required": [
+          "span_name",
+          "span_kind",
+          "category",
+          "count",
+          "rate",
+          "ci_low",
+          "ci_high"
+        ],
+        "title": "FailingSpanOut",
+        "type": "object"
+      },
+      "FailingSpansOut": {
+        "description": "`reviewed` counts the window's traces that carry a failure category at all; `spans` is\nempty when there are none. `truncated` is true when more than the groups shown exist.",
+        "properties": {
+          "reviewed": {
+            "title": "Reviewed",
+            "type": "integer"
+          },
+          "score_name": {
+            "title": "Score Name",
+            "type": "string"
+          },
+          "spans": {
+            "items": {
+              "$ref": "#/components/schemas/FailingSpanOut"
+            },
+            "title": "Spans",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "score_name",
+          "reviewed",
+          "spans",
+          "truncated"
+        ],
+        "title": "FailingSpansOut",
+        "type": "object"
       },
       "FailureCategoriesIn": {
         "additionalProperties": false,
@@ -31890,6 +31993,84 @@
           }
         },
         "summary": "List selections",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/review/failing-spans": {
+      "get": {
+        "description": "Where the window's reviewed traces first went wrong: each trace's latest\n`failure_category` that names a span, `none` left out, grouped by span name, span kind and\ncategory, with Wilson 95 % bounds. `422 WINDOW_TOO_LARGE` over 30 days.",
+        "operationId": "list_failing_spans_api_v1_projects__project_id__review_failing_spans_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FailingSpansOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List failing spans",
         "tags": [
           "review"
         ]

@@ -112,6 +112,8 @@ REVIEW_ROWS = (
     Row("DELETE", REVIEW_POLICY, P.ANNOTATIONS_WRITE, also=frozenset({404})),
     Row("POST", f"{REVIEW_POLICY}/runs", P.ANNOTATIONS_WRITE),
     Row("GET", f"{REVIEW_POLICY}/selections", P.PROJECT_READ),
+    # G-022: where reviewed traces first went wrong.
+    Row("GET", f"{PRJ}/review/failing-spans", P.PROJECT_READ),
 )
 
 EVALUATOR = f"{PRJ}/evaluators/{{evaluator_id}}"

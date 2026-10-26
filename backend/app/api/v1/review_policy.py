@@ -1,9 +1,10 @@
-"""The review policy: what a project queues for review every UTC night, and its history.
+"""The review policy: what a project queues for review every UTC night, and its history; and
+the failing-span rollup of what reviewers labelled.
 
-Members read the policy and the selection history (`project:read`); members set, delete and
-run it by hand (`annotations:write`). Sessions and personal access tokens only: an API key is
-refused by `require()`. Responses are built before the commit, which ends the project binding
-that row-level security needs.
+Members read the policy, the selection history and the rollup (`project:read`); members set,
+delete and run the policy by hand (`annotations:write`). Sessions and personal access tokens
+only: an API key is refused by `require()`. Responses are built before the commit, which ends
+the project binding that row-level security needs.
 """
 
 import uuid
@@ -18,21 +19,24 @@ from app.api.locks import lock_project_of
 from app.api.review_problems import REVIEW_ERRORS, review_problem
 from app.api.schemas import Page
 from app.api.schemas.review import (
+    FailingSpansOut,
     ReviewPolicyIn,
     ReviewPolicyOut,
     RunRequest,
     RunRequestedOut,
     SelectionOut,
 )
+from app.api.window import Window
 from app.core.pagination import decode_cursor, encode_cursor
 from app.core.permissions import Permission
 from app.db.models import ReviewPolicy
 from app.review import queries, service
 from app.review.calendar import next_run_at
+from app.review.failing_spans import failing_spans
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter(prefix="/projects/{project_id}/review-policy", tags=["review"])
+router = APIRouter(prefix="/projects/{project_id}", tags=["review"])
 
 PolicyReader = Annotated[Access, Depends(require(Permission.PROJECT_READ))]
 PolicyWriter = Annotated[Access, Depends(require(Permission.ANNOTATIONS_WRITE))]
@@ -58,7 +62,7 @@ async def _policy_out(db: DbSession, policy: ReviewPolicy, now: datetime) -> Rev
     )
 
 
-@router.get("", response_model=ReviewPolicyOut, summary="Get the review policy")
+@router.get("/review-policy", response_model=ReviewPolicyOut, summary="Get the review policy")
 async def get_policy(
     project_id: uuid.UUID, access: PolicyReader, db: DbSession, clock: ClockDep
 ) -> ReviewPolicyOut:
@@ -70,7 +74,7 @@ async def get_policy(
     return await _policy_out(db, policy, clock())
 
 
-@router.put("", response_model=ReviewPolicyOut, summary="Set the review policy")
+@router.put("/review-policy", response_model=ReviewPolicyOut, summary="Set the review policy")
 async def put_policy(
     project_id: uuid.UUID,
     body: ReviewPolicyIn,
@@ -101,7 +105,9 @@ async def put_policy(
     return saved
 
 
-@router.delete("", status_code=status.HTTP_204_NO_CONTENT, summary="Delete the review policy")
+@router.delete(
+    "/review-policy", status_code=status.HTTP_204_NO_CONTENT, summary="Delete the review policy"
+)
 async def delete_policy(
     project_id: uuid.UUID, request: Request, access: PolicyWriter, db: DbSession
 ) -> None:
@@ -118,7 +124,7 @@ async def delete_policy(
 
 
 @router.post(
-    "/runs",
+    "/review-policy/runs",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=RunRequestedOut,
     summary="Select a day now",
@@ -151,7 +157,9 @@ async def request_run(
     return RunRequestedOut(day=body.day, job_id=job_id)
 
 
-@router.get("/selections", response_model=Page[SelectionOut], summary="List selections")
+@router.get(
+    "/review-policy/selections", response_model=Page[SelectionOut], summary="List selections"
+)
 async def list_selections(
     project_id: uuid.UUID,
     access: PolicyReader,
@@ -173,6 +181,16 @@ async def list_selections(
         if len(rows) > limit and last
         else None,
     )
+
+
+@router.get("/review/failing-spans", response_model=FailingSpansOut, summary="List failing spans")
+async def list_failing_spans(
+    project_id: uuid.UUID, access: PolicyReader, db: DbSession, window: Window
+) -> FailingSpansOut:
+    """Where the window's reviewed traces first went wrong: each trace's latest
+    `failure_category` that names a span, `none` left out, grouped by span name, span kind and
+    category, with Wilson 95 % bounds. `422 WINDOW_TOO_LARGE` over 30 days."""
+    return await failing_spans(db, access.require_project().id, window)
 
 
 def _midnight(day: date) -> datetime:

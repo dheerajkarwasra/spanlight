@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-{/* Sources: backend/app/review/calendar.py, backend/app/review/select.py, backend/app/review/outliers.py, backend/app/review/reasons.py, backend/app/review/schemas.py, backend/app/review/selection.py, backend/app/review/selection_sql.py, backend/app/review/jobs.py, backend/app/api/v1/review_policy.py, backend/app/api/review_problems.py, backend/app/api/annotation_problems.py, backend/app/api/v1/annotations.py, backend/app/api/v1/dataset_items.py, backend/app/scores/failure_category.py, backend/app/api/v1/scores.py, backend/app/releases/failure_categories.py, backend/app/api/v1/releases.py, backend/app/config.py, frontend/src/features/annotations/agreement.ts, frontend/src/features/annotations/last-item-strip.tsx, frontend/src/features/annotations/use-work-session.ts, frontend/src/features/scores/score-settings-links.tsx, docs/api-deviations.md */}
+{/* Sources: backend/app/review/calendar.py, backend/app/review/select.py, backend/app/review/outliers.py, backend/app/review/reasons.py, backend/app/review/schemas.py, backend/app/review/selection.py, backend/app/review/selection_sql.py, backend/app/review/jobs.py, backend/app/api/v1/review_policy.py, backend/app/review/failing_spans.py, backend/app/review/failing_span_queries.py, backend/app/annotations/service.py, backend/app/api/review_problems.py, backend/app/api/annotation_problems.py, backend/app/api/v1/annotations.py, backend/app/api/v1/dataset_items.py, backend/app/scores/failure_category.py, backend/app/api/v1/scores.py, backend/app/releases/failure_categories.py, backend/app/api/v1/releases.py, backend/app/config.py, frontend/src/features/annotations/agreement.ts, frontend/src/features/annotations/last-item-strip.tsx, frontend/src/features/annotations/use-work-session.ts, frontend/src/features/scores/score-settings-links.tsx, docs/api-deviations.md */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
@@ -102,6 +102,19 @@ A review policy's queue must ask for `failure_category`; otherwise the policy is
 
 The **Failure categories** card on **Releases** shows how often each category happens per release, with a 95 % interval. See [Releases and users](/docs/releases-and-users/#failure-categories).
 
+### Mark where it first went wrong
+
+A category says what went wrong; the span says where. When you complete an item, any score may carry a `span_id`: the span of the item's trace where the trace first went wrong. The review screen has no span picker yet, so set it through the API:
+
+```json
+POST /api/v1/projects/{project_id}/annotation-queues/{queue_id}/items/{item_id}/complete
+{"scores": [{"name": "failure_category", "string_value": "tool_misuse", "span_id": "5f2c9a0b1d3e4f60"}]}
+```
+
+The span must be one of the item's trace, and an item queued for one span takes only that span; anything else is refused with `422 SPAN_NOT_IN_TRACE` and nothing is written. A score without `span_id` keeps the item's span, as before.
+
+`GET /review/failing-spans?from&to` rolls the labels up. Each trace that started in the window counts once, under its latest `failure_category`. Labels that name a span and are not `none` are grouped by the span's name, its kind and the category, each with a count, a share of the window's reviewed traces and a 95 % interval. A label whose span is no longer stored (never sent, or removed by retention) counts under `span_name: null` instead of being dropped. The window may span at most 30 days (`422 WINDOW_TOO_LARGE`); the 200 largest groups are listed and `truncated` says when there are more.
+
 ## Keep a case in a dataset
 
 **Save as dataset item** copies the trace's stored input and output into the dataset you pick, through the same route as **Add to dataset** on the Traces page. Edit the expected output afterwards: the recorded output is only a starting point. The item's metadata also gets `review`, with the queue, the item, the reason and the failure category you gave, so a dataset built from review keeps why each case was kept. The dataset can then run in an [experiment](/docs/experiments/) after every change.
@@ -125,6 +138,8 @@ Under `/api/v1/projects/{project_id}`. The review policy routes take a signed-in
 | `GET /review-policy/selections` | `project:read` | The selection history, newest day first, 30 a page |
 | `POST /score-configs/failure-category` | `scores:write` | Create the `failure_category` config: `{"categories": [...]}`, 2 to 30, with `none` |
 | `GET /annotation-queues/{queue_id}/items?reason=` | `project:read` | The queue's items, each with `reason` and `reason_detail` |
+| `POST /annotation-queues/{queue_id}/items/{item_id}/complete` | `annotations:write` | Complete an item; each score may carry the `span_id` where the trace first went wrong |
+| `GET /review/failing-spans?from&to` | `project:read` | Where reviewed traces first went wrong, by span name, span kind and category |
 | `GET /releases/failure-categories?from&to&environment` | `project:read` | The rate of each category per release; also readable with a project API key that has `traces:read` |
 
 A `PUT` body is `{"queue_id", "enabled"?, "random_rate"?, "include_errors"?, "include_cost_outliers"?, "include_doctor_findings"?, "daily_cap"?, "environments"?}`. `random_rate` is a decimal string or number from 0 to 0.05.

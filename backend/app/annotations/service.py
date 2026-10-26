@@ -25,6 +25,7 @@ from app.annotations.errors import (
     ScoreNotInQueueError,
     ScoreRejectedError,
     ScoreRequiredError,
+    SpanNotInTraceError,
     UnknownScoreConfigError,
     UnknownTraceError,
 )
@@ -172,12 +173,13 @@ async def complete_item(
     """Write the reviewer's scores on the item's trace and mark it done.
 
     Raises `QueueNotFoundError`, `QueueItemNotFoundError`, `ItemNotPendingError`,
-    `ItemNotAssignedError`, `ScoreNotInQueueError`, `ScoreRequiredError` and
-    `ScoreRejectedError`; the caller must not commit after one.
+    `ItemNotAssignedError`, `ScoreNotInQueueError`, `ScoreRequiredError`,
+    `SpanNotInTraceError` and `ScoreRejectedError`; the caller must not commit after one.
     """
     queue = await _queue(db, project_id, queue_id)
     item = await _owned_item(db, queue_id, item_id, user_id)
     await _check_names(db, project_id, queue, completion)
+    await _check_spans(db, project_id, item, completion)
     outcome = await write_scores(
         db,
         project_id,
@@ -263,10 +265,29 @@ async def _check_names(
         raise ScoreRequiredError(absent)
 
 
+async def _check_spans(
+    db: AsyncSession, project_id: uuid.UUID, item: AnnotationQueueItem, completion: Completion
+) -> None:
+    """A span a score names is one of the item's trace; a span-scoped item takes only its own.
+    Span ids are not foreign keys, so the check is here."""
+    stored: dict[str, bool] = {}
+    refused: list[str] = []
+    for score in completion.scores:
+        span_id = score.span_id
+        if span_id is None or span_id == item.span_id:
+            continue
+        if item.span_id is None and span_id not in stored:
+            stored[span_id] = await queries.span_in_trace(db, project_id, item.trace_id, span_id)
+        if not stored.get(span_id, False):
+            refused.append(score.name)
+    if refused:
+        raise SpanNotInTraceError(sorted(refused))
+
+
 def _score_in(item: AnnotationQueueItem, score: CompletedScore) -> ScoreIn:
     return ScoreIn(
         trace_id=item.trace_id,
-        span_id=item.span_id,
+        span_id=score.span_id or item.span_id,
         name=score.name,
         value=score.value,
         string_value=score.string_value,
