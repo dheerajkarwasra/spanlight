@@ -3409,3 +3409,60 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
   payloads are refused by replay (`REPLAY_PAYLOAD_REDACTED`), as for secrets.
 - **Known misses and false positives.** National phone formats without `+` and digit runs longer than 15 are kept;
   SSH remotes such as `git@github.com` and other `+`-prefixed numbers of 10 to 15 digits are redacted.
+
+### End-user erasure
+
+- **Route.** `POST /api/v1/projects/{project_id}/users/erasures` takes `{"external_user_id": <1 to 256 characters, no
+  NUL>}` in the body (ids may contain `/`) and answers `202 {"status": "queued", "requested_at": <timestamp>}`. `202`
+  means queued, not done. Permission `project:delete` (admins and owners; a write permission, so read-only tokens
+  cannot). Non-members get `404`; the demo project answers `403`; `Idempotency-Key` is honoured as on other POSTs (the
+  idempotency store keeps an unsalted SHA-256 of the request body, raw id included, for 24 hours).
+- **The job.** `erase_end_user` runs in the worker's long-job slot (3 hour timeout, heartbeat every 20 seconds) and
+  deletes in batches bounded by stored span count (about 5,000 spans, at most 1,000 traces), each batch one
+  transaction bound to the project (row-level security applies, and every statement also names the project; no
+  bypass), looping until a batch is empty. Spans go with their traces through the foreign key, in ingest's lock order.
+- **Deleted**, in that project only: `traces` (spans cascade), `scores`, `annotation_queue_items`, `dataset_items`
+  with `source_trace_id` in the user's traces (locked datasets included), the `experiment_items` over those items and
+  the traces in their `trace_id`, `replay_runs` with the user's `source_trace_id` and their `result_trace_id` traces,
+  `user_stats_daily`, `attribution_rollups_daily` rows with `group_kind = 'user'`, `alert_events` whose
+  `payload.budget.scope` is `user` and `scope_id` the id, and the `user_id` key of `exports.filters`. **Set to NULL:**
+  `evaluator_runs.error` for the user's traces and `insight_explanations.text` where the insight's
+  `evidence.trace_ids` cites one.
+- **Kept:** hourly and daily cost rollups (no user dimension; the last 48 hours are recomputed by the rollup jobs),
+  user-scoped `budgets` (their count is reported as `user_budgets_remaining`), experiment run `totals`, traces of the
+  user's sessions that carry no user id, the gateway cache (at most 24 hours), the job payload until finished jobs are
+  cleaned up (7 days), backups until pruned. A user-stats or attribution refresh, or an evaluator run, that started
+  before the erasure may write a row after it; a second request removes it.
+- **Audit.** `end_user.erase_request` on every request, and `end_user.erase` when the job finishes (`outcome:
+  success`, `metadata` = row counts per table plus `user_budgets_remaining`; counts accumulate across retries on the
+  job row) or gives up after its last attempt (`outcome: failure`, `reason` = the error type, counts so far). Both have
+  `target_type: end_user` and `target_id = hex(HMAC-SHA256(SECRET_KEY, "spanlight:end-user-erasure:v1\n<project_id>:
+  <external_user_id>"))`; the raw id is never written to the audit log. Rotating `SECRET_KEY` changes the hash.
+- **Duplicates.** The job's dedupe key is `erase:{project_id}:{hash}`, so a request while a job for the same user is
+  queued or running creates no second job (the request is still audited). A request after the job finished or failed
+  removes that job row and queues a new one. There is no status endpoint and no suppression list: send no new data
+  for the id before requesting.
+
+### Scheduled experiment runs
+
+- **Route.** `PUT /api/v1/projects/{project_id}/experiments/{experiment_id}/schedule` takes `{"schedule": "weekly" |
+  null}` and answers `200` with the experiment. It needs `experiments:run`, because a schedule spends money as a run
+  does, and is audited as `experiment.schedule_change` even when the value did not change. The schedule is saved on
+  any server; runs start only where `EXPERIMENT_SCHEDULES_ENABLED` is set. `ExperimentOut.schedule`;
+  `ExperimentRunOut.trigger` is `manual` or `schedule`.
+- **Jobs.** The daily `schedule_experiments` job enqueues one `run_scheduled_experiment` per scheduled experiment with
+  the dedupe key `scheduled_experiment:{experiment_id}:{iso_year}-W{iso_week:02}` and one attempt, so an experiment
+  gets at most one scheduled run per ISO week however many workers or passes there are. The child calls the same
+  `start_run` a person does, with no user (`started_by` null, audit actor `system`). A manual run already queued or
+  running makes the child end `done` / `skipped_run_in_progress`; the next week tries again. A run that cannot start
+  fails with the same error codes as a manual run and opens no finding.
+- **Comparison.** The baseline is the previous `done` run of the same experiment whose `target` is identical; without
+  one nothing is compared. A score regressed when `regressed > improved` and its exact two-sided p-value is below
+  0.05 / m, m being the number of scores with a test (Bonferroni), decided on the exact value, not the rounded one.
+- **Finding.** A regression upserts one insight of kind `experiment_regression`, fingerprinted on the experiment id,
+  severity `critical`, layer `provider`, certainty `measured`; `evidence.metrics` holds `experiment_id`, `run_a`,
+  `run_b`, `scores_regressed` and per regressed score `<name>.test`, `<name>.improved`, `<name>.regressed`,
+  `<name>.p_value`; `evidence.window` spans the baseline's start to the run's end. Opening it notifies the project's
+  insight channels. A later scheduled run with no regression resolves an open or acknowledged one; a muted one keeps
+  its mute. The detector engine never resolves this kind. It has no catalogue entry, so its `label` is the kind
+  string, and it is not in the sensitivity settings.

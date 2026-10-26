@@ -44,6 +44,9 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 - **Redact email addresses and phone numbers.** A project can turn on `redact_contact_info` (`PATCH /api/v1/projects/{id}`; off by default): ingestion then also replaces email addresses and international phone numbers (a leading `+` and 10 to 15 digits) with `[REDACTED]` in span names, inputs, outputs, attributes and status messages, for spans ingested after it is turned on. Phone numbers without a leading `+` are not detected, and an SSH remote such as `git@github.com` is redacted as an email. The settings screen has no switch yet.
 
+- **Erase one end user's data.** `POST /api/v1/projects/{project_id}/users/erasures` with `{"external_user_id": "..."}` queues a worker job (`202`) that deletes, in batches of a few thousand spans, the user's traces and spans, scores, review-queue items, the dataset items copied from their traces (locked datasets included) with the experiment items and run traces made from them, replays and their result traces, their daily statistics, attribution rows, budget alerts and export filters, and clears evaluator-run errors and Doctor explanations that cite their traces. Admins and owners (`project:delete`); the demo project refuses; `Idempotency-Key` is honoured. The audit log records `end_user.erase_request` and `end_user.erase` (per-table counts; outcome `failure` with the counts so far if the job gives up) against a keyed hash of the id, never the id itself. The end-user page has no button yet.
+- **Weekly experiment reruns.** An experiment can be scheduled `weekly` (`PUT /api/v1/projects/{project_id}/experiments/{experiment_id}/schedule`, `experiments:run`, audited as `experiment.schedule_change`). With `EXPERIMENT_SCHEDULES_ENABLED` (off by default) a daily worker job starts one run per scheduled experiment per ISO week; the run's `trigger` is `schedule`. A scheduled run that ends `done` is compared with the previous `done` run of the same target with the existing paired tests; a score that got significantly worse (more items down than up, exact p below 0.05 divided by the number of scores tested) opens a critical `experiment_regression` finding and notifies the project's insight channels, and a later scheduled run without one resolves it. A week with a manual run in progress is skipped. The experiment page has no schedule control yet.
+
 ### Changed
 
 - **A run scores a fixed set of items.** It takes the ids of the dataset's first `max_items` items when it starts: items added while it runs are not scored, and items deleted while it runs are skipped. Before, a run read the dataset page by page and could pick up items added mid-run.
@@ -91,6 +94,10 @@ Run `spanlight migrate` after upgrading. 1010 adds the copy columns to `experime
 1022 creates `budget_counters` and `budget_reservations` (row-level security, project isolation and worker bypass policies). Its downgrade drops both, which this release's gateway needs, so downgrade only together with the previous release.
 
 1023 adds `projects.redact_contact_info` (`boolean NOT NULL DEFAULT false`; a constant default, so catalog only).
+
+1024 adds `end_user.erase_request` and `end_user.erase` to the audit action CHECK, added `NOT VALID` and then validated in its own statement so `audit_events` is not scanned under an exclusive lock. Its downgrade restores the old list `NOT VALID` and deletes nothing (the audit log is append-only and hash-chained).
+
+1025 adds `experiments.schedule` and `experiment_runs.trigger` (constant default `manual`, catalog only), `experiment.schedule_change` to the audit action CHECK and `skipped_run_in_progress` to the job outcome CHECK, in the same `NOT VALID` then validate shape. Its downgrade drops both columns and clears that outcome from job rows.
 
 ## [0.7.0] - 2026-10-20
 
