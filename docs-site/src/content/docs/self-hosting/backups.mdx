@@ -5,7 +5,7 @@ sidebar:
   order: 24
 ---
 
-{/* Sources: backend/app/backups/jobs.py, backend/app/backups/service.py, backend/app/backups/restore.py, backend/app/backups/retention.py, backend/app/backups/libpq.py, backend/app/cli.py, backend/app/jobs/scheduler.py, backend/app/config.py, deploy/compose.yaml, deploy/compose.minio.yaml, deploy/Dockerfile, docs/runbooks/restore.md, docs/runbooks/alerts.md, deploy/.env.example, backend/app/db/models/platform.py, docs/runbooks/rotate-secrets.md */}
+{/* Sources: backend/app/backups/jobs.py, backend/app/backups/service.py, backend/app/backups/restore.py, backend/app/backups/retention.py, backend/app/end_users/erasure_job.py, backend/app/backups/libpq.py, backend/app/cli.py, backend/app/jobs/scheduler.py, backend/app/config.py, deploy/compose.yaml, deploy/compose.minio.yaml, deploy/Dockerfile, docs/runbooks/restore.md, docs/runbooks/alerts.md, deploy/.env.example, backend/app/db/models/platform.py, docs/runbooks/rotate-secrets.md */}
 
 import { Aside, Steps } from '@astrojs/starlight/components';
 import NextSteps from '../../../components/NextSteps.astro';
@@ -143,6 +143,10 @@ spanlight restore --key backups/2026/10/09/spanlight-20261009T030000Z.dump
 ```
 
 The target comes from the `RESTORE_TARGET_URL` environment variable. Prefer that to the `--target-url` option, because a URL on the command line is visible in the process list and your shell history. The dump has neither owners nor privileges, so after a restore you run `spanlight ensure-app-role` against the restored database so the API and worker can connect. The [restore runbook](/docs/runbooks/restore/) has the complete Compose procedure, including how to swap the restored database in for the live one and how to go back.
+
+### Erasures and backups
+
+A dump holds whatever the database held when it was taken. Data you removed later with an [end-user erasure](/docs/guides/privacy/#erase-one-end-users-data) stays in every backup taken before the erasure until that backup is pruned: up to 14 days for a daily backup and up to 8 weeks for a Sunday one. Keep the bucket access-restricted, and when you restore a backup, run again every erasure requested after the backup was taken. A restored audit log does not know about those requests, because they came later, so keep your own log of erasure requests (or [stream the audit log](/docs/audit-log/) elsewhere) and work from that.
 
 ## Rehearse a restore
 

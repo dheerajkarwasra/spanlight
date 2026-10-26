@@ -4570,6 +4570,44 @@
         "title": "EmailVerifyConfirmIn",
         "type": "object"
       },
+      "EndUserErasureIn": {
+        "description": "The end user to erase, by the `user_id` the application sent with its traces.",
+        "properties": {
+          "external_user_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\x00]*$",
+            "title": "External User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "external_user_id"
+        ],
+        "title": "EndUserErasureIn",
+        "type": "object"
+      },
+      "EndUserErasureOut": {
+        "description": "The erasure is queued, not done: a worker job deletes the data in batches.",
+        "properties": {
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "status": {
+            "const": "queued",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "requested_at"
+        ],
+        "title": "EndUserErasureOut",
+        "type": "object"
+      },
       "ErrorBucketOut": {
         "properties": {
           "approximate": {
@@ -33971,6 +34009,81 @@
           }
         },
         "summary": "List Users",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/users/erasures": {
+      "post": {
+        "description": "Queue the erasure of everything stored for one end user of the project: traces and\nspans, scores, review-queue items, the dataset items copied from the user's traces and the\nexperiment items and replays made from them, the user's daily statistics, attribution rows,\nbudget alerts and export filters. `202` means queued: a worker job deletes in batches, and\nthe organization's audit log gets an `end_user.erase` event with the counts when it is done.\n\nThe id goes in the body because ids can contain `/`. The demo project refuses.",
+        "operationId": "request_user_erasure_api_v1_projects__project_id__users_erasures_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Makes a retry of this request safe: it runs once, then is replayed.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[\\x21-\\x7e]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Makes a retry of this request safe: it runs once, then is replayed.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EndUserErasureIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EndUserErasureOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Erase one end user's data",
         "tags": [
           "users"
         ]

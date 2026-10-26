@@ -112,6 +112,8 @@ PROJECT_DATA_ROWS = (
     Row("GET", f"{PRJ}/releases/failure-categories", P.PROJECT_READ, also=frozenset({404})),
     Row("GET", f"{PRJ}/users", P.PROJECT_READ),
     Row("GET", f"{PRJ}/users/{{external_user_id:path}}", P.PROJECT_READ),
+    # Erasing one end user's data deletes rows like deleting the project does.
+    Row("POST", f"{PRJ}/users/erasures", P.PROJECT_DELETE),
     Row("GET", f"{PRJ}/attribution", P.PROJECT_READ),
     Row("GET", f"{PRJ}/unpriced-models", P.PROJECT_READ),
     # UX Phase 6: the setup checklist's steps.

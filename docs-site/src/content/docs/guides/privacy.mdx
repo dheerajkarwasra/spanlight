@@ -1,11 +1,11 @@
 ---
 title: Privacy, retention and deletion
-description: Control what Spanlight stores and for how long. Secret redaction on ingest, optional email and phone redaction, turning off prompt and completion capture, the retention period, and what deleting a project or exporting traces does.
+description: Control what Spanlight stores and for how long. Secret redaction on ingest, optional email and phone redaction, turning off prompt and completion capture, the retention period, what deleting a project or exporting traces does, and how to erase one end user's data.
 sidebar:
   order: 5
 ---
 
-{/* Sources: backend/app/core/redact.py, backend/app/playground/replay_source.py, backend/app/core/security.py, backend/app/ingest/normalize.py, backend/app/ingest/pipeline.py, backend/app/gateway/key_context.py, backend/app/gateway/recorder.py, backend/app/api/schemas/projects.py, backend/app/db/models/projects.py, backend/app/api/v1/projects.py, backend/app/core/permissions.py, backend/app/jobs/tasks/retention.py, backend/app/jobs/scheduler.py, backend/app/services/deletion.py, backend/app/exports/purge.py, backend/app/exports/service.py, backend/app/gateway/execute.py, backend/app/gateway/key_schemas.py, frontend/src/features/settings/project-settings-form.tsx, frontend/src/features/settings/project-settings-parts.tsx, frontend/src/features/settings/project-settings-schema.ts, frontend/src/features/settings/project-settings-page.tsx, frontend/src/features/settings/project-danger-zone.tsx, frontend/src/features/settings/danger-copy.ts, frontend/src/features/settings/settings-nav-items.ts, frontend/src/features/traces/payload-view.tsx */}
+{/* Sources: backend/app/core/redact.py, backend/app/playground/replay_source.py, backend/app/core/security.py, backend/app/ingest/normalize.py, backend/app/ingest/pipeline.py, backend/app/gateway/key_context.py, backend/app/gateway/recorder.py, backend/app/api/schemas/projects.py, backend/app/db/models/projects.py, backend/app/api/v1/projects.py, backend/app/core/permissions.py, backend/app/jobs/tasks/retention.py, backend/app/jobs/scheduler.py, backend/app/services/deletion.py, backend/app/exports/purge.py, backend/app/exports/service.py, backend/app/end_users/erasure_job.py, backend/app/api/v1/end_users.py, backend/app/jobs/tasks/cleanup.py, backend/app/backups/retention.py, backend/app/gateway/execute.py, backend/app/gateway/key_schemas.py, frontend/src/features/settings/project-settings-form.tsx, frontend/src/features/settings/project-settings-parts.tsx, frontend/src/features/settings/project-settings-schema.ts, frontend/src/features/settings/project-settings-page.tsx, frontend/src/features/settings/project-danger-zone.tsx, frontend/src/features/settings/danger-copy.ts, frontend/src/features/settings/settings-nav-items.ts, frontend/src/features/traces/payload-view.tsx */}
 
 import NextSteps from '../../../components/NextSteps.astro';
 import Prerequisites from '../../../components/Prerequisites.astro';
@@ -114,6 +114,39 @@ The files of the project's [exports](/docs/guides/exports/) sit in your object s
 
 Deleting an organization deletes all of its projects the same way, together with its members and its audit log. Only an owner can do it.
 
+## Erase one end user's data
+
+To act on an erasure request from one of your application's users, erase everything Spanlight stores for the `user_id` your application sent with its traces. There is no screen for this yet; call the API as an admin or owner, with a [personal access token](/docs/guides/access/):
+
+```bash
+curl -X POST "$SPANLIGHT_URL/api/v1/projects/$PROJECT_ID/users/erasures" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"external_user_id": "user-123"}'
+```
+
+The id goes in the body because ids can contain `/`. The answer is `202` with `{"status": "queued", ...}`: the erasure is queued, not done. A worker job deletes the data in batches of a few thousand spans, so a user with millions of spans takes a while without blocking ingestion, and it loops until nothing of the user is left, which also catches spans that arrive while it runs. When it finishes, the organization's audit log gets an `end_user.erase` event; the request itself is an `end_user.erase_request` event. If the job fails for good, the `end_user.erase` event is written with outcome `failure` and the counts so far; request again.
+
+**Stop sending data for the id first.** Spanlight does not keep a block list: a span with the erased `user_id` that arrives after the job finished is stored like any other. Request the erasure again to remove it; a request while a job for the same user is queued or running is a no-op.
+
+**What goes.** In that one project only (the same id in another project is untouched):
+
+- the user's traces and spans, their scores, review-queue items and the error text of evaluator runs over them;
+- the dataset items copied from the user's traces, the experiment items run over those items and the traces those runs produced, in locked datasets too; the experiment runs' totals stay as computed;
+- replays of the user's spans and the traces they produced; the text of a Doctor explanation whose insight cites one of the user's traces;
+- the user's rows in the per-user daily statistics, the daily attribution rollups and the budget alerts of a budget scoped to the user; the `user_id` filter of the user's exports (the files themselves expire within seven days).
+
+**What stays.**
+
+- Anonymous aggregates: the hourly rollups and daily cost rollups behind the charts have no user dimension. Rollups of the last two days are recomputed, so recent charts drop the user's calls; older totals keep counting them anonymously.
+- A budget scoped to the user. It is configuration you chose; the audit event reports how many such budgets remain so you can delete them.
+- The gateway cache, which is not linked to a user and expires within 24 hours; the queued job's payload, which holds the id until finished jobs are removed after seven days.
+- Backups, until they age out. See [Back up and restore](/docs/self-hosting/backups/#erasures-and-backups).
+- Traces of the user's sessions that carry no `user_id` themselves; text that mentions the person inside other users' traces, which cannot be found by id; and dataset items made by hand.
+- For 24 hours, the idempotency store keeps an unsalted SHA-256 hash of each request body sent with an `Idempotency-Key`, the erasure request's body included.
+- A row written after the job by work that started before it: a user-statistics or attribution refresh, or an evaluator run already in flight over one of the user's traces. Request the erasure again to remove it.
+
+**Proof without the id.** The audit log is append-only, so the two events never hold the id. Their `target_id` is `HMAC-SHA256(SECRET_KEY, "spanlight:end-user-erasure:v1\n<project id>:<external user id>")` in hex (the first line is a fixed prefix, then a newline). To check later that a given id was erased, recompute that hash and look for it in the audit log; rotating `SECRET_KEY` changes every hash, so keep your own record of the ids you erased.
+
 ## Exports
 
 Exporting traces writes a CSV or JSONL file to your own object storage. The file holds the prompts and completions your project captured, so treat it like the traces themselves. Members, admins and owners can export; viewers cannot. Exports are made in **Settings, Project, Exports**.
@@ -126,6 +159,7 @@ Spanlight deletes an export file seven days after it was made, and when the proj
 - **Retention.** When it is the only setting you changed, saving a new period shows a toast such as "Traces are now kept for 14 days." Traces older than the period are removed within the next hour.
 - **Redaction.** Send a span whose input contains `Authorization: Bearer abcdefgh12345678`. The stored input reads `Authorization: [REDACTED]`.
 - **Contact redaction.** With `redact_contact_info` on, send a span whose input contains `mail jane@example.com`. The stored input reads `mail [REDACTED]`.
+- **Erasure.** After the request, the user disappears from **Users** once the job has run (usually within a minute). The audit log shows `end_user.erase` with the number of rows removed per table.
 
 ## Troubleshooting
 

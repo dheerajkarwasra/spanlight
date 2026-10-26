@@ -97,6 +97,8 @@ from app.api.schemas.datasets import (
 )
 from app.api.schemas.end_users import (
     DayStats,
+    EndUserErasureIn,
+    EndUserErasureOut,
     StatsWindow,
     UserDetailOut,
     UserListOut,
@@ -260,6 +262,8 @@ __all__ = [
     "DeliveryOut",
     "DeliverySummaryOut",
     "EmailVerifyConfirmIn",
+    "EndUserErasureIn",
+    "EndUserErasureOut",
     "FailureCategoriesOut",
     "FaultProfileCreate",
     "FaultProfileOut",

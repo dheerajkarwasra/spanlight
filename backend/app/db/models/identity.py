@@ -129,6 +129,8 @@ class AuditAction(enum.StrEnum):
     AUDIT_STREAM_DELETE = "audit_stream.delete"
     AUDIT_STREAM_ROTATE_SECRET = "audit_stream.rotate_secret"  # noqa: S105 - an action name
     AUDIT_STREAM_TEST = "audit_stream.test"
+    END_USER_ERASE_REQUEST = "end_user.erase_request"
+    END_USER_ERASE = "end_user.erase"
 
 
 class AuditActorType(enum.StrEnum):

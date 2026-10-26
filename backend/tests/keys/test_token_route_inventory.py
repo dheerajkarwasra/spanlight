@@ -138,6 +138,7 @@ WRITE_GUARDED: set[Route] = {
     ("POST", "/api/v1/projects/{project_id}/insights/{insight_id}/unmute"),
     ("POST", "/api/v1/projects/{project_id}/playground/replays"),
     ("POST", "/api/v1/projects/{project_id}/playground/runs"),
+    ("POST", "/api/v1/projects/{project_id}/users/erasures"),
     ("POST", "/api/v1/projects/{project_id}/prompts"),
     ("POST", "/api/v1/projects/{project_id}/prompts/{name:path}/versions"),
     ("POST", "/api/v1/projects/{project_id}/review-policy/runs"),

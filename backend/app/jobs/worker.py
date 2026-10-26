@@ -54,6 +54,9 @@ TASK_TIMEOUT_OVERRIDES: Mapping[str, float] = {
     # An experiment run: up to 1 000 items, four provider calls in flight, each followed by its
     # evaluators; it extends its lease before every call and every 20 seconds.
     "run_experiment": 3 * 60 * 60.0,
+    # Erasing one end user: batches of a few thousand spans until none is left, for a user who
+    # may own millions; it extends its lease before every batch and every 20 seconds.
+    "erase_end_user": 3 * 60 * 60.0,
 }
 # Kinds that run in the long-job slot.
 LONG_KINDS: frozenset[str] = frozenset(TASK_TIMEOUT_OVERRIDES)

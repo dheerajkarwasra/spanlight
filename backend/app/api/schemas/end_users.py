@@ -4,9 +4,11 @@ Unknown values are `None`, never 0: `cost_usd` is `None` for a user whose calls 
 """
 
 from datetime import date, datetime
+from typing import Annotated, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from app.api.params import NO_NUL
 from app.api.schemas.common import Money, Page
 from app.api.schemas.traces import SessionSummaryOut
 
@@ -72,3 +74,16 @@ class UserDetailOut(BaseModel):
     recent_sessions: list[SessionSummaryOut]
     window: StatsWindow
     computed_at: datetime | None
+
+
+class EndUserErasureIn(BaseModel):
+    """The end user to erase, by the `user_id` the application sent with its traces."""
+
+    external_user_id: Annotated[str, Field(min_length=1, max_length=256, pattern=NO_NUL)]
+
+
+class EndUserErasureOut(BaseModel):
+    """The erasure is queued, not done: a worker job deletes the data in batches."""
+
+    status: Literal["queued"]
+    requested_at: datetime
