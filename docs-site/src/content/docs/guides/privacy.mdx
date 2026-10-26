@@ -1,16 +1,16 @@
 ---
 title: Privacy, retention and deletion
-description: Control what Spanlight stores and for how long. Secret redaction on ingest, turning off prompt and completion capture, the retention period, and what deleting a project or exporting traces does.
+description: Control what Spanlight stores and for how long. Secret redaction on ingest, optional email and phone redaction, turning off prompt and completion capture, the retention period, and what deleting a project or exporting traces does.
 sidebar:
   order: 5
 ---
 
-{/* Sources: backend/app/core/redact.py, backend/app/core/security.py, backend/app/ingest/normalize.py, backend/app/ingest/pipeline.py, backend/app/gateway/key_context.py, backend/app/gateway/recorder.py, backend/app/api/schemas/projects.py, backend/app/db/models/projects.py, backend/app/api/v1/projects.py, backend/app/core/permissions.py, backend/app/jobs/tasks/retention.py, backend/app/jobs/scheduler.py, backend/app/services/deletion.py, backend/app/exports/purge.py, backend/app/exports/service.py, backend/app/gateway/execute.py, backend/app/gateway/key_schemas.py, frontend/src/features/settings/project-settings-form.tsx, frontend/src/features/settings/project-settings-parts.tsx, frontend/src/features/settings/project-settings-schema.ts, frontend/src/features/settings/project-settings-page.tsx, frontend/src/features/settings/project-danger-zone.tsx, frontend/src/features/settings/danger-copy.ts, frontend/src/features/settings/settings-nav-items.ts, frontend/src/features/traces/payload-view.tsx */}
+{/* Sources: backend/app/core/redact.py, backend/app/playground/replay_source.py, backend/app/core/security.py, backend/app/ingest/normalize.py, backend/app/ingest/pipeline.py, backend/app/gateway/key_context.py, backend/app/gateway/recorder.py, backend/app/api/schemas/projects.py, backend/app/db/models/projects.py, backend/app/api/v1/projects.py, backend/app/core/permissions.py, backend/app/jobs/tasks/retention.py, backend/app/jobs/scheduler.py, backend/app/services/deletion.py, backend/app/exports/purge.py, backend/app/exports/service.py, backend/app/gateway/execute.py, backend/app/gateway/key_schemas.py, frontend/src/features/settings/project-settings-form.tsx, frontend/src/features/settings/project-settings-parts.tsx, frontend/src/features/settings/project-settings-schema.ts, frontend/src/features/settings/project-settings-page.tsx, frontend/src/features/settings/project-danger-zone.tsx, frontend/src/features/settings/danger-copy.ts, frontend/src/features/settings/settings-nav-items.ts, frontend/src/features/traces/payload-view.tsx */}
 
 import NextSteps from '../../../components/NextSteps.astro';
 import Prerequisites from '../../../components/Prerequisites.astro';
 
-Spanlight stores the prompts and completions your application sends, so you decide what it keeps and for how long. Each project has two settings for this: whether to capture prompts and completions, and how many days to keep traces. This page also covers the secret redaction that always runs, and what deleting a project removes.
+Spanlight stores the prompts and completions your application sends, so you decide what it keeps and for how long. Each project has settings for this: whether to capture prompts and completions, whether to redact email addresses and phone numbers, and how many days to keep traces. This page also covers the secret redaction that always runs, and what deleting a project removes.
 
 <Prerequisites
   items={[
@@ -49,6 +49,36 @@ From then on, spans are stored without their input and output. Tokens, cost, lat
 - To remove what is already stored, shorten the retention period or delete the project.
 
 Only the admin and owner roles can change it. For anyone else the switch is disabled.
+
+## Redact email addresses and phone numbers
+
+A project can also redact email addresses and phone numbers, on top of the secret redaction that always runs. It is off by default, because code-heavy prompts often hold strings that look like an address. The settings screen does not have a switch for it yet, so set it through the API, with the admin or owner role and a [personal access token](/docs/guides/access/) with the write scope:
+
+```bash
+curl -sS -X PATCH "$SPANLIGHT_HOST/api/v1/projects/$PROJECT" \
+  -H "Authorization: Bearer $SPANLIGHT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"redact_contact_info": true}'
+```
+
+The response shows `"redact_contact_info": true`. Send `false` to turn it off again.
+
+While it is on, Spanlight replaces these with `[REDACTED]` in the span name, input, output, attributes and status message, including the names of keys in JSON objects:
+
+- **Email addresses**: a name, `@`, and a domain with at least one dot that ends in letters, such as `jane@example.com`.
+- **Phone numbers in international form**: a `+`, then 10 to 15 digits, which may be split by spaces, dashes, dots or brackets, such as `+44 20 7946 0958` or `+1 (415) 555-2671`.
+
+What it does not catch, or catches when you may not expect it:
+
+- Phone numbers written without a leading `+`, such as `(415) 555-2671` or `020 7946 0958`, are not detected.
+- Strings that only look like an address are kept: `react@18.3.1` and `user@localhost` are stored as sent.
+- An SSH remote such as `git@github.com:org/repo.git` has the shape of an address and is redacted.
+- A `+` followed by a long number, such as `+1234567890` in a diff, is redacted.
+- The trace name, trace metadata and identifiers (`user_id`, `session_id`, tags) are not covered; do not put contact details there.
+
+The setting applies to spans ingested after you turn it on. Spans already stored keep what they hold; shorten the retention period or delete the project to remove them. It covers every way of sending data, including spans the gateway records, but not the [gateway cache](/docs/gateway/cache/#privacy), which keeps the provider's exact response. A redacted prompt cannot be [replayed](/docs/playground/), and evaluators and dataset imports see the redacted text.
+
+Like secret redaction, this is a safety net and not a guarantee. Names, street addresses, national ids and numbers in other formats are not detected. If a payload must never be stored, turn off payload capture instead.
 
 ## Set the retention period
 
@@ -95,6 +125,7 @@ Spanlight deletes an export file seven days after it was made, and when the proj
 - **Capture off.** When it is the only setting you changed, the toast after you save reads "Prompts and completions will no longer be captured." Send a new trace. Open it in **Traces**: the span's Input and Output show "No input captured" and "No output captured", while tokens, cost and latency are still there. Traces from before the change keep their text.
 - **Retention.** When it is the only setting you changed, saving a new period shows a toast such as "Traces are now kept for 14 days." Traces older than the period are removed within the next hour.
 - **Redaction.** Send a span whose input contains `Authorization: Bearer abcdefgh12345678`. The stored input reads `Authorization: [REDACTED]`.
+- **Contact redaction.** With `redact_contact_info` on, send a span whose input contains `mail jane@example.com`. The stored input reads `mail [REDACTED]`.
 
 ## Troubleshooting
 

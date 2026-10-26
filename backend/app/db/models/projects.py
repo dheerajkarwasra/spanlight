@@ -20,6 +20,8 @@ class Project(Base):
     slug: Mapped[str] = mapped_column(Text)
     retention_days: Mapped[int] = mapped_column(Integer, server_default=text("30"))
     capture_payloads: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    # Whether ingestion also redacts emails and `+` phone numbers in span content (migration 1023).
+    redact_contact_info: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     # Whether org members get the Monday summary email for this project (`weekly_digest` job).
     weekly_digest_enabled: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
     # Alert channels of the organization that hear about critical insights, at most 10. No

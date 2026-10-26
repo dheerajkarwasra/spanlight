@@ -42,6 +42,8 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 - **Trace context across MCP and services.** The Python and TypeScript SDKs have `inject()` and `continue_trace()` / `continueTrace()`, which carry a trace across processes as a W3C `traceparent` in MCP `params._meta` (SEP-414), HTTP headers or queue messages. Spans opened inside `continue_trace` become children of the caller's span and never overwrite the caller's trace name, environment or release. An invalid or missing `traceparent` starts a new trace; the sampled flag is not honoured, and `tracestate` and `baggage` are not used. Only continue traces from callers you trust: a caller chooses the trace id.
 
+- **Redact email addresses and phone numbers.** A project can turn on `redact_contact_info` (`PATCH /api/v1/projects/{id}`; off by default): ingestion then also replaces email addresses and international phone numbers (a leading `+` and 10 to 15 digits) with `[REDACTED]` in span names, inputs, outputs, attributes and status messages, for spans ingested after it is turned on. Phone numbers without a leading `+` are not detected, and an SSH remote such as `git@github.com` is redacted as an email. The settings screen has no switch yet.
+
 ### Changed
 
 - **A run scores a fixed set of items.** It takes the ids of the dataset's first `max_items` items when it starts: items added while it runs are not scored, and items deleted while it runs are skipped. Before, a run read the dataset page by page and could pick up items added mid-run.
@@ -87,6 +89,8 @@ Run `spanlight migrate` after upgrading. 1010 adds the copy columns to `experime
 1021 adds the nullable `evaluators.config_changed_at` (catalog only, no rewrite).
 
 1022 creates `budget_counters` and `budget_reservations` (row-level security, project isolation and worker bypass policies). Its downgrade drops both, which this release's gateway needs, so downgrade only together with the previous release.
+
+1023 adds `projects.redact_contact_info` (`boolean NOT NULL DEFAULT false`; a constant default, so catalog only).
 
 ## [0.7.0] - 2026-10-20
 

@@ -44,6 +44,21 @@ _DIGIT_RUN = re.compile(r"\b\d{4,}(?:[ \-]\d{4,})*(?:[ \-]\d{2,})?\b")
 _SEPARATOR = re.compile(r"[ \-]")
 _CARD_DIGITS = range(13, 20)
 
+# Contact patterns, applied only for a project that opts in (`projects.redact_contact_info`).
+# An email needs a dotted domain ending in letters, so `react@18.3.1` and `user@localhost` are
+# kept; an SSH remote like `git@github.com` is redacted. Every quantifier is bounded and a match
+# starts only where a local part starts, so a long run without an `@` costs one pass.
+_EMAIL = re.compile(
+    r"(?<![A-Za-z0-9._%+\-])[A-Za-z0-9._%+\-]{1,64}"
+    r"@(?:[A-Za-z0-9\-]{1,63}\.){1,8}[A-Za-z]{2,24}\b"
+)
+# A phone candidate: `+`, a non-zero digit, then digits and the separators numbers are printed
+# with, ending on a digit. `_redact_phone` keeps it unless it holds 10-15 digits (E.164 allows at
+# most 15). The `+` is required: national formats like `(415) 555-2671` are not detected. The
+# 10-digit floor keeps `+12345678` in a diff; the non-zero digit keeps `+05:30` in a timestamp.
+_PHONE = re.compile(r"(?<![\w+])\+[1-9][\d ().\-]{8,22}\d(?!\d)")
+_PHONE_DIGITS = range(10, 16)
+
 MAX_DEPTH = 64
 # What a value nested deeper than `MAX_DEPTH` is stored as.
 DEPTH_MARKER = "[MAX_DEPTH]"
@@ -123,22 +138,34 @@ def _rebuild_run(run: str, groups: list[str], covered: list[bool]) -> str:
     return "".join(pieces)
 
 
-def redact_text(value: str) -> str:
+def _redact_phone(match: re.Match[str]) -> str:
+    candidate = match.group(0)
+    digits = sum(char.isdigit() for char in candidate)
+    return REDACTED if digits in _PHONE_DIGITS else candidate
+
+
+def redact_text(value: str, *, contacts: bool = False) -> str:
+    """`value` with secrets and card numbers replaced; also emails and phones with `contacts`."""
     for pattern in _SECRET_PATTERNS:
         value = pattern.sub(REDACTED, value)
+    if contacts:
+        value = _PHONE.sub(_redact_phone, _EMAIL.sub(REDACTED, value))
     return _DIGIT_RUN.sub(_redact_cards, value)
 
 
-def redact_json(value: Any, *, depth: int = 0) -> Any:
+def redact_json(value: Any, *, depth: int = 0, contacts: bool = False) -> Any:
     """Return a copy of a JSON-compatible value with secrets in strings replaced."""
     if isinstance(value, str):
-        return redact_text(value)
+        return redact_text(value, contacts=contacts)
     if depth >= MAX_DEPTH:
         return DEPTH_MARKER
     if isinstance(value, dict):
         return {
-            redact_text(str(key)): redact_json(item, depth=depth + 1) for key, item in value.items()
+            redact_text(str(key), contacts=contacts): redact_json(
+                item, depth=depth + 1, contacts=contacts
+            )
+            for key, item in value.items()
         }
     if isinstance(value, list):
-        return [redact_json(item, depth=depth + 1) for item in value]
+        return [redact_json(item, depth=depth + 1, contacts=contacts) for item in value]
     return value

@@ -107,6 +107,7 @@ async def _record(
         project_id=context.project_id,
         capture_payloads=context.capture_payloads,
         org_id=context.org_id,
+        redact_contact_info=context.redact_contact_info,
         source_key_id=context.key_id,
         prepared_truncated=prepared_truncated,
     )
@@ -196,7 +197,9 @@ def record_soon(
     # Held until written, so held as stored: redacted and at most 1 MiB per payload.
     try:
         span, truncated, size = prepare_span_payloads(
-            span, capture_payloads=context.capture_payloads
+            span,
+            capture_payloads=context.capture_payloads,
+            redact_contacts=context.redact_contact_info,
         )
     except Exception as failure:  # noqa: BLE001 - counted and logged, the client was answered
         # Counted like a write that never succeeds. Only the type is logged: the message may

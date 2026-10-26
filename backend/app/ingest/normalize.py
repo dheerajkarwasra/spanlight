@@ -82,28 +82,39 @@ class NormalizedSpan:
 
 
 def normalize_span(
-    span: SpanIn, *, capture_payloads: bool, prices: PriceBook, now: datetime
+    span: SpanIn,
+    *,
+    capture_payloads: bool,
+    prices: PriceBook,
+    now: datetime,
+    redact_contacts: bool = False,
 ) -> NormalizedSpan:
+    """The span ready to store. `redact_contacts` also redacts emails and phone numbers in its
+    name, status message, attributes and payloads (`projects.redact_contact_info`)."""
     _check_span(span, now)
     try:
         trace = trace_fields(span)
     except ValueError as exc:  # invalid trace metadata, with its field path
         raise SpanRejectedError(str(exc)) from None
     usage = _usage(span)
-    attributes = _attributes(span)
-    stored_input, stored_output, truncated, payload_bytes = _payloads(span, capture_payloads)
+    attributes = _attributes(span, redact_contacts)
+    stored_input, stored_output, truncated, payload_bytes = _payloads(
+        span, capture_payloads, redact_contacts
+    )
     modifiers = reported_modifiers(attributes)
     cost_usd, fee_usd, pricing_version = _cost(span, prices, usage, modifiers)
     multipliers = multipliers_for(pricing_version, span.start_time)
     flag_unpriced_modifiers(attributes, span.provider, modifiers, multipliers)
-    status_message = redact_text(span.status_message) if span.status_message else None
+    status_message = (
+        redact_text(span.status_message, contacts=redact_contacts) if span.status_message else None
+    )
     error_class = classify_error(span.status, status_message, attributes)
     return NormalizedSpan(
         trace_id=span.trace_id,
         span_id=span.span_id,
         parent_span_id=span.parent_span_id,
         kind=span.kind,
-        name=redact_text(span.name),
+        name=redact_text(span.name, contacts=redact_contacts),
         status=span.status,
         status_message=status_message,
         error_class=error_class,
@@ -218,18 +229,18 @@ def _cost(
     return cost.cost_usd, cost.fee_usd, cost.pricing_version
 
 
-def _payloads(span: SpanIn, capture_payloads: bool) -> tuple[Any, Any, bool, int]:
+def _payloads(span: SpanIn, capture_payloads: bool, contacts: bool) -> tuple[Any, Any, bool, int]:
     """The input and output to store, whether either was truncated, and their stored bytes."""
     if not capture_payloads:
         return None, None, False, 0
-    stored_input, input_truncated, input_bytes = _prepare_payload(span.input)
-    stored_output, output_truncated, output_bytes = _prepare_payload(span.output)
+    stored_input, input_truncated, input_bytes = _prepare_payload(span.input, contacts)
+    stored_output, output_truncated, output_bytes = _prepare_payload(span.output, contacts)
     truncated = input_truncated or output_truncated or span.truncated
     return stored_input, stored_output, truncated, input_bytes + output_bytes
 
 
 def prepare_span_payloads(
-    span: dict[str, Any], *, capture_payloads: bool
+    span: dict[str, Any], *, capture_payloads: bool, redact_contacts: bool = False
 ) -> tuple[dict[str, Any], bool, int]:
     """A raw span with `input` and `output` already as they will be stored, the flag, and the
     payloads' stored bytes.
@@ -241,8 +252,12 @@ def prepare_span_payloads(
     """
     if not capture_payloads:
         return {**span, "input": None, "output": None}, False, 0
-    stored_input, input_truncated, input_bytes = _prepare_payload(span.get("input"))
-    stored_output, output_truncated, output_bytes = _prepare_payload(span.get("output"))
+    stored_input, input_truncated, input_bytes = _prepare_payload(
+        span.get("input"), redact_contacts
+    )
+    stored_output, output_truncated, output_bytes = _prepare_payload(
+        span.get("output"), redact_contacts
+    )
     prepared = {**span, "input": stored_input, "output": stored_output}
     return prepared, input_truncated or output_truncated, input_bytes + output_bytes
 
@@ -252,15 +267,15 @@ def stored_payload_bytes(*payloads: Any) -> int:
     return sum(_json_size(payload) for payload in payloads if payload is not None)
 
 
-def _attributes(span: SpanIn) -> dict[str, Any]:
+def _attributes(span: SpanIn, contacts: bool) -> dict[str, Any]:
     """The redacted attributes, holding the span's raw `finish_reason` when it sent one.
 
     The `finish_reason` column holds the canonical value; the provider's own stays here. Malformed
     `provider.*` values are dropped whoever sent them.
     """
-    attributes = clean_provider_attributes(redact_json(span.attributes))
+    attributes = clean_provider_attributes(redact_json(span.attributes, contacts=contacts))
     if span.finish_reason and attributes.get("finish_reason") is None:
-        attributes["finish_reason"] = redact_text(span.finish_reason)
+        attributes["finish_reason"] = redact_text(span.finish_reason, contacts=contacts)
     if _json_size(attributes) > MAX_ATTRIBUTES_BYTES:
         raise SpanRejectedError(f"attributes: exceed {MAX_ATTRIBUTES_BYTES} bytes")
     return attributes
@@ -282,7 +297,7 @@ def _json_size(value: Any) -> int:
     return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode())
 
 
-def _prepare_payload(value: Any) -> tuple[Any, bool, int]:
+def _prepare_payload(value: Any, contacts: bool) -> tuple[Any, bool, int]:
     """Redact, then truncate to MAX_PAYLOAD_BYTES; also the stored size in bytes.
 
     Redaction runs first so a secret straddling the cut can never survive in
@@ -291,7 +306,7 @@ def _prepare_payload(value: Any) -> tuple[Any, bool, int]:
     """
     if value is None:
         return None, False, 0
-    redacted = redact_json(value)
+    redacted = redact_json(value, contacts=contacts)
     serialized = json.dumps(redacted, ensure_ascii=False, separators=(",", ":"))
     encoded = serialized.encode()
     if len(encoded) <= MAX_PAYLOAD_BYTES:

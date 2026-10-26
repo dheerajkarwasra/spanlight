@@ -3392,3 +3392,20 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
   in flight plus $Y for this call is over the $Z limit today|this month; a lower max_tokens lowers the
   reservation.`; a refusal by a firing state keeps the soft-limit wording, since spend sent from the SDK or over OTLP
   is measured once a minute and never stopped. In-process callers keep the project, model and user scopes only.
+
+## Hardening wave 3 (added 2026-10-26)
+
+### Contact-info redaction
+
+- **`projects.redact_contact_info`** (boolean, default `false`) is returned by `GET` and `PATCH
+  /api/v1/projects/{id}`, and `PATCH` accepts it with the same permission as `capture_payloads` (`project:write`,
+  admins and owners); the change is recorded in the `project.update` audit event.
+- **What it redacts.** When true, ingestion (native, OTLP and gateway-recorded spans) also replaces with
+  `[REDACTED]`, in the span name, status message, attributes (keys included) and input and output: email addresses
+  (a local part of 1 to 64 characters, `@`, then a dotted domain ending in a 2 to 24 letter TLD) and phone numbers
+  (`+`, a non-zero digit, then digits and the separators space, `-`, `.`, `(` and `)`, with 10 to 15 digits in all).
+  It applies to spans ingested after the change; stored spans are not rewritten. The trace name, trace metadata,
+  `user_id`, `session_id` and tags are not covered. `request_hash` is still computed from the raw input. Redacted
+  payloads are refused by replay (`REPLAY_PAYLOAD_REDACTED`), as for secrets.
+- **Known misses and false positives.** National phone formats without `+` and digit runs longer than 15 are kept;
+  SSH remotes such as `git@github.com` and other `+`-prefixed numbers of 10 to 15 digits are redacted.

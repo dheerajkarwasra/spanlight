@@ -49,6 +49,7 @@ class KeyContext:
     project_id: uuid.UUID
     org_id: uuid.UUID
     capture_payloads: bool
+    redact_contact_info: bool
     route_id: uuid.UUID
     route_name: str
     route_version: int
@@ -122,6 +123,7 @@ async def load_key_context(db: AsyncSession, key: GatewayKey) -> KeyContext | No
         project_id=project.id,
         org_id=project.org_id,
         capture_payloads=project.capture_payloads,
+        redact_contact_info=project.redact_contact_info,
         route_id=route.id,
         route_name=route.name,
         route_version=route.version,

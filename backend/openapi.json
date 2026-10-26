@@ -11952,6 +11952,10 @@
             "title": "Promoted Metadata Keys",
             "type": "array"
           },
+          "redact_contact_info": {
+            "title": "Redact Contact Info",
+            "type": "boolean"
+          },
           "retention_days": {
             "title": "Retention Days",
             "type": "integer"
@@ -11972,6 +11976,7 @@
           "slug",
           "retention_days",
           "capture_payloads",
+          "redact_contact_info",
           "weekly_digest_enabled",
           "insight_channel_ids",
           "promoted_metadata_keys",
@@ -12036,6 +12041,17 @@
               }
             ],
             "title": "Promoted Metadata Keys"
+          },
+          "redact_contact_info": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redact Contact Info"
           },
           "retention_days": {
             "anyOf": [

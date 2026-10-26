@@ -31,6 +31,8 @@ class ProjectOut(ApiModel):
     slug: str
     retention_days: int
     capture_payloads: bool
+    # Also redact emails and `+` phone numbers in spans ingested while on.
+    redact_contact_info: bool
     weekly_digest_enabled: bool
     # Alert channels of the organization that hear about critical insights.
     insight_channel_ids: list[uuid.UUID]
@@ -47,6 +49,7 @@ class ProjectUpdateIn(BaseModel):
     name: Name | None = None
     retention_days: Annotated[int, Field(ge=1, le=90)] | None = None
     capture_payloads: bool | None = None
+    redact_contact_info: bool | None = None
     weekly_digest_enabled: bool | None = None
     # At most 10, repeats dropped; each must be an alert channel of the project's organization
     # (else 422 `UNKNOWN_CHANNEL`). `[]` turns insight notifications off.

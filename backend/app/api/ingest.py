@@ -158,13 +158,18 @@ async def _store(
     counters, client_ignored = check_client(client)
     project = (
         await db.execute(
-            select(Project.capture_payloads, Project.org_id).where(Project.id == key.project_id)
+            select(Project.capture_payloads, Project.redact_contact_info, Project.org_id).where(
+                Project.id == key.project_id
+            )
         )
     ).one_or_none()
     if project is None:  # the project was deleted after the key was checked
         raise unauthorized("Missing, invalid or revoked API key.")
     target = IngestTarget(
-        project_id=key.project_id, capture_payloads=project.capture_payloads, org_id=project.org_id
+        project_id=key.project_id,
+        capture_payloads=project.capture_payloads,
+        org_id=project.org_id,
+        redact_contact_info=project.redact_contact_info,
     )
     try:
         outcome = await ingest_spans(db, target, raw_spans)

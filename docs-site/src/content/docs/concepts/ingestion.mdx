@@ -72,6 +72,8 @@ Redaction looks at the span and trace names and every string in the input, outpu
 - AWS access key ids, and AWS secret keys that are labelled as such.
 - Card numbers: groups of 13 to 19 digits that pass the Luhn check.
 
+A project can also turn on `redact_contact_info`, which redacts email addresses and phone numbers written with a leading `+` in the span name, input, output, attributes and status message. It is off by default. [Redact email addresses and phone numbers](/docs/guides/privacy/#redact-email-addresses-and-phone-numbers) lists the patterns and what they miss.
+
 The patterns favour catching a secret over sparing a harmless string, but they are not broad enough to eat ordinary prose. A secret in a shape that none of them match is stored as sent. If a payload must never be stored, turn payload capture off for the project instead of relying on redaction.
 
 ## What it means for you

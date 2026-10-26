@@ -46,6 +46,8 @@ class IngestTarget:
     project_id: uuid.UUID
     capture_payloads: bool
     org_id: uuid.UUID  # whose price overrides price the spans
+    # `projects.redact_contact_info`: also redact emails and phone numbers in span content.
+    redact_contact_info: bool = False
     # The gateway key the calls came through. Only the gateway sets it; native and OTLP
     # ingestion leave it None, since a project API key is not a gateway key.
     source_key_id: uuid.UUID | None = None
@@ -195,7 +197,11 @@ def _prepare(
         prepared = target.prepared_truncated
         capture = target.capture_payloads
         normalized = normalize_span(
-            validated, capture_payloads=capture and prepared is None, prices=prices, now=now
+            validated,
+            capture_payloads=capture and prepared is None,
+            prices=prices,
+            now=now,
+            redact_contacts=target.redact_contact_info,
         )
         if capture and prepared is not None:
             # Already redacted and cut by `prepare_span_payloads`: stored as they are.

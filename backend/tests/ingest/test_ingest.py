@@ -401,6 +401,43 @@ async def test_capture_payloads_off_drops_input_and_output(
     assert is_sql_null is True
 
 
+async def test_redact_contact_info_redacts_emails_and_phones_only_when_on(
+    client: httpx.AsyncClient,
+    workspace: Workspace,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    text_in = "mail jane@example.com or call +44 20 7946 0958"
+    kept = "install react@18.3.1 at 2026-10-25T12:30:00+05:30"
+
+    def contact_span(trace_id: str) -> dict[str, Any]:
+        return span(
+            trace_id=trace_id,
+            name=f"ask {text_in}",
+            input={"messages": [{"role": "user", "content": f"{text_in}; {kept}"}]},
+            output={"role": "assistant", "content": text_in},
+            attributes={"note": text_in},
+        )
+
+    off, on = new_trace_id(), new_trace_id()
+    await _ingest(client, workspace, [contact_span(off)])
+    patch = await workspace.owner.patch(
+        f"/api/v1/projects/{workspace.project_id}", json={"redact_contact_info": True}
+    )
+    assert patch.json()["redact_contact_info"] is True
+    await _ingest(client, workspace, [contact_span(on)])
+
+    async with session_factory() as db:
+        await bypass_rls(db)
+        stored = {row.trace_id: row for row in await db.scalars(select(Span))}
+    assert stored[off].input["messages"][0]["content"] == f"{text_in}; {kept}"
+    assert stored[off].attributes["note"] == text_in
+    redacted = "mail [REDACTED] or call [REDACTED]"
+    assert stored[on].name == f"ask {redacted}"
+    assert stored[on].input["messages"][0]["content"] == f"{redacted}; {kept}"
+    assert stored[on].output["content"] == redacted
+    assert stored[on].attributes["note"] == redacted
+
+
 async def test_cost_is_computed_from_seeded_prices(
     client: httpx.AsyncClient,
     workspace: Workspace,

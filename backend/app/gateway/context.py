@@ -153,6 +153,7 @@ class GatewayContext:
     monotonic: Callable[[], float] = time.monotonic
     sleep: Sleep = asyncio.sleep
     span_sink: SpanSink | None = None  # None: spans go to the background recorder
+    redact_contact_info: bool = False  # `projects.redact_contact_info`, for the recorded spans
 
     @property
     def key_id(self) -> uuid.UUID | None:
@@ -198,6 +199,7 @@ def context_for_key(
         route_version=key.route_version,
         credentials=key.credentials,
         capture_payloads=key.capture_payloads,
+        redact_contact_info=key.redact_contact_info,
         budget_guard=services.budget_guard,
         cache=services.cache,
         http=services.http,
