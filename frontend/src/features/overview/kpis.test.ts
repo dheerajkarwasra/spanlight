@@ -80,6 +80,7 @@ describe("ribbonKpis", () => {
   function ribbon(overrides: Partial<Kpis> = {}, previous: Partial<Kpis> = {}) {
     return ribbonKpis({
       metrics: { current: kpis(overrides), previous: kpis(previous), approximate: true },
+      monthToDateUsd: null,
       points,
       health: { value: 72, open_critical: 1, open_warning: 2, approximate: false } as Health,
       range,
@@ -120,9 +121,24 @@ describe("ribbonKpis", () => {
   });
 
   it("projects spend for short windows and flags a lower bound", () => {
-    const spend = find(ribbon({ cost_usd: "1.00", unpriced_calls: 3 }), "spend");
+    // 24 h of data at $1/day: $20.10 so far this month + $1/day x 10.5 days to Nov 1 (UTC).
+    const spend = find(
+      ribbonKpis({
+        metrics: {
+          current: kpis({ cost_usd: "1.00", unpriced_calls: 3 }),
+          previous: kpis(),
+          approximate: true,
+        },
+        monthToDateUsd: 20.1,
+        points: points.map((point) => ({ ...point, bucketStart: "2026-10-20T12:00:00Z" })),
+        health: null,
+        range,
+        now,
+      }),
+      "spend",
+    );
     expect(spend).toMatchObject({ value: "$1.00", lowerBound: true, trend: null });
-    expect(spend.denominator).toBe("Projected $31.00 this month");
+    expect(spend.denominator).toBe("Projected $30.60 this month");
   });
 
   it("leaves spend unknown when no call was priced", () => {

@@ -100,9 +100,17 @@ class BurnPointOut(ApiModel):
 
 
 class BudgetBurnOut(ApiModel):
-    """The budget's spend per day of the current period, up to now."""
+    """The budget's spend per day of the current period, up to now, and a month-end forecast."""
 
     period_start: datetime
     resets_at: datetime
     amount_usd: DecimalStr
     points: list[BurnPointOut]
+    # The spend at the period's end at the trailing complete days' rate; null for a daily
+    # budget, under 3 days of spend history, or when one of those days is unknown.
+    forecast_usd: DecimalStr | None
+    # How many complete days the rate is the mean of (up to 7).
+    forecast_basis_days: int
+    # The first UTC day the spend passes the amount, measured or forecast; null if it does not
+    # within the period.
+    forecast_crosses_on: date | None

@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import type { ModelMetrics } from "@/lib/api";
 
+import type { ChartPoint } from "./chart-data";
 import {
-  daysInMonth,
   formatCompactCost,
   formatShare,
   formatTileCost,
@@ -33,18 +33,33 @@ describe("splitCurrency", () => {
 });
 
 describe("projectMonthlySpend", () => {
-  const october = new Date(2026, 9, 8);
+  const bucket = (bucketStart: string, costUsd: number | null, llmCalls = 1): ChartPoint => ({
+    bucketStart,
+    llmCalls,
+    errors: 0,
+    succeeded: llmCalls,
+    partial: false,
+    p95Ms: null,
+    costUsd,
+    tokens: 0,
+  });
+  // 06:00 UTC on Oct 1 is still Sep 30 west of UTC; budgets and this projection use UTC.
+  const now = new Date("2026-10-01T06:00:00Z");
+  const window = [bucket("2026-09-30T06:00:00Z", 0.5), bucket("2026-10-01T00:00:00Z", 0.5)];
 
-  it("extrapolates the daily run rate over the days in this month", () => {
-    expect(daysInMonth(october)).toBe(31);
-    expect(projectMonthlySpend(184.27, DAY, october)).toBeCloseTo(184.27 * 31);
-    expect(projectMonthlySpend(70, 7 * DAY, october)).toBeCloseTo(310);
-    expect(projectMonthlySpend(10, HOUR, new Date(2026, 1, 3))).toBeCloseTo(10 * 24 * 28);
+  it("adds the UTC month's spend so far to the window's daily rate over the time left", () => {
+    // $1 over 24 h of data: $0.50 already this month + $1/day x 30.75 days to Nov 1, 00:00 UTC.
+    expect(projectMonthlySpend(1, 0.5, window, DAY, now)).toBeCloseTo(31.25);
   });
 
-  it("skips windows longer than a week and unknown spend", () => {
-    expect(projectMonthlySpend(500, 30 * DAY, october)).toBeNull();
-    expect(projectMonthlySpend(null, DAY, october)).toBeNull();
+  it("is null without a day of data or a known spend", () => {
+    const late = [bucket("2026-09-30T06:00:00Z", 0, 0), bucket("2026-09-30T20:00:00Z", 1)];
+    expect(projectMonthlySpend(1, 0.5, late, DAY, now)).toBeNull(); // 10 h of data
+    expect(projectMonthlySpend(1, 0.5, window, HOUR, now)).toBeNull();
+    expect(projectMonthlySpend(1, null, window, DAY, now)).toBeNull();
+    expect(projectMonthlySpend(null, 0.5, window, DAY, now)).toBeNull();
+    expect(projectMonthlySpend(1, 0.5, null, DAY, now)).toBeNull();
+    expect(projectMonthlySpend(500, 0.5, window, 30 * DAY, now)).toBeNull();
   });
 });
 

@@ -29,6 +29,8 @@ const SPARKLINE_TONES: Partial<Record<RibbonKpiId, SparklineTone>> = {
 
 interface KpiRibbonProps {
   metrics: OverviewMetrics;
+  /** The UTC month's spend so far; null while unknown. */
+  monthToDateUsd: number | null;
   /** The timeseries behind the sparklines; null while unknown. */
   points: ChartPoint[] | null;
   /** The Doctor's score: undefined while loading, null when it failed. */
@@ -43,6 +45,7 @@ interface KpiRibbonProps {
 /** The "Now" stratum (spec §4 O1): four headline cards, each a link to where it is explained. */
 export function KpiRibbon({
   metrics,
+  monthToDateUsd,
   points,
   health,
   budget,
@@ -62,7 +65,7 @@ export function KpiRibbon({
     spend: { to: "/$orgId/$projectId/attribution", params },
     doctor: { to: "/$orgId/$projectId/doctor", params },
   };
-  const cards = ribbonKpis({ metrics, points, health: health ?? null, range, now });
+  const cards = ribbonKpis({ metrics, monthToDateUsd, points, health: health ?? null, range, now });
   const comparisonLabel = `vs ${previousPeriodLabel(range)}`;
 
   return (

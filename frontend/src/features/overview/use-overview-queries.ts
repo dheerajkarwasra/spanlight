@@ -20,6 +20,7 @@ import {
 import { bucketFor, resolveRange } from "@/lib/time-range";
 
 import { RELEASE_WINDOW_MAX_MS } from "./release-markers";
+import { PROJECTION_MAX_WINDOW_MS, utcMonthStart } from "./spend";
 
 export const RECENT_ERRORS_LIMIT = 3;
 export const TAB_TRACES_LIMIT = 5;
@@ -65,6 +66,19 @@ export function useOverviewQueries() {
     queryKey: keys.timeseries({ ...metricsWindow, bucket }),
     queryFn: () => projectsApi.timeseries(projectId, { ...metricsWindow, bucket }),
     placeholderData: keepPreviousData,
+  });
+
+  // The UTC month's spend so far, for the Spend card's projection. Preset windows end now;
+  // longer or custom windows show no projection, so they skip it.
+  const monthToDateWindow: MetricsQuery = {
+    from: new Date(utcMonthStart(new Date(Date.parse(range.to) - 1))).toISOString(),
+    to: range.to,
+    environment,
+  };
+  const monthToDate = useQuery({
+    queryKey: keys.overview(monthToDateWindow),
+    queryFn: () => projectsApi.overview(projectId, monthToDateWindow),
+    enabled: range.value !== "custom" && range.durationMs <= PROJECTION_MAX_WINDOW_MS,
   });
 
   const models = useQuery({
@@ -157,6 +171,7 @@ export function useOverviewQueries() {
     environment,
     bucket,
     overview,
+    monthToDate,
     timeseries,
     models,
     health,

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { parseMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import { CallsErrorsChartSkeleton } from "./calls-errors-card";
@@ -39,7 +40,7 @@ function Cell({ place, children }: { place: keyof typeof PLACE; children: ReactN
 }
 
 export function OverviewDashboard({ queries, now }: { queries: OverviewQueries; now: Date }) {
-  const { overview, timeseries, health, budgets, range } = queries;
+  const { overview, monthToDate, timeseries, health, budgets, range } = queries;
   if (!overview.data) {
     return null;
   }
@@ -53,6 +54,7 @@ export function OverviewDashboard({ queries, now }: { queries: OverviewQueries; 
         <KpiRibbon
           className={cn("transition-opacity", overview.isPlaceholderData && "opacity-60")}
           metrics={overview.data}
+          monthToDateUsd={parseMoney(monthToDate.data?.current.cost_usd)}
           points={points}
           health={score}
           budget={budgets.data ? projectBudget(budgets.data) : null}

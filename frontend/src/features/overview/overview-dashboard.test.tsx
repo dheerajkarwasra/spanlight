@@ -92,6 +92,7 @@ function queries(overrides: Partial<Record<keyof OverviewQueries, unknown>> = {}
     bucket: "hour",
     isLive: true,
     overview: ok({ current: KPIS, previous: KPIS, approximate: false }),
+    monthToDate: ok({ current: KPIS, previous: KPIS, approximate: false }),
     timeseries: ok([]),
     models: ok([]),
     health: ok(HEALTH),

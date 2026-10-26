@@ -1,6 +1,8 @@
 import type { ModelMetrics } from "@/lib/api";
 import { formatCost, parseMoney } from "@/lib/format";
 
+import type { ChartPoint } from "./chart-data";
+
 /**
  * Pure helpers for the Spend card: the split headline amount, the monthly projection, the
  * peak bar and the top models by share of cost.
@@ -43,26 +45,37 @@ export function splitCurrency(amount: number): SplitAmount {
   return { whole: formatted.slice(0, point), fraction: formatted.slice(point) };
 }
 
-/** Days in the calendar month that contains `date` (local time). */
-export function daysInMonth(date: Date): number {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+/** Midnight UTC on the first of the month `months` after the UTC month of `date`. */
+export function utcMonthStart(date: Date, months = 0): number {
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1);
 }
 
 /**
- * Linear run-rate projection: the window's spend per day × the days in the current month.
- * Null when the spend is unknown or the window is longer than a week (then the window itself
- * already says more than an extrapolation would).
+ * Month-end spend at the window's rate, on the UTC month budgets reset on: the month's spend so
+ * far plus the window's spend per day of data × the time left. Null when either spend is
+ * unknown, the window is longer than a week (it already says more than an extrapolation would)
+ * or it holds under 24 h of data.
  */
 export function projectMonthlySpend(
   costUsd: number | null,
+  monthToDateUsd: number | null,
+  points: readonly ChartPoint[] | null,
   windowMs: number,
   now: Date,
 ): number | null {
-  if (costUsd === null || windowMs <= 0 || windowMs > PROJECTION_MAX_WINDOW_MS) {
+  if (costUsd === null || monthToDateUsd === null || points === null) {
     return null;
   }
-  const windowDays = windowMs / DAY_MS;
-  return (costUsd / windowDays) * daysInMonth(now);
+  const first = points.find((point) => point.llmCalls > 0);
+  if (first === undefined || windowMs > PROJECTION_MAX_WINDOW_MS) {
+    return null;
+  }
+  const windowStart = now.getTime() - windowMs;
+  const heldMs = now.getTime() - Math.max(windowStart, Date.parse(first.bucketStart));
+  if (!(heldMs >= DAY_MS)) {
+    return null;
+  }
+  return monthToDateUsd + (costUsd / heldMs) * (utcMonthStart(now, 1) - now.getTime());
 }
 
 const compactCurrency = new Intl.NumberFormat("en-US", {

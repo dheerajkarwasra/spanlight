@@ -12,9 +12,11 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from sqlalchemy import text
 
 from app.budgets.periods import period_start
 from app.budgets.types import BudgetPeriod
+from app.db.rls import bypass_rls
 from app.rollups.jobs import roll_up_all
 from tests.budgets.support import (
     PRICED_MODEL,
@@ -23,6 +25,7 @@ from tests.budgets.support import (
     BudgetRef,
     BudgetWorld,
     create_budget,
+    ingest_spend,
 )
 from tests.gateway_support import ManualClock
 from tests.helpers import create_workspace, new_trace_id, span
@@ -161,6 +164,61 @@ async def test_burn_unknown_day_is_null_and_cumulative_carries(
         (DAYS[1], STEP_COST, STEP_COST),  # the priced part, a lower bound
         (DAYS[2], None, STEP_COST),
     ]
+
+
+async def created_on(world: BudgetWorld, created_at: datetime) -> None:
+    async with world.sessions() as db:
+        await bypass_rls(db)
+        await db.execute(
+            text("UPDATE projects SET created_at = :at WHERE id = :id"),
+            {"at": created_at, "id": world.workspace.project_id},
+        )
+        await db.commit()
+
+
+async def test_burn_forecast_at_the_trailing_days_rate(budget_world: BudgetWorld) -> None:
+    world = budget_world
+    world.clock.advance((8 * DAY).total_seconds())  # noon on the 11th day of the month
+    now = world.clock.wall()
+    await created_on(world, MONTH - DAY)
+    steady = await create_budget(
+        world, period="monthly", amount=Decimal(40), scope="user", scope_id="steady"
+    )
+    tight = await create_budget(
+        world,
+        period="monthly",
+        amount=Decimal(25),
+        scope="user",
+        scope_id="steady",
+        name="Tight",
+    )
+    quiet = await create_budget(
+        world, period="monthly", amount=Decimal(40), scope="user", scope_id="quiet", name="Quiet"
+    )
+    for day in range(10):  # $1 a day on each of the first ten days
+        await ingest_spend(
+            world, start=MONTH + day * DAY + timedelta(hours=1), user="steady", tokens=2_500_000
+        )
+        if day != 3:  # $0 on the 4th, the first of the last 7 complete days
+            await ingest_spend(
+                world, start=MONTH + day * DAY + timedelta(hours=1), user="quiet", tokens=2_500_000
+            )
+    await roll_up_all(world.sessions, now=now)
+
+    remaining = Decimal((NEXT_MONTH - now) / DAY)
+    body = await burn(world, steady)
+    assert (money(body["forecast_usd"]), body["forecast_basis_days"]) == (10 + remaining, 7)
+    assert body["forecast_crosses_on"] is None  # 10 + 1 x remaining stays under $40
+    body = await burn(world, tight)
+    assert date.fromisoformat(body["forecast_crosses_on"]) == (now + 15 * DAY).date()
+    body = await burn(world, quiet)  # the $0 day is a real day: $6 over 7 days
+    expected = (9 + Decimal(6) / 7 * remaining).quantize(Decimal("0.00000001"))
+    assert (money(body["forecast_usd"]), body["forecast_basis_days"]) == (expected, 7)
+
+    await created_on(world, MONTH + 8 * DAY + timedelta(hours=6))  # two days before today
+    body = await burn(world, steady)
+    assert (body["forecast_usd"], body["forecast_basis_days"]) == (None, 2)
+    assert body["forecast_crosses_on"] is None
 
 
 async def test_burn_other_project_budget_is_404(budget_world: BudgetWorld) -> None:

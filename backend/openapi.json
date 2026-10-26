@@ -2394,11 +2394,38 @@
         "type": "string"
       },
       "BudgetBurnOut": {
-        "description": "The budget's spend per day of the current period, up to now.",
+        "description": "The budget's spend per day of the current period, up to now, and a month-end forecast.",
         "properties": {
           "amount_usd": {
             "title": "Amount Usd",
             "type": "string"
+          },
+          "forecast_basis_days": {
+            "title": "Forecast Basis Days",
+            "type": "integer"
+          },
+          "forecast_crosses_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast Crosses On"
+          },
+          "forecast_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast Usd"
           },
           "period_start": {
             "format": "date-time",
@@ -2422,7 +2449,10 @@
           "period_start",
           "resets_at",
           "amount_usd",
-          "points"
+          "points",
+          "forecast_usd",
+          "forecast_basis_days",
+          "forecast_crosses_on"
         ],
         "title": "BudgetBurnOut",
         "type": "object"

@@ -120,6 +120,8 @@ export interface RibbonKpi {
 
 interface RibbonInput {
   metrics: OverviewMetrics;
+  /** The UTC month's spend so far; null while it is unknown. */
+  monthToDateUsd: number | null;
   /** The timeseries behind the sparklines; null while it is unknown. */
   points: readonly ChartPoint[] | null;
   /** The Doctor's score; null when it failed to load. */
@@ -150,13 +152,20 @@ function spendLine(
 }
 
 /** Calls · error rate, p95 latency, spend and the Doctor's score, in display order. */
-export function ribbonKpis({ metrics, points, health, range, now }: RibbonInput): RibbonKpi[] {
+export function ribbonKpis({
+  metrics,
+  monthToDateUsd,
+  points,
+  health,
+  range,
+  now,
+}: RibbonInput): RibbonKpi[] {
   const { current, previous, approximate } = metrics;
   const errors = errorCountFrom(current.error_rate, current.llm_calls);
   const p50 = formatDuration(current.p50_ms);
   const cost = parseMoney(current.cost_usd);
   const previousCost = parseMoney(previous.cost_usd);
-  const projection = projectMonthlySpend(cost, range.durationMs, now);
+  const projection = projectMonthlySpend(cost, monthToDateUsd, points, range.durationMs, now);
   const open = health ? health.open_critical + health.open_warning : 0;
   const trend = (pick: (point: ChartPoint) => number | null) => points?.map(pick) ?? null;
   const base = {

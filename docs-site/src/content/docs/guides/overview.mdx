@@ -46,7 +46,7 @@ Under the date is a greeting and one sentence about the window.
 The dark **Spend** card is the page's headline.
 
 - **The amount** is the cost of all spans in the window, with the cents muted. The pill beside the title is the change against the previous window of the same length. A rise in spend is shown as bad news.
-- **The projection**, such as "Projected $5.4K this month", is the window's spend per day multiplied by the number of days in the current month. It appears only for windows of 7 days or less, and it is an estimate, not a forecast. The line also shows what the previous window cost.
+- **The projection**, such as "Projected $5.4K this month", is the spend so far in the current UTC month plus the window's spend per day times the time left in it. It appears for preset windows of 7 days or less that hold at least 24 hours of data, and it is an estimate, not a forecast. Otherwise, or while the month's spend so far is unknown, the line shows what the previous window cost.
 - **The unpriced note**, such as "12 calls unpriced · spend is a lower bound", appears when LLM calls had no price. Those calls add nothing to spend.
 - **The bars** show spend per hour for windows up to two days, and per day for longer ones. The highest bar is lime and carries its value. For the preset ranges the axis counts back from now, for example "−6h" and "Now". A custom range shows dates instead. Hover a bar for the exact range and amount.
 - **The three tiles** under the bars are the most expensive models, with their dollars and share of priced spend.
