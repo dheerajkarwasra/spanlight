@@ -140,6 +140,7 @@ Evaluators score traces: heuristics run locally, LLM judges call a model through
 | `EVALS_ENABLED` | boolean | `true` | Schedule online evaluation, which samples recent spans for every enabled evaluator once a minute. Off, evaluators run only inside experiments and test runs. |
 | `EVAL_SAMPLER_MAX_RUNS_PER_CYCLE` | integer (min 1, max 10000) | `50` | Most evaluation runs one evaluator gets per one-minute sampling cycle. Spans past it are not sampled in that cycle. An LLM judge whose monthly budget is used up is not sampled at all. |
 | `EXPERIMENT_MAX_ITEMS` | integer (min 1, max 100000) | `1000` | Ceiling for an experiment's `max_items`: the most dataset items one experiment run processes. |
+| `EXPERIMENT_SCHEDULES_ENABLED` | boolean | `false` | Schedule the daily job that reruns every experiment marked `weekly` once per ISO week, unattended, each run under its own cost limit. Off, a saved schedule starts nothing. See [weekly reruns](/docs/experiments/#weekly-reruns). |
 
 ### Review loop
 

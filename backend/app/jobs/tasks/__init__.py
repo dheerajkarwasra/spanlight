@@ -9,6 +9,12 @@ from app.end_users.erasure_job import ERASE_JOB, run_erase_end_user
 from app.end_users.jobs import run_refresh_user_stats, run_refresh_user_stats_deep
 from app.evals.experiment_queries import RUN_JOB as EXPERIMENT_RUN_JOB
 from app.evals.experiment_run import run_run_experiment
+from app.evals.experiment_schedule import (
+    RUN_SCHEDULED_JOB,
+    SCHEDULE_JOB,
+    run_run_scheduled_experiment,
+    run_schedule_experiments,
+)
 from app.evals.jobs import run_run_evaluator, run_sample_for_evaluation
 from app.evals.reservation import RUN_JOB
 from app.exports.jobs import run_create_export
@@ -66,4 +72,6 @@ TASKS: dict[str, TaskHandler] = {
     "deliver_audit_streams": run_deliver_audit_streams,
     REAP_JOB: run_reap_budget_reservations,
     ERASE_JOB: run_erase_end_user,
+    SCHEDULE_JOB: run_schedule_experiments,
+    RUN_SCHEDULED_JOB: run_run_scheduled_experiment,
 }

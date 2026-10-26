@@ -31,6 +31,7 @@ ALLOWED = {
     "app.attribution.job_queries",  # the refresh job's list of projects
     "app.budgets.jobs",  # reaps expired gateway budget reservations across projects
     "app.end_users.job_queries",
+    "app.evals.experiment_schedule",  # the daily listing of scheduled experiments across projects
     "app.evals.jobs",
     "app.exports.expiry",
     "app.gateway.jobs",

@@ -9,7 +9,7 @@ import uuid
 from collections.abc import Mapping
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import PlainSerializer
 
@@ -33,8 +33,15 @@ __all__ = [
     "LastRunOut",
     "Rate",
     "RunStart",
+    "ScheduleBody",
     "TotalsOut",
 ]
+
+
+class ScheduleBody(ApiModel):
+    # `weekly` runs the experiment once per ISO week (when the server enables schedules); null
+    # clears the schedule.
+    schedule: Literal["weekly"] | None
 
 
 def _format_rate(value: Decimal) -> str:
@@ -112,6 +119,8 @@ class ExperimentRunOut(ApiModel):
     finished_at: datetime | None
     heartbeat_at: datetime | None
     started_by: uuid.UUID | None
+    # `manual` (a person started it) or `schedule` (the weekly rerun).
+    trigger: str
     # Stored when the run ended (null before). A single run's read computes them live while the
     # run is unfinished.
     totals: TotalsOut | None = None
@@ -136,6 +145,7 @@ class ExperimentRunOut(ApiModel):
             finished_at=run.finished_at,
             heartbeat_at=run.heartbeat_at,
             started_by=run.started_by,
+            trigger=run.trigger,
             totals=_totals_out(run, totals, evaluator_errors),
         )
 
@@ -181,6 +191,9 @@ class ExperimentOut(ApiModel):
     evaluator_ids: list[uuid.UUID]
     created_by: uuid.UUID | None
     created_at: datetime
+    # `weekly`, or null when the experiment runs only by hand. A schedule only starts runs on a
+    # server with EXPERIMENT_SCHEDULES_ENABLED.
+    schedule: str | None
     run_count: int
     # The run with the highest number; null before the first run.
     last_run: LastRunOut | None
@@ -204,6 +217,7 @@ class ExperimentOut(ApiModel):
                 "evaluator_ids": list(experiment.evaluator_ids or ()),
                 "created_by": experiment.created_by,
                 "created_at": experiment.created_at,
+                "schedule": experiment.schedule,
                 "run_count": summary.run_count if summary is not None else 0,
                 "last_run": (
                     LastRunOut.of(last, (legacy_evaluator_errors or {}).get(last.id))

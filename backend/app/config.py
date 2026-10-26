@@ -187,6 +187,10 @@ class Settings(BaseSettings):
     evals_enabled: bool = True
     eval_sampler_max_runs_per_cycle: int = Field(default=50, ge=1, le=10_000)
     experiment_max_items: int = Field(default=1000, ge=1, le=100_000)
+    # `experiment_schedules_enabled` schedules the daily job that reruns every experiment marked
+    # `weekly` once per ISO week (unattended, paid calls under each run's cost cap). Off by
+    # default: a saved schedule is kept but no run starts from it.
+    experiment_schedules_enabled: bool = False
 
     # Review loop. `review_selection_enabled` schedules the nightly selection of traces into each
     # project's review queue; off, a policy can still be run by hand. `replay_monthly_budget_usd`
@@ -285,6 +289,7 @@ class Settings(BaseSettings):
         "evals_enabled",
         "eval_sampler_max_runs_per_cycle",
         "experiment_max_items",
+        "experiment_schedules_enabled",
         "review_selection_enabled",
         "replay_monthly_budget_usd",
         "billing_sources_enabled",

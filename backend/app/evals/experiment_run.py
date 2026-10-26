@@ -20,7 +20,8 @@ A cancelled job (worker shutdown, timeout) ends the run `cancelled` and a lost l
 `lease_lost`; any other failure `internal_error`; the calls in flight are cancelled and store
 their items first. A run whose worker died is failed `abandoned` by the reaper
 (`experiment_queries.reap_abandoned_runs`); a heartbeat that finds the run no longer running stops
-the dispatch, so a reaped run never starts another paid call.
+the dispatch, so a reaped run never starts another paid call. A scheduled run that ended `done`
+is then compared with its baseline (`experiment_regression`), in a transaction of its own.
 """
 
 import asyncio
@@ -40,6 +41,7 @@ from app.db.rls import bind_project
 from app.evals import experiment_queries as queries
 from app.evals.experiment_item import ItemDone, RunPlan, run_item
 from app.evals.experiment_prepare import start
+from app.evals.experiment_regression import check_scheduled_run
 from app.evals.experiment_request import item_request, run_tag
 from app.evals.experiment_totals import summarize_items, totals_json
 from app.evals.jobs import EvalServices
@@ -273,3 +275,5 @@ async def _finish(deps: RunnerDeps, plan: RunPlan, error: str | None) -> None:
         errors=totals.errors,
         cost_usd=None if totals.cost_usd is None else str(totals.cost_usd),
     )
+    if ended and status is ExperimentRunStatus.DONE:
+        await check_scheduled_run(deps, plan.run_id, plan.project.id)

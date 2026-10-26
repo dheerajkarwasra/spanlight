@@ -1,9 +1,9 @@
 """Experiments: replay a dataset through a prompt or messages and score every answer.
 
-Members list and read experiments, runs and items (`project:read`); members create experiments
-and start runs (`experiments:run`), which spend money in the project. A run is queued here and
-executed by the worker's `run_experiment` job. Responses are built before the commit, which ends
-the project binding that row-level security needs.
+Members list and read experiments, runs and items (`project:read`); members create experiments,
+start runs and set the weekly schedule (`experiments:run`), which spend money in the project. A
+run is queued here and executed by the worker's `run_experiment` job. Responses are built before
+the commit, which ends the project binding that row-level security needs.
 """
 
 import uuid
@@ -23,6 +23,7 @@ from app.api.schemas.experiments import (
     ExperimentRunOut,
     ExperimentSpec,
     RunStart,
+    ScheduleBody,
 )
 from app.core.errors import not_found
 from app.core.idempotency import idempotent
@@ -163,6 +164,37 @@ async def start_run(
     await db.commit()
     _log("experiment_run_queued", access, experiment_id, run_id=str(run.id))
     return queued
+
+
+@router.put(
+    "/{experiment_id}/schedule",
+    response_model=ExperimentOut,
+    summary="Set an experiment's schedule",
+)
+async def set_schedule(
+    project_id: uuid.UUID,
+    experiment_id: uuid.UUID,
+    body: ScheduleBody,
+    request: Request,
+    access: ExperimentWriter,
+    db: DbSession,
+) -> ExperimentOut:
+    """`{"schedule": "weekly"}` reruns the experiment once per ISO week against its own target;
+    `{"schedule": null}` stops that. Runs start only on a server with
+    `EXPERIMENT_SCHEDULES_ENABLED`; the schedule is saved either way."""
+    locked_project_id = await lock_project_of(access, db)
+    try:
+        experiment = await service.set_schedule(
+            db, locked_project_id, actor_of(access, request), experiment_id, body.schedule
+        )
+    except EXPERIMENT_ERRORS as error:
+        raise experiment_problem(error) from None
+    summary = (await queries.run_summaries(db, [experiment.id]))[experiment.id]
+    legacy = await service.legacy_evaluator_errors(db, [summary.last_run])
+    updated = ExperimentOut.of(experiment, summary, legacy)
+    await db.commit()
+    _log("experiment_schedule_changed", access, experiment.id, schedule=body.schedule)
+    return updated
 
 
 @router.get("/{experiment_id}/runs", response_model=Page[ExperimentRunOut], summary="List runs")

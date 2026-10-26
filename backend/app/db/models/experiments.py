@@ -42,6 +42,8 @@ class Experiment(Base):
         ForeignKey("users.id", ondelete="SET NULL")
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # `weekly`, or None when the experiment runs only by hand (CHECK, migration 1025).
+    schedule: Mapped[str | None] = mapped_column(Text)
 
 
 class ExperimentRun(Base):
@@ -70,6 +72,8 @@ class ExperimentRun(Base):
     started_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
+    # `manual` (a person started it) or `schedule` (the weekly rerun); CHECK, migration 1025.
+    trigger: Mapped[str] = mapped_column(Text, server_default=text("'manual'"))
 
 
 class ExperimentItem(Base):

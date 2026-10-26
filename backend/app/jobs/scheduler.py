@@ -116,6 +116,15 @@ FETCH_BILLING_SOURCES = PeriodicJob(
 )
 
 
+# Enqueues one `run_scheduled_experiment` per experiment marked `weekly` once a UTC day, runnable
+# from 04:00 UTC; the children dedupe on the ISO week, so one run per experiment per week. Only
+# with EXPERIMENT_SCHEDULES_ENABLED: the children spend money. Three attempts: the listing is
+# cheap and the children dedupe.
+SCHEDULE_EXPERIMENTS = PeriodicJob(
+    "schedule_experiments", timedelta(days=1), max_attempts=3, run_after_offset=timedelta(hours=4)
+)
+
+
 def period_start(job: PeriodicJob, now: datetime) -> datetime:
     seconds = int(job.every.total_seconds())
     return datetime.fromtimestamp(int(now.timestamp()) // seconds * seconds, tz=now.tzinfo)
@@ -162,6 +171,8 @@ def periodic_jobs(settings: Settings) -> list[PeriodicJob]:
         jobs.append(POLL_PROVIDER_STATUS)
     if settings.review_selection_enabled:
         jobs.append(SELECT_FOR_REVIEW)
+    if settings.experiment_schedules_enabled:
+        jobs.append(SCHEDULE_EXPERIMENTS)
     return jobs
 
 

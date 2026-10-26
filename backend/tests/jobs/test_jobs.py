@@ -232,6 +232,7 @@ def test_retry_after_is_not_a_way_to_end() -> None:
         "skipped_not_configured",
         "skipped_budget",
         "already_selected",
+        "skipped_run_in_progress",
     }
     assert JobOutcome.SKIPPED_BUDGET.is_skipped and not JobOutcome.OK.is_skipped
 

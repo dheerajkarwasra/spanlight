@@ -5867,6 +5867,17 @@
           "run_count": {
             "title": "Run Count",
             "type": "integer"
+          },
+          "schedule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schedule"
           }
         },
         "required": [
@@ -5877,6 +5888,7 @@
           "evaluator_ids",
           "created_by",
           "created_at",
+          "schedule",
           "run_count",
           "last_run"
         ],
@@ -5982,6 +5994,10 @@
                 "type": "null"
               }
             ]
+          },
+          "trigger": {
+            "title": "Trigger",
+            "type": "string"
           }
         },
         "required": [
@@ -5994,7 +6010,8 @@
           "started_at",
           "finished_at",
           "heartbeat_at",
-          "started_by"
+          "started_by",
+          "trigger"
         ],
         "title": "ExperimentRunOut",
         "type": "object"
@@ -14973,6 +14990,27 @@
           "clamped"
         ],
         "title": "SamplesPage",
+        "type": "object"
+      },
+      "ScheduleBody": {
+        "properties": {
+          "schedule": {
+            "anyOf": [
+              {
+                "const": "weekly",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schedule"
+          }
+        },
+        "required": [
+          "schedule"
+        ],
+        "title": "ScheduleBody",
         "type": "object"
       },
       "ScopeDeniedParams": {
@@ -27027,6 +27065,70 @@
           }
         },
         "summary": "List a run's items",
+        "tags": [
+          "experiments"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/experiments/{experiment_id}/schedule": {
+      "put": {
+        "description": "`{\"schedule\": \"weekly\"}` reruns the experiment once per ISO week against its own target;\n`{\"schedule\": null}` stops that. Runs start only on a server with\n`EXPERIMENT_SCHEDULES_ENABLED`; the schedule is saved either way.",
+        "operationId": "set_schedule_api_v1_projects__project_id__experiments__experiment_id__schedule_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set an experiment's schedule",
         "tags": [
           "experiments"
         ]

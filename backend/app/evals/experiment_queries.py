@@ -23,6 +23,7 @@ from app.db.models import (
     ExperimentItem,
     ExperimentRun,
     ExperimentRunStatus,
+    Project,
 )
 from app.evals.experiment_totals import ItemFacts
 from app.jobs.queue import job_may_still_run
@@ -117,6 +118,36 @@ async def run_summaries(
     rows = await db.execute(select(latest, ranked.c.run_count).where(ranked.c.rank == 1))
     found = {run.experiment_id: RunSummary(int(count), run) for run, count in rows}
     return {key: found.get(key, RunSummary(0, None)) for key in experiment_ids}
+
+
+async def scheduled_experiments(db: AsyncSession) -> list[tuple[uuid.UUID, uuid.UUID, uuid.UUID]]:
+    """`(experiment_id, project_id, org_id)` of every experiment with a schedule, oldest first.
+    Every project: the caller is the `schedule_experiments` job and bypasses row-level
+    security."""
+    rows = await db.execute(
+        select(Experiment.id, Experiment.project_id, Project.org_id)
+        .join(Project, Project.id == Experiment.project_id)
+        .where(Experiment.schedule.is_not(None))
+        .order_by(Experiment.created_at, Experiment.id)
+    )
+    return [(row.id, row.project_id, row.org_id) for row in rows]
+
+
+async def baseline_run(db: AsyncSession, run: ExperimentRun) -> ExperimentRun | None:
+    """The previous `done` run of the run's experiment with the same target, or None. A run of
+    another prompt version is not a baseline."""
+    return await db.scalar(
+        select(ExperimentRun)
+        .where(
+            ExperimentRun.experiment_id == run.experiment_id,
+            ExperimentRun.id != run.id,
+            ExperimentRun.status == ExperimentRunStatus.DONE.value,
+            ExperimentRun.target == run.target,
+            ExperimentRun.number < run.number,
+        )
+        .order_by(ExperimentRun.number.desc())
+        .limit(1)
+    )
 
 
 async def next_run_number(db: AsyncSession, experiment_id: uuid.UUID) -> int:

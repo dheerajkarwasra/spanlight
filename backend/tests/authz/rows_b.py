@@ -139,6 +139,8 @@ EXPERIMENT_ROWS = (
     Row("GET", EXPERIMENT, P.PROJECT_READ),
     Row("GET", f"{EXPERIMENT}/runs", P.PROJECT_READ),
     Row("POST", f"{EXPERIMENT}/runs", P.EXPERIMENTS_RUN),
+    # A weekly schedule spends money as a run does.
+    Row("PUT", f"{EXPERIMENT}/schedule", P.EXPERIMENTS_RUN),
     Row("GET", f"{EXPERIMENT}/runs/{{run_id}}", P.PROJECT_READ),
     Row("GET", f"{EXPERIMENT}/runs/{{run_id}}/items", P.PROJECT_READ),
     Row("GET", f"{EXPERIMENT}/runs/{{run_a}}/compare/{{run_b}}", P.PROJECT_READ),

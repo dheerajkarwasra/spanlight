@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-{/* Sources: backend/app/evals/experiments.py, backend/app/api/experiment_problems.py, frontend/src/features/experiments/run-label.ts, frontend/src/features/experiments/start-run.tsx, frontend/src/features/experiments/run-list.tsx, frontend/src/features/experiments/run-scores.tsx, backend/app/evals/stats.py, backend/app/evals/compare.py, backend/app/evals/experiment_totals.py, backend/app/evals/experiment_prepare.py, backend/app/evals/experiment_run.py, backend/app/evals/experiment_compare.py, sdks/python/src/spanlight/_experiments_report.py, frontend/src/features/experiments/new-experiment-page.tsx, frontend/src/features/experiments/experiment-form-state.ts, frontend/src/features/experiments/compare-table.tsx, frontend/src/features/experiments/output-diff.tsx, frontend/src/features/experiments/output-diff-rows.ts, docs/api-deviations.md */}
+{/* Sources: backend/app/evals/experiments.py, backend/app/evals/experiment_schedule.py, backend/app/evals/experiment_regression.py, backend/app/api/experiment_problems.py, frontend/src/features/experiments/run-label.ts, frontend/src/features/experiments/start-run.tsx, frontend/src/features/experiments/run-list.tsx, frontend/src/features/experiments/run-scores.tsx, backend/app/evals/stats.py, backend/app/evals/compare.py, backend/app/evals/experiment_totals.py, backend/app/evals/experiment_prepare.py, backend/app/evals/experiment_run.py, backend/app/evals/experiment_compare.py, sdks/python/src/spanlight/_experiments_report.py, frontend/src/features/experiments/new-experiment-page.tsx, frontend/src/features/experiments/experiment-form-state.ts, frontend/src/features/experiments/compare-table.tsx, frontend/src/features/experiments/output-diff.tsx, frontend/src/features/experiments/output-diff-rows.ts, docs/api-deviations.md */}
 
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
@@ -70,6 +70,31 @@ Nothing is created until you submit the form, and you can change every field fir
 - **One run at a time.** While a run is queued or running, another start answers `409 RUN_IN_PROGRESS`.
 - **Compare prompt versions with one experiment.** The body may be `{"target_override": {"prompt_version_id": "..."}}`. For a prompt-version experiment, that runs another version of **the same prompt**, with the experiment's credential, model and parameters. Anything else answers `422 TARGET_OVERRIDE_INVALID`. Every run keeps the effective target it used, so one experiment can hold a run for version 1 and a run for version 2.
 - **Numbering.** Runs are numbered 1, 2, 3 in the order they start, and a number never changes.
+
+## Weekly reruns
+
+A provider can change what a model name serves without telling you. A weekly rerun catches that: once per ISO week the server runs the experiment again against the same dataset and target, compares the result with the previous run, and opens a Doctor finding when a score got significantly worse.
+
+**Turning it on.** Weekly reruns are off until an operator sets `EXPERIMENT_SCHEDULES_ENABLED=true` on the server (see [configuration](/docs/configuration/#evaluations)); the worker then runs a daily job from 04:00 UTC that starts this week's run for every scheduled experiment. A schedule saved on a server without the setting is kept but starts nothing. Until the experiment page has a control, set the schedule through the API, with the same `experiments:run` permission a run needs:
+
+```bash
+curl -sS -X PUT "$SPANLIGHT_HOST/api/v1/projects/$PROJECT/experiments/$EXPERIMENT/schedule" \
+  -H "Authorization: Bearer $SPANLIGHT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"schedule": "weekly"}'
+```
+
+The answer is the experiment with `"schedule": "weekly"`; `{"schedule": null}` clears it. The change is in the audit log as `experiment.schedule_change`.
+
+**What it costs.** Every scheduled run makes real provider calls under the experiment's own cost limit, and its judges spend under their monthly budgets. A week is about 4.35 per month, so the most the target's calls can cost is about **4.35 × `max_cost_usd` a month per experiment**, plus what its judges spend. A project [budget](/docs/budgets/) set to block still stops calls.
+
+**One run a week, whatever happens.** The daily job gives each experiment one job per ISO week, so several workers or several daily passes never start a second run. A scheduled run has `"trigger": "schedule"` in the API (a run a person started has `"manual"`) and `started_by` null. When a manual run is still queued or running, that week's scheduled run is skipped (the job ends `skipped_run_in_progress`) and next week tries again. A run that cannot start (a revoked credential, a model that lost its price) fails like a manual run would, with the same reason, and opens no finding.
+
+**The baseline.** When a scheduled run ends `done`, it is compared with the **previous `done` run of the same experiment with the same target**: a run of another prompt version is not a baseline, and the first run has none. The comparison is the one on the compare page, paired on the items unchanged between the two runs.
+
+**When a finding opens.** With several scores, each is tested at a stricter level so that the chance of a false alarm across all of them stays near one in twenty: a score counts as regressed only when more items went down than up and its exact p-value is below 0.05 divided by the number of scores tested (the Bonferroni rule). A regression opens one critical **Experiment regression** finding per experiment in the [Doctor](/docs/doctor/), sent to the project's insight channels like any critical finding; its evidence names the two runs and each regressed score's test and p-value. A later scheduled run with no regression resolves it. A failed scheduled run opens nothing.
+
+**A regression can be the judge.** When a judge scores the answers, a worse score can mean the judge's own model changed rather than the target. A heuristic evaluator on the same experiment separates the two: if it regressed too, the target changed; if only the judge did, suspect the judge.
 
 ## Run an experiment from code
 
@@ -162,6 +187,7 @@ The answer is `201` with the experiment. A target keeps every parameter you did 
   "evaluator_ids": ["<evaluator id>", "<evaluator id>"],
   "created_by": "<user id>",
   "created_at": "2026-10-13T09:30:00Z",
+  "schedule": null,
   "run_count": 0,
   "last_run": null
 }
@@ -197,6 +223,7 @@ The answer is `202`. The run is queued and a worker executes it:
   "finished_at": null,
   "heartbeat_at": null,
   "started_by": "<user id>",
+  "trigger": "manual",
   "totals": null
 }
 ```
@@ -297,6 +324,7 @@ Under `/api/v1/projects/{project_id}/experiments`.
 | `GET`, `POST` | `project:read`, `experiments:run` | List (with run count and latest run) and create (`409 NAME_TAKEN`) |
 | `GET /{experiment_id}` | `project:read` | One experiment |
 | `POST /{experiment_id}/runs` | `experiments:run` | Start a run |
+| `PUT /{experiment_id}/schedule` | `experiments:run` | Set `{"schedule": "weekly"}` or `{"schedule": null}` ([weekly reruns](#weekly-reruns)) |
 | `GET /{experiment_id}/runs` | `project:read` | Runs, newest first, with the totals stored when each ended |
 | `GET /{experiment_id}/runs/{run_id}` | `project:read` | One run; totals are computed live while it runs |
 | `GET /{experiment_id}/runs/{run_id}/items` | `project:read` | The run's items in dataset order, each with its copy of the dataset item |

@@ -20,10 +20,16 @@ class JobOutcome(enum.StrEnum):
     SKIPPED_BUDGET = "skipped_budget"
     # The review selection found its project-day already selected and queued nothing.
     ALREADY_SELECTED = "already_selected"
+    # A scheduled experiment rerun found a run of the experiment already queued or running.
+    SKIPPED_RUN_IN_PROGRESS = "skipped_run_in_progress"
 
     @property
     def is_skipped(self) -> bool:
-        return self in (JobOutcome.SKIPPED_NOT_CONFIGURED, JobOutcome.SKIPPED_BUDGET)
+        return self in (
+            JobOutcome.SKIPPED_NOT_CONFIGURED,
+            JobOutcome.SKIPPED_BUDGET,
+            JobOutcome.SKIPPED_RUN_IN_PROGRESS,
+        )
 
 
 @dataclass(frozen=True)

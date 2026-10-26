@@ -124,6 +124,7 @@ WRITE_GUARDED: set[Route] = {
     ("POST", "/api/v1/projects/{project_id}/evaluators/{evaluator_id}/test"),
     ("POST", "/api/v1/projects/{project_id}/experiments"),
     ("POST", "/api/v1/projects/{project_id}/experiments/{experiment_id}/runs"),
+    ("PUT", "/api/v1/projects/{project_id}/experiments/{experiment_id}/schedule"),
     ("POST", "/api/v1/projects/{project_id}/exports"),
     ("POST", "/api/v1/projects/{project_id}/gateway/cache/purge"),
     ("POST", "/api/v1/projects/{project_id}/gateway/fault-profiles"),

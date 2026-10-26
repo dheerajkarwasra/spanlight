@@ -13,11 +13,17 @@ the experiment that can no longer finish (its worker died), then inserts a `queu
 that target, with its `run_experiment` job, in the same transaction. One attempt only: the job
 pays providers. A second unfinished run is refused by a partial unique index
 (`RunInProgressError`). Audit metadata holds names and ids, never the config's messages.
+
+The schedule (`weekly` or none) is the one setting of an experiment that can change
+(`set_schedule`); the daily `schedule_experiments` job starts the weekly runs with a
+`ScheduleActor` (no user) and `trigger = "schedule"` (`app.evals.experiment_schedule`).
 """
 
 import uuid
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,6 +64,17 @@ from app.services.audit import record_audit
 NAME_CONSTRAINT = "experiments_project_name_key"
 ACTIVE_RUN_CONSTRAINT = "experiment_runs_active_key"
 RUN_JOB_ATTEMPTS = 1
+Schedule = Literal["weekly"]
+Trigger = Literal["manual", "schedule"]
+
+
+@dataclass(frozen=True, slots=True)
+class ScheduleActor:
+    """The app itself starting a scheduled run: no user, no client; the audit event is `system`."""
+
+    org_id: uuid.UUID
+    user_id: None = None
+    ip: None = None
 
 
 async def create_experiment(
@@ -144,11 +161,12 @@ async def _check(
 async def start_run(
     db: AsyncSession,
     project_id: uuid.UUID,
-    actor: Actor,
+    actor: Actor | ScheduleActor,
     experiment_id: uuid.UUID,
     override: TargetOverride | None = None,
     *,
     now: datetime,
+    trigger: Trigger = "manual",
 ) -> ExperimentRun:
     """Queue a run of the experiment and its job. Raises `ExperimentNotFoundError`,
     `RunInProgressError` and `ExperimentConfigError` (`TARGET_OVERRIDE_INVALID`)."""
@@ -164,6 +182,7 @@ async def start_run(
         status=ExperimentRunStatus.QUEUED.value,
         started_at=now,
         started_by=actor.user_id,
+        trigger=trigger,
     )
     db.add(run)
     try:
@@ -205,7 +224,7 @@ async def _effective_target(
 async def _queue_job_and_audit(
     db: AsyncSession,
     project_id: uuid.UUID,
-    actor: Actor,
+    actor: Actor | ScheduleActor,
     experiment: Experiment,
     run: ExperimentRun,
 ) -> None:
@@ -228,8 +247,36 @@ async def _queue_job_and_audit(
             "name": experiment.name,
             "run_id": str(run.id),
             "prompt_version_id": run.target.get("prompt_version_id"),
+            "trigger": run.trigger,
         },
     )
+
+
+async def set_schedule(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    actor: Actor,
+    experiment_id: uuid.UUID,
+    schedule: Schedule | None,
+) -> Experiment:
+    """Set or clear the experiment's schedule under its row lock; audited even when unchanged.
+    Raises `ExperimentNotFoundError`."""
+    experiment = await queries.get_experiment(db, project_id, experiment_id, lock=True)
+    if experiment is None:
+        raise ExperimentNotFoundError
+    experiment.schedule = schedule
+    await db.flush()
+    await record_audit(
+        db,
+        org_id=actor.org_id,
+        actor_user_id=actor.user_id,
+        action=AuditAction.EXPERIMENT_SCHEDULE_CHANGE,
+        target_type="experiment",
+        target_id=experiment.id,
+        ip=actor.ip,
+        metadata={"name": experiment.name, "schedule": schedule},
+    )
+    return experiment
 
 
 async def get_run(
