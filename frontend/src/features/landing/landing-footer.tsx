@@ -26,9 +26,9 @@ const COLUMNS: readonly FooterColumnData[] = [
   {
     heading: "Product",
     items: [
-      { label: "Cost", href: `#${SECTION_IDS.cost}` },
-      { label: "Features", href: `#${SECTION_IDS.features}` },
-      { label: "Diagnose", href: `#${SECTION_IDS.diagnose}` },
+      { label: "Features", href: `#${SECTION_IDS.cost}` },
+      { label: "Beyond tracing", href: `#${SECTION_IDS.features}` },
+      { label: "How it works", href: `#${SECTION_IDS.howItWorks}` },
       { label: "Live demo", action: "demo" },
       { label: "Sign in", to: "/login" },
       { label: "Get started", to: "/signup" },
@@ -50,10 +50,10 @@ const COLUMNS: readonly FooterColumnData[] = [
     items: [
       { label: "Gateway", href: DOCS_LINKS.gateway },
       { label: "The Doctor", href: DOCS_LINKS.doctor },
-      { label: "Cost and pricing", href: DOCS_LINKS.cost },
-      { label: "Attribution", href: DOCS_LINKS.attribution },
+      { label: "Prompts", href: DOCS_LINKS.prompts },
       { label: "Evaluators", href: DOCS_LINKS.evaluators },
       { label: "Experiments", href: DOCS_LINKS.experiments },
+      { label: "Alerts and budgets", href: DOCS_LINKS.alerts },
     ],
   },
   {
@@ -74,13 +74,13 @@ interface LandingFooterProps {
   demoPending: boolean;
 }
 
-/** Footer card with link columns and the oversized wordmark (Figma "Section/Footer", v3). */
+/** Footer card with product, developer, guide and project links. */
 export function LandingFooter({ onTryDemo, demoPending }: LandingFooterProps) {
   const year = new Date().getFullYear();
 
   return (
     <footer className="px-3 md:px-8">
-      <div className="mx-auto flex max-w-[1200px] flex-col gap-8 overflow-hidden rounded-t-card border-x border-t border-border bg-surface px-6 pt-9 md:px-14 md:pt-14">
+      <div className="mx-auto flex max-w-[1200px] flex-col gap-8 overflow-hidden rounded-t-card border-x border-t border-border bg-surface px-6 py-9 md:p-14">
         <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex flex-col items-start gap-4 lg:w-[340px] lg:gap-[18px]">
             <Logo />
@@ -88,7 +88,7 @@ export function LandingFooter({ onTryDemo, demoPending }: LandingFooterProps) {
               Open-source LLM observability: traces, auditable cost, diagnoses, evals and a gateway
               on one Postgres.
             </p>
-            <Button asChild>
+            <Button asChild className="shadow-none">
               <a href={EXTERNAL_LINKS.github}>Star on GitHub</a>
             </Button>
           </div>
@@ -126,16 +126,6 @@ export function LandingFooter({ onTryDemo, demoPending }: LandingFooterProps) {
             </a>
           </p>
         </div>
-
-        {/*
-         * Decorative wordmark, cropped by the card. Drawn as generated content so it isn't
-         * read out or measured as body text (it is deliberately low-contrast).
-         */}
-        <div
-          aria-hidden
-          data-wordmark="spanlight"
-          className="h-6 overflow-hidden text-[37px] leading-[1.04] font-extrabold tracking-[-0.04em] whitespace-nowrap text-surface-hover before:content-[attr(data-wordmark)] md:h-[83px] md:text-[129px]"
-        />
       </div>
     </footer>
   );

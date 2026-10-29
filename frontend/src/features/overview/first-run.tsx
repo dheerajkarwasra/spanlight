@@ -33,7 +33,6 @@ function ConnectCard({ projectName, environment }: FirstRunProps) {
 
   return (
     <Card className="flex flex-col gap-8 overflow-hidden p-6 sm:p-9 xl:flex-row xl:gap-12">
-      <MeshWash />
       <div className="relative flex flex-col gap-7 xl:w-[430px] xl:shrink-0">
         <Illustration />
         <div className="flex flex-col gap-2.5">
@@ -58,23 +57,9 @@ function ConnectCard({ projectName, environment }: FirstRunProps) {
   );
 }
 
-/** Soft lavender / butter / sky blobs behind the illustration (Figma "Mesh wash"). */
-function MeshWash() {
-  return (
-    <div aria-hidden className="pointer-events-none absolute -top-40 -left-36 h-[360px] w-[520px]">
-      <span className="absolute top-10 left-10 h-[220px] w-[300px] rounded-full bg-mesh-1 opacity-60 blur-3xl" />
-      <span className="absolute top-2.5 left-[220px] h-[180px] w-[240px] rounded-full bg-mesh-2 opacity-50 blur-3xl" />
-      <span className="absolute top-[170px] left-[120px] h-[160px] w-[280px] rounded-full bg-mesh-3 opacity-60 blur-3xl" />
-    </div>
-  );
-}
-
 function Illustration() {
   return (
     <div aria-hidden className="relative h-[104px] w-[132px]">
-      <span className="absolute top-2.5 left-0 h-[84px] w-24 rounded-full bg-mesh-1 opacity-80 blur-xl" />
-      <span className="absolute top-0 left-[46px] h-[70px] w-20 rounded-full bg-mesh-2 opacity-80 blur-xl" />
-      <span className="absolute top-10 left-[34px] h-16 w-[92px] rounded-full bg-mesh-3 opacity-80 blur-xl" />
       <span className="absolute top-5 left-[34px] flex size-16 items-center justify-center rounded-[20px] border border-border bg-surface shadow-lg">
         <Activity className="size-7 text-accent" strokeWidth={2} />
       </span>

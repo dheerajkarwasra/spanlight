@@ -8,23 +8,23 @@ test.describe("landing page", () => {
 
     await expect(page).toHaveURL(/\/$/);
     await expect(
-      page.getByRole("heading", { level: 1, name: "See each LLM call clearly." }),
+      page.getByRole("heading", { level: 1, name: "See every LLM call clearly." }),
     ).toBeVisible();
 
     const nav = page.getByRole("navigation", { name: "Main" });
-    await expect(nav.getByRole("link", { name: "Features" })).toHaveAttribute("href", "#features");
+    await expect(nav.getByRole("link", { name: "Product" })).toHaveAttribute("href", "#cost");
     await expect(nav.getByRole("link", { name: "How it works" })).toHaveAttribute(
       "href",
       "#how-it-works",
     );
-    await expect(nav.getByRole("link", { name: "Open source" })).toHaveAttribute(
+    await expect(nav.getByRole("link", { name: "Self-hosting" })).toHaveAttribute(
       "href",
       "#open-source",
     );
 
-    await expect(page.getByRole("link", { name: "Get started — it’s free" })).toHaveAttribute(
+    await expect(page.getByRole("link", { name: "Self-host Spanlight" }).first()).toHaveAttribute(
       "href",
-      "/signup",
+      "/docs/self-hosting/",
     );
     await expect(page.getByRole("banner").getByRole("link", { name: "Sign in" })).toHaveAttribute(
       "href",
@@ -37,11 +37,11 @@ test.describe("landing page", () => {
     await page.goto("/");
     await page
       .getByRole("navigation", { name: "Main" })
-      .getByRole("link", { name: "Features" })
+      .getByRole("link", { name: "Product" })
       .click();
-    await expect(page).toHaveURL(/#features$/);
+    await expect(page).toHaveURL(/#cost$/);
     await expect(
-      page.getByRole("heading", { level: 2, name: /Everything you need/ }),
+      page.getByRole("heading", { level: 2, name: /Understand the cost/ }),
     ).toBeInViewport();
   });
 
@@ -56,6 +56,49 @@ test.describe("landing page", () => {
 
     await expect(menu).toBeHidden();
     await expect(page).toHaveURL(/#how-it-works$/);
+  });
+
+  test("visitors see setup before the product benefits and four supporting features", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.locator("main > section[id]")).toHaveCount(4);
+    await expect(page.locator("main > section[id]").nth(0)).toHaveAttribute("id", "how-it-works");
+    await expect(page.locator("main > section[id]").nth(1)).toHaveAttribute("id", "cost");
+    await expect(page.locator("#cost").getByRole("heading", { level: 3 })).toHaveText([
+      "Know what every call costs",
+      "Find the cause with the Doctor",
+      "Checked against the bill",
+    ]);
+    await expect(page.locator("#diagnose").getByRole("heading", { level: 3 })).toHaveText([
+      "One base URL, no SDK",
+      "Evals with honest error bars",
+      "Prompts, playground, replay",
+      "Sessions",
+    ]);
+    await expect(
+      page.getByRole("link", { name: "Self-hosting guide", exact: true }),
+    ).toHaveAttribute("href", "/docs/self-hosting/");
+  });
+
+  test("phone visitors can switch integration tabs and copy the visible snippet", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/#how-it-works");
+    await page.getByRole("tab", { name: "Gateway", exact: true }).click();
+    const copy = page.getByRole("button", { name: "Copy the Gateway snippet" });
+    await expect(copy).toBeInViewport({ ratio: 1 });
+    await copy.click();
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe(
+        'from openai import OpenAI\n\nclient = OpenAI(\n    base_url="…/gw/v1",\n    api_key="<YOUR_GATEWAY_KEY>",\n)',
+      );
+    await expectNoAxeViolations(page);
   });
 
   test("the header and footer link the docs, the repository and PyPI", async ({ page }) => {

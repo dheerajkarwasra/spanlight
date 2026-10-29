@@ -13,7 +13,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 
-import { EXTERNAL_LINKS, NAV_LINKS } from "./links";
+import { DOCS_LINKS, EXTERNAL_LINKS, NAV_LINKS } from "./links";
 
 interface LandingNavProps {
   onTryDemo: () => void;
@@ -27,7 +27,7 @@ interface LandingNavProps {
 export function LandingNav({ onTryDemo, demoPending }: LandingNavProps) {
   return (
     <header className="relative px-4 pt-4 md:px-8 lg:pt-6">
-      <div className="mx-auto flex max-w-[1200px] items-center justify-between rounded-full border border-border bg-surface py-2 pr-2 pl-3.5 shadow-card lg:p-2.5">
+      <div className="mx-auto flex max-w-[1200px] items-center justify-between rounded-full border border-border bg-surface py-2 pr-2 pl-3.5 lg:p-2.5">
         <div className="flex lg:flex-1 lg:pl-3">
           <Link to="/" aria-label="Spanlight home" className="rounded-md">
             <Logo />
@@ -35,7 +35,7 @@ export function LandingNav({ onTryDemo, demoPending }: LandingNavProps) {
         </div>
 
         <nav aria-label="Main" className="hidden lg:block">
-          <ul className="flex items-center gap-6 xl:gap-9">
+          <ul className="flex items-center gap-6 xl:gap-7">
             {NAV_LINKS.map((link) => (
               <li key={link.label}>
                 <a
@@ -137,8 +137,8 @@ function MobileMenu({ onTryDemo, demoPending }: LandingNavProps) {
           <Button variant="primary" size="lg" loading={demoPending} onClick={onTryDemo}>
             Try the live demo
           </Button>
-          <Button asChild size="lg">
-            <Link to="/signup">Get started — it’s free</Link>
+          <Button asChild size="lg" className="shadow-none">
+            <a href={DOCS_LINKS.selfHosting}>Self-host Spanlight</a>
           </Button>
           <Button asChild variant="ghost" size="lg">
             <Link to="/login">Sign in</Link>

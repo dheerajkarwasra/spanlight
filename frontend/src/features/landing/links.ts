@@ -47,6 +47,8 @@ export const DOCS_LINKS = {
   selfHosting: docsLink("self-hosting/"),
   gateway: docsLink("gateway/quickstart/"),
   doctor: docsLink("doctor/"),
+  prompts: docsLink("prompts/"),
+  alerts: docsLink("alerts/"),
   evaluators: docsLink("evaluators/"),
   experiments: docsLink("experiments/"),
   cost: docsLink("concepts/cost/"),
@@ -71,10 +73,8 @@ export interface NavLink {
 
 /** Header navigation (desktop bar and mobile sheet). */
 export const NAV_LINKS: readonly NavLink[] = [
-  { label: "Cost", href: `#${SECTION_IDS.cost}` },
-  { label: "Features", href: `#${SECTION_IDS.features}` },
-  { label: "Diagnose", href: `#${SECTION_IDS.diagnose}` },
+  { label: "Product", href: `#${SECTION_IDS.cost}` },
   { label: "How it works", href: `#${SECTION_IDS.howItWorks}` },
-  { label: "Open source", href: `#${SECTION_IDS.openSource}` },
+  { label: "Self-hosting", href: `#${SECTION_IDS.openSource}` },
   { label: "Docs", href: DOCS_LINKS.quickstart },
 ];

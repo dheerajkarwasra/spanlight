@@ -1,12 +1,8 @@
 import { Fragment } from "react";
 
-import { CopyButton } from "@/components/copy-button";
 import { Button } from "@/components/ui/button";
 
 import { DOCS_LINKS, EXTERNAL_LINKS, SECTION_IDS } from "./links";
-import { ResponsiveCopy } from "./responsive-copy";
-
-const QUICKSTART_COMMAND = "docker compose up";
 
 const SERVICES = [
   { name: "postgres", status: "Healthy" },
@@ -18,13 +14,13 @@ const SERVICES = [
 
 const FACTS = ["MIT core", "Postgres 17", "5 services", "eval-gate Action"] as const;
 
-/** The dark open-source band: self-hosting pitch, copyable command and a terminal mock-up. */
+/** The dark open-source band: ownership, privacy and a guided self-hosting action. */
 export function OpenSourceSection() {
   return (
     <section
       id={SECTION_IDS.openSource}
       aria-labelledby="open-source-title"
-      className="scroll-mt-6 px-5 pt-24 md:px-8 lg:pt-40"
+      className="scroll-mt-6 px-5 pt-16 md:px-8 lg:pt-24"
     >
       <div className="relative mx-auto flex max-w-[1200px] flex-col gap-7 overflow-hidden rounded-card bg-hero-card px-[22px] pt-9 pb-6 text-hero-card-foreground md:p-12 xl:flex-row xl:items-center xl:gap-14 xl:py-[72px] xl:pr-16 xl:pl-[72px] dark:border dark:border-border">
         <div className="relative flex flex-col items-start gap-[18px] md:gap-6 xl:w-[540px] xl:shrink-0">
@@ -39,34 +35,16 @@ export function OpenSourceSection() {
             <span className="text-lime">Yours.</span>
           </h2>
           <p className="text-base leading-[1.55] text-rail-muted-foreground md:text-lg">
-            <ResponsiveCopy
-              copy={{
-                mobile:
-                  "The core is MIT licensed. API, worker and dashboard run on one Postgres as one Docker Compose stack.",
-                desktop:
-                  "The core is MIT licensed. The API, worker and dashboard run on one Postgres as a single Docker Compose stack, so your prompts, traces and costs stay on infrastructure you control.",
-              }}
-            />
+            MIT core. One Postgres. Your prompts and traces stay on infrastructure you control, with
+            project isolation, secret redaction and optional payload capture.
           </p>
-
-          <div className="flex items-center gap-3 rounded-full border border-rail-tile bg-rail-tile py-1.5 pr-1.5 pl-4 lg:gap-4 lg:py-2 lg:pr-2 lg:pl-5">
-            <code className="font-mono text-label leading-[1.5] text-rail-foreground lg:text-code">
-              <span className="text-lime">$</span> {QUICKSTART_COMMAND}
-            </code>
-            <CopyButton
-              value={QUICKSTART_COMMAND}
-              label="Copy command"
-              tone="ink"
-              className="size-8 lg:size-9 [&_svg]:size-3.5 lg:[&_svg]:size-4"
-            />
-          </div>
 
           <div className="flex w-full flex-col gap-2.5 pt-1 md:w-auto md:flex-row md:gap-3 md:pt-2">
             <Button asChild variant="highlight" size="lg">
-              <a href={EXTERNAL_LINKS.github}>Star on GitHub</a>
+              <a href={DOCS_LINKS.selfHosting}>Self-hosting guide</a>
             </Button>
-            <Button asChild size="lg">
-              <a href={DOCS_LINKS.selfHosting}>Read the docs</a>
+            <Button asChild size="lg" className="shadow-none">
+              <a href={EXTERNAL_LINKS.github}>View on GitHub</a>
             </Button>
           </div>
         </div>
@@ -77,7 +55,7 @@ export function OpenSourceSection() {
   );
 }
 
-/** What `docker compose up` prints, as a static illustration. */
+/** Example output after following the clone and configuration steps in the guide. */
 function Terminal() {
   return (
     <figure className="relative flex min-w-0 flex-1 flex-col gap-3 rounded-tile border border-rail-tile bg-rail-tile px-4 pt-3.5 pb-4 lg:gap-4 lg:px-[22px] lg:pt-[18px] lg:pb-[22px]">
@@ -87,22 +65,18 @@ function Terminal() {
           <span className="size-2 rounded-full bg-rail-tile lg:size-[9px]" />
           <span className="size-2 rounded-full bg-rail-tile lg:size-[9px]" />
         </span>
-        {/* Brighter than the Figma label: the violet glow behind it would fail AA otherwise. */}
         <span className="font-mono text-2xs leading-[1.5] text-rail-foreground lg:text-xs">
           ~/spanlight
         </span>
       </figcaption>
       <pre className="overflow-x-auto font-mono text-xs leading-[1.5] text-rail-muted-foreground lg:text-label">
+        <span className="text-rail-muted-foreground"># After clone + configuration</span>
+        {"\n"}
         <span className="text-lime">$</span>{" "}
         <span className="text-rail-foreground">
-          <ResponsiveCopy
-            copy={{
-              mobile: "docker compose up -d",
-              desktop: "docker compose -f deploy/compose.yaml up -d",
-            }}
-          />
+          {"docker compose \\\n  -f deploy/compose.yaml \\\n  up -d"}
         </span>
-        {"\n"}
+        {"\n\n"}
         {SERVICES.map((service) => (
           <Fragment key={service.name}>
             <span className="text-lime">✔</span>{" "}

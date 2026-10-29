@@ -9,9 +9,9 @@ interface FeatureTileProps {
   title: string;
   description: Copy;
   illustration: ReactNode;
-  /** `ink` is the dark hero tile (Trace explorer); `surface` the white tiles. */
+  /** `ink` is a primary benefit tile; `surface` is a supporting feature tile. */
   tone?: "surface" | "ink";
-  /** `split` puts copy and illustration side by side on wide screens (Private by design). */
+  /** `split` puts copy and illustration side by side on wide screens. */
   layout?: "stacked" | "split";
   /** True when the illustration is a real screenshot with its own alt text, not decoration. */
   illustrationIsContent?: boolean;
@@ -37,7 +37,7 @@ export function FeatureTile({
   return (
     <article
       className={cn(
-        "flex flex-col gap-[22px] overflow-hidden rounded-card px-[22px] py-6 shadow-card md:gap-6 md:p-7",
+        "flex min-w-0 flex-col gap-[22px] overflow-hidden rounded-card px-[22px] py-6 md:gap-6 md:p-7",
         ink
           ? "bg-hero-card text-hero-card-foreground dark:border dark:border-border"
           : "border border-border bg-surface",

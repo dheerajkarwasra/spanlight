@@ -1,5 +1,5 @@
 import { CodeSampleCard } from "./code-sample-card";
-import { SECTION_IDS } from "./links";
+import { DOCS_LINKS, SECTION_IDS } from "./links";
 import { ResponsiveCopy, type Copy } from "./responsive-copy";
 import { SectionHeading } from "./section-heading";
 
@@ -8,14 +8,16 @@ interface Step {
   description: Copy;
   /** Mono chip under the description. */
   detail: Copy;
+  href?: string;
 }
 
 const STEPS: readonly Step[] = [
   {
     title: "Self-host or try the demo",
     description:
-      "Run docker compose up on your own machine, or explore the live demo workspace first.",
-    detail: "docker compose up -d",
+      "Follow the setup guide to run Spanlight, or explore the live demo workspace first.",
+    detail: "Read the self-hosting guide",
+    href: DOCS_LINKS.selfHosting,
   },
   {
     title: "Add three lines, or one base URL",
@@ -25,7 +27,7 @@ const STEPS: readonly Step[] = [
       desktop:
         "Wrap your OpenAI or Anthropic client, point an OpenTelemetry exporter at /v1/otlp/traces, or set your client’s base URL to the gateway.",
     },
-    detail: 'pip install "spanlight[anthropic]"',
+    detail: { mobile: "pip install spanlight", desktop: 'pip install "spanlight[anthropic]"' },
   },
   {
     title: "Watch traces arrive live",
@@ -48,7 +50,7 @@ export function HowItWorksSection() {
     <section
       id={SECTION_IDS.howItWorks}
       aria-labelledby="how-it-works-title"
-      className="scroll-mt-6 px-5 pt-24 md:px-8 lg:pt-40"
+      className="scroll-mt-6 px-5 pt-16 md:px-8 lg:pt-24"
     >
       <SectionHeading
         id="how-it-works-title"
@@ -57,7 +59,7 @@ export function HowItWorksSection() {
         description="Send traces with the SDK, any OpenTelemetry exporter or the gateway. Only the gateway sits in the request path, and only if you choose it."
       />
 
-      <div className="mx-auto mt-9 grid max-w-[1200px] grid-cols-1 gap-9 lg:mt-14 xl:grid-cols-12 xl:gap-5">
+      <div className="mx-auto mt-9 grid max-w-[1200px] grid-cols-1 gap-9 lg:mt-10 xl:grid-cols-12 xl:gap-5">
         <ol className="flex flex-col gap-3 md:gap-4 xl:col-span-5">
           {STEPS.map((step, index) => (
             <StepCard key={step.title} number={index + 1} step={step} />
@@ -72,7 +74,7 @@ export function HowItWorksSection() {
 /** Figma "Landing/Step card": ink number disc, title, description and a mono detail chip. */
 function StepCard({ number, step }: { number: number; step: Step }) {
   return (
-    <li className="flex flex-1 items-start gap-3.5 rounded-card border border-border bg-surface p-5 shadow-card md:gap-[18px] md:p-6">
+    <li className="flex flex-1 items-start gap-3.5 rounded-card border border-border bg-surface p-5 md:gap-[18px] md:p-6">
       <span
         aria-hidden
         className="flex size-11 shrink-0 items-center justify-center rounded-full bg-hero-card text-base leading-[1.4] font-extrabold tracking-[-0.01em] text-lime dark:border dark:border-border"
@@ -84,9 +86,18 @@ function StepCard({ number, step }: { number: number; step: Step }) {
         <p className="text-sm text-muted-foreground">
           <ResponsiveCopy copy={step.description} />
         </p>
-        <span className="max-w-full truncate rounded-full bg-surface-muted px-3 py-1.5 font-mono text-xs leading-[1.5] text-muted-foreground">
-          <ResponsiveCopy copy={step.detail} />
-        </span>
+        {step.href ? (
+          <a
+            href={step.href}
+            className="max-w-full rounded-full bg-surface-muted px-3 py-1.5 font-mono text-xs leading-[1.5] text-muted-foreground underline-offset-2 hover:underline"
+          >
+            <ResponsiveCopy copy={step.detail} />
+          </a>
+        ) : (
+          <span className="max-w-full truncate rounded-full bg-surface-muted px-3 py-1.5 font-mono text-xs leading-[1.5] text-muted-foreground">
+            <ResponsiveCopy copy={step.detail} />
+          </span>
+        )}
       </div>
     </li>
   );

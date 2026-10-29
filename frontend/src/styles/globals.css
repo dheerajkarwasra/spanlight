@@ -128,12 +128,6 @@
   --chart-mix-cache-read: var(--chart-class-timeout);
   --chart-mix-cache-write: var(--chart-class-network);
 
-  /* Hero mesh gradient */
-  --mesh-1: #e9d5ff;
-  --mesh-2: #fde68a;
-  --mesh-3: #bae6fd;
-  --mesh-opacity: 0.85;
-
   /* Code: JSON strings on light surfaces, and the always-dark code block */
   --syntax-string: #0f766e;
   --code-keyword: #d946ef;
@@ -240,12 +234,6 @@
   --chart-class-gateway: #b9b7b1;
   --chart-class-unknown: #6f6d68;
 
-  /* No decorative glow in the dark theme. */
-  --mesh-1: transparent;
-  --mesh-2: transparent;
-  --mesh-3: transparent;
-  --mesh-opacity: 0;
-
   --syntax-string: #5eead4;
   --code-keyword: #e5e5e5;
 
@@ -332,9 +320,6 @@
   --color-chart-class-client: var(--chart-class-client);
   --color-chart-class-gateway: var(--chart-class-gateway);
   --color-chart-class-unknown: var(--chart-class-unknown);
-  --color-mesh-1: var(--mesh-1);
-  --color-mesh-2: var(--mesh-2);
-  --color-mesh-3: var(--mesh-3);
   --color-syntax-string: var(--syntax-string);
   --color-code-keyword: var(--code-keyword);
   --color-code-string: var(--code-string);

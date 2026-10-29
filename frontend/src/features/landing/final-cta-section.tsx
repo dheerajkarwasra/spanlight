@@ -7,12 +7,12 @@ interface FinalCtaSectionProps {
   demoPending: boolean;
 }
 
-/** Closing call to action (Figma "Section/Final CTA"); the mesh stays on the hero only. */
+/** Closing call to action (Figma "Section/Final CTA"). */
 export function FinalCtaSection({ onTryDemo, demoPending }: FinalCtaSectionProps) {
   return (
     <section
       aria-labelledby="final-cta-title"
-      className="relative flex flex-col items-center gap-[22px] px-5 py-28 text-center md:px-8 lg:gap-7 lg:py-40"
+      className="relative flex flex-col items-center gap-[22px] px-5 py-16 text-center md:px-8 lg:gap-7 lg:py-24"
     >
       <h2
         id="final-cta-title"
@@ -24,14 +24,14 @@ export function FinalCtaSection({ onTryDemo, demoPending }: FinalCtaSectionProps
         </span>
       </h2>
       <p className="relative max-w-[320px] text-base leading-[1.55] text-muted-foreground md:max-w-[560px] lg:text-[19px]">
-        Explore the live demo workspace, or self-host the whole stack with one command.
+        Explore a sample workspace, or follow the guide to run Spanlight on your own infrastructure.
       </p>
       <div className="relative flex w-full flex-col gap-2.5 pt-2 md:w-auto md:flex-row md:gap-3 lg:pt-3">
         <Button variant="primary" size="lg" loading={demoPending} onClick={onTryDemo}>
           Try the live demo
         </Button>
-        <Button asChild size="lg">
-          <a href={DOCS_LINKS.quickstart}>Read the docs</a>
+        <Button asChild size="lg" className="shadow-none">
+          <a href={DOCS_LINKS.selfHosting}>Self-host Spanlight</a>
         </Button>
       </div>
     </section>

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import { NotFoundPage } from "@/app/route-pages";
 import { ErrorState } from "@/components/error-state";
-import { MeshBackdrop } from "@/components/mesh-backdrop";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,7 +38,7 @@ import { useRailCollapsed } from "./use-rail-collapsed";
  * The signed-in layout.
  *
  * Desktop (≥ 1024px): canvas with a 12px gutter, the floating dark rail on the left and the
- * rounded main panel (mesh backdrop, in-panel top bar) on the right. The page scrolls the
+ * rounded main panel with an in-panel top bar on the right. The page scrolls the
  * window; the rail stays pinned. From 1280px the rail is expanded unless the viewer collapsed it;
  * below that it is the 56px icon rail, whose "Expand sidebar" opens the full rail in the sheet.
  *
@@ -103,9 +102,7 @@ function ChromeShell() {
   }, []);
 
   useKeyboardShortcuts(togglePalette, openHelp);
-  // The mesh is a hero decoration: only the Overview greeting gets it, data pages stay plain.
   const pathname = useLocation({ select: (location) => location.pathname });
-  const onOverview = pathname.endsWith("/overview");
   const hub = hubForPath(pathname);
 
   useEffect(() => {
@@ -181,10 +178,6 @@ function ChromeShell() {
       </Sheet>
 
       <div className="relative flex min-w-0 flex-1 flex-col overflow-clip bg-background lg:min-h-[calc(100dvh-1.5rem)] lg:rounded-card">
-        {onOverview ? (
-          <MeshBackdrop className="-top-[120px] -left-[200px] lg:top-0 lg:-right-4 lg:left-auto" />
-        ) : null}
-
         <MobileAppBar
           className="lg:hidden"
           onOpenCommandPalette={openPalette}

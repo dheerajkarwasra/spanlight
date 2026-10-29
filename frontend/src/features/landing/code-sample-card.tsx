@@ -49,7 +49,7 @@ export function CodeSampleCard({ className }: { className?: string }) {
         className,
       )}
     >
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <TabsPrimitive.List
           aria-label="Integration"
           className="flex gap-0.5 rounded-full bg-rail-tile p-[3px] md:p-1"
@@ -59,7 +59,7 @@ export function CodeSampleCard({ className }: { className?: string }) {
               key={id}
               value={id}
               className={cn(
-                "rounded-full px-[11px] py-[5px] text-xs font-semibold text-rail-muted-foreground transition-colors md:px-3.5 md:py-1.5 md:text-label",
+                "rounded-full px-2 py-[5px] text-xs font-semibold text-rail-muted-foreground transition-colors md:px-3.5 md:py-1.5 md:text-label",
                 "hover:text-rail-foreground focus-visible:outline-lime",
                 "data-[state=active]:bg-rail-foreground data-[state=active]:text-rail",
               )}
@@ -75,7 +75,7 @@ export function CodeSampleCard({ className }: { className?: string }) {
           showLabel
           variant="highlight"
           size="sm"
-          className="h-auto gap-[5px] py-1.5 pr-3 pl-2.5 text-xs md:gap-1.5 md:py-[7px] md:pr-3.5 md:pl-3 md:text-label [&_svg]:size-[13px] [&_svg]:text-lime-foreground md:[&_svg]:size-3.5"
+          className="ml-auto h-auto gap-[5px] py-1.5 pr-3 pl-2.5 text-xs md:gap-1.5 md:py-[7px] md:pr-3.5 md:pl-3 md:text-label [&_svg]:size-[13px] [&_svg]:text-lime-foreground md:[&_svg]:size-3.5"
         />
       </div>
 

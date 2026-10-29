@@ -1,9 +1,12 @@
 import { cn } from "@/lib/utils";
 
+import { ResponsiveCopy } from "./responsive-copy";
+
 import { Dot, type DotTone, Pill, SpanBar } from "./illustrations/illo-parts";
 
 interface Span {
   name: string;
+  mobileName?: string;
   dot: DotTone;
   /** Start and length as a share of the trace, in percent. */
   start: number;
@@ -15,8 +18,23 @@ interface Span {
 const SPANS: readonly Span[] = [
   { name: "answer_ticket", dot: "chain", start: 0, length: 100, child: false },
   { name: "search_docs", dot: "retrieval", start: 2, length: 16, child: true },
-  { name: "claude-sonnet-5-5 · 429", dot: "danger", start: 20, length: 6, child: true },
-  { name: "claude-sonnet-5-5", dot: "llm", start: 34, length: 58, child: true, selected: true },
+  {
+    name: "claude-sonnet-5-5 · 429",
+    mobileName: "sonnet · 429",
+    dot: "danger",
+    start: 20,
+    length: 6,
+    child: true,
+  },
+  {
+    name: "claude-sonnet-5-5",
+    mobileName: "sonnet",
+    dot: "llm",
+    start: 34,
+    length: 58,
+    child: true,
+    selected: true,
+  },
   { name: "lookup_order", dot: "tool", start: 93, length: 6, child: true },
 ];
 
@@ -32,7 +50,7 @@ const COST_LINES = [
   { label: "Output", quantity: "420 × $10.00/M", amount: "$0.004200" },
 ] as const;
 
-const CARD = "flex flex-col rounded-card border border-border bg-surface shadow-card";
+const CARD = "flex flex-col rounded-card border border-border bg-surface";
 
 /**
  * The hero figure (Figma "Illo/Trace anatomy"): one traced request as a waterfall with the
@@ -63,14 +81,18 @@ export function TraceAnatomy({ className }: { className?: string }) {
             >
               <span
                 className={cn(
-                  "flex min-w-0 items-center gap-2 md:w-[230px] md:shrink-0",
+                  "flex w-[120px] shrink-0 items-center gap-2 md:w-[230px]",
                   span.child && "pl-4",
                 )}
               >
                 <Dot tone={span.dot} />
-                <span className="truncate font-mono text-xs text-foreground">{span.name}</span>
+                <span className="truncate font-mono text-xs text-foreground">
+                  <ResponsiveCopy
+                    copy={{ mobile: span.mobileName ?? span.name, desktop: span.name }}
+                  />
+                </span>
               </span>
-              <span className="relative hidden h-2.5 flex-1 md:block">
+              <span className="relative h-2.5 min-w-0 flex-1">
                 <SpanBar tone={span.dot} start={span.start} length={span.length} />
               </span>
             </div>
@@ -78,12 +100,12 @@ export function TraceAnatomy({ className }: { className?: string }) {
           <div className="mt-1 flex items-center gap-2.5 rounded-input bg-hero-card px-3.5 py-3 text-hero-card-foreground dark:border dark:border-border">
             <Dot tone="warning" />
             <span className="min-w-0 flex-1 truncate text-label font-semibold">
-              Doctor · Retry-After ignored
+              <ResponsiveCopy
+                copy={{ mobile: "Doctor · Retry ignored", desktop: "Doctor · Retry-After ignored" }}
+              />
             </span>
             <Pill tone="lime">Fix</Pill>
-            <Pill tone="accent" className="hidden md:inline">
-              Check
-            </Pill>
+            <Pill tone="accent">Check</Pill>
           </div>
         </div>
 
@@ -122,9 +144,8 @@ export function TraceAnatomy({ className }: { className?: string }) {
       </div>
 
       <figcaption className="mx-auto mt-4 max-w-[340px] text-center text-xs font-medium text-muted-foreground md:max-w-[720px] lg:mt-6 lg:text-sm">
-        An illustration of one traced request: a rate-limited call, its retry and the Doctor’s
-        finding, beside the retry’s cost breakdown. Token rates are claude-sonnet-5-5 from the
-        2026-10-16 price table.
+        An illustration of one traced request. Token rates are claude-sonnet-5-5 from the 2026-10-16
+        price table.
       </figcaption>
     </figure>
   );

@@ -2,7 +2,6 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import { Logo } from "@/components/logo";
-import { MeshBackdrop } from "@/components/mesh-backdrop";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 
@@ -32,14 +31,12 @@ interface AuthLayoutProps {
 
 /**
  * Sign in, sign up and the account flows around them (Figma "Sign in" and "Account flows"): the
- * form column on the mesh canvas, and on desktop the ink showcase panel with one drawn trace.
+ * form column on a neutral canvas, and on desktop the ink showcase panel with one drawn trace.
  * Phones get the form only.
  */
 export function AuthLayout({ title, accent, description, status, children }: AuthLayoutProps) {
   return (
     <div className="relative flex min-h-dvh overflow-clip bg-canvas lg:p-3">
-      <MeshBackdrop className="-top-[190px] right-auto -left-[300px] sm:-top-[170px] sm:-left-[220px]" />
-
       <div className="relative flex min-w-0 flex-1 flex-col px-6 pt-5 pb-10 lg:px-9 lg:pt-6">
         <AuthHeader />
         <main className="mx-auto flex w-full max-w-[400px] flex-1 flex-col justify-center gap-6 pt-14 lg:py-10">
@@ -84,12 +81,10 @@ interface AuthCenteredLayoutProps {
   children: ReactNode;
 }
 
-/** A single card centred on the mesh canvas (Figma "Invite — Desktop"). */
+/** A single card centred on a neutral canvas (Figma "Invite — Desktop"). */
 export function AuthCenteredLayout({ children }: AuthCenteredLayoutProps) {
   return (
     <div className="relative flex min-h-dvh flex-col overflow-clip bg-canvas px-4 pt-5 pb-10 sm:px-12 sm:pt-9">
-      <MeshBackdrop className="-top-[180px] right-auto -left-[160px]" />
-      <MeshBackdrop className="top-auto -right-[180px] -bottom-[140px]" />
       <AuthHeader />
       <main className="relative flex flex-1 items-center justify-center py-12">{children}</main>
     </div>

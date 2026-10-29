@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 
 import { Logo } from "@/components/logo";
-import { MeshBackdrop } from "@/components/mesh-backdrop";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 interface OnboardingLayoutProps {
@@ -13,14 +12,12 @@ interface OnboardingLayoutProps {
 }
 
 /**
- * A focused, full-page layout outside the app shell (Figma "Onboarding 1–3"): the mesh canvas,
+ * A focused, full-page layout outside the app shell (Figma "Onboarding 1–3"): a neutral canvas,
  * a header with the logo, the step pills and the theme toggle, then a 720px content column.
  */
 export function OnboardingLayout({ stepper, exitLink, children }: OnboardingLayoutProps) {
   return (
     <div className="relative flex min-h-dvh flex-col gap-8 overflow-clip bg-canvas px-4 pt-5 pb-12 sm:px-12 sm:pt-9 lg:gap-16">
-      <MeshBackdrop className="-top-[210px] -right-[120px]" />
-
       <header className="relative grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-5 lg:grid-cols-[1fr_auto_1fr]">
         <Logo />
         {stepper ? (
