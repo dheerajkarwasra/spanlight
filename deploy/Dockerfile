@@ -100,7 +100,7 @@ CMD ["sh", "-c", "unset MIGRATION_DATABASE_URL; exec uvicorn app.main:app --host
 # golang.org/x/net 0.59.0, which failed the 0.6.0 release scan (CVE-2026-78667, CVE-2026-78669,
 # CVE-2026-97031). The same Caddy release is rebuilt here with a patched toolchain and x/net.
 # shortcut: pinned by hand, drop this stage once the official image ships Go >= 1.27.2.
-FROM golang:1.27.2-alpine AS caddy-build
+FROM golang:1.27.3-alpine AS caddy-build
 WORKDIR /src
 RUN printf '%s\n' 'package main' \
       'import (' \
