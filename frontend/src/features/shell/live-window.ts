@@ -49,15 +49,21 @@ let clockNow = new Date();
 const listeners = new Set<() => void>();
 let stopClock: (() => void) | null = null;
 
-function tick(client: QueryClient): void {
+/**
+ * Moves the window when the minute has changed. `refresh` also reloads an unchanged window: only
+ * the interval asks for it, since on mount the page is already fetching and on return to the tab
+ * React Query's focus refetch already runs.
+ */
+function tick(client: QueryClient, refresh: boolean): void {
   if (document.visibilityState !== "visible") {
     return;
   }
   const next = new Date();
   const end = windowEnd(clockNow);
   if (windowEnd(next) === end) {
-    // Same minute: the window is unchanged, so refresh what the page shows for it.
-    void client.invalidateQueries({ predicate: (query) => endsAt(query.queryKey, end) });
+    if (refresh) {
+      void client.invalidateQueries({ predicate: (query) => endsAt(query.queryKey, end) });
+    }
     return;
   }
   carryForward(client, clockNow, next);
@@ -68,15 +74,18 @@ function tick(client: QueryClient): void {
 }
 
 function startClock(client: QueryClient): () => void {
-  const onTick = () => {
-    tick(client);
+  const onInterval = () => {
+    tick(client, true);
   };
-  const timer = window.setInterval(onTick, LIVE_TICK_MS);
-  document.addEventListener("visibilitychange", onTick);
-  onTick();
+  const onCatchUp = () => {
+    tick(client, false);
+  };
+  const timer = window.setInterval(onInterval, LIVE_TICK_MS);
+  document.addEventListener("visibilitychange", onCatchUp);
+  onCatchUp();
   return () => {
     window.clearInterval(timer);
-    document.removeEventListener("visibilitychange", onTick);
+    document.removeEventListener("visibilitychange", onCatchUp);
   };
 }
 
