@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from typing import Any, Literal, Protocol
 
-from sqlalchemy import delete, update
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,7 +45,7 @@ class GatewayCache(Protocol):
     async def lookup(
         self, db: AsyncSession, project_id: uuid.UUID, key: bytes, now: datetime
     ) -> CachedResponse | None:
-        """The live entry for `key`, counting the hit; None if there is none or it expired."""
+        """The live entry for `key`; None if there is none or it expired. Read-only."""
         ...
 
     async def store(
@@ -108,24 +108,20 @@ class PostgresGatewayCache:
     async def lookup(
         self, db: AsyncSession, project_id: uuid.UUID, key: bytes, now: datetime
     ) -> CachedResponse | None:
-        # One statement finds the live row and counts the hit, so the count cannot miss a hit
-        # that races another.
+        # A plain read: concurrent hits on one row share no lock. The hit rate comes from the
+        # spans (`spanlight.cache`), so `hit_count` is not maintained.
         row = (
             await db.execute(
-                update(GatewayCacheEntry)
-                .where(
-                    GatewayCacheEntry.project_id == project_id,
-                    GatewayCacheEntry.cache_key == key,
-                    GatewayCacheEntry.expires_at > now,
-                )
-                .values(hit_count=GatewayCacheEntry.hit_count + 1)
-                .returning(
+                select(
                     GatewayCacheEntry.body,
                     GatewayCacheEntry.content_type,
                     GatewayCacheEntry.model,
                     GatewayCacheEntry.usage,
+                ).where(
+                    GatewayCacheEntry.project_id == project_id,
+                    GatewayCacheEntry.cache_key == key,
+                    GatewayCacheEntry.expires_at > now,
                 )
-                .execution_options(synchronize_session=False)
             )
         ).one_or_none()
         if row is None:

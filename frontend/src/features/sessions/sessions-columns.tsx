@@ -48,7 +48,7 @@ export function sessionColumns({
     {
       id: "session",
       header: "Session",
-      width: "minmax(220px,1.2fr)",
+      width: "minmax(240px,1fr)",
       sticky: true,
       cell: (session) => (
         <span className="flex min-w-0 flex-col">
@@ -70,7 +70,7 @@ export function sessionColumns({
     {
       id: "user",
       header: "User",
-      width: "minmax(120px,0.8fr)",
+      width: "minmax(136px,0.6fr)",
       hideable: true,
       minContainer: SHOW_USER,
       cell: (session) =>
@@ -89,7 +89,7 @@ export function sessionColumns({
     {
       id: "turns",
       header: "Turns",
-      width: "80px",
+      width: "72px",
       align: "end",
       sortKey: "turns",
       cell: (session) => formatInteger(session.trace_count),
@@ -97,7 +97,7 @@ export function sessionColumns({
     {
       id: "duration",
       header: "Duration",
-      width: "96px",
+      width: "88px",
       align: "end",
       hideable: true,
       minContainer: SHOW_DURATION,
@@ -110,7 +110,7 @@ export function sessionColumns({
     {
       id: "tokens",
       header: "Tokens",
-      width: "96px",
+      width: "88px",
       align: "end",
       sortKey: "tokens",
       cell: (session) =>
@@ -128,7 +128,7 @@ export function sessionColumns({
     {
       id: "cost",
       header: "Cost",
-      width: "112px",
+      width: "104px",
       align: "end",
       sortKey: "cost",
       cell: (session) => <SessionCost session={session} costP99={costP99} />,
@@ -150,7 +150,7 @@ export function sessionColumns({
     {
       id: "last_turn",
       header: "Last turn",
-      width: "minmax(180px,1.4fr)",
+      width: "minmax(172px,1.2fr)",
       hideable: true,
       minContainer: SHOW_LAST_TURN,
       sortKey: "last",

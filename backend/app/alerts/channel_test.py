@@ -29,6 +29,7 @@ from app.alerts.channels.errors import (
 from app.alerts.payload import ChannelTestPayload, OrgRef
 from app.alerts.service import allowed_recipients
 from app.config import Settings
+from app.core.idempotency_store import StoredResponse, complete_operation
 from app.core.ratelimit import PostgresTokenBucket
 from app.db.models import AlertChannel, AlertChannelKind, AuditAction, Organization
 from app.notifications.delivery import DeliveryOutcome, DeliveryResult, deliver_now
@@ -92,11 +93,32 @@ async def send_test(
     row_ids, seen_updated_at = await _enqueue_test(
         db, org, channel_id, actor_id, settings=settings, now=clock(), ip=ip
     )
+    await complete_operation(
+        db,
+        StoredResponse(
+            200,
+            {"delivery_id": str(row_ids[0]), "status": "pending", "error": None},
+            "application/json",
+        ),
+    )
     await db.commit()
     result = await _deliver(session_factory, row_ids)
     if result.status == "sent":
         await queries.mark_verified(db, org.id, channel_id, clock(), seen_updated_at)
-        await db.commit()
+    await complete_operation(
+        db,
+        StoredResponse(
+            200,
+            {
+                "delivery_id": str(result.delivery_id),
+                "status": result.status,
+                "error": result.error,
+            },
+            "application/json",
+        ),
+        replace=True,
+    )
+    await db.commit()
     logger.info(
         "alert_channel_tested",
         org_id=str(org.id),

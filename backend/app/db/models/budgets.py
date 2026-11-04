@@ -5,6 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
@@ -77,6 +78,9 @@ class BudgetCounter(Base):
     period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
     settled_usd: Mapped[Decimal] = mapped_column(Numeric(18, 8), server_default=text("0"))
+    legacy_unattributed_usd: Mapped[Decimal] = mapped_column(
+        Numeric(18, 8), server_default=text("0")
+    )
     reserved_usd: Mapped[Decimal] = mapped_column(Numeric(18, 8), server_default=text("0"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -84,9 +88,10 @@ class BudgetCounter(Base):
 class BudgetReservation(Base):
     """A gateway call's estimate held against one budget until its span settles it.
 
-    `held` until the span write settles it (and deletes the row); `reaped` once the worker has
-    counted an expired one at its estimate, kept so a late settle can replace that with the
-    real cost. Row-level security applies.
+    `held` until the span write settles it; `reaped` once the worker has counted an expired
+    one at its estimate. `settled` retains identity while raw spans exist and for at least
+    90 days from admission, so a fresh history read cannot double-count it. No payload or scope
+    metadata is copied here. RLS applies.
     """
 
     __tablename__ = "budget_reservations"
@@ -98,5 +103,90 @@ class BudgetReservation(Base):
     trace_id: Mapped[str] = mapped_column(Text)
     span_id: Mapped[str] = mapped_column(Text)
     amount_usd: Mapped[Decimal] = mapped_column(Numeric(18, 8))
+    reclassified: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    charged_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))
     status: Mapped[str] = mapped_column(Text, server_default=text("'held'"))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class BudgetDeletedSpan(Base):
+    """A deleted priced span of the current UTC month, kept so budget admission still counts it.
+
+    Written by the `spans` delete trigger (migration 1031), read by `app.budgets.history` and
+    pruned with the counters. Only ids, time, money, model and the gateway key: no user
+    identifier, trace name, metadata or payload. RLS applies.
+    """
+
+    __tablename__ = "budget_deleted_spans"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
+    )
+    trace_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    span_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    cost_usd: Mapped[Decimal] = mapped_column(Numeric(18, 8))
+    model: Mapped[str | None] = mapped_column(Text)
+    source_key_id: Mapped[uuid.UUID | None] = mapped_column(UUID)
+    deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BudgetBucketVersion(Base):
+    """The generation of one UTC hour of a project's budget inputs (migration 1032).
+
+    Statement triggers on `spans` and `budget_reservations` bump it in the writer's own
+    transaction; a `BudgetBucketSnapshot` is valid while its generation matches. Pruned with
+    the counters. RLS applies.
+    """
+
+    __tablename__ = "budget_bucket_versions"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
+    )
+    bucket_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    generation: Mapped[int] = mapped_column(BigInteger)
+
+
+class BudgetBucketSnapshot(Base):
+    """One budget's committed spend of one UTC hour, as `app.budgets.compaction` computed it
+    against `generation` (0: no version row existed; -1: created by a compactor, never
+    computed) plus the deltas folded in since. A cache: deleting rows is the repair. RLS
+    applies.
+    """
+
+    __tablename__ = "budget_bucket_snapshots"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
+    )
+    budget_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("budgets.id", ondelete="CASCADE"), primary_key=True
+    )
+    bucket_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    committed_usd: Mapped[Decimal] = mapped_column(Numeric(18, 8))
+    generation: Mapped[int] = mapped_column(BigInteger)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class BudgetBucketDelta(Base):
+    """An exact change to one budget's spend of one UTC hour that a writer appended (migration
+    1033): an uncorrelated span stored or corrected, a settled charge. Folded into the hour's
+    `BudgetBucketSnapshot` under its row lock by admission or the reaper's job. RLS applies.
+    """
+
+    __tablename__ = "budget_bucket_deltas"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
+    )
+    budget_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("budgets.id", ondelete="CASCADE"), primary_key=True
+    )
+    bucket_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    seq: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, server_default=text("nextval('budget_bucket_delta_seq')")
+    )
+    amount_usd: Mapped[Decimal] = mapped_column(Numeric(18, 8))

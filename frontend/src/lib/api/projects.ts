@@ -1,3 +1,5 @@
+import type { AggregateList } from "./aggregate";
+import type { AggregateMetadata } from "./aggregate";
 import { api } from "./client";
 import { toPathId } from "./end-users";
 import { projectPath } from "./paths";
@@ -37,7 +39,7 @@ export interface TimeWindow {
  * LLM tokens by price class over whole UTC days, all environments (`GET …/metrics/token-mix`).
  * Every figure is null when the project has no cost rollup in those days.
  */
-export interface TokenMix {
+export interface TokenMix extends AggregateMetadata {
   first_day: string;
   last_day: string;
   uncached_input_tokens: number | null;
@@ -51,6 +53,8 @@ export interface TokenMix {
 /** Which setup checklist steps the project has done (`GET …/activation`), read on request. */
 export interface Activation {
   first_trace: boolean;
+  first_trace_id?: string | null;
+  first_trace_at?: string | null;
   session: boolean;
   budget: boolean;
   evaluation: boolean;
@@ -149,51 +153,102 @@ export const projectsApi = {
   revokeKey: (projectId: string, keyId: string): Promise<void> =>
     api.delete(`${projectPath(projectId)}/keys/${encodeURIComponent(keyId)}`),
 
-  onboarding: (projectId: string): Promise<OnboardingStatus> =>
-    api.get<OnboardingStatus>(`${projectPath(projectId)}/onboarding`),
+  onboarding: (projectId: string, signal?: AbortSignal): Promise<OnboardingStatus> =>
+    api.get<OnboardingStatus>(`${projectPath(projectId)}/onboarding`, undefined, signal),
   activation: (projectId: string): Promise<Activation> =>
     api.get<Activation>(`${projectPath(projectId)}/activation`),
 
-  filters: (projectId: string): Promise<FilterOptions> =>
-    api.get<FilterOptions>(`${projectPath(projectId)}/filters`),
+  filters: (projectId: string, signal?: AbortSignal): Promise<FilterOptions> =>
+    api.get<FilterOptions>(`${projectPath(projectId)}/filters`, undefined, signal),
 
-  traces: (projectId: string, query: TraceListQuery): Promise<Page<TraceSummary>> =>
-    api.get<Page<TraceSummary>>(`${projectPath(projectId)}/traces`, { ...query }),
-  traceHistogram: (projectId: string, query: TraceHistogramQuery): Promise<TraceHistogram> =>
-    api.get<TraceHistogram>(`${projectPath(projectId)}/traces/histogram`, { ...query }),
-  trace: (projectId: string, traceId: string): Promise<TraceDetail> =>
-    api.get<TraceDetail>(`${projectPath(projectId)}/traces/${encodeURIComponent(traceId)}`),
-  compareTraces: (projectId: string, a: string, b: string): Promise<TraceComparison> =>
-    api.get<TraceComparison>(`${projectPath(projectId)}/traces/compare`, { a, b }),
+  traces: (
+    projectId: string,
+    query: TraceListQuery,
+    signal?: AbortSignal,
+  ): Promise<Page<TraceSummary>> =>
+    api.get<Page<TraceSummary>>(`${projectPath(projectId)}/traces`, { ...query }, signal),
+  traceHistogram: (
+    projectId: string,
+    query: TraceHistogramQuery,
+    signal?: AbortSignal,
+  ): Promise<TraceHistogram> =>
+    api.get<TraceHistogram>(`${projectPath(projectId)}/traces/histogram`, { ...query }, signal),
+  /**
+   * `span_content=bounded`: this client reads `payload_omitted` and `attributes_omitted`, so the
+   * server may leave content out past its 8 MiB budget instead of refusing the trace.
+   */
+  trace: (projectId: string, traceId: string, signal?: AbortSignal): Promise<TraceDetail> =>
+    api.get<TraceDetail>(
+      `${projectPath(projectId)}/traces/${encodeURIComponent(traceId)}`,
+      { span_content: "bounded" },
+      signal,
+    ),
+  compareTraces: (
+    projectId: string,
+    a: string,
+    b: string,
+    signal?: AbortSignal,
+  ): Promise<TraceComparison> =>
+    api.get<TraceComparison>(`${projectPath(projectId)}/traces/compare`, { a, b }, signal),
 
-  /** One span with its payloads, for a span trace detail returned without them. */
-  span: (projectId: string, traceId: string, spanId: string): Promise<Span> =>
+  /** One span with its attributes and payloads, for a span trace detail returned without them. */
+  span: (projectId: string, traceId: string, spanId: string, signal?: AbortSignal): Promise<Span> =>
     api.get<Span>(
       `${projectPath(projectId)}/traces/${encodeURIComponent(traceId)}/spans/${encodeURIComponent(spanId)}`,
+      undefined,
+      signal,
     ),
 
-  sessions: (projectId: string, query: SessionListQuery): Promise<SessionPage> =>
-    api.get<SessionPage>(`${projectPath(projectId)}/sessions`, { ...query }),
-  /** The session id travels as one path segment, `~`-prefixed like user ids (`toPathId`). */
+  sessions: (
+    projectId: string,
+    query: SessionListQuery,
+    signal?: AbortSignal,
+  ): Promise<SessionPage> =>
+    api.get<SessionPage>(`${projectPath(projectId)}/sessions`, { ...query }, signal),
+  /**
+   * The session id travels as one path segment, `~`-prefixed like user ids (`toPathId`).
+   * `span_content=bounded` as on `trace`.
+   */
   sessionTurns: (
     projectId: string,
     sessionId: string,
     query: SessionTurnsQuery,
+    signal?: AbortSignal,
   ): Promise<Page<SessionTurn>> =>
     api.get<Page<SessionTurn>>(
       `${projectPath(projectId)}/sessions/${encodeURIComponent(toPathId(sessionId))}/turns`,
-      { ...query },
+      { ...query, span_content: "bounded" },
+      signal,
     ),
 
-  overview: (projectId: string, query: MetricsQuery): Promise<OverviewMetrics> =>
-    api.get<OverviewMetrics>(`${projectPath(projectId)}/metrics/overview`, { ...query }),
+  overview: (
+    projectId: string,
+    query: MetricsQuery,
+    signal?: AbortSignal,
+  ): Promise<OverviewMetrics> =>
+    api.get<OverviewMetrics>(`${projectPath(projectId)}/metrics/overview`, { ...query }, signal),
   timeseries: (
     projectId: string,
     query: MetricsQuery & { bucket: Bucket },
-  ): Promise<TimeseriesPoint[]> =>
-    api.get<TimeseriesPoint[]>(`${projectPath(projectId)}/metrics/timeseries`, { ...query }),
-  models: (projectId: string, query: MetricsQuery): Promise<ModelMetrics[]> =>
-    api.get<ModelMetrics[]>(`${projectPath(projectId)}/metrics/models`, { ...query }),
+    signal?: AbortSignal,
+  ): Promise<AggregateList<TimeseriesPoint>> =>
+    api.getAggregateList<TimeseriesPoint>(
+      `${projectPath(projectId)}/metrics/timeseries`,
+      {
+        ...query,
+      },
+      signal,
+    ),
+  models: (
+    projectId: string,
+    query: MetricsQuery,
+    signal?: AbortSignal,
+  ): Promise<AggregateList<ModelMetrics>> =>
+    api.getAggregateList<ModelMetrics>(
+      `${projectPath(projectId)}/metrics/models`,
+      { ...query },
+      signal,
+    ),
   /** Ignores `environment`: the cost rollup it reads has none. */
   tokenMix: (projectId: string, window: TimeWindow): Promise<TokenMix> =>
     api.get<TokenMix>(`${projectPath(projectId)}/metrics/token-mix`, { ...window }),

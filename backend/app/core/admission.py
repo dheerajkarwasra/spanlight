@@ -7,9 +7,9 @@ and clients wait up to 30 seconds. With a cap on the requests in flight, the one
 answered 503 problem+json with `Retry-After: 1` at once, without reading their body or touching
 the database, and well-behaved clients (the SDK honours `Retry-After`) back off.
 
-`/gw/` is exempt: the gateway has its own back-pressure (key limits, budgets), and a model call
-is held open for seconds by the provider, not by this process's work. `/health/` is exempt so
-an orchestrator never restarts a process for being busy.
+`/gw/` has an independent ingress cap (`app.gateway.admission`), so long provider streams do
+not spend dashboard capacity. `/health/` is exempt so an orchestrator never restarts a process
+for being busy.
 
 Not uvicorn's `--limit-concurrency`: it answers a bare text 503 with no `Retry-After`, outside
 the problem+json contract, and counts health checks and gateway streams too.

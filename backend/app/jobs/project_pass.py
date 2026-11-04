@@ -27,6 +27,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.rls import bind_project
+from app.jobs.queue import LeaseLostError
 
 logger = structlog.get_logger(__name__)
 
@@ -102,7 +103,7 @@ async def run_project_pass(
             break
         memory.attempted(project_id)
         time_limit = min(PROJECT_TIMEOUT_SECONDS, hard_stop - time.monotonic())
-        rows = await _run_one_project(session_factory, project_id, run_project, event, time_limit)
+        rows = await run_one_project(session_factory, project_id, run_project, event, time_limit)
         if rows is None:
             run.projects_failed += 1
         else:
@@ -111,7 +112,7 @@ async def run_project_pass(
     return run
 
 
-async def _run_one_project(
+async def run_one_project(
     session_factory: async_sessionmaker[AsyncSession],
     project_id: uuid.UUID,
     run_project: RunProject,
@@ -122,10 +123,17 @@ async def _run_one_project(
     (logged; the transaction rolls back, so nothing half-written stays)."""
     try:
         async with asyncio.timeout(time_limit), session_factory() as db:
-            await bind_project(db, project_id)
-            rows = await run_project(db, project_id)
-            await db.commit()
-            return rows
+            try:
+                await bind_project(db, project_id)
+                rows = await run_project(db, project_id)
+                await db.commit()
+                return rows
+            except BaseException:
+                # Discard uncertain work rather than wait for a rollback ACK past the budget.
+                await db.invalidate()
+                raise
+    except LeaseLostError:
+        raise
     except TimeoutError as exc:
         logger.error(
             f"{event}_project_timed_out",

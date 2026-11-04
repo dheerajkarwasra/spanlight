@@ -191,7 +191,7 @@ export function useFilterSuggestionsQuery() {
   const { projectId } = useProjectParams();
   return useQuery({
     queryKey: queryKeys.project(projectId).filters,
-    queryFn: () => projectsApi.filters(projectId),
+    queryFn: ({ signal }) => projectsApi.filters(projectId, signal),
     staleTime: 5 * 60_000,
   });
 }
@@ -219,15 +219,19 @@ export function useTestTracesQuery(q: string) {
   const search = q.trim();
   return useQuery({
     queryKey: [...queryKeys.project(projectId).evaluators.all, "test-traces", search] as const,
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       const to = new Date();
       const from = new Date(to.getTime() - TEST_TRACE_DAYS * 24 * 60 * 60_000);
-      return projectsApi.traces(projectId, {
-        from: from.toISOString(),
-        to: to.toISOString(),
-        q: search === "" ? undefined : search,
-        limit: TEST_TRACE_FETCH,
-      });
+      return projectsApi.traces(
+        projectId,
+        {
+          from: from.toISOString(),
+          to: to.toISOString(),
+          q: search === "" ? undefined : search,
+          limit: TEST_TRACE_FETCH,
+        },
+        signal,
+      );
     },
     select: (page) =>
       page.items

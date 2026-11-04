@@ -15,6 +15,7 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 from app.config import Settings
+from app.core.thread_ownership import owned_thread
 from app.storage.object_store import ObjectInfo
 
 if TYPE_CHECKING:
@@ -33,18 +34,22 @@ DEFAULT_REGION = "us-east-1"
 
 
 def _build_client(
-    settings: Settings, endpoint: str | None, access_key: str, secret_key: str
+    endpoint: str | None,
+    access_key: str,
+    secret_key: str,
+    region: str | None,
+    force_path_style: bool,
 ) -> "S3Client":
     # A Session per client: sessions are not thread-safe, clients are.
     return boto3.Session().client(
         "s3",
         endpoint_url=endpoint,
-        region_name=settings.s3_region or DEFAULT_REGION,
+        region_name=region or DEFAULT_REGION,
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
         config=Config(
             signature_version="s3v4",
-            s3={"addressing_style": "path" if settings.s3_force_path_style else "auto"},
+            s3={"addressing_style": "path" if force_path_style else "auto"},
             retries={"max_attempts": 3, "mode": "standard"},
             connect_timeout=10,
             read_timeout=60,
@@ -67,13 +72,20 @@ def attachment_disposition(key: str) -> str:
 
 class S3ObjectStore:
     def __init__(
-        self, client: "S3Client", bucket: str, presign_client: "S3Client | None" = None
+        self,
+        client: "S3Client",
+        bucket: str,
+        presign_client: "S3Client | None" = None,
+        *,
+        sse: str | None = None,
     ) -> None:
         # One client per store: boto3 clients are thread-safe, sessions are not.
         self._client = client
         self._bucket = bucket
         # Signs download links against the address browsers use; it never makes a request.
         self._presign_client = presign_client or client
+        # `ServerSideEncryption` sent with every new object (a single PUT or a multipart upload).
+        self._sse: dict[str, Any] = {"ServerSideEncryption": sse} if sse else {}
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "S3ObjectStore":
@@ -85,11 +97,21 @@ class S3ObjectStore:
             raise ValueError("Object storage requires S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY")
         access_key = settings.s3_access_key.get_secret_value()
         secret_key = settings.s3_secret_key.get_secret_value()
-        client = _build_client(settings, settings.s3_endpoint, access_key, secret_key)
+        client = _build_client(
+            settings.s3_endpoint,
+            access_key,
+            secret_key,
+            settings.s3_region,
+            settings.s3_force_path_style,
+        )
         presign_client = None
         if settings.s3_public_endpoint not in (None, settings.s3_endpoint):
             presign_client = _build_client(
-                settings, settings.s3_public_endpoint, access_key, secret_key
+                settings.s3_public_endpoint,
+                access_key,
+                secret_key,
+                settings.s3_region,
+                settings.s3_force_path_style,
             )
         return cls(client, settings.s3_bucket, presign_client)
 
@@ -140,19 +162,29 @@ class S3ObjectStore:
             raise
 
     async def open(self, key: str) -> AsyncIterator[bytes]:
-        response = await asyncio.to_thread(self._client.get_object, Bucket=self._bucket, Key=key)
+        acquisition = asyncio.create_task(
+            asyncio.to_thread(self._client.get_object, Bucket=self._bucket, Key=key)
+        )
+        try:
+            response = await owned_thread(acquisition)
+        except asyncio.CancelledError:
+            if not acquisition.cancelled() and acquisition.exception() is None:
+                await owned_thread(asyncio.to_thread(acquisition.result()["Body"].close))
+            raise
         stream = response["Body"]
         try:
-            while chunk := await asyncio.to_thread(stream.read, READ_CHUNK_SIZE):
+            while chunk := await owned_thread(asyncio.to_thread(stream.read, READ_CHUNK_SIZE)):
                 yield chunk
         finally:
-            await asyncio.to_thread(stream.close)
+            await owned_thread(asyncio.to_thread(stream.close))
 
     async def delete(self, key: str) -> None:
-        await asyncio.to_thread(self._client.delete_object, Bucket=self._bucket, Key=key)
+        await owned_thread(
+            asyncio.to_thread(self._client.delete_object, Bucket=self._bucket, Key=key)
+        )
 
     async def list(self, prefix: str) -> list[ObjectInfo]:
-        return await asyncio.to_thread(self._list_sync, prefix)
+        return await owned_thread(asyncio.to_thread(self._list_sync, prefix))
 
     def presigned_get_url(self, key: str, expires_in: int) -> str:
         # Signing is local arithmetic with no network call, so it needs no thread. The link asks
@@ -178,45 +210,61 @@ class S3ObjectStore:
         ]
 
     async def _put_object(self, key: str, body: bytes, content_type: str) -> None:
-        await asyncio.to_thread(
-            self._client.put_object,
-            Bucket=self._bucket,
-            Key=key,
-            Body=body,
-            ContentType=content_type,
+        await owned_thread(
+            asyncio.to_thread(
+                self._client.put_object,
+                Bucket=self._bucket,
+                Key=key,
+                Body=body,
+                ContentType=content_type,
+                **self._sse,
+            )
         )
 
     async def _start_multipart(self, key: str, content_type: str) -> str:
-        response = await asyncio.to_thread(
-            self._client.create_multipart_upload,
-            Bucket=self._bucket,
-            Key=key,
-            ContentType=content_type,
+        acquisition = asyncio.create_task(
+            asyncio.to_thread(
+                self._client.create_multipart_upload,
+                Bucket=self._bucket,
+                Key=key,
+                ContentType=content_type,
+                **self._sse,
+            )
         )
+        try:
+            response = await owned_thread(acquisition)
+        except asyncio.CancelledError:
+            if not acquisition.cancelled() and acquisition.exception() is None:
+                await self._abort_multipart(key, acquisition.result()["UploadId"])
+            raise
         return response["UploadId"]
 
     async def _upload_part(
         self, key: str, upload_id: str, number: int, body: bytes
     ) -> "CompletedPartTypeDef":
-        response = await asyncio.to_thread(
-            self._client.upload_part,
-            Bucket=self._bucket,
-            Key=key,
-            UploadId=upload_id,
-            PartNumber=number,
-            Body=body,
+        response = await owned_thread(
+            asyncio.to_thread(
+                self._client.upload_part,
+                Bucket=self._bucket,
+                Key=key,
+                UploadId=upload_id,
+                PartNumber=number,
+                Body=body,
+            )
         )
         return {"ETag": response["ETag"], "PartNumber": number}
 
     async def _complete_multipart(
         self, key: str, upload_id: str, parts: "builtins.list[CompletedPartTypeDef]"
     ) -> None:
-        await asyncio.to_thread(
-            self._client.complete_multipart_upload,
-            Bucket=self._bucket,
-            Key=key,
-            UploadId=upload_id,
-            MultipartUpload={"Parts": parts},
+        await owned_thread(
+            asyncio.to_thread(
+                self._client.complete_multipart_upload,
+                Bucket=self._bucket,
+                Key=key,
+                UploadId=upload_id,
+                MultipartUpload={"Parts": parts},
+            )
         )
 
     async def _abort_multipart(self, key: str, upload_id: str) -> None:
@@ -224,6 +272,6 @@ class S3ObjectStore:
         # behind cost storage until the bucket's lifecycle rule removes them, hence the warning.
         kwargs: dict[str, Any] = {"Bucket": self._bucket, "Key": key, "UploadId": upload_id}
         try:
-            await asyncio.to_thread(self._client.abort_multipart_upload, **kwargs)
+            await owned_thread(asyncio.to_thread(self._client.abort_multipart_upload, **kwargs))
         except (BotoCoreError, ClientError):
             logger.warning("object_store.abort_multipart_failed", key=key, exc_info=True)

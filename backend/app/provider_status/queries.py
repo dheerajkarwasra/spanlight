@@ -10,10 +10,12 @@ add a grace period to the end of the incident, for errors that drain after the f
 """
 
 import uuid
+from collections.abc import Collection
 from datetime import datetime, timedelta
 
 from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.db.models import ProviderIncident, ProviderStatusSource
 from app.provider_status.types import DETECTOR_GRACE, ProviderIncidentRow, TimeRange
@@ -49,6 +51,43 @@ async def list_incidents(
         )
     query = query.order_by(ProviderIncident.started_at.desc(), ProviderIncident.id.desc())
     return list((await db.scalars(query.limit(limit))).all())
+
+
+async def api_incidents_by_provider(
+    db: AsyncSession, *, window: TimeRange, providers: Collection[str], limit_each: int
+) -> dict[str, list[ProviderIncident]]:
+    """Each provider's API-affecting incidents overlapping `window`, newest first by
+    `(started_at, id)`, at most `limit_each` per provider, in one query."""
+    if not providers:
+        return {}
+    newest = (
+        func.row_number()
+        .over(
+            partition_by=ProviderIncident.provider,
+            order_by=(ProviderIncident.started_at.desc(), ProviderIncident.id.desc()),
+        )
+        .label("newest")
+    )
+    ranked = (
+        select(ProviderIncident, newest)
+        .where(
+            ProviderIncident.provider.in_(providers),
+            ProviderIncident.api_affected.is_(True),
+            ProviderIncident.started_at < window.end,
+            func.coalesce(ProviderIncident.resolved_at, func.now()) > window.start,
+        )
+        .subquery()
+    )
+    incident = aliased(ProviderIncident, ranked)
+    query = (
+        select(incident)
+        .where(ranked.c.newest <= limit_each)
+        .order_by(incident.provider, incident.started_at.desc(), incident.id.desc())
+    )
+    found: dict[str, list[ProviderIncident]] = {}
+    for row in (await db.scalars(query)).all():
+        found.setdefault(row.provider, []).append(row)
+    return found
 
 
 async def list_sources(db: AsyncSession) -> list[ProviderStatusSource]:

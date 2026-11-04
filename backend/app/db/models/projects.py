@@ -3,7 +3,17 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, LargeBinary, Text, func, text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -19,6 +29,10 @@ class Project(Base):
     name: Mapped[str] = mapped_column(Text)
     slug: Mapped[str] = mapped_column(Text)
     retention_days: Mapped[int] = mapped_column(Integer, server_default=text("30"))
+    budget_history_missing_through: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    aggregate_history_unverified_before: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=text("NULL")
+    )
     capture_payloads: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
     # Whether ingestion also redacts emails and `+` phone numbers in span content (migration 1023).
     redact_contact_info: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
@@ -35,6 +49,11 @@ class Project(Base):
     promoted_metadata_keys: Mapped[list[str]] = mapped_column(
         ARRAY(Text), server_default=text("'{}'")
     )
+    # Per-project ingest caps (migration 1039): NULL is the instance setting, each CHECKed > 0.
+    # Set by the operator through `spanlight set-ingest-caps`, never by the API.
+    ingest_spans_per_second: Mapped[int | None] = mapped_column(Integer)
+    ingest_spans_per_day: Mapped[int | None] = mapped_column(BigInteger)
+    ingest_bytes_per_day: Mapped[int | None] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

@@ -7,19 +7,24 @@ reservation is committed before the handler runs, which is what lets a concurren
 it, and that a handler that rolls back does not take the reservation with it.
 
 Time comes from the database clock throughout, so API replicas with skewed clocks agree on
-whether a request is abandoned or a row has expired.
+whether an unanswered operation is old or a completed outcome has expired.
 """
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
 import structlog
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.errors import idempotency_in_progress, idempotency_mismatch
+from app.core.errors import (
+    idempotency_in_progress,
+    idempotency_mismatch,
+    idempotency_outcome_unknown,
+)
 from app.core.observability import IDEMPOTENCY_REQUESTS
 from app.db.models import IdempotencyKey
 
@@ -28,23 +33,25 @@ logger = structlog.get_logger(__name__)
 SessionFactory = async_sessionmaker[AsyncSession]
 
 IN_FLIGHT_TIMEOUT = timedelta(seconds=60)
-"""A request still unanswered after this long is taken to have died, and its key can be reused."""
+"""After this observation interval an unanswered operation has an explicitly unknown outcome."""
 
 RETENTION = timedelta(hours=24)
 """How long a key is remembered, counted from when it was reserved."""
 
+MAX_KEPT_BODY_BYTES = 1024 * 1024
 _RESERVE_ATTEMPTS = 3
 
 
-@dataclass(frozen=True)
+@dataclass
 class Reservation:
-    """A key this request owns until it completes or releases it."""
+    """A logical operation identity owned by this request."""
 
     principal_id: str
     key: str
     token: datetime
-    """The row's `created_at`. A request that takes an abandoned row over writes a new one, so a
-    request that is slower than the timeout can no longer complete or delete the new owner's row."""
+    """The operation's creation timestamp fences final updates after completed-key reuse."""
+    keep_pending: bool = False
+    """Suppress every completion path when external outcome or receipt storage is uncertain."""
 
 
 @dataclass(frozen=True)
@@ -61,8 +68,8 @@ async def reserve(
 ) -> Reservation | StoredResponse:
     """Claim `key` for this request, or find out what became of the request that already did.
 
-    Returns a `Reservation` when the caller should run the request: the key was new, had expired,
-    or belonged to a request that has been unanswered for over a minute. Returns the
+    Returns a `Reservation` when the key is new or its known completed outcome expired.
+    Pending operations never expire or transfer ownership. Returns the
     `StoredResponse` when the same request already finished. Raises `IDEMPOTENCY_MISMATCH` (422)
     when the key was first used for a different request and `IDEMPOTENCY_IN_PROGRESS` (409) when
     the same request is still running.
@@ -73,7 +80,7 @@ async def reserve(
         if outcome is not None:
             return outcome
     # The row kept vanishing between the insert that found it and the read that locks it: other
-    # requests with this key are failing and releasing it in a loop. Let the client come back.
+    # completed rows may be removed by cleanup. Let the client come back.
     IDEMPOTENCY_REQUESTS.labels("in_progress").inc()
     raise idempotency_in_progress()
 
@@ -81,7 +88,9 @@ async def reserve(
 async def complete(
     session_factory: SessionFactory, reservation: Reservation, response: StoredResponse
 ) -> bool:
-    """Store the answer under the reservation. False when the row is no longer this request's."""
+    """Store a representable answer unless this operation must remain pending."""
+    if not _can_complete(reservation, response):
+        return False
     async with session_factory() as db:
         result = await db.execute(
             update(IdempotencyKey)
@@ -93,16 +102,63 @@ async def complete(
     return bool(getattr(result, "rowcount", 0))
 
 
-async def release(session_factory: SessionFactory, reservation: Reservation) -> bool:
-    """Forget the reservation so a retry can run. False when the row is no longer this request's."""
-    async with session_factory() as db:
-        result = await db.execute(
-            delete(IdempotencyKey)
-            .where(*_owned(reservation))
-            .execution_options(synchronize_session=False)
-        )
-        await db.commit()
-    return bool(getattr(result, "rowcount", 0))
+def operation_reservation(db: AsyncSession) -> Reservation | None:
+    """The request's operation, explicitly propagated when a domain uses another session."""
+    reservation = db.info.get("idempotency_operation")
+    return reservation if isinstance(reservation, Reservation) else None
+
+
+async def complete_operation(
+    db: AsyncSession,
+    response: StoredResponse,
+    *,
+    reservation: Reservation | None = None,
+    replace: bool = False,
+) -> None:
+    """Persist a safe operation receipt in the business transaction; never commit it here.
+
+    A queued receipt may be replaced with its known final outcome using the same owner fence.
+    Missing ownership aborts the business transaction, rather than committing untracked work.
+    """
+    reservation = reservation or operation_reservation(db)
+    if reservation is None or not _can_complete(reservation, response):
+        return
+    conditions = _owned(reservation)[:-1] if replace else _owned(reservation)
+    result = await db.execute(
+        update(IdempotencyKey)
+        .where(*conditions)
+        .values(status=response.status, body=response.body, content_type=response.content_type)
+        .execution_options(synchronize_session=False)
+    )
+    if not getattr(result, "rowcount", 0):
+        raise idempotency_outcome_unknown()
+
+
+def _can_complete(reservation: Reservation, response: StoredResponse) -> bool:
+    """Reject unsupported JSONB and oversized receipts before they can abort domain writes."""
+    if reservation.keep_pending:
+        return False
+    try:
+        encoded = json.dumps(
+            response.body, ensure_ascii=False, allow_nan=False, separators=(",", ":")
+        ).encode()
+        pending = [response.body, response.content_type]
+        while pending:
+            value = pending.pop()
+            if isinstance(value, str) and "\x00" in value:
+                raise ValueError("NUL is not representable in PostgreSQL JSONB")
+            if isinstance(value, dict):
+                pending.extend(value.keys())
+                pending.extend(value.values())
+            elif isinstance(value, (list, tuple)):
+                pending.extend(value)
+        if len(encoded) <= MAX_KEPT_BODY_BYTES:
+            return True
+    except (ValueError, TypeError, UnicodeError, RecursionError):
+        pass
+    reservation.keep_pending = True
+    logger.warning("idempotency_receipt_unstorable", principal_id=reservation.principal_id)
+    return False
 
 
 def _owned(reservation: Reservation) -> tuple[Any, ...]:
@@ -136,8 +192,7 @@ async def _try_reserve(
         IDEMPOTENCY_REQUESTS.labels("reserved").inc()
         return Reservation(principal_id, key, created_at)
 
-    # Someone holds the key. `FOR UPDATE` queues concurrent requests behind each other, so two
-    # that find the same abandoned row cannot both take it over.
+    # Locking serializes lookup with atomic business receipts and completed-key reuse.
     row = (
         await db.execute(
             select(
@@ -155,8 +210,8 @@ async def _try_reserve(
     if row is None:
         return None
 
-    if row.expired:
-        # Past its day but not pruned yet: as good as absent, whatever it held.
+    if row.expired and row.status is not None:
+        # Known completed outcomes preserve the documented 24-hour key reuse contract.
         return await _take_over(db, principal_id, key, request_hash, outcome="reserved")
     if bytes(row.request_hash) != request_hash:
         IDEMPOTENCY_REQUESTS.labels("mismatch").inc()
@@ -167,8 +222,8 @@ async def _try_reserve(
         logger.info("idempotency_replayed", principal_id=principal_id, status=row.status)
         return StoredResponse(row.status, row.body, row.content_type)
     if row.abandoned:
-        logger.warning("idempotency_taken_over", principal_id=principal_id)
-        return await _take_over(db, principal_id, key, request_hash, outcome="taken_over")
+        logger.warning("idempotency_outcome_unknown", principal_id=principal_id)
+        raise idempotency_outcome_unknown()
     IDEMPOTENCY_REQUESTS.labels("in_progress").inc()
     logger.info("idempotency_in_progress", principal_id=principal_id)
     raise idempotency_in_progress()

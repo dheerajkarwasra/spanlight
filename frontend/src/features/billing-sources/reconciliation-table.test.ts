@@ -7,7 +7,14 @@ import type {
   ReconciliationTokens,
 } from "@/lib/api";
 
-import { flattenDays, pendingDayRanges, renderRules, summaryTiles } from "./reconciliation-table";
+import {
+  BYPASS_TOOLTIP,
+  bypassDayRange,
+  flattenDays,
+  pendingDayRanges,
+  renderRules,
+  summaryTiles,
+} from "./reconciliation-table";
 
 const UNKNOWN_TOKENS: ReconciliationTokens = {
   uncached_input: null,
@@ -80,6 +87,7 @@ function day(overrides: Partial<ReconciliationDay> = {}): ReconciliationDay {
     credits_usd: "0",
     other_usd: "0.0000",
     unattributed_calls: 0,
+    bypass_suspected: false,
     groups: [group()],
     credits: [],
     other: [],
@@ -290,6 +298,53 @@ describe("flattenDays", () => {
   });
 });
 
+describe("unavailable source history", () => {
+  const SOURCE_REMOVED =
+    "Source rows were removed. Stored values are snapshots; missing values are unknown.";
+  const UNAVAILABLE_NOTE = "retained snapshot; source history unavailable";
+
+  it("labels a day with retained Spanlight figures a snapshot, not past retention", () => {
+    const retained = day({
+      aggregate_status: "unavailable",
+      incomplete: true,
+      note: UNAVAILABLE_NOTE,
+      explained_usd: null,
+      residual_usd: null,
+      variance_ratio: null,
+      groups: [
+        group(),
+        group({ group: "gpt-4.1", spanlight_usd: null, residual_usd: null, variance_ratio: null }),
+      ],
+    });
+    const [row] = flattenDays(report([retained]), "p1");
+    expect(row?.chips).toEqual([{ label: "Retained snapshot", tooltip: SOURCE_REMOVED }]);
+    expect(row?.spanlight.text).toBe("$12.20");
+    expect(row?.residual.reason).toBe(SOURCE_REMOVED);
+    // A retained group does not make another group's Spanlight figure known.
+    expect(row?.groups[0]?.spanlight.text).toBe("$12.20");
+    expect(row?.groups[1]?.spanlight).toEqual({ text: null, reason: SOURCE_REMOVED });
+    // The provider's bill stays beside the unknown comparison.
+    expect(row?.provider.text).toBe("$12.35");
+  });
+
+  it("says source history is unavailable for a day with no Spanlight figure", () => {
+    const gone = day({
+      aggregate_status: "unavailable",
+      incomplete: true,
+      note: UNAVAILABLE_NOTE,
+      spanlight_usd: null,
+      explained_usd: null,
+      residual_usd: null,
+      variance_ratio: null,
+      groups: [group({ spanlight_usd: null, residual_usd: null, variance_ratio: null })],
+    });
+    const [row] = flattenDays(report([gone]), "p1");
+    expect(row?.chips.map((chip) => chip.label)).toEqual(["Source history unavailable"]);
+    expect(row?.spanlight).toEqual({ text: null, reason: SOURCE_REMOVED });
+    expect(row?.notes).toContain(SOURCE_REMOVED);
+  });
+});
+
 describe("renderRules", () => {
   it("shows the provisional chip on a provisional day only", () => {
     expect(renderRules(PROVISIONAL)).toEqual({
@@ -380,7 +435,7 @@ describe("unknown figures", () => {
       explained: [
         {
           kind: "untraced_traffic",
-          usd: "0.9000",
+          usd: null,
           count: null,
           tokens: null,
           note: "no span with this model",
@@ -394,6 +449,13 @@ describe("unknown figures", () => {
     );
     expect(onlyUntraced?.spanlight.reason).toMatch(/no calls/i);
     expect(onlyUntraced?.groups[0]?.spanlight.reason).toMatch(/no calls/i);
+    // Spanlight knows no call for an untraced model, so its line is not "counted, not priced".
+    expect(onlyUntraced?.groups[0]?.lines[0]?.usd).toEqual({
+      text: null,
+      reason:
+        "Not explained: Spanlight has no call with this model on this day, so the provider’s amount stays in the residual.",
+    });
+    expect(onlyUntraced?.footnote).toBe("No credits or other provider charges on this day.");
     const [mixed] = flattenDays(
       report([day({ spanlight_usd: null, groups: [untraced, unpriced] })]),
       "p1",
@@ -477,5 +539,37 @@ describe("pendingDayRanges", () => {
       ]),
     );
     expect(ranges).toEqual({ unfetched: "Oct 12 – Oct 14", provisional: "Oct 10 – Oct 11" });
+  });
+});
+
+describe("suspected bypass", () => {
+  it("marks a day the server flags with a warning chip that names the likely causes", () => {
+    const [flagged, clean] = flattenDays(
+      report([day({ day: "2026-10-09", bypass_suspected: true }), day()]),
+      "p1",
+    );
+    expect(flagged?.chips).toContainEqual({
+      label: "Unexplained spend",
+      tooltip: BYPASS_TOOLTIP,
+      tone: "warning",
+    });
+    expect(BYPASS_TOOLTIP).toMatch(/outside the gateway and the SDK.*unmapped project.*leaked/);
+    expect(clean?.chips.map((chip) => chip.label)).not.toContain("Unexplained spend");
+    // The tile's chips have no tooltip, so the causes are a visible note there too.
+    expect(flagged?.notes).toContain(BYPASS_TOOLTIP);
+    expect(clean?.notes).not.toContain(BYPASS_TOOLTIP);
+  });
+
+  it("names the flagged days, or null when the server flags none", () => {
+    expect(
+      bypassDayRange(
+        report([
+          day({ day: "2026-10-03", bypass_suspected: true }),
+          day({ day: "2026-10-09", bypass_suspected: true }),
+          day({ day: "2026-10-10" }),
+        ]),
+      ),
+    ).toBe("Oct 3, Oct 9");
+    expect(bypassDayRange(report([day()]))).toBeNull();
   });
 });

@@ -1,12 +1,14 @@
 """`personal_access_tokens` and migration 0008."""
 
+from uuid import uuid4
+
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.migrations import downgrade_to, upgrade_to_head
 from app.db.models import PersonalAccessToken, TokenScope, User
+from tests.db.migration_support import downgrade_to, upgrade_to_target
 
 SessionFactory = async_sessionmaker[AsyncSession]
 
@@ -61,7 +63,8 @@ async def test_the_schema_refuses_a_scope_other_than_read_and_write(
     async with session_factory() as db:
         user = await _user(db)
         statement = text(
-            "INSERT INTO personal_access_tokens (id, user_id, name, prefix, secret_hash, scope) "
+            "INSERT INTO personal_access_tokens "
+            "(id, user_id, name, prefix, secret_hash, scope) "
             "VALUES (gen_random_uuid(), :user_id, 'cli', 'spl_pat_bogus', '\\x01', 'admin')"
         )
         with pytest.raises(DataError, match="token_scope"):
@@ -111,30 +114,46 @@ def _scalar(database_url: str, sql: str) -> object:
         engine.dispose()
 
 
+@pytest.mark.migration_revision("0008")
 async def test_downgrading_removes_the_table_and_its_type_and_upgrading_restores_them(
-    app_database_url: str, session_factory: SessionFactory
+    migration_database_url: str, migration_session_factory: SessionFactory
 ) -> None:
     """Tokens cannot survive a downgrade, and the old schema cannot honour them either way.
 
     Dropping the table ends every token, which is the safe direction: nothing gains access.
     """
-    async with session_factory() as db:
-        db.add(_token(await _user(db)))
+    async with migration_session_factory() as db:
+        user_id = uuid4()
+        await db.execute(
+            text("INSERT INTO users (id, email, name) VALUES (:id, 'old@example.com', 'Ada')"),
+            {"id": user_id},
+        )
+        await db.execute(
+            text(
+                "INSERT INTO personal_access_tokens "
+                "(id, user_id, name, prefix, secret_hash, scope) "
+                "VALUES (:id, :user, 'CLI', 'spl_pat_historical', :secret, 'read')"
+            ),
+            {"id": uuid4(), "user": user_id, "secret": HASH},
+        )
         await db.commit()
 
-    downgrade_to(app_database_url, "0007")
+    downgrade_to(migration_database_url, "0007")
     try:
-        assert _scalar(app_database_url, "SELECT to_regclass('personal_access_tokens')") is None
         assert (
-            _scalar(app_database_url, "SELECT 1 FROM pg_type WHERE typname = 'token_scope'") is None
+            _scalar(migration_database_url, "SELECT to_regclass('personal_access_tokens')") is None
+        )
+        assert (
+            _scalar(migration_database_url, "SELECT 1 FROM pg_type WHERE typname = 'token_scope'")
+            is None
         )
     finally:
-        upgrade_to_head(app_database_url)
+        upgrade_to_target(migration_database_url)
 
-    assert _scalar(app_database_url, "SELECT count(*) FROM personal_access_tokens") == 0
+    assert _scalar(migration_database_url, "SELECT count(*) FROM personal_access_tokens") == 0
     assert (
         _scalar(
-            app_database_url,
+            migration_database_url,
             "SELECT count(*) FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid "
             "WHERE t.typname = 'token_scope'",
         )

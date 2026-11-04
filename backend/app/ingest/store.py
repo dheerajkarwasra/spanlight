@@ -9,18 +9,21 @@ project and share-locked its row, and commits.
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Table, exists, func, text
+from sqlalchemy import Table, exists, func, literal_column, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.dml import ReturningInsert
 
+from app.budgets.buckets import bump_hours_of_traces
 from app.db.models import Score, Span, Trace
+from app.ingest.aggregate_changes import lock_identities
 from app.ingest.metadata import merge_metadata
 from app.ingest.normalize import NormalizedSpan
 from app.ingest.usage_rollup import recompute_usage_rollups
+from app.rollups.dirty import mark_dirty_hours
 
 
 @dataclass
@@ -69,15 +72,45 @@ async def write_spans(
     project_id: uuid.UUID,
     spans: Sequence[NormalizedSpan],
     source_key_id: uuid.UUID | None,
-) -> None:
+) -> int:
     """Upsert the traces, then the spans, then recompute the traces' totals from stored spans.
 
     `source_key_id` is the gateway key the spans came through; None for native and OTLP spans.
+    Returns how many of the spans were new rows (a replay inserts none).
     """
+    if not spans:
+        return 0
     traces = _merge_traces(spans)
+    trace_ids = [trace.trace_id for trace in traces]
+    await lock_identities(session, project_id, trace_ids)
+    new_hours = batch_hours(traces, spans)
+    # Takes the budget bucket version rows of every hour the write touches, sorted, before the
+    # trace and span triggers bump them one statement at a time; also the old hours.
+    old_hours = await bump_hours_of_traces(
+        session,
+        project_id,
+        trace_ids,
+        new_hours,
+        writing=[(span.trace_id, span.span_id) for span in spans],
+    )
     await _upsert_traces(session, project_id, traces)
-    await _upsert_spans(session, project_id, spans, source_key_id)
-    await _recompute_rollups(session, project_id, [trace.trace_id for trace in traces])
+    inserted = await _upsert_spans(session, project_id, spans, source_key_id)
+    await _recompute_rollups(session, project_id, trace_ids)
+    await mark_dirty_hours(session, project_id, [*old_hours, *new_hours])
+    return inserted
+
+
+def batch_hours(traces: Sequence[_TraceRow], spans: Sequence[NormalizedSpan]) -> list[datetime]:
+    """The UTC hours of every span's and merged trace's start in the batch.
+
+    With the hours read before the writes, a superset of the hours after them: a stored trace
+    starts at its earliest span, either an older one (already read) or one of these. An extra
+    hour (a gateway-owned span the batch left alone) only costs an idempotent rescan.
+    """
+    starts = [trace.started_at for trace in traces] + [span.started_at for span in spans]
+    return sorted(
+        {start.astimezone(UTC).replace(minute=0, second=0, microsecond=0) for start in starts}
+    )
 
 
 async def _upsert_traces(
@@ -171,7 +204,8 @@ async def _upsert_spans(
     project_id: uuid.UUID,
     spans: Sequence[NormalizedSpan],
     source_key_id: uuid.UUID | None,
-) -> None:
+) -> int:
+    """Upsert the spans; returns how many were inserted rather than updated or left alone."""
     ordered = sorted(spans, key=lambda span: (span.trace_id, span.span_id))
     rows = [
         {
@@ -184,15 +218,21 @@ async def _upsert_spans(
         for span in ordered
     ]
     statement = _SPAN_UPSERT_GUARDED if source_key_id is None else _SPAN_UPSERT
-    await session.execute(statement, rows)
+    result = await session.execute(statement, rows)
+    # Summed over every RETURNING page of the insertmanyvalues path.
+    return sum(1 for row in result if row.inserted)
 
 
-def _span_upsert(*, guarded: bool) -> ReturningInsert[tuple[str]]:
+def _span_upsert(*, guarded: bool) -> ReturningInsert[tuple[str, bool]]:
     """The span upsert, compiled once and given the rows as parameters.
 
     `RETURNING` makes SQLAlchemy render the rows into one multi-row INSERT per 1,000 rows
     ("insertmanyvalues"), in the given order. Inlining the rows with `.values([...])` instead
     compiled every column of every row again for each batch, the largest CPU cost of ingestion.
+
+    `inserted` is `(xmax = 0)`: the usual upsert idiom for "this row was inserted, not updated",
+    not documented behaviour (an updated row carries the updating transaction's id in `xmax`).
+    A guarded conflict the `WHERE` skips (a gateway-owned span) returns no row at all.
     """
     spans: Table = Span.__table__  # type: ignore[assignment]  # mapped classes type it loosely
     statement = insert(spans)
@@ -209,7 +249,7 @@ def _span_upsert(*, guarded: bool) -> ReturningInsert[tuple[str]]:
         index_elements=[spans.c.project_id, spans.c.trace_id, spans.c.span_id],
         set_=update_columns,
         where=spans.c.source_key_id.is_(None) if guarded else None,
-    ).returning(spans.c.span_id)
+    ).returning(spans.c.span_id, literal_column("(xmax = 0)").label("inserted"))
 
 
 _SPAN_UPSERT_GUARDED = _span_upsert(guarded=True)  # native and OTLP spans
@@ -222,23 +262,36 @@ _SPAN_UPSERT = _span_upsert(guarded=False)  # the gateway's own spans
 # span is unpriced, and, like `cost_usd`, when the sum is too large for numeric(14, 8). A trace
 # with no superseded span has a known zero of both. The project id is hidden from the planner as
 # `(SELECT CAST(:project_id AS uuid))`, for the reason in `app.ingest.usage_rollup`.
+#
+# The touched traces' stored spans are read once, by primary key, and both totals come from
+# that set. Ranking the retries straight from `spans` let the planner take the partial index on
+# `request_hash` whenever the last ANALYZE saw few spans with a hash (a project seeded before its
+# gateway traffic), and walk every gateway span of the project on each write: 69 ms instead of
+# 0.2 ms.
 _RECOMPUTE_ROLLUPS = text(
     """
-    WITH ranked AS (
+    WITH batch AS MATERIALIZED (
+        SELECT trace_id, span_id, kind, status, model, rate_limit_kind, request_hash,
+               started_at, ended_at, input_tokens, output_tokens, cost_usd, usage_rollup,
+               -- A retry candidate: an llm span with a request hash that is neither a cache hit
+               -- nor fault-injected, nor an SDK span over the gateway's record of the same call
+               -- (a usage rollup, `app.ingest.usage_rollup`).
+               kind = 'llm'
+                   AND request_hash IS NOT NULL
+                   AND attributes->>'spanlight.cache' IS DISTINCT FROM 'hit'
+                   AND NOT (attributes ? 'spanlight.fault.scenario')
+                   AND NOT usage_rollup AS retry_eligible
+        FROM spans
+        WHERE project_id = (SELECT CAST(:project_id AS uuid)) AND trace_id = ANY(:trace_ids)
+    ),
+    ranked AS (
         SELECT trace_id,
                cost_usd,
                row_number() OVER (
                    PARTITION BY trace_id, request_hash ORDER BY started_at DESC, span_id DESC
                ) AS position
-        FROM spans
-        WHERE project_id = (SELECT CAST(:project_id AS uuid)) AND trace_id = ANY(:trace_ids)
-          AND kind = 'llm'
-          AND request_hash IS NOT NULL
-          AND attributes->>'spanlight.cache' IS DISTINCT FROM 'hit'
-          AND NOT (attributes ? 'spanlight.fault.scenario')
-          -- An SDK span over the gateway's record of the same call is a usage rollup of it
-          -- (`app.ingest.usage_rollup`), not a retry.
-          AND NOT usage_rollup
+        FROM batch
+        WHERE retry_eligible
     ),
     superseded AS (
         SELECT trace_id,
@@ -287,8 +340,7 @@ _RECOMPUTE_ROLLUPS = text(
                )                                          AS has_unpriced,
                min(started_at)                            AS started_at,
                max(ended_at)                              AS ended_at
-        FROM spans
-        WHERE project_id = (SELECT CAST(:project_id AS uuid)) AND trace_id = ANY(:trace_ids)
+        FROM batch
         GROUP BY trace_id
     ) AS s
     LEFT JOIN superseded AS r ON r.trace_id = s.trace_id

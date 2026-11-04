@@ -135,7 +135,7 @@ def test_decorator_resolves_global_client_at_call_time(ingest):
         return "ok"
 
     tracer = spanlight.init(
-        api_key="key", host="http://spanlight.test", transport=ingest.transport()
+        api_key="key", host="https://spanlight.test", transport=ingest.transport()
     )
     assert defined_before_init() == "ok"
 

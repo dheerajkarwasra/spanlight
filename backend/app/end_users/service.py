@@ -25,6 +25,7 @@ from app.end_users import queries
 from app.end_users.days import DayTotals, UserTotals, day_bounds, fill_days, midnight, total
 from app.end_users.queries import UserSort
 from app.explorer.trace_sort import SortOrder
+from app.rollups.coverage_reads import CoverageState
 
 RECENT_SESSIONS = 20
 
@@ -78,8 +79,9 @@ async def list_users(
     """
     first_day, end_day = day_bounds(window)
     after = decode_value_cursor(cursor) if cursor else None
+    coverage = CoverageState()
     rows = await queries.read_users(
-        db, project_id, first_day, end_day, sort, limit + 1, after, environment, q, order
+        db, project_id, first_day, end_day, sort, limit + 1, after, environment, q, order, coverage
     )
     fresh = await queries.read_freshness(db, project_id, first_day, end_day, environment)
     pending = int(fresh.pending_traces)
@@ -93,7 +95,10 @@ async def list_users(
         next_cursor=next_cursor,
         window=_stats_window(first_day, end_day),
         computed_at=fresh.computed_at,
-        pending_traces=None if fresh.computed_at is None and pending == 0 else pending,
+        pending_traces=None
+        if coverage.unavailable or (fresh.computed_at is None and pending == 0)
+        else pending,
+        **coverage.metadata(),
     )
 
 
@@ -174,8 +179,9 @@ async def user_detail(
     if not external_user_id:
         raise not_found("No end user with this id has activity in the window.")
     first_day, end_day = day_bounds(window)
+    coverage = CoverageState()
     rows = await queries.read_daily(
-        db, project_id, external_user_id, first_day, end_day, environment
+        db, project_id, external_user_id, first_day, end_day, environment, coverage
     )
     stored = [_stored_day(row) for row in rows]
     totals = total(stored)
@@ -184,9 +190,24 @@ async def user_detail(
     sessions = await queries.read_recent_sessions(
         db, project_id, external_user_id, RECENT_SESSIONS, environment
     )
+    daily = [_day_stats(day) for day in fill_days(first_day, end_day, stored)]
+    if coverage.unavailable:
+        stored_days = {day.day for day in stored}
+        for day in daily:
+            if day.day not in stored_days:
+                for field in (
+                    "traces",
+                    "llm_calls",
+                    "errors",
+                    "unpriced_calls",
+                    "cost_usd",
+                    "tokens",
+                ):
+                    setattr(day, field, None)
     return UserDetailOut(
         user=_totals_stats(external_user_id, totals),
-        daily=[_day_stats(day) for day in fill_days(first_day, end_day, stored)],
+        daily=daily,
+        **coverage.metadata(),
         recent_sessions=[_session(row) for row in sessions],
         window=_stats_window(first_day, end_day),
         computed_at=_computed_at(rows),

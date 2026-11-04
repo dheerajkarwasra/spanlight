@@ -5,14 +5,20 @@ runs in a transaction bound to the project; the explicit `project_id` filters ar
 """
 
 import uuid
+from datetime import datetime
 
 from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.alerts.types import AlertRuleKind
+from app.budgets.periods import period_start
+from app.budgets.types import BudgetPeriod
 from app.db.models import AlertRule, AlertState, Budget, GatewayKey, Trace
+from app.db.models.budgets import BudgetCounter
 
 BudgetRow = tuple[Budget, AlertState | None]
+# The project's gateway counters of the current periods, by (budget id, period start).
+Counters = dict[tuple[uuid.UUID, datetime], BudgetCounter]
 
 
 def _with_state(project_id: uuid.UUID) -> Select[Budget, AlertState]:
@@ -40,13 +46,29 @@ async def get_state(db: AsyncSession, rule_id: uuid.UUID) -> AlertState | None:
     return await db.get(AlertState, rule_id, populate_existing=True)
 
 
+async def period_counters(db: AsyncSession, project_id: uuid.UUID, now: datetime) -> Counters:
+    """The project's budget counters (gateway spend settled and reserved, ADR 0017) for every
+    period containing `now`: the month's row of a monthly budget, today's of a daily one."""
+    rows = await db.scalars(
+        select(BudgetCounter).where(
+            BudgetCounter.project_id == project_id,
+            BudgetCounter.period_start >= period_start(BudgetPeriod.MONTHLY, now),
+        )
+    )
+    return {(row.budget_id, row.period_start): row for row in rows}
+
+
 async def lock_budget(
     db: AsyncSession, project_id: uuid.UUID, budget_id: uuid.UUID
 ) -> tuple[Budget, AlertRule] | None:
     """The budget and its rule, both locked until the transaction ends.
 
     Rule first, as the evaluation job locks it, then the budget, so an edit and an evaluation
-    wait for each other instead of interleaving.
+    wait for each other instead of interleaving. The budget is taken `FOR NO KEY UPDATE`: it
+    excludes the gateway guard (which takes `FOR SHARE`) and other edits, but not the `KEY
+    SHARE` a delta or reservation insert takes through its foreign key, so an ingest batch or a
+    settle in flight never waits on an edit while the edit's fence (`projects FOR UPDATE`)
+    waits on it.
     """
     rule_id = await db.scalar(
         select(Budget.rule_id).where(Budget.project_id == project_id, Budget.id == budget_id)
@@ -66,7 +88,7 @@ async def lock_budget(
     budget = await db.scalar(
         select(Budget)
         .where(Budget.project_id == project_id, Budget.id == budget_id)
-        .with_for_update()
+        .with_for_update(key_share=True)  # FOR NO KEY UPDATE
         .execution_options(populate_existing=True)
     )
     if rule is None or budget is None:

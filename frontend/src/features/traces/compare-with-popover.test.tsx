@@ -72,12 +72,16 @@ describe("CompareWithPopover", () => {
 
     await user.click(await screen.findByRole("button", { name: "Compare with…" }));
     const previous = await screen.findByRole("region", { name: "Previous run of answer_ticket" });
-    expect(list).toHaveBeenCalledWith("proj_1", {
-      from: "2026-09-21T10:00:00.000Z",
-      to: THIS.started_at,
-      name: "answer_ticket",
-      limit: 6,
-    });
+    expect(list).toHaveBeenCalledWith(
+      "proj_1",
+      {
+        from: "2026-09-21T10:00:00.000Z",
+        to: THIS.started_at,
+        name: "answer_ticket",
+        limit: 6,
+      },
+      expect.any(AbortSignal),
+    );
     expect(within(previous).getAllByRole("link")).toHaveLength(1);
     const recent = screen.getByRole("region", { name: "Recent runs of answer_ticket" });
     expect(within(recent).getAllByRole("link")).toHaveLength(2);

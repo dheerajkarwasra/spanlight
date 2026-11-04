@@ -14,14 +14,23 @@ x-backend: &backend
     target: backend
   image: ${SPANLIGHT_IMAGE:-spanlight:local}
   restart: unless-stopped
+  stop_grace_period: 75s
   environment: &backend-env
     DATABASE_URL: postgresql+psycopg://spanlight_app:${APP_DB_PASSWORD:?set APP_DB_PASSWORD}@postgres:5432/spanlight
     APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
     SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY}
+    TERMS_VERSION: ${TERMS_VERSION:-}
+    SHUTDOWN_TIMEOUT_SECONDS: ${SHUTDOWN_TIMEOUT_SECONDS:-}
+    SHUTDOWN_WORK_SECONDS: ${SHUTDOWN_WORK_SECONDS:-}
+    SHUTDOWN_FLUSH_SECONDS: ${SHUTDOWN_FLUSH_SECONDS:-}
+    SHUTDOWN_CLOSE_SECONDS: ${SHUTDOWN_CLOSE_SECONDS:-}
     METRICS_TOKEN: ${METRICS_TOKEN:-}
     CREDENTIALS_KEYS: ${CREDENTIALS_KEYS:-}
     EE_LICENSE_KEY: ${EE_LICENSE_KEY:-}
     GATEWAY_MODE: ${GATEWAY_MODE:-}
+    GATEWAY_MAX_IN_FLIGHT: ${GATEWAY_MAX_IN_FLIGHT:-}
+    GATEWAY_MAX_IN_FLIGHT_BYTES: ${GATEWAY_MAX_IN_FLIGHT_BYTES:-}
+    GATEWAY_MAX_IN_FLIGHT_PER_KEY: ${GATEWAY_MAX_IN_FLIGHT_PER_KEY:-}
     GATEWAY_ALLOW_INSECURE_BASE_URLS: ${GATEWAY_ALLOW_INSECURE_BASE_URLS:-}
     GATEWAY_ORG_RPM_CEILING: ${GATEWAY_ORG_RPM_CEILING:-}
     GATEWAY_RECORD_CONCURRENCY: ${GATEWAY_RECORD_CONCURRENCY:-}
@@ -37,6 +46,7 @@ x-backend: &backend
     EXPLAIN_MODEL: ${EXPLAIN_MODEL:-}
     EXPLAIN_MONTHLY_BUDGET_USD: ${EXPLAIN_MONTHLY_BUDGET_USD:-}
     USER_STATS_ENABLED: ${USER_STATS_ENABLED:-}
+    AGGREGATE_REPAIR_ENABLED: ${AGGREGATE_REPAIR_ENABLED:-false}
     EVALS_ENABLED: ${EVALS_ENABLED:-}
     EVAL_SAMPLER_MAX_RUNS_PER_CYCLE: ${EVAL_SAMPLER_MAX_RUNS_PER_CYCLE:-}
     EXPERIMENT_MAX_ITEMS: ${EXPERIMENT_MAX_ITEMS:-}
@@ -76,11 +86,14 @@ x-backend: &backend
     API_POOL_TIMEOUT_SECONDS: ${API_POOL_TIMEOUT_SECONDS:-}
     API_STATEMENT_TIMEOUT_SECONDS: ${API_STATEMENT_TIMEOUT_SECONDS:-}
     API_MAX_IN_FLIGHT: ${API_MAX_IN_FLIGHT:-}
+    INGEST_MAX_IN_FLIGHT_PER_PROJECT: ${INGEST_MAX_IN_FLIGHT_PER_PROJECT:-}
     API_KEY_CACHE_TTL_SECONDS: ${API_KEY_CACHE_TTL_SECONDS:-}
     IDEMPOTENCY_POOL_SIZE: ${IDEMPOTENCY_POOL_SIZE:-}
     IDEMPOTENCY_POOL_TIMEOUT_SECONDS: ${IDEMPOTENCY_POOL_TIMEOUT_SECONDS:-}
     RATE_LIMIT_POOL_SIZE: ${RATE_LIMIT_POOL_SIZE:-}
     RATE_LIMIT_POOL_TIMEOUT_SECONDS: ${RATE_LIMIT_POOL_TIMEOUT_SECONDS:-}
+    RATE_LIMIT_LOCK_TIMEOUT_MS: ${RATE_LIMIT_LOCK_TIMEOUT_MS:-}
+    RATE_LIMIT_STATEMENT_TIMEOUT_MS: ${RATE_LIMIT_STATEMENT_TIMEOUT_MS:-}
     LOG_LEVEL: ${LOG_LEVEL:-INFO}
     LOG_JSON: ${LOG_JSON:-true}
   depends_on:
@@ -98,7 +111,10 @@ services:
     # Postgres needs about 1.5 GB free for it (shared_buffers alone is 1 GB): on a smaller host it
     # fails to start, so lower shared_buffers and effective_cache_size. On a bigger node raise
     # shared_buffers to about a quarter of RAM and effective_cache_size to about three quarters.
-    # max_connections=200 fits 6 api replicas: replicas x 30 + 2 (worker) + 4 <= max_connections - 10.
+    # max_connections=200 fits 6 api replicas and one worker: 30 x api + 5 x worker + 1 (migrate)
+    # + 10 (admin, psql) <= max_connections - 3. The budget is in docs/runbooks/scale.md.
+    # The parallel-worker values are Postgres' own, pinned because the trace list's value sorts rely on
+    # them (about 3x slower serial); docs/runbooks/scale.md says how to raise them on a bigger node.
     command:
       - postgres
       - -c
@@ -119,6 +135,10 @@ services:
       - random_page_cost=1.1
       - -c
       - autovacuum_vacuum_cost_limit=1000
+      - -c
+      - max_parallel_workers_per_gather=2
+      - -c
+      - max_parallel_workers=8
     environment:
       POSTGRES_DB: spanlight
       POSTGRES_USER: postgres
@@ -133,10 +153,19 @@ services:
 
   # Migrations run as the database owner, then provision the non-superuser role
   # the app connects as, so Postgres row-level security is actually enforced.
+  # On a fresh install (no project yet, and nothing else writing before this step) the last
+  # command activates aggregate coverage, so new projects' figures read as complete. With projects
+  # it changes nothing: an upgrade activates after draining old writers (docs/runbooks/deploy.md).
   migrate:
     <<: *backend
     restart: "no"
-    command: ["sh", "-c", "spanlight migrate && spanlight ensure-app-role --role spanlight_app"]
+    command:
+      - sh
+      - -c
+      - >-
+        spanlight migrate && spanlight ensure-app-role --role spanlight_app &&
+        spanlight activate-aggregate-coverage --writers-drained --fresh-install
+        --skip-if-projects-exist
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD}@postgres:5432/spanlight
       APP_DB_PASSWORD: ${APP_DB_PASSWORD}
@@ -159,6 +188,14 @@ services:
       # security, so it stays out of the api, which faces the network.
       BACKUPS_ENABLED: ${BACKUPS_ENABLED:-}
       BACKUP_DATABASE_URL: ${BACKUP_DATABASE_URL:-}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION:-}
+      BACKUP_S3_ACCESS_KEY: ${BACKUP_S3_ACCESS_KEY:-}
+      BACKUP_S3_SECRET_KEY: ${BACKUP_S3_SECRET_KEY:-}
+      BACKUP_S3_FORCE_PATH_STYLE: ${BACKUP_S3_FORCE_PATH_STYLE:-}
+      # Unset keeps the default (AES256); set it blank to send no encryption header.
+      BACKUP_S3_SSE: ${BACKUP_S3_SSE-AES256}
     healthcheck:
       disable: true
 
@@ -175,9 +212,16 @@ services:
       DATABASE_URL: postgresql+psycopg://spanlight_app:${APP_DB_PASSWORD:?set APP_DB_PASSWORD}@postgres:5432/spanlight
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY}
+      SHUTDOWN_TIMEOUT_SECONDS: ${SHUTDOWN_TIMEOUT_SECONDS:-}
+      SHUTDOWN_WORK_SECONDS: ${SHUTDOWN_WORK_SECONDS:-}
+      SHUTDOWN_FLUSH_SECONDS: ${SHUTDOWN_FLUSH_SECONDS:-}
+      SHUTDOWN_CLOSE_SECONDS: ${SHUTDOWN_CLOSE_SECONDS:-}
       METRICS_TOKEN: ${METRICS_TOKEN:-}
       CREDENTIALS_KEYS: ${CREDENTIALS_KEYS:-}
       GATEWAY_MODE: ${GATEWAY_MODE:-}
+      GATEWAY_MAX_IN_FLIGHT: ${GATEWAY_MAX_IN_FLIGHT:-}
+      GATEWAY_MAX_IN_FLIGHT_BYTES: ${GATEWAY_MAX_IN_FLIGHT_BYTES:-}
+      GATEWAY_MAX_IN_FLIGHT_PER_KEY: ${GATEWAY_MAX_IN_FLIGHT_PER_KEY:-}
       GATEWAY_ALLOW_INSECURE_BASE_URLS: ${GATEWAY_ALLOW_INSECURE_BASE_URLS:-}
       GATEWAY_ORG_RPM_CEILING: ${GATEWAY_ORG_RPM_CEILING:-}
       GATEWAY_RECORD_CONCURRENCY: ${GATEWAY_RECORD_CONCURRENCY:-}
@@ -187,6 +231,8 @@ services:
       API_STATEMENT_TIMEOUT_SECONDS: ${API_STATEMENT_TIMEOUT_SECONDS:-}
       RATE_LIMIT_POOL_SIZE: ${RATE_LIMIT_POOL_SIZE:-}
       RATE_LIMIT_POOL_TIMEOUT_SECONDS: ${RATE_LIMIT_POOL_TIMEOUT_SECONDS:-}
+      RATE_LIMIT_LOCK_TIMEOUT_MS: ${RATE_LIMIT_LOCK_TIMEOUT_MS:-}
+      RATE_LIMIT_STATEMENT_TIMEOUT_MS: ${RATE_LIMIT_STATEMENT_TIMEOUT_MS:-}
       SENTRY_DSN: ${SENTRY_DSN:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-}

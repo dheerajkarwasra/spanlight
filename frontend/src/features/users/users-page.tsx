@@ -4,14 +4,17 @@ import { useEffect } from "react";
 import { DataTable, type SortOrder } from "@/components/data-table";
 import { ErrorState } from "@/components/error-state";
 import { FieldSelect } from "@/components/field-select";
+import { SourceHistoryEmpty } from "@/components/freshness-chip";
 import { ListFooter } from "@/components/list-footer";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { UnknownValue } from "@/components/unknown-value";
 import { useProjectFilters } from "@/features/shell/project-context";
 import { useHasTraces } from "@/features/shell/use-has-traces";
 import type { UserSort, UserStats } from "@/lib/api";
 import { formatInteger } from "@/lib/format";
+import { SOURCE_REMOVED, sourceHistoryGone, sourceHistoryLabel } from "@/lib/freshness";
 import { rangePhrase } from "@/lib/time-range";
 
 import { ComputedAtChip } from "./computed-at-chip";
@@ -37,6 +40,8 @@ export function UsersPage() {
   const userHref = useUserHref();
   const usersQuery = useUserListQuery({ sort, order, q });
   const users = usersQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  const status = usersQuery.data?.pages[0]?.aggregate_status;
+  const history = sourceHistoryLabel(status, users.length > 0);
   const stale = usersQuery.isPlaceholderData;
 
   useEffect(() => {
@@ -82,10 +87,17 @@ export function UsersPage() {
     const pendingTraces = first?.pending_traces ?? null;
     return (
       <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span>{`${usersQuery.hasNextPage ? "Top " : ""}${count} end ${noun} ${rangePhrase(range)}`}</span>
+        {sourceHistoryGone(status, users.length > 0) ? (
+          // Nothing retained and no source to count from: the count is unknown, not 0.
+          <span>
+            <UnknownValue reason={SOURCE_REMOVED} /> end users {rangePhrase(range)}
+          </span>
+        ) : (
+          <span>{`${usersQuery.hasNextPage ? "Top " : ""}${count} end ${noun} ${rangePhrase(range)}`}</span>
+        )}
         {/* Nothing computed and nothing pending: the window is empty, not behind. */}
-        {computedAt === null && pendingTraces === null ? null : (
-          <ComputedAtChip value={computedAt} pendingTraces={pendingTraces} />
+        {computedAt === null && pendingTraces === null && history === null ? null : (
+          <ComputedAtChip value={computedAt} pendingTraces={pendingTraces} history={history} />
         )}
       </span>
     );
@@ -108,7 +120,11 @@ export function UsersPage() {
     if (!usersQuery.isPending && users.length === 0) {
       return (
         <Card>
-          <UsersEmptyState q={q} unconfigured={hasTraces === false} />
+          {history !== null ? (
+            <SourceHistoryEmpty />
+          ) : (
+            <UsersEmptyState q={q} unconfigured={hasTraces === false} />
+          )}
         </Card>
       );
     }

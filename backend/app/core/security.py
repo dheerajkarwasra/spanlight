@@ -15,6 +15,8 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 from starlette.responses import Response
 
+from app.core.thread_ownership import owned_thread
+
 MIN_PASSWORD_LENGTH = 10
 
 _password_hasher = PasswordHasher()  # argon2id with library-recommended parameters
@@ -57,7 +59,7 @@ async def _run_hashing[T](function: Callable[..., T], *args: Any) -> T:
     if slots is None:
         slots = _hash_slots[loop] = asyncio.Semaphore(_HASH_CONCURRENCY)
     async with slots:
-        return await loop.run_in_executor(_hash_executor, function, *args)
+        return await owned_thread(loop.run_in_executor(_hash_executor, function, *args))
 
 
 async def hash_password_async(password: str) -> str:

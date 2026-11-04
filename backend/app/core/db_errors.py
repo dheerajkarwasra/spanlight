@@ -36,6 +36,11 @@ def is_statement_timeout(orig: object) -> bool:
     return isinstance(orig, psycopg.errors.QueryCanceled)
 
 
+def is_lock_timeout(orig: object) -> bool:
+    """Whether a lock wait outlived `lock_timeout` (`LockNotAvailable`)."""
+    return isinstance(orig, psycopg.errors.LockNotAvailable)
+
+
 # Postgres shutting down or starting up (admin_shutdown, crash_shutdown, cannot_connect_now).
 _RESTARTING = frozenset({"57P01", "57P02", "57P03"})
 

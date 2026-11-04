@@ -8,7 +8,7 @@ and also filter on `project_id` explicitly, which keeps index usage obvious.
 
 import uuid
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
@@ -37,7 +37,14 @@ from app.explorer.filter_values import filter_values
 from app.explorer.trace_compare import align, compare_spans, payload_changed
 from app.explorer.trace_histogram import trace_histogram
 from app.explorer.trace_previews import trace_previews
-from app.explorer.trace_queries import SummaryDetails, summary_details, trace_span, trace_spans
+from app.explorer.trace_queries import (
+    ProjectedSpan,
+    SummaryDetails,
+    span_content_too_large,
+    summary_details,
+    trace_span,
+    trace_spans,
+)
 from app.explorer.trace_sort import SortOrder, TraceSort
 from app.ingest.error_class import ErrorClass
 from app.scores.queries import ScoreSummary, latest_scores_by_name
@@ -47,6 +54,22 @@ router = APIRouter(prefix="/projects/{project_id}", tags=["traces"])
 # Also readable by an API key with `traces:read`, for the project it belongs to.
 ProjectReader = Annotated[ReadAccess, Depends(require(Permission.PROJECT_READ, allow_api_key=True))]
 TraceIdQuery = Annotated[str, Query(min_length=1, max_length=256)]
+# `bounded`: the caller handles `attributes_omitted` and `payload_omitted`. Without it, a response
+# that would omit attributes is refused (`SPAN_CONTENT_TOO_LARGE`) rather than served incomplete.
+SpanContent = Annotated[Literal["bounded"] | None, Query()]
+SPAN_CONTENT_RESPONSES: dict[int | str, dict[str, Any]] = {
+    422: {
+        "description": "The spans' stored content passes the 8 MiB budget and the request did "
+        "not ask for `span_content=bounded` (`SPAN_CONTENT_TOO_LARGE`)."
+    }
+}
+
+# `SpanOut`'s fields read off the stored span; the rest are per-response (`ProjectedSpan`).
+_STORED_SPAN_FIELDS = [
+    name
+    for name in SpanOut.model_fields
+    if name not in {"payload_omitted", "attributes_omitted", "retry_eligible"}
+]
 
 MAX_ERROR_MESSAGE_LENGTH = 500
 NO_DETAILS = SummaryDetails(None, None, None, None)
@@ -118,9 +141,9 @@ async def list_traces(
     cursor: Annotated[str | None, Query()] = None,
 ) -> Page[TraceSummaryOut]:
     project = access.require_project()
-    page_query = await filters.narrow(db, select(Trace), project.id, window)
-    page_query = trace_sort.apply(page_query, sort=sort, order=order, cursor=cursor).limit(
-        limit + 1
+    page_query = await filters.narrow(db, trace_sort.keys(sort), project.id, window)
+    page_query = trace_sort.page(
+        page_query, project.id, sort=sort, order=order, cursor=cursor, limit=limit
     )
     with filters.too_broad_on_timeout():
         rows = (await db.scalars(page_query)).all()
@@ -218,14 +241,31 @@ async def compare_traces(
     )
 
 
+def span_out(projected: ProjectedSpan) -> SpanOut:
+    """A span as every span-returning route serializes it; the three flags are always explicit."""
+    span, payload_omitted, attributes_omitted, retry_eligible = projected
+    return SpanOut.model_validate(
+        {
+            **{name: getattr(span, name) for name in _STORED_SPAN_FIELDS},
+            "payload_omitted": payload_omitted,
+            "attributes_omitted": attributes_omitted,
+            "retry_eligible": retry_eligible,
+        }
+    )
+
+
 def _change[T: (int, float, Decimal)](before: T | None, after: T | None) -> T | None:
     """`after - before`; None when either is unknown."""
     return None if before is None or after is None else after - before
 
 
-@router.get("/traces/{trace_id}", response_model=TraceDetailOut)
+@router.get("/traces/{trace_id}", response_model=TraceDetailOut, responses=SPAN_CONTENT_RESPONSES)
 async def get_trace(
-    project_id: uuid.UUID, trace_id: str, access: ProjectReader, db: DbSession
+    project_id: uuid.UUID,
+    trace_id: str,
+    access: ProjectReader,
+    db: DbSession,
+    span_content: SpanContent = None,
 ) -> TraceDetailOut:
     project = access.require_project()
     trace = await db.scalar(
@@ -239,27 +279,22 @@ async def get_trace(
         trace, *details.get(trace.trace_id, NO_DETAILS), scores.get(trace.trace_id, [])
     )
     spans = await trace_spans(db, project.id, summary.trace_id)
-    return TraceDetailOut(
-        **summary.model_dump(),
-        spans=[
-            SpanOut.model_validate(span, from_attributes=True).model_copy(
-                update={"payload_omitted": omitted}
-            )
-            for span, omitted in spans
-        ],
-    )
+    if span_content is None and any(span.attributes_omitted for span in spans):
+        raise span_content_too_large()
+    return TraceDetailOut(**summary.model_dump(), spans=[span_out(span) for span in spans])
 
 
 @router.get("/traces/{trace_id}/spans/{span_id}", response_model=SpanOut)
 async def get_span(
     project_id: uuid.UUID, trace_id: str, span_id: str, access: ProjectReader, db: DbSession
 ) -> SpanOut:
-    """One span with its payloads: what trace detail leaves out past its payload budget."""
+    """One span with its attributes and payloads: what trace detail leaves out past its content
+    budget."""
     project = access.require_project()
     span = await trace_span(db, project.id, trace_id.lower(), span_id.lower())
     if span is None:
         raise not_found()
-    return SpanOut.model_validate(span, from_attributes=True)
+    return span_out(span)
 
 
 @router.get("/filters", response_model=FiltersOut)

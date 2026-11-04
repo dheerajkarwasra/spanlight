@@ -57,7 +57,7 @@ export function useLabRunsQuery() {
       };
       return {
         queryKey: queryKeys.project(projectId).traces(query),
-        queryFn: () => projectsApi.traces(projectId, query),
+        queryFn: ({ signal }) => projectsApi.traces(projectId, query, signal),
       };
     }),
     combine: (results) => {

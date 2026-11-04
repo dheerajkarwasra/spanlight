@@ -99,6 +99,7 @@ class TraceListFilters:
             score_value=self.score_value,
             has_scores=self.has_scores,
             has_retries=self.has_retries,
+            started_from=window.start,
         )
         if not self.q:
             return query

@@ -32,8 +32,9 @@ CHILD_TABLES = {
 }
 
 # Tables that hold no tenant data at all: shared by every organization, so they carry no tenant
-# column and no row-level security (the providers' published status incidents).
-GLOBAL_TABLES = {"provider_incidents", "provider_status_sources"}
+# column and no row-level security (the providers' published status incidents, the retention
+# job's per-class cursors).
+GLOBAL_TABLES = {"provider_incidents", "provider_status_sources", "retention_progress"}
 TENANT_COLUMNS = ("project_id", "org_id", "user_id", "key_id")
 
 # Extra policies beyond the two every secured table has.

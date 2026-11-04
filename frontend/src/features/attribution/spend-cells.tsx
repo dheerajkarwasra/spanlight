@@ -57,12 +57,12 @@ export function GroupCell({ row, drill, onFocus }: GroupCellProps) {
 }
 
 /** The count, and a link to Pricing when calls had no price (spec ruling 9). */
-export function UnpricedCell({ count }: { count: number }) {
+export function UnpricedCell({ count }: { count: number | null }) {
   const { orgId, projectId } = useProjectParams();
   return (
     <span className="inline-flex items-center gap-2">
-      {formatInteger(count)}
-      {count > 0 ? (
+      {formatInteger(count) ?? <UnknownValue reason="Not reported for this period" />}
+      {count !== null && count > 0 ? (
         <Link
           to="/$orgId/$projectId/pricing"
           params={{ orgId, projectId }}

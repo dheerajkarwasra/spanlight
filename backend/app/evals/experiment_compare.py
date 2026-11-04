@@ -4,13 +4,18 @@ Both runs must have ended (`done` or `failed`): a run still queued or running ha
 items. Each side loads at most `limit` items, the experiment's `max_items` ceiling. With the
 experiment's `cluster_key`, each item is clustered by that key's value in its frozen metadata
 (`experiment_totals.cluster_label`).
+
+Copies are told apart by a digest computed in Postgres, and outputs and copies are read only
+with `details` (the regression check reads the aggregate alone).
 """
 
 import uuid
+from typing import Any
 
+from sqlalchemy import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ExperimentItem, ExperimentRunStatus
+from app.db.models import ExperimentRunStatus
 from app.evals import experiment_queries as queries
 from app.evals.compare import Comparison, ItemRow, compare_runs
 from app.evals.experiment_errors import ExperimentNotFoundError, RunNotFinishedError
@@ -20,7 +25,7 @@ from app.scores.queries import boolean_score_names
 _ENDED = (ExperimentRunStatus.DONE.value, ExperimentRunStatus.FAILED.value)
 
 
-def _row(item: ExperimentItem, cluster_key: str | None) -> ItemRow:
+def _row(item: Row[Any], cluster_key: str | None) -> ItemRow:
     return ItemRow(
         dataset_item_id=item.dataset_item_id,
         trace_id=item.trace_id,
@@ -32,11 +37,9 @@ def _row(item: ExperimentItem, cluster_key: str | None) -> ItemRow:
         evaluator_error=item.evaluator_error,
         input=item.input,
         expected_output=item.expected_output,
-        # A JSON-null input reads back as None too; the metadata is non-NULL on every copy.
-        has_copy=item.input is not None or item.item_metadata is not None,
-        cluster=None
-        if cluster_key is None
-        else cluster_label((item.item_metadata or {}).get(cluster_key), item.dataset_item_id),
+        has_copy=item.has_copy,
+        copy_digest=item.copy_digest,
+        cluster=None if cluster_key is None else cluster_label(item.cluster, item.dataset_item_id),
     )
 
 
@@ -48,9 +51,11 @@ async def compare_experiment_runs(
     run_b: uuid.UUID,
     *,
     limit: int,
+    details: bool = True,
 ) -> Comparison:
     """Raises `ExperimentNotFoundError` when the experiment or either run is not found under it,
-    and `RunNotFinishedError` when either run has not ended."""
+    and `RunNotFinishedError` when either run has not ended. Without `details` no item carries its
+    output or copy; the aggregate and the run deltas are the same."""
     experiment = await queries.get_experiment(db, project_id, experiment_id)
     if experiment is None:
         raise ExperimentNotFoundError
@@ -60,15 +65,14 @@ async def compare_experiment_runs(
         raise ExperimentNotFoundError
     if first.status not in _ENDED or second.status not in _ENDED:
         raise RunNotFinishedError
-    items_a = await queries.list_run_items(db, first.id, limit=limit)
-    items_b = (
-        items_a
-        if second.id == first.id
-        else await queries.list_run_items(db, second.id, limit=limit)
-    )
     key = experiment.config.get("cluster_key")
-    return compare_runs(
-        [_row(i, key) for i in items_a],
-        [_row(i, key) for i in items_b],
-        boolean_scores=await boolean_score_names(db, project_id),
-    )
+
+    async def rows(run_id: uuid.UUID) -> list[ItemRow]:
+        items = await queries.compare_items(
+            db, run_id, limit=limit, cluster_key=key, outputs=details, copies=details
+        )
+        return [_row(i, key) for i in items]
+
+    rows_a = await rows(first.id)
+    rows_b = rows_a if second.id == first.id else await rows(second.id)
+    return compare_runs(rows_a, rows_b, boolean_scores=await boolean_score_names(db, project_id))

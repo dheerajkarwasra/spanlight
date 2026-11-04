@@ -14,6 +14,7 @@ from app.api.schemas import EndUserErasureIn, EndUserErasureOut, UserDetailOut, 
 from app.api.window import Window
 from app.core.errors import forbidden, not_found
 from app.core.idempotency import idempotent
+from app.core.idempotency_store import StoredResponse, complete_operation
 from app.core.pagination import DEFAULT_PAGE_SIZE, PageLimit
 from app.core.permissions import Permission
 from app.end_users import service
@@ -106,5 +107,9 @@ async def request_user_erasure(
         actor_user_id=access.user_id,
         ip=client_ip(request),
     )
+    result = EndUserErasureOut(status="queued", requested_at=requested_at)
+    await complete_operation(
+        db, StoredResponse(202, result.model_dump(mode="json", by_alias=True), "application/json")
+    )
     await db.commit()
-    return EndUserErasureOut(status="queued", requested_at=requested_at)
+    return result

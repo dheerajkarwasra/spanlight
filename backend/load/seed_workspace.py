@@ -7,7 +7,7 @@ service function creates a workspace: the API handlers do it inline.
 import secrets
 import uuid
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -15,6 +15,7 @@ from app.core.scopes import KeyScope
 from app.core.security import API_KEY_PREFIX, UNUSABLE_PASSWORD_HASH, generate_key
 from app.db.models import ApiKey, Membership, MembershipRole, Organization, Project, User
 from app.pricing.cost import sync_seed_prices
+from app.rollups.activation import NEW_PROJECT_BOUNDARY
 from app.services.slugs import slugify, with_random_suffix
 from seed_data import SPREAD
 
@@ -76,7 +77,15 @@ async def create_workspace(session_factory: async_sessionmaker[AsyncSession]) ->
         session.add_all([org, user])
         await session.flush()
         session.add(Membership(org_id=org.id, user_id=user.id, role=MembershipRole.OWNER))
-        project = Project(org_id=org.id, name="Load test", slug="load-test")
+        # A new project has no history from before this release, so its aggregate coverage
+        # starts at the boundary `activate-aggregate-coverage` gives new projects. Without it a
+        # stack that only ran migrations leaves coverage unverified and the backfill writes nothing.
+        project = Project(
+            org_id=org.id,
+            name="Load test",
+            slug="load-test",
+            aggregate_history_unverified_before=datetime.fromisoformat(NEW_PROJECT_BOUNDARY),
+        )
         session.add(project)
         await session.flush()
         await session.refresh(project)  # retention_days is a server default

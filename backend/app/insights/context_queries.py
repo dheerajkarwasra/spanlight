@@ -1,7 +1,8 @@
 """Load what the detectors of one project run read: `load_context`.
 
-Five reads, each bounded: the project's llm spans and tool spans of the last 24 hours (newest
-first, at most `SPAN_CAP` each), one grouped read of the hourly rollups for the baselines, the
+Five reads, each bounded: the project's llm spans of the last 24 hours and its tool spans of the
+last hour (each kind for the longest window a detector of that kind declares; newest first, at
+most `SPAN_CAP` each), one grouped read of the hourly rollups for the baselines, the
 organization's provider errors of the last 30 minutes, and the status-page incidents of those
 providers. The first three run in a transaction bound to the project (row-level security
 applies; the `project_id` filters are a second guard). The organization read spans projects, so
@@ -41,11 +42,15 @@ from app.rollups.compute import floor_hour
 from app.rollups.queries import summed_histogram
 
 CONTEXT_WINDOW = timedelta(hours=24)
-"""How far back the span reads go: the longest detector window."""
+"""How far back the llm span read goes: the longest detector window."""
+
+TOOL_WINDOW = timedelta(hours=1)
+"""How far back the tool span read goes: `tool_loop` is the only detector that reads tool spans."""
 
 ORG_PROVIDER_WINDOW = timedelta(minutes=30)
 SPAN_CAP = 50_000
-"""Most spans of each kind one run reads; hitting it marks the context truncated."""
+"""Most spans of each kind one run reads; hitting it marks the context (and every detector run
+row of the pass) truncated: the detectors saw the newest spans only."""
 
 _GATEWAY_COLUMNS = ",\n".join(
     f"s.attributes ->> '{attribute}' AS gw_{name}" for attribute, name in GATEWAY_ATTRIBUTES.items()
@@ -150,7 +155,8 @@ async def load_context(
         return None
     window = Window(start=now - CONTEXT_WINDOW, end=now)
     llm_spans, llm_truncated = await _llm_spans(db, project_id, window)
-    tool_spans, tool_truncated = await _tool_spans(db, project_id, window)
+    tool_window = Window(start=now - TOOL_WINDOW, end=now)
+    tool_spans, tool_truncated = await _tool_spans(db, project_id, tool_window)
     baseline_end = _baseline_end(now)
     groups = await _baseline_groups(db, project_id, baseline_end)
     baselines = build_baselines(groups)

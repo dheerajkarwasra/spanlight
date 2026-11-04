@@ -3,6 +3,7 @@ import { useId, useState, type ReactNode } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
+import { SourceHistoryEmpty } from "@/components/freshness-chip";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ModelMetrics } from "@/lib/api";
@@ -16,6 +17,8 @@ import { MODEL_PREVIEW_LIMIT, sortModelsByCalls, unpricedCalls } from "./models"
 interface ModelTableProps {
   models: ModelMetrics[];
   isRefreshing: boolean;
+  /** Source history is unavailable: an empty list is not "no calls". */
+  unavailable?: boolean;
   className?: string;
 }
 
@@ -23,7 +26,12 @@ interface ModelTableProps {
  * Per-model usage, latency and cost (Figma "Models card"). A real table when the card is wide;
  * on narrow cards each model becomes a tile with the three numbers that matter most.
  */
-export function ModelTable({ models, isRefreshing, className }: ModelTableProps) {
+export function ModelTable({
+  models,
+  isRefreshing,
+  unavailable = false,
+  className,
+}: ModelTableProps) {
   const [expanded, setExpanded] = useState(false);
   const listId = useId();
   const sorted = sortModelsByCalls(models);
@@ -64,7 +72,9 @@ export function ModelTable({ models, isRefreshing, className }: ModelTableProps)
         ) : null
       }
     >
-      {sorted.length === 0 ? (
+      {sorted.length === 0 && unavailable ? (
+        <SourceHistoryEmpty className="py-8" />
+      ) : sorted.length === 0 ? (
         <EmptyState
           icon={Boxes}
           title="No model calls in this period"

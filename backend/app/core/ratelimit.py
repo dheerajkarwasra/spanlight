@@ -53,16 +53,17 @@ _REFILLED = """LEAST(
 # One statement, in two parts.
 #
 # `taken` is the upsert. A key seen for the first time is inserted with a full bucket minus the
-# token being taken. A key that exists is updated to its refilled count minus one, but only
-# `WHERE` that count is at least one; otherwise the row is left untouched and the upsert returns
-# nothing. Postgres serialises concurrent upserts of one key on the row lock and re-evaluates the
+# `cost` tokens being taken (`acquire` guarantees `cost <= burst`, so the bucket never goes
+# negative). A key that exists is updated to its refilled count minus the cost, but only `WHERE`
+# that count covers it; otherwise the row is left untouched and the upsert returns nothing.
+# Postgres serialises concurrent upserts of one key on the row lock and re-evaluates the
 # `SET` and the `WHERE` against the row as the previous holder left it, and inserts that race on
 # a new key are arbitrated by the primary key, so two requests can never take the same token.
 # `updated_at` only moves forward. A refused request writes nothing, so the refill keeps counting
 # from the last write.
 #
-# The outer SELECT reports the result: `allowed` is whether the upsert took a token, and
-# `retry_after` is how long until a bucket in the state this statement started from holds one
+# The outer SELECT reports the result: `allowed` is whether the upsert took the tokens, and
+# `retry_after` is how long until a bucket in the state this statement started from holds `cost`
 # (read from the statement's snapshot, so under contention it can lag the locked row by a few
 # milliseconds; it is a hint for the client, not part of the decision).
 # The f-string only splices in the constant above; every value is a bound parameter.
@@ -70,17 +71,17 @@ _ACQUIRE = text(
     f"""
     WITH taken AS (
         INSERT INTO rate_limit_buckets AS b (key, tokens, updated_at)
-        VALUES (:key, CAST(:burst AS double precision) - 1, now())
+        VALUES (:key, CAST(:burst AS double precision) - CAST(:cost AS double precision), now())
         ON CONFLICT (key) DO UPDATE
-            SET tokens = {_REFILLED} - 1,
+            SET tokens = {_REFILLED} - CAST(:cost AS double precision),
                 updated_at = GREATEST(now(), b.updated_at)
-            WHERE {_REFILLED} >= 1
+            WHERE {_REFILLED} >= CAST(:cost AS double precision)
         RETURNING 1
     )
     SELECT
         EXISTS (SELECT 1 FROM taken) AS allowed,
         (
-            SELECT (1 - {_REFILLED}) / CAST(:rate AS double precision)
+            SELECT (CAST(:cost AS double precision) - {_REFILLED}) / CAST(:rate AS double precision)
             FROM rate_limit_buckets AS b
             WHERE b.key = :key
         ) AS retry_after
@@ -89,10 +90,10 @@ _ACQUIRE = text(
 
 
 class AsyncRateLimiter(Protocol):
-    """Takes one token for `key`, using the session it is given."""
+    """Takes `cost` tokens for `key`, using the session it is given."""
 
-    async def acquire(self, db: AsyncSession, key: str) -> float | None:
-        """None when a token was taken, else the seconds until one will be available."""
+    async def acquire(self, db: AsyncSession, key: str, cost: int = 1) -> float | None:
+        """None when the tokens were taken, else the seconds until they will be available."""
         ...
 
 
@@ -111,14 +112,20 @@ class PostgresTokenBucket:
         if self.rate <= 0 or self.burst < 1:
             raise ValueError("rate must be positive and burst at least 1")
 
-    async def acquire(self, db: AsyncSession, key: str) -> float | None:
-        result = await db.execute(_ACQUIRE, {"key": key, "rate": self.rate, "burst": self.burst})
+    async def acquire(self, db: AsyncSession, key: str, cost: int = 1) -> float | None:
+        # A first take inserts `burst - cost` with no `WHERE`: a cost above the burst would mint
+        # a negative bucket, so it is a caller's bug and fails loudly.
+        if cost < 1 or cost > self.burst:
+            raise ValueError(f"cost must be between 1 and the burst ({self.burst}), got {cost}")
+        result = await db.execute(
+            _ACQUIRE, {"key": key, "rate": self.rate, "burst": self.burst, "cost": cost}
+        )
         allowed, retry_after = result.one()
         if allowed:
             return None
         # The bucket was just refused, so some wait is owed even if the snapshot the estimate was
         # computed from had already refilled (or the row was pruned in between).
-        minimum = 1.0 / self.rate
+        minimum = cost / self.rate
         return max(float(retry_after), minimum) if retry_after is not None else minimum
 
 
@@ -138,6 +145,11 @@ BILLING_UPLOAD_LIMITER = PostgresTokenBucket(rate=6 / 3600, burst=6)
 """Per billing source on its CSV upload: six an hour, so a loop of 5 MB files cannot keep the
 threadpool parsing and the rollups recomputing."""
 
+UNSUBSCRIBE_LIMITER = PostgresTokenBucket(rate=1, burst=60)
+"""Per client address on the one-click digest unsubscribe: 60 at once, then one a second. Mail
+providers send one-click POSTs for many users from few addresses, so the bucket is wide; it
+bounds write load, not guessing (a token is a 256-bit HMAC)."""
+
 BILLING_KEY_CHECK_LIMITER = PostgresTokenBucket(rate=1 / 60, burst=5)
 """Per organization on the admin key check of a billing source's create or rotate: one a minute,
 bursts of 5, so the check cannot be looped to test keys against a provider."""
@@ -149,17 +161,18 @@ async def take_token(
     key: str,
     *,
     scope: str,
+    cost: int = 1,
 ) -> float | None:
-    """Take a token from `limiter` for `key`: None when taken, else the seconds to wait.
+    """Take `cost` tokens from `limiter` for `key`: None when taken, else the seconds to wait.
 
-    The token is taken in a short transaction of its own from `session_factory` (the rate-limit
+    The tokens are taken in a short transaction of its own from `session_factory` (the rate-limit
     pool), committed before this returns. If that fails (the pool is exhausted, the database is
     down) the check is skipped, so None, and a warning is logged. `scope` labels the metric and
     the warning. Counting a refusal is the caller's job, since only the caller knows it refused.
     """
     try:
         async with session_factory() as db, db.begin():
-            return await limiter.acquire(db, key)
+            return await limiter.acquire(db, key, cost)
     except SQLAlchemyError as exc:
         RATE_LIMIT_UNAVAILABLE.labels(scope).inc()
         now = time.monotonic()
@@ -171,16 +184,22 @@ async def take_token(
 
 
 async def enforce_rate_limit(
-    request: Request, limiter: AsyncRateLimiter, key: str, *, scope: str, detail: str
+    request: Request,
+    limiter: AsyncRateLimiter,
+    key: str,
+    *,
+    scope: str,
+    detail: str,
+    cost: int = 1,
 ) -> None:
-    """Take a token from `limiter` for `key`, or raise 429 `RATE_LIMITED` with `Retry-After`.
+    """Take `cost` tokens from `limiter` for `key`, or raise 429 `RATE_LIMITED` with `Retry-After`.
 
-    `scope` labels the rejection metric (`ingest`, `demo`, `api`, `billing_refresh`,
-    `billing_upload` or `billing_key_check`). The token
-    is taken as `take_token` describes, so a limiter that cannot run lets the request through.
+    `scope` labels the rejection metric (`ingest`, `ingest_project`, `demo`, `api`,
+    `billing_refresh`, `billing_upload`, `billing_key_check` or `unsubscribe`). The tokens are
+    taken as `take_token` describes, so a limiter that cannot run lets the request through.
     """
     session_factory = request.app.state.rate_limit_session_factory
-    retry_after = await take_token(session_factory, limiter, key, scope=scope)
+    retry_after = await take_token(session_factory, limiter, key, scope=scope, cost=cost)
     if retry_after is not None:
         RATE_LIMIT_REJECTIONS.labels(scope).inc()
         raise too_many_requests(math.ceil(retry_after), detail)

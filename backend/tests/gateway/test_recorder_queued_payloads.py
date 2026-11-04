@@ -6,6 +6,7 @@ a backlog of spans during a database outage holds at most that much per payload,
 the requests. The request hash is still computed from the whole request.
 """
 
+import threading
 from typing import Any
 
 import httpx
@@ -15,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.observability import GATEWAY_RECORD_FAILURES
 from app.core.redact import REDACTED
 from app.gateway import call, recorder, span_write
+from app.gateway.context import LARGE_BODY_BYTES
 from app.ingest import pipeline
 from app.ingest.normalize import MAX_PAYLOAD_BYTES
 from app.ingest.request_hash import request_hash
@@ -32,6 +34,7 @@ from tests.gateway_support import (
 
 SECRET = "sk-test-" + "a" * 32  # an OpenAI-shaped key, which redaction replaces
 PROMPT_BYTES = MAX_PAYLOAD_BYTES + 200_000
+LARGE_BODY = {**CHAT_BODY, "messages": [{"role": "user", "content": "x" * LARGE_BODY_BYTES}]}
 
 
 async def test_a_queued_span_holds_its_payloads_redacted_and_cut(
@@ -64,6 +67,37 @@ async def test_a_queued_span_holds_its_payloads_redacted_and_cut(
     assert span["request_hash"] == request_hash(CHAT_BODY["model"], body)  # the whole request
 
 
+async def test_a_large_body_has_its_payloads_prepared_off_the_event_loop(
+    gateway_workspace: GatewayWorkspace,
+    fake_provider: FakeProvider,
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Redacting and cutting a 10 MB body is about half a second of Python: on the event loop it
+    # would stall every call on the process.
+    threads: list[str] = []
+    real_prepare = recorder.prepare_span_payloads
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        threads.append(threading.current_thread().name)
+        return real_prepare(*args, **kwargs)
+
+    monkeypatch.setattr(recorder, "prepare_span_payloads", spy)
+    for body in (CHAT_BODY, LARGE_BODY):
+        fake_provider.reply_json(fixture_text("openai/chat.json").encode())
+        response = await gateway_workspace.gw.post("/gw/v1/chat/completions", json=body)
+        assert response.status_code == 200
+
+    spans = await read_gateway_spans(session_factory, gateway_workspace.project_id)
+    assert [span["input"] for span in spans] == [CHAT_BODY, LARGE_BODY]
+    loop_thread = threading.current_thread().name
+    assert threads[0] == loop_thread  # a small body stays where it was
+    assert threads[1].startswith("gateway-payloads")
+    writers = recorder._writers
+    assert writers is not None and writers.held_bytes == 0  # the up-front count was released
+
+
+@pytest.mark.parametrize("body", [CHAT_BODY, LARGE_BODY], ids=["small", "large"])
 async def test_a_span_whose_payloads_cannot_be_prepared_is_counted_as_lost(
     gateway_workspace: GatewayWorkspace,
     gateway_client: httpx.AsyncClient,
@@ -71,6 +105,7 @@ async def test_a_span_whose_payloads_cannot_be_prepared_is_counted_as_lost(
     session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
+    body: dict[str, Any],
 ) -> None:
     answer = fixture_text("openai/chat.json").encode()
     fake_provider.reply_json(answer)
@@ -82,7 +117,7 @@ async def test_a_span_whose_payloads_cannot_be_prepared_is_counted_as_lost(
     errors = metric_delta(GATEWAY_RECORD_FAILURES, reason="error")
     lost = (await gateway_client.get("/health/ready")).json()["gateway_spans_lost"]
 
-    response = await gateway_workspace.gw.post("/gw/v1/chat/completions", json=CHAT_BODY)
+    response = await gateway_workspace.gw.post("/gw/v1/chat/completions", json=body)
     await drain_recorder()
 
     assert (response.status_code, response.content) == (200, answer)  # the client is unaffected

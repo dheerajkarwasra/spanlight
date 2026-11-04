@@ -6,7 +6,8 @@
 #   1b. the database role the api connects as is neither a superuser nor able to bypass row-level
 #      security (either would silently turn off tenant isolation), and the backup role's URL is
 #      not in the api container's environment
-#   2. the dashboard sends X-Frame-Options: DENY on /
+#   2. the dashboard sends X-Frame-Options: DENY on /, and /.well-known/security.txt answers 200
+#      with a Contact field (RFC 9116)
 #   3. the strict Content-Security-Policy of deploy/Caddyfile is the one policy sent on /, on a
 #      dashboard route, on an API path and on a health path, and the relaxed policy the API
 #      reference needs is sent on /api/docs and nowhere else among them
@@ -18,6 +19,8 @@
 #   6. signup, organization, project and API key creation work through the web port with the
 #      same session cookie, CSRF header and Origin header the dashboard uses; a second person who
 #      belongs to no organization gets 404 NOT_FOUND, not the data, from a project route
+#   6b. the migrate service activated aggregate coverage on the fresh install, so the new project
+#      starts with complete source history (its boundary is the Unix epoch, not unverified)
 #   7. a span sent by the Python SDK shows up (onboarding reports has_traces within 20 s)
 #   8. a native POST /v1/traces is accepted (the SDK swallows errors by design, so this is the
 #      step that fails on a non-2xx from ingest)
@@ -96,6 +99,23 @@ with psycopg.connect(url) as connection:
         "SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user"
     ).fetchone()
 print("rolsuper=%s rolbypassrls=%s" % (str(row[0]).lower(), str(row[1]).lower()))
+'
+
+# The program run inside the api container by check_new_project_has_coverage, with the project
+# id as its argument. It prints whether the project's aggregate history boundary is the epoch.
+COVERAGE_PROGRAM='
+import os
+import sys
+
+import psycopg
+
+url = os.environ["DATABASE_URL"].replace("+psycopg", "", 1)
+with psycopg.connect(url) as connection:
+    row = connection.execute(
+        "SELECT aggregate_history_unverified_before = %s::timestamptz FROM projects WHERE id = %s",
+        ("1970-01-01T00:00:00Z", sys.argv[1]),
+    ).fetchone()
+print("activated=%s" % (row is not None and row[0] is True))
 '
 
 # ---------- helpers ----------
@@ -309,6 +329,13 @@ check_security_headers() {
     fail "/ does not send X-Frame-Options: DENY"
 }
 
+# The file is static in the web image; a missing one would fall through to the SPA's index.html
+# with 200, so the body is checked too.
+check_security_txt() {
+  http "$BASE_URL/.well-known/security.txt"
+  grep -q '^Contact: ' <<<"$RESPONSE_BODY" || fail "/.well-known/security.txt has no Contact field"
+}
+
 # The strict policy covers everything except the API reference, which FastAPI builds with an
 # inline script and a bundle from jsDelivr. Each response must carry the policy deploy/Caddyfile
 # gives it, so a matcher that stops matching (or matches too much) fails here. The strict one is
@@ -425,6 +452,16 @@ create_project() {
   PROJECT_ID=$(jq -er '.id' <<<"$RESPONSE_BODY") || fail "the project response has no id"
 }
 
+# Without the migrate service's fresh activation, every project of a new install reads its
+# rollup figures as "unavailable".
+check_new_project_has_coverage() {
+  local activated
+  activated=$(compose exec -T api python -c "$COVERAGE_PROGRAM" "$PROJECT_ID") ||
+    fail "could not read the project's coverage boundary from the api container"
+  [ "$activated" = "activated=True" ] ||
+    fail "aggregate coverage was not activated on the fresh install: $activated"
+}
+
 # A person who signed up but belongs to no organization must be told the project does not exist
 # (404), never that it exists but is off limits (403) or its data (200). A Phase 5 route
 # (datasets) stands for the whole project API; the member's own call is the control.
@@ -493,12 +530,14 @@ main() {
   run_step "check the api database role cannot bypass row-level security" \
     check_api_role_cannot_bypass_rls
   run_step "check security headers on /" check_security_headers
+  run_step "check /.well-known/security.txt" check_security_txt
   run_step "check the Content-Security-Policy on / and /api/docs" check_content_security_policy
   run_step "check the documentation site at /docs/" check_docs_site
   run_step "check the gateway refuses a call without a key" check_gateway_refuses_without_key
   run_step "sign up" sign_up
   run_step "create an organization" create_organization
   run_step "create a project" create_project
+  run_step "check the fresh install activated aggregate coverage" check_new_project_has_coverage
   run_step "check a non-member gets 404 from a project route" check_non_member_gets_404
   run_step "create an API key" create_api_key
   run_step "send a span with the Python SDK" send_sdk_span

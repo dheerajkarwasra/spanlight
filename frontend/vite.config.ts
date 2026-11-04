@@ -28,6 +28,8 @@ export default defineConfig({
         proxiedPaths.map((path) => [path, { target: backendTarget, changeOrigin: false }]),
       ),
       "/docs": { target: docsTarget, changeOrigin: false },
+      // Astro's dev server serves docs-site images from /@fs/, outside its /docs base.
+      "^/@fs/.*/docs-site/": { target: docsTarget, changeOrigin: false },
     },
   },
   build: {
@@ -42,6 +44,8 @@ export default defineConfig({
             { name: "react", test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
             { name: "tanstack", test: /node_modules[\\/]@tanstack[\\/]/ },
             { name: "radix", test: /node_modules[\\/](@radix-ui|radix-ui)[\\/]/ },
+            // Keep shared class utilities out of the chart dependency closure.
+            { name: "clsx", test: /node_modules[\\/]clsx[\\/]/ },
             { name: "charts", test: /node_modules[\\/](recharts|d3-[a-z-]+|victory-vendor)[\\/]/ },
             // zod and its jitless switch share a chunk, so the switch runs before any chunk that
             // builds a schema at import time. In the entry chunk it ran after them, and zod's

@@ -9,8 +9,6 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 
-import structlog
-
 from app.backups.child import CHUNK_SIZE, ChildProcess
 from app.backups.libpq import connection_params, process_environment
 from app.backups.restore import RestoreError, restore_backup
@@ -27,8 +25,6 @@ __all__ = [
     "restore_backup",
     "run_backup",
 ]
-
-logger = structlog.get_logger(__name__)
 
 PG_DUMP = "pg_dump"
 CONTENT_TYPE = "application/octet-stream"
@@ -76,7 +72,8 @@ async def run_backup(settings: Settings, store: ObjectStore, now: datetime) -> B
     """Dump the database to `backups/YYYY/MM/DD/spanlight-<UTC timestamp>.dump`.
 
     The dump is streamed from `pg_dump` to the store, so its size is not bound by memory or
-    disk. On any failure the child is killed and nothing is left under the key.
+    disk. On failure the child is killed and the store aborts any incomplete multipart upload.
+    A successful PUT with an indeterminate network result can leave an object for retention.
     """
     if settings.backup_database_url is None:
         raise BackupNotConfiguredError("BACKUP_DATABASE_URL is not set")
@@ -108,14 +105,5 @@ async def run_backup(settings: Settings, store: ObjectStore, now: datetime) -> B
             raise BackupError("the upload ended before pg_dump finished")
     except BaseException:
         await process.stop()
-        await _discard(store, key)
         raise
     return BackupResult(key=key, size_bytes=stream.size)
-
-
-async def _discard(store: ObjectStore, key: str) -> None:
-    """Best effort: remove whatever a failed backup may have left under `key`."""
-    try:
-        await store.delete(key)
-    except Exception:
-        logger.warning("backup.discard_failed", key=key, exc_info=True)

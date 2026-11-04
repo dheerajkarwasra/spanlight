@@ -88,7 +88,8 @@ export const alertsApi = {
     ),
 
   /** Firing rules first, then by name. Unpaginated; budget rules are not listed. */
-  rules: (projectId: string): Promise<AlertRule[]> => api.get<AlertRule[]>(rulesPath(projectId)),
+  rules: (projectId: string, signal?: AbortSignal): Promise<AlertRule[]> =>
+    api.get<AlertRule[]>(rulesPath(projectId), undefined, signal),
   rule: (projectId: string, ruleId: string): Promise<AlertRule> =>
     api.get<AlertRule>(rulePath(projectId, ruleId)),
   createRule: (projectId: string, input: AlertRuleInput): Promise<AlertRule> =>

@@ -6,12 +6,11 @@ enum type is found here instead of during a rollback in production.
 
 from typing import Any
 
+import pytest
 from sqlalchemy import create_engine, text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.migrations import downgrade_to, head_revision, upgrade_to_head
 from app.db.models import Base
-from app.pricing.cost import sync_seed_prices
+from tests.db.migration_support import downgrade_to, expected_revision, upgrade_to_target
 
 # Each query lists one kind of schema object in a stable order, so two schemas that match
 # compare equal and a difference names the object that is missing or changed.
@@ -84,31 +83,27 @@ def _current_revision(database_url: str) -> str | None:
         engine.dispose()
 
 
+@pytest.mark.migration_revision("head")
 async def test_migrations_downgrade_to_base_and_upgrade_to_head(
-    app_database_url: str, session_factory: async_sessionmaker[AsyncSession]
+    migration_database_url: str,
 ) -> None:
-    before = _schema_snapshot(app_database_url)
-    assert _current_revision(app_database_url) == head_revision()
+    before = _schema_snapshot(migration_database_url)
+    assert _current_revision(migration_database_url) == expected_revision()
 
-    downgrade_to(app_database_url, "base")
+    downgrade_to(migration_database_url, "base")
     try:
-        emptied = _schema_snapshot(app_database_url)
+        emptied = _schema_snapshot(migration_database_url)
         # Only Alembic's own bookkeeping may remain, and no enum type may be left behind.
         assert {row[0] for row in emptied["columns"]} == {"alembic_version"}
         assert emptied["enums"] == []
         assert emptied["policies"] == []
         assert emptied["functions"] == []
     finally:
-        # The rest of the session shares this database, so it must end at head even when an
-        # assertion above fails. The price table is seeded once per session by a fixture and
-        # was dropped with the schema, so it is seeded again here.
-        upgrade_to_head(app_database_url)
-        async with session_factory() as db:
-            await sync_seed_prices(db)
-            await db.commit()
+        # Rebuild the owned schema even when an assertion above fails.
+        upgrade_to_target(migration_database_url)
 
-    assert _current_revision(app_database_url) == head_revision()
-    after = _schema_snapshot(app_database_url)
+    assert _current_revision(migration_database_url) == expected_revision()
+    after = _schema_snapshot(migration_database_url)
     assert after == before
     tables = {row[0] for row in after["columns"]}
     assert set(Base.metadata.tables) <= tables

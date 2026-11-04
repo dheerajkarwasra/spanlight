@@ -25,7 +25,7 @@ from app.jobs.scheduler import ROLLUP_COST_DAILY, ROLLUP_COST_DAILY_DEEP, period
 from app.jobs.tasks import TASKS
 from app.pricing.price_row import token_classes
 from app.reconciliation.backfill import BACKFILL_JOB, backfill_payload
-from app.reconciliation.queries import mapping_patterns
+from app.reconciliation.queries import mapping_patterns, rollup_rows_for_project_window
 from app.reconciliation.rollup_jobs import (
     rollup_all,
     run_rollup_cost_daily,
@@ -770,3 +770,15 @@ async def _context(settings: Settings, session_factory: SessionFactory, kind: st
     return TaskContext(
         job=job, settings=settings, session_factory=session_factory, clock=lambda: NOW
     )
+
+
+async def test_report_reads_nonempty_rollup_rows(session_factory: SessionFactory) -> None:
+    """The coverage wrapper's metadata columns stay out of the rows handed to the report."""
+    [project] = await new_projects(session_factory, 1)
+    await _seed_every_class(session_factory, project)
+    await _refresh(session_factory, project, [DAY])
+    async with session_factory() as db:
+        await bind_project(db, project)
+        rows = await rollup_rows_for_project_window(db, project, DAY, DAY + timedelta(days=1))
+    assert len(rows) == 5
+    assert sum(row.calls for row in rows) == 13

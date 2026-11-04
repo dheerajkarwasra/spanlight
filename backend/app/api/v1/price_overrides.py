@@ -1,9 +1,10 @@
 """Price overrides: an organization's own rates, applied to every span its projects ingest.
 
-Members read the list; owners and admins add and delete (`gateway:write`). An override beats the
-seed price of the same provider and pattern, and applies to spans that start at or after its
-`effective_from`; spans already stored keep the cost they were priced with, until a replay of
-the same span re-prices it with the overrides in force at replay time.
+Members read the list; owners add and delete (`prices:override`: an override reprices the
+spend and budget admission of every project).
+An override beats the seed price of the same provider and pattern, and applies to spans that
+start at or after its `effective_from`; spans already stored keep the cost they were priced
+with, until a replay of the same span re-prices it with the overrides in force at replay time.
 """
 
 import uuid
@@ -25,7 +26,7 @@ logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/orgs/{org_id}/price-overrides", tags=["prices"])
 
 OverrideReader = Annotated[Access, Depends(require(Permission.ORG_READ))]
-OverrideWriter = Annotated[Access, Depends(require(Permission.GATEWAY_WRITE))]
+OverrideWriter = Annotated[Access, Depends(require(Permission.PRICES_OVERRIDE))]
 
 
 def _override_out(override: PriceOverride, creator: User | None) -> PriceOverrideOut:

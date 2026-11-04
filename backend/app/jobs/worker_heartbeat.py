@@ -4,6 +4,8 @@
 from the job loop, so a task that runs for hours (a database backup) does not make the worker
 look dead, and a stuck job loop that still has a live event loop is caught by the job queue's
 leases instead. A failed beat is logged and retried on the next tick; it never stops the worker.
+The optional progress callback reports short-loop staleness before each beat, including failed
+beats; it does not change the persisted readiness signal.
 """
 
 import asyncio
@@ -11,6 +13,7 @@ import contextlib
 import os
 import socket
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from importlib.metadata import PackageNotFoundError, version
 
@@ -72,14 +75,23 @@ async def run_heartbeat(
     worker_id: str,
     *,
     interval: float = HEARTBEAT_INTERVAL_SECONDS,
+    report_progress: Callable[[], None] | None = None,
+    sample_queue: Callable[[], Awaitable[None]] | None = None,
 ) -> None:
-    """Beat immediately, then every `interval` seconds until `stop` is set."""
+    """Beat immediately, then every `interval` seconds until `stop` is set.
+
+    `sample_queue` runs after each beat attempt; it bounds and handles its own failures.
+    """
     worker_version = backend_version()
     while not stop.is_set():
+        if report_progress is not None:
+            report_progress()
         try:
             async with asyncio.timeout(HEARTBEAT_TIMEOUT_SECONDS):
                 await beat(session_factory, worker_id, worker_version)
         except Exception as exc:  # noqa: BLE001 - a missed beat must never take the worker down
             logger.warning("worker_heartbeat_failed", worker_id=worker_id, error=repr(exc))
+        if sample_queue is not None:
+            await sample_queue()
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(stop.wait(), timeout=interval)

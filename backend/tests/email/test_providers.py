@@ -478,3 +478,71 @@ async def test_get_email_sender_passes_the_smtp_settings_through(smtp_inbox: Smt
     await get_email_sender(settings).send(TEXT_ONLY)
 
     assert len(smtp_inbox.envelopes) == 1
+
+
+# --- extra headers (the digest's one-click unsubscribe) ---------------------------------------
+
+UNSUBSCRIBE_HEADERS = {
+    "List-Unsubscribe": f"<https://app.example.com/api/v1/email/unsubscribe?token={TOKEN}>",
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+}
+WITH_HEADERS = EmailMessage(
+    to="ada@example.com",
+    subject="Your week",
+    text="Hello",
+    html=None,
+    headers=UNSUBSCRIBE_HEADERS,
+)
+
+
+async def test_resend_sends_extra_headers() -> None:
+    inbox = ResendInbox()
+
+    await resend_sender(inbox).send(WITH_HEADERS)
+
+    (request,) = inbox.requests
+    assert json.loads(request.content)["headers"] == UNSUBSCRIBE_HEADERS
+
+
+async def test_resend_sends_no_headers_field_without_extra_headers() -> None:
+    inbox = ResendInbox()
+
+    await resend_sender(inbox).send(TEXT_ONLY)
+
+    (request,) = inbox.requests
+    assert "headers" not in json.loads(request.content)
+
+
+async def test_smtp_sends_extra_headers(smtp_inbox: SmtpInbox) -> None:
+    await smtp_sender(smtp_inbox).send(WITH_HEADERS)
+
+    (received,) = smtp_inbox.parsed()
+    for name, value in UNSUBSCRIBE_HEADERS.items():
+        assert received[name] == value
+
+
+async def test_smtp_rejects_a_line_break_in_an_extra_header(smtp_inbox: SmtpInbox) -> None:
+    unsafe = EmailMessage(
+        to="ada@example.com",
+        subject="Hi",
+        text="Hello",
+        headers={"List-Unsubscribe": "<x>\r\nBcc: eve@example.com"},
+    )
+
+    with pytest.raises(EmailDeliveryError, match="line break"):
+        await smtp_sender(smtp_inbox).send(unsafe)
+
+    assert smtp_inbox.envelopes == []
+
+
+async def test_console_writes_extra_headers_but_never_logs_them(tmp_path: Path) -> None:
+    sink = tmp_path / "outbox.jsonl"
+
+    with capture_logs() as logs:
+        await ConsoleEmailSender(sink).send(WITH_HEADERS)
+        await ConsoleEmailSender(sink).send(TEXT_ONLY)
+
+    first, second = (json.loads(line) for line in sink.read_text(encoding="utf-8").splitlines())
+    assert first["headers"] == UNSUBSCRIBE_HEADERS
+    assert second["headers"] is None
+    assert TOKEN not in json.dumps(logs, default=str)

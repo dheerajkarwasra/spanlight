@@ -14,7 +14,8 @@ from app.db.models import Session, TokenScope, User
 
 @dataclass(frozen=True)
 class SessionPrincipal:
-    """A signed-in browser: the `spl_session` cookie. May use every dashboard route."""
+    """A signed-in browser: the session cookie (`__Host-spl_session` over https, `spl_session`
+    over http). May use every dashboard route."""
 
     user: User
     session: Session

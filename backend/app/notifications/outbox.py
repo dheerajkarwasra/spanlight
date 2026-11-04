@@ -10,11 +10,14 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import ColumnElement, and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ids import new_id
 from app.db.models import AlertChannel, NotificationOutbox, NotificationStatus
+
+# `last_error` of a row quarantined by `spanlight restore-reconcile` (see `app.backups.recovery`).
+RECOVERY_ERROR_PREFIX = "recovery:"
 
 
 class NotificationKind(enum.StrEnum):
@@ -32,6 +35,8 @@ async def enqueue(
     target: dict[str, Any],
     payload: dict[str, Any],
     channel_id: uuid.UUID | None = None,
+    *,
+    failed: str | None = None,
 ) -> uuid.UUID:
     """Add a pending notification to the caller's transaction and return its id.
 
@@ -39,11 +44,23 @@ async def enqueue(
     with the rest of its work. `target` says where it goes, `payload` what it says. Once the
     notification is settled, the stored payload is reduced to its `subject` and `summary`, so a
     link in the body does not stay in the database (see `lease.py` for the exact rule).
+
+    `failed` writes the row already failed after one attempt, with that `last_error`, for a
+    notification known never to be sendable (an alert email that could not be rendered): the
+    delivery log shows it and the worker never claims it. It must be safe to store and show.
     """
     row_id = new_id()
+    settled: dict[str, Any] = {}
+    if failed is not None:
+        settled = {"status": NotificationStatus.FAILED, "attempts": 1, "last_error": failed}
     db.add(
         NotificationOutbox(
-            id=row_id, kind=kind.value, channel_id=channel_id, target=target, payload=payload
+            id=row_id,
+            kind=kind.value,
+            channel_id=channel_id,
+            target=target,
+            payload=payload,
+            **settled,
         )
     )
     await db.flush()
@@ -59,18 +76,40 @@ async def count_pending(db: AsyncSession) -> int:
     return int(await db.scalar(statement) or 0)
 
 
+def retryable() -> ColumnElement[bool]:
+    """Whether a channel row can go back in the queue: `failed`, with a message to send (an
+    email that was never rendered has no `text`), and not quarantined by recovery. The
+    delivery log shows this as `retryable`, and `retry_failed` requires it."""
+    return and_(
+        NotificationOutbox.status == NotificationStatus.FAILED,
+        or_(
+            NotificationOutbox.kind != NotificationKind.EMAIL.value,
+            NotificationOutbox.payload.has_key("text"),
+        ),
+        or_(
+            NotificationOutbox.last_error.is_(None),
+            ~NotificationOutbox.last_error.startswith(RECOVERY_ERROR_PREFIX),
+        ),
+    )
+
+
 async def retry_failed(
     db: AsyncSession, org_id: uuid.UUID, channel_id: uuid.UUID, row_id: uuid.UUID, now: datetime
 ) -> bool:
     """Put a failed alert delivery back in the queue; False when the row is not one.
 
     Only a `failed` row of this channel of this organization qualifies. A failed row that has a
-    `channel_id` kept its payload (see `lease.py`), so it can be sent again; transactional mail
+    `channel_id` kept its payload (see `lease.py`), so it can be sent again, except an email
+    that never had a message (`text`) because it could not be rendered; transactional mail
     has no channel and is never matched. The row keeps its id, so a receiver still sees the same
     `X-Spanlight-Delivery`. It starts over (`attempts = 0`, due now, no lease) and keeps its
     `last_error` until the next attempt replaces it. Flushes but never commits.
 
-    The `org_id` and `channel_id` conditions are the only guard: the outbox is not under
+    A row whose `last_error` starts with `recovery:` was quarantined by `spanlight
+    restore-reconcile` and is never retried here: only an explicit `authorize_replay` decision
+    there puts it back in the queue (see `app.backups.recovery`).
+
+    The `org_id` and `channel_id` conditions are the only other guard: the outbox is not under
     row-level security.
     """
     channel_of_org = (
@@ -83,7 +122,7 @@ async def retry_failed(
         .where(
             NotificationOutbox.id == row_id,
             NotificationOutbox.channel_id == channel_of_org,
-            NotificationOutbox.status == NotificationStatus.FAILED,
+            retryable(),
         )
         .values(
             status=NotificationStatus.PENDING,

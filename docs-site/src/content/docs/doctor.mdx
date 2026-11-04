@@ -62,7 +62,7 @@ Spans stored before these fields existed have none of them, and they are not fil
 The worker runs every detector over every project that received a span in the last 24 hours, **every 15 minutes**. For each project it loads the last 24 hours of LLM spans and tool spans (up to 50 000 of each, newest first) and gives each detector the slice it needs, from 15 minutes to 24 hours. Baselines for the spike detectors come from the previous 7 days.
 
 - **A run is bounded.** One pass starts no new project after 40 seconds, and one project may take at most 30 seconds. A project the pass did not reach goes first in the next one. A detector that raises an error is recorded and skipped; the others still run.
-- **Nothing is invented from thin data.** Every detector has a minimum sample size and returns nothing below it. A baseline needs at least 100 calls in the same slice; without one, the spike detectors say nothing.
+- **Nothing is invented from thin data.** Every detector has a minimum sample size and returns nothing below it. A baseline needs at least 100 calls in the same slice; without one, `error_spike` warns only at 25 % errors or more over the last 24 hours, and the latency and cost spike detectors say nothing.
 - **Faults and cache hits are not traffic.** Calls that the [Integration Lab](/docs/gateway/lab/) faulted on purpose are left out of the detectors that judge the health of your traffic or your provider (`error_spike`, `latency_regression`, `cost_spike`, `rate_limit_pressure`, `provider_incident`, `unpriced_spend`, `model_retiring`). Gateway cache hits never reached a provider and are left out of `retry_storm`, `cache_opportunity`, `unpriced_spend` and `model_retiring`. The detectors that judge client behaviour (the lab findings) use the faulted calls on purpose. Calls refused by your gateway key's own rate limit never reached a provider, so `error_spike` and `rate_limit_pressure` leave them out too.
 - **Evidence is real traces.** Each insight lists up to 20 trace ids that contributed to the finding, most recent first, and the numbers behind it. Open them to confirm the finding.
 
@@ -240,7 +240,7 @@ Open **Doctor** after your project has had traffic for 15 minutes or more. The p
 
 | You see | Check |
 | --- | --- |
-| No insights at all | The Doctor needs traffic in the last 24 hours and checks every 15 minutes. Then check `DETECTORS_ENABLED` and that the worker is running. A new install has no baseline: the traffic detectors stay quiet until a slice has 100 calls from the previous 7 days. |
+| No insights at all | The Doctor needs traffic in the last 24 hours and checks every 15 minutes. Then check `DETECTORS_ENABLED` and that the worker is running. A new install has no baseline: until a slice has 100 calls from the previous 7 days, `error_spike` warns only at 25 % errors or more and the latency and cost spike detectors stay quiet. |
 | A finding you expected is missing | Each detector has a minimum sample size (see its entry). The client detectors need `request_hash`, so spans must come from the current SDK or the gateway; `tool_loop` needs stored inputs. |
 | An insight does not go away | It resolves after 24 hours without a sighting. Resolve it by hand if you have fixed the cause; it reopens if the problem is seen again. |
 | A critical insight did not notify | The project needs insight channels under Settings, Project. A muted insight does not notify until its mute ends, and only the first opening notifies. |

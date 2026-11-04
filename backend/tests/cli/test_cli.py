@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 
 from app import cli
 from app.config import get_settings
+from app.rollups.recovery import RecentRecoveryError
 
 PASSWORD = "brand new password"
 
@@ -115,9 +116,11 @@ def _enrol_with_two_factor(app_database_url: str, email: str) -> None:
             (email,),
         )
         conn.execute(
-            "INSERT INTO recovery_codes (user_id, code_hash) "
-            "SELECT id, sha256(convert_to(n::text, 'UTF8')) FROM users, generate_series(1, 10) n "
-            "WHERE email = %s",
+            # Every stored format: NULL (before code_length existed), 10 and 28.
+            "INSERT INTO recovery_codes (user_id, code_hash, code_length) "
+            "SELECT id, sha256(convert_to(n::text, 'UTF8')), "
+            "(ARRAY[NULL, 10, 28]::smallint[])[n %% 3 + 1] "
+            "FROM users, generate_series(1, 10) n WHERE email = %s",
             (email,),
         )
 
@@ -257,3 +260,68 @@ def test_reset_2fa_keeps_sessions_and_the_password(
 
     assert _query(app_database_url, "SELECT password_hash FROM users") == before
     assert _query(app_database_url, "SELECT count(*) FROM sessions") == [(1,)]
+
+
+def test_aggregate_activation_requires_explicit_drain_acknowledgement(runner: CliRunner) -> None:
+    result = runner.invoke(cli.app, ["activate-aggregate-coverage"])
+    assert result.exit_code == 2
+    assert "--writers-drained" in result.output
+
+
+@pytest.mark.parametrize(
+    ("failure", "message"),
+    [
+        (TimeoutError(), "stopped at its time limit"),
+        (RecentRecoveryError("Project was deleted during recent recovery"), "Project was deleted"),
+    ],
+)
+def test_recent_recovery_failure_is_an_error_line_not_a_traceback(
+    runner: CliRunner, monkeypatch: pytest.MonkeyPatch, failure: Exception, message: str
+) -> None:
+    async def fail(*_: object) -> None:
+        raise failure
+
+    monkeypatch.setattr(cli, "recover_recent", fail)
+    result = runner.invoke(
+        cli.app,
+        [
+            "rollups",
+            "backfill",
+            "--project",
+            "00000000-0000-7000-8000-000000000002",
+            "--from",
+            "2026-10-01T00:00Z",
+            "--to",
+            "2026-10-01T01:00Z",
+            "--resume-recent",
+        ],
+    )
+    assert isinstance(result.exception, SystemExit), result.exception
+    assert result.exit_code == 1
+    assert message in result.output
+
+
+def test_an_unexpected_recovery_bug_keeps_its_traceback(
+    runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bug = RuntimeError("unexpected")
+
+    async def fail(*_: object) -> None:
+        raise bug
+
+    monkeypatch.setattr(cli, "recover_recent", fail)
+    result = runner.invoke(
+        cli.app,
+        [
+            "rollups",
+            "backfill",
+            "--project",
+            "00000000-0000-7000-8000-000000000002",
+            "--from",
+            "2026-10-01T00:00Z",
+            "--to",
+            "2026-10-01T01:00Z",
+            "--resume-recent",
+        ],
+    )
+    assert result.exception is bug

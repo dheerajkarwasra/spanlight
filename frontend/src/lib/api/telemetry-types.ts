@@ -1,3 +1,4 @@
+import type { AggregateMetadata } from "./aggregate";
 /**
  * Project, trace, span, session, metrics, price and export types, mirroring the backend's bodies
  * exactly (snake_case; money as a decimal string; every unknown value `null`, never zero).
@@ -16,6 +17,11 @@ export interface Project {
   slug: string;
   retention_days: number;
   capture_payloads: boolean;
+  /**
+   * Built-in email and international phone patterns are redacted from spans ingested while this
+   * is on; stored spans keep what they had.
+   */
+  redact_contact_info: boolean;
   /** The Monday summary email to the project's members. Absent from older servers: read it as on. */
   weekly_digest_enabled?: boolean;
   /** Alert channels of the org that hear about critical insights; `[]` is off. */
@@ -29,6 +35,7 @@ export interface ProjectUpdate {
   name?: string;
   retention_days?: number;
   capture_payloads?: boolean;
+  redact_contact_info?: boolean;
   weekly_digest_enabled?: boolean;
   /** At most 10 channels of the project's org (else `422 UNKNOWN_CHANNEL`); `[]` turns it off. */
   insight_channel_ids?: string[];
@@ -120,6 +127,12 @@ export interface TraceSummary {
   error_message: string | null;
   /** The same span's error class; null when nothing failed or it failed before classification. */
   error_class: ErrorClass | null;
+  /**
+   * Whether a span without a parent was stored. False while only child spans have arrived (the
+   * root may still be running, or was sent elsewhere): duration, tokens and cost cover the spans
+   * received. Null when it could not be read.
+   */
+  root_received: boolean | null;
   /** True once the trace has any score, from a person, the SDK or an evaluator. */
   has_scores: boolean;
   /**
@@ -196,10 +209,22 @@ export interface Span {
   attributes: Record<string, unknown>;
   truncated: boolean;
   /**
-   * True when trace detail left `input` and `output` out (null) because the trace's payloads
-   * passed its 8 MiB budget; `projectsApi.span` returns the span with them.
+   * True when trace detail (or session turns) left non-null `input` and `output` out (null)
+   * because the trace's stored content passed its 8 MiB budget; `projectsApi.span` returns the
+   * span with them. False when both payloads are stored null, even past the budget.
    */
   payload_omitted: boolean;
+  /**
+   * True when `attributes` was left out (`{}`) past the same budget; `projectsApi.span` returns
+   * them. Only with it false is `{}` a span without attributes.
+   */
+  attributes_omitted: boolean;
+  /**
+   * Whether the span can be a retry attempt, by the rule `traces.retry_calls` counts (LLM call
+   * with a request hash, not a cache hit, not fault-injected, not a usage rollup). Read on the
+   * server from the stored attributes, so it holds while they are omitted.
+   */
+  retry_eligible: boolean;
   /** Canonical finish reason; the raw value is in `attributes`. Null when unknown. */
   finish_reason: FinishReason | null;
   /** The prompt version that produced this call; null when it was not linked to one. */
@@ -265,8 +290,8 @@ export interface TraceComparison {
 
 /**
  * One trace of a session with the few spans its conversation needs (root, first LLM call with an
- * input, last with an output, earliest failure). A span past the page's payload budget has
- * `payload_omitted` set.
+ * input, last with an output, earliest failure). A span past the page's content budget has
+ * `attributes_omitted`, and `payload_omitted` when it had non-null payloads.
  */
 export interface SessionTurn {
   trace: TraceSummary;
@@ -313,16 +338,16 @@ export interface SessionPage extends Page<SessionListItem> {
   cost_p99_usd: string | null;
 }
 
-export interface Kpis {
-  traces: number;
-  llm_calls: number;
+export interface Kpis extends AggregateMetadata {
+  traces: number | null;
+  llm_calls: number | null;
   error_rate: number | null;
   p50_ms: number | null;
   p95_ms: number | null;
   cost_usd: string | null;
-  unpriced_calls: number;
-  input_tokens: number;
-  output_tokens: number;
+  unpriced_calls: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
 }
 
 export interface OverviewMetrics {
@@ -342,17 +367,17 @@ export interface TraceHistogram {
   buckets: { bucket_start: string; traces: number; errors: number }[];
 }
 
-export interface TimeseriesPoint {
+export interface TimeseriesPoint extends AggregateMetadata {
   bucket_start: string;
-  llm_calls: number;
-  errors: number;
+  llm_calls: number | null;
+  errors: number | null;
   p95_ms: number | null;
   cost_usd: string | null;
-  tokens: number;
+  tokens: number | null;
   approximate: boolean;
 }
 
-export interface ModelMetrics {
+export interface ModelMetrics extends AggregateMetadata {
   provider: string | null;
   model: string | null;
   calls: number;

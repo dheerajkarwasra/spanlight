@@ -27,6 +27,8 @@ an OpenAI alias: Azure bills its own rates and none are seeded, so an Azure span
 
 An organization's price overrides are loaded next to the seed prices; `best_price` says which
 row wins. An override's `version` is `override:<id>`, so a stored cost says which rate made it.
+The seed prices and fees are cached per process for `SEED_BOOK_TTL_S`; overrides are read on
+every load.
 
 A token cost is only produced when the model has a known price at the span's start
 time and both input and output token counts are present. Otherwise `cost_usd` is
@@ -34,6 +36,7 @@ NULL, and so is `pricing_version`, even when a fee was priced: unknown is never
 reported as zero, and a fee alone is never presented as the span's total.
 """
 
+import time
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -47,6 +50,7 @@ from app.db.models import ModelPrice, PriceOverride
 from app.db.models import ServerToolFee as ServerToolFeeRow
 from app.pricing.fees import FEE_QUANTUM, FeeBook, ServerToolFee
 from app.pricing.price_row import OVERRIDE_VERSION_PREFIX, Price, best_price, token_cost
+from app.pricing.provider_alias import canonical_provider
 from app.pricing.seed_sync import sync_seed_prices
 from app.pricing.tiers import multipliers_for
 
@@ -60,6 +64,9 @@ __all__ = [
     "sync_seed_prices",
 ]
 
+# How long one process reuses the seed prices and fees before reading them again.
+SEED_BOOK_TTL_S = 60.0
+_SEED_BOOK: dict[str, tuple[float, "PriceBook"]] = {}
 _COST_QUANTUM = FEE_QUANTUM  # numeric(14, 8): token costs and fees round alike
 _PER_THOUSAND = Decimal(1000)
 _WEB_SEARCH = "web_search"
@@ -81,12 +88,16 @@ class CostResult:
 
 
 class PriceBook:
-    """An immutable set of prices and server-tool fees loaded once per ingestion batch."""
+    """An immutable set of prices and server-tool fees; the seed book is shared by the process."""
 
     def __init__(self, prices: Iterable[Price], *, fees: FeeBook | None = None) -> None:
         self._prices: Sequence[Price] = tuple(prices)
         self._fees = fees if fees is not None else FeeBook(())
         self._versions = frozenset(price.version for price in self._prices)
+        # Rows by canonical provider, so a lookup scans one provider's rows, not every row.
+        self._by_provider: dict[str | None, list[Price]] = {}
+        for price in self._prices:
+            self._by_provider.setdefault(canonical_provider(price.provider), []).append(price)
 
     def find(
         self, provider: str | None, model: str, at: datetime, prompt_tokens: int = 0
@@ -99,7 +110,12 @@ class PriceBook:
         on either side; no provider matches every row. `prompt_tokens` picks the tier: the row
         with the highest `min_prompt_tokens` not above it.
         """
-        return best_price(self._prices, provider, model, at, prompt_tokens)
+        canonical = canonical_provider(provider)
+        if canonical is None:
+            return best_price(self._prices, None, model, at, prompt_tokens)
+        # Every row in the bucket already has the span's canonical provider: `best_price` gets
+        # no provider, so it does not fold each row's again. The candidates are the same.
+        return best_price(self._by_provider.get(canonical, ()), None, model, at, prompt_tokens)
 
     def find_by_version(
         self, version: str, provider: str | None, model: str, at: datetime, prompt_tokens: int = 0
@@ -182,19 +198,47 @@ def _quantize(amount: Decimal) -> Decimal:
     return amount.quantize(_COST_QUANTUM, rounding=ROUND_HALF_UP)
 
 
-async def load_price_book(session: AsyncSession, org_id: UUID | None = None) -> PriceBook:
+async def load_price_book(
+    session: AsyncSession,
+    org_id: UUID | None = None,
+    *,
+    overrides: Sequence[PriceOverride] | None = None,
+) -> PriceBook:
     """The seed prices and fees, plus the overrides of `org_id` when one is given.
 
-    Three queries per batch: the seed prices, the server-tool fees and the organization's own
-    override rows.
+    The seed part is shared by the process for `SEED_BOOK_TTL_S` (`_seed_book`); the
+    organization's override rows are read on every call, one query, so an override is used from
+    the next batch on and never reaches another organization's book.
+    A caller that already read overrides in its current query can supply those rows instead;
+    an empty sequence means the query found none, not a request to read again.
     """
-    prices = [_seed_price(row) for row in (await session.scalars(select(ModelPrice))).all()]
-    if org_id is not None:
-        overrides = await session.scalars(
-            select(PriceOverride).where(PriceOverride.org_id == org_id)
-        )
-        prices.extend(_override_price(row) for row in overrides)
-    return PriceBook(prices, fees=await _load_fees(session))
+    seed = await _seed_book(session)
+    if org_id is None:
+        return seed
+    if overrides is None:
+        overrides = (
+            await session.scalars(select(PriceOverride).where(PriceOverride.org_id == org_id))
+        ).all()
+    prices = [_override_price(row) for row in overrides if row.org_id == org_id]
+    if not prices:
+        return seed
+    return PriceBook([*seed._prices, *prices], fees=seed.fees)
+
+
+async def _seed_book(session: AsyncSession) -> PriceBook:
+    """The seed prices and fees, read at most once per `SEED_BOOK_TTL_S` in this process.
+
+    Their rows change only when `sync_seed_prices` inserts a release's snapshots (startup, the
+    worker, `spanlight sync-prices`), so a process that started on an older release sees them
+    within the TTL. Two queries on a miss; concurrent misses each read, and the last one is kept.
+    """
+    cached = _SEED_BOOK.get("book")
+    if cached is not None and time.monotonic() < cached[0]:
+        return cached[1]
+    rows = (await session.scalars(select(ModelPrice))).all()
+    book = PriceBook((_seed_price(row) for row in rows), fees=await _load_fees(session))
+    _SEED_BOOK["book"] = (time.monotonic() + SEED_BOOK_TTL_S, book)
+    return book
 
 
 def _seed_price(row: ModelPrice) -> Price:

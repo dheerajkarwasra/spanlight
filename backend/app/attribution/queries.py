@@ -22,6 +22,9 @@ from app.api.window import TimeWindow
 from app.attribution.aggregate_sql import GroupKind, grouped_cte, money_sum, retry_cost_sum
 from app.end_users.days import midnight
 from app.end_users.queries import PENDING_CAP, pending_sql
+from app.rollups.compute import floor_hour
+from app.rollups.coverage_reads import CoverageState, read_covered
+from app.rollups.dirty import ATTRIBUTION
 
 AttributionSort = Literal["cost", "calls", "errors", "retry_cost"]
 
@@ -173,6 +176,7 @@ async def read_raw_groups(
     sort: AttributionSort,
     limit: int,
     after: Cursor | None,
+    coverage: CoverageState | None = None,
 ) -> list[Row[Any]]:
     """Up to `limit` values of the traces started in `window`, read live, after the cursor."""
     prefix, source, params = _raw_source(project_id, kind, key, window, environment)
@@ -180,8 +184,17 @@ async def read_raw_groups(
     sql = prefix + _ITEMS.format(
         sums=_SUMS, source=source, where="WHERE ", having=having, sort=_SORT_EXPRESSIONS[sort]
     )
-    result = await db.execute(text(sql), {**params, **cursor_params, "limit": limit})
-    return list(result.all())
+    return await read_covered(
+        db,
+        text(sql),
+        {**params, **cursor_params, "limit": limit},
+        project_id,
+        floor_hour(window.start),
+        window.end,
+        coverage,
+        raw=True,
+        relevant_consumers=0,
+    )
 
 
 async def read_rollup_groups(
@@ -194,6 +207,7 @@ async def read_rollup_groups(
     sort: AttributionSort,
     limit: int,
     after: Cursor | None,
+    coverage: CoverageState | None = None,
 ) -> list[Row[Any]]:
     """Up to `limit` values of the rollup rows of `[first_day, end_day)`, after the cursor."""
     source, params = _rollup_source(project_id, kind, key, days, environment)
@@ -201,8 +215,16 @@ async def read_rollup_groups(
     sql = _ITEMS.format(
         sums=_SUMS, source=source, where="AND ", having=having, sort=_SORT_EXPRESSIONS[sort]
     )
-    result = await db.execute(text(sql), {**params, **cursor_params, "limit": limit})
-    return list(result.all())
+    return await read_covered(
+        db,
+        text(sql),
+        {**params, **cursor_params, "limit": limit},
+        project_id,
+        midnight(days[0]),
+        midnight(days[1]),
+        coverage,
+        relevant_consumers=ATTRIBUTION,
+    )
 
 
 async def read_totals(
@@ -214,6 +236,7 @@ async def read_totals(
     *,
     window: TimeWindow | None = None,
     days: tuple[date, date] | None = None,
+    coverage: CoverageState | None = None,
 ) -> list[Row[Any]]:
     """The buckets and the totals of the window, from the raw source (`window`) or the rollup
     source (`days`), in one query.
@@ -223,13 +246,23 @@ async def read_totals(
     """
     if window is not None:
         prefix, source, params = _raw_source(project_id, kind, key, window, environment)
+        bounds = (floor_hour(window.start), window.end)
     elif days is not None:
         prefix = ""
         source, params = _rollup_source(project_id, kind, key, days, environment)
+        bounds = (midnight(days[0]), midnight(days[1]))
     else:
         raise ValueError("read_totals needs a window or days")
-    result = await db.execute(text(prefix + _TOTALS.format(sums=_SUMS, source=source)), params)
-    return list(result.all())
+    return await read_covered(
+        db,
+        text(prefix + _TOTALS.format(sums=_SUMS, source=source)),
+        params,
+        project_id,
+        *bounds,
+        coverage,
+        raw=window is not None,
+        relevant_consumers=0 if window is not None else ATTRIBUTION,
+    )
 
 
 async def read_series(
@@ -242,6 +275,7 @@ async def read_series(
     *,
     window: TimeWindow | None = None,
     days: tuple[date, date] | None = None,
+    coverage: CoverageState | None = None,
 ) -> list[Row[Any]]:
     """`bucket_start`, `unpriced_calls` and `cost_usd` per hour of the raw source (`window`) or
     per day of the rollup source (`days`), for every trace or only the group `value` (never the
@@ -249,14 +283,25 @@ async def read_series(
     if window is not None:
         prefix, source, params = _raw_source(project_id, kind, key, window, environment, True)
         bucket, joiner = "hour", "WHERE "
+        bounds = (floor_hour(window.start), window.end)
     elif days is not None:
         prefix, bucket, joiner = "", "day", "AND "
         source, params = _rollup_source(project_id, kind, key, days, environment)
+        bounds = (midnight(days[0]), midnight(days[1]))
     else:
         raise ValueError("read_series needs a window or days")
     where = "" if value is None else f"{joiner}r.bucket = 'value' AND r.group_value = :value"
     sql = prefix + _SERIES.format(bucket=bucket, source=source, value=where)
-    return list((await db.execute(text(sql), {**params, "value": value})).all())
+    return await read_covered(
+        db,
+        text(sql),
+        {**params, "value": value},
+        project_id,
+        *bounds,
+        coverage,
+        raw=window is not None,
+        relevant_consumers=0 if window is not None else ATTRIBUTION,
+    )
 
 
 async def count_pending(

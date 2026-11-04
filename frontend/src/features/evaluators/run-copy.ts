@@ -36,7 +36,7 @@ export function runState(run: Pick<EvaluatorRun, "status" | "error">): RunState 
 const ERROR_COPY: Record<string, string> = {
   [BUDGET_EXCEEDED]: BUDGET_SKIPPED_COPY,
   gateway_budget_blocked: "A project budget blocked the call.",
-  verdict_unparseable: "The judge's reply was not a valid score.",
+  verdict_unparseable: "The judge did not record a verdict.",
   judge_no_answer: "The judge model returned no answer.",
   judge_truncated:
     "The judge reached its max tokens before giving a score. Raise max tokens and run it again.",

@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import type { AttributionResponse } from "@/lib/api";
 import { describeRange, type ResolvedRange } from "@/lib/time-range";
 
+import { attributionHistory } from "./cost-strip/cost-strip-data";
+
 const DAY_MS = 24 * 3_600_000;
 
 /** The rollup refresh schedule (`REFRESH_ATTRIBUTION` in `app/jobs/scheduler.py`). */
@@ -41,11 +43,12 @@ export function WindowNote({
     const lastDay = new Date(to.getTime() - 1);
     label = `${UTC_DAY.format(from)} – ${UTC_DAY.format(lastDay)} · ${days} days`;
   }
+  const history = page ? attributionHistory(page) : null;
   return (
     <span className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
       <CalendarDays aria-hidden className="size-4" />
       <span>{label}</span>
-      {source === "raw" ? (
+      {source === "raw" && history === null ? (
         <Badge variant="success" size="sm">
           Live
         </Badge>
@@ -54,6 +57,7 @@ export function WindowNote({
           value={page.computed_at}
           pendingTraces={page.pending_traces}
           explanation={ROLLUP_EXPLANATION}
+          history={history}
         />
       ) : null}
     </span>

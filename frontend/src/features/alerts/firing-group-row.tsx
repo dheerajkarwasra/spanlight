@@ -39,7 +39,7 @@ export function FiringGroupRow({ group, rule, now }: FiringGroupRowProps) {
         onClick={() => {
           setExpanded((open) => !open);
         }}
-        className="flex min-h-11 w-full items-center gap-3 rounded-tile px-3.5 py-3 text-left outline-none hover:bg-surface-hover focus-visible:outline-[1.5px] focus-visible:outline-offset-2 focus-visible:outline-ring"
+        className="flex min-h-11 w-full items-center gap-3 rounded-tile px-3.5 py-3 text-left outline-none hover:bg-surface-hover focus-visible:outline-[1.5px] focus-visible:outline-offset-2 focus-visible:outline-ring focus-visible:outline-solid"
       >
         <ChevronRight
           aria-hidden

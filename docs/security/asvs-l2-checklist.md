@@ -19,7 +19,7 @@ Assessed in October 2026 against the code before the first `1.0` release.
 |---|---|---|---|---|
 | V1 Architecture | 27 | 11 | 0 | 0 |
 | V2 Authentication | 19 | 8 | 13 | 3 |
-| V3 Session management | 12 | 3 | 2 | 1 |
+| V3 Session management | 13 | 3 | 1 | 1 |
 | V4 Access control | 7 | 2 | 0 | 0 |
 | V5 Validation, sanitization and encoding | 21 | 0 | 0 | 7 |
 | V6 Stored cryptography | 6 | 3 | 1 | 3 |
@@ -29,9 +29,9 @@ Assessed in October 2026 against the code before the first `1.0` release.
 | V10 Malicious code | 2 | 1 | 0 | 2 |
 | V11 Business logic | 2 | 4 | 2 | 0 |
 | V12 Files and resources | 7 | 3 | 0 | 5 |
-| V13 API and web services | 5 | 4 | 0 | 0 |
+| V13 API and web services | 6 | 3 | 0 | 0 |
 | V14 Configuration | 16 | 5 | 1 | 1 |
-| **Total** | **141** | **55** | **21** | **27** |
+| **Total** | **143** | **54** | **20** | **27** |
 
 ## V1 Architecture, design and threat modeling
 
@@ -140,7 +140,7 @@ Assessed in October 2026 against the code before the first `1.0` release.
 | 3.4.1 | `Secure` cookie attribute | Met | Set whenever `APP_BASE_URL` is https | `api/v1/auth.py`, `config.py` (`secure_cookies`) |
 | 3.4.2 | `HttpOnly` cookie attribute | Met | The CSRF cookie is readable by design: the SPA echoes it | `api/v1/auth.py` |
 | 3.4.3 | `SameSite` cookie attribute | Met | `Lax` | `api/v1/auth.py` |
-| 3.4.4 | `__Host-` cookie prefix | Not met | | `api/deps.py` (`SESSION_COOKIE`) |
+| 3.4.4 | `__Host-` cookie prefix | Met | `__Host-spl_session` and `__Host-spl_csrf` whenever `APP_BASE_URL` is https; a plain-http deployment keeps `spl_session` and `spl_csrf`, since the prefix needs `Secure` | `api/deps.py` (`session_cookie_name`, `csrf_cookie_name`) |
 | 3.4.5 | Most precise cookie path | N/A | Spanlight expects an origin of its own; the OAuth state cookie is scoped to the OAuth routes | `auth/oauth_state.py` |
 | 3.5.1 | Users can revoke linked OAuth relationships | Met | Providers can be unlinked unless it is the last way to sign in; provider tokens are never stored | `auth/oauth_service.py` (`unlink_identity`) |
 | 3.5.2 | Session tokens rather than static API secrets | Partial | Browsers use sessions; scripts and SDKs use API keys and tokens by design, which can expire and be revoked | `api/deps.py` |
@@ -240,7 +240,7 @@ Assessed in October 2026 against the code before the first `1.0` release.
 | 8.2.1 | Anti-caching headers | Met | `no-store` and `Pragma: no-cache` on every response that shows a secret once: new API keys, invite links, new tokens, two-factor setup and recovery codes; also on OAuth redirects and the audit CSV | `core/security.py` (`mark_uncacheable`), `api/v1/keys.py`, `api/v1/tokens.py`, `api/v1/totp.py` |
 | 8.2.2 | No sensitive data in browser storage | Met | Local storage holds the theme and the last project id only | `frontend/src/lib/last-project.ts` |
 | 8.2.3 | Client data cleared after sign-out | Met | The query cache is cleared and the cookies deleted | `frontend/src/features/shell/use-sign-out.ts`, `api/v1/auth.py` (`logout`) |
-| 8.3.1 | No sensitive data in query strings | Partial | Invite preview takes its token in the query (R1); export links carry their signature in the query by design | `api/v1/orgs.py` (`preview_invite`) |
+| 8.3.1 | No sensitive data in query strings | Partial | Export links carry their signature in the query by design; invite tokens travel in the URL fragment and a POST body (R1) | `exports/service.py`, `api/v1/orgs.py` (`preview_invite`) |
 | 8.3.2 | Users can export or remove their data | Partial | Traces can be exported; projects and organizations can be deleted; a user account cannot be deleted by its user | `api/v1/exports.py`, `api/v1/projects.py`, `api/v1/orgs.py` |
 | 8.3.3 | Clear privacy information and consent | N/A | Self-hosted: the operator is the controller of the data | |
 | 8.3.4 | Sensitive data identified with a handling policy | Met | | [threat model](threat-model.md) §2 |
@@ -310,7 +310,7 @@ Assessed in October 2026 against the code before the first `1.0` release.
 | ID | Requirement | Status | Note | Reference |
 |---|---|---|---|---|
 | 13.1.1 | Same encodings and parsers everywhere | Met | One JSON parser per path; OTLP protobuf through the official definitions | `ingest/pipeline.py`, `ingest/otlp.py` |
-| 13.1.3 | No secrets in API URLs | Partial | Invite preview takes its token in the query (R1) | `api/v1/orgs.py` (`preview_invite`) |
+| 13.1.3 | No secrets in API URLs | Met | The invite preview and accept calls take the token in a POST body (R1) | `api/v1/orgs.py` (`preview_invite`) |
 | 13.1.4 | Authorization at route and resource level | Met | `require()` on the route; every query scoped to the bound project or organization; RLS underneath | `api/deps.py`, `db/rls.py` |
 | 13.1.5 | Unexpected content types rejected | Partial | OTLP refuses other types with 415; native ingestion parses the body as JSON whatever the declared type | `api/ingest.py` |
 | 13.2.1 | HTTP methods restricted per action | Met | | `api/v1/` |

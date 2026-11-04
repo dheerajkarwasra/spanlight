@@ -26,6 +26,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.window import TimeWindow
 from app.core.model_match import like_prefix, model_filter_sql
 from app.rollups.compute import floor_hour
+from app.rollups.coverage_reads import CoverageState, read_covered
+from app.rollups.dirty import HOURLY
 from app.rollups.filtered import RollupFilters
 
 # A NULL filter parameter means "any value". Without the breakdown every provider's rows are
@@ -82,6 +84,7 @@ async def read_error_rollups(
     filters: RollupFilters,
     *,
     provider_breakdown: bool,
+    coverage: CoverageState | None = None,
 ) -> list[ErrorHour]:
     """One row per hour, [provider,] error class and rate-limit kind that had failures, oldest
     hour first."""
@@ -95,7 +98,16 @@ async def read_error_rollups(
         "model": filters.model,
         "model_like": None if filters.model is None else like_prefix(filters.model),
     }
-    rows = (await db.execute(_ERROR_HOURS, params)).all()
+    rows = await read_covered(
+        db,
+        _ERROR_HOURS,
+        params,
+        project_id,
+        floor_hour(window.start),
+        window.end,
+        coverage,
+        relevant_consumers=HOURLY,
+    )
     return [
         ErrorHour(
             bucket_start=row.bucket_start,

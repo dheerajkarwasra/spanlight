@@ -1,7 +1,9 @@
 """A fake OpenAI-compatible provider for the gateway load test.
 
 It answers `POST /v1/chat/completions` and `GET /v1/models` with fixed bodies, after
-FAKE_PROVIDER_DELAY_MS milliseconds (default 0), and checks nothing about the request. The gateway
+FAKE_PROVIDER_DELAY_MS milliseconds (default 0), and checks nothing about the request but its
+`stream` flag: a streaming call gets the same answer as three server-sent events and `[DONE]`,
+the delay spent before the first one. The gateway
 overhead is the time a call spends in Spanlight, so the provider has to add as little and as
 steady a time as possible: no model, no network, no randomness.
 
@@ -13,10 +15,11 @@ The load Compose file runs it in the backend image with this file mounted in.
 import asyncio
 import json
 import os
+from collections.abc import AsyncIterator
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import Response, StreamingResponse
 from starlette.routing import Route
 
 MODEL = "gpt-4o-mini"
@@ -38,6 +41,31 @@ CHAT_COMPLETION = json.dumps(
     }
 ).encode()
 
+
+def _chunk(delta: dict[str, str], finish_reason: str | None = None, **extra: object) -> bytes:
+    choice = {"index": 0, "delta": delta, "finish_reason": finish_reason}
+    body = {
+        "id": "chatcmpl-load-test",
+        "object": "chat.completion.chunk",
+        "created": 1_700_000_000,
+        "model": MODEL,
+        "choices": [choice],
+        **extra,
+    }
+    return b"data: " + json.dumps(body).encode() + b"\n\n"
+
+
+STREAM_CHUNKS = (
+    _chunk({"role": "assistant", "content": "This is"}),
+    _chunk({"content": " a canned answer."}),
+    _chunk(
+        {},
+        "stop",
+        usage={"prompt_tokens": 24, "completion_tokens": 6, "total_tokens": 30},
+    ),
+    b"data: [DONE]\n\n",
+)
+
 MODEL_LIST = json.dumps(
     {"object": "list", "data": [{"id": MODEL, "object": "model", "owned_by": "load-test"}]}
 ).encode()
@@ -55,8 +83,17 @@ def delay_seconds() -> float:
 DELAY_SECONDS = delay_seconds()
 
 
+async def stream_chunks() -> AsyncIterator[bytes]:
+    if DELAY_SECONDS:
+        await asyncio.sleep(DELAY_SECONDS)
+    for chunk in STREAM_CHUNKS:
+        yield chunk
+
+
 async def chat_completions(request: Request) -> Response:
-    # The body is not read: a canned answer does not depend on it, and parsing would add time.
+    # Only the stream flag is read; the answer is canned either way.
+    if b'"stream"' in (body := await request.body()) and json.loads(body).get("stream") is True:
+        return StreamingResponse(stream_chunks(), media_type="text/event-stream")
     if DELAY_SECONDS:
         await asyncio.sleep(DELAY_SECONDS)
     return Response(CHAT_COMPLETION, media_type="application/json")

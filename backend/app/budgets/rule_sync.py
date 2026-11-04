@@ -11,14 +11,21 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import delete
+from sqlalchemy import delete, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.alerts.types import AlertRuleKind, Comparator, Metric
+from app.budgets.reserve import RESERVATION_LEASE
 from app.budgets.schemas import BudgetSpec
 from app.budgets.scope_parse import parse_metadata_scope
-from app.budgets.types import BudgetScope
-from app.db.models import AlertRule, BudgetCounter, BudgetReservation
+from app.budgets.types import BudgetPeriod, BudgetScope
+from app.db.models import (
+    AlertRule,
+    BudgetBucketDelta,
+    BudgetBucketSnapshot,
+    BudgetCounter,
+    BudgetReservation,
+)
 
 # The filter key each one-value scope sets on the rule (`app.alerts.rules.metric_filters` reads
 # them). A `metadata` scope sets `metadata_key` and `metadata_value` instead, split from its
@@ -96,11 +103,34 @@ def sync_budget_rule(rule: AlertRule, spec: BudgetSpec, *, now: datetime) -> boo
     return changed
 
 
-async def forget_counters(db: AsyncSession, budget_id: uuid.UUID) -> None:
-    """Drop the budget's gateway counters and reservations (`app.budgets.reserve`) when its scope
-    or period changes: the spend they count belonged to the old one, as `forget_state` does for
-    the rule's last measured value."""
-    for table in (BudgetReservation, BudgetCounter):
+async def reclassify_history(
+    db: AsyncSession,
+    budget_id: uuid.UUID,
+    period: BudgetPeriod,
+    *,
+    scope_changed: bool,
+) -> None:
+    """Keep admission identity while mapping settled history to an edited scope/period.
+
+    The service has rejected unresolved relevant charges and holds the budget lock. Expiry is
+    immutable: admission always stored it as admission time + the fixed reservation lease.
+    A future lease-policy change must migrate this clock before changing that invariant.
+    """
+    unit = "day" if period is BudgetPeriod.DAILY else "month"
+    values: dict[str, Any] = {
+        "period_start": func.date_trunc(
+            unit, BudgetReservation.expires_at - RESERVATION_LEASE, "UTC"
+        ),
+    }
+    if scope_changed:
+        values["reclassified"] = True
+    await db.execute(
+        update(BudgetReservation)
+        .where(BudgetReservation.budget_id == budget_id)
+        .values(**values)
+        .execution_options(synchronize_session=False)
+    )
+    for table in (BudgetCounter, BudgetBucketSnapshot, BudgetBucketDelta):
         await db.execute(
             delete(table)
             .where(table.budget_id == budget_id)

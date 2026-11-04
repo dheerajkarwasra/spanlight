@@ -44,7 +44,7 @@ const INCIDENTS: IncidentList = {
 
 function mockProviders(health: () => Promise<HealthReport>, incidents: IncidentList = INCIDENTS) {
   vi.spyOn(providersApi, "health").mockImplementation(health);
-  vi.spyOn(providersApi, "errorTimeseries").mockResolvedValue([]);
+  vi.spyOn(providersApi, "errorTimeseries").mockResolvedValue({ items: [] });
   vi.spyOn(providersApi, "samples").mockResolvedValue({
     items: [],
     next_cursor: null,
@@ -217,14 +217,16 @@ describe("ProvidersPage", () => {
       ],
       next_cursor: null,
     });
-    vi.spyOn(providersApi, "errorTimeseries").mockResolvedValue([
-      {
-        bucket_start: "2026-10-16T01:00:00Z",
-        by_class: { rate_limit: 12, timeout: 4 },
-        approximate: false,
-      },
-      { bucket_start: "2026-10-16T02:00:00Z", by_class: {}, approximate: false },
-    ]);
+    vi.spyOn(providersApi, "errorTimeseries").mockResolvedValue({
+      items: [
+        {
+          bucket_start: "2026-10-16T01:00:00Z",
+          by_class: { rate_limit: 12, timeout: 4 },
+          approximate: false,
+        },
+        { bucket_start: "2026-10-16T02:00:00Z", by_class: {}, approximate: false },
+      ],
+    });
     vi.spyOn(providersApi, "samples").mockResolvedValue({
       items: [
         {
@@ -296,5 +298,111 @@ describe("ProvidersPage", () => {
     expect(screen.getByText("Not a status page link")).toBeInTheDocument();
     expect(screen.getByText("Stale")).toBeInTheDocument();
     expect(screen.getByText(/3 failed polls/)).toBeInTheDocument();
+  });
+
+  it.each([
+    { name: "all unknown", values: [null] },
+    { name: "unknown and known zero", values: [null, {}] },
+  ])("shows unknown error history for $name buckets", async ({ values }) => {
+    mockProviders(() => Promise.resolve(report([ANTHROPIC])));
+    vi.mocked(providersApi.errorTimeseries).mockResolvedValue({
+      items: values.map((by_class, index) => ({
+        bucket_start: `2026-10-16T0${index + 1}:00:00Z`,
+        by_class,
+        approximate: true,
+      })),
+    });
+    renderApp(PATH);
+    const card = await screen.findByRole("region", { name: "Errors by class" });
+    expect(
+      await within(card).findByLabelText("Unknown: Not reported for this period"),
+    ).toHaveTextContent("—");
+    expect(within(card).queryByText("No failed LLM calls in this window")).not.toBeInTheDocument();
+  });
+
+  it("keeps the no-failures state for known zero error buckets", async () => {
+    mockProviders(() => Promise.resolve(report([ANTHROPIC])));
+    vi.mocked(providersApi.errorTimeseries).mockResolvedValue({
+      items: [{ bucket_start: "2026-10-16T01:00:00Z", by_class: {}, approximate: true }],
+    });
+    renderApp(PATH);
+    const card = await screen.findByRole("region", { name: "Errors by class" });
+    expect(await within(card).findByText("No failed LLM calls in this window")).toBeInTheDocument();
+    expect(
+      within(card).queryByLabelText("Unknown: Not reported for this period"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("identifies unknown legend and table counts while preserving true zeros", async () => {
+    window.localStorage.setItem("spanlight-provider-errors-view", "table");
+    mockProviders(() => Promise.resolve(report([ANTHROPIC])));
+    vi.mocked(providersApi.errorTimeseries).mockResolvedValue({
+      items: [
+        { bucket_start: "2026-10-16T01:00:00Z", by_class: { timeout: 2 }, approximate: true },
+        { bucket_start: "2026-10-16T02:00:00Z", by_class: null, approximate: true },
+        { bucket_start: "2026-10-16T03:00:00Z", by_class: {}, approximate: true },
+      ],
+    });
+    renderApp(PATH);
+    const legend = await screen.findByRole("list", { name: "Error classes" });
+    expect(
+      within(legend).getByLabelText("Unknown: Not reported for this period"),
+    ).toHaveTextContent("—");
+    const table = screen.getByRole("region", {
+      name: "Failed LLM calls per hour and class, table",
+    });
+    const knownRow = within(table).getByRole("row", { name: /Oct 16 · 01:00 – 02:00/ });
+    const unknownRow = within(table).getByRole("row", { name: /Oct 16 · 02:00 – 03:00/ });
+    const zeroRow = within(table).getByRole("row", { name: /Oct 16 · 03:00 – 04:00/ });
+    expect(
+      within(knownRow)
+        .getAllByRole("cell")
+        .map((cell) => cell.textContent),
+    ).toEqual(["2", "2"]);
+    expect(
+      within(unknownRow).getAllByLabelText("Unknown: Not reported for this period"),
+    ).toHaveLength(2);
+    expect(
+      within(unknownRow)
+        .getAllByRole("cell")
+        .map((cell) => cell.textContent),
+    ).toEqual(["—", "—"]);
+    expect(
+      within(zeroRow)
+        .getAllByRole("cell")
+        .map((cell) => cell.textContent),
+    ).toEqual(["0", "0"]);
+  });
+
+  it("says source history is unavailable instead of no calls, keeping incidents", async () => {
+    mockProviders(() => Promise.resolve({ ...report([]), aggregate_status: "unavailable" }));
+    renderApp(PATH);
+
+    expect(
+      await screen.findByRole("heading", { name: "Source history unavailable" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Source history unavailable" })).toBeInTheDocument();
+    expect(screen.queryByText("No LLM calls in this window")).not.toBeInTheDocument();
+  });
+
+  it("labels retained provider figures a snapshot", async () => {
+    mockProviders(() =>
+      Promise.resolve({ ...report([ANTHROPIC]), aggregate_status: "unavailable" }),
+    );
+    renderApp(PATH);
+
+    expect(await screen.findByRole("button", { name: "Retained snapshot" })).toBeInTheDocument();
+  });
+
+  it("does not call an unavailable empty error history failure-free", async () => {
+    mockProviders(() => Promise.resolve(report([ANTHROPIC])));
+    vi.mocked(providersApi.errorTimeseries).mockResolvedValue({
+      items: [],
+      aggregate_status: "unavailable",
+    });
+    renderApp(PATH);
+    const card = await screen.findByRole("region", { name: "Errors by class" });
+    expect(await within(card).findByText("Source history unavailable")).toBeInTheDocument();
+    expect(within(card).queryByText("No failed LLM calls in this window")).not.toBeInTheDocument();
   });
 });

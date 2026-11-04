@@ -100,11 +100,15 @@ def _resolved_paragraphs(payload: AlertPayload) -> list[str | tuple[str, str]]:
 
 
 def _budget_paragraphs(payload: AlertPayload, budget: BudgetPayload) -> list[str | tuple[str, str]]:
+    # Worded as the budgets page names each scope; `tests/alerts/test_alert_render.py` renders
+    # every `BudgetScope`, so a new scope cannot ship without its words here.
     scope = {
         "project": "",
         "gateway_key": " for one gateway key",
         "user": f" for user {budget.scope_id}",
         "model": f" for model {budget.scope_id}",
+        "metadata": f" for metadata {budget.scope_id}",
+        "trace_name": f" for trace name {budget.scope_id}",
     }[budget.scope]
     spent = (
         f"{payload.project.name} spent {format_money(budget.spent_usd)} of its "

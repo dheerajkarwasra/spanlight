@@ -38,6 +38,7 @@ export const queryKeys = {
   me: ["me"] as const,
   authSessions: ["auth", "sessions"] as const,
   authTokens: ["auth", "tokens"] as const,
+  authTerms: ["auth", "terms"] as const,
   totp: ["auth", "totp"] as const,
   oauthProviders: ["auth", "oauth", "providers"] as const,
   oauthIdentities: ["auth", "oauth", "identities"] as const,
@@ -94,6 +95,7 @@ export const queryKeys = {
       unpricedModels: (window: TimeWindow, environment: string | undefined) =>
         [...all, "unpriced-models", { ...window, environment }] as const,
       onboarding: [...all, "onboarding"] as const,
+      connectionStatus: [...all, "connection-status"] as const,
       activation: [...all, "activation"] as const,
       filters: [...all, "filters"] as const,
       traces: (query: Omit<TraceListQuery, "cursor">) => [...all, "traces", query] as const,
@@ -146,6 +148,7 @@ export const queryKeys = {
       providerIncidents: (query: Omit<IncidentListQuery, "cursor">) =>
         [...providers, "incidents", query] as const,
       completeness: (query: CompletenessQuery) => [...all, "completeness", query] as const,
+      ingestQuota: (query: CompletenessQuery) => [...all, "ingest-quota", query] as const,
       releases: (query: ReleaseListQuery) => [...all, "releases", query] as const,
       releaseCompare: (query: ReleaseCompareQuery) => [...all, "release-compare", query] as const,
       /** Under the `releases` scope, so invalidating the release list covers it. */

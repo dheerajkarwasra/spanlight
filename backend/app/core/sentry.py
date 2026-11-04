@@ -8,8 +8,8 @@ from sentry_sdk.types import Event, Hint
 
 from app.config import Settings
 
-# The invite page is /invite/<token>, so a browser sends that token in the Referer of every API
-# call the page makes, not only in the `?token=` of the preview request. The SDK's own filter
+# Invite links mailed before the token moved to the fragment open /invite/<token>, so a browser can
+# still send a token in the Referer of the API calls that page makes. The SDK's own filter
 # removes `Authorization` and `Cookie` only; the CSRF token (session-bound, but still a credential
 # for that session) and the client's Idempotency-Key are not needed to debug an error either.
 _DROPPED_HEADERS = frozenset({"referer", "x-csrf-token", "idempotency-key"})
@@ -18,9 +18,9 @@ _DROPPED_HEADERS = frozenset({"referer", "x-csrf-token", "idempotency-key"})
 def before_send(event: Event, hint: Hint) -> Event:
     """Remove the parts of a failed request's URL that can carry a bearer secret.
 
-    `GET /api/v1/invites/preview?token=...` puts an invite token in the query string, which the SDK
-    sends as `request.query_string`. Any other endpoint could do the same, so the query is dropped
-    for every request instead of for a list of known names. The path stays: it names the route.
+    A query string can carry a bearer secret (the invite preview took its token there until it
+    became a POST), and the SDK sends it as `request.query_string`. So the query is dropped for
+    every request instead of for a list of known names. The path stays: it names the route.
     """
     request = event.get("request")
     if not request:

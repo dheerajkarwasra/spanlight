@@ -198,6 +198,8 @@ async def rotate_credential(
     except CREDENTIAL_ERRORS as error:
         raise _credential_problem(error) from None
     await db.commit()
+    # This process's gateway calls read the change from the next call, not after the key cache TTL.
+    request.app.state.gateway_key_cache.clear()
     logger.info(
         "provider_credential_rotated", org_id=str(access.org.id), credential_id=str(credential_id)
     )
@@ -262,6 +264,7 @@ async def delete_credential(
     except CREDENTIAL_ERRORS as error:
         raise _credential_problem(error) from None
     await db.commit()
+    request.app.state.gateway_key_cache.clear()
     logger.info(
         "provider_credential_deleted", org_id=str(access.org.id), credential_id=str(credential_id)
     )

@@ -17,4 +17,12 @@ describe("AttributionEmpty", () => {
     render(<AttributionEmpty groupBy="trace_name" metadataKey={null} pendingTraces={0} />);
     expect(screen.getByText("No traces in this window")).toBeInTheDocument();
   });
+
+  it("says source history is unavailable instead of no traces", () => {
+    render(
+      <AttributionEmpty groupBy="trace_name" metadataKey={null} pendingTraces={0} unavailable />,
+    );
+    expect(screen.getByRole("heading", { name: "Source history unavailable" })).toBeInTheDocument();
+    expect(screen.queryByText("No traces in this window")).not.toBeInTheDocument();
+  });
 });

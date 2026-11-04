@@ -422,6 +422,13 @@ options. Use `tracer.observe`, `tracer.span` and
 | `shutdown_timeout` |                         | `5.0`                   | Time budget for the flush at interpreter exit                            |
 | `prompt_cache_ttl` |                         | `60.0`                  | Seconds a fetched prompt is served before it is revalidated              |
 
+`host` must use `https://`. Plain `http://` works only for local and private-network hosts:
+`localhost` and names ending in `.localhost`, `.local` or `.internal`, single-label names such
+as a Compose service (`http://api:8000`), and loopback, private and link-local IP addresses.
+With any other plain-http host the SDK logs a warning and stays disabled rather than send the
+key in clear text. A service name with an underscore (`my_api`) is not a valid host name and is
+refused too: rename it with a hyphen or use `https://`.
+
 ### `@observe(name=None, kind="chain", capture_input=True, capture_output=True)`
 
 Traces each call of a function. It supports plain functions, `async def`,
@@ -526,6 +533,16 @@ your spans to another trace of the same project. Your spans still land in the pr
 own API key.
 
 ## Delivery guarantees
+
+Delivery is confirmed only by a JSON acknowledgment whose nonnegative integer `accepted`
+count plus its `rejected` entries equals the batch size. Rejection indexes must be unique
+integers within the batch. Empty, malformed or inconsistent success responses are ambiguous:
+the SDK retries the same IDs within its configured retry budget, then counts unconfirmed
+entries as failed. A write may already have committed; server idempotence prevents duplicate
+stored records when those IDs are retried. A valid `Retry-After` is a minimum delay, even above
+the client exponential backoff cap. Integer delays beyond exact numeric representation remain
+pending until shutdown rather than retrying early. Shutdown interrupts pending retry waits.
+
 
 Spans are sent by a background daemon thread. A batch goes out when it reaches
 `batch_size` spans or after `flush_interval` seconds. Failed requests are

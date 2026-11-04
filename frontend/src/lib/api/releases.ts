@@ -18,8 +18,12 @@ function releasesPath(projectId: string): string {
  */
 export const releasesApi = {
   /** The release seen last first, at most 200. */
-  list: (projectId: string, query: ReleaseListQuery = {}): Promise<ReleaseStats[]> =>
-    api.get<ReleaseStats[]>(releasesPath(projectId), { ...query }),
+  list: (
+    projectId: string,
+    query: ReleaseListQuery = {},
+    signal?: AbortSignal,
+  ): Promise<ReleaseStats[]> =>
+    api.get<ReleaseStats[]>(releasesPath(projectId), { ...query }, signal),
   /** `a` is the baseline, `b` the candidate; deltas are `b - a`. */
   compare: (projectId: string, query: ReleaseCompareQuery): Promise<Comparison> =>
     api.get<Comparison>(`${releasesPath(projectId)}/compare`, { ...query }),

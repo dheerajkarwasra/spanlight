@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import type { BillingSource } from "@/lib/api";
 
-import { failingCopy, neverFetchedCopy, sourceSummary, tableFootnote } from "./reconciliation-copy";
+import {
+  bypassCopy,
+  failingCopy,
+  neverFetchedCopy,
+  sourceSummary,
+  tableFootnote,
+} from "./reconciliation-copy";
 
 function source(overrides: Partial<BillingSource> = {}): BillingSource {
   return {
@@ -115,5 +121,26 @@ describe("callouts", () => {
     expect(copy.body).toBe(
       "Refresh tries again now, and the daily fetch retries at 03:30 UTC. The last success was Oct 15, 03:31 UTC.",
     );
+  });
+});
+
+describe("bypassCopy", () => {
+  const causes =
+    "Likely causes: calls made outside the gateway and the SDK, a project this source is not mapped to, or a leaked provider key. Check the provider’s usage by key, map every project that uses this account, and rotate the key if you cannot account for the spend.";
+
+  it("names the day and the email's likely causes", () => {
+    expect(bypassCopy("Oct 9")).toEqual({
+      title: "Unexplained provider spend on Oct 9",
+      body: `On this day more than 10 % and more than $1 of the provider’s bill is not explained by Spanlight’s traces or the known causes. ${causes}`,
+    });
+  });
+
+  it("speaks of several days when the range names more than one", () => {
+    expect(bypassCopy("Oct 3, Oct 9").body).toMatch(/^On these days /);
+    expect(bypassCopy("Oct 3, Oct 9").title).toBe("Unexplained provider spend on Oct 3 and Oct 9");
+    expect(bypassCopy("Oct 1, Oct 3 – Oct 5, Oct 9").title).toBe(
+      "Unexplained provider spend on Oct 1, Oct 3 – Oct 5 and Oct 9",
+    );
+    expect(bypassCopy("Oct 3 – Oct 5").title).toBe("Unexplained provider spend on Oct 3 – Oct 5");
   });
 });

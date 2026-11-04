@@ -88,7 +88,12 @@ def exact_binomial_two_sided(k: int, n: int) -> Fraction:
     """Two-sided exact binomial p-value for `k` of `n` under p = 1/2, capped at 1."""
     if n <= 0:
         return Fraction(1)
-    tail = sum(math.comb(n, i) for i in range(min(k, n - k) + 1))
+    # Reuse adjacent binomial coefficients instead of rebuilding each large integer.
+    tail = 0
+    coefficient = 1
+    for i in range(min(k, n - k) + 1):
+        tail += coefficient
+        coefficient = coefficient * (n - i) // (i + 1)
     return min(Fraction(1), 2 * Fraction(tail, 2**n))
 
 

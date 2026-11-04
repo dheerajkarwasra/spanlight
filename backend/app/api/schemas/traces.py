@@ -126,11 +126,22 @@ class SpanOut(BaseModel):
     input: Any
     output: Any
     attributes: dict[str, Any]
+    """The span's attributes as stored, or `{}` when `attributes_omitted` is true."""
     truncated: bool
     payload_omitted: bool = False
-    """True when trace detail (or session turns) left `input` and `output` out (null) because the
-    payloads passed the response's 8 MiB budget; `GET .../traces/{trace_id}/spans/{span_id}`
-    returns them. Always false on that endpoint."""
+    """True when trace detail (or session turns) left non-null `input` and `output` out (null)
+    because the trace's stored content passed the response's 8 MiB budget;
+    `GET .../traces/{trace_id}/spans/{span_id}` returns them. False when both payloads are stored
+    null, even past the budget. Always false on that endpoint."""
+    attributes_omitted: bool = False
+    """True when trace detail (or session turns) left `attributes` out (`{}`) past the same
+    budget; the span endpoint returns them. Only with it false is `{}` a span without
+    attributes. Always false on the span endpoint. A request without `span_content=bounded`
+    gets `422 SPAN_CONTENT_TOO_LARGE` instead of a response with it true."""
+    retry_eligible: bool
+    """Whether the span can be a retry attempt, by the rule `traces.retry_calls` counts: an llm
+    span with a request hash that is not a cache hit, not fault-injected and not a usage rollup.
+    Read from the stored attributes, so it holds when they are omitted."""
     finish_reason: str | None
     """Canonical: `stop`, `length`, `tool_calls`, `content_filter` or `other`; the raw value is
     the `finish_reason` attribute (or the provider's own attribute)."""

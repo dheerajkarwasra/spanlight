@@ -73,6 +73,26 @@ export function isExceeded(ratio: number | null): boolean {
   return ratio !== null && ratio > 1;
 }
 
+/** Why a `block` budget's in-flight figure is "—" once it has been evaluated. */
+export const IN_FLIGHT_UNKNOWN_REASON = "The server did not report the gateway spend in flight.";
+
+/**
+ * The gateway estimates held for calls in flight: null (not shown) for a `notify` budget, which
+ * the gateway never reserves against; otherwise the figure, or "—" with its reason.
+ */
+export function inFlight(
+  budget: Pick<Budget, "action" | "state">,
+): { text: string; reason: null } | { text: null; reason: string } | null {
+  if (budget.action !== "block") {
+    return null;
+  }
+  if (budget.state === null) {
+    return { text: null, reason: NOT_EVALUATED_REASON };
+  }
+  const text = formatUsd(budget.state.reserved_usd);
+  return text === null ? { text: null, reason: IN_FLIGHT_UNKNOWN_REASON } : { text, reason: null };
+}
+
 /** A firing `block` budget is stopping gateway calls right now. */
 export function isBlocking(budget: Pick<Budget, "action" | "state">): boolean {
   return budget.action === "block" && budget.state?.state === "firing";

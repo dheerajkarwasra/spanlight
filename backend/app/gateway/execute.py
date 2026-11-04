@@ -7,8 +7,9 @@ order, and the first that answers ends the call:
 1. the requested model against the key's `allowed_models`, before any alias is applied
    (`MODEL_NOT_ALLOWED`), then the route's targets that serve the surface
    (`NO_COMPATIBLE_TARGET`), ordered by a weighted first pick;
-2. the budget guard (`BUDGET_EXCEEDED`, no upstream call);
-3. the cache, for a non-streaming call with a key that has a TTL (a hit replays the answer);
+2. the cache, for a non-streaming call with a key that has a TTL (a hit replays the answer: it
+   costs no provider spend, so it is not checked against a budget and reserves nothing);
+3. the budget guard (`BUDGET_EXCEEDED`, no upstream call);
 4. the fault decision, for a key with a fault profile (a "before" fault answers instead of the
    provider);
 5. the attempt loop (`attempts.run_attempts`): retries and fallbacks inside `timeout_ms`;
@@ -25,9 +26,7 @@ import asyncio
 from typing import Any
 
 import structlog
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.budgets.queries import trace_dimensions
 from app.core.db_errors import is_busy
 from app.core.errors import RETRY_AFTER_SECONDS
 from app.db.rls import bind_project
@@ -84,13 +83,14 @@ async def execute(request: GatewayRequest, context: GatewayContext) -> GatewayRe
 async def _run(call: Call) -> GatewayResult:
     request, context = call.request, call.context
     plan = plan_route(request, context)
-    decision = await _check_budget(call, plan)
-    if not decision.allowed:
-        call.budget = decision
-        return call.fail(blocked_error(decision))
     cached = await _lookup_cache(call)
     if cached is not None:
         return call.from_cache(cached)
+    decision = await _check_budget(call, plan)
+    call.budgeted = decision.reserved or not decision.allowed
+    if not decision.allowed:
+        call.budget = decision
+        return call.fail(blocked_error(decision))
     call.fault = _decide_fault(call)
     if call.fault is not None and call.fault.scenario in BEFORE_SCENARIOS:
         error = await apply_before(
@@ -149,7 +149,7 @@ def upstream_body(request: GatewayRequest) -> dict[str, Any]:
 
 
 async def _check_budget(call: Call, plan: RoutePlan) -> BudgetDecision:
-    """Step 2, in a short transaction of its own under the project binding.
+    """Step 3, in a short transaction of its own under the project binding.
 
     The guard reserves the call's estimated cost against its blocking budgets, keyed by the
     span the call will write; the transaction commits before any upstream call and the span
@@ -164,9 +164,7 @@ async def _check_budget(call: Call, plan: RoutePlan) -> BudgetDecision:
     ]
     async with context.sessions() as db, db.begin():
         await bind_project(db, context.project_id)
-        metadata, trace_name = (
-            (None, None) if context.key is None else await _dimensions(call, plan, db)
-        )
+        metadata, trace_name = (None, None) if context.key is None else _dimensions(call)
         return await context.budget_guard.check(
             db,
             context.project_id,
@@ -182,33 +180,32 @@ async def _check_budget(call: Call, plan: RoutePlan) -> BudgetDecision:
             trace_id=call.trace_id,
             span_id=call.span_id,
             org_id=context.org_id,
+            stored_trace_id=(
+                call.request.trace.trace_id
+                if context.key is not None and (not metadata or trace_name is None)
+                else None
+            ),
         )
 
 
-async def _dimensions(
-    call: Call, plan: RoutePlan, db: AsyncSession
-) -> tuple[dict[str, str], str | None]:
+def _dimensions(call: Call) -> tuple[dict[str, str], str | None]:
     """The keyed call's trace metadata and name for the budget guard (spec §8.3).
 
     The headers first. A call that joins a trace by id adds the stored trace's values when the
-    headers lack either: one primary-key read, the header winning per key. A trace not stored
-    yet gives nothing, so the first calls of a run may not match a `trace_name` budget. A call
-    that starts a new trace gets `tracing.default_trace_name`, the name the stored trace gets.
+    headers lack either: a primary-key join in the guard, the header winning per key. A trace
+    not stored yet gives nothing, so the first calls of a run may not match a `trace_name`
+    budget. A call that starts a new trace gets `tracing.default_trace_name`, the name the
+    stored trace gets.
     """
-    trace, context = call.request.trace, call.context
+    trace = call.request.trace
     metadata, name = trace.metadata, trace.trace_name
     if trace.trace_id is None:
         return metadata, name or default_trace_name(call.request)
-    if metadata and name is not None:
-        return metadata, name
-    stored = await trace_dimensions(db, context.project_id, trace.trace_id)
-    if stored is None:
-        return metadata, name
-    return {**stored[1], **metadata}, name or stored[0]
+    return metadata, name
 
 
 async def _lookup_cache(call: Call) -> CachedResponse | None:
-    """Step 3. Its own transaction, committed at once: a hit holds the row lock until then.
+    """Step 2, a read-only transaction of its own: a hit locks nothing and writes nothing.
 
     A cache that cannot be read is a miss, never a failed call.
     """

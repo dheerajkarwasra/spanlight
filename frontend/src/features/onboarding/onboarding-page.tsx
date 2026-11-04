@@ -8,7 +8,7 @@ import { Notice } from "@/components/notice";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMe } from "@/features/auth/queries";
-import { orgsApi, queryKeys, type Membership, type OnboardingStatus } from "@/lib/api";
+import { orgsApi, queryKeys, type Membership } from "@/lib/api";
 import { readLastProject, type LastProject } from "@/lib/last-project";
 
 import { ConnectStep } from "./connect-step";
@@ -24,7 +24,7 @@ import {
   type OnboardingState,
   type OnboardingStepId,
 } from "./steps";
-import { useOnboardingStatus } from "./use-onboarding-status";
+import { useOnboardingStatus, type ConnectionStatus } from "./use-onboarding-status";
 
 const onboardingRoute = getRouteApi("/_authed/onboarding");
 
@@ -48,7 +48,8 @@ export function OnboardingPage() {
   });
 
   const status = useOnboardingStatus(state.step === "connect" ? state.project.id : null);
-  const firstTraceReceived = state.step === "connect" && status.data?.has_traces === true;
+  const firstTraceReceived =
+    state.step === "connect" && status.data?.activation?.first_trace === true;
   const loadFailed = projects.isError && state.step === "loading";
 
   return (
@@ -85,7 +86,7 @@ function Stepper({ state, complete }: { state: OnboardingState; complete: boolea
 interface OnboardingStepProps {
   state: OnboardingState;
   memberships: readonly Membership[];
-  status: UseQueryResult<OnboardingStatus>;
+  status: UseQueryResult<ConnectionStatus>;
 }
 
 function OnboardingStep({ state, memberships, status }: OnboardingStepProps) {
@@ -124,14 +125,7 @@ function OnboardingStep({ state, memberships, status }: OnboardingStepProps) {
       );
 
     case "connect": {
-      const received = status.data?.has_traces === true;
-      const hero: StepHeroCopy = received
-        ? {
-            title: "You’re",
-            accent: "connected.",
-            description: `Spanlight is recording traces from ${state.project.name}.`,
-          }
-        : { title: "Send your first", accent: "trace." };
+      const hero: StepHeroCopy = { title: "Send your first", accent: "trace." };
       return (
         <StepSection step="connect" notice={null} hero={hero} compact>
           <ConnectStep membership={state.membership} project={state.project} status={status} />

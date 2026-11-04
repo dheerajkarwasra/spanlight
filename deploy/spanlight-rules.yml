@@ -1,0 +1,220 @@
+# Spanlight alert and recording rules for Prometheus, loaded by deploy/prometheus.yml
+# (`rule_files`). docs/runbooks/slo.md explains the objectives and what each alert means.
+# Check after editing: promtool check rules deploy/spanlight-rules.yml
+#
+# Adjust before use:
+# - spanlight:api_expected_replicas and spanlight:worker_expected_replicas: set each to the number
+#   of api and worker replicas you run (deploy/compose.replicas.yaml runs two api replicas).
+# - SpanlightNotReady needs the blackbox probe job `spanlight-ready` from slo.md; without it,
+#   remove that rule.
+# - Delete the spanlight-worker-alerts group if the worker is not scraped.
+# - SpanlightBackupMissing: remove it if backups are deliberately off.
+
+groups:
+  - name: spanlight-slo-recording
+    interval: 30s
+    rules:
+      # Share of /api and /v1 requests that were 5xx, over several windows.
+      # The numerator is wrapped in `or vector(0)`: a healthy instance has no 5xx series at all,
+      # and without it the ratio, the availability and the error budget would be empty.
+      - record: spanlight:http_error_ratio:rate5m
+        expr: |
+          (sum(rate(spanlight_http_requests_total{route=~"/api/.*|/v1/.*",status=~"5.."}[5m])) or vector(0))
+          / sum(rate(spanlight_http_requests_total{route=~"/api/.*|/v1/.*"}[5m]))
+      - record: spanlight:http_error_ratio:rate30m
+        expr: |
+          (sum(rate(spanlight_http_requests_total{route=~"/api/.*|/v1/.*",status=~"5.."}[30m])) or vector(0))
+          / sum(rate(spanlight_http_requests_total{route=~"/api/.*|/v1/.*"}[30m]))
+      - record: spanlight:http_error_ratio:rate1h
+        expr: |
+          (sum(rate(spanlight_http_requests_total{route=~"/api/.*|/v1/.*",status=~"5.."}[1h])) or vector(0))
+          / sum(rate(spanlight_http_requests_total{route=~"/api/.*|/v1/.*"}[1h]))
+      - record: spanlight:http_error_ratio:rate6h
+        expr: |
+          (sum(rate(spanlight_http_requests_total{route=~"/api/.*|/v1/.*",status=~"5.."}[6h])) or vector(0))
+          / sum(rate(spanlight_http_requests_total{route=~"/api/.*|/v1/.*"}[6h]))
+      - record: spanlight:http_error_ratio:rate3d
+        expr: |
+          (sum(rate(spanlight_http_requests_total{route=~"/api/.*|/v1/.*",status=~"5.."}[3d])) or vector(0))
+          / sum(rate(spanlight_http_requests_total{route=~"/api/.*|/v1/.*"}[3d]))
+      # The SLI itself, over the SLO window: 0.995 or more is a pass.
+      - record: spanlight:http_availability:ratio30d
+        expr: |
+          1 - (
+            (sum(increase(spanlight_http_requests_total{route=~"/api/.*|/v1/.*",status=~"5.."}[30d])) or vector(0))
+            / sum(increase(spanlight_http_requests_total{route=~"/api/.*|/v1/.*"}[30d]))
+          )
+      # Share of the 30-day error budget still unspent: 1 is untouched, 0 or below is gone.
+      - record: spanlight:http_error_budget_remaining:ratio30d
+        expr: 1 - ((1 - spanlight:http_availability:ratio30d) / 0.005)
+      # How many replicas you run: set these to your own numbers.
+      - record: spanlight:api_expected_replicas
+        expr: vector(1)
+      - record: spanlight:worker_expected_replicas
+        expr: vector(1)
+
+  - name: spanlight-slo-alerts
+    rules:
+      # Availability. Budget burn rate = error ratio / 0.005. Two windows must agree, so a spike
+      # that is already over does not page. 14.4x for 1 h spends 2 % of the 30-day budget.
+      - alert: SpanlightAvailabilityFastBurn
+        expr: |
+          spanlight:http_error_ratio:rate1h > (14.4 * 0.005)
+          and spanlight:http_error_ratio:rate5m > (14.4 * 0.005)
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: "Spanlight is failing more than 7 % of requests"
+          runbook: "docs/runbooks/slo.md#availability-alerts"
+      # 6x for 6 h spends 5 % of the budget.
+      - alert: SpanlightAvailabilitySlowBurn
+        expr: |
+          spanlight:http_error_ratio:rate6h > (6 * 0.005)
+          and spanlight:http_error_ratio:rate30m > (6 * 0.005)
+        for: 15m
+        labels: {severity: page}
+        annotations:
+          summary: "Spanlight is burning its availability budget 6x too fast"
+          runbook: "docs/runbooks/slo.md#availability-alerts"
+      # 1x for 3 days spends 10 % of the budget. A ticket, not a page.
+      - alert: SpanlightAvailabilityBudgetDrain
+        expr: |
+          spanlight:http_error_ratio:rate3d > 0.005
+          and spanlight:http_error_ratio:rate6h > 0.005
+        for: 1h
+        labels: {severity: ticket}
+        annotations:
+          summary: "Spanlight is on course to miss its 99.5 % availability target"
+          runbook: "docs/runbooks/slo.md#availability-alerts"
+
+      # Nothing answers. These fire when there is no traffic data to compute ratios from.
+      - alert: SpanlightNotReady
+        expr: probe_success{job="spanlight-ready"} == 0
+        for: 3m
+        labels: {severity: page}
+        annotations:
+          summary: "/health/ready is failing"
+          runbook: "docs/runbooks/README.md#first-five-minutes-of-any-incident"
+      - alert: SpanlightMetricsScrapeDown
+        expr: up{job="spanlight-api"} == 0
+        for: 5m
+        labels: {severity: ticket}
+        annotations:
+          summary: "Prometheus cannot scrape the Spanlight api (down, or METRICS_TOKEN mismatch)"
+          runbook: "docs/runbooks/rotate-secrets.md#metrics_token"
+      # Targets come from DNS (one per replica). A replica that stops leaves DNS, its `up` series
+      # goes stale instead of 0, and the rule above never fires; this one counts the replicas that
+      # answer. `or vector(0)` also makes it fire when there is no api target at all.
+      - alert: SpanlightApiReplicasMissing
+        expr: (count(up{job="spanlight-api"} == 1) or vector(0)) < spanlight:api_expected_replicas
+        for: 5m
+        labels: {severity: ticket}
+        annotations:
+          summary: "Fewer api replicas answer the metrics scrape than expected"
+          runbook: "docs/runbooks/scale.md#4-scale-the-api"
+
+      # Latency. p95 over 10 minutes, estimated from the histogram buckets.
+      - alert: SpanlightIngestLatencyP95High
+        expr: |
+          histogram_quantile(0.95, sum by (le) (
+            rate(spanlight_http_request_duration_seconds_bucket{method="POST",route=~"/v1/traces|/v1/otlp/traces"}[10m])
+          )) > 0.2
+        for: 10m
+        labels: {severity: page}
+        annotations:
+          summary: "Ingest p95 latency is above 200 ms"
+          runbook: "docs/runbooks/scale.md"
+      - alert: SpanlightDashboardLatencyP95High
+        expr: |
+          histogram_quantile(0.95, sum by (le) (
+            rate(spanlight_http_request_duration_seconds_bucket{method="GET",route=~"/api/v1/projects/[^/]+/(traces|sessions|filters|metrics)(/.*)?"}[10m])
+          )) > 0.3
+        for: 10m
+        labels: {severity: page}
+        annotations:
+          summary: "Dashboard read p95 latency is above 300 ms"
+          runbook: "docs/runbooks/scale.md"
+
+      # Early signals that sit behind the objectives.
+      - alert: SpanlightIngestRateLimited
+        expr: sum(rate(spanlight_rate_limit_rejections_total{scope="ingest"}[5m])) > 1
+        for: 15m
+        labels: {severity: ticket}
+        annotations:
+          summary: "Ingest clients have been rate limited for 15 minutes"
+          runbook: "docs/runbooks/ingestion-spike.md"
+      - alert: SpanlightSpansRejected
+        expr: |
+          sum(rate(spanlight_rejected_spans_total[15m]))
+          / (sum(rate(spanlight_ingested_spans_total[15m])) + sum(rate(spanlight_rejected_spans_total[15m])))
+          > 0.05
+        for: 15m
+        labels: {severity: ticket}
+        annotations:
+          summary: "More than 5 % of incoming spans are being rejected"
+          runbook: "docs/runbooks/ingestion-spike.md"
+
+  # Delete this whole group if the worker is not scraped (for example Railway without a
+  # scraper): `or vector(0)` makes the rollup and backup rules fire when there is no data.
+  - name: spanlight-worker-alerts
+    rules:
+      - alert: SpanlightWorkerScrapeDown
+        expr: up{job="spanlight-worker"} == 0
+        for: 5m
+        labels: {severity: ticket}
+        annotations:
+          summary: "Prometheus cannot scrape the Spanlight worker (down, no WORKER_METRICS_PORT, or METRICS_TOKEN mismatch)"
+          runbook: "docs/runbooks/README.md#is-the-worker-alive"
+      # Same as SpanlightApiReplicasMissing, for worker replicas that leave DNS.
+      - alert: SpanlightWorkerReplicasMissing
+        expr: (count(up{job="spanlight-worker"} == 1) or vector(0)) < spanlight:worker_expected_replicas
+        for: 5m
+        labels: {severity: ticket}
+        annotations:
+          summary: "Fewer worker replicas answer the metrics scrape than expected"
+          runbook: "docs/runbooks/README.md#is-the-worker-alive"
+      # rollup_hourly runs every 5 minutes: about 6 finished jobs per 30 minutes.
+      - alert: SpanlightRollupsStalled
+        expr: (sum(increase(spanlight_jobs_finished_total{kind="rollup_hourly",outcome="done"}[30m])) or vector(0)) < 3
+        for: 10m
+        labels: {severity: page}
+        annotations:
+          summary: "No hourly rollups have finished for about 30 minutes (worker down or stuck)"
+          runbook: "docs/runbooks/README.md#is-the-worker-alive"
+      - alert: SpanlightRollupSlow
+        expr: histogram_quantile(0.95, sum by (le) (rate(spanlight_rollup_duration_seconds_bucket[1h]))) > 5
+        for: 30m
+        labels: {severity: ticket}
+        annotations:
+          summary: "Rollup runs are slow (p95 over 5 s; a task is stopped at 50 s)"
+          runbook: "docs/runbooks/scale.md"
+      - alert: SpanlightJobFailed
+        expr: sum by (kind) (increase(spanlight_jobs_finished_total{outcome="failed"}[1h])) > 0
+        for: 0m
+        labels: {severity: ticket}
+        annotations:
+          summary: "A {{ $labels.kind }} job ran out of attempts"
+          runbook: "docs/runbooks/README.md#is-the-worker-alive"
+      # The nightly backup is enqueued at 03:00 UTC. Skipped counts as missing: with backups
+      # deliberately off, remove this rule.
+      - alert: SpanlightBackupMissing
+        expr: (sum(increase(spanlight_jobs_finished_total{kind="backup_database",outcome="done"}[26h])) or vector(0)) < 1
+        for: 1h
+        labels: {severity: ticket}
+        annotations:
+          summary: "No database backup has completed in 26 hours"
+          runbook: "docs/runbooks/restore.md"
+      - alert: SpanlightOutboxBacklog
+        expr: spanlight_outbox_pending > 1000
+        for: 15m
+        labels: {severity: ticket}
+        annotations:
+          summary: "More than 1000 notifications are waiting in the outbox"
+          runbook: "docs/runbooks/README.md#is-the-worker-alive"
+      - alert: SpanlightNotificationsFailing
+        expr: sum by (kind) (increase(spanlight_notifications_delivered_total{outcome="failed"}[1h])) > 0
+        for: 0m
+        labels: {severity: ticket}
+        annotations:
+          summary: "{{ $labels.kind }} notifications are failing permanently"
+          runbook: "docs/runbooks/README.md#is-the-worker-alive"

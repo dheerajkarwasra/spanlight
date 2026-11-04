@@ -4,13 +4,68 @@
 
 Ship a new Spanlight build to a running instance: apply database migrations, replace the api, worker and web containers, and confirm the result. Use it for every upgrade, including a patch release.
 
-Migrations run before the new api starts and are applied with `spanlight migrate` (Alembic `upgrade head`). They are forward changes to a live database, so take a backup first; [rollback.md](rollback.md) explains what a rollback costs once a migration has run.
+Migrations run before the new api starts and are applied with `spanlight migrate` (Alembic `upgrade head`). Review old/new schema compatibility before deployment. For incompatible or destructive changes, enable maintenance, pause producers, drain requests and jobs, and stop all API, worker, gateway and other writers before DDL. Verify a backup restores successfully into a disposable database first; [rollback.md](rollback.md) explains what a rollback costs once a migration has run.
+
+Migrations 1031–1033 (budget snapshots) are such a change: stop the api, any standalone gateway and the worker before `spanlight migrate`. With old and new versions mixed, a call an old process settles after the new reservation trigger is in place is missing from the open hour's budget total until another write to that hour, and 1032's triggers on `spans`, `traces` and `budget_reservations` must wait for running writers within its 5-second lock timeout.
+
+## Worker kind and payload compatibility
+
+Use a maintenance/drained upgrade by default: pause producers, drain requests and jobs,
+stop old writers and workers, apply the reviewed migration, then start and verify the new
+workers before resuming producers. The queue's registry filter is a narrow kind guarantee,
+not proof of rolling schema or payload compatibility.
+
+Workers claim and expire exhausted leases only for their exact registered handler keys,
+including enterprise handlers. Unsupported kinds wait without consuming attempts or changing
+payloads, fences or leases; an empty registry processes nothing. Compare queued/running kinds
+with the `tasks` list in each worker's `worker_started` log (see [README.md](README.md#is-the-worker-alive)).
+A healthy heartbeat or successful empty poll does not prove a capable worker exists for every kind.
+
+The first release containing this filter still requires draining and replacing every older,
+unfiltered worker before any new kind is produced. For a breaking payload contract, use a
+distinct kind with an explicit handler, or complete a drained cutover. Evolve a payload within
+one kind only after both old-handler/new-payload and new-handler/old-payload tests pass.
+An added version field cannot protect against deployed handlers that ignore it.
 
 ## Prerequisites
 
+### Aggregate capture and repair cutover
+
+Revision 1028 requires a drained maintenance release. Keep external maintenance or traffic
+control enabled while stopping old API, standalone gateway, ingestion, usage-backfill and
+worker producers. Stop old schedulers too. Verify the old processes and active jobs have
+finished or have an explicit recovery disposition before starting replacement writers.
+Resolve old payloads through compatible new handlers or a reviewed offline migration;
+do not delete queued jobs to make a deployment appear healthy.
+
+Apply the reviewed expand-only 1028 migration before the new application code, then verify
+the exact migration head and that the application role is neither superuser nor BYPASSRLS.
+Start the API and check `/health/live`, start the compatible workers, then require the existing
+`/health/ready` gate before restoring traffic. API startup liveness cannot depend on a worker
+that the deployment has not started yet. A heartbeat alone proves neither payload compatibility
+nor completion of aggregate repair.
+
+Normal materialized observation service requires both aggregate capture and repair. The safe
+code default `AGGREGATE_REPAIR_ENABLED=false` keeps capture active but leaves materialized
+observations degraded. After the schema, writer and worker gates, enable repair through the
+approved configuration, compare complete-source buckets against authoritative raw results,
+and require the relevant enabled-consumer backlog to converge. Disabled-consumer obligations
+remain pending; complete-source raw views remain usable. Do not declare materialized alerts
+or observations restored solely because the API is live.
+
+Rollback disables repair while retaining capture and truthful pending reads. Rolling back
+capture creates an untracked interval requiring drain and reconciliation. Downgrade 1028 only
+with all marker writers and consumers stopped and no dirty rows, including zero-mask remnants.
+Preserve the independent 1026 budget and 1027 source-coverage boundaries.
+
+Compose dependency ordering and Railway's startup healthcheck do not implement this maintenance
+workflow for existing replicas. External traffic control and the documented operator sequence
+are required. Hosted enforcement and staging verification remain release gates; this procedure
+does not claim automated rolling compatibility.
+
 - Shell access to the host that runs Docker Compose, or the Railway CLI logged in (`railway whoami`) and linked to the project.
 - The version you are shipping, as a git tag or commit in this checkout.
-- For a backup: object storage (`S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`) and `BACKUP_DATABASE_URL` configured. Without them there is no automatic backup; take a `pg_dump` yourself (step 2).
+- For a backup: backup storage (`BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY`, `BACKUP_S3_SECRET_KEY`) and `BACKUP_DATABASE_URL` configured. Without them there is no automatic backup; take a `pg_dump` yourself (step 2).
 - Five minutes with nobody else changing `deploy/.env`.
 
 ## Docker Compose
@@ -44,7 +99,7 @@ spl exec worker spanlight backup now
 Expected: `Backed up to backups/2026/10/09/spanlight-20261009T143012Z.dump (48213377 bytes).` (your own key and size). Confirm it is listed:
 
 ```bash
-spl exec worker spanlight backup list
+docker run --rm --network <compose-network> --env-file <recovery.env> <deployment-image> spanlight backup list
 ```
 
 Without object storage, dump the database to a file on the host. The image's `pg_dump` is version 17, the same as the server, so run it in the `postgres` container:
@@ -70,6 +125,8 @@ git diff <old-commit> HEAD -- deploy/.env.example deploy/compose.yaml
 ```
 
 ### 4. Build and start
+
+For an incompatible migration, keep ingress blocked and all old writers stopped through migration and verification. `depends_on` orders new containers; it does not drain existing replicas. Stop standalone gateways and external writers too. Follow the maintenance sequence in [rollback.md](rollback.md#steps-railway), adapted to this host.
 
 ```bash
 spl up -d --build
@@ -126,7 +183,9 @@ docker image prune
 
 ## Railway
 
-Deploy the api first: its pre-deploy command runs `spanlight migrate && spanlight ensure-app-role --role spanlight_app` as the Postgres owner, and a failure there stops the deploy and leaves the running version untouched.
+For a backward-compatible migration, deploy the api first: its pre-deploy command runs `spanlight migrate && spanlight ensure-app-role --role spanlight_app` as the Postgres owner, and a failure there stops the deploy and leaves the running version untouched.
+
+For an incompatible or destructive migration, pause automatic deploys, enable maintenance, drain and stop every writer, verify a restorable backup, and run a reviewed one-off migration before starting compatible application images. Use the isolation and recovery sequence in [rollback.md](rollback.md#steps-railway). A failed pre-deploy can leave old replicas running; it is not protection from incompatible DDL.
 
 1. Record the current state and take a backup.
 
@@ -167,8 +226,41 @@ Deploy the api first: its pre-deploy command runs `spanlight migrate && spanligh
 
 If you deploy from GitHub (see [the Railway guide](../deploy/railway.md)), pushes to `main` deploy automatically; Railway does not read `railway.ts` on deploy, so run `railway config apply` yourself for infrastructure changes.
 
+## Release verification
+
+A server `v<semver>` tag invokes the same CI workflow used by pull requests at the tagged commit. The required aggregate depends on backend, both SDKs, frontend, docs, workflow checks, Docker builds and Compose smoke. Every dependency must report `success`; failed, skipped, cancelled or incomplete checks block publication. The publish job additionally requires the aggregate's verified SHA to equal the event SHA. A green run for another commit or branch head does not qualify. SDK tag trains remain separate.
+
+The release job builds and loads backend/web candidates once, runs the disposable Compose smoke against those local images with builds removed and pulling disabled, checks image IDs stayed unchanged, then scans and pushes those same images. Recorded registry digests feed signing and SBOM generation; stable `latest` moves only after signing. Pre-releases never move `latest`.
+
+Before authorizing a release, review the workflow run and retain its tagged SHA, all required results, candidate smoke/scan logs and both pushed digests with signature/SBOM verification. A disposable Docker rehearsal and an owner-authorized RC run are required execution evidence: static contract tests and workflow lint alone do not prove hosted publication or digest continuity. Rehearse a deliberately failing required check and confirm no image or release is published; then use a successful RC to verify the tested image configuration IDs and published digest contents correspond. Never use production volumes for the smoke script, which deletes its test volumes.
+
 ## Escape hatch
 
 - **`migrate` failed or the new api does not become ready, and no migration ran:** the old containers are gone on Compose (the images were rebuilt), so go back to the previous commit and rebuild: `git checkout <old-commit>` then `spl up -d --build`. On Railway the previous api deployment keeps serving because the pre-deploy failed.
 - **The new version is live and wrong:** follow [rollback.md](rollback.md). If a migration ran, read it first: the old build refuses to become ready on a newer schema.
 - **Data is damaged:** follow [restore.md](restore.md) with the backup from step 2.
+
+### Activate aggregate source preservation (1027)
+
+Migration 1027 leaves aggregate coverage unverified. Deploy the instrumented API, worker,
+retention, erasure and administrative writers, and stop/drain every older writer before
+running `spanlight activate-aggregate-coverage --writers-drained` as the database owner.
+Do not treat a successful migration alone as activation. The command uses the database clock
+plus the accepted ten-minute future skew and advances legacy coverage to the next UTC day.
+Older buckets remain unverified permanently; refreshing or backfilling never clears evidence.
+For a new installation, add `--fresh-install`; activation refuses a nonempty project inventory.
+The Compose `migrate` service runs it this way on every `up` with `--skip-if-projects-exist`, so a
+new Compose install is activated before its first project exists; with any project present that
+step changes nothing and exits 0, and the drained activation above stays the upgrade path.
+New project IDs created after activation use the finite UTC Unix epoch as their boundary:
+they have no earlier source history, and accepted telemetry is bounded to the past 90 days.
+The finite value round-trips through ordinary project ORM/API reads.
+
+Source deletion and aggregate replacement serialize per project. Deletion records every affected
+trace-start and span-start hour in the same transaction; existing aggregate snapshots survive.
+Incomplete reads expose `aggregate_status=unavailable` and `oldest_pending_at=null` on objects.
+Bare-list routes keep their bodies and expose `Aggregate-Status`, even for `[]`; the optional
+`Aggregate-Oldest-Pending-At` header is absent when no correction is pending. Missing values
+are null, never inferred zero. There is no pending correction consumer in this release.
+Monitor `spanlight_aggregate_unavailable_reads_total` for reads requiring retained snapshots.
+The dashboard is same-origin; no cross-origin header exposure is needed.

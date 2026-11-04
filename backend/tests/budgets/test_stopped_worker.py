@@ -1,9 +1,8 @@
-"""A stopped worker freezes every budget in its last evaluated state, and readiness shows it.
+"""A stopped evaluator leaves notification state stale; fresh history still guards admission.
 
-The guard reads only the stored state, so with no evaluation pass a firing budget keeps blocking
-after its spend is gone and a budget below its cap keeps allowing however much is spent.
-`/health/ready` reports the heartbeat age and the alert evaluation lag; the lag is measured from
-the newest finished evaluation job, so it reads null once the cleanup job has pruned them all.
+Readiness reports heartbeat age and evaluation lag. A firing state remains a refusal until
+its evaluation resolves or its UTC period ends, while fresh priced history protects a budget
+whose stored state is still below the cap.
 """
 
 from datetime import timedelta
@@ -56,14 +55,17 @@ async def test_a_stopped_worker_freezes_a_firing_budget(budget_world: BudgetWorl
     assert world.fake.requests == []
 
 
-async def test_a_stopped_worker_freezes_a_budget_below_its_cap(budget_world: BudgetWorld) -> None:
+async def test_a_stopped_worker_does_not_disable_fresh_history_admission(
+    budget_world: BudgetWorld,
+) -> None:
     world = budget_world
     budget = await create_budget(world)
     await evaluate(world, next_pass(world.clock))  # evaluated with nothing spent: ok
 
     await ingest_spend(world, steps=5)  # $0.010: ten times the cap, and no pass runs
 
-    assert (await chat(world, scripted_tokens=0)).status_code == 200
+    assert (await chat(world)).status_code == 402
+    assert world.fake.requests == []
     state = await state_of(world, budget)
     assert state is not None and state["state"] == "ok"
 

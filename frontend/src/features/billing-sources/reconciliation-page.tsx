@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { usePermission, useProjectParams } from "@/features/shell";
 import { isApiError, type BillingSource } from "@/lib/api";
 
-import { SourceCallout } from "./reconciliation-callouts";
+import { BypassCallout, SourceCallout } from "./reconciliation-callouts";
 import { tableFootnote } from "./reconciliation-copy";
 import { DailyCard, DayTable, DayTableSkeleton } from "./reconciliation-day-table";
 import { ReconciliationHeader } from "./reconciliation-header";
@@ -83,6 +83,7 @@ function ReconciliationContent({ source, reportWindow, onWindowChange }: Content
         canManage={canManage}
       />
       <SourceCallout source={source} report={report.data} canManage={canManage} />
+      <BypassCallout report={report.data} />
       {report.isPending ? (
         <>
           <ReconciliationTilesSkeleton />

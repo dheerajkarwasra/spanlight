@@ -39,6 +39,7 @@ function summary(id: string): TraceSummary {
     models: [],
     error_message: null,
     error_class: null,
+    root_received: true,
     has_scores: false,
     retry_calls: 0,
     retry_cost_usd: "0",
@@ -203,7 +204,7 @@ describe("the peek sheet from 1280 px", () => {
     renderApp(`${TRACES_URL}?peek=t1`);
     const sheet = await peekSheet("trace-t1");
 
-    await user.click(within(sheet).getByRole("treeitem", { name: /child/ }));
+    await user.click(await within(sheet).findByRole("treeitem", { name: /child/ }));
     await user.click(within(sheet).getByRole("tab", { name: "Raw JSON" }));
 
     // The address bar shows the org and project slugs.
@@ -278,12 +279,32 @@ describe("the peek sheet from 1280 px", () => {
     expect(router.state.location.search).not.toHaveProperty("peek");
   });
 
+  it("keeps errors first and says what a trace without its root covers", async () => {
+    vi.spyOn(projectsApi, "trace").mockImplementation((_project, id) =>
+      Promise.resolve({ ...detail(id), root_received: false, error_count: 1 }),
+    );
+    renderApp(`${TRACES_URL}?peek=t2`);
+
+    const sheet = await peekSheet("trace-t2");
+    expect(within(sheet).getByText("Error: 1 error")).toBeInTheDocument();
+    expect(within(sheet).getByText("Duration so far")).toBeInTheDocument();
+    expect(
+      within(sheet).getByText(
+        (_, element) =>
+          element?.tagName === "P" &&
+          /^Root span not received\. Duration, tokens and cost cover received spans only\. Last span ended .+\.$/.test(
+            element.textContent,
+          ),
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("pads its own scroll box below the sticky summary bar, not the page", async () => {
     vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(56);
     renderApp(`${TRACES_URL}?peek=t1`);
     const sheet = await peekSheet("trace-t1");
 
-    const box = within(sheet).getByRole("tree").closest(".overflow-y-auto") as HTMLElement;
+    const box = (await within(sheet).findByRole("tree")).closest(".overflow-y-auto") as HTMLElement;
     await waitFor(() => {
       expect(box.style.scrollPaddingTop).toBe("64px");
     });

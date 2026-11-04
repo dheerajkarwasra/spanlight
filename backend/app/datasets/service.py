@@ -7,6 +7,9 @@ dataset's row lock first, so two requests cannot both pass the item limit. A loc
 runs under the row lock, so a write either commits before a lock or sees it. Its description can
 still change. Audit metadata holds the dataset's name and, for a delete, how many items went with
 it; never item content.
+
+Item content (`input`, `expected_output`, `metadata`) is stored redacted the way ingest redacts
+span payloads, with the project's `redact_contact_info`, on every path that writes it.
 """
 
 import uuid
@@ -15,7 +18,9 @@ from datetime import datetime
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
+from app.core.redact import redact_json
 from app.datasets import queries
 from app.datasets.errors import (
     DatasetFullError,
@@ -145,6 +150,9 @@ async def add_items(
         return []
     if await queries.count_items(db, dataset.id) + len(items) > MAX_ITEMS_PER_DATASET:
         raise DatasetFullError(MAX_ITEMS_PER_DATASET)
+    contacts = await queries.redacts_contacts(db, project_id)
+    # Up to 1 000 items of 64 KB: CPU work that would otherwise stall the event loop.
+    items = await run_in_threadpool(_redacted_items, items, contacts)
     ids = await queries.insert_items(db, dataset.id, items)
     dataset.updated_at = now
     await db.flush()
@@ -204,10 +212,11 @@ async def update_item(
     item = await queries.get_item(db, dataset_id, item_id)
     if item is None:
         raise DatasetItemNotFoundError
+    contacts = await queries.redacts_contacts(db, project_id)
     if "expected_output" in patch.model_fields_set:
-        item.expected_output = patch.expected_output
+        item.expected_output = redact_json(patch.expected_output, contacts=contacts)
     if "metadata" in patch.model_fields_set and patch.metadata is not None:
-        item.metadata_ = patch.metadata
+        item.metadata_ = redact_json(patch.metadata, contacts=contacts)
     await db.flush()
     return item
 
@@ -239,6 +248,19 @@ async def items_by_ids(
 ) -> list[DatasetItem]:
     """The dataset's items with these ids in id order; an item deleted since is skipped."""
     return await queries.items_by_ids(db, dataset_id, ids)
+
+
+def _redacted_items(items: list[DatasetItemIn], contacts: bool) -> list[DatasetItemIn]:
+    return [
+        item.model_copy(
+            update={
+                "input": redact_json(item.input, contacts=contacts),
+                "expected_output": redact_json(item.expected_output, contacts=contacts),
+                "metadata": redact_json(item.metadata, contacts=contacts),
+            }
+        )
+        for item in items
+    ]
 
 
 async def _locked(db: AsyncSession, project_id: uuid.UUID, dataset_id: uuid.UUID) -> Dataset:

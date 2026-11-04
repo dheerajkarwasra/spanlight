@@ -7,14 +7,16 @@ from, is in ``app.metrics.service``.
 import uuid
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 
 from app.api.deps import DbSession, ReadAccess, require
 from app.api.schemas import ModelMetricsOut, OverviewOut, TimeseriesPointOut, TokenMixOut
+from app.api.schemas.common import AGGREGATE_RESPONSE_HEADERS
 from app.api.window import Window
 from app.core.permissions import Permission
 from app.metrics import service
 from app.metrics.token_mix import token_mix
+from app.rollups.coverage_reads import CoverageState
 
 router = APIRouter(prefix="/projects/{project_id}/metrics", tags=["metrics"])
 
@@ -35,9 +37,12 @@ async def overview(
     return await service.overview(db, project.id, window, environment)
 
 
-@router.get("/timeseries", response_model=list[TimeseriesPointOut])
+@router.get(
+    "/timeseries", response_model=list[TimeseriesPointOut], responses=AGGREGATE_RESPONSE_HEADERS
+)
 async def timeseries(
     project_id: uuid.UUID,
+    response: Response,
     access: ProjectReader,
     db: DbSession,
     window: Window,
@@ -45,19 +50,30 @@ async def timeseries(
     bucket: Literal["hour", "day"] = "hour",
 ) -> list[TimeseriesPointOut]:
     project = access.require_project()
-    return await service.timeseries(db, project.id, window, environment, bucket)
+    coverage = CoverageState()
+    result = await service.timeseries(db, project.id, window, environment, bucket, coverage)
+    response.headers["Aggregate-Status"] = coverage.status
+    if coverage.oldest_pending_at is not None:
+        response.headers["Aggregate-Oldest-Pending-At"] = coverage.oldest_pending_at.isoformat()
+    return result
 
 
-@router.get("/models", response_model=list[ModelMetricsOut])
+@router.get("/models", response_model=list[ModelMetricsOut], responses=AGGREGATE_RESPONSE_HEADERS)
 async def models(
     project_id: uuid.UUID,
+    response: Response,
     access: ProjectReader,
     db: DbSession,
     window: Window,
     environment: EnvironmentFilter = None,
 ) -> list[ModelMetricsOut]:
     project = access.require_project()
-    return await service.models(db, project.id, window, environment)
+    coverage = CoverageState()
+    result = await service.models(db, project.id, window, environment, coverage)
+    response.headers["Aggregate-Status"] = coverage.status
+    if coverage.oldest_pending_at is not None:
+        response.headers["Aggregate-Oldest-Pending-At"] = coverage.oldest_pending_at.isoformat()
+    return result
 
 
 @router.get("/token-mix", response_model=TokenMixOut)

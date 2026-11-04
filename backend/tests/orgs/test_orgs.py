@@ -28,10 +28,12 @@ async def test_org_slug_never_collides_with_a_dashboard_path(browser_factory: An
     ada: Browser = await browser_factory("ada@example.com")
     login = (await ada.post("/api/v1/orgs", json={"name": "Login"})).json()
     api = (await ada.post("/api/v1/orgs", json={"name": "API"})).json()
+    a11y = (await ada.post("/api/v1/orgs", json={"name": "Accessibility"})).json()
     plain = (await ada.post("/api/v1/orgs", json={"name": "Globex"})).json()
 
     assert login["slug"] not in RESERVED_ORG_SLUGS and login["slug"].startswith("login-")
     assert api["slug"] not in RESERVED_ORG_SLUGS and api["slug"].startswith("api-")
+    assert a11y["slug"].startswith("accessibility-")
     assert plain["slug"] == "globex"
 
 
@@ -114,8 +116,8 @@ async def test_invite_flow(browser_factory: Any) -> None:
     created = await owner.post(f"/api/v1/orgs/{workspace.org_id}/invites", json={"role": "member"})
     assert created.status_code == 201
     invite = created.json()
-    assert invite["url"].startswith("http://testserver/invite/")
-    token = invite["url"].rsplit("/", 1)[1]
+    assert invite["url"].startswith("http://testserver/invite#token=")
+    token = invite["url"].split("#token=", 1)[1]
 
     pending = (await owner.get(f"/api/v1/orgs/{workspace.org_id}/invites")).json()
     assert [item["id"] for item in pending] == [invite["id"]]
@@ -140,9 +142,9 @@ async def test_invite_preview_shows_org_and_role_without_accepting(
     created = (
         await owner.post(f"/api/v1/orgs/{workspace.org_id}/invites", json={"role": "admin"})
     ).json()
-    token = created["url"].rsplit("/", 1)[1]
+    token = created["url"].split("#token=", 1)[1]
 
-    preview = await guest.get("/api/v1/invites/preview", params={"token": token})
+    preview = await guest.post("/api/v1/invites/preview", json={"token": token})
     assert preview.status_code == 200
     body = preview.json()
     assert body["org"]["id"] == workspace.org_id
@@ -160,7 +162,7 @@ async def test_invite_preview_shows_org_and_role_without_accepting(
 
 
 async def test_invite_preview_requires_login(client: Any) -> None:
-    response = await client.get("/api/v1/invites/preview", params={"token": "whatever"})
+    response = await client.post("/api/v1/invites/preview", json={"token": "whatever"})
     assert response.status_code == 401
 
 
@@ -174,7 +176,7 @@ async def test_invite_preview_hides_unknown_used_and_expired_tokens(
     used = (
         await owner.post(f"/api/v1/orgs/{workspace.org_id}/invites", json={"role": "viewer"})
     ).json()
-    used_token = used["url"].rsplit("/", 1)[1]
+    used_token = used["url"].split("#token=", 1)[1]
     assert (
         await guest.post("/api/v1/invites/accept", json={"token": used_token})
     ).status_code == 200
@@ -187,11 +189,11 @@ async def test_invite_preview_hides_unknown_used_and_expired_tokens(
             update(Invite).where(Invite.id == expired["id"]).values(expires_at=Invite.created_at)
         )
         await db.commit()
-    expired_token = expired["url"].rsplit("/", 1)[1]
+    expired_token = expired["url"].split("#token=", 1)[1]
 
     details: set[str] = set()
     for token in ("not-a-real-token", used_token, expired_token):
-        response = await guest.get("/api/v1/invites/preview", params={"token": token})
+        response = await guest.post("/api/v1/invites/preview", json={"token": token})
         assert response.status_code == 404
         details.add(response.json()["detail"])
     assert len(details) == 1
@@ -217,7 +219,7 @@ async def test_expired_and_revoked_invites_cannot_be_used(
             update(Invite).where(Invite.id == expired["id"]).values(expires_at=Invite.created_at)
         )
         await db.commit()
-    expired_token = expired["url"].rsplit("/", 1)[1]
+    expired_token = expired["url"].split("#token=", 1)[1]
     assert (
         await guest.post("/api/v1/invites/accept", json={"token": expired_token})
     ).status_code == 404
@@ -227,7 +229,7 @@ async def test_expired_and_revoked_invites_cannot_be_used(
     ).json()
     revoke = await owner.delete(f"/api/v1/orgs/{workspace.org_id}/invites/{revoked['id']}")
     assert revoke.status_code == 204
-    revoked_token = revoked["url"].rsplit("/", 1)[1]
+    revoked_token = revoked["url"].split("#token=", 1)[1]
     assert (
         await guest.post("/api/v1/invites/accept", json={"token": revoked_token})
     ).status_code == 404

@@ -23,6 +23,7 @@ from app.db.models import GatewayKey, ProviderCredential, Span
 from app.db.rls import bind_project
 from app.gateway.context import GatewayContext
 from app.gateway.key_limits import record_minute
+from app.gateway.write_evidence import WriteEvidence
 from app.ingest.pipeline import IngestOutcome, IngestTarget, ingest_spans
 from app.ingest.rate_limit_kind import GATEWAY_LIMITER_CODE
 
@@ -37,26 +38,37 @@ async def write_span(
     now: datetime,
     *,
     retry: bool = False,
+    evidence: WriteEvidence | None = None,
 ) -> IngestOutcome:
     """One try, in one transaction: the span, the key's minute and the `last_used_at` moves.
 
     A `retry` first looks for the span: an earlier try may have committed and still raised (its
     acknowledgement lost), and then nothing more is written, so the minute counts the call once.
     """
-    async with context.sessions() as db, db.begin():
-        if retry and await _already_stored(db, context.project_id, span):
-            return IngestOutcome(accepted=1)
-        # `ingest_spans` binds the project, which the key's rows below need as well.
-        outcome = await ingest_spans(db, target, [span], now=now)
-        if context.key is not None:
-            if not _refused_by_limiter(span):
-                await record_minute(
-                    db, context.key.key.id, context.project_id, _total_tokens(span), now
-                )
-            await _touch_key(db, context.key.key, now)
-        await _touch_credentials(db, context, credential_ids, now)
-        # Last: the budget's counter row is the hottest lock of the transaction.
-        await settle(db, context.project_id, span, now)
+    evidence = evidence if evidence is not None else WriteEvidence()
+    earlier_unacknowledged = evidence.unacknowledged_commit
+    async with context.sessions() as db:
+        async with db.begin():
+            if retry and await _already_stored(db, context.project_id, span):
+                evidence.stored = True
+                return IngestOutcome(accepted=1)
+            # `ingest_spans` binds the project, which the key's rows below need as well.
+            outcome = await ingest_spans(db, target, [span], now=now)
+            if context.key is not None:
+                if not _refused_by_limiter(span):
+                    await record_minute(
+                        db, context.key.key.id, context.project_id, _total_tokens(span), now
+                    )
+                await _touch_key(db, context.key.key, now)
+            await _touch_credentials(db, context, credential_ids, now)
+            # Last: the budget's counter row is the hottest lock of the transaction.
+            await settle(db, context.project_id, span, now)
+            # An exception leaving the transaction cannot prove whether COMMIT took effect.
+            evidence.unacknowledged_commit = True
+        if outcome.accepted:
+            evidence.stored = True
+        else:
+            evidence.unacknowledged_commit = earlier_unacknowledged
     return outcome
 
 

@@ -48,11 +48,11 @@ interface PriceOverrideDialogProps {
 }
 
 /**
- * Figma "Pricing — Add price override" (714:1206). Without `gateway:write` it explains who can
+ * Figma "Pricing — Add price override" (714:1206). Without `prices:override` it explains who can
  * add one instead of showing the form. Mounted only while open, so each opening starts fresh.
  */
 export function PriceOverrideDialog({ open, onOpenChange, initial }: PriceOverrideDialogProps) {
-  const canWrite = usePermission("gateway:write");
+  const canWrite = usePermission("prices:override");
   const create = useCreatePriceOverride();
   return (
     <Dialog
@@ -74,7 +74,7 @@ export function PriceOverrideDialog({ open, onOpenChange, initial }: PriceOverri
           ) : (
             <div className="grid gap-[22px]">
               <DialogHeading title={TITLE} description={DESCRIPTION} />
-              <ReadOnlyNote>{viewOnlyCopy("price overrides", "gateway:write")}</ReadOnlyNote>
+              <ReadOnlyNote>{viewOnlyCopy("price overrides", "prices:override")}</ReadOnlyNote>
             </div>
           )}
         </DialogContent>

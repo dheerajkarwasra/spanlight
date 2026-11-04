@@ -28,7 +28,7 @@ class ResendEmailSender:
         self._transport = transport  # tests pass httpx.MockTransport; production uses the default
 
     async def send(self, message: EmailMessage) -> None:
-        body = {
+        body: dict[str, object] = {
             "from": self._from_address,
             "to": message.to,
             "subject": message.subject,
@@ -36,6 +36,8 @@ class ResendEmailSender:
         }
         if message.html is not None:
             body["html"] = message.html
+        if message.headers:
+            body["headers"] = dict(message.headers)
         headers = {"Authorization": f"Bearer {self._api_key.get_secret_value()}"}
 
         try:

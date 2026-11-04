@@ -1,6 +1,7 @@
 import type { Budget, GatewayKey } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
-import { BUDGET_COLUMNS } from "./budget-columns";
+import { BUDGET_GRID } from "./budget-columns";
 import { BudgetRow } from "./budget-row";
 
 interface BudgetListProps {
@@ -39,13 +40,16 @@ export function BudgetList({ budgets, gatewayKeys, projectName, canWrite }: Budg
     <div className="@container flex flex-col gap-1.5">
       <div
         aria-hidden
-        className="hidden items-center gap-3 pt-2 pr-3 pb-0.5 pl-4 text-overline text-subtle-foreground uppercase @[56rem]:flex"
+        className={cn(
+          "hidden gap-3 pt-2 pr-3 pb-0.5 pl-4 text-overline text-subtle-foreground uppercase",
+          BUDGET_GRID,
+        )}
       >
-        <span className={BUDGET_COLUMNS.name}>Budget</span>
-        <span className={BUDGET_COLUMNS.scope}>Scope</span>
-        <span className={BUDGET_COLUMNS.period}>Period</span>
-        <span className={BUDGET_COLUMNS.spend}>Spend</span>
-        <span className={BUDGET_COLUMNS.resets}>Resets</span>
+        <span>Budget</span>
+        <span>Scope</span>
+        <span>Period</span>
+        <span>Spend</span>
+        <span>Resets</span>
       </div>
       <ul aria-label="Budgets" className="flex flex-col gap-1.5">
         {budgets.map((budget) => (

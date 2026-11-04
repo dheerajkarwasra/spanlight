@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   barFill,
   formatUsd,
+  IN_FLIGHT_UNKNOWN_REASON,
+  inFlight,
   isExceeded,
+  NOT_EVALUATED_REASON,
   percentLabel,
   resetsInLabel,
   spendRatio,
@@ -68,5 +71,40 @@ describe("resetsInLabel", () => {
 
   it("is null for an unreadable time", () => {
     expect(resetsInLabel("soon", now)).toBeNull();
+  });
+});
+
+describe("inFlight", () => {
+  const state = {
+    spent_usd: "1.0000",
+    period_start: "2026-10-01T00:00:00Z",
+    resets_at: "2026-11-01T00:00:00Z",
+    state: "ok" as const,
+    last_evaluated_at: "2026-10-14T12:00:00Z",
+    reserved_usd: "0.4200",
+    gateway_settled_usd: "0.5800",
+  };
+
+  it("is not shown for a notify budget, which the gateway never reserves against", () => {
+    expect(inFlight({ action: "notify", state: { ...state, reserved_usd: null } })).toBeNull();
+  });
+
+  it("formats the held estimate of a block budget, $0.00 included", () => {
+    expect(inFlight({ action: "block", state })).toEqual({ text: "$0.42", reason: null });
+    expect(inFlight({ action: "block", state: { ...state, reserved_usd: "0" } })).toEqual({
+      text: "$0.00",
+      reason: null,
+    });
+  });
+
+  it("is unknown, never $0.00, before the first evaluation or without a figure", () => {
+    expect(inFlight({ action: "block", state: null })).toEqual({
+      text: null,
+      reason: NOT_EVALUATED_REASON,
+    });
+    expect(inFlight({ action: "block", state: { ...state, reserved_usd: null } })).toEqual({
+      text: null,
+      reason: IN_FLIGHT_UNKNOWN_REASON,
+    });
   });
 });

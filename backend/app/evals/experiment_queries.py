@@ -11,8 +11,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
+from sqlalchemy import Row, and_, cast, func, null, or_, select, update
 from sqlalchemy import Text as SqlText
-from sqlalchemy import and_, cast, func, null, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -205,19 +205,55 @@ async def list_items(
     return 1 + int(before or 0), list(rows)
 
 
-async def list_run_items(
-    db: AsyncSession, run_id: uuid.UUID, *, limit: int
-) -> list[ExperimentItem]:
-    """At most `limit` items of the run in dataset item order (a run holds at most the
-    experiment's `max_items`)."""
-    return list(
-        await db.scalars(
-            select(ExperimentItem)
-            .where(ExperimentItem.run_id == run_id)
-            .order_by(ExperimentItem.dataset_item_id)
-            .limit(limit)
-        )
+# SHA-256 of an item's frozen copy as stored JSON text (JSONB text is canonical: key order and
+# spacing never differ), so a comparison tells copies apart without reading them.
+_COPY_DIGEST = func.sha256(
+    func.convert_to(
+        cast(func.jsonb_build_array(ExperimentItem.input, ExperimentItem.expected_output), SqlText),
+        "UTF8",
     )
+)
+
+
+async def compare_items(
+    db: AsyncSession,
+    run_id: uuid.UUID,
+    *,
+    limit: int,
+    cluster_key: str | None,
+    outputs: bool,
+    copies: bool,
+) -> list[Row[Any]]:
+    """At most `limit` items of the run in dataset item order (a run holds at most the
+    experiment's `max_items`), with what a comparison reads: the scores, cost, latency and errors,
+    `has_copy`, `copy_digest` and `cluster` (the value under `cluster_key` in the frozen metadata;
+    the metadata itself is not read). `output` and the copy's `input` and `expected_output` are
+    read only when asked for and are None otherwise."""
+    rows = await db.execute(
+        select(
+            ExperimentItem.dataset_item_id,
+            ExperimentItem.trace_id,
+            ExperimentItem.scores,
+            ExperimentItem.latency_ms,
+            ExperimentItem.cost_usd,
+            ExperimentItem.error,
+            ExperimentItem.evaluator_error,
+            ExperimentItem.output if outputs else null().label("output"),
+            ExperimentItem.input if copies else null().label("input"),
+            ExperimentItem.expected_output if copies else null().label("expected_output"),
+            or_(ExperimentItem.input.is_not(None), ExperimentItem.item_metadata.is_not(None)).label(
+                "has_copy"
+            ),
+            _COPY_DIGEST.label("copy_digest"),
+            (null() if cluster_key is None else ExperimentItem.item_metadata[cluster_key]).label(
+                "cluster"
+            ),
+        )
+        .where(ExperimentItem.run_id == run_id)
+        .order_by(ExperimentItem.dataset_item_id)
+        .limit(limit)
+    )
+    return list(rows)
 
 
 async def evaluator_error_counts(

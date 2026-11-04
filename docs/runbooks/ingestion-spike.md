@@ -4,7 +4,8 @@
 
 Use this when ingestion traffic jumps or misbehaves:
 
-- Senders get `429 RATE_LIMITED` from `POST /v1/traces` or `POST /v1/otlp/traces`.
+- Senders get `429 RATE_LIMITED` or `429 INGEST_QUOTA_EXCEEDED` from `POST /v1/traces` or `POST /v1/otlp/traces`.
+- A tenant reports missing data and the Overview shows a "spans were refused" notice.
 - The api or database is under load after a burst of traffic.
 - A sender was offline, then flushed a backlog, and charts over long windows (a week, a month) are missing spans that the trace list shows.
 
@@ -22,7 +23,9 @@ Use this when ingestion traffic jumps or misbehaves:
 
 - **Per-key rate limit.** Each API key gets 50 requests per second, with a burst of 100. The limit counts requests, not spans. It is shared by all api replicas through the `rate_limit_buckets` table in Postgres. The limits are constants in `backend/app/core/ratelimit.py`, not settings; changing them is a code change.
 - **A refused request** is `429` with `Retry-After` (whole seconds) and a problem+json body whose `code` is `RATE_LIMITED` and whose `detail` is `Ingestion rate limit exceeded for this key.` The Python SDK honours `Retry-After` and retries (`max_retries`, default 5) before it drops a batch.
-- **Request size.** A request may carry at most 1000 spans and 5 MiB (after decompression); beyond that it gets `413 PAYLOAD_TOO_LARGE`. So one key can in principle ingest up to 50 000 spans a second if its senders batch to the maximum.
+- **Per-project concurrency.** One project may have at most `INGEST_MAX_IN_FLIGHT_PER_PROJECT` (default 8) ingest requests in flight per api process, across all its keys. The next one is refused before its body is read: `429 RATE_LIMITED`, detail `Too many concurrent ingest requests for this project.`, `Retry-After: 1`, counted in `spanlight_rate_limit_rejections_total{scope="ingest_project_concurrency"}` and not as lost spans (the span count is unknown). It keeps one tenant's flood from taking every slot of a shared process.
+- **Request size.** A request may carry at most 1000 spans and 5 MiB (after decompression); beyond that it gets `413 PAYLOAD_TOO_LARGE`. So one key can in principle send up to 50 000 spans a second if its senders batch to the maximum, which is why the project caps below exist.
+- **Per-project caps.** On top of the per-key limit, every project has a span rate (`INGEST_SPANS_PER_SECOND`, default 1000 a second, bursts of at least a full batch) and a daily quota of spans (`INGEST_SPANS_PER_DAY`, default 1,000,000) and body bytes (`INGEST_BYTES_PER_DAY`, default 5 GiB) per UTC day. See [Per-project caps](#per-project-caps).
 - **Late spans.** The api accepts spans that started up to 90 days ago (and end no more than 10 minutes in the future). The rollups that long-window charts read are recomputed only for the last 48 hours.
 
 ## 1. See what is happening
@@ -70,7 +73,7 @@ A bucket refills at 50 tokens a second, so look at rows with a recent `updated_a
 
 ## 2. Fix 429s
 
-429 is the system protecting the database. The remedy is on the sending side, because the limit is per key and per request:
+429 is the system protecting the database. For `RATE_LIMITED` with the detail `… for this key.` the remedy is on the sending side, because the limit is per key and per request (for `… for this project.` and for `INGEST_QUOTA_EXCEEDED`, see [Per-project caps](#per-project-caps)):
 
 1. **Send bigger batches, less often.** The same spans in fewer requests. Up to 1000 spans and 5 MiB per request.
 2. **Give each producer its own key.** Limits are per key, so one noisy service no longer throttles another. Create one key per service or environment in the dashboard's **API keys** page (see [revoke-key.md](revoke-key.md#revoke-a-project-api-key) for where it is).
@@ -78,6 +81,47 @@ A bucket refills at 50 tokens a second, so look at rows with a recent `updated_a
 4. **Raise the limit only with a code change.** If your real, steady traffic is above 50 requests per second per key after batching, change `INGEST_LIMITER` in `backend/app/core/ratelimit.py`, then ship it through [deploy.md](deploy.md) after checking the connection budget in [scale.md](scale.md#2-the-connection-budget).
 
 Verify: the 429 rate returns to roughly zero, `spanlight_ingested_spans_total` keeps rising, and new spans show up in the dashboard.
+
+## Per-project caps
+
+The three settings and their defaults: `INGEST_SPANS_PER_SECOND=1000` (sustained spans a second per project, bursts of `max(5000, rate)`), `INGEST_SPANS_PER_DAY=1000000` and `INGEST_BYTES_PER_DAY=5368709120` (5 GiB of decompressed request bodies). Each `0` turns that cap off everywhere; the three at `0` are the kill switch. They apply to `POST /v1/traces` and `POST /v1/otlp/traces` only: the gateway's own spans are governed by the gateway key limits and are neither checked nor counted.
+
+Two codes, both `429` with `Retry-After` and a problem+json body, and both refuse the whole request (nothing of it is stored, so a client retries the whole batch):
+
+- `RATE_LIMITED` with the detail `Ingestion rate limit exceeded for this project.`: the span rate, `Retry-After` in seconds. Clients resend these within seconds.
+- `INGEST_QUOTA_EXCEEDED`: a daily quota is used up, `Retry-After` is the seconds to the next UTC midnight, and the body carries `quota` (`spans_per_day` or `bytes_per_day`), `limit`, `used` and `resets_at`. A batch whose every span is already stored (a retry of an acknowledged batch) is admitted anyway.
+
+Refused spans are counted per project and hour in `telemetry_losses_hourly` (`source = 'ingest'`, reasons `quota_rate`, `quota_spans`, `quota_bytes`), shown in the completeness card and as a notice on Overview and Traces, and reported by `GET /api/v1/projects/{id}/ingest-quota` (`rejected_days`, with today's usage and the effective limits). They are "spans refused", not "spans lost": a client that retried is counted once per refusal and may have stored them after all.
+
+```promql
+sum by (quota) (rate(spanlight_ingest_quota_rejections_total[5m]))          # refused requests
+sum by (quota) (rate(spanlight_ingest_quota_rejected_spans_total[5m]))      # spans in them
+rate(spanlight_rate_limit_rejections_total{scope="ingest_project"}[5m])      # project rate refusals
+rate(spanlight_ingest_quota_replays_admitted_total[5m])                      # replays admitted at the cap
+histogram_quantile(0.99, sum by (le) (rate(spanlight_ingest_quota_utilisation_bucket[1h])))  # how close tenants run
+```
+
+The utilisation histogram observes `used / limit` of the quota closest to its cap on every request of a capped project, with no per-project label; a p99 near 1 means some tenant is at its cap.
+
+**A tenant reports missing data.** Read `GET /api/v1/projects/{id}/ingest-quota` (or the Settings page's Ingest quota card) for `rejected_days`. Daily refusals (`spans - rate_spans`) are data the client could not store until midnight; rate refusals are usually resent. If the tenant's steady volume is legitimate, raise its caps:
+
+```bash
+spl exec api spanlight set-ingest-caps <project-id> --spans-per-day 5000000 --bytes-per-day 21474836480
+spl exec api spanlight set-ingest-caps <project-id> --spans-per-day default      # back to the instance setting
+```
+
+The command prints the effective caps and their source. The equivalent SQL is `UPDATE projects SET ingest_spans_per_day = 5000000 WHERE id = '<project-id>'` (`NULL` clears an override; `0` is refused by a CHECK). A refusal logs `ingest_quota_exceeded` (warning, with `project_id`, `quota`, `used`, `limit`, `retry_after`) or `ingest_project_rate_limited` (info) at most once a minute per project.
+
+**Before deploying the caps** (or raising them): confirm no project came near the defaults in the last 30 days, as the owner role (the app role sees nothing without a project binding):
+
+```sql
+SELECT project_id, date_trunc('day', bucket_start, 'UTC') AS day, sum(span_count)
+FROM span_rollups_hourly
+WHERE bucket_start >= now() - interval '30 days'
+GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 10;
+```
+
+Bytes have no history: the first week's `spanlight_ingest_quota_utilisation` is the byte check. The migration that adds the caps (1039) takes an exclusive lock on `projects` for a moment; it queues behind in-flight batches and new batches queue behind it, so run `spanlight migrate` off-peak and simply re-run it on a lock timeout.
 
 ## 3. If the load is on the database
 

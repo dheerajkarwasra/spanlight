@@ -14,6 +14,7 @@ import {
   treeItemMeta,
   type SpanNode,
 } from "./span-tree";
+import { walkSpanTree } from "./span-traversal";
 import { topLevelPositions, waterfallItems } from "./waterfall-items";
 
 interface Options {
@@ -25,9 +26,8 @@ interface Options {
 }
 
 function indexNodes(nodes: readonly SpanNode[], byId = new Map<string, SpanNode>()) {
-  for (const node of nodes) {
+  for (const { node } of walkSpanTree(nodes)) {
     byId.set(node.span.span_id, node);
-    indexNodes(node.children, byId);
   }
   return byId;
 }

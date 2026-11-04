@@ -24,7 +24,12 @@ function releaseQuietly(key: SessionKey, itemId: string): void {
  * page is still on the same queue (`active`), so an unmount never claims, never races a running
  * complete with a release, and never leaves a claim behind.
  */
-export function useWorkSession(queueId: string) {
+export interface WorkSessionOptions {
+  /** After the server confirmed a complete, skip or release of `itemId` (e.g. to fix copies). */
+  onSettled?: (itemId: string, action: SaveAction, scores: CompletedScore[]) => void;
+}
+
+export function useWorkSession(queueId: string, options: WorkSessionOptions = {}) {
   const { projectId } = useProjectParams();
   const invalidate = useInvalidateQueues();
   const refreshScores = useRefreshScores();
@@ -46,9 +51,11 @@ export function useWorkSession(queueId: string) {
   const claiming = useRef<InFlightClaim | null>(null);
   const invalidateRef = useRef(invalidate);
   const refreshScoresRef = useRef(refreshScores);
+  const onSettledRef = useRef(options.onSettled);
   useEffect(() => {
     invalidateRef.current = invalidate;
     refreshScoresRef.current = refreshScores;
+    onSettledRef.current = options.onSettled;
   });
 
   // Stable for the life of the component: it reads everything else through refs.
@@ -157,6 +164,8 @@ export function useWorkSession(queueId: string) {
       }
       busy.current = null;
       held.current = null;
+      // Even when the page has closed in the meantime: the item ended on the server.
+      onSettledRef.current?.(itemId, action, scores);
       const traceId = heldTrace.current;
       if (action === "complete" && traceId !== null) {
         // The scores now sit on the trace: its panel, the explorer column and the score-name

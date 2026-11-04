@@ -38,6 +38,39 @@ describe("SessionsPage", () => {
     mockSignedIn([makeProject("proj_1", "Checkout")]);
   });
 
+  it("hides the previous project's sessions while the next project waits, including a rapid return", async () => {
+    vi.mocked(projectsApi.get).mockRestore();
+    mockSignedIn([makeProject("proj_1", "Checkout"), makeProject("proj_2", "Search")]);
+    let finishB!: (value: SessionPage) => void;
+    const pendingB = new Promise<SessionPage>((resolve) => {
+      finishB = resolve;
+    });
+    vi.spyOn(projectsApi, "sessions").mockImplementation((projectId) =>
+      projectId === "proj_1" ? Promise.resolve(page({ items: [session()] })) : pendingB,
+    );
+    const router = renderApp(`/${ORG_ID}/proj_1/sessions`);
+    await screen.findAllByRole("link", { name: "chat_1" });
+    await act(() =>
+      router.navigate({
+        to: "/$orgId/$projectId/sessions",
+        params: { orgId: ORG_ID, projectId: "proj_2" },
+      }),
+    );
+    expect(screen.queryAllByRole("link", { name: "chat_1" })).toHaveLength(0);
+    await act(() =>
+      router.navigate({
+        to: "/$orgId/$projectId/sessions",
+        params: { orgId: ORG_ID, projectId: "proj_1" },
+      }),
+    );
+    await screen.findAllByRole("link", { name: "chat_1" });
+    act(() => {
+      finishB(page({ items: [session({ session_id: "chat_b" })] }));
+    });
+    expect(screen.queryAllByRole("link", { name: "chat_b" })).toHaveLength(0);
+    expect(screen.getAllByRole("link", { name: "chat_1" }).length).toBeGreaterThan(0);
+  });
+
   it("lists user, turns, tokens, the cost flag above p99 and the last turn's input", async () => {
     const listSpy = vi.spyOn(projectsApi, "sessions").mockResolvedValue(
       page({
@@ -75,6 +108,7 @@ describe("SessionsPage", () => {
     expect(listSpy).toHaveBeenCalledWith(
       "proj_1",
       expect.objectContaining({ sort: "last", order: "desc", preview: true }),
+      expect.any(AbortSignal),
     );
   });
 
@@ -116,9 +150,17 @@ describe("SessionsPage", () => {
     const box = await screen.findByRole("searchbox", { name: "Search by session ID or user ID" });
     await userEvent.type(box, "chat");
     await waitFor(() => {
-      expect(listSpy).toHaveBeenCalledWith("proj_1", expect.objectContaining({ q: "chat" }));
+      expect(listSpy).toHaveBeenCalledWith(
+        "proj_1",
+        expect.objectContaining({ q: "chat" }),
+        expect.any(AbortSignal),
+      );
     });
-    expect(listSpy).not.toHaveBeenCalledWith("proj_1", expect.objectContaining({ q: "c" }));
+    expect(listSpy).not.toHaveBeenCalledWith(
+      "proj_1",
+      expect.objectContaining({ q: "c" }),
+      expect.any(AbortSignal),
+    );
   });
 
   it("flips the Cost header between descending and ascending", async () => {
@@ -138,6 +180,7 @@ describe("SessionsPage", () => {
       expect(listSpy).toHaveBeenCalledWith(
         "proj_1",
         expect.objectContaining({ sort: "cost", order: "asc" }),
+        expect.any(AbortSignal),
       );
     });
   });
@@ -200,7 +243,11 @@ describe("SessionsPage", () => {
     const entries = window.history.length;
     await userEvent.type(box, "ch{Enter}");
     await waitFor(() => {
-      expect(listSpy).toHaveBeenLastCalledWith("proj_1", expect.objectContaining({ q: "ch" }));
+      expect(listSpy).toHaveBeenLastCalledWith(
+        "proj_1",
+        expect.objectContaining({ q: "ch" }),
+        expect.any(AbortSignal),
+      );
     });
     expect(window.history.length).toBe(entries);
 

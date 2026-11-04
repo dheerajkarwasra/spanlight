@@ -49,19 +49,28 @@ from app.db.models.billing import BillingSource
 from app.db.rls import bind_project
 from app.end_users.days import ONE_DAY, day_bounds, midnight
 from app.jobs.queue import enqueue
+from app.pricing.provider_alias import canonical_provider
 from app.reconciliation import queries
-from app.reconciliation.arithmetic import SETTLE_LAG, GroupReconciliation, reconcile_day
+from app.reconciliation.arithmetic import (
+    SETTLE_LAG,
+    GroupReconciliation,
+    bypass_suspected,
+    group_key,
+    reconcile_day,
+)
 from app.reconciliation.backfill import BACKFILL_ATTEMPTS, BACKFILL_JOB, backfill_payload
 from app.reconciliation.explained import ExplainedKind, provider_unknown
 from app.reconciliation.line_items import model_pattern_for
 from app.reconciliation.report_out import charges_out, explained_out, summarize, tokens_out
 from app.reconciliation.rollups import refresh_cost_rollups
 from app.reconciliation.types import CostRollupRow, MappedLine
+from app.rollups.coverage_reads import CoverageState
 
 MAX_REPORT_DAYS = 31
 LAZY_BUILD_MAX_PROJECT_DAYS = 31
 ROLLUP_PENDING_NOTE = "rollup pending"
-# Explained lines computed from the provider's amounts: unknown while no run covers the day.
+# Explained lines computed from the provider's amounts, or saying a model the provider billed
+# has no span: unknown while no run covers the day.
 _PROVIDER_KINDS: frozenset[ExplainedKind] = frozenset(
     {"batch_spend", "server_tool_fees", "untraced_traffic"}
 )
@@ -80,6 +89,7 @@ class ReportWindowInvalid(Exception):  # noqa: N818 - reads as the outcome, like
 class _SpanlightSide:
     rows: list[CostRollupRow] = field(default_factory=list)
     pending: set[date] = field(default_factory=set)
+    unavailable: set[date] = field(default_factory=set)
 
 
 @dataclass(frozen=True)
@@ -88,6 +98,7 @@ class _Context:
     now: datetime
     fetched: Mapping[date, datetime]
     pending: Set[date]
+    unavailable: Set[date]
     cutoffs: Mapping[uuid.UUID, date]
 
 
@@ -125,6 +136,7 @@ async def build_report(
         now=now,
         fetched=fetched,
         pending=side.pending,
+        unavailable=side.unavailable,
         cutoffs={p.id: first_retained_day(p.retention_days, now) for p in view.projects},
     )
     lines_by_day = _by_day(_remapped_lines(lines, patterns))
@@ -140,6 +152,7 @@ async def build_report(
         projects=[ReportProjectOut(id=p.id, name=p.name) for p in view.projects],
         days=days,
         summary=summarize(days),
+        aggregate_status="unavailable" if side.unavailable else "complete",
     )
 
 
@@ -172,7 +185,12 @@ async def _spanlight_side(
         if later:
             await _queue_backfill(db, project.id, later, now)
             side.pending.update(later)
-        side.rows.extend(await queries.rollup_rows_for_project_window(db, project.id, first, end))
+        coverage = CoverageState()
+        side.rows.extend(
+            await queries.rollup_rows_for_project_window(db, project.id, first, end, coverage)
+        )
+        if coverage.unavailable:
+            side.unavailable.update(_each_day(first, end))
         await db.commit()
     return side
 
@@ -214,32 +232,66 @@ def _day(
 ) -> ReportDayOut | None:
     fetched_at = context.fetched.get(day)
     pending = day in context.pending
+    unavailable = day in context.unavailable
     settled = fetched_at is not None and fetched_at >= midnight(day + ONE_DAY) + SETTLE_LAG
     spanlight = [] if pending else rows
     result = reconcile_day(
         day, context.provider, lines, spanlight, context.now, settled, context.cutoffs
     )
-    if not pending and not (
-        result.groups or result.credits or result.other or result.unattributed_calls
+    if (
+        not pending
+        and not unavailable
+        and not (result.groups or result.credits or result.other or result.unattributed_calls)
     ):
         return None
-    provider_known, spanlight_known = fetched_at is not None, not pending
-    both = provider_known and spanlight_known
-    groups = [_group(group, provider_known, spanlight_known) for group in result.groups]
+    provider_known = fetched_at is not None
+    # A snapshot for another model/provider cannot establish this group's source history.
+    retained_groups = {
+        group_key(row.model_pattern, row.model)
+        for row in spanlight
+        if row.provider_canonical == canonical_provider(context.provider)
+    }
+    spanlight_known = not pending and (not unavailable or bool(retained_groups))
+    both = (
+        provider_known
+        and spanlight_known
+        and (not unavailable or all(group.group in retained_groups for group in result.groups))
+    )
+    groups = [
+        _group(
+            group,
+            provider_known,
+            not pending and (not unavailable or group.group in retained_groups),
+        )
+        for group in result.groups
+    ]
+    unattributed_known = not pending and (
+        not unavailable or any(row.provider_canonical is None for row in spanlight)
+    )
+    provider_usd = result.provider_usd if provider_known else None
+    residual_usd = result.residual_usd if both else None
     return ReportDayOut(
         day=day,
         provisional=result.provisional,
         fetched_at=fetched_at,
-        incomplete=result.incomplete or pending,
-        note=ROLLUP_PENDING_NOTE if pending else None,
-        provider_usd=result.provider_usd if provider_known else None,
+        incomplete=result.incomplete or pending or unavailable,
+        note=(
+            "retained snapshot; source history unavailable"
+            if unavailable
+            else ROLLUP_PENDING_NOTE
+            if pending
+            else None
+        ),
+        aggregate_status="unavailable" if unavailable else "complete",
+        provider_usd=provider_usd,
         spanlight_usd=result.spanlight_usd if spanlight_known else None,
         explained_usd=_sum(g.explained_usd for g in groups) if both else None,
-        residual_usd=result.residual_usd if both else None,
+        residual_usd=residual_usd,
+        bypass_suspected=bypass_suspected(provider_usd=provider_usd, residual_usd=residual_usd),
         variance_ratio=result.variance_ratio if both else None,
         credits_usd=result.credits_usd if provider_known else None,
         other_usd=result.other_usd if provider_known else None,
-        unattributed_calls=result.unattributed_calls,
+        unattributed_calls=result.unattributed_calls if unattributed_known else None,
         groups=groups,
         credits=charges_out(result.credits),
         other=charges_out(result.other),

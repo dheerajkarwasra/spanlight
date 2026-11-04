@@ -1,3 +1,4 @@
+import type { AggregateList } from "./aggregate";
 import { api } from "./client";
 import { projectPath } from "./paths";
 import type {
@@ -25,12 +26,21 @@ export const providersApi = {
   health: (projectId: string, query: ProviderHealthQuery = {}): Promise<HealthReport> =>
     api.get<HealthReport>(`${providersPath(projectId)}/health`, { ...query }),
   /** Failed LLM calls per UTC bucket and class; classes with no failures are absent. */
-  errorTimeseries: (projectId: string, query: ErrorTimeseriesQuery): Promise<ErrorBucket[]> =>
-    api.get<ErrorBucket[]>(`${providersPath(projectId)}/errors/timeseries`, { ...query }),
+  errorTimeseries: (
+    projectId: string,
+    query: ErrorTimeseriesQuery,
+  ): Promise<AggregateList<ErrorBucket>> =>
+    api.getAggregateList<ErrorBucket>(`${providersPath(projectId)}/errors/timeseries`, {
+      ...query,
+    }),
   /** The newest failed calls; a window over 24 hours is cut to its last 24 (`clamped`). */
   samples: (projectId: string, query: ErrorSamplesQuery = {}): Promise<ErrorSamplesPage> =>
     api.get<ErrorSamplesPage>(`${providersPath(projectId)}/errors/samples`, { ...query }),
   /** Incidents overlapping the window, newest first, and every feed's poll state. */
-  incidents: (projectId: string, query: IncidentListQuery = {}): Promise<IncidentList> =>
-    api.get<IncidentList>(`${projectPath(projectId)}/provider-incidents`, { ...query }),
+  incidents: (
+    projectId: string,
+    query: IncidentListQuery = {},
+    signal?: AbortSignal,
+  ): Promise<IncidentList> =>
+    api.get<IncidentList>(`${projectPath(projectId)}/provider-incidents`, { ...query }, signal),
 };

@@ -8,9 +8,10 @@ import re
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 
 from app.api.deps import Access, ClockDep, DbSession, require
+from app.api.schemas.common import AGGREGATE_RESPONSE_HEADERS
 from app.api.schemas.providers import ErrorBucketOut, HealthReportOut, SamplesPage
 from app.api.window import Window
 from app.core.errors import FieldError, ProblemError
@@ -22,6 +23,7 @@ from app.ingest.rate_limit_kind import RateLimitKind
 from app.providers import service
 from app.providers.sample_queries import SampleCursor, SampleFilters
 from app.providers.series import Bucket
+from app.rollups.coverage_reads import CoverageState
 
 router = APIRouter(prefix="/projects/{project_id}/providers", tags=["providers"])
 
@@ -57,10 +59,14 @@ async def get_health(
 
 
 @router.get(
-    "/errors/timeseries", response_model=list[ErrorBucketOut], summary="Errors by class over time"
+    "/errors/timeseries",
+    response_model=list[ErrorBucketOut],
+    responses=AGGREGATE_RESPONSE_HEADERS,
+    summary="Errors by class over time",
 )
 async def get_error_timeseries(
     project_id: uuid.UUID,
+    response: Response,
     access: ProjectReader,
     db: DbSession,
     window: Window,
@@ -75,7 +81,8 @@ async def get_error_timeseries(
     Part of the provider health page, so it does not count a use of its own.
     """
     project = access.require_project()
-    return await service.timeseries(
+    coverage = CoverageState()
+    result = await service.timeseries(
         db,
         project.id,
         window,
@@ -83,7 +90,12 @@ async def get_error_timeseries(
         environment=environment,
         provider=provider,
         now=clock(),
+        coverage=coverage,
     )
+    response.headers["Aggregate-Status"] = coverage.status
+    if coverage.oldest_pending_at is not None:
+        response.headers["Aggregate-Oldest-Pending-At"] = coverage.oldest_pending_at.isoformat()
+    return result
 
 
 @router.get("/errors/samples", response_model=SamplesPage, summary="Sample failed calls")

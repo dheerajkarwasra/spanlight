@@ -1,9 +1,11 @@
 ---
 /**
  * Starlight's footer (edit link, last updated, previous and next page) with "Report a problem
- * with this page" in its meta row. Starlight's own Footer renders nothing from a slot, so the
- * footer is rebuilt here from the same parts and styles. The script below makes wide tables and
- * code blocks reachable by keyboard and gives each one its own name.
+ * with this page" and the legal links in its meta row. The legal pages belong to the app, which
+ * serves these docs under /docs/ on the same host, so they are absolute site paths. Starlight's
+ * own Footer renders nothing from a slot, so the footer is rebuilt here from the same parts and
+ * styles. The script below makes wide tables and code blocks reachable by keyboard and gives each
+ * one its own name.
  */
 import EditLink from '@astrojs/starlight/components/EditLink.astro';
 import LastUpdated from '@astrojs/starlight/components/LastUpdated.astro';
@@ -12,6 +14,9 @@ import Pagination from '@astrojs/starlight/components/Pagination.astro';
 import ReportProblem from './ReportProblem.astro';
 
 const isSplash = Astro.locals.starlightRoute.entry.data.template === 'splash';
+// The legal pages name the spanlight.dev operator, so only that build links them (set at build
+// time, see LEGAL_PAGES in deploy/Dockerfile). Self-hosted docs leave it empty.
+const legalPages = process.env.LEGAL_PAGES === '1';
 ---
 
 <footer class="sl-flex">
@@ -19,6 +24,16 @@ const isSplash = Astro.locals.starlightRoute.entry.data.template === 'splash';
     <EditLink />
     <LastUpdated />
     {!isSplash && <ReportProblem />}
+    {
+      legalPages && (
+        <nav aria-label="Legal" class="legal sl-flex">
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+          <a href="/imprint">Imprint</a>
+          <a href="/accessibility">Accessibility</a>
+        </nav>
+      )
+    }
   </div>
   <Pagination />
 </footer>
@@ -36,6 +51,13 @@ const isSplash = Astro.locals.starlightRoute.entry.data.template === 'splash';
       margin-top: 3rem;
       font-size: var(--sl-text-sm);
       color: var(--sl-color-gray-3);
+    }
+    .legal {
+      gap: 1rem;
+    }
+    .legal a {
+      color: inherit;
+      text-underline-offset: 0.125em;
     }
   }
 </style>

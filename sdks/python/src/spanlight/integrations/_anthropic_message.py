@@ -21,12 +21,19 @@ def record_usage(span: Span, usage: Any) -> None:
     fields = usage_fields(usage)
     if fields is not None:
         span.set_usage(**fields)
+    span.set_attributes(usage_attributes(usage))
+
+
+def usage_attributes(usage: Any) -> dict[str, str]:
+    """Response-side billing modifiers shared by message and batch instrumentation."""
+    attributes = {}
     # Where and at which speed the call ran, as billed: the server prices data residency and
     # fast mode from these, in place of the request-side ``usage.pricing_modifier_unknown``.
     for name in ("inference_geo", "speed"):
         value = get_field(usage, name)
         if isinstance(value, str):
-            span.set_attribute(f"usage.{name}", value[:64])
+            attributes[f"usage.{name}"] = value[:64]
+    return attributes
 
 
 def usage_fields(usage: Any) -> dict[str, Any] | None:

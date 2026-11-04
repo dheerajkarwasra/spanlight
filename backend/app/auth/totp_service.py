@@ -20,10 +20,11 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.totp import (
+    LEGACY_RECOVERY_CODE_LENGTH,
     hash_recovery_code,
     is_recovery_code,
     is_totp_code,
@@ -53,6 +54,12 @@ class InvalidTotpCodeError(Exception):
 
 class NoPendingSetupError(InvalidTotpCodeError):
     """Enabling was attempted before a setup produced a secret to check the code against."""
+
+
+@dataclass(frozen=True)
+class RecoveryCodeStatus:
+    remaining: int
+    legacy: bool
 
 
 @dataclass(frozen=True)
@@ -122,7 +129,14 @@ async def enable(
 
     codes = new_recovery_codes()
     await db.execute(delete(RecoveryCode).where(RecoveryCode.user_id == locked.id))
-    db.add_all(RecoveryCode(user_id=locked.id, code_hash=hash_recovery_code(c)) for c in codes)
+    db.add_all(
+        RecoveryCode(
+            user_id=locked.id,
+            code_hash=hash_recovery_code(c),
+            code_length=LEGACY_RECOVERY_CODE_LENGTH,
+        )
+        for c in codes
+    )
     locked.totp_enabled_at = now
     # The code that proved the app is spent, like any other.
     locked.totp_last_step = step
@@ -139,9 +153,9 @@ async def verify(
     """Whether `code` is a valid second factor for the user right now; spends it if so.
 
     A six-digit code must be the TOTP code of a step in the window and later than the last one
-    used. A ten-character code must be an unused recovery code. Anything else is False, as is a
-    user without two-factor authentication. The user row stays locked until the caller ends the
-    transaction, which is what serialises two attempts with the same code.
+    used. A 10- or 28-character code must be an unused recovery code. Anything else is False,
+    as is a user without two-factor authentication. The user row stays locked until the caller
+    ends the transaction, which is what serialises two attempts with the same code.
     """
     locked = await _locked(db, user)
     if not locked.totp_enabled:
@@ -210,15 +224,20 @@ async def _clear(db: AsyncSession, locked: User) -> None:
     await db.flush()
 
 
-async def recovery_codes_remaining(db: AsyncSession, user_id: uuid.UUID) -> int:
-    return int(
-        await db.scalar(
-            select(func.count())
+async def recovery_code_status(db: AsyncSession, user_id: uuid.UUID) -> RecoveryCodeStatus:
+    """How many unused recovery codes the user has, and whether any is in the legacy format."""
+    legacy = or_(
+        RecoveryCode.code_length.is_(None),
+        RecoveryCode.code_length == LEGACY_RECOVERY_CODE_LENGTH,
+    )
+    remaining, legacy_count = (
+        await db.execute(
+            select(func.count(), func.count().filter(legacy))
             .select_from(RecoveryCode)
             .where(RecoveryCode.user_id == user_id, RecoveryCode.used_at.is_(None))
         )
-        or 0
-    )
+    ).one()
+    return RecoveryCodeStatus(remaining=int(remaining), legacy=legacy_count > 0)
 
 
 async def _locked(db: AsyncSession, user: User) -> User:

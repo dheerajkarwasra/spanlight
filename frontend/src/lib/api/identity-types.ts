@@ -58,6 +58,12 @@ export interface Me {
   email_verification_required: boolean;
   /** The caller hid the setup checklist; per user, across every project. */
   activation_checklist_dismissed: boolean;
+  /** The terms version the caller accepted; null when they never accepted any. */
+  terms_accepted_version: string | null;
+  /** The terms version this server asks for (`TERMS_VERSION`); null when it asks for none. */
+  terms_current_version: string | null;
+  /** Whether the caller gets the weekly digest; false once they turned it off for every project. */
+  weekly_digest: boolean;
   capabilities: ServerCapabilities;
 }
 

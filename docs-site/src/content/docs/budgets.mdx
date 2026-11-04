@@ -43,36 +43,42 @@ The **period** is a UTC calendar day (`daily`, resetting at 00:00 UTC) or a UTC 
 
 Spend is the cost of the priced spans in the scope since the period began. A span whose model has no known price adds nothing, so spend is a lower bound when unpriced models are in use (the **Unpriced models** list shows which). The spend of a scope that has spans but no priced span at all shows as "—", never as $0.
 
-A budget fires when spend is **strictly above** the amount. It resolves, sending `alert.resolved`, on the first evaluation that measures spend at or below the amount.
+A budget fires when spend is **strictly above** the amount. It resolves, sending `alert.resolved`, once three consecutive minute evaluations measure spend at or below the amount, like any [alert rule](/docs/alerts/#how-evaluation-works).
 
 ## Notify or block
 
 | Action | When the budget is exceeded |
 | --- | --- |
 | `notify` | Sends the notification. Nothing is blocked. |
-| `block` | Sends the notification and makes the gateway answer `402 BUDGET_EXCEEDED` to calls in the scope, with no call to the provider and no cost, until the budget is no longer exceeded. Gateway spend is held to the amount before each call is forwarded; spend sent from the SDK is measured once a minute and cannot be stopped (below). |
+| `block` | Sends the notification and makes the gateway answer `402 BUDGET_EXCEEDED` to calls in the scope, with no call to the provider and no cost, until the budget is no longer exceeded. The gateway checks fresh recorded history and reserves a priced estimate before forwarding; SDK ingestion cannot be stopped (below). |
 
 The notification is the same for both. It names the budget, what was spent and the amount, and for a blocking budget it says when the period resets.
 
 ### What a block does and does not do
 
-**Gateway spend is held to the amount.** Before a call is forwarded, the gateway reserves an estimate of what it can cost against every blocking budget that matches it, and refuses the call with `402` when the spend already settled or in flight this period plus that estimate would pass the amount. When the call's span is written, the reservation is replaced by the real cost. Concurrent calls, on any number of API replicas, see each other's reservations, so twenty calls at once on a budget with room for five admit exactly five. The spend of a scope whose calls all go through the gateway (every `gateway_key` budget) can exceed the amount by at most the error of one estimate.
+**The gateway checks recorded history and reserves an estimate.** Before forwarding, it counts matching history, settled calls and in-flight reservations once, including history from before budget creation or a scope edit. Concurrent calls see each other's reservations. The reservation becomes a final charge when the span is written; a late span or stored cost correction is reflected in the next admission check. This is an estimate-based admission limit, not an unconditional provider-bill cap: actual costs can exceed supported estimates, and unpriced or unmodelled inputs remain outside that guarantee.
 
 The estimate counts the request's text (`messages`, `input`, `system`, `instructions`, `tools`; images and files are not counted) and every output token the request allows: the largest of `max_tokens`, `max_completion_tokens` and `max_output_tokens`, times `n`, at the dearest price among the model you asked for and the models the route's targets would send it to, for the requested `service_tier`. A request that sets none of them reserves 16,384 output tokens, so near the amount a call without `max_tokens` can be refused although it would have fitted. The 402 message says what is spent or in flight, what the call would add and the amount, and that a lower `max_tokens` lowers the reservation. A call to a model with no known price reserves nothing and is admitted; its spend is unknown, not zero.
 
 **What a budget cannot stop.**
 
-- **Spend sent from the SDK or over OTLP is measured, not stopped.** It reaches the budget only through the alert worker's measurement, once every 60 seconds, and the budget blocks the gateway once that measurement is over the amount. Between two measurements, SDK spend over the amount still lets gateway calls through, and the 402 for a budget blocked by measured spend says so: it ends with `(soft limit, measured every 60 s)`. For a scope that mixes SDK and gateway traffic, set the amount below the limit that must hold.
+- **SDK and OTLP spend cannot be stopped.** Already committed, priced history is included in the next gateway admission check. Ingestion can still add spend independently, including while another call is being admitted. Notifications and displayed spend are evaluated every 60 seconds; an evaluated-state refusal retains its `(soft limit, measured every 60 s)` suffix.
 - **A leaked provider key** used outside Spanlight never touches the gateway. Only the provider's own spend caps stop it: set a monthly limit on the provider's workspace or project as well.
 
 - **Ingestion is never blocked.** `POST /v1/traces`, the OTLP endpoint and the SDK keep recording whatever the budgets say. A budget limits what the gateway spends, not what the dashboard may know.
 - **Only the gateway blocks.** Calls that do not go through a gateway key are not stopped.
 - **A reservation outlives a crash by 12 minutes.** If a call's span is never written (the API process died mid-stream), its reservation is counted at the estimate after 12 minutes and corrected to the real cost if the span arrives later.
-- **A cached answer still needs room.** The reservation is taken before the cache is read, so near the amount a call that would have been served from the cache is refused.
+- **A cached answer is always served.** The cache is read before the budget check; a hit costs no provider spend, so it reserves nothing and is answered even when a `block` budget is firing.
 - **Metadata and trace name are matched from the call.** The gateway reads the `x-spanlight-metadata` and `x-spanlight-trace-name` headers. A call that starts a new trace has the name the trace will get, `"<surface> <model>"` with the model your client asked for, such as `chat_completions gpt-4.1-mini`. A call that joins a trace (`x-spanlight-trace-id`) and lacks either header also uses the stored trace's metadata and name, the header winning per key. That is best effort: until a span of the trace has been stored, there is nothing to read, so the first calls of a run may not match. Send the headers on every call to be sure.
 - **Several budgets can match one call.** The call is refused if any enabled blocking budget that matches its project, gateway key, user, model, metadata or trace name is exceeded or cannot hold the call's estimate; the message names the one with the lowest amount.
-- **A stopped worker means a stale guard.** If evaluation stops, a blocking budget keeps its last state: an exceeded one keeps blocking and one not yet exceeded keeps allowing.
-- **Editing is immediate.** Changing a firing budget's amount, scope or period, disabling it, or deleting it resolves it at once and unblocks the scope; if it is still over the line it fires again within a minute. A new scope or period also forgets the gateway spend counted for the old one; a new amount keeps it.
+- **A stopped worker leaves notifications and displayed state stale.** Fresh recorded history and reservations still protect priced gateway admission. A previously firing state can continue refusing calls until evaluation resumes or the period resets.
+- **An edit waits for the calls being admitted.** Editing, disabling or deleting a budget waits for the gateway calls the budget is admitting at that moment, and admissions that keep arriving do not wait for the edit. If the budget stays that busy, the change answers `503 BUDGET_BUSY` with `Retry-After` after a few short tries instead of hanging; try it again once the burst has passed. The old amount applies until the edit is stored.
+- **Scope and period edits preserve unresolved charges.** They return `409 BUDGET_RESERVATIONS_PENDING` while calls are pending, conservative charges cannot be reclassified, or legacy charges remain ambiguous. Eligible edits preserve call identity and admission time while reading the new scope's existing history immediately. Later timestamp corrections do not move an admitted charge to another period. Amount changes retain charges and holds.
+- **Deleted spend still counts.** Daily hard budgets require at least one day of project retention; monthly budgets require 31 days. Creation or update with insufficient retention returns `422 BUDGET_HISTORY_RETENTION`. When a priced span of the current UTC month is deleted (by retention, an end-user erasure or a trace deletion), its cost is kept as money in a ledger and still counts against matching budgets, so a deletion neither hides spend nor blocks calls. Project and gateway-key budgets count deleted spend by key, and model budgets by model. User, trace-name and metadata budgets count all deleted spend of the period, because the trace that carried those fields is gone. A span stored again, or one a reservation already charges, is counted once. Telemetry deletion policies are unchanged.
+
+Charge identity remains while its raw span exists and for at least 90 days from admission. Counter aggregates expire after 62 days. This does not extend telemetry retention. Reusing a deleted trace/span identity after both retention horizons expire is outside the deduplication guarantee.
+
+**Upgrade compatibility:** the ledger holds only spend deleted after the upgrade. Migration 1031 marks the current period's history as unknown only for projects with evidence that priced spend of this month was already lost: retention short enough to have deleted spans of this month, an end-user erasure this month, or a retention change this month. Hard budgets of those projects refuse calls with an actionable `402` until the next UTC period; every other project admits calls normally. Previously unattributed charges are preserved conservatively and may cause over-refusal; no amounts are reset.
 
 ### The 402 response
 
@@ -135,7 +141,7 @@ A budget of `$0.01` is the quickest way to see a block.
 1. Create a blocking budget on the project with the amount `0.01`. A toast reads `Created budget "…"`.
 2. Send calls through a gateway key, each with a `max_tokens`, until their priced cost passes `$0.01`.
 3. The next call through the key is refused with `402` and `spanlight_code` `BUDGET_EXCEEDED`, before any evaluation: its message says the budget would be exceeded.
-4. Within a minute the evaluation measures the spend: the budget's row shows it as `$… of $0.01` with a percent of 100 % or more, in the danger colour, and a **Blocking (soft)** badge next to the name (the badge still carries the old word until the budgets page is redesigned).
+4. Within a minute the evaluation measures the spend: the budget's row shows it as `$… of $0.01` with a percent of 100 % or more, in the danger colour, and a **Blocking (soft)** badge next to the name; a gateway-key budget, where only gateway calls can spend, shows **Blocking** instead. A `block` budget's row also shows **In flight**, the gateway estimates held for calls still running, or "—" until the first evaluation.
 
 ## The weekly digest
 

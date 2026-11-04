@@ -81,7 +81,7 @@ class WebhookDeliverer:
         try:
             body, event = webhook_body(payload)
         except ValidationError:
-            logger.warning("alert_payload_unparseable", event=summary_event(payload))
+            logger.warning("alert_payload_unparseable", alert_event=summary_event(payload))
             raise PermanentDeliveryError(BAD_PAYLOAD) from None
         timestamp = int(self._clock())
         headers = {

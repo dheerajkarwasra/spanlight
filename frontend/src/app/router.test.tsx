@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, authApi, orgsApi, projectsApi, type Org } from "@/lib/api";
 import { makeProject, ME, mockSignedIn, mockSignedOut, ORG_ID, renderApp } from "@/test/render-app";
 
+import routerSource from "./router.tsx?raw";
+
 const GLOBEX: Org = {
   id: "org_2",
   name: "Globex",
@@ -170,5 +172,14 @@ describe("workspace URLs of an org that requires two-factor authentication", () 
     await act(() => router.navigate({ href: "/acme/checkout/traces" }));
     await expectTitle("Traces · Spanlight");
     expect(window.location.pathname).toBe("/acme/checkout/traces");
+  });
+});
+
+describe("entry chunk", () => {
+  it("imports no page or the app shell statically, so each loads in its own chunk", () => {
+    const staticImports = [...routerSource.matchAll(/^import [^;]+ from "([^"]+)";$/gm)].map(
+      (match) => match[1],
+    );
+    expect(staticImports.filter((path) => /-page$|\/app-shell$/.test(path ?? ""))).toEqual([]);
   });
 });

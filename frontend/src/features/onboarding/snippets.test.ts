@@ -135,17 +135,43 @@ describe("buildSnippets", () => {
     const parsed = JSON.parse(json) as { spans: Record<string, unknown>[] };
     expect(parsed.spans).toHaveLength(1);
     expect(parsed.spans[0]).toMatchObject({
-      kind: "llm",
+      kind: "chain",
       status: "ok",
-      provider: "openai",
-      model: "gpt-4o-mini",
-      trace: { environment: "production" },
+      name: "Test trace from setup",
+      trace: { environment: "production", tags: ["spanlight:setup-test"] },
     });
+    expect(parsed.spans[0]).not.toHaveProperty("provider");
+    expect(parsed.spans[0]).not.toHaveProperty("model");
+    expect(parsed.spans[0]).not.toHaveProperty("usage");
+    expect(parsed.spans[0]).not.toHaveProperty("output.role");
   });
 
   it("honours a custom environment", () => {
     const snippets = buildSnippets({ apiKey: null, host: HOST, environment: "staging" });
     expect(snippet(snippets, "python")).toContain('environment="staging"');
     expect(snippet(snippets, "otel")).toContain("deployment.environment.name=staging");
+  });
+});
+
+// Bounded generated cases exercise the payload invariant across serialized environment labels.
+describe("setup curl payload invariants", () => {
+  it.each(
+    Array.from(
+      { length: 64 },
+      (_, seed) => `env-${seed}-${["plain", 'quoted"', "slash\\", "東京"][seed % 4]}`,
+    ),
+  )("keeps %s tagged and free of provider billing", (environment) => {
+    const curl = snippet(buildSnippets({ apiKey: SECRET, host: HOST, environment }), "curl");
+    const payload = /<<EOF\n([\s\S]*)\nEOF$/.exec(curl)?.[1];
+    const body = JSON.parse(payload ?? "null") as { spans: Record<string, unknown>[] };
+    expect(body.spans).toHaveLength(1);
+    expect(body.spans[0]).toMatchObject({
+      kind: "chain",
+      trace: { environment, tags: ["spanlight:setup-test"] },
+    });
+    expect(body.spans[0]).not.toHaveProperty("usage");
+    expect(body.spans[0]).not.toHaveProperty("provider");
+    expect(body.spans[0]).not.toHaveProperty("model");
+    expect(body.spans[0]).not.toHaveProperty("output.role");
   });
 });

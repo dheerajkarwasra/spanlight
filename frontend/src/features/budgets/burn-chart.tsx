@@ -11,7 +11,7 @@ import {
 } from "@/lib/chart-theme";
 
 import { tickPositions, shortUsd } from "./budget-ticks";
-import { burnTooltip, dayLabel, periodDays, type BurnPoint } from "./burn-series";
+import { burnForecast, burnTooltip, dayLabel, periodDays, type BurnPoint } from "./burn-series";
 import type { BudgetBurn } from "@/lib/api";
 
 const LINE_COLOR = SERIES_COLORS.cost;
@@ -26,13 +26,32 @@ interface BurnChartProps {
 /**
  * Spec ruling 11: spend to date as one 2 px `--chart-4` line over every day of the period (it
  * stops at today), the amount as a dashed line and 50 / 80 % as dotted ones. One y axis, labelled
- * only at those marks ("$250"), each mark line labelled with its percent. No projection.
+ * only at those marks ("$250"), each mark line labelled with its percent. G-024: a dashed line
+ * from today's spend to the forecast on the period's last day, when the forecast is known.
  */
 export function BurnChart({ burn, points, summary }: BurnChartProps) {
   const amount = Number(burn.amount_usd);
   const byDay = new Map(points.map((point) => [point.day, point]));
-  const data = periodDays(burn).map((day) => ({ day, cumulative: byDay.get(day)?.cumulative }));
-  const peak = Math.max(amount, ...points.map((point) => point.cumulative ?? 0));
+  const forecast = burnForecast(burn);
+  const today = points.at(-1);
+  // Two points: today's spend and the forecast; Recharts draws the segment between them.
+  const ahead =
+    forecast?.usd != null && today?.cumulative != null && today.day !== forecast.lastDay
+      ? new Map([
+          [today.day, today.cumulative],
+          [forecast.lastDay, forecast.usd],
+        ])
+      : null;
+  const data = periodDays(burn).map((day) => ({
+    day,
+    cumulative: byDay.get(day)?.cumulative,
+    forecast: ahead?.get(day),
+  }));
+  const peak = Math.max(
+    amount,
+    ...points.map((point) => point.cumulative ?? 0),
+    ahead ? (forecast?.usd ?? 0) : 0,
+  );
   const ticks = tickPositions(amount);
 
   return (
@@ -85,6 +104,20 @@ export function BurnChart({ burn, points, summary }: BurnChartProps) {
             ) : null;
           }}
         />
+        {ahead ? (
+          <Line
+            dataKey="forecast"
+            name="Forecast"
+            {...LINE_SERIES_PROPS}
+            type="linear"
+            connectNulls
+            strokeWidth={2}
+            strokeDasharray="4 4"
+            stroke={LINE_COLOR}
+            dot={false}
+            activeDot={false}
+          />
+        ) : null}
         <Line
           dataKey="cumulative"
           name="Spend to date"

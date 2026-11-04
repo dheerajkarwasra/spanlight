@@ -13,7 +13,8 @@ Every statement has two forms, picked by whether an environment filter was given
   guarantees it), so joining ``traces`` would neither add nor drop a row; it would only make the
   database read the whole of ``traces`` for the project, which at tens of millions of spans is
   the slowest part of the request.
-* With a filter it joins ``traces``, because the environment belongs to the trace.
+* With a filter it reads ``traces`` too, because the environment belongs to the trace: once per
+  trace of the ranges, not once per span (see ``_IN_ENVIRONMENT``).
 
 Both forms return the same rows for the same data. The filter-free form reads only the columns
 that ``spans_project_started_window_idx`` carries, so it is answered from the index without
@@ -42,7 +43,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.window import TimeWindow
 from app.rollups.buckets import BUCKET_COUNT
-from app.rollups.compute import BUCKET_INDEX_SQL, NEGATED_BOUNDS
+from app.rollups.compute import BUCKET_INDEX_SQL, NEGATED_BOUNDS, floor_hour
+from app.rollups.coverage_reads import CoverageState, read_covered_groups
 
 Groups = Sequence[Sequence[TimeWindow]]
 """Groups of disjoint ranges; the statements return one row per non-empty group (and bucket)."""
@@ -59,14 +61,23 @@ _RANGES = """
      AND s.started_at < w.end_at
 """
 
-_SPANS = {
-    False: _RANGES + "    WHERE TRUE\n",
-    True: _RANGES
-    + """
-    JOIN traces AS t ON t.project_id = s.project_id AND t.trace_id = s.trace_id
-    WHERE t.environment = :environment
-""",
-}
+# Joining `traces` to the spans would probe its key once per span (most of the read's time); this
+# probes it once per trace instead: the ranges' distinct trace ids come from a second read of the
+# same index range, each is looked up (`LIMIT 1` keeps that a key probe, whatever the planner
+# estimates), and the spans of the traces in the environment are kept. The rows are the join's:
+# `(project_id, trace_id)` is the key of `traces`.
+_IN_ENVIRONMENT = f"""    WHERE s.trace_id IN (
+        SELECT d.trace_id
+        FROM (SELECT DISTINCT s.trace_id{_RANGES}) AS d
+        CROSS JOIN LATERAL (
+            SELECT t.environment FROM traces AS t
+            WHERE t.project_id = :project_id AND t.trace_id = d.trace_id
+            LIMIT 1
+        ) AS t
+        WHERE t.environment = :environment)
+"""
+
+_SPANS = {False: _RANGES + "    WHERE TRUE\n", True: _RANGES + _IN_ENVIRONMENT}
 
 _SUMS = """
            sum(s.cost_usd) FILTER (WHERE NOT s.usage_rollup)                   AS cost_usd,
@@ -82,7 +93,7 @@ _LLM_COUNTS = """
 # The histogram forms aggregate in two levels: the inner query groups the spans of each group by
 # their bucket index, computed once per span, and the outer one adds those few rows up and builds
 # the array (32 filtered counts per span cost more than the rest of the read). Only an llm span
-# with a duration has a bucket, as in `app.alerts.metrics_queries.llm_histogram`; any other has
+# with a duration has a bucket, as in `app.alerts.metrics_queries._by_bucket`; any other has
 # -1, so NULL is free to mark the row of a grouping set without the index.
 _BUCKET = (
     "CASE WHEN s.kind = 'llm' AND s.duration_ms IS NOT NULL"
@@ -109,20 +120,27 @@ def _positions(names: str) -> str:
 
 
 def _by_bucket(
-    keys: str, names: str, aggregates: str, totals: Sequence[str], spans: str, p95: str = ""
+    keys: str,
+    names: str,
+    aggregates: str,
+    totals: Sequence[str],
+    spans: str,
+    exact: str = "",
+    exact_names: Sequence[str] = (),
 ) -> str:
     """The two-level histogram form: ``keys`` are the group columns, named ``names``, and
     ``totals`` the names of ``aggregates``.
 
     The outer level adds the bucket rows up, cast back to the single-level types (bigint, numeric
-    for cost). An exact percentile cannot be added up: with ``p95`` the inner level also groups
-    without the index, and that row (``b IS NULL``) gives the percentile and the totals.
+    for cost). An exact percentile cannot be added up: with ``exact`` (the percentiles, named
+    ``exact_names``) the inner level also groups without the index, and that row (``b IS NULL``)
+    gives the percentiles and the totals.
     """
     keys_at = _positions(names)
     group = f"{keys_at}, {names.count(',') + 2}"
-    if p95:
-        columns = [f"max({c}) FILTER (WHERE b IS NULL) AS {c}" for c in (*totals, "p95_ms")]
-        group, aggregates = f"GROUPING SETS (({group}), ({keys_at}))", f"{aggregates}, {p95}"
+    if exact:
+        columns = [f"max({c}) FILTER (WHERE b IS NULL) AS {c}" for c in (*totals, *exact_names)]
+        group, aggregates = f"GROUPING SETS (({group}), ({keys_at}))", f"{aggregates}, {exact}"
     else:
         columns = [
             f"sum({c}) AS {c}" if c == "cost_usd" else f"CAST(sum({c}) AS bigint) AS {c}"
@@ -144,11 +162,12 @@ Statement = Literal["kpis", "timeseries", "models"]
 
 
 @cache
-def _statement(kind: Statement, environment: bool, histogram: bool) -> TextClause:
+def _statement(kind: Statement, environment: bool, histogram: bool | Literal["both"]) -> TextClause:
     """One statement for a filter form and a latency form.
 
-    The KPI and model reads take exact p50/p95 or the histogram. The time series takes the exact
-    p95 always (a bucket of raw spans only stays exact) and the histogram as well when asked.
+    The KPI and model reads take exact p50/p95 or the histogram, or both (``"both"``: the KPIs of
+    groups that differ in form). The time series takes the exact p95 always (a bucket of raw spans
+    only stays exact) and the histogram as well when asked.
     """
     spans, totals, aggregates = _SPANS[environment], _TOTALS, f"{_LLM_COUNTS}{_SUMS}"
     if kind == "kpis":
@@ -170,9 +189,13 @@ def _statement(kind: Statement, environment: bool, histogram: bool) -> TextClaus
             f"SELECT {keys},{aggregates},\n           {latency}\n"
             f"{spans}    GROUP BY {_positions(names)}"
         )
+    elif kind == "timeseries":
+        sql = _by_bucket(keys, names, aggregates, totals, spans, latency, ("p95_ms",))
+    elif histogram == "both":
+        exact = ("p50_ms", "p95_ms")
+        sql = _by_bucket(keys, names, aggregates, totals, spans, latency, exact)
     else:
-        p95 = latency if kind == "timeseries" else ""
-        sql = _by_bucket(keys, names, aggregates, totals, spans, p95)
+        sql = _by_bucket(keys, names, aggregates, totals, spans)
     statement = text(sql).bindparams(
         bindparam("starts", type_=ARRAY(DateTime(timezone=True))),
         bindparam("ends", type_=ARRAY(DateTime(timezone=True))),
@@ -237,27 +260,39 @@ async def read_span_kpis(
     project_id: uuid.UUID,
     groups: Groups,
     environment: str | None,
-    histogram: bool = False,
+    histogram: Sequence[bool] | bool = False,
+    coverage: Sequence[CoverageState] | None = None,
 ) -> list[Row[Any] | None]:
     """One row of span aggregates per group, ``None`` for a group without spans (see
-    ``app.metrics.service`` for the meaning)."""
+    ``app.metrics.service`` for the meaning). ``histogram`` and ``coverage`` may be given per
+    group; a row has the latency form of its group."""
     rows: list[Row[Any] | None] = [None] * len(groups)
-    params = _params(project_id, groups, environment, histogram)
+    if isinstance(histogram, bool):
+        histogram = [histogram] * len(groups)
+    forms = {h for h, group in zip(histogram, groups, strict=True) if _reads(group)}
+    form: bool | Literal["both"] = forms.pop() if len(forms) == 1 else "both"
+    params = _params(project_id, groups, environment, form is not False)
     if params is not None:
-        statement = _statement("kpis", environment is not None, histogram)
-        for row in (await db.execute(statement, params)).all():
+        statement = _statement("kpis", environment is not None, form)
+        for row in await _covered(db, statement, params, project_id, groups, coverage):
             rows[int(row.grp)] = row
     return rows
 
 
 async def read_trace_counts(
-    db: AsyncSession, project_id: uuid.UUID, groups: Groups, environment: str | None
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    groups: Groups,
+    environment: str | None,
+    coverage: Sequence[CoverageState] | None = None,
 ) -> list[int]:
     """The number of traces that started inside each group's ranges."""
     counts = [0] * len(groups)
     params = _params(project_id, groups, environment)
     if params is not None:
-        for row in (await db.execute(_TRACE_COUNTS[environment is not None], params)).all():
+        for row in await _covered(
+            db, _TRACE_COUNTS[environment is not None], params, project_id, groups, coverage
+        ):
             counts[int(row.grp)] = int(row.traces)
     return counts
 
@@ -269,13 +304,15 @@ async def read_timeseries(
     environment: str | None,
     bucket: Literal["hour", "day"],
     histogram: bool = False,
+    coverage: CoverageState | None = None,
 ) -> list[Row[Any]]:
     """One row per UTC bucket of the ranges that holds a span; the caller fills the gaps."""
     params = _params(project_id, [ranges], environment, histogram)
     if params is None:
         return []
     statement = _statement("timeseries", environment is not None, histogram)
-    return list((await db.execute(statement, {**params, "bucket": bucket})).all())
+    states = None if coverage is None else [coverage]
+    return await _covered(db, statement, {**params, "bucket": bucket}, project_id, [ranges], states)
 
 
 async def read_models(
@@ -284,10 +321,47 @@ async def read_models(
     ranges: Sequence[TimeWindow],
     environment: str | None,
     histogram: bool = False,
+    coverage: CoverageState | None = None,
 ) -> list[Row[Any]]:
     """Every provider and model pair with llm calls in the ranges; the caller sorts and cuts."""
     params = _params(project_id, [ranges], environment, histogram)
     if params is None:
         return []
     statement = _statement("models", environment is not None, histogram)
-    return list((await db.execute(statement, params)).all())
+    states = None if coverage is None else [coverage]
+    return await _covered(db, statement, params, project_id, [ranges], states)
+
+
+def _reads(group: Sequence[TimeWindow]) -> bool:
+    return any(r.start < r.end for r in group)
+
+
+async def _covered(
+    db: AsyncSession,
+    statement: TextClause,
+    params: dict[str, Any],
+    project_id: uuid.UUID,
+    groups: Groups,
+    coverage: Sequence[CoverageState] | None,
+) -> list[Row[Any]]:
+    """Read with each group's coverage judged over its own hours and recorded in its own state;
+    a group with nothing to read is not judged (as when it is read alone)."""
+    return await read_covered_groups(
+        db,
+        statement,
+        params,
+        project_id,
+        [
+            (
+                g,
+                floor_hour(min(window.start for window in group)),
+                max(window.end for window in group),
+                None if coverage is None else coverage[g],
+            )
+            for g, group in enumerate(groups)
+            if _reads(group)
+        ],
+        relevant_consumers=0,
+        raw=True,
+        grouped=True,
+    )

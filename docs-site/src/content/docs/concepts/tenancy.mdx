@@ -64,7 +64,7 @@ Two details keep the guarantee real.
 
 | Credential | Looks like | Belongs to | Can do |
 | --- | --- | --- | --- |
-| Session | `spl_session` cookie | A person who signed in | Everything the person's roles allow, in the dashboard. State-changing requests also need a CSRF token. A session lasts 7 days from its last use and never more than 30. |
+| Session | `__Host-spl_session` cookie (`spl_session` on a plain `http` deployment) | A person who signed in | Everything the person's roles allow, in the dashboard. State-changing requests also need a CSRF token. A session lasts 7 days from its last use and never more than 30. |
 | Project API key | `spl_live_…` | One project | Only what its scopes allow: `ingest:write`, `traces:read`, `scores:write`, `prompts:read`. |
 | Personal access token | `spl_pat_…` | A person | What the person can do, limited to read-only if its scope is `read`. It cannot reach the routes that are for a browser, such as creating more tokens. |
 | Gateway key | `spl_gw_…` | One project | Calling the gateway. It cannot send traces or call the dashboard API. |

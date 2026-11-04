@@ -31,6 +31,10 @@ export const capturePayloadsSchema = z.object({
   capture_payloads: z.boolean(),
 });
 
+export const contactRedactionSchema = z.object({
+  redact_contact_info: z.boolean(),
+});
+
 export const insightChannelsSchema = z.object({
   insight_channel_ids: z.array(z.string()).max(MAX_RULE_CHANNELS),
 });
@@ -50,6 +54,7 @@ export const projectSettingsSchema = z.object({
   ...projectNameSchema.shape,
   ...retentionSchema.shape,
   ...capturePayloadsSchema.shape,
+  ...contactRedactionSchema.shape,
   ...weeklyDigestSchema.shape,
   ...insightChannelsSchema.shape,
   ...promotedKeysSchema.shape,
@@ -91,6 +96,12 @@ export function changedProjectFields(
     update.capture_payloads = values.capture_payloads;
   }
   if (
+    values.redact_contact_info !== undefined &&
+    values.redact_contact_info !== project.redact_contact_info
+  ) {
+    update.redact_contact_info = values.redact_contact_info;
+  }
+  if (
     values.weekly_digest_enabled !== undefined &&
     values.weekly_digest_enabled !== (project.weekly_digest_enabled ?? true)
   ) {
@@ -122,7 +133,7 @@ function formatDays(days: number): string {
 /** The success toast for a saved update: specific for one field, general for several. */
 export function projectSavedMessage(update: ProjectUpdate): string {
   const fields = Object.keys(update);
-  if (fields.length !== 1) {
+  if (fields.length !== 1 || update.redact_contact_info !== undefined) {
     return "Project settings saved.";
   }
   if (update.name !== undefined) {

@@ -75,7 +75,7 @@ export function DeliveryRow({ delivery, channelId, canWrite }: DeliveryRowProps)
       <dl className="flex gap-8">
         <div className="flex flex-col gap-0.5">
           <dt className="text-overline text-subtle-foreground uppercase">Attempts</dt>
-          <dd className="text-sm text-foreground tabular">{attemptsLabel(delivery.attempts)}</dd>
+          <dd className="text-sm text-foreground tabular">{attemptsLabel(delivery)}</dd>
         </div>
         <div className="flex flex-col gap-0.5">
           <dt className="text-overline text-subtle-foreground uppercase">Next attempt</dt>

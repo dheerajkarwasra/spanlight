@@ -18,8 +18,11 @@ interface BucketTooltipProps {
 
 /** One bucket's calls, failed calls with their rate, and the incidents that overlap it. */
 export function BucketTooltip({ active, point, bucket, now, bands }: BucketTooltipProps) {
-  const rate = point.llmCalls > 0 ? point.errors / point.llmCalls : null;
-  const errorValue = formatInteger(point.errors) ?? "0";
+  const rate =
+    point.llmCalls !== null && point.errors !== null && point.llmCalls > 0
+      ? point.errors / point.llmCalls
+      : null;
+  const errorValue = formatInteger(point.errors) ?? "—";
   return (
     <ChartTooltip
       active={active}

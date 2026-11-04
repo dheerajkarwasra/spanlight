@@ -22,10 +22,11 @@ The settings every deployment needs to look at.
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | string | `postgresql+psycopg://spanlight_app:***@localhost:5432/spanlight` (local development) | SQLAlchemy URL the application connects to. The role must not be a superuser and must not have `BYPASSRLS`, or row-level security is silently skipped. The Compose file builds it from `APP_DB_PASSWORD`. |
-| `APP_BASE_URL` | string | `http://localhost:8000` | The public URL the dashboard is served from. It is the allowed `Origin` for state-changing requests and the base of the links in emails and OAuth callbacks. An `https` URL turns on `Secure` cookies and requires a real `SECRET_KEY`. |
+| `APP_BASE_URL` | string | `http://localhost:8000` | The public URL the dashboard is served from. It is the allowed `Origin` for state-changing requests and the base of the links in emails and OAuth callbacks. An `https` URL turns on `Secure` cookies with `__Host-` names. An `https` URL, or any host other than `localhost`, `127.0.0.1` or `[::1]`, requires a real `SECRET_KEY`. |
 | `ALLOWED_ORIGINS` | comma-separated list | empty | Extra origins allowed to make state-changing requests, comma-separated. Leave empty unless another site must call the API from a browser. |
-| `SECRET_KEY` | secret | built-in development value (do not use) | HMAC key for CSRF tokens and for the short-lived signed state of two-factor and GitHub or Google sign-in. Required when `APP_BASE_URL` uses `https`: the application refuses to start with the built-in development value. Generate a long random string. Rotating it does not sign anyone out. |
+| `SECRET_KEY` | secret | built-in development value (do not use) | HMAC key for CSRF tokens and for the short-lived signed state of two-factor and GitHub or Google sign-in. Required when `APP_BASE_URL` uses `https` or is not local: the application refuses to start with the built-in development value. It must be at least 32 characters unless `APP_BASE_URL` is `localhost`, `127.0.0.1` or `[::1]`. Generate a long random string. Rotating it does not sign anyone out. |
 | `CREDENTIALS_KEYS` | secret | unset | Master keys that encrypt stored secrets such as two-factor seeds and gateway provider credentials, as `<key_id>:<base64 of 32 bytes>`, comma-separated. The first entry encrypts new data; keep older entries so existing data stays readable. Unset leaves two-factor authentication and the gateway's provider credentials unavailable. The worker needs the same value as the API. Without it the worker cannot open any stored secret: experiment runs and LLM judge evaluators fail with `credentials_not_configured`, webhook evaluators fail with `webhook_secret_unreadable`, Slack, webhook and PagerDuty alerts are not delivered, and demo traffic is skipped. The worker logs a `worker_credentials_keys_missing` warning at start-up. Back the value up: a lost key cannot be recovered. |
+| `TERMS_VERSION` | string | unset | The version of the hosted terms of service that users must accept, for example `2026-11-01`. Set, signup asks for acceptance and signed-in users are asked to accept when the version changes. Leave it unset on a self-hosted instance: no terms are asked for anywhere. |
 
 ### Email
 
@@ -56,11 +57,11 @@ A provider is on exactly when both of its values are set. Setting only one of a 
 
 ### Object storage
 
-Backups and trace exports need an S3-compatible store. It is on when the bucket and both keys are set; setting only some of them stops the application at startup. A request that needs storage while it is off answers `409 NOT_CONFIGURED`.
+Trace exports need an S3-compatible store. It is on when the bucket and both keys are set; setting only some of them stops the application at startup. A request that needs storage while it is off answers `409 NOT_CONFIGURED`.
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `S3_BUCKET` | string | unset | Bucket for backups and exports. Keep it private and encrypted at rest. |
+| `S3_BUCKET` | string | unset | Bucket for trace exports. Keep it private and encrypted at rest. |
 | `S3_ACCESS_KEY` | secret | unset | Access key ID for the bucket. |
 | `S3_SECRET_KEY` | secret | unset | Secret access key for the bucket. |
 | `S3_REGION` | string | unset | Region of the bucket. AWS buckets need it, for example `eu-west-1`. |
@@ -70,12 +71,19 @@ Backups and trace exports need an S3-compatible store. It is on when the bucket 
 
 ### Backups
 
-The nightly backup job runs when `BACKUPS_ENABLED` is true, object storage is on and `BACKUP_DATABASE_URL` is set. Otherwise it ends as `skipped_not_configured`.
+The nightly backup job runs when `BACKUPS_ENABLED` is true, explicit backup storage is configured and `BACKUP_DATABASE_URL` is set. Otherwise it ends as `skipped_not_configured`.
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
 | `BACKUPS_ENABLED` | boolean | `true` | Set to `false` to turn the nightly backup off. |
 | `BACKUP_DATABASE_URL` | secret | unset | Connection URL `pg_dump` uses. It must use a superuser or a role with `BYPASSRLS`, never the application role: the tenant tables force row-level security and a dump fails without bypassing it. |
+| `BACKUP_S3_BUCKET` | string | unset | Independent private backup bucket; never falls back to S3_BUCKET. |
+| `BACKUP_S3_ACCESS_KEY` | secret | unset | Backup principal access key; routine workers need Put/Abort only. |
+| `BACKUP_S3_SECRET_KEY` | secret | unset | Backup principal secret; supply independent recovery or retention keys only to operators. |
+| `BACKUP_S3_ENDPOINT` | string | unset | Independent S3-compatible backup endpoint; unset uses AWS. |
+| `BACKUP_S3_REGION` | string | unset | Independent backup signing region; defaults to us-east-1. |
+| `BACKUP_S3_FORCE_PATH_STYLE` | boolean | `false` | Use path-style addressing for backup storage (MinIO). |
+| `BACKUP_S3_SSE` | string | `AES256` | Server-side encryption requested on backup uploads; blank sends none (MinIO without KMS). |
 
 ### Worker and health
 
@@ -83,6 +91,10 @@ The nightly backup job runs when `BACKUPS_ENABLED` is true, object storage is on
 | --- | --- | --- | --- |
 | `WORKER_REQUIRED` | boolean | `true` | `/health/ready` answers `503` when no worker has reported in the last 120 seconds. Set to `false` only for a deployment that deliberately runs the API without a worker; notifications and exports only move while a worker runs. |
 | `WORKER_METRICS_PORT` | integer (min 1, max 65535) | unset | Port on which the worker serves `/metrics`, with the same `METRICS_TOKEN` rule as the API. Unset leaves the listener off, and then the worker's job, outbox, notification and rollup metrics are not exposed. |
+| `SHUTDOWN_TIMEOUT_SECONDS` | number (greater than 0) | `60` | Total first-signal shutdown envelope; later signals never reset it. External stop grace must exceed it (75s requested by default). Unjoined database users retain their pools past expiry until external hard stop; accounting remains incomplete. |
+| `SHUTDOWN_WORK_SECONDS` | number (greater than 0) | `50` | Work allowance before cancellation. With defaults, producer joins end at 52.5s, writes at 53.75s and cancellation joins at 55s. Must leave room for joins and both reserves. |
+| `SHUTDOWN_FLUSH_SECONDS` | number (greater than 0) | `3` | Final loss-flush reserve before resource close (default 55-58s). Failed or uncertain writes remain incomplete. |
+| `SHUTDOWN_CLOSE_SECONDS` | number (greater than 0) | `2` | Resource-close reserve at the end of the original deadline (default 58-60s); tracing uses only remaining time. |
 
 ### Demo workspace
 
@@ -101,9 +113,12 @@ The gateway serves `/gw/v1/*` for OpenAI- and Anthropic-compatible clients. Prov
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
 | `GATEWAY_MODE` | `embedded` \| `standalone` \| `disabled` | `embedded` | Where the gateway runs. `embedded` serves it from the API process, `standalone` leaves it to a separate `python -m app.gateway` process (point `GATEWAY_UPSTREAM` at it) and `disabled` turns it off. In the last two the API answers `/gw/*` with `404`. |
+| `GATEWAY_MAX_IN_FLIGHT` | integer (min 1) | `512` | Most concurrent HTTP gateway requests per process in embedded or standalone mode. Excess requests get provider-shaped 503 with Retry-After before body/authentication. A slot lasts through stream cleanup. Dashboard/health capacity is independent; internal playground and worker calls are outside this cap. Replicas/processes multiply capacity and memory; `GATEWAY_MAX_IN_FLIGHT_BYTES` is what bounds memory. |
+| `GATEWAY_MAX_IN_FLIGHT_BYTES` | integer (min 10485760) | `83886080` | Most declared request-body bytes of in-flight gateway requests per process (80 MiB, at least 10 MiB). A request reserves its `Content-Length`, or the full 10 MiB request cap when the body is chunked or undeclared; `GET`, `HEAD` and `OPTIONS` reserve nothing. One that does not fit gets the same 503. |
+| `GATEWAY_MAX_IN_FLIGHT_PER_KEY` | integer (min 1) | `256` | Most in-flight gateway requests per process with the same gateway key, read as authentication reads it from `Authorization` or `x-api-key`, so one caller cannot take every slot. Excess requests get the same 503. |
 | `GATEWAY_ALLOW_INSECURE_BASE_URLS` | boolean | `false` | Allow provider credentials to use `http://` base URLs and private, loopback or link-local addresses, for a local model server. Off, a base URL must be `https://` and resolve only to public addresses. Keep it off on a shared deployment. |
 | `GATEWAY_ORG_RPM_CEILING` | integer (min 1, max 100000) | unset | Requests per minute one organization may send through the gateway, across all its keys, checked before each key's own limits. Unset means no ceiling. Set it on a shared deployment so one organization cannot crowd out the others. |
-| `GATEWAY_RECORD_CONCURRENCY` | integer (min 1, max 256) | `16` | Most gateway spans written to the database at once. Spans are written after the answer has been sent, and each write holds a connection. |
+| `GATEWAY_RECORD_CONCURRENCY` | integer (min 1, max 10) | `8` | Most gateway spans written to the database at once. Spans are written after the answer has been sent, and each write holds a connection of the pool requests use (10, with 10 more on overflow), so keep it at or below 10: more writers than that let a burst of span writes take the connections gateway calls need. |
 | `GATEWAY_RECORD_BACKLOG` | integer (min 1, max 100000) | `5000` | Most gateway spans waiting or being written, a failed write waiting to be retried included. Each holds its input and output already cut to 1 MiB; the memory a waiting span takes in the process is larger than its stored JSON, so size the backlog by what the api can spare. Past it a span is dropped and counted in `spanlight_gateway_record_failures_total` and in `gateway_spans_lost` on `/health/ready`; the call itself is never affected. |
 | `GATEWAY_RECORD_BACKLOG_MB` | integer (min 1, max 65536) | `128` | Most megabytes (MiB) of payloads the waiting gateway spans may hold together, counted as their input and output stored JSON. A span that would pass it is dropped and counted like one past `GATEWAY_RECORD_BACKLOG`, unless it is the only one waiting. With ordinary payloads the span count binds first; this bounds a backlog of large ones. |
 
@@ -129,6 +144,7 @@ Detectors read each project's recent spans every 15 minutes and turn what they f
 | `PROVIDER_STATUS_POLLING_ENABLED` | boolean | `true` | Schedule the poll of the Anthropic, OpenAI and Google public status pages every 5 minutes, whose incidents the provider pages and the Doctor cite. The feed URLs are fixed. Off, nothing is fetched (an air-gapped instance) and the incident list says polling is disabled. |
 | `EXPLAIN_MODEL` | string | `claude-sonnet-5-5` | Claude model that explains an insight. It must have a price, or explanations answer `409 EXPLAIN_MODEL_UNPRICED`. |
 | `EXPLAIN_MONTHLY_BUDGET_USD` | decimal (min 0) | `1.00` | Most an organization may spend on explanations per UTC month, in US dollars. `0` turns explanations off (`409 NOT_CONFIGURED`). |
+| `AGGREGATE_REPAIR_ENABLED` | boolean | `false` | Consume durable correction markers every five minutes. Capture and pending metadata remain active when off; affected materialized observations and alerts remain pending. Enable after the aggregate repair cutover procedure and verify relevant backlog convergence. |
 | `USER_STATS_ENABLED` | boolean | `true` | Schedule the refresh of per-user daily statistics behind the Users page. Off, the page stops updating. |
 
 ### Evaluations
@@ -184,7 +200,18 @@ A request that would otherwise wait on a busy database fails fast with `503` and
 | `API_POOL_TIMEOUT_SECONDS` | number (min 1, max 60) | `1.0` | Seconds an API request waits for a connection from the main pool. Past it the request answers `503 SERVICE_UNAVAILABLE` with `Retry-After: 5`. Blank keeps the default. |
 | `API_STATEMENT_TIMEOUT_SECONDS` | number (min 1, max 300) | `10.0` | Longest one database statement of an API request may run. The database cancels it and the request answers `503 SERVICE_UNAVAILABLE` with `Retry-After: 5`. Blank keeps the default. |
 | `API_MAX_IN_FLIGHT` | integer (min 1) | `64` | Most `/api` and `/v1` requests one api process serves at once. Past it a request answers `503 SERVICE_UNAVAILABLE` with `Retry-After: 1` at once instead of queueing. `/gw` and `/health` are not counted. Blank keeps the default. |
-| `API_KEY_CACHE_TTL_SECONDS` | number (min 0) | `10` | Seconds one api process reuses a project API key's row before reading it again. A key revoked or deleted through another api process keeps working on this one for up to this long; a revocation on the same process takes effect at once. `0` reads the key on every request. Blank keeps the default. |
+| `API_KEY_CACHE_TTL_SECONDS` | number (min 0) | `10` | Seconds one api process reuses a project API key's row, and a gateway key's context (project, route, provider credential, Integration Lab profile and the project's payload capture and contact redaction settings), before reading it again. A key revoked or edited, or a route, credential, profile, capture or redaction setting changed, through another api process keeps its old value on this one for up to this long; a change on the same process takes effect at once. `0` reads them on every request. Blank keeps the default. |
+
+### Ingest caps
+
+What one project may send through `POST /v1/traces` and `POST /v1/otlp/traces`, on top of the per-key request limit. Over a cap the request is `429` with `Retry-After`. Concurrency refusals happen before the body is read, so their span count is unknown and they are not counted as telemetry losses. Span-rate and daily-quota refusals are counted and shown to the project (the completeness card and the notices on Overview and Traces). `0` disables only the span-rate and daily-quota caps. One project's own span-rate and daily-quota caps: `spanlight set-ingest-caps <project-id> --spans-per-day N` (and `--bytes-per-day`, `--spans-per-second`; `default` clears one). The gateway's own spans are governed by the gateway key limits instead. See the [ingestion spike runbook](/docs/runbooks/ingestion-spike/#per-project-caps).
+
+| Variable | Type | Default | Description |
+| --- | --- | --- | --- |
+| `INGEST_MAX_IN_FLIGHT_PER_PROJECT` | integer (min 1) | `8` | Concurrent span-ingest requests one project may hold per process, shared across its keys and both ingest routes. Minimum 1; blank keeps the default. Checked after key authentication, scope and the per-key bucket, before reading the body; held until the request finishes. Over it the request is `429 RATE_LIMITED` with `Retry-After: 1`. The default leaves most of a process's database connections (20) to other projects; replicas multiply this limit. Refusals increment `spanlight_rate_limit_rejections_total` with `scope="ingest_project_concurrency"`. |
+| `INGEST_SPANS_PER_SECOND` | integer (min 0) | `1000` | Sustained spans a second one project may ingest, with bursts of at least a full 1,000-span batch. Over it the request is `429 RATE_LIMITED` with `Retry-After` in seconds. `0` is no rate cap. |
+| `INGEST_SPANS_PER_DAY` | integer (min 0) | `1000000` | Spans one project may store per UTC day (replays of stored spans count nothing). Once used up, a request with new spans is `429 INGEST_QUOTA_EXCEEDED` with `Retry-After` until midnight UTC. `0` is no daily span cap. |
+| `INGEST_BYTES_PER_DAY` | integer (min 0) | `5368709120` | Decompressed request body bytes one project may ingest per UTC day; the same `429` as the span quota once used up. `0` is no daily byte cap. |
 
 ### Connection pools
 
@@ -196,6 +223,8 @@ Idempotency keys and rate limiting each use a small pool of their own, so they c
 | `IDEMPOTENCY_POOL_TIMEOUT_SECONDS` | number (greater than 0) | `5.0` | Seconds a request waits for an idempotency connection before it fails. |
 | `RATE_LIMIT_POOL_SIZE` | integer (min 1) | `5` | Connections in the rate-limit pool. |
 | `RATE_LIMIT_POOL_TIMEOUT_SECONDS` | number (greater than 0) | `0.25` | Seconds a rate-limit check waits for a connection. A check that cannot get one is skipped and the request goes through, so keep this short. |
+| `RATE_LIMIT_LOCK_TIMEOUT_MS` | integer (greater than 0) | `100` | Milliseconds each token-bucket SQL lock wait may take. Must be positive and less than RATE_LIMIT_STATEMENT_TIMEOUT_MS. SQL errors skip the check and increment unavailable metrics. Separate from connection checkout and request/cancellation cleanup time. |
+| `RATE_LIMIT_STATEMENT_TIMEOUT_MS` | integer (greater than 0) | `250` | Milliseconds a token-bucket SQL statement may take. Must exceed RATE_LIMIT_LOCK_TIMEOUT_MS. Applies only to the dedicated limiter pool; authentication throttles and budgets retain their existing failure policies. This is not a full request deadline. |
 
 ### Monitoring and logging
 
@@ -237,15 +266,20 @@ These are read by `deploy/compose.yaml` and the `web` role, not by the applicati
 
 <!-- Sources: deploy/compose.minio.yaml -->
 
-These are read by `deploy/compose.minio.yaml`, the optional file that adds a local MinIO object store for trying exports and backups without a cloud account. Start it with `docker compose -f deploy/compose.yaml -f deploy/compose.minio.yaml --env-file deploy/.env up -d --build`. The file sets the `S3_*` variables of the `api` and `worker` for you: the endpoint `http://minio:9000`, the region `us-east-1`, path-style addressing, and a public endpoint of `http://localhost:<MINIO_API_PORT>` for download links. For production, leave the file out and set the `S3_*` variables to a real bucket.
+These are read by `deploy/compose.minio.yaml`, the optional file that adds a local MinIO object store for trying exports and backups without a cloud account. Start it with `docker compose -f deploy/compose.yaml -f deploy/compose.minio.yaml --env-file deploy/.env up -d --build`. The file sets the `S3_*` variables of the `api` and `worker` for you: the endpoint `http://minio:9000`, the region `us-east-1`, path-style addressing, and a public endpoint of `http://localhost:<MINIO_API_PORT>` for download links. It provisions distinct export/upload/recovery/retention users. Root credentials stay in MinIO/init, while only worker receives upload-only `BACKUP_S3_*`. Recovery and retention credentials belong to separate operator processes. For production, leave the overlay out and configure export `S3_*` plus independent worker `BACKUP_S3_*` values.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `MINIO_ROOT_USER` | `spanlight-minio` | MinIO's root user, which the file also uses as `S3_ACCESS_KEY`. The default is public: change it in `deploy/.env` if anyone else can reach the host. |
-| `MINIO_ROOT_PASSWORD` | `spanlight-minio-secret` | MinIO's root password, which the file also uses as `S3_SECRET_KEY`. The default is public: change it in `deploy/.env` if anyone else can reach the host. |
+| `MINIO_ROOT_USER` | `spanlight-minio` | MinIO administrator user; passed only to MinIO and initialization. The default is public: change it in `deploy/.env` if anyone else can reach the host. |
+| `MINIO_ROOT_PASSWORD` | `spanlight-minio-secret` | MinIO administrator password; passed only to MinIO and initialization. The default is public: change it in `deploy/.env` if anyone else can reach the host. |
 | `MINIO_API_PORT` | `9000` | Host port of the MinIO API, bound to `127.0.0.1` only. Browsers download exports from it, so it is also the port in `S3_PUBLIC_ENDPOINT`. |
 | `MINIO_CONSOLE_PORT` | `9001` | Host port of the MinIO web console, bound to `127.0.0.1` only. |
-| `S3_BUCKET` | `spanlight` | Bucket that the one-shot `minio-init` service creates (nothing happens if it exists) and that the `api` and `worker` use. |
+| `S3_BUCKET` | `spanlight` | Export bucket created by `minio-init`; API and worker use export-only credentials. |
+| `BACKUP_S3_BUCKET` | `spanlight-backups` | Separate backup bucket; must differ from export bucket. |
+| `MINIO_EXPORT_USER`, `MINIO_EXPORT_PASSWORD` | `spanlight-exports`, `spanlight-exports-secret` | Local export credentials; API and worker receive these as generic S3 keys. |
+| `MINIO_UPLOAD_USER`, `MINIO_UPLOAD_PASSWORD` | `spanlight-backup-upload`, `spanlight-backup-upload-secret` | Local Put/Abort principal; only worker receives these as backup keys. |
+| `MINIO_RECOVERY_USER`, `MINIO_RECOVERY_PASSWORD` | `spanlight-backup-recovery`, `spanlight-backup-recovery-secret` | Operator List/Get credentials; supplied only to initialization, never app services. |
+| `MINIO_RETENTION_USER`, `MINIO_RETENTION_PASSWORD` | `spanlight-backup-retention`, `spanlight-backup-retention-secret` | Operator List/Delete credentials; supplied only to initialization, never app services. |
 
 Backups also need `BACKUP_DATABASE_URL`, which the MinIO file does not set. See [Back up and restore](/docs/self-hosting/backups/).
 

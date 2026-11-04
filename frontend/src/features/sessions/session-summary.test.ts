@@ -40,6 +40,7 @@ function makeTrace(
     has_unpriced: false,
     models: [],
     error_message: null,
+    root_received: true,
     has_scores: false,
     scores: [],
     error_class: null,

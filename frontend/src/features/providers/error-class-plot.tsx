@@ -88,7 +88,7 @@ export function ErrorClassPlot({ points, classes, bucket, summary }: ErrorClassP
           {classes.map((name) => (
             <Bar
               key={name}
-              dataKey={(point: StackedPoint) => point.counts[name] ?? 0}
+              dataKey={(point: StackedPoint) => point.counts[name]}
               name={errorClassLabel(name)}
               fill={errorClassColor(name)}
               {...SURFACE_GAP_PROPS}

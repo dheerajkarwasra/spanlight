@@ -1,4 +1,4 @@
-"""The `backup_database` job: dump the database to object storage once a day, then prune."""
+"""The `backup_database` job: dump the database to object storage once a day."""
 
 import asyncio
 import contextlib
@@ -7,12 +7,12 @@ from typing import Any
 
 import structlog
 
-from app.backups.retention import BACKUP_PREFIX, prune_backups
 from app.backups.service import BackupResult, run_backup
+from app.backups.storage import get_backup_object_store
 from app.jobs.context import TaskContext
 from app.jobs.outcome import JobOutcome
 from app.jobs.queue import LeaseLostError
-from app.storage.object_store import ObjectStore, get_object_store
+from app.storage.object_store import ObjectStore
 
 logger = structlog.get_logger(__name__)
 
@@ -28,7 +28,7 @@ async def run_backup_database(context: TaskContext, _: dict[str, Any]) -> JobOut
     if settings.backup_database_url is None:
         logger.info("backup_skipped", reason="BACKUP_DATABASE_URL is not set")
         return JobOutcome.SKIPPED_NOT_CONFIGURED
-    store = get_object_store(settings)
+    store = get_backup_object_store(settings)
     if store is None:
         logger.info("backup_skipped", reason="object storage is not configured")
         return JobOutcome.SKIPPED_NOT_CONFIGURED
@@ -42,7 +42,6 @@ async def run_backup_database(context: TaskContext, _: dict[str, Any]) -> JobOut
         size_bytes=result.size_bytes,
         seconds=round(asyncio.get_running_loop().time() - started, 1),
     )
-    await _prune(store, now)
     return JobOutcome.OK
 
 
@@ -82,25 +81,3 @@ async def _heartbeat_until_lost(context: TaskContext) -> None:
             # A database blip must not kill a healthy dump; the next beat tries again, and the
             # lease check on the next successful one tells us if we lost the job meanwhile.
             logger.warning("backup_heartbeat_failed", exc_info=True)
-
-
-async def _prune(store: ObjectStore, now: datetime) -> None:
-    """Delete backups outside the retention policy. A failure here never fails the job.
-
-    The new backup is already safe, and retrying the whole job would only make another dump.
-    """
-    try:
-        stale = prune_backups(await store.list(BACKUP_PREFIX), now)
-    except Exception:
-        logger.error("backup_prune_failed", exc_info=True)
-        return
-    deleted = 0
-    for key in stale:
-        try:
-            await store.delete(key)
-        except Exception:
-            logger.error("backup_prune_delete_failed", key=key, exc_info=True)
-        else:
-            deleted += 1
-    if stale:
-        logger.info("backups_pruned", deleted=deleted, failed=len(stale) - deleted)

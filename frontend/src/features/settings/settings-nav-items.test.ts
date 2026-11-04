@@ -69,6 +69,7 @@ const SERVER_MATRIX: Record<Role, readonly Permission[]> = {
     "org:read",
     "org:security",
     "org:update",
+    "prices:override",
     "project:delete",
     "project:read",
     "project:write",

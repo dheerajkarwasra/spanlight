@@ -1,3 +1,4 @@
+import type { AggregateMetadata } from "./aggregate";
 /**
  * Attribution: a project's spend and usage grouped by trace metadata, trace name, user or
  * release, mirroring `backend/app/api/schemas/attribution.py`. Money is a decimal string; an
@@ -11,12 +12,12 @@ export type AttributionSource = "raw" | "rollup";
 
 /** The figures of every trace started in the window, whatever its group. */
 export interface AttributionTotals {
-  traces: number;
-  llm_calls: number;
-  errors: number;
-  unpriced_calls: number;
-  input_tokens: number;
-  output_tokens: number;
+  traces: number | null;
+  llm_calls: number | null;
+  errors: number | null;
+  unpriced_calls: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
   /** A lower bound while `unpriced_calls` is above 0; `null` when nothing was priced. */
   cost_usd: string | null;
   retries: number | null;
@@ -36,13 +37,13 @@ export interface AttributionRow extends AttributionTotals {
   share_of_cost: number | null;
 }
 
-export interface AttributionResponse {
+export interface AttributionResponse extends AggregateMetadata {
   group_by: AttributionGroupBy;
   key: string | null;
   /** In UTC; widened to whole UTC days on the rollup path (`to` exclusive). */
   window: { from: string; to: string };
   source: AttributionSource;
-  updated_within_minutes: number;
+  updated_within_minutes: number | null;
   /** The rollup's latest recompute among the rows read; null when none was read, and on `raw`. */
   computed_at: string | null;
   /** The window's traces the rollup doesn't include yet, capped at 10,000; null on `raw`. */
@@ -62,11 +63,11 @@ export interface AttributionSeriesPoint {
   bucket_start: string;
   /** "0" for a bucket without traces; `null` when its calls had no price; a lower bound while `unpriced_calls` > 0. */
   cost_usd: string | null;
-  unpriced_calls: number;
+  unpriced_calls: number | null;
 }
 
 /** The window's spend per bucket, from the list's own source: hourly on `raw`, per UTC day on `rollup`. */
-export interface AttributionSeries {
+export interface AttributionSeries extends AggregateMetadata {
   bucket: "hour" | "day";
   source: AttributionSource;
   window: { from: string; to: string };

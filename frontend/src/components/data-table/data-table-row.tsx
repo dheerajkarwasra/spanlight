@@ -135,6 +135,7 @@ export function BodyRow<Row>(props: BodyRowProps<Row>) {
       role="row"
       aria-rowindex={props.index + 2}
       data-state={selected ? "selected" : undefined}
+      data-density={props.density}
       style={{ ...props.style, gridTemplateColumns: layout.template }}
       onClick={props.onClick}
       className={cn(

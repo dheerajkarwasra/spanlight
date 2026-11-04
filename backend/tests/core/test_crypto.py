@@ -149,7 +149,7 @@ def test_failure_messages_never_carry_key_material_or_plaintext() -> None:
     settings = make_settings(v1=key)
     plaintext = b"super-secret-totp-seed"
     sealed = encrypt(plaintext, settings=settings)
-    tampered = Sealed(sealed.ciphertext[:-1] + b"\x00", sealed.key_id)
+    tampered = Sealed(sealed.ciphertext[:-1] + bytes([sealed.ciphertext[-1] ^ 0x01]), sealed.key_id)
 
     with pytest.raises(DecryptionFailed) as failure:
         decrypt(tampered, settings=settings)

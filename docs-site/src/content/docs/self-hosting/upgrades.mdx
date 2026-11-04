@@ -116,7 +116,7 @@ cosign verify-blob sbom-spanlight.cdx.json \
 
    ```bash
    spl exec worker spanlight backup now
-   spl exec worker spanlight backup list
+   docker run --rm --network <compose-network> --env-file <recovery.env> <deployment-image> spanlight backup list
    ```
 
    `backup now` prints `Backed up to backups/2026/10/09/spanlight-20261009T143012Z.dump (48213377 bytes).` with your own key and size. Without object storage, dump the database to a file on the host instead:
@@ -140,7 +140,7 @@ cosign verify-blob sbom-spanlight.cdx.json \
    spl up -d --build
    ```
 
-   Compose rebuilds the images and runs the `migrate` service to completion. It applies the migrations as the database owner (`spanlight migrate`) and then refreshes the `spanlight_app` role (`spanlight ensure-app-role`). The `api` and `worker` start only after `migrate` succeeds, and `web` starts once `api` is healthy. Containers whose image or settings changed are recreated.
+   Compose rebuilds the images and runs the `migrate` service to completion. It applies the migrations as the database owner (`spanlight migrate`), refreshes the `spanlight_app` role (`spanlight ensure-app-role`) and runs the fresh-install coverage step (`spanlight activate-aggregate-coverage … --skip-if-projects-exist`), which changes nothing once a project exists. The `api` and `worker` start only after `migrate` succeeds, and `web` starts once `api` is healthy. Containers whose image or settings changed are recreated.
 
 6. **Check that the migrations ran.**
 
@@ -148,11 +148,12 @@ cosign verify-blob sbom-spanlight.cdx.json \
    spl logs migrate
    ```
 
-   A successful run ends with these two lines:
+   A successful run ends with these three lines (on an installation with no project yet, the last one says `Coverage activated; …` instead):
 
    ```text
    Database is at the latest migration.
    Role spanlight_app is ready (no superuser, no RLS bypass).
+   Projects already exist: fresh coverage activation skipped, nothing changed. An upgrade activates coverage with --writers-drained after draining old writers.
    ```
 
    If `migrate` failed, the new API never started. Read the error above those lines. If the failure happened before any migration was applied, you can go back to the old commit and rebuild.
@@ -177,9 +178,11 @@ Do not use `deploy/smoke.sh` to check a production upgrade. It builds its own st
 
 ## How the migrations run
 
-You do not run migrations yourself. The `migrate` service in `deploy/compose.yaml` runs `spanlight migrate && spanlight ensure-app-role --role spanlight_app` as the database owner on every `up`. On a database that is already current, it changes nothing and prints the same two lines.
+You do not run migrations yourself. The `migrate` service in `deploy/compose.yaml` runs `spanlight migrate && spanlight ensure-app-role --role spanlight_app` as the database owner on every `up`. On a database that is already current, it changes nothing and prints the same first two lines.
 
-Run both as a Postgres superuser (the bundled `postgres` user is one). Content search on the Traces page uses an index that row-level security only allows when two text functions are marked `LEAKPROOF`, and only a superuser can mark them. As another role, the migration prints `content search: not a superuser, functions not marked LEAKPROOF` and search then looks at span content from the last hour of the selected range only. `spanlight ensure-app-role` sets one of the marks again after a restore, because a database dump does not keep it.
+The same service then runs `spanlight activate-aggregate-coverage --writers-drained --fresh-install --skip-if-projects-exist`. On the first `up` of a new installation there is no project yet, so it activates aggregate coverage and every project you create afterwards reads its rollup figures as complete. Once a project exists it changes nothing and says so. An installation that already had projects before it upgraded past migration 1027 activates coverage once, by hand, after its old writers are stopped: see [Activate aggregate source preservation](/docs/runbooks/deploy/#activate-aggregate-source-preservation-1027).
+
+Run `spanlight migrate` and `spanlight ensure-app-role` as a Postgres superuser (the bundled `postgres` user is one); the `migrate` service runs all three steps as that user. Content search on the Traces page uses an index that row-level security only allows when two text functions are marked `LEAKPROOF`, and only a superuser can mark them. As another role, the migration prints `content search: not a superuser, functions not marked LEAKPROOF` and search then looks at span content from the last hour of the selected range only. `spanlight ensure-app-role` sets one of the marks again after a restore, because a database dump does not keep it.
 
 Migrations are forward changes to a live database. The readiness check compares the database's revision with the one the code expects, and answers `503` with `"migrations":"pending"` when they differ in either direction. That is what stops an old build from running on a newer schema.
 

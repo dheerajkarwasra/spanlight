@@ -8,10 +8,13 @@ commit, which ends the project binding that row-level security needs.
 """
 
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import Annotated
 
 import structlog
 from fastapi import APIRouter, Depends, Request, status
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 from app.alerts.rule_errors import UnknownChannelError
 from app.api.deps import Access, ClockDep, DbSession, SettingsDep, client_ip, require
@@ -20,15 +23,19 @@ from app.api.schemas import BudgetBurnOut, BudgetOut, BudgetPatch, BudgetSpec
 from app.budgets import queries, service
 from app.budgets.burn import budget_burn
 from app.budgets.errors import (
+    BudgetHistoryRetentionError,
     BudgetLimitError,
     BudgetNameTakenError,
     BudgetNotFoundError,
+    BudgetReservationsPendingError,
     UnknownScopeError,
 )
 from app.budgets.types import BudgetScope
+from app.core.db_errors import is_lock_timeout
 from app.core.errors import FieldError, ProblemError, conflict, not_found
-from app.core.observability import feature_used
+from app.core.observability import BUDGET_BUSY, feature_used
 from app.core.permissions import Permission
+from app.db.rls import bind_project
 
 logger = structlog.get_logger(__name__)
 
@@ -43,9 +50,19 @@ SCOPE_FEATURES = {
     BudgetScope.TRACE_NAME: "budget_trace_name_scope",
 }
 
+# An edit or delete locks the budget `FOR NO KEY UPDATE`, which waits for every gateway admission
+# holding it `FOR SHARE`, and admissions that arrive meanwhile do not queue behind the edit
+# (Postgres grants a compatible share lock at once). Under a sustained burst of calls the edit
+# could wait up to the statement timeout and fail as a plain 503; instead it waits a short
+# `lock_timeout` a few times and then says what is busy.
+BUSY_ATTEMPTS = 3
+BUSY_LOCK_TIMEOUT_MS = 2000
+
 BUDGET_ERRORS = (
     BudgetNotFoundError,
+    BudgetHistoryRetentionError,
     BudgetLimitError,
+    BudgetReservationsPendingError,
     BudgetNameTakenError,
     UnknownChannelError,
     UnknownScopeError,
@@ -54,6 +71,20 @@ BUDGET_ERRORS = (
 
 def _budget_problem(error: Exception) -> ProblemError:
     """The problem response for an error the budget service raises."""
+    if isinstance(error, BudgetReservationsPendingError):
+        return conflict(
+            "BUDGET_RESERVATIONS_PENDING",
+            "Scope and period cannot change while calls are pending "
+            "or existing charges cannot be reconstructed. "
+            "Wait for settlement or for uncertain "
+            "charges to leave the relevant period.",
+        )
+    if isinstance(error, BudgetHistoryRetentionError):
+        return ProblemError(
+            422,
+            "BUDGET_HISTORY_RETENTION",
+            f"An enabled block budget requires at least {error.days} days of project retention.",
+        )
     if isinstance(error, BudgetNotFoundError):
         return not_found()
     if isinstance(error, BudgetLimitError):
@@ -80,6 +111,54 @@ def _budget_problem(error: Exception) -> ProblemError:
     raise error
 
 
+def _budget_busy() -> ProblemError:
+    return ProblemError(
+        503,
+        "BUDGET_BUSY",
+        "The budget is busy with other requests right now. Try the change again in a few seconds.",
+        headers={"Retry-After": "5"},
+    )
+
+
+async def _write_with_retries[T](
+    db: DbSession,
+    access: Access,
+    budget_id: uuid.UUID,
+    attempt: Callable[[uuid.UUID], Awaitable[T]],
+) -> T:
+    """Lock the project of `access` and run `attempt` (a budget write, given the locked
+    project's id) in a transaction whose lock waits are bounded, up to `BUSY_ATTEMPTS` times; a
+    try that times out on any of its locks, the organization's and project's included, is rolled
+    back and repeated, and the last one answers `503 BUDGET_BUSY`. A statement timeout is not
+    retried: it is a slow query, not a busy budget, and answers the usual 503."""
+    project = access.require_project()
+    # Read before any rollback, which expires the rows.
+    ids = {"org_id": str(access.org.id), "project_id": str(project.id), "budget_id": str(budget_id)}
+    for tries_left in reversed(range(BUSY_ATTEMPTS)):
+        await db.execute(
+            text("SELECT set_config('lock_timeout', :ms, true)"), {"ms": str(BUSY_LOCK_TIMEOUT_MS)}
+        )
+        try:
+            return await attempt(await lock_project_of(access, db))
+        except OperationalError as error:
+            if not is_lock_timeout(error.orig):
+                raise
+            await db.rollback()
+            outcome = "retried" if tries_left else "refused"
+            BUDGET_BUSY.labels(outcome=outcome).inc()
+            logger.warning(
+                "budget_busy", **ids, attempt=BUSY_ATTEMPTS - tries_left, outcome=outcome
+            )
+            if not tries_left:
+                raise _budget_busy() from None
+            # The rollback expired the rows the request already holds and ended the project
+            # binding (`SET LOCAL`): load them here, where awaiting is possible, and bind again.
+            for row in (access.auth.user, access.org, project):
+                await db.refresh(row)
+            await bind_project(db, project.id)
+    raise AssertionError("unreachable: every try returns or raises")
+
+
 def _log(event: str, access: Access, budget_id: uuid.UUID, **fields: object) -> None:
     logger.info(
         event,
@@ -95,9 +174,11 @@ async def list_budgets(
     project_id: uuid.UUID, access: BudgetReader, db: DbSession, clock: ClockDep
 ) -> list[BudgetOut]:
     """By name. Unpaginated: a project has at most 50 budgets."""
-    rows = await queries.list_budgets(db, access.require_project().id)
+    project = access.require_project().id
+    rows = await queries.list_budgets(db, project)
     now = clock()
-    return [BudgetOut.of(budget, state, now) for budget, state in rows]
+    counters = await queries.period_counters(db, project, now)
+    return [BudgetOut.of(budget, state, now, counters) for budget, state in rows]
 
 
 @router.post(
@@ -149,7 +230,9 @@ async def get_budget(
     if found is None:
         raise not_found()
     budget, state = found
-    return BudgetOut.of(budget, state, clock())
+    now = clock()
+    counters = await queries.period_counters(db, budget.project_id, now)
+    return BudgetOut.of(budget, state, now, counters)
 
 
 @router.get("/{budget_id}/burn", response_model=BudgetBurnOut, summary="Get a budget's burn")
@@ -185,25 +268,30 @@ async def update_budget(
     first and sends `alert.resolved`. A new scope or period clears the spend shown until the next
     evaluation, about a minute later.
     """
-    locked_project_id = await lock_project_of(access, db)
-    now = clock()
-    try:
-        budget = await service.update_budget(
-            db,
-            access.org.id,
-            locked_project_id,
-            budget_id,
-            access.user_id,
-            body,
-            now=now,
-            ip=client_ip(request),
-            settings=settings,
-        )
-    except BUDGET_ERRORS as error:
-        raise _budget_problem(error) from None
-    updated = BudgetOut.of(budget, await queries.get_state(db, budget.rule_id), now)
+
+    async def attempt(locked_project_id: uuid.UUID) -> BudgetOut:
+        now = clock()
+        try:
+            budget = await service.update_budget(
+                db,
+                access.org.id,
+                locked_project_id,
+                budget_id,
+                access.user_id,
+                body,
+                now=now,
+                ip=client_ip(request),
+                settings=settings,
+            )
+        except BUDGET_ERRORS as error:
+            raise _budget_problem(error) from None
+        state = await queries.get_state(db, budget.rule_id)
+        counters = await queries.period_counters(db, locked_project_id, now)
+        return BudgetOut.of(budget, state, now, counters)
+
+    updated = await _write_with_retries(db, access, budget_id, attempt)
     await db.commit()
-    _log("budget_updated", access, budget.id)
+    _log("budget_updated", access, budget_id)
     return updated
 
 
@@ -219,19 +307,22 @@ async def delete_budget(
 ) -> None:
     """Delete the budget with its alert history. A firing budget is resolved first and sends
     `alert.resolved`; a blocking one stops blocking at once."""
-    locked_project_id = await lock_project_of(access, db)
-    try:
-        await service.delete_budget(
-            db,
-            access.org.id,
-            locked_project_id,
-            budget_id,
-            access.user_id,
-            now=clock(),
-            ip=client_ip(request),
-            settings=settings,
-        )
-    except BUDGET_ERRORS as error:
-        raise _budget_problem(error) from None
+
+    async def attempt(locked_project_id: uuid.UUID) -> None:
+        try:
+            await service.delete_budget(
+                db,
+                access.org.id,
+                locked_project_id,
+                budget_id,
+                access.user_id,
+                now=clock(),
+                ip=client_ip(request),
+                settings=settings,
+            )
+        except BUDGET_ERRORS as error:
+            raise _budget_problem(error) from None
+
+    await _write_with_retries(db, access, budget_id, attempt)
     await db.commit()
     _log("budget_deleted", access, budget_id)

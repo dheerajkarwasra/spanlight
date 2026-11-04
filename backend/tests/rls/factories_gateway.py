@@ -122,4 +122,40 @@ GATEWAY = (
         touch="status",
         parents=(parent("budgets", budget_id="id"),),
     ),
+    RowFactory(
+        table="budget_bucket_versions",
+        sql=(
+            "INSERT INTO budget_bucket_versions (project_id, bucket_start, generation) "
+            "VALUES (:project_id, date_trunc('hour', now(), 'UTC'), "
+            "nextval('budget_bucket_generation_seq')) RETURNING *"
+        ),
+        touch="generation",
+    ),
+    RowFactory(
+        table="budget_bucket_snapshots",
+        sql=(
+            "INSERT INTO budget_bucket_snapshots (project_id, budget_id, bucket_start, "
+            "committed_usd, generation) "
+            "VALUES (:project_id, :budget_id, date_trunc('hour', now(), 'UTC'), 1, 0) RETURNING *"
+        ),
+        touch="computed_at",
+        parents=(parent("budgets", budget_id="id"),),
+    ),
+    RowFactory(
+        table="budget_bucket_deltas",
+        sql=(
+            "INSERT INTO budget_bucket_deltas (project_id, budget_id, bucket_start, amount_usd) "
+            "VALUES (:project_id, :budget_id, date_trunc('hour', now(), 'UTC'), 1) RETURNING *"
+        ),
+        touch="amount_usd",
+        parents=(parent("budgets", budget_id="id"),),
+    ),
+    RowFactory(
+        table="budget_deleted_spans",
+        sql=(
+            "INSERT INTO budget_deleted_spans (project_id, trace_id, span_id, started_at, "
+            f"cost_usd) VALUES (:project_id, {HEX32}, {HEX16}, now(), 1) RETURNING *"
+        ),
+        touch="model",
+    ),
 )

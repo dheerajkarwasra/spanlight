@@ -12,8 +12,8 @@ import { RATE_LIMIT_KIND_ORDER } from "@/lib/rate-limit-kind";
 export interface StackedPoint {
   bucketStart: string;
   /** Failed calls per class: every class seen in any bucket, 0 where this bucket has none. */
-  counts: Partial<Record<ErrorClass, number>>;
-  total: number;
+  counts: Partial<Record<ErrorClass, number | null>>;
+  total: number | null;
   approximate: boolean;
 }
 
@@ -24,7 +24,7 @@ export interface StackedPoint {
 export function toStackedPoints(buckets: readonly ErrorBucket[]): StackedPoint[] {
   const seen = new Set<ErrorClass>();
   for (const bucket of buckets) {
-    for (const [name, count] of Object.entries(bucket.by_class)) {
+    for (const [name, count] of Object.entries(bucket.by_class ?? {})) {
       if (count > 0) {
         seen.add(name as ErrorClass);
       }
@@ -32,12 +32,12 @@ export function toStackedPoints(buckets: readonly ErrorBucket[]): StackedPoint[]
   }
   const classes = ERROR_CLASSES.filter((name) => seen.has(name));
   return buckets.map((bucket) => {
-    const counts: Partial<Record<ErrorClass, number>> = {};
-    let total = 0;
+    const counts: Partial<Record<ErrorClass, number | null>> = {};
+    let total: number | null = bucket.by_class === null ? null : 0;
     for (const name of classes) {
-      const count = bucket.by_class[name] ?? 0;
+      const count = bucket.by_class === null ? null : (bucket.by_class[name] ?? 0);
       counts[name] = count;
-      total += count;
+      total = total === null || count === null ? null : total + count;
     }
     return { bucketStart: bucket.bucket_start, counts, total, approximate: bucket.approximate };
   });

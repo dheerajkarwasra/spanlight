@@ -7,7 +7,7 @@ those modules would otherwise import each other in a cycle.
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, PlainSerializer, StringConstraints
 
@@ -58,3 +58,28 @@ class UserOut(ApiModel):
     name: str
     created_at: datetime
     email_verified: bool
+
+
+class AggregateMetadata(BaseModel):
+    """Unavailable values are retained materialized snapshots; absent values remain unknown."""
+
+    aggregate_status: Literal["complete", "pending", "unavailable"] = "complete"
+    oldest_pending_at: datetime | None = None
+
+
+AGGREGATE_RESPONSE_HEADERS: dict[int | str, dict[str, Any]] = {
+    200: {
+        "headers": {
+            "Aggregate-Status": {
+                "description": "Source coverage, including when the response array is empty.",
+                "schema": {"type": "string", "enum": ["complete", "pending", "unavailable"]},
+            },
+            "Aggregate-Oldest-Pending-At": {
+                "description": (
+                    "Oldest pending correction time; omitted when no correction is pending."
+                ),
+                "schema": {"type": "string", "format": "date-time"},
+            },
+        }
+    }
+}

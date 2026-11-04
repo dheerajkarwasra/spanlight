@@ -141,7 +141,11 @@ async def revoke_key(
     now: datetime,
     ip: str | None = None,
 ) -> None:
-    """Revoke the key: the gateway refuses it from the next call. Raises `KeyNotFoundError`.
+    """Revoke the key. Raises `KeyNotFoundError`.
+
+    The handler clears this process's key cache, so its gateway refuses the key from the next
+    call; another api or gateway process refuses it within `api_key_cache_ttl_seconds`
+    (`app.gateway.key_context`).
 
     Revoking a revoked key changes nothing and audits nothing. The row stays, so the spans sent
     with the key keep their attribution.

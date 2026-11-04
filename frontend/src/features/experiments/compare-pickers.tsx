@@ -8,6 +8,7 @@ import type { ExperimentRun } from "@/lib/api";
 import { formatCost, formatInteger } from "@/lib/format";
 
 import { isFinished, runOptionLabel, type VersionIndex } from "./run-label";
+import { targetChanges } from "./target-diff";
 
 interface ComparePickersProps {
   runs: readonly ExperimentRun[];
@@ -38,35 +39,50 @@ export function ComparePickers({ runs, index, pair, onChange }: ComparePickersPr
     .filter((run) => isFinished(run))
     .map((run) => ({ value: run.id, label: runOptionLabel(run, index) }));
   return (
-    <Card className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end">
-      <FormField label="Baseline (A)" hint={hint(detailA)} className="min-w-0 flex-1">
-        <FieldSelect
-          value={a ?? ""}
-          placeholder="Pick a run"
-          onChange={(value) => onChange(value, b)}
-          options={options}
-        />
-      </FormField>
-      <div className="flex justify-center sm:pb-7">
-        <Button
-          size="icon"
-          variant="ghost"
-          className="size-11 bg-surface-muted"
-          aria-label="Swap baseline and candidate"
-          disabled={a === undefined && b === undefined}
-          onClick={() => onChange(b, a)}
-        >
-          <ArrowLeftRight aria-hidden className="max-sm:rotate-90" />
-        </Button>
+    <Card className="flex flex-col gap-3 p-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+        <FormField label="Baseline (A)" hint={hint(detailA)} className="min-w-0 flex-1">
+          <FieldSelect
+            value={a ?? ""}
+            placeholder="Pick a run"
+            onChange={(value) => onChange(value, b)}
+            options={options}
+          />
+        </FormField>
+        <div className="flex justify-center sm:pb-7">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-11 bg-surface-muted"
+            aria-label="Swap baseline and candidate"
+            disabled={a === undefined && b === undefined}
+            onClick={() => onChange(b, a)}
+          >
+            <ArrowLeftRight aria-hidden className="max-sm:rotate-90" />
+          </Button>
+        </div>
+        <FormField label="Candidate (B)" hint={hint(detailB)} className="min-w-0 flex-1">
+          <FieldSelect
+            value={b ?? ""}
+            placeholder="Pick a run"
+            onChange={(value) => onChange(a, value)}
+            options={options}
+          />
+        </FormField>
       </div>
-      <FormField label="Candidate (B)" hint={hint(detailB)} className="min-w-0 flex-1">
-        <FieldSelect
-          value={b ?? ""}
-          placeholder="Pick a run"
-          onChange={(value) => onChange(a, value)}
-          options={options}
-        />
-      </FormField>
+      {detailA && detailB && detailA.id !== detailB.id ? (
+        <WhatChanged changes={targetChanges(detailA.target, detailB.target, index)} />
+      ) : null}
     </Card>
+  );
+}
+
+/** Figma "Experiments — Compare — what changed (G-003)": the target differences, A to B. */
+function WhatChanged({ changes }: { changes: string[] }) {
+  return (
+    <p className="text-[13px] text-muted-foreground">
+      <span className="font-semibold text-foreground">What changed:</span>{" "}
+      {changes.length > 0 ? changes.join(" · ") : "nothing; same target, model and parameters"}
+    </p>
   );
 }

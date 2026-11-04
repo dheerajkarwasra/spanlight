@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { doctorSpanId } from "./doctor-span";
-import { testSpan } from "./span-test-data";
+import { countedStartReads, testSpan } from "./span-test-data";
 
 // Mirrors backend/app/insights/explain_queries.py `trace_excerpts`: failed first, LLM first,
 // then start time, then span id.
@@ -28,5 +28,11 @@ describe("doctorSpanId", () => {
     const twin = testSpan("a", null, 0, 100, { kind: "chain" });
     expect(doctorSpanId([root, twin])).toBe("a");
     expect(doctorSpanId([])).toBeNull();
+  });
+
+  it("reads each start time once, so a 5,000-span trace costs one pass", () => {
+    const { spans, reads } = countedStartReads(5_000);
+    expect(doctorSpanId(spans)).toBe("s0");
+    expect(reads()).toBeLessThanOrEqual(spans.length);
   });
 });

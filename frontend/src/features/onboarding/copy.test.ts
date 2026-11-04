@@ -7,14 +7,14 @@ function wordCount(strings: readonly string[]): number {
 }
 
 describe("ONBOARDING_COPY", () => {
-  it.each(Object.entries(ONBOARDING_COPY))("%s step's prose is at most 25 words", (_, step) => {
+  it.each(Object.entries(ONBOARDING_COPY))("%s step's prose is at most 30 words", (_, step) => {
     const strings = [
       step.heroDescription ?? "",
       step.cardTitle,
       step.cardDescription,
       ...(step.helper ?? []),
     ];
-    expect(wordCount(strings)).toBeLessThanOrEqual(25);
+    expect(wordCount(strings)).toBeLessThanOrEqual(30);
   });
 
   it("copy matches the spec", () => {
@@ -32,7 +32,10 @@ describe("ONBOARDING_COPY", () => {
       connect: {
         cardTitle: "API key",
         cardDescription: "Shown once. Revoke it in Settings › API keys.",
-        helper: ["Waiting for your first trace…", "Send a test trace or run a snippet."],
+        helper: [
+          "Waiting for an application trace…",
+          "Verify ingestion with a test trace, then instrument your app.",
+        ],
       },
     });
   });

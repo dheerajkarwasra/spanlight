@@ -16,11 +16,10 @@ import pytest
 from app.config import Settings
 from app.db.rls import bypass_rls
 from app.jobs.context import TaskContext
-from app.jobs.queue import ClaimedJob
 from app.jobs.tasks import retention
-from app.jobs.tasks.retention import apply_daily_table_retention, run_retention
-from app.reconciliation import retention as billing_retention
-from app.reconciliation.retention import PROVIDER_LINES_RETENTION_DAYS, apply_billing_retention
+from app.jobs.tasks.retention import run_retention
+from app.reconciliation.retention import PROVIDER_LINES_RETENTION_DAYS
+from tests.attribution.daily_support import queued
 from tests.jobs.bypass_support import (
     SessionFactory,
     execute,
@@ -28,6 +27,7 @@ from tests.jobs.bypass_support import (
     new_projects,
     seed_llm_spans,
 )
+from tests.jobs.retention_support import drain
 
 NOW = datetime(2026, 10, 16, 12, 0, tzinfo=UTC)
 
@@ -119,7 +119,7 @@ async def test_lines_and_runs_older_than_400_days_are_purged_in_batches(
     session_factory: SessionFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Two rows per batch, so each delete needs several batches to finish.
-    monkeypatch.setattr(billing_retention, "BATCH_SIZE", 2)
+    monkeypatch.setattr(retention, "ROW_BATCH", 2)
     [project] = await new_projects(session_factory, 1)
     org_id = await _org_of(session_factory, project)
     source = await _source(session_factory, org_id)
@@ -137,10 +137,11 @@ async def test_lines_and_runs_older_than_400_days_are_purged_in_batches(
     recent_run = await _run(session_factory, source, org_id, recent_at)
     recent_line = await _line(session_factory, source, org_id, recent_run, recent_day)
 
-    deleted = await apply_billing_retention(session_factory, now=NOW)
+    lines = await drain(session_factory, "provider_cost_lines", NOW)
+    runs = await drain(session_factory, "fetch_runs", NOW)
 
     assert PROVIDER_LINES_RETENTION_DAYS == 400
-    assert deleted == (4, 2)
+    assert (lines, runs) == (4, 2)
     assert await _ids(session_factory, "provider_cost_lines") == {kept_by_old_run, recent_line}
     assert await _ids(session_factory, "billing_fetch_runs") == {kept_old_run, recent_run}
 
@@ -160,9 +161,7 @@ async def test_cost_rollups_purged_at_project_cutoff(session_factory: SessionFac
         await _rollup(session_factory, project, cutoff_day)
     await _rollup(session_factory, long, (NOW - timedelta(days=8)).date())
 
-    deleted = await apply_daily_table_retention(session_factory, now=NOW)
-
-    assert (deleted.user_stats, deleted.cost_rollups, deleted.attribution_rollups) == (0, 2, 0)
+    assert await drain(session_factory, "daily_cost", NOW) == 2
     rows = await fetch(
         session_factory, "SELECT project_id, day FROM cost_rollups_daily ORDER BY project_id, day"
     )
@@ -202,9 +201,7 @@ async def test_retention_deletes_attribution_rollups_before_the_cutoff(
         await _attribution_row(session_factory, project, cutoff_day)
     await _attribution_row(session_factory, long, (NOW - timedelta(days=8)).date())
 
-    deleted = await apply_daily_table_retention(session_factory, now=NOW)
-
-    assert (deleted.user_stats, deleted.cost_rollups, deleted.attribution_rollups) == (0, 0, 2)
+    assert await drain(session_factory, "daily_attribution", NOW) == 2
     rows = await fetch(session_factory, "SELECT project_id, day FROM attribution_rollups_daily")
     assert {(row["project_id"], row["day"]) for row in rows} == {
         (short, (NOW - timedelta(days=7)).date()),
@@ -241,8 +238,10 @@ async def test_billing_retention_is_independent_of_span_retention(
     old = now - timedelta(days=PROVIDER_LINES_RETENTION_DAYS + 1)
     old_run = await _run(session_factory, source, org_id, old)
     await _line(session_factory, source, org_id, old_run, old.date())
-    job = ClaimedJob(id=1, kind="retention", payload={}, attempts=1, max_attempts=1, fence=1)
-    context = TaskContext(job=job, settings=settings, session_factory=session_factory)
+    job = await queued(session_factory, "retention", {})
+    context = TaskContext(
+        job=job, settings=settings, session_factory=session_factory, clock=lambda: now
+    )
 
     await run_retention(context, {})
 
@@ -253,11 +252,13 @@ async def test_billing_retention_is_independent_of_span_retention(
     assert await _ids(session_factory, "billing_fetch_runs") == {run}
     [(event, fields)] = recorder.events
     assert event == "retention_applied"
-    assert fields["traces_deleted"] == 2
-    assert fields["cost_rollups_deleted"] == 1
-    assert fields["attribution_rollups_deleted"] == 0
-    assert fields["provider_lines_deleted"] == 1
-    assert fields["fetch_runs_deleted"] == 1
+    assert fields["deleted"]["trace_cascades"] == 2
+    assert fields["deleted"]["daily_cost"] == 1
+    assert fields["deleted"]["daily_attribution"] == 0
+    assert fields["deleted"]["provider_cost_lines"] == 1
+    assert fields["deleted"]["fetch_runs"] == 1
+    assert fields["opportunities"] == retention.MAX_OPPORTUNITIES
+    assert fields["incomplete"] is False  # every batch came back short
 
 
 async def test_user_stats_batch_deletes_batch_size_rows_across_environments(
@@ -282,6 +283,5 @@ async def test_user_stats_batch_deletes_batch_size_rows_across_environments(
         await db.commit()
     assert getattr(result, "rowcount", None) == 2
 
-    deleted = await apply_daily_table_retention(session_factory, now=NOW)
-    assert deleted.user_stats == 1
+    assert await drain(session_factory, "user_stats", NOW) == 1
     assert await fetch(session_factory, "SELECT 1 FROM user_stats_daily") == []

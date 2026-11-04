@@ -244,6 +244,7 @@ async def test_a_deleted_project_is_dropped_not_retried(
     assert counter.drain() == {}
 
 
+@pytest.mark.serial
 async def test_shutdown_flush_is_bounded_when_the_database_is_down(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

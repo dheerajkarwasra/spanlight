@@ -1,9 +1,9 @@
 """The console provider: for development and tests, where nothing should leave the machine.
 
 It always logs the recipient and the subject. When given a file it also appends the whole
-message to it as one JSON line, so a developer or an end-to-end test can read the verification
-link out of the file. The body is never logged: links in it are credentials, and log lines are
-shipped and kept.
+message to it as one JSON line, extra headers included, so a developer or an end-to-end test can
+read the verification link out of the file. The body and the headers are never logged: links in
+them are credentials, and log lines are shipped and kept.
 """
 
 import asyncio
@@ -15,6 +15,7 @@ from pathlib import Path
 
 import structlog
 
+from app.core.thread_ownership import owned_thread
 from app.email.message import EmailMessage
 
 logger = structlog.get_logger(__name__)
@@ -37,9 +38,10 @@ class ConsoleEmailSender:
                     "subject": message.subject,
                     "text": message.text,
                     "html": message.html,
+                    "headers": dict(message.headers) if message.headers else None,
                 }
             )
-            await asyncio.to_thread(_append_line, self._path, line)
+            await owned_thread(asyncio.to_thread(_append_line, self._path, line))
         logger.info(
             "email_console", to=message.to, subject=message.subject, written=self._path is not None
         )

@@ -36,16 +36,21 @@ original design; everything else is a clarification.
   `TOTP_ALREADY_ENABLED` / `TOTP_NOT_ENABLED` (409, two-factor setup state),
   `TWO_FACTOR_NOT_ENABLED` (409, an owner requires two-factor for the org without having it),
   `TWO_FACTOR_REQUIRED` (403, the org requires two-factor and the caller has not turned it on),
-  `INVALID_TOTP_CODE` (422 when enabling or disabling, 401 when signing in),
+  `INVALID_TOTP_CODE` (422 when enabling, disabling or re-proving the owner, 401 when signing in),
+  `TOTP_CODE_REQUIRED` (422, an email change or account deletion by an account with two-factor on, sent
+  without `code`),
   `TOTP_CHALLENGE_INVALID` (401, the second step of signing in),
-  `INVALID_PASSWORD` (422, two-factor setup with a missing or wrong current password),
-  `REAUTH_REQUIRED` (403, two-factor setup by an account without a password whose sign-in is older than
-  10 minutes), `TOO_MANY_EXPORTS` (409, a project already has 5 exports queued or running),
+  `INVALID_PASSWORD` (422, two-factor setup, an email change or account deletion with a missing or wrong
+  current password),
+  `REAUTH_REQUIRED` (403, two-factor setup, an email change or account deletion by an account without a
+  password whose sign-in is older than 10 minutes),
+  `TOO_MANY_EXPORTS` (409, a project already has 5 exports queued or running),
   `EE_LICENSE_REQUIRED` (403, an enterprise-edition feature the instance's license does not grant; the
   `feature` member names it, see "Enterprise edition" below),
   `CONFIRMATION_MISMATCH` (422, a deletion whose typed `confirm` is not the slug of what it deletes),
   `IDEMPOTENCY_MISMATCH` (422, an `Idempotency-Key` first used for a different request),
   `IDEMPOTENCY_IN_PROGRESS` (409, the first request with that key has not answered yet),
+  `IDEMPOTENCY_OUTCOME_UNKNOWN` (409, the original operation may have completed and will not be repeated),
   `SLUG_UNAVAILABLE` (409), `PAYLOAD_TOO_LARGE` (413),
   `UNSUPPORTED_MEDIA_TYPE` (415), `VALIDATION_ERROR` (422, with `errors[].field`),
   `RATE_LIMITED` (429, with `Retry-After`), `INVALID_JSON` / `INVALID_OTLP` / `BAD_REQUEST` (400),
@@ -86,6 +91,9 @@ original design; everything else is a clarification.
 
 ## Auth, CSRF, sessions
 
+- **Cookie names (2026-11-01).** Over https (`APP_BASE_URL` with `https`) the session and CSRF cookies are
+  `__Host-spl_session` and `__Host-spl_csrf`; over plain http they are `spl_session` and `spl_csrf`. Over https
+  the plain names are ignored (no fallback). Below, `spl_session` and `spl_csrf` stand for either form.
 - `spl_csrf` is a signed token bound to the session; the SPA echoes the cookie value in `X-CSRF-Token`.
   `GET /api/v1/auth/me` re-issues `spl_csrf` if it is missing or stale, so the SPA can recover.
 - State-changing `/api/` requests (every version) **without an `Origin` header are rejected** (403 `ORIGIN_NOT_ALLOWED`),
@@ -95,13 +103,18 @@ original design; everything else is a clarification.
 - CSRF is required on every authenticated unsafe method, including `POST /api/v1/auth/logout` and
   `POST /api/v1/invites/accept`. Exempt (Origin check only): `signup`, `login`, `POST /api/v1/demo/session`,
   `POST /api/v1/auth/email/verify/confirm`, `POST /api/v1/auth/password/forgot`,
-  `POST /api/v1/auth/password/reset`, `POST /api/v1/auth/totp/verify`.
+  `POST /api/v1/auth/password/reset`, `POST /api/v1/auth/email/change/confirm`, `POST /api/v1/auth/totp/verify`.
 - `POST /api/v1/auth/signup` is limited to **10 attempts per IP per hour**; the 11th is 429 `RATE_LIMITED`
   with `Retry-After`. Every attempt counts, including one refused with `409 EMAIL_TAKEN`, so probing for
   registered addresses is limited too.
-- Login throttle: once an email has **5** failures (or an IP **20**) within 15 minutes, further attempts
-  return 429 with `Retry-After` — i.e. the 6th attempt is blocked. Throttled attempts are not recorded.
-  Wrong two-factor codes count as failed sign-ins too (see Two-factor authentication).
+- Login throttle (changed 2026-11-01): `POST /api/v1/auth/login` and the two-factor step share one failure
+  budget per 15-minute window: **5** failures per (email, client IP), **50** per email and **20** per client IP.
+  When the client IP is unknown, the limit of 5 applies per email. Any limit reached answers 429 with
+  `Retry-After` set to the seconds until the oldest counted failure leaves the window. Successful sign-ins never
+  count, and throttled attempts are not recorded. The count and the record are serialised per email (an advisory
+  lock on the lowercased address), so parallel guesses cannot exceed the limit. Independently, at most **20**
+  password checks per (email, client IP) run per window, successful or not; the 21st answers 429 with
+  `Retry-After`. Wrong two-factor codes count as failed sign-ins too (see Two-factor authentication).
 - `POST /api/v1/demo/session` → **200 `User`** and sets the same cookies as login (`Max-Age` 3600).
   404 when the demo is disabled; 429 after 10 per IP per hour.
 - `DELETE /api/v1/auth/sessions/{id}` returns 404 for sessions that are not the caller's.
@@ -124,11 +137,12 @@ original design; everything else is a clarification.
 - `DELETE …/members/{own user id}` lets any member **leave** the org (still subject to `LAST_OWNER`).
 - Accepting an invite as an existing member keeps the existing role (never downgrades).
 - Invalid, used, expired or revoked invite tokens → 404.
-- **Addition:** `GET /api/v1/invites/preview?token=…` → 200 `{org: {id, name, slug}, role, expires_at}`,
-  so the invite page can show the organization and role **before** the user accepts. It requires a
-  signed-in session (401 otherwise), changes nothing (no audit event, the invite stays usable) and
-  returns the same 404 `NOT_FOUND` for unknown, used, expired and revoked tokens. The token travels
-  in the query string, like the `/invite/{token}` page URL it comes from.
+- **Addition:** `POST /api/v1/invites/preview` with body `{"token": "<token>"}` → 200
+  `{org: {id, name, slug}, role, expires_at}`, so the invite page can show the organization and role **before**
+  the user accepts. It requires a signed-in session (401 otherwise; 403 `SESSION_REQUIRED` with a bearer),
+  changes nothing (no audit event, the invite stays usable) and returns the same 404 `NOT_FOUND` for unknown,
+  used, expired and revoked tokens. **Changed 2026-11-01:** it was `GET …/invites/preview?token=…`; `GET` now
+  answers 405. A POST keeps the token out of any URL that access logs or `Referer` record.
 - **Addition (invite emails, 2026-10-08):** `POST /api/v1/orgs/{org_id}/invites` takes an optional
   `email` (a valid address, else 422 `VALIDATION_ERROR`) next to `role`. The create response and
   `GET /api/v1/orgs/{org_id}/invites` items gain `email`, which is `null` for an invite created without
@@ -147,9 +161,12 @@ original design; everything else is a clarification.
     because anyone can sign up, create an organization and invite arbitrary addresses; unlimited, that
     would let strangers send mail from the instance's sender address.
   - **Accepting is unchanged.** Mailing does not tie an invite to the address it was sent to: any
-    signed-in holder of the link can accept it, as for a link shared by hand. The link keeps its
-    `{APP_BASE_URL}/invite/<token>` shape. Because the token is in the path, it can appear in access
-    logs and `Referer` headers; unlike the verification and reset links, it is not in the URL fragment.
+    signed-in holder of the link can accept it, as for a link shared by hand. **Changed 2026-11-01:** the
+    link is `{APP_BASE_URL}/invite#token=<token>`, the token in the URL fragment like the verification and
+    reset links, so it stays out of access logs and `Referer` headers. Links in the old
+    `{APP_BASE_URL}/invite/<token>` shape (mailed before the change, valid up to 7 days) are redirected in
+    the browser to the fragment form and keep working. A signed-out invitee's token waits in the browser
+    tab's session storage while they sign in, instead of in the `next` parameter.
 - **Addition (2026-10-08):** `PATCH /api/v1/orgs/{org_id}` → 200 `Org` takes `{"require_2fa": bool}` (see
   Two-factor authentication) and, since 2026-10-09, `name` (see Organization and project administration).
   `Org` (in `memberships[].org`, `POST /orgs`, this response and `GET /orgs/{id}`) gains a `require_2fa`
@@ -191,6 +208,9 @@ original design; everything else is a clarification.
     `cost_usd` is `null` when nothing in the window was priced. `error_rate`/percentiles are `null`
     when there are no LLM calls.
   - `traces` counts traces started in the window. `environment` filters by the trace's environment.
+  - `cost_usd` has no $1,000,000 cap (2026-11-02): the hourly rollups store the exact sum (their column is plain
+    `numeric`), so the overview, cost alerts and budget spend count a large hour in full. Trace totals and
+    attribution are `null` from $1,000,000 up because their columns are `numeric(14, 8)`.
   - Timeseries buckets are gapless (empty buckets have zero counts and `null` cost/p95), in UTC.
 - Metrics source and `approximate` (any window length): whole UTC hours that closed at least
   10 minutes before the project's last rollup run are read from the hourly rollups; everything else
@@ -201,14 +221,19 @@ original design; everything else is a clarification.
   and traces are exact sums of the two parts, except that a span stored more than 10 minutes after
   it started can be missing from a rolled-up hour until that hour is rolled up again: within
   5 minutes while the hour is one of the last three, otherwise within about an hour. When a window
-  reads any rollup hour, its p50/p95 are estimated from merged latency histograms (within about
-  ±25 %) and `approximate` is true; otherwise percentiles are exact (`percentile_cont`) and
+  reads any rollup hour, its p50/p95 are estimated from merged latency histograms and `approximate` is true; otherwise percentiles are exact (`percentile_cont`) and
   `approximate` is false. `overview` carries a top-level `approximate: bool`, true when either
   period used a rollup hour (then every percentile of the response is an estimate); `timeseries`
   and `models` stay plain lists (an envelope would break clients), so each item carries
   `approximate: bool`: per bucket for `timeseries` (a bucket of raw spans only keeps its exact
   p95), and the window's value for every `models` row. `models` merges both parts per provider and
   model before ranking, then keeps the top 100.
+- Histogram percentile correction (2026-11-03): use continuous ranks `q * (n - 1)`, then
+  interpolate harmonic bucket representatives. For observations in bounded interior buckets,
+  the worst-case relative error is about 20.066%. The first bucket and final open-ended bucket
+  have no such guarantee; estimates remain capped at 300,000 ms. This replaces the former
+  unconditional approximate 25% claim. Stored boundaries and exact sums are unchanged; no
+  backfill is needed. Estimated latency and TTFT alert decisions near thresholds can change.
 - Trace `status=ok|error` filters on `error_count = 0 | > 0`. `q` matches the trace name
   (case-insensitive substring), an exact trace id, or (2026-10-19, `q` of 3+ characters) span content:
   a case-insensitive substring of a preview of a span's input and output (the last 2,000 characters of
@@ -366,8 +391,8 @@ original design; everything else is a clarification.
 - The demo job also skips (with a warning) if any billed demo LLM call this month is unpriced, since
   the budget could not be enforced. It runs at most one attempt per period (no paid retries).
 - `cleanup_sessions` also prunes login attempts and throttle events older than a day, email tokens that
-  are used or expired and older than a day, finished jobs older than 7 days, and idempotency keys past
-  their 24 hours.
+  are used or expired and older than a day, finished jobs older than 7 days, and completed idempotency
+  outcomes past their 24 hours. Pending or ambiguous operation identities are retained indefinitely.
 
 ## Trace summaries: `error_message` (added 2026-10-08)
 
@@ -398,7 +423,7 @@ card and the trace list. Computed with a correlated subquery on the spans primar
 
 An organization can set its own rates for a model. The routes are under
 `/api/v1/orgs/{org_id}/price-overrides`: `GET` (`org:read`) lists them ordered by provider,
-`model_pattern`, `effective_from` and `min_prompt_tokens`, `POST` (`gateway:write`, owners and admins) adds one and
+`model_pattern`, `effective_from` and `min_prompt_tokens`, `POST` (`prices:override`, owners only) adds one and
 returns 201, `DELETE /{override_id}` returns 204. Non-members get 404, and so does an override of
 another organization.
 
@@ -634,12 +659,17 @@ needs `CREDENTIALS_KEYS`, which seals the secret in the database (AES-256-GCM, s
 
 | Route | Auth | Request | Response |
 |---|---|---|---|
-| `GET /api/v1/auth/totp` | session | | `{"enabled", "enabled_at", "recovery_codes_remaining"}` |
+| `GET /api/v1/auth/totp` | session | | `{"enabled", "enabled_at", "recovery_codes_remaining", "legacy_recovery_codes"}` |
 | `POST /api/v1/auth/totp/setup` | session + CSRF | | `{"secret", "otpauth_url"}`; replaces a pending secret; `409 TOTP_ALREADY_ENABLED`; `409 NOT_CONFIGURED` without `CREDENTIALS_KEYS`; `403 FORBIDDEN` for the demo account |
 | `POST /api/v1/auth/totp/enable` | session + CSRF | `{"code"}` | `{"recovery_codes": [10 strings]}`; `422 INVALID_TOTP_CODE`; `409 TOTP_ALREADY_ENABLED`; `409 EMAIL_UNVERIFIED`; `403 FORBIDDEN` for the demo account |
 | `POST /api/v1/auth/totp/disable` | session + CSRF | `{"code"}` (TOTP or recovery) | `204`; `422 INVALID_TOTP_CODE`; `409 TOTP_NOT_ENABLED`; `429` |
 | `POST /api/v1/auth/totp/verify` | none (Origin check) | `{"challenge", "code"}` | `200` `LoginOut` with cookies; `401 INVALID_TOTP_CODE`; `401 TOTP_CHALLENGE_INVALID`; `429` |
 
+- **`legacy_recovery_codes`** is `true` when two-factor authentication is on and at least one unused
+  recovery code is in the legacy 10-character format (`recovery_codes.code_length` NULL or 10); `false`
+  when every unused code is in the 28-character format, when none is left, and when two-factor
+  authentication is off. Sign-in, disable and every other route that accepts a recovery code accept both
+  formats; enable still issues 10-character codes.
 - **Login now returns `LoginOut`**, a union discriminated by `status`: `{"status": "signed_in", "user": User}`
   with the session cookies set, as before but wrapped, or `{"status": "totp_required", "challenge",
   "expires_at"}` with **no cookies** when the password was right and the account has two-factor
@@ -859,7 +889,7 @@ signed-in browser session manages tokens.
   token.
 - Nowhere else. Every route that needs a signed-in session answers a token with `403 SESSION_REQUIRED`: all of
   `/api/v1/auth/*` except `GET /auth/me` (so a token cannot create, list or revoke tokens, change two-factor
-  authentication, or manage sessions or linked accounts), `POST /orgs`, `GET /invites/preview` and
+  authentication, or manage sessions or linked accounts), `POST /orgs`, `POST /invites/preview` and
   `POST /invites/accept`. So do the routes that need no sign-in (signup, login, email verification, password
   reset, `POST /auth/totp/verify`, `POST /demo/session`, `/auth/oauth/…`): a token is refused there rather than
   served as an anonymous request. An API key gets `403 KEY_SCOPE` on all of these, as before.
@@ -937,22 +967,28 @@ the OpenAPI document; on any other route the header is ignored.
 - **Same key, different request.** `422 IDEMPOTENCY_MISMATCH`, whether the first request has answered or not.
   Send a new key for a different request.
 - **Same key while the first request is still running.** `409 IDEMPOTENCY_IN_PROGRESS`; retry in a moment. A
-  first request that has not answered after 60 seconds is taken to have died: the next request with the key
-  runs the route and takes the key over, so a request slower than a minute can run twice.
+  first request that has not answered after 60 seconds returns `409 IDEMPOTENCY_OUTCOME_UNKNOWN`.
+  Time passing never authorizes another execution. A still-live original request may later complete;
+  retrying with the same key checks for its result.
 - **What is kept.** Every `2xx` and `4xx` answer, including a `422` for a body the route rejects, so a client
-  that fixes a rejected request must send it under a new key. A `5xx` is never kept: the key is released so
-  that the retry runs. Authentication failures (`401`, `403 CSRF_FAILED`, `403 ORIGIN_NOT_ALLOWED`) and refusals
+  that fixes a rejected request must send it under a new key. A `5xx` is never kept, but its operation
+  identity remains pending because external effects may already have occurred. Authentication failures (`401`, `403 CSRF_FAILED`, `403 ORIGIN_NOT_ALLOWED`) and refusals
   by the route's permission check (`403`, `404`) come before the key is looked at, so they are never kept.
 - **A replay is authorized like the request it replays.** The permission check runs again before the key is
   looked at, so a caller who has lost access since, such as a member who was removed or a token that was
   revoked, gets the `401`, `403` or `404` the original request would now get, not the kept answer.
 - **JSON only, up to 1 MiB.** The kept body is JSON. If a route answers with anything else (another content
   type, a file), or with a JSON body of more than 1 MiB, the answer is delivered as it is but cannot be kept,
-  and the key is released.
-- **The limit of the guarantee.** If the server stops after the route has committed its changes and before
-  the answer is kept, the key stays unanswered for a minute and the retry then runs the route again.
-- **Retention.** A key is forgotten 24 hours after the first request reserved it. A key past that time is
-  ignored even before the cleanup job removes it, and can be used again for any request.
+  and the operation identity remains pending.
+- **Commit and recovery.** Export, experiment and erasure receipts commit atomically with their domain
+  work. Alert tests commit an honest pending delivery receipt with their outbox rows, then update it
+  with the final delivery outcome. Playground results persist before returning; replay results commit
+  with their ledger settlement. A retry recovers these receipts even if HTTP response persistence fails.
+  Process death after an external success but before its result is stored remains explicitly unknown;
+  it never silently repeats the external call. This does not promise exactly-once provider execution.
+- **Retention.** Known completed outcomes retain the existing 24-hour key reuse contract, counted from
+  reservation. Pending or ambiguous operations are retained indefinitely, including by cleanup.
+  No retry without a key is deduplicated.
 
 ## Exports (added 2026-10-09)
 
@@ -1205,7 +1241,8 @@ Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anth
 - **Webhook URL.** `https://` only, no user name or password, no fragment (a query string is allowed), and the host
   must resolve to public addresses only; any failure is `422 UNSAFE_URL` on `config.url`, including a host that
   does not resolve. Any `@` before the path is refused, an empty user name included.
-  `WEBHOOK_ALLOW_PRIVATE_TARGETS=true` allows `http://` and private addresses.
+  `WEBHOOK_ALLOW_PRIVATE_TARGETS=true` allows `http://` and private addresses, but never link-local or cloud
+  metadata addresses (see Security and legal hardening below).
 - **Edits.** `PATCH {name?, config?, secret?, rotate_secret?}`; the kind never changes. `config` replaces the
   whole config. `rotate_secret` on a non-webhook channel is `422` on `rotate_secret`. A new config or secret clears
   `verified_at`, since the last test reached the old target. A `PATCH` that changes nothing writes no audit event.
@@ -1224,14 +1261,24 @@ Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anth
   should authenticate deliveries with the signature, not with a token in the URL.
 - **Delivery log.** `GET /api/v1/orgs/{id}/alert-channels/{channel_id}/deliveries?status&limit&cursor` needs
   `org:read` and lists the channel's outbox rows newest first (`created_at`, then `id`), one row per recipient for an
-  email channel. Items are `{id, kind, status, attempts, next_attempt_at, last_error, created_at, summary}` with
+  email channel. Items are `{id, kind, status, attempts, next_attempt_at, last_error, created_at, summary, retryable}` with
   `summary: {event, event_id?, rule_id?, rule_name?} | null`, read from the payload's `summary` key, which settled rows
-  keep. A row's target (addresses) and payload are never returned. A channel of another organization is `404`.
+  keep, and `retryable`, whether a retry would be taken (a `failed` row with a message to send that recovery has not
+  quarantined). A row's target (addresses) and payload are never returned. A channel of another organization is `404`.
 - **Retry.** `POST .../deliveries/{delivery_id}/retry` needs `alerts:write` and answers the delivery as it now
   stands. Only a `failed` row of the channel can be retried: its attempts reset to 0 and it is due at once, with the
   same id (so `X-Spanlight-Delivery` is stable) and its `last_error` until the next attempt. Any other status is `409
-  NOT_RETRYABLE`; so is an email whose recipient is no longer a verified member of the organization (unless
-  `ALERT_EMAIL_ANY_RECIPIENT` is on), without naming the address; a delivery that is not the channel's is `404`. Audit action `alert_channel.retry_delivery`.
+  NOT_RETRYABLE` ("Only a delivery that failed can be retried."); so is an email whose recipient is no longer a
+  verified member of the organization (unless `ALERT_EMAIL_ANY_RECIPIENT` is on), without naming the address, a row
+  `spanlight restore-reconcile` quarantined, and an email that was never rendered (below), each with its own
+  `detail`; a delivery that is not the channel's is `404`. Audit action `alert_channel.retry_delivery`.
+- **Render failures (2026-11-02).** An alert email that cannot be rendered is written to the delivery log at once as
+  a `failed` row (`attempts` 1, `last_error` "The alert could not be rendered as an email", `summary` only,
+  `retryable: false`), one per recipient, and the worker never sends it. Retrying it answers `409 NOT_RETRYABLE` with
+  `detail` "This delivery could not be rendered and cannot be retried."; the dashboard shows no Retry for it and its
+  attempts without the "of 8". An email row with no `text` (one a recovery replay put back in the queue) fails for
+  good on its first attempt instead of being retried. A Slack, webhook or PagerDuty payload that cannot be rendered
+  or read fails after one attempt instead of being retried.
 
 ## Alert rules and events (added 2026-10-10)
 
@@ -1254,6 +1301,12 @@ Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anth
   `ok` (so the cooldown starts) and `alert.resolved` is queued for the rule's current channels unless it is muted,
   all in the same transaction as the change. Renaming, changing `channel_ids` or `cooldown_minutes`, and enabling
   keep the state.
+- **Recovery window (2026-11-02).** `firing -> ok` needs three consecutive clear minute passes (`RECOVERY_MINUTES =
+  3`, counted in whole minutes, so the first and third clear pass are two minutes apart). A breach resets the window;
+  an unknown value or a missing anomaly baseline leaves it unchanged. `resolved_at` of the event and of
+  `alert.resolved` is the pass that completes the window, not the first clear pass; the cooldown counts from it.
+  Edits, disabling, deleting and a budget's period rollover still resolve at once. The start of the window is kept in
+  `alert_states.clear_since` (migration 1036). Not configurable.
 - **List.** Firing rules first, then by name, unpaginated. Each rule embeds `state: {state, since, last_value,
   last_evaluated_at}`, `null` before its first evaluation.
 - **Mute.** `POST .../{rule_id}/mute {"until": <datetime> | null}`. `until` must be after the server's clock and at
@@ -1294,14 +1347,17 @@ Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anth
 - **Periods.** UTC calendar periods: a daily budget starts again at 00:00 UTC, a monthly one at 00:00 UTC on the 1st.
   Spend is the `spend` metric (priced spans, like `cost_usd`) over the period so far, filtered by the scope only. The
   budget fires when spend is strictly above `amount_usd`, sends `budget.exceeded`, and resolves with `alert.resolved`
-  on the first pass that measures it at or below the amount. A budget still firing from an earlier period resolves on
-  the first pass of the new period whatever that pass measures (spend of blocked, unpriced calls is unknown), then
-  may fire again if the new period's spend is already over.
+  once three consecutive minute passes measure it at or below the amount (the alerts recovery window). A budget still
+  firing from an earlier period resolves on the first pass of the new period whatever that pass measures (spend of
+  blocked, unpriced calls is unknown), then may fire again if the new period's spend is already over.
 - **State.** Each budget embeds `state: {spent_usd, period_start, resets_at, state, last_evaluated_at}`, `null` before
   its first evaluation. `period_start` and `resets_at` are the current period by the server's clock. When the last
   evaluation belongs to an earlier period (the first minute of a new one, or evaluation stopped), `spent_usd` is
   `null` and `state` is `ok` until the next evaluation. `spent_usd` is also `null` when spans exist and none was
-  priced.
+  priced. `state` also carries `reserved_usd` and `gateway_settled_usd` (2026-11-02): the budget's gateway counter
+  for the current period (estimates held in flight, and charges settled with the span). Only a `block` budget has a
+  counter, so both are `null` for `notify`; a `block` budget that admitted no gateway call this period reads `"0"`
+  for both.
 - **Edits that reset.** Changing `amount_usd`, `scope`, `scope_id` or `period` of a firing budget, disabling it, or
   deleting it resolves the alert at that moment and sends `alert.resolved` (with `budget` as it was), in the same
   transaction. Changing `scope`, `scope_id` or `period` also clears the measured spend, so `state` is `null` until
@@ -1311,6 +1367,21 @@ Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anth
   budget whose spend comes from such calls stays at 0 (`spent_usd` is `null` while spans exist and none was
   priced), never fires and, with `action: block`, never blocks. Add a price override for the model to put its
   calls under the budget.
+- **Admission history (2026-10-29).** Priced gateway admission uses fresh period history plus disjoint retained
+  settled/reaped correlation and held reservations. Cached evaluation values are not an admission baseline.
+  Eligible scope edits preserve identities and reclassify them using current stored scope dimensions; period
+  edits use immutable admission time. Correlation remains while raw spans exist and for at least 90 days
+  from admission; natural-ID resurrection after both retention horizons is outside bounded deduplication.
+  A scope/period edit that would discard pending, conservative unclassifiable, or relevant legacy charges returns
+  `409 BUDGET_RESERVATIONS_PENDING`. Enabled daily/monthly block budgets require 1/31 days of project retention
+  (`422 BUDGET_HISTORY_RETENTION`), rechecked at admission. Deleted priced spend of the current UTC month
+  (retention, an end-user erasure, a trace deletion) is kept as money in a ledger and still counts at admission,
+  so a `402 BUDGET_EXCEEDED` after a deletion carries the ordinary `would be exceeded` reason. User-, trace-name-
+  and metadata-scoped budgets count all deleted spend of the period conservatively, since the trace is gone.
+  Only projects that migration 1031 found evidence of current-month loss for (retention short enough, an erasure
+  or a retention change this month) have their current period marked unknown, and refuse with an actionable `402`
+  until the next UTC period. Legacy charges are preserved conservatively. None of this extends telemetry
+  retention. See ADR 0017 for overlap, correction, and estimate-guarantee boundaries.
 - **Hidden rule.** Each budget owns an alert rule (`kind: budget`) that is not reachable through `/alert-rules`. It
   is written in the same transaction as the budget, and deleting the budget deletes it with its events.
 
@@ -1453,6 +1524,15 @@ Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anth
   fault-injected and cache-hit successes. Tool-span input hashes are SHA-256 of the stored jsonb's text form, computed
   in the database; they are compared only with each other, never with a request hash. Every detector returns its
   findings in fingerprint-key order.
+- **`error_spike` without a baseline (2026-11-02).** When a slice has no `error_rate` baseline (fewer than 100 calls
+  in the baseline period, or no rollup yet), the check warns when the last 24 hours hold at least 50 calls and an
+  error rate of at least 25 %; it is never critical, `baseline_error_rate` is `null`, the title reads "Error rate is
+  …" and the summary says there is no baseline yet. It uses the same fingerprint key as the baselined rule, so an
+  open no-baseline warning on a slice is the same insight a later baselined finding updates: a baselined critical on
+  that slice escalates it and does not notify as an opening (as with any warning-to-critical escalation).
+  `detector_runs.window_start` for `error_spike` is now 24 hours before `window_end` for every project, because the
+  detector reads 24 hours; baselined findings still carry a 15-minute evidence window. `latency_regression` and
+  `cost_spike` have no fallback: no absolute threshold means the same across models.
 - **Mute.** `until` must carry a UTC offset (`422` otherwise, the usual validation error); a past or too distant value, or an
   empty, blank or over-500-character reason, is `422 INVALID_MUTE`. A mute may be set from any status, including to change the end or the reason of one
   that is already muted.
@@ -2029,7 +2109,9 @@ Calls made after the full test pass on behaviour the spec left open.
   `incomplete: true`; the report builds missing rollups inline up to 31 project-days per request and queues the rest
   (one `rollup_cost_daily_backfill` job per project, deduplicated per project, window and UTC date of the request, so
   a backfill that failed is queued again the next day). A day past a mapped project's retention is `incomplete`, gets the
-  `beyond_retention` line, and its `batch_spend`, `server_tool_fees` and `untraced_traffic` lines carry no USD.
+  `beyond_retention` line, and its `batch_spend` and `server_tool_fees` lines carry no USD. `untraced_traffic` (the
+  provider billed a model no mapped project called) never carries USD (2026-11-02, RD17): that spend is in the
+  residual, so a bill with no traced call reads as unexplained, not as a match.
   `priority_commitment` carries minus the token cost Spanlight recorded for commitment-billed (Anthropic priority)
   calls, `null` when the provider bills a priority `tokens` line. In a rollup, `fee_usd` sums the fees of spans whose
   cost is known while `web_search_requests` counts every span's searches, so the `server_tool_fees` amount compares
@@ -2043,6 +2125,18 @@ Calls made after the full test pass on behaviour the spec left open.
   is a strict decimal (`-0.005`) is written as a plain number, so a spreadsheet reads a negative figure as a number;
   every text cell, and a number cell that is not a strict decimal, goes through the export's formula escaping. The file
   is named `reconciliation-<source id>-<first day>-<last day>.csv`, both days included.
+- **Bypass alert (added 2026-11-02).** Each report day carries `bypass_suspected`: `true` when `residual_usd` is
+  known and above both 10 % of `provider_usd` and $1; `false` when either side is unknown. The residual holds every
+  dollar of a model no mapped project called (`untraced_traffic` carries no USD), so spend entirely outside Spanlight
+  is suspected too; only fees, batch spend beyond traced batch calls and commitment-billed priority calls are
+  explained. After a successful fetch,
+  every closed day that is suspected emails the organization's owners and admins with a verified address once per
+  source and day (transactional mail, `summary.event = "billing_bypass"`); a refetch of the same days sends nothing
+  again. The check gets what is left of the fetch job's 45 s rollup budget and never fails the fetch; a check skipped
+  or cut short is counted in `spanlight_billing_bypass_checks_total{outcome}` and its days are notified by the next
+  fetch. The notice goes by email only: alert rule channels are project-scoped, so Slack and PagerDuty receive
+  nothing, and the in-app view is the flag on the report. The "Hard admission for gateway calls" entry (Hardening
+  wave 2) covers the gateway side.
 - **Users: `computed_at`.** `GET /projects/{id}/users` and `…/users/{external_user_id}` return `computed_at`, the latest
   time a day of the window (or of the user, in the window) was recomputed, `null` when none has been; see "Users" for the
   refresh schedule.
@@ -2063,10 +2157,11 @@ Calls made after the full test pass on behaviour the spec left open.
   is unchanged (a string holding the first 1 MiB of the JSON text, `truncated: true`). It is a constant, not a
   setting. The 5 MB request body, 1,000 spans per batch and 64 KB of attributes per span are unchanged; a span with
   both payloads full is 2 MiB.
-- **Trace detail has an 8 MiB payload budget.** `GET …/traces/{trace_id}` returns spans in start order with their
-  payloads while the payloads returned so far stay within 8 MiB of stored JSON; every later span comes back with
-  `input` and `output` null and `payload_omitted: true` (a new span field, false everywhere else). A trace under the
-  budget, nearly every trace, is returned as before. One span always fits.
+- **Trace detail has an 8 MiB content budget.** `GET …/traces/{trace_id}` returns spans in start order while the
+  stored content returned so far stays within 8 MiB; past it, spans come back with their content withheld and
+  flagged. A trace under the budget, nearly every trace, is returned as before. One span always fits. Since
+  2026-11-02 the budget covers attributes as well as payloads, and a read that would have to withhold attributes
+  needs `span_content=bounded`: see "Bounded span content (S9)" below.
 - **`GET /api/v1/projects/{project_id}/traces/{trace_id}/spans/{span_id}`** (`project:read`, API keys too) returns one
   span with its payloads, the same shape as a trace-detail span; `404` for an unknown span. The dashboard calls it for
   a span returned with `payload_omitted`.
@@ -2350,7 +2445,8 @@ Calls made after the full test pass on behaviour the spec left open.
   `environment` and `release` are stored as sent, unredacted: they are identifiers, and redacting them would merge
   distinct values into one `[REDACTED]` and break session, user and release lookups. Redaction is pattern-based only:
   a labelled secret without a known shape (`password: "hunter2"`) is not redacted anywhere.
-  Email addresses and JWTs are not redacted, in metadata as in payloads. Metadata is stored whether or not the
+  Email addresses are not redacted unless the project turns on `redact_contact_info`. JWTs are redacted since
+  2026-11-01, in metadata as in payloads. Metadata is stored whether or not the
   project captures payloads.
 - **No index on `metadata`.** The design planned a partial GIN index on `traces.metadata`. It was not built:
   `traces` forces row-level security, and Postgres uses a condition as an index condition only when its operator is
@@ -3063,8 +3159,9 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
   an output; the earliest failed span, the one `error_message` comes from). Same read permission (API keys
   included), order (`started_at`, `trace_id` descending), cursor and `limit` (default 50, at most 200) as
   `GET /traces?session_id=`, plus `environment` (at most 64 characters, as on users and attribution). It takes no `from`/`to`: a session's traces are listed for as long
-  as they are retained. Payloads share one 8 MiB budget per page, spent in page order then start order; a span past
-  it has `payload_omitted: true` and null payloads, read with `GET .../traces/{trace_id}/spans/{span_id}`. A
+  as they are retained. Stored content shares one 8 MiB budget per page, spent in page order then start order; a span
+  past it has its content withheld and flagged (`payload_omitted`, `attributes_omitted`; see "Bounded span content
+  (S9)" below) and is read whole with `GET .../traces/{trace_id}/spans/{span_id}`. A
   session id the project does not have is an empty page, not a 404. The session id is a `:path` segment: a slash
   travels percent-encoded, and `.`, `..` or an id starting with `~` travels with one leading `~`, as on the users
   routes. The server picks the first `llm` span with any input, while the dashboard used to walk every `llm` span
@@ -3372,26 +3469,27 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
 ### Budgets
 
 - **Hard admission for gateway calls.** Before a gateway call is forwarded, every enabled `block` budget that matches
-  it must hold the call's estimated cost. With M the spend the alert evaluator last measured this period, G the
-  gateway spend settled into the budget's counter this period, R the reservations in flight and E the call's
-  estimate, the call is admitted when `max(M, G) + R + E <= amount_usd` for every matching budget, else refused with
-  `402 BUDGET_EXCEEDED` and no upstream call. E is the request's text (`messages`, `input`, `system`,
-  `instructions`, `tools`; image, file and audio parts are not counted) at one token per three ASCII characters, plus
-  the largest of `max_tokens`, `max_completion_tokens` and `max_output_tokens` times `n` as output (16,384 output
-  tokens when none is set), priced for the requested `service_tier` at the dearest of the model asked for and the
-  route's targets (each with its provider's tier factor), without data-residency or fast-mode factors; token counts
-  are clamped to the largest count the price book prices. A model the price book cannot price gives no estimate, and
-  a zero estimate (a $0 price override) reserves nothing: such a call is admitted, as before. A reservation is settled by the call's span write
-  at the stored span's cost (nothing for a call never sent or refused with an HTTP error status; the estimate when the
-  cost is otherwise unknown); it expires after 12 minutes (the 10-minute stream cap plus slack) and is then counted
-  at its estimate until a late settle corrects it. A span the recorder cannot write is settled at once in its own
-  transaction (at the estimate when the provider may have billed); a span dropped because the write backlog is full
-  is counted by the reaper. The budget's period for a call is taken from the call's clock, so a call admitted at 23:59:59 settles
-  into its own day. Changing a budget's scope or period discards its counted gateway spend; changing the amount keeps
-  it. The `BUDGET_EXCEEDED` message of a refusal by the counter reads `Budget "<name>" would be exceeded: $X spent or
-  in flight plus $Y for this call is over the $Z limit today|this month; a lower max_tokens lowers the
-  reservation.`; a refusal by a firing state keeps the soft-limit wording, since spend sent from the SDK or over OTLP
-  is measured once a minute and never stopped. In-process callers keep the project, model and user scopes only.
+  it must hold the call's estimated cost E. The call is admitted when the budget's committed spend this period (the
+  period's priced history, settled gateway charges and reservations in flight, each counted once; see "Admission
+  history (2026-10-29)" under Budgets) plus E is at most `amount_usd` for every matching budget, else refused with
+  `402 BUDGET_EXCEEDED` and no upstream call. The alert evaluator's measured spend is not part of this sum. E is the
+  request's text (`messages`, `input`, `system`, `instructions`, `tools`; image, file and audio parts are not
+  counted) at one token per three ASCII characters, plus the largest of `max_tokens`, `max_completion_tokens` and
+  `max_output_tokens` times `n` as output (16,384 output tokens when none is set), priced for the requested
+  `service_tier` at the dearest of the model asked for and the route's targets (each with its provider's tier
+  factor), without data-residency or fast-mode factors; token counts are clamped to the largest count the price book
+  prices. A model the price book cannot price gives no estimate, and a zero estimate (a $0 price override) reserves
+  nothing: such a call is admitted, as before. A reservation is settled by the call's span write at the stored span's
+  cost (nothing for a call never sent or refused with an HTTP error status; the estimate when the cost is otherwise
+  unknown); it expires after 12 minutes (the 10-minute stream cap plus slack) and is then counted at its estimate
+  until a late settle corrects it. A span the recorder cannot write is settled at once in its own transaction (at the
+  estimate when the provider may have billed); a span dropped because the write backlog is full is counted by the
+  reaper. The budget's period for a call is taken from the call's clock, so a call admitted at 23:59:59 settles into
+  its own day. Changing a budget's scope or period discards its counted gateway spend; changing the amount keeps it.
+  The `BUDGET_EXCEEDED` message of a refusal by the counter reads `Budget "<name>" would be exceeded: $X spent or in
+  flight plus $Y for this call is over the $Z limit today|this month; a lower max_tokens lowers the reservation.`; a
+  refusal by a firing state keeps the soft-limit wording, since spend sent from the SDK or over OTLP is measured once
+  a minute and never stopped. In-process callers keep the project, model and user scopes only.
 
 ## Hardening wave 3 (added 2026-10-26)
 
@@ -3416,7 +3514,8 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
   NUL>}` in the body (ids may contain `/`) and answers `202 {"status": "queued", "requested_at": <timestamp>}`. `202`
   means queued, not done. Permission `project:delete` (admins and owners; a write permission, so read-only tokens
   cannot). Non-members get `404`; the demo project answers `403`; `Idempotency-Key` is honoured as on other POSTs (the
-  idempotency store keeps an unsalted SHA-256 of the request body, raw id included, for 24 hours).
+  idempotency store keeps an unsalted SHA-256 of the request body, raw id included, for 24 hours for
+  completed outcomes; pending or ambiguous operation fingerprints remain until resolved).
 - **The job.** `erase_end_user` runs in the worker's long-job slot (3 hour timeout, heartbeat every 20 seconds) and
   deletes in batches bounded by stored span count (about 5,000 spans, at most 1,000 traces), each batch one
   transaction bound to the project (row-level security applies, and every statement also names the project; no
@@ -3524,3 +3623,332 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
   and is display only (no alert). `forecast_crosses_on` is the first UTC day the spend passes the amount (strictly
   greater, like the budget rule): the measured day if it already has, else the day the projection reaches it before
   `resets_at`, else `null`. The list endpoint is unchanged (no per-row metric read).
+- UI (2026-11-04, G-024): the budget's "Show burn" panel shows the forecast under the legend
+  ("Forecast $465 by Oct 31 · average of the last 7 days") and a dashed segment from today's spend to
+  the forecast on the period's last day; the table view adds a "Forecast, <day>" row. When
+  `forecast_crosses_on` is set the line reads "Passes $500 on <day>", or "Passed" when that day's
+  measured spend to date is already over the amount, in the warning colour. A `null` forecast is "—"
+  with the reason, never $0; a daily budget shows no forecast. This replaces "no projection" in spec
+  ruling 11.
+
+### Onboarding application identity (2026-10-29 readiness)
+
+`GET /api/v1/projects/{project_id}/activation` adds nullable `first_trace_id` and
+`first_trace_at`. They identify the earliest application trace, ordered by start
+time and then trace ID, using the same project/RLS scope and exclusion of the
+`spanlight:setup-test` tag as `first_trace`. No matching application trace yields
+`false`, `null`, `null`. The existing onboarding endpoint still reports any
+received trace, including setup traffic; it proves ingestion, not application
+activation. The onboarding UI polls until `Activation.first_trace` is true and
+uses that response's identity rather than selecting a trace by timestamp.
+
+## Aggregate source coverage
+
+Aggregate responses add `aggregate_status` (`complete`, `pending`, `unavailable`) and nullable
+`oldest_pending_at`. There is no pending-correction consumer in the preservation release.
+Unavailable means source history cannot be proven complete: retained numbers are snapshots;
+missing numbers are null. The metrics/models, metrics/timeseries and provider error-timeseries
+endpoints retain bare arrays and expose `Aggregate-Status` even on empty arrays. The optional
+`Aggregate-Oldest-Pending-At` response header is absent when null. Clients must consume the
+header instead of interpreting an empty array as a complete zero. OpenAPI documents both.
+
+An absent named user detail still returns 404, preserving identity/erasure behavior; an unknown
+project history must not create a new user identity. User lists expose unavailable metadata even
+when empty. Existing-user details expose coverage and preserve null gaps in daily values.
+
+### Dirty-hour shard reader semantics (2026-11-03)
+
+Correction pending reads consider both `aggregate_dirty_hours` and `aggregate_dirty_shards`.
+The correction contribution to `oldest_pending_at` is the minimum `first_marked_at` among rows
+in the requested range whose current mask intersects the reader's consumers. Scheduled pending
+work still contributes its own due time. Pending/complete status and source-loss precedence
+are unchanged.
+
+A row retained since Monday only for a disabled consumer does not age Wednesday's hourly work
+unless the new mark lands on that same row. A different shard reports Wednesday; a same-shard
+mark retains Monday. Both timestamps conservatively precede or equal the true pending start.
+Discovery offers each project/hour pair once per pass, at its oldest runnable row's age. Backlog counts distinct pairs and uses the oldest retained row's age, including disabled-only and zero-mask rows.
+Both ages may advance when older rows settle.
+Release 1 still writes the old table; the sharded writer is disabled by a module constant.
+
+## Terms acceptance, account deletion and profile editing (2026-11-01)
+
+New routes under `/api/v1/auth`. Every write below needs a browser session: a personal access token gets
+`403 SESSION_REQUIRED`, and the shared demo account gets `403 FORBIDDEN`. The one exception is confirming an
+email change, which is anonymous like a password reset. Logs carry user ids, never addresses. Every change is
+audited (`user.terms_accept`, `user.update`, `user.email_change`, `user.delete`) in each non-demo org the user
+belongs to, with the user as actor and target; a user in no org leaves no event.
+
+- **Terms are optional.** With `TERMS_VERSION` unset the server asks for no terms: signup needs nothing,
+  `terms_current_version` is `null` and there is no gate.
+- **`POST /signup`** takes `accept_terms`, a strict boolean: only JSON `true` counts as consent; `"true"`, `1`
+  or `"yes"` are `422 VALIDATION_ERROR`. With `TERMS_VERSION` set and `accept_terms` not `true`, the answer is
+  `422 TERMS_NOT_ACCEPTED`, checked after the signup IP throttle and before the account exists. The server stores
+  its own `TERMS_VERSION` and the time; a version sent by the client is ignored.
+- **`GET /me`** adds `terms_accepted_version` and `terms_current_version` (the setting), both nullable.
+- **`GET /terms`** (anonymous) answers `{"version": str | null}` for the signed-out signup page.
+- **`POST /terms/accept`** `{version}` answers `204`. `404 TERMS_NOT_CONFIGURED` when `TERMS_VERSION` is unset,
+  `409 TERMS_VERSION_MISMATCH` unless `version` is the current one. Idempotent: accepting the same version again
+  keeps the first timestamp and writes no second audit event. The demo check comes first.
+- **`PATCH /me`** `{name}` (the signup `Name` rules) answers the `UserOut`. It audits only a real change.
+- **Owner re-proof** for an email change and for deletion: the current `password`, or, for an account without
+  one, a session signed in within the last 10 minutes. A wrong or missing password is `422 INVALID_PASSWORD`; a
+  password-less account with an older session gets `403 REAUTH_REQUIRED`. When the account has two-factor
+  authentication on, the request must also carry `code`: a TOTP code (spent, so it cannot be replayed) or an
+  unused recovery code (spent). A missing code is `422 TOTP_CODE_REQUIRED`, a wrong one `422 INVALID_TOTP_CODE`;
+  both are checked after the password. So a right password with a wrong code answers `INVALID_TOTP_CODE`,
+  not `INVALID_PASSWORD`, which tells the caller the password was right. This is accepted: it is throttled,
+  and sign-in and two-factor setup answer the same way. Each action keeps its own throttle of 5 attempts per user per 15 minutes
+  (`429` with `Retry-After`); every attempt counts, password and code alike, and a failed one stays counted. A
+  password-less account with two-factor authentication on is throttled the same way.
+- **`POST /email/change`** `{new_email, password?, code?}` answers `202 {"status": "accepted"}`. Checks, in order:
+  `503 EMAIL_NOT_CONFIGURED` without an email provider (the operator's state comes first), the demo refusal, the
+  re-proof, a limit of 3 requests per user per hour (`429`), then `409 EMAIL_TAKEN` when any account has the
+  address, the caller's own included. The limit runs before the taken check, so probing for addresses counts.
+  It retires earlier unused change links, mails the new address a link (`/confirm-email-change#token=…`, valid
+  1 hour) and the current address a notice without a link. Nothing changes until the link is opened.
+- **`POST /email/change/confirm`** `{token}` (anonymous; Origin check, no CSRF) answers `204`. Unknown, used,
+  expired and wrong-kind tokens get the same `404 NOT_FOUND` as a reset link. `409 EMAIL_TAKEN` if the address
+  was taken meanwhile; the token stays unspent. On success it sets the address and `email_verified_at`, retires
+  every unused emailed link of the user, ends all their sessions, revokes their personal access tokens and keeps
+  their sign-in providers linked. The audit metadata says only that the email changed and how many tokens were
+  revoked, never either address.
+- **A password reset cancels a pending email change.** Resetting a password (the emailed reset or the CLI
+  `reset-password`) retires the user's unused email-change links, so a change requested with a stolen password
+  dies when the owner resets it. The notice to the old address says so.
+- **Personal access tokens end with an email change (changed 2026-11-01).** Confirming the change also revokes
+  every personal access token of the user, as a password reset does. The `user.email_change` audit metadata gains
+  `tokens_revoked` (a count).
+- **`DELETE /me`** `{password?, code?, confirm}` answers `204` and clears the session and CSRF cookies. `confirm` must be
+  exactly `delete` (`422 CONFIRMATION_MISMATCH` otherwise, checked before the re-proof so a typo costs no
+  password attempt). Then the re-proof. Then `409 SOLE_OWNER` while the caller is the only `owner` membership of
+  any org; the body adds `orgs: [{id, slug, name}]`, ordered by name, and nothing is deleted. The owner rows of
+  those orgs are locked, so two co-owners deleting at once cannot leave an org without an owner. Otherwise, in
+  one transaction, it writes `user.delete` to each org (before the row goes, so `actor_email` is kept) and
+  deletes the user. Sessions, personal access tokens, sign-in providers, recovery codes, memberships, emailed
+  links and insight feedback go with the row; what the user made in a project (datasets, prompts, annotations
+  and the like) stays, with its author set to `NULL`. Audit rows keep `actor_user_id` and `actor_email`, and the
+  org's audit chain still verifies. Irreversible.
+
+## Deleted spend counts against block budgets (2026-11-01)
+
+Deleting a priced span of the current UTC month (retention, an end-user erasure, a trace deletion)
+no longer makes every matching `block` budget refuse with `history is missing` for the rest of the
+period. The deleted span's cost stays in `budget_deleted_spans` (ids, start time, cost, model and
+gateway key only) and admission counts it with the stored spans, so a `402 BUDGET_EXCEEDED` after a
+deletion carries the ordinary `would be exceeded` reason with the deleted spend included. A span
+stored again, or one a reservation already charges, is counted once. User-, trace-name- and
+metadata-scoped budgets count all deleted spend of the period, since the trace is gone; project
+and gateway-key budgets count it by key, model budgets by model name. The ledger is pruned with
+the budget counters after 62 days. `history is missing` is now answered only by projects migration
+1031 marked for evidence of a deletion this month (short retention, an erasure or a retention change
+in the audit log), until the next UTC period.
+
+## Gateway admission by bytes and per-key share (2026-11-01)
+
+The gateway's HTTP admission (`app.gateway.admission`) refuses a call before reading its body or
+checking its key when any of three per-process limits is full, checked in this order:
+
+- **Count:** `GATEWAY_MAX_IN_FLIGHT` calls in flight (default 512, was 8).
+- **Bytes:** `GATEWAY_MAX_IN_FLIGHT_BYTES` of reserved request bodies (default 83,886,080, 80 MiB; at
+  least `MAX_REQUEST_BYTES`, 10 MiB). A call with a `Transfer-Encoding` header reserves the full
+  10 MiB whatever its `Content-Length` says. Otherwise a `GET`, `HEAD` or `OPTIONS` call reserves
+  nothing, and any other call reserves its `Content-Length` when that is a plain number of at most
+  10 MiB (`0` reserves nothing), else the full 10 MiB: a missing or malformed header, and a declared
+  length over the cap (the handler still answers that one `413`).
+- **Key:** `GATEWAY_MAX_IN_FLIGHT_PER_KEY` calls in flight with the same key (default 256). The key
+  is read as authentication reads it (`Authorization: Bearer` with any case of `Bearer` and any
+  surrounding whitespace, or `x-api-key`; the two headers carrying one key are one key) and kept only
+  as its SHA-256. It is not checked here: a missing, blank or conflicting key falls back to the
+  stripped raw header value, so every request sending the same invalid value shares one set of
+  slots. A key's entry is dropped when its last call ends.
+
+All three are held until the complete call ends, stream finalization included, and released once.
+Finalization outlasts the client's last byte by tens of milliseconds, so the defaults leave room for
+more calls in flight than there are clients: 200 looping streaming clients reached 256 in flight.
+The refusal is unchanged: provider-shaped `503 SERVICE_UNAVAILABLE` with `Retry-After: 1` and the
+request id (OpenAI type `server_error`, Anthropic type `overloaded_error`).
+`spanlight_gateway_admission_rejections_total` gains a `reason` label: `count`, `bytes` or `key`.
+
+
+## Security and legal hardening (2026-11-01)
+
+The inline changes above (cookie names, login limits, the invite preview and link, email change revoking
+tokens) are dated 2026-11-01 where they stand. The rest of this change:
+
+- **Outbound address checks.** Link-local and cloud metadata addresses (`169.254.0.0/16`, `fe80::/10`,
+  `fd00:ec2::254`, `100.100.100.200`, in IPv4, IPv6 and IPv4-embedded-in-IPv6 spellings) are refused for
+  webhook URLs and gateway credential base URLs even when `WEBHOOK_ALLOW_PRIVATE_TARGETS` or
+  `GATEWAY_ALLOW_INSECURE_BASE_URLS` opens private networks. The refusal is the existing `422 UNSAFE_URL` (or
+  the base URL error) for that field.
+- **Refused writes are audited at most ten times** per member per organization per 15 minutes
+  (`access.denied`). The refusal itself is unchanged; only the audit rows past ten are skipped.
+- **Judge verdicts come from a tool call.** Judge runs read the verdict only from the `record_verdict` tool
+  call's arguments. OpenAI judges are forced to call it (`tool_choice` names the function). Anthropic judges send
+  `tool_choice: auto` with a system sentence that asks for the tool, because Claude Opus 5.5, Sonnet 5.5 and
+  Fable 5.1 reject a forced tool with a 400. A judge that answers without calling the tool fails the run with
+  `verdict_unparseable`; there is no free-text fallback, so judged content cannot supply a score. An empty
+  successful answer is `verdict_unparseable` too; `judge_no_answer` now means only a call that ended without a
+  response. Text inside the judged `input`, `output` and `expected_output` has every `</` escaped as `<\/`, so it
+  cannot close its data block; the judge sees `</div>` in judged text as `<\/div>`.
+- **Dataset items are redacted on write.** `POST …/items`, `…/items/upload`, `…/items/from-traces` and
+  `PATCH …/items/{id}` redact `input`, `expected_output` and `metadata` (values and object keys) with the ingest
+  redactor and the project's `redact_contact_info`. The stored and returned values are the redacted ones;
+  responses carry no count of redacted values. Values nested deeper than 64 levels are stored as `[MAX_DEPTH]`,
+  as for spans. Items stored earlier are unchanged.
+- **Weekly digest opt-out.**
+  - `GET /api/v1/auth/me` adds `weekly_digest` (bool, self-only, on `MeOut` rather than `UserOut`): true unless
+    the caller turned the digest off. A project's `weekly_digest_enabled` still applies on top.
+  - `PATCH /api/v1/auth/me`: `name` is now optional and `weekly_digest` (bool) is accepted; a field left out is
+    unchanged. `weekly_digest: false` turns the digest off for the caller in every project.
+  - `POST /api/v1/email/unsubscribe` (new, anonymous) turns the weekly digest off for the user the token names.
+    The token comes in the query (`?token=`, for RFC 8058 one-click; the form-encoded body
+    `List-Unsubscribe=One-Click` is ignored) or in a JSON body `{"token": "…"}` (the `/unsubscribe` page). The
+    query parameter is declared in the OpenAPI document (optional, unconstrained); the JSON body is read by the
+    handler and does not appear there. Every token, valid, forged, malformed or missing, answers
+    `200 {"status": "accepted"}`, and repeating a call changes nothing, so the route cannot tell anyone which
+    tokens are real. Tokens are HMACs over the user id and never expire. The route is exempt from the Origin
+    check (mail clients send none) and from CSRF (no session is read), and rate limited per client address (60 at
+    once, then 1 per second; `429 RATE_LIMITED`).
+  - Each digest carries `List-Unsubscribe` and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` headers and
+    an unsubscribe link in its footer (token in the URL fragment).
+- **Reserved organization slug.** `accessibility` joins the reserved slugs, so an organization named
+  "Accessibility" gets `accessibility-<suffix>`.
+
+## Readiness Stage C (2026-11-02)
+
+### Bounded span content (S9)
+
+Effective from the release that carries this entry.
+
+- **Budget.** `GET /api/v1/projects/{project_id}/traces/{trace_id}` and
+  `GET /api/v1/projects/{project_id}/sessions/{session_id}/turns` spend one 8 MiB budget of stored content per
+  response: per span, `coalesce(payload_bytes, 64 KiB) + octet_length(attributes::text)`, summed in start order
+  (session turns: page order, then start order, one budget per page). A span at the exact boundary is inline; one
+  span always fits. From the first span past the budget on, `attributes` is `{}` with `attributes_omitted: true`, and
+  `input` and `output` are null with `payload_omitted: true` only when a stored non-null value was withheld (a span
+  whose input and output are both stored null keeps `payload_omitted: false`: they are known to be absent).
+- **Selector.** `span_content=bounded` (optional, on both routes) says the caller handles both flags. Without it, a
+  response that would set `attributes_omitted` on any span is refused with `422 SPAN_CONTENT_TOO_LARGE` ("This
+  response requires bounded span content. Reload the dashboard, or update the API request to include
+  span_content=bounded and handle payload_omitted and attributes_omitted."), with no `Retry-After`. Any other value
+  is `422 VALIDATION_ERROR`. Unqualified reads whose content fits keep complete attributes and every existing field
+  meaning. This is a narrow resource-limit exception to ADR 0005, recorded there: a payload-heavy read without the
+  selector that used to succeed with omitted payloads can now be refused.
+- **One span whole.** `GET …/traces/{trace_id}/spans/{span_id}` returns complete attributes and payloads, with both
+  flags false.
+- **`retry_eligible`.** Every `SpanOut` (the three span routes) carries `retry_eligible: bool`: an `llm` span with a
+  request hash, whose `spanlight.cache` is not the exact string `"hit"`, without a `spanlight.fault.scenario` key
+  (any value), and not a usage rollup. It is the `traces.retry_calls` predicate, read from the stored attributes even
+  when they are omitted from the response. The dashboard groups retries by it, so a new dashboard against an older
+  api during a deploy shows no retry groups until the api is upgraded.
+- **OpenAPI.** The `span_content` query parameter (enum `bounded`) with its `422` description on both routes;
+  `SpanOut` adds `attributes_omitted` (default false) and the required `retry_eligible`.
+
+### Retention
+
+Retention is eventually complete, not complete per run. Each hourly run serves a bounded number of (cleanup class,
+project) batches chosen by a durable per-class cursor (`retention_progress`, migration 1035), so a project's expired
+data goes one batch per visit; `retention_applied` logs `incomplete: true` while more remains. The worker extends its
+job lease once per round of 14 opportunities, not before every opportunity.
+
+### Restore reconciliation
+
+- `POST …/alert-channels/{channel_id}/deliveries/{delivery_id}/retry` answers the existing `409 NOT_RETRYABLE` for a
+  `failed` row whose `last_error` starts with `recovery:` (a delivery quarantined by `spanlight restore-reconcile`).
+  The public route never clears that marker.
+- Jobs reconciled after a restore are `done` with `outcome` null and `last_error = recovery:<id>:<disposition>`,
+  because the outcome CHECK lists only worker outcomes.
+
+### Aggregate coverage
+
+- `spanlight activate-aggregate-coverage --fresh-install --skip-if-projects-exist` exits 0 without changes when any
+  project exists; without the new flag the refusal on a nonempty inventory is unchanged. With `--fresh-install` it
+  checks for projects before taking any lock.
+- The dashboard renders `aggregate_status: unavailable` as "Retained snapshot" when the response carries stored
+  figures and "Source history unavailable" when it carries none, with unknown counts as "—"; `complete` and
+  `pending` responses keep their freshness line.
+
+### Ingestion
+
+Since a batch's identity advisory locks are taken in one statement, one `statement_timeout` bounds the waits for all
+of a batch's identity locks together, not each lock's wait separately.
+
+## Per-project ingest caps (2026-11-02)
+
+Effective from the release that carries this entry (migration 1039).
+
+- **`429 INGEST_QUOTA_EXCEEDED`** on `POST /v1/traces` and `POST /v1/otlp/traces`: a daily quota of the project
+  (spans, or decompressed request body bytes, per UTC day) is used up. `Retry-After` is the whole seconds to the next
+  UTC midnight (at least 1). Extension members: `quota` (`spans_per_day` | `bytes_per_day`), `limit`, `used` and
+  `resets_at` (RFC 3339, UTC). The request is refused whole. The batch that crosses a quota is admitted: refusal is
+  on `used >= limit`, never on `used + n > limit`. A request whose every `(trace_id, span_id)` is already stored is
+  admitted (a retry after a lost acknowledgement).
+- **`429 RATE_LIMITED`** on the two routes now has two details: `Ingestion rate limit exceeded for this key.`
+  (requests per key, unchanged) and `Ingestion rate limit exceeded for this project.` (spans per second per
+  project; `Retry-After` is whole seconds, rounded up).
+- **OTLP.** Both refusals are the same `application/problem+json` body for JSON and protobuf clients; there is no
+  `partialSuccess`.
+- **Empty batches** (`spans: []`) are not subject to the project span-rate or daily-quota caps. Spans the gateway records are never capped or
+  counted.
+- **`GET /api/v1/projects/{project_id}/ingest-quota?from&to`** (project read: a session, or an API key with
+  `traces:read`, which gets `404` for another project): `limits.{spans_per_second,spans_per_day,bytes_per_day}`,
+  each `{value: int | null, source: "project" | "default"}` (`null` is no cap); `today {day, spans, bytes,
+  resets_at}`; `rejected_days [{day, spans, rate_spans}]`, ascending over the window (hours that overlap the window
+  count whole, as on the completeness route). Counts are clamped to 2^53 − 1.
+- **Refused, not lost.** Refused spans are counted per hour in `telemetry_losses_hourly` with the reasons
+  `quota_rate`, `quota_spans` and `quota_bytes`. A client that retried is counted once per refusal and may have
+  stored the spans later, so the count can overstate what is missing and the completeness ratio stays a lower bound.
+  The dashboard says "refused", never "lost".
+
+## Per-project ingest concurrency (2026-11-03)
+
+- **`429 RATE_LIMITED`** on `POST /v1/traces` and `POST /v1/otlp/traces` also has the detail
+  `Too many concurrent ingest requests for this project.` with `Retry-After: 1`. Both routes and all
+  keys belonging to the project share `INGEST_MAX_IN_FLIGHT_PER_PROJECT` slots per process (default 8,
+  minimum 1). Replicas multiply the limit. JSON and protobuf clients receive `application/problem+json`.
+- **Order:** global admission → key authentication, scope and per-key request bucket → project concurrency
+  slot → body read and parse → daily quota and replay probe → project span bucket → pipeline and commit.
+  The slot is released exactly once on completion, error or disconnect. Empty batches and replays also
+  require a slot because the body has not yet been read.
+- **Counting:** each concurrency refusal increments
+  `spanlight_rate_limit_rejections_total{scope="ingest_project_concurrency"}`. It adds no
+  `telemetry_losses_hourly` row: the span count is unknown before the body is read. Gateway-recorded spans,
+  scores and prompt reads do not take these slots. The global `API_MAX_IN_FLIGHT` cap retains its `503`.
+
+## Stage E speed (2026-11-02)
+
+No new route or field; two new refusals (the `413` compression-ratio refusal and `503 BUDGET_BUSY`, below). These
+are the behaviours a caller or operator can observe.
+
+- **Gateway key context is cached.** A gateway call reuses its key's context (project, route, provider credential,
+  Integration Lab profile, and the project's `capture_payloads` and `redact_contact_info`) for `API_KEY_CACHE_TTL_SECONDS` (10 s by default),
+  like project API keys. A gateway key revoked or edited, or a route, credential, profile, capture or redaction
+  setting changed, applies from the next call on the api process that made the change, and within that TTL on other api
+  processes and on a standalone gateway. In particular, after `capture_payloads` is turned off another api process
+  may still store payloads for up to the TTL, and after `redact_contact_info` is turned on it may still store
+  unredacted email addresses and phone numbers in gateway spans for up to the TTL. `0` reads them on every call. The built-in price book is reused for up
+  to 60 s per process; an organization's price overrides are read on every batch and call.
+- **A cache hit is answered before the budget guard.** A firing or fully reserved `block` budget still serves cache
+  hits for stored answers and refuses misses (the budgets spec is silent on the cache; a hit costs no provider
+  spend). A hit holds no reservation and settles nothing; its span keeps `cost_usd = 0`, zero usage,
+  `spanlight.cache = hit` and `spanlight.cache.original_usage`. `gateway_cache.hit_count` is no longer written and
+  stays 0.
+- **Compressed gateway bodies.** A `Content-Encoding: gzip` or `deflate` body is limited to 10 MB decompressed and,
+  past 1 MiB, to a 100:1 inflation ratio (ingestion's limit). A body over the ratio is `413` with
+  `spanlight_code: PAYLOAD_TOO_LARGE` and the message "A compressed request body may inflate at most 100-fold.", in
+  the provider's error envelope.
+- **Budget admissions share the budget row; busy edits answer `503 BUDGET_BUSY`.** The gateway's budget guard holds the
+  budget `FOR SHARE` (it held `FOR NO KEY UPDATE`), so admissions against one budget no longer wait for each other on
+  the budget row; they queue only on the period's counter row. An edit's `FOR NO KEY UPDATE` still excludes admissions,
+  waits for those in flight, and new admissions do not queue behind it. `PATCH` and
+  `DELETE /api/v1/projects/{project_id}/budgets/{budget_id}` run with a 2 s `lock_timeout` and up to three tries; only a
+  lock timeout is retried (a statement timeout answers the usual `503 SERVICE_UNAVAILABLE`). When the last try times
+  out the answer is `503` with `code: BUDGET_BUSY` and `Retry-After: 5`, and the old budget stays in force.
+  `spanlight_budget_busy_total{outcome="retried"|"refused"}` counts the tries and the log event is `budget_busy`.
+- **Detector runs.** `detector_runs.truncated` means the newest 50,000 spans of a kind were read: llm spans over 24
+  hours, tool spans over the last hour. Each project runs in its own `run_detectors_project` job; a job from a pass
+  older than 15 minutes is skipped and writes no run rows.
+- **Experiment compare.** An item counts as edited between two runs when the stored JSON of its two copies differs
+  (compared by SHA-256 in Postgres), so numbers that differ only in formatting (`1.0` and `1.00`) count as an edit.
+  Copies written by Spanlight itself always use one form, so this arises only for rows written outside the API.

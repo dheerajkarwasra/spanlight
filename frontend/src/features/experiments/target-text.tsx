@@ -3,7 +3,7 @@ import { FileText } from "lucide-react";
 import type { ExperimentTarget } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-import { targetLabel, type VersionIndex } from "./run-label";
+import { hasParams, paramsLabel, targetLabel, type VersionIndex } from "./run-label";
 
 interface TargetTextProps {
   target: ExperimentTarget;
@@ -11,7 +11,10 @@ interface TargetTextProps {
   className?: string;
 }
 
-/** What an experiment runs: the prompt version (violet) or "Ad-hoc messages", over the model. */
+/**
+ * What an experiment runs: the prompt version (violet) or "Ad-hoc messages", over the model and,
+ * when any is set, the sampling parameters.
+ */
 export function TargetText({ target, index, className }: TargetTextProps) {
   return (
     <div className={cn("flex min-w-0 flex-col gap-0.5", className)}>
@@ -25,6 +28,11 @@ export function TargetText({ target, index, className }: TargetTextProps) {
         {targetLabel(target, index)}
       </span>
       <span className="truncate font-mono text-[11px] text-muted-foreground">{target.model}</span>
+      {hasParams(target.params) ? (
+        <span className="truncate text-[11px] text-muted-foreground">
+          {paramsLabel(target.params)}
+        </span>
+      ) : null}
     </div>
   );
 }

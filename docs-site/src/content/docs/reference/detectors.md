@@ -32,13 +32,13 @@ Each insight page asks **Was this right?**. The votes give every detector a prec
 
 ## Traffic
 
-These three compare the recent past with the previous 7 days. They need a baseline of at least 100 calls in the same slice, and they ignore calls the Integration Lab faulted.
+These three compare the recent past with the previous 7 days, using a baseline of at least 100 calls in the same slice, and they ignore calls the Integration Lab faulted. Without a baseline (a new or small project), `error_spike` falls back to a fixed 25 % rule; `latency_regression` and `cost_spike` stay quiet, because no fixed latency or spend threshold means the same thing across models.
 
 ### `error_spike`: error rate jumped
 
-- **Reads:** LLM calls of the last 15 minutes, per environment and model, against that slice's error rate over the previous 7 days.
-- **Fires when:** the slice has at least 50 calls and its error rate is at least the larger of three times the baseline and the baseline plus 5 points (so it is also at least 5 %). Warning; critical when the error rate is 25 % or more.
-- **Guards:** needs a baseline; lab faults are not counted, minimum sample included. Calls refused by a gateway key's own rate limit are not counted either: they never reached a model.
+- **Reads:** LLM calls of the last 15 minutes, per environment and model, against that slice's error rate over the previous 7 days. A slice with no baseline is read over the last 24 hours instead.
+- **Fires when:** the slice has at least 50 calls and its error rate is at least the larger of three times the baseline and the baseline plus 5 points (so it is also at least 5 %). Warning; critical when the error rate is 25 % or more. With no baseline yet: at least 50 calls in the last 24 hours and an error rate of 25 % or more, warning only; the evidence shows the baseline as unknown.
+- **Guards:** lab faults are not counted, minimum sample included. Calls refused by a gateway key's own rate limit are not counted either: they never reached a model.
 - **Fix:** open the example traces and filter by error class. One class usually names the cause: `rate_limit` means slow down or raise limits, `auth` means rotate the key, `provider_5xx` means add a fallback target to the gateway route, `context_length` means trim the input, `gateway` means Spanlight's gateway refused the call (a budget, for example).
 - **Verify:** the error rate on Overview stays under the threshold, and the insight resolves after 24 hours without a recurrence.
 

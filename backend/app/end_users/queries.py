@@ -17,6 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.end_users.days import midnight
 from app.explorer.trace_queries import escape_like
 from app.explorer.trace_sort import SortOrder
+from app.rollups.coverage_reads import CoverageState, read_covered
+from app.rollups.dirty import USER_DAILY
 
 UserSort = Literal["cost", "errors", "traces"]
 
@@ -163,6 +165,7 @@ async def read_users(
     environment: str | None,
     q: str | None = None,
     order: SortOrder = "desc",
+    coverage: CoverageState | None = None,
 ) -> list[Row[Any]]:
     """Up to `limit` users summed over `[first_day, end_day)` after the cursor `after = (sort
     value, user id)`, if any: `sort` in `order` with unknowns last, ties by user id ascending;
@@ -191,7 +194,16 @@ async def read_users(
         environment=_environment_filter(environment, params),
         search=_search_filter(q, params),
     )
-    return list((await db.execute(text(sql), params)).all())
+    return await read_covered(
+        db,
+        text(sql),
+        params,
+        project_id,
+        midnight(first_day),
+        midnight(end_day),
+        coverage,
+        relevant_consumers=USER_DAILY,
+    )
 
 
 async def read_freshness(
@@ -222,6 +234,7 @@ async def read_daily(
     first_day: date,
     end_day: date,
     environment: str | None,
+    coverage: CoverageState | None = None,
 ) -> list[Row[Any]]:
     """One user's stored days in `[first_day, end_day)`, oldest first. Every row's
     `computed_at` is the latest recompute of those days."""
@@ -232,7 +245,16 @@ async def read_daily(
         "end_day": end_day,
     }
     sql = _DAILY.format(environment=_environment_filter(environment, params))
-    return list((await db.execute(text(sql), params)).all())
+    return await read_covered(
+        db,
+        text(sql),
+        params,
+        project_id,
+        midnight(first_day),
+        midnight(end_day),
+        coverage,
+        relevant_consumers=USER_DAILY,
+    )
 
 
 async def read_recent_sessions(

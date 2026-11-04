@@ -106,6 +106,9 @@ async def fire_demo_block_budget(
     async with session_factory() as db:
         workspace = await ensure_demo_workspace(db)
         await bind_project(db, workspace.project.id)
+        # Monthly hard budgets need history for a maximum-length UTC month.
+        workspace.project.retention_days = 31
+        await db.flush()
         spec = BudgetSpec.model_validate(
             {
                 "name": "Monthly cap",

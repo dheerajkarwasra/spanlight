@@ -240,6 +240,8 @@ async def test_a_metadata_budget_in_one_project_never_blocks_the_other_with_the_
     bound to that project and allows the same pair bound to the second, whether the pair comes
     from the header or from the second project's own stored trace."""
     first, _ = tenants
+    retention = await first.owner.patch(first.project, json={"retention_days": 31})
+    assert retention.status_code == 200, retention.text
     body = {
         "name": "Shared cap",
         "scope": "metadata",

@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.attribution.aggregate_sql import GroupKind, grouped_cte, money_sum, retry_cost_sum
 from app.core.observability import ATTRIBUTION_FOLDED_VALUES
 from app.end_users.days import ONE_DAY, midnight
+from app.rollups.coverage import complete_day_ranges, lock_aggregate_sources
 
 # Distinct values kept per (project, day, environment, kind, key); the rest fold into `other`.
 VALUE_CAP = 1000
@@ -184,7 +185,25 @@ async def refresh_group(
     """
     if not days:
         return RefreshResult()
-    first_day, last_day = min(days), max(days)
+    if not await lock_aggregate_sources(db, project_id):
+        return RefreshResult()
+    result = RefreshResult()
+    for first_day, last_day in await complete_day_ranges(db, project_id, days):
+        result += await _refresh_group_range(
+            db, project_id, kind, key, first_day, last_day, value_cap
+        )
+    return result
+
+
+async def _refresh_group_range(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    kind: GroupKind,
+    key: str | None,
+    first_day: date,
+    last_day: date,
+    value_cap: int,
+) -> RefreshResult:
     params = {
         "project_id": project_id,
         "kind": kind,
@@ -207,7 +226,7 @@ async def refresh_attribution(
     promoted_keys: Sequence[str],
     days: Sequence[date],
     *,
-    backfill_days: Sequence[date] = (),
+    backfill_days: Sequence[date] | None = (),
 ) -> RefreshResult:
     """Recompute every kind and every promoted key over `days`, then prune the other keys.
 
@@ -216,6 +235,8 @@ async def refresh_attribution(
     The `metadata` rows of keys not in `promoted_keys` are deleted, whatever their day; they
     count as removed.
     """
+    if not await lock_aggregate_sources(db, project_id):
+        return RefreshResult()
     result = RefreshResult()
     for kind in ("trace_name", "user", "release"):
         result += await refresh_group(db, project_id, kind, None, days)
@@ -225,7 +246,7 @@ async def refresh_attribution(
         else set()
     )
     for key in promoted_keys:
-        key_days = backfill_days if key in backfilled else days
+        key_days = backfill_days if backfill_days and key in backfilled else days
         result += await refresh_group(db, project_id, "metadata", key, key_days)
     pruned = await db.execute(
         _PRUNE_KEYS, {"project_id": project_id, "promoted": list(promoted_keys)}

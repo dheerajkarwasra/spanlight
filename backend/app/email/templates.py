@@ -1,4 +1,5 @@
-"""The transactional emails: verify an address, reset a password, accept an invite.
+"""The transactional emails: verify an address, reset a password, change the address, accept an
+invite.
 
 The copy is fixed here, not in a template engine. The plain-text part carries values raw, since
 it is not markup. The HTML part renders the same paragraphs and escapes every value in them.
@@ -41,6 +42,34 @@ def render_password_reset(name: str, url: str) -> EmailMessage:
             "The link works once and expires in 1 hour. Resetting your password signs you out "
             "on every device. If you didn't ask for this, ignore this email; "
             "your password stays the same.",
+        ],
+    )
+
+
+def render_email_change_confirm(name: str, url: str) -> EmailMessage:
+    """Sent to the new address: confirm the change. The link works once and expires in 1 hour."""
+    return _compose(
+        subject="Confirm your new email for Spanlight",
+        paragraphs=[
+            f"Hi {name},",
+            ("Confirm that this is the new email address for your Spanlight account:", url),
+            "The link works once and expires in 1 hour. Changing your email signs you out on "
+            "every device. If you didn't ask for this, ignore this email; nothing changes.",
+        ],
+    )
+
+
+def render_email_change_notice(name: str) -> EmailMessage:
+    """Sent to the current address: a change was asked for. It carries no link."""
+    return _compose(
+        subject="Your Spanlight email address is changing",
+        paragraphs=[
+            f"Hi {name},",
+            "Someone asked to change the email address of your Spanlight account. We sent a "
+            "confirmation link to the new address; the change happens only if that link is "
+            "opened within 1 hour.",
+            'If this wasn\'t you, reset your password now with "Forgot password" on the sign-in '
+            "page. Resetting your password cancels the pending change.",
         ],
     )
 

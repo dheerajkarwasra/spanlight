@@ -2,6 +2,7 @@ import { KeyRound, PieChart } from "lucide-react";
 
 import { CodeBlock } from "@/components/code-block";
 import { EmptyState } from "@/components/empty-state";
+import { SourceHistoryEmpty } from "@/components/freshness-chip";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { AttributionGroupBy } from "@/lib/api";
@@ -50,11 +51,17 @@ export function AttributionEmpty({
   groupBy,
   metadataKey,
   pendingTraces,
+  unavailable = false,
 }: {
   groupBy: AttributionGroupBy;
   metadataKey: string | null;
   pendingTraces: number | null;
+  /** Source history is unavailable: no rows is not "no traces". */
+  unavailable?: boolean;
 }) {
+  if (unavailable) {
+    return <SourceHistoryEmpty />;
+  }
   if (pendingTraces !== null && pendingTraces > 0) {
     const verb = pendingTraces === 1 ? "hasn't" : "haven't";
     return (

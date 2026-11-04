@@ -18,7 +18,14 @@ import type { QueueItem, TraceDetail, TracesAdded } from "@/lib/api";
 
 import { reasonLabel } from "./reason-copy";
 import { useSaveFromReview } from "./review-queries";
-import { RECORDED_NOTE, reviewMetadata, saveSpanOf, type SaveSpan } from "./save-from-review";
+import {
+  hasRecordedOutput,
+  RECORDED_NOTE,
+  reviewMetadata,
+  saveSpanOf,
+  type SaveSpan,
+} from "./save-from-review";
+import type { ReviewCopy } from "./use-review-copies";
 
 /** The queue side of the save: where the item sits and the reviewer's current label. */
 export interface ReviewSource {
@@ -30,6 +37,8 @@ export interface ReviewSource {
 }
 
 interface SaveFromReviewDialogProps {
+  /** The copy as saved, so the page can fix its label once the item is submitted (G-004). */
+  onSaved?: (copy: ReviewCopy) => void;
   item: QueueItem;
   trace: TraceDetail;
   source: ReviewSource;
@@ -47,6 +56,7 @@ export function SaveFromReviewDialog({
   source,
   open,
   onClose,
+  onSaved,
 }: SaveFromReviewDialogProps) {
   return (
     <Dialog
@@ -60,7 +70,7 @@ export function SaveFromReviewDialog({
           hideClose
           className="max-h-[calc(100dvh-2rem)] max-w-[520px] overflow-y-auto rounded-card p-6 sm:p-7"
         >
-          <SaveForm item={item} trace={trace} source={source} onDone={onClose} />
+          <SaveForm item={item} trace={trace} source={source} onDone={onClose} onSaved={onSaved} />
         </DialogContent>
       ) : null}
     </Dialog>
@@ -72,9 +82,10 @@ interface SaveFormProps {
   trace: TraceDetail;
   source: ReviewSource;
   onDone: () => void;
+  onSaved?: (copy: ReviewCopy) => void;
 }
 
-function SaveForm({ item, trace, source, onDone }: SaveFormProps) {
+function SaveForm({ item, trace, source, onDone, onSaved }: SaveFormProps) {
   const [datasetId, setDatasetId] = useState("");
   // An item copied into this dataset whose `metadata.review` write failed: a retry only marks it.
   const [copied, setCopied] = useState<{
@@ -89,21 +100,24 @@ function SaveForm({ item, trace, source, onDone }: SaveFormProps) {
   const dataset = useDatasetOption(datasetId);
   const choice = saveSpanOf(item, trace);
   const reason = item.reason ?? "manual";
+  // G-005: no recorded output means no expected output; say so before saving.
+  const noOutput = choice !== null && !hasRecordedOutput(choice.span);
 
   function submit(span: SaveSpan["span"]) {
     setRejection(null);
+    const metadata = reviewMetadata(trace, span, {
+      queue_id: source.queueId,
+      item_id: item.id,
+      reason,
+      failure_category: source.failureCategory,
+    });
     save.mutate(
       {
         datasetId,
         traceId: trace.trace_id,
         spanId: span.span_id,
         copiedItemId: copied?.datasetId === datasetId ? copied.itemId : null,
-        metadata: reviewMetadata(trace, span, {
-          queue_id: source.queueId,
-          item_id: item.id,
-          reason,
-          failure_category: source.failureCategory,
-        }),
+        metadata,
         onCopied: (itemId, others) => setCopied({ datasetId, itemId, alsoIn: others }),
       },
       {
@@ -112,13 +126,19 @@ function SaveForm({ item, trace, source, onDone }: SaveFormProps) {
             setRejection(rejectionLabel(result.rejected));
             return;
           }
+          if (result.itemId !== null) onSaved?.({ datasetId, itemId: result.itemId, metadata });
           // A retry only marks the earlier copy; the duplicate warning is that copy's.
           const others = copied?.datasetId === datasetId ? copied.alsoIn : result.alsoIn;
           if (others.length > 0) {
             setAlsoIn(others);
             return;
           }
-          toast.success(`Saved to “${dataset?.name ?? "the dataset"}”. ${RECORDED_NOTE}`);
+          const name = dataset?.name ?? "the dataset";
+          toast.success(
+            noOutput
+              ? `Saved to “${name}” without an expected output. Add one in the dataset.`
+              : `Saved to “${name}”. ${RECORDED_NOTE}`,
+          );
           onDone();
         },
       },
@@ -153,7 +173,7 @@ function SaveForm({ item, trace, source, onDone }: SaveFormProps) {
               {source.failureCategory === null ? (
                 <UnknownValue reason="No failure category is picked for this item yet" />
               ) : (
-                `${source.failureCategory} (your current label)`
+                `${source.failureCategory} (draft; updated when you submit)`
               )}
             </Row>
             <Row label="Queue item">{source.queueLabel}</Row>
@@ -169,10 +189,17 @@ function SaveForm({ item, trace, source, onDone }: SaveFormProps) {
               : datasetErrorMessage(save.error)}
         </Notice>
       ) : null}
-      <p className="flex items-start gap-1.5 text-xs font-medium text-muted-foreground">
-        <Info aria-hidden className="mt-px size-3.5 shrink-0" />
-        {RECORDED_NOTE}
-      </p>
+      {noOutput ? (
+        <Notice tone="warning">
+          <span className="font-semibold">No recorded output.</span> This item will be saved without
+          an expected output. Add one in the dataset before scoring with it.
+        </Notice>
+      ) : (
+        <p className="flex items-start gap-1.5 text-xs font-medium text-muted-foreground">
+          <Info aria-hidden className="mt-px size-3.5 shrink-0" />
+          {RECORDED_NOTE}
+        </p>
+      )}
       <div className="flex justify-end gap-2.5">
         {alsoIn ? (
           <Button variant="primary" autoFocus onClick={onDone}>

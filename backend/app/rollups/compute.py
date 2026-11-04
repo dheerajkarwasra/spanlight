@@ -14,6 +14,9 @@ a rollup and a raw read of the same hours agree:
 * ``unpriced_calls`` counts ``llm`` spans whose ``cost_usd`` is NULL. It is 0 for other kinds.
 * Token columns sum the span columns, treating unknown as 0. ``cost_usd`` sums the known costs
   and stays NULL when no span in the row has one, so an unpriced row is never reported as free.
+  The column is unbounded ``numeric``, so the sum is exact at any size: the $1,000,000 guard of
+  the ``numeric(14, 8)`` columns (trace totals, attribution) would turn a large hour into NULL,
+  which every reader that adds hours skips, giving a lower total than the raw spans.
 * Usage rollups (``spans.usage_rollup``: a span repeating the usage of a descendant) are left
   out of the token and cost sums and of ``unpriced_calls``, so one call is never billed twice;
   ``span_count`` and ``errors`` still count them, as a rollup is a span of its kind.
@@ -38,6 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.rls import bind_project
 from app.rollups.buckets import BOUNDS_MS, BUCKET_COUNT
+from app.rollups.coverage import complete_ranges, lock_aggregate_sources
 from app.rollups.error_compute import DELETE_ERROR_ROLLUPS, INSERT_ERROR_ROLLUPS
 
 HOUR = timedelta(hours=1)
@@ -99,7 +103,7 @@ _LOCK_PROJECT = text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))")
 _KEY_SHARE_PROJECT = text("SELECT id FROM projects WHERE id = :project_id FOR KEY SHARE")
 
 # The newest span in a range, used by a backfill to jump over days with no spans at all.
-_NEWEST_SPAN_BEFORE = text(
+NEWEST_SPAN_BEFORE = text(
     """
     SELECT max(started_at) FROM spans
     WHERE project_id = :project_id AND started_at >= :start AND started_at < :end
@@ -207,6 +211,11 @@ def ceil_hour(moment: datetime) -> datetime:
     return floored if floored == moment.astimezone(UTC) else floored + HOUR
 
 
+async def lock_rollups(db: AsyncSession, project_id: uuid.UUID) -> None:
+    """Acquire the narrow hourly lock after source serialization, before progress locks."""
+    await db.execute(_LOCK_PROJECT, {"key": f"span-rollups:{project_id}"})
+
+
 async def compute_rollups(
     db: AsyncSession, project_id: uuid.UUID, start: datetime, end: datetime
 ) -> int:
@@ -228,21 +237,22 @@ async def compute_rollups(
     aligned_end = ceil_hour(end)
     if aligned_end <= aligned_start:
         return 0
-    await bind_project(db, project_id)
-    project = await db.execute(_KEY_SHARE_PROJECT, {"project_id": project_id})
-    if project.scalar_one_or_none() is None:
+    if not await lock_aggregate_sources(db, project_id):
         return 0
-    await db.execute(_LOCK_PROJECT, {"key": f"span-rollups:{project_id}"})
-    params: dict[str, Any] = {"project_id": project_id, "start": aligned_start, "end": aligned_end}
-    await db.execute(_DELETE_SPAN_ROLLUPS, params)
-    await db.execute(_DELETE_TRACE_ROLLUPS, params)
-    await db.execute(DELETE_ERROR_ROLLUPS, params)
-    results = [
-        await db.execute(_INSERT_SPAN_ROLLUPS, {**params, "neg_bounds": list(NEGATED_BOUNDS)}),
-        await db.execute(_INSERT_TRACE_ROLLUPS, params),
-        await db.execute(INSERT_ERROR_ROLLUPS, params),
-    ]
-    return sum(int(getattr(result, "rowcount", 0)) for result in results)
+    await lock_rollups(db, project_id)
+    total = 0
+    for safe_start, safe_end in await complete_ranges(db, project_id, aligned_start, aligned_end):
+        params: dict[str, Any] = {"project_id": project_id, "start": safe_start, "end": safe_end}
+        await db.execute(_DELETE_SPAN_ROLLUPS, params)
+        await db.execute(_DELETE_TRACE_ROLLUPS, params)
+        await db.execute(DELETE_ERROR_ROLLUPS, params)
+        results = [
+            await db.execute(_INSERT_SPAN_ROLLUPS, {**params, "neg_bounds": list(NEGATED_BOUNDS)}),
+            await db.execute(_INSERT_TRACE_ROLLUPS, params),
+            await db.execute(INSERT_ERROR_ROLLUPS, params),
+        ]
+        total += sum(int(getattr(result, "rowcount", 0)) for result in results)
+    return total
 
 
 async def backfill_rollups(
@@ -277,7 +287,7 @@ async def backfill_rollups(
         await bind_project(db, project_id)
         newest = (
             await db.execute(
-                _NEWEST_SPAN_BEFORE,
+                NEWEST_SPAN_BEFORE,
                 {"project_id": project_id, "start": aligned_start, "end": chunk_end},
             )
         ).scalar_one()

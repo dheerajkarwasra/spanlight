@@ -28,6 +28,8 @@ from app.db.models import ProviderIncident
 from app.provider_status import service as provider_status
 from app.providers import queries, retry_queries, sample_queries, series
 from app.providers.retry_queries import RetryReport
+from app.rollups.compute import floor_hour
+from app.rollups.coverage_reads import CoverageState
 from app.rollups.error_queries import read_error_rollups
 from app.rollups.filtered import RollupFilters
 
@@ -59,11 +61,26 @@ async def health(
 ) -> HealthReportOut:
     """Calls, failures, retries and status page incidents per provider, busiest first."""
     plan = plan_window(window, rollup_split(now))
-    counts = await _provider_counts(db, project_id, plan, environment)
-    retries = await retry_queries.read_retry_totals(db, project_id, window, environment)
+    coverage = CoverageState()
+    counts = await _provider_counts(db, project_id, plan, environment, coverage)
+    retries = await retry_queries.read_retry_totals(db, project_id, window, environment, coverage)
+    if coverage.unavailable:
+        plan = WindowPlan((floor_hour(window.start), window.end), ())
+        counts = await _provider_counts(db, project_id, plan, environment, coverage)
     order = series.busiest_first(set(counts) | set(retries.by_provider), counts)
+    # Feeds store lowercase names; a span keeps its sender's case ("OpenAI").
+    incidents = await provider_status.api_incidents_by_provider(
+        db,
+        window=window,
+        providers={p.lower() for p in order if p is not None},
+        limit_each=INCIDENTS_PER_PROVIDER,
+    )
     providers = [
-        await _provider_out(db, counts.get(p) or series.ProviderCounts(p), retries, window)
+        _provider_out(
+            counts.get(p) or series.ProviderCounts(p),
+            retries,
+            [] if p is None else incidents.get(p.lower(), []),
+        )
         for p in order
     ]
     return HealthReportOut(
@@ -71,22 +88,28 @@ async def health(
         approximate=plan.rollup is not None,
         providers=providers,
         retry_cost_note=RETRY_COST_NOTE,
+        **coverage.metadata(),
     )
 
 
 async def _provider_counts(
-    db: AsyncSession, project_id: uuid.UUID, plan: WindowPlan, environment: str | None
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    plan: WindowPlan,
+    environment: str | None,
+    coverage: CoverageState,
 ) -> dict[str | None, series.ProviderCounts]:
-    calls = await queries.read_raw_calls(db, project_id, plan.raw, environment)
-    errors = await queries.read_raw_errors(db, project_id, plan.raw, environment)
+    calls = await queries.read_raw_calls(db, project_id, plan.raw, environment, coverage)
+    errors = await queries.read_raw_errors(db, project_id, plan.raw, environment, coverage)
     if plan.rollup is not None:
-        calls += await queries.read_rollup_calls(db, project_id, plan.rollup, environment)
+        calls += await queries.read_rollup_calls(db, project_id, plan.rollup, environment, coverage)
         hours = await read_error_rollups(
             db,
             project_id,
             TimeWindow(*plan.rollup),
             RollupFilters(environment=environment),
             provider_breakdown=True,
+            coverage=coverage,
         )
         errors += [
             series.ErrorCount(
@@ -97,25 +120,13 @@ async def _provider_counts(
     return series.provider_counts(calls, errors)
 
 
-async def _provider_out(
-    db: AsyncSession,
+def _provider_out(
     counts: series.ProviderCounts,
     report: RetryReport,
-    window: TimeWindow,
+    incidents: list[ProviderIncident],
 ) -> ProviderHealthOut:
     rate = series.error_rate(counts.errors, counts.llm_calls)
     retries = report.for_provider(counts.provider)
-    incidents: list[ProviderIncident] = []
-    if counts.provider is not None:
-        # Feeds store lowercase names; a span keeps its sender's case ("OpenAI").
-        incidents = await provider_status.list_incidents(
-            db,
-            window=window,
-            provider=counts.provider.lower(),
-            api_only=True,
-            limit=INCIDENTS_PER_PROVIDER,
-            after=None,
-        )
     return ProviderHealthOut(
         provider=counts.provider,
         llm_calls=counts.llm_calls,
@@ -142,15 +153,20 @@ async def timeseries(
     environment: str | None,
     provider: str | None,
     now: datetime,
+    coverage: CoverageState | None = None,
 ) -> list[ErrorBucketOut]:
     """Failed llm calls per bucket and error class; gapless, zero classes absent."""
     plan = plan_window(window, rollup_split(now))
+    coverage = coverage or CoverageState()
     raw = await queries.read_raw_error_hours(
-        db, project_id, plan.raw, environment=environment, provider=provider
+        db, project_id, plan.raw, environment=environment, provider=provider, coverage=coverage
     )
     hours: dict[tuple[datetime, str], int] = {}
     for row in raw:
         hours[(row.hour, row.error_class)] = hours.get((row.hour, row.error_class), 0) + row.errors
+    if coverage.unavailable:
+        plan = WindowPlan((floor_hour(window.start), window.end), ())
+        hours.clear()
     rollup_hours: list[datetime] = []
     if plan.rollup is not None:
         rollup_hours = series.hours_between(*plan.rollup)
@@ -160,12 +176,31 @@ async def timeseries(
             TimeWindow(*plan.rollup),
             RollupFilters(environment=environment, provider=provider),
             provider_breakdown=False,
+            coverage=coverage,
         )
+        if coverage.unavailable and plan.raw:
+            # A deletion may commit between the raw and rollup statements. Discard the raw
+            # contribution and read only retained snapshots for the entire requested window.
+            hours.clear()
+            rollup_hours = series.hours_between(floor_hour(window.start), window.end)
+            rows = await read_error_rollups(
+                db,
+                project_id,
+                TimeWindow(floor_hour(window.start), window.end),
+                RollupFilters(environment=environment, provider=provider),
+                provider_breakdown=False,
+                coverage=coverage,
+            )
         for h in rows:
             key = (h.bucket_start, h.error_class)
             hours[key] = hours.get(key, 0) + h.errors
     return [
-        ErrorBucketOut(bucket_start=b.bucket_start, by_class=b.by_class, approximate=b.approximate)
+        ErrorBucketOut(
+            bucket_start=b.bucket_start,
+            by_class=None if coverage.unavailable and not b.by_class else b.by_class,
+            approximate=b.approximate,
+            **coverage.metadata(),
+        )
         for b in series.bucket_series(window, bucket, hours, rollup_hours=rollup_hours)
     ]
 

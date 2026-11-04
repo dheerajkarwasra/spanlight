@@ -5,13 +5,16 @@ holds a lock the request needs); `app.gateway.span_write` says what one write st
 
 A write that fails for a reason that may pass (a lost connection, a timeout, a deadlock: see
 `app.core.db_errors.is_transient`) is retried after each of `RECORD_RETRY_DELAYS_S` (waiting
-through the context's `sleep`); each try is one transaction, so a failed one leaves nothing
-behind, and a retry first checks whether the span is stored already (a try whose commit went
+through the context's `sleep`); each try is one transaction. A rollback before commit leaves
+nothing behind; an unacknowledged commit remains uncertain. A retry checks for a stored span
+(a try whose commit went
 through but was not acknowledged), so the key's minute counts the call once. Nothing is raised:
 the client was already answered. A span still not stored after the last retry, or whose write
 failed for a reason a retry would meet again (a deleted project, a value or constraint the
 database refuses, a bug), is logged by the error's type and SQLSTATE, never its message, and
-counted as `reason="error"`; a span ingestion refuses is not retried (it would be refused
+counted as `reason="error"` only when no commit remains unresolved. Uncertain writes emit
+accounting-incomplete diagnostics without inventing a definite loss. A span ingestion refuses
+is not retried (it would be refused
 again) and is counted as `reason="rejected"`.
 
 `record_soon` runs `record` as a task the caller does not wait for, which also survives the
@@ -24,7 +27,8 @@ requests use: at most `GATEWAY_RECORD_CONCURRENCY` tries run at once (a write wa
 holds no slot), and at most `GATEWAY_RECORD_BACKLOG` spans wait or run. A queued span's input
 and output are already redacted and cut as ingestion stores them (`prepare_span_payloads`, at
 most 1 MiB each), and the waiting spans' payloads together stay within
-`GATEWAY_RECORD_BACKLOG_MB` (counted as their stored JSON bytes), so the backlog's memory is
+`GATEWAY_RECORD_BACKLOG_MB` (counted as their stored JSON bytes; a span still waiting for a
+worker thread to prepare a large body counts the body's size), so the backlog's memory is
 bounded however large the requests. A span past either bound is dropped, counted as
 `reason="overflow"` and logged at most once a minute, without its contents. A `low_priority`
 span (a call the key limiter refused) is dropped the same way once half of either bound is taken
@@ -38,45 +42,35 @@ spans this process could not store since it started), and by project and hour fo
 """
 
 import asyncio
-import contextlib
 import time
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import structlog
 
 from app.budgets.reserve import settle_unstored
-from app.core.db_errors import is_transient, sqlstate
-from app.core.observability import INGESTED_SPANS, REJECTED_SPANS
-from app.gateway.context import GatewayContext, GatewayResult
+from app.core.thread_ownership import owned_thread
+from app.gateway.cleanup_join import retained
+from app.gateway.context import LARGE_BODY_BYTES, GatewayContext, GatewayResult
+from app.gateway.record_tasks import RecorderShutdown, _Writers, shutdown_writers
+from app.gateway.record_write import _record
 from app.gateway.span_losses import lose, spans_lost
 from app.gateway.span_write import write_span
+from app.gateway.write_evidence import WriteEvidence
 from app.ingest.normalize import prepare_span_payloads
-from app.ingest.pipeline import IngestOutcome, IngestTarget
 
 logger = structlog.get_logger(__name__)
 
-METRIC_SOURCE = "gateway"
 OVERFLOW_LOG_INTERVAL_S = 60.0
 # The waits before each retry of a failed span write: four tries over about 2.6 s. A constant
 # beside the `GATEWAY_RECORD_*` settings (`app.config`), which bound how many writes run and wait.
 RECORD_RETRY_DELAYS_S = (0.1, 0.5, 2.0)
-
-
-@dataclass
-class _Writers:
-    """The background writes of one event loop, and how many may run and wait."""
-
-    loop: asyncio.AbstractEventLoop
-    slots: asyncio.Semaphore
-    backlog: int
-    backlog_bytes: int
-    pending: set["asyncio.Task[None]"] = field(default_factory=set)
-    held_bytes: int = 0  # the stored payload bytes of the pending spans
-    dropped: int = 0  # since the last overflow log line
-    logged_at: float | None = None
+# Large payloads are prepared on a thread of their own, not the event loop's default executor
+# (which also resolves hostnames for upstream calls). One thread: the work is Python, so the GIL
+# lets no second one go faster, and a queue of preparations only delays spans, not answers.
+_payload_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="gateway-payloads")
 
 
 _writers: _Writers | None = None
@@ -90,90 +84,24 @@ async def record(
     Never raises (see the module docstring): a lost or refused span is logged, counted and
     answered with False.
     """
-    return await _record(context, span, credential_ids, slots=None, prepared_truncated=None)
-
-
-async def _record(
-    context: GatewayContext,
-    span: dict[str, Any],
-    credential_ids: Sequence[uuid.UUID],
-    *,
-    slots: asyncio.Semaphore | None,
-    prepared_truncated: bool | None,
-) -> bool:
-    """`record`, each try holding one of `slots` when given, for a span whose payloads may
-    already be prepared (`prepared_truncated`, see `IngestTarget`)."""
-    target = IngestTarget(
-        project_id=context.project_id,
-        capture_payloads=context.capture_payloads,
-        org_id=context.org_id,
-        redact_contact_info=context.redact_contact_info,
-        source_key_id=context.key_id,
-        prepared_truncated=prepared_truncated,
-    )
-    outcome = await _write_with_retries(context, target, span, credential_ids, slots)
-    if outcome is None:
-        return False
-    INGESTED_SPANS.labels(METRIC_SOURCE).inc(outcome.accepted)
-    if outcome.rejected:
-        REJECTED_SPANS.labels(METRIC_SOURCE).inc(len(outcome.rejected))
-        lose(context.project_id, "rejected")
-        logger.warning(
-            "gateway.span_rejected",
-            span_id=span.get("span_id"),
-            reason=outcome.rejected[0].reason,
+    evidence = WriteEvidence()
+    try:
+        return await _record(
+            context,
+            span,
+            credential_ids,
+            slots=None,
+            prepared_truncated=None,
+            evidence=evidence,
+            write=write_span,
+            retry_delays=RECORD_RETRY_DELAYS_S,
         )
-        return False
-    return True
-
-
-async def _write_with_retries(
-    context: GatewayContext,
-    target: IngestTarget,
-    span: dict[str, Any],
-    credential_ids: Sequence[uuid.UUID],
-    slots: asyncio.Semaphore | None,
-) -> IngestOutcome | None:
-    """`write_span`, retried after each of `RECORD_RETRY_DELAYS_S`; None if the last try fails.
-
-    Each try holds one of `slots` (when given), and none is held while waiting to retry. Only a
-    transient failure (`is_transient`) is retried: any other would fail every retry too.
-    """
-    now = context.clock()  # every try counts the call in the same minute
-    span_id = span.get("span_id")
-    for tries, retry_in_s in enumerate((*RECORD_RETRY_DELAYS_S, None)):
-        try:
-            async with slots if slots is not None else contextlib.nullcontext():
-                return await write_span(context, target, span, credential_ids, now, retry=tries > 0)
-        except Exception as failure:  # noqa: BLE001 - counted and logged, the client was answered
-            if retry_in_s is None or not is_transient(failure):
-                _write_lost(context.project_id, span, failure, tries=tries + 1)
-                await settle_unstored(context.sessions, context.project_id, span)
-                return None
-            logger.warning(
-                "gateway.record_retry",
-                span_id=span_id,
-                error_type=type(failure).__name__,
-                retry_in_s=retry_in_s,
-            )
-            await context.sleep(retry_in_s)
-    return None  # not reached: the last try returns from the loop
-
-
-def _write_lost(
-    project_id: uuid.UUID, span: dict[str, Any], failure: BaseException, *, tries: int
-) -> None:
-    """Count and log a lost span by error type and SQLSTATE: the message may quote the payload."""
-    lose(project_id, "error")
-    logger.error(
-        "gateway.record_failed",
-        span_id=span.get("span_id"),
-        trace_id=span.get("trace_id"),
-        stage="write",
-        error_type=type(failure).__name__,
-        sqlstate=sqlstate(failure),
-        tries=tries,
-    )
+    except asyncio.CancelledError:
+        _account_abandoned(context, evidence)
+        raise
+    finally:
+        if evidence.reported:
+            _writers_for(context).accounting_complete = False
 
 
 def record_soon(
@@ -182,9 +110,15 @@ def record_soon(
     credential_ids: Sequence[uuid.UUID] = (),
     *,
     low_priority: bool = False,
+    body_bytes: int = 0,
 ) -> None:
     """Run `record` in the background, or drop the span when the backlog is full (half full for
     a `low_priority` span). A context with a `span_sink` hands the span to it instead.
+
+    A span whose request body (`body_bytes`) is over `LARGE_BODY_BYTES` has its payloads
+    prepared in a worker thread: redacting and cutting a 10 MB body takes about half a second
+    of Python, which on the event loop would stall every call on the process. Until then it
+    counts `body_bytes` against the backlog's bytes.
     """
     if context.span_sink is not None:
         context.span_sink.add(span, credential_ids)
@@ -194,35 +128,45 @@ def record_soon(
     if len(writers.pending) >= limit:
         _overflow(writers, context.project_id)
         return
-    # Held until written, so held as stored: redacted and at most 1 MiB per payload.
-    try:
-        span, truncated, size = prepare_span_payloads(
-            span,
-            capture_payloads=context.capture_payloads,
-            redact_contacts=context.redact_contact_info,
-        )
-    except Exception as failure:  # noqa: BLE001 - counted and logged, the client was answered
-        # Counted like a write that never succeeds. Only the type is logged: the message may
-        # quote the payload.
-        lose(context.project_id, "error")
-        logger.error(
-            "gateway.record_failed",
-            span_id=span.get("span_id"),
-            stage="prepare",
-            error_type=type(failure).__name__,
-        )
-        _settle_lost(writers, context, span)
-        return
+    in_thread = body_bytes > LARGE_BODY_BYTES
+    truncated, size = False, body_bytes
+    if not in_thread:
+        # Held until written, so held as stored: redacted and at most 1 MiB per payload.
+        try:
+            span, truncated, size = _prepare(context, span)
+        except Exception as failure:  # noqa: BLE001 - counted and logged, the client was answered
+            _prepare_failed(writers, context, span, failure)
+            return
     byte_limit = writers.backlog_bytes // 2 if low_priority else writers.backlog_bytes
     # The first waiting span is always taken, so one span larger than the budget is not lost.
     if writers.pending and writers.held_bytes + size > byte_limit:
         _overflow(writers, context.project_id)
         return
-    task = writers.loop.create_task(_write(writers, context, span, credential_ids, truncated))
+    evidence = WriteEvidence()
+
+    async def prepare_then_write() -> None:
+        nonlocal span, truncated, size
+        if in_thread:
+            raw = span
+            try:
+                work = writers.loop.run_in_executor(_payload_executor, _prepare, context, raw)
+                span, truncated, prepared = await owned_thread(work)
+            except Exception as failure:  # noqa: BLE001 - as on the event loop above
+                _prepare_failed(writers, context, raw, failure)
+                return
+            writers.held_bytes += prepared - size
+            size = prepared
+        await _write(writers, context, span, credential_ids, truncated, evidence)
+
+    task = writers.loop.create_task(prepare_then_write())
     writers.pending.add(task)
     writers.held_bytes += size
 
     def _release(done: "asyncio.Task[None]") -> None:
+        if evidence.reported:
+            writers.accounting_complete = False
+        if done.cancelled():
+            _account_abandoned(context, evidence)
         writers.pending.discard(done)
         writers.held_bytes -= size
 
@@ -260,17 +204,26 @@ class DirectSpans:
 
 
 async def drain(timeout_s: float | None = None) -> None:
-    """Wait for the spans still being written, at most `timeout_s` when given."""
+    """Drain, then cancel and cooperatively join unfinished writers before returning.
+
+    The timeout bounds ordinary work, not driver cancellation. Process owners needing a
+    hard envelope use shutdown and must keep pools alive when its join is incomplete.
+    """
+    loop = asyncio.get_running_loop()
+    await retained(shutdown(cancel_at=None if timeout_s is None else loop.time() + timeout_s))
+
+
+def pending_tasks() -> tuple[asyncio.Task[None], ...]:
+    """Remaining database users; retain pools until these tasks have joined."""
     writers = _writers
     if writers is None or writers.loop is not asyncio.get_running_loop():
-        return
-    deadline = None if timeout_s is None else time.monotonic() + timeout_s
-    while writers.pending:
-        left = None if deadline is None else deadline - time.monotonic()
-        if left is not None and left <= 0:
-            logger.warning("gateway.record_drain_timeout", pending=len(writers.pending))
-            return
-        await asyncio.wait(list(writers.pending), timeout=left)
+        return ()
+    return tuple(task for task in writers.pending if not task.done())
+
+
+async def shutdown(*, cancel_at: float | None, deadline: float | None = None) -> RecorderShutdown:
+    """Join recorder tasks after external producers stop; deadlines use loop.time()."""
+    return await shutdown_writers(_writers, cancel_at=cancel_at, deadline=deadline)
 
 
 async def _write(
@@ -279,8 +232,44 @@ async def _write(
     span: dict[str, Any],
     credential_ids: Sequence[uuid.UUID],
     truncated: bool,
+    evidence: WriteEvidence,
 ) -> None:
-    await _record(context, span, credential_ids, slots=writers.slots, prepared_truncated=truncated)
+    await _record(
+        context,
+        span,
+        credential_ids,
+        slots=writers.slots,
+        prepared_truncated=truncated,
+        evidence=evidence,
+        write=write_span,
+        retry_delays=RECORD_RETRY_DELAYS_S,
+    )
+
+
+def _prepare(context: GatewayContext, span: dict[str, Any]) -> tuple[dict[str, Any], bool, int]:
+    return prepare_span_payloads(
+        span, capture_payloads=context.capture_payloads, redact_contacts=context.redact_contact_info
+    )
+
+
+def _prepare_failed(
+    writers: _Writers, context: GatewayContext, span: dict[str, Any], failure: Exception
+) -> None:
+    """Counted like a write that never succeeds. Only the type is logged: the message may quote
+    the payload."""
+    lose(context.project_id, "error")
+    logger.error(
+        "gateway.record_failed",
+        span_id=span.get("span_id"),
+        stage="prepare",
+        error_type=type(failure).__name__,
+    )
+    _settle_lost(writers, context, span)
+
+
+def _account_abandoned(context: GatewayContext, evidence: WriteEvidence) -> None:
+    if not evidence.abandoned(context.project_id):
+        _writers_for(context).accounting_complete = False
 
 
 def _writers_for(context: GatewayContext) -> _Writers:
@@ -319,6 +308,7 @@ def _overflow(writers: _Writers, project_id: uuid.UUID) -> None:
 __all__ = [
     "RECORD_RETRY_DELAYS_S",
     "DirectSpans",
+    "RecorderShutdown",
     "credentials_used",
     "drain",
     "record",

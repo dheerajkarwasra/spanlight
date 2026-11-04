@@ -87,8 +87,12 @@ async def fetch_profile(
     client_id, client_secret = credentials
     spec = PROVIDERS[provider]
     try:
+        # trust_env=False: no HTTP(S)_PROXY or .netrc from the host sees the code or the secret.
         async with httpx.AsyncClient(
-            transport=transport, timeout=PROVIDER_TIMEOUT_SECONDS, follow_redirects=False
+            transport=transport,
+            timeout=PROVIDER_TIMEOUT_SECONDS,
+            follow_redirects=False,
+            trust_env=False,
         ) as client:
             response = await client.post(
                 spec.token_url,

@@ -45,10 +45,10 @@ GATEWAY_ROWS = (
         also=frozenset({409}),
     ),
     Row("DELETE", f"{ORG}/credentials/{{credential_id}}", P.CREDENTIALS_MANAGE),
-    # Price overrides: organization-wide.
+    # Price overrides: organization-wide, owners only to change.
     Row("GET", f"{ORG}/price-overrides", P.ORG_READ),
-    Row("POST", f"{ORG}/price-overrides", P.GATEWAY_WRITE),
-    Row("DELETE", f"{ORG}/price-overrides/{{override_id}}", P.GATEWAY_WRITE),
+    Row("POST", f"{ORG}/price-overrides", P.PRICES_OVERRIDE),
+    Row("DELETE", f"{ORG}/price-overrides/{{override_id}}", P.PRICES_OVERRIDE),
 )
 
 ALERT_ROWS = (

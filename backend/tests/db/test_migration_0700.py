@@ -5,7 +5,7 @@ seven values), and `error_class` accepts `gateway`. Traces learn `retry_calls` a
 `retry_cost_usd`, NULL until the trace is recomputed. A downgrade deletes the spans of class
 `gateway`, since the 0400 CHECK it restores refuses them; that loss is documented.
 
-Every test here downgrades the session's shared database and leaves it at head.
+Round trips use an explicitly owned database at the pinned historical revision.
 """
 
 import uuid
@@ -15,9 +15,8 @@ import psycopg
 import pytest
 from sqlalchemy import exc
 
-from alembic import command
-from app.db.migrations import alembic_config, downgrade_to, head_revision, upgrade_to_head
 from tests.db import schema_probe as probe
+from tests.db.migration_support import downgrade_to, expected_revision, upgrade_to_target
 
 BELOW = "0602"
 ORG_ID = uuid.UUID("10000000-0000-4000-8000-000000000700")
@@ -37,10 +36,10 @@ SPAN_CHECKS = ("spans_rate_limit_kind_check", "spans_error_class_check")
 
 
 @pytest.fixture
-def back_to_head(app_database_url: str) -> Iterator[None]:
+def back_to_target(migration_database_url: str) -> Iterator[None]:
     yield
-    upgrade_to_head(app_database_url)
-    assert probe.current_revision(app_database_url) == head_revision()
+    upgrade_to_target(migration_database_url)
+    assert probe.current_revision(migration_database_url) == expected_revision()
 
 
 def _seed(connection: psycopg.Connection) -> None:
@@ -64,7 +63,7 @@ def _insert_span(connection: psycopg.Connection, span_id: str, **values: object)
 
 
 def _assert_at_head(database_url: str) -> None:
-    assert probe.current_revision(database_url) == head_revision()
+    assert probe.current_revision(database_url) == expected_revision()
     spans = probe.columns(database_url, "spans")
     traces = probe.columns(database_url, "traces")
     assert {name: spans.get(name) for name in SPAN_COLUMNS} == SPAN_COLUMNS
@@ -75,8 +74,9 @@ def _assert_at_head(database_url: str) -> None:
     assert "'gateway'::text" in checks["spans_error_class_check"][0]
 
 
-def test_0700_round_trip(app_database_url: str, back_to_head: None) -> None:
-    _assert_at_head(app_database_url)
+@pytest.mark.migration_revision("0700")
+def test_0700_round_trip(migration_database_url: str, back_to_target: None) -> None:
+    _assert_at_head(migration_database_url)
     with probe.admin() as connection:
         _seed(connection)
         _insert_span(connection, "07000000000000a1", rate_limit_kind="spend_cap")
@@ -84,11 +84,11 @@ def test_0700_round_trip(app_database_url: str, back_to_head: None) -> None:
             _insert_span(connection, "07000000000000a2", rate_limit_kind="burst")
         _insert_span(connection, "07000000000000a3", error_class="gateway")
 
-    downgrade_to(app_database_url, BELOW)
-    assert probe.current_revision(app_database_url) == BELOW
-    assert not SPAN_COLUMNS.keys() & probe.columns(app_database_url, "spans").keys()
-    assert not TRACE_COLUMNS.keys() & probe.columns(app_database_url, "traces").keys()
-    checks = probe.constraints(app_database_url, "spans")
+    downgrade_to(migration_database_url, BELOW)
+    assert probe.current_revision(migration_database_url) == BELOW
+    assert not SPAN_COLUMNS.keys() & probe.columns(migration_database_url, "spans").keys()
+    assert not TRACE_COLUMNS.keys() & probe.columns(migration_database_url, "traces").keys()
+    checks = probe.constraints(migration_database_url, "spans")
     assert "spans_rate_limit_kind_check" not in checks
     assert checks["spans_error_class_check"][1] is True
     with (
@@ -97,12 +97,13 @@ def test_0700_round_trip(app_database_url: str, back_to_head: None) -> None:
     ):
         _insert_span(connection, "07000000000000a4", error_class="gateway")
 
-    upgrade_to_head(app_database_url)
-    _assert_at_head(app_database_url)
+    upgrade_to_target(migration_database_url)
+    _assert_at_head(migration_database_url)
 
 
+@pytest.mark.migration_revision("0700")
 def test_0700_downgrade_deletes_gateway_class_rows(
-    app_database_url: str, back_to_head: None
+    migration_database_url: str, back_to_target: None
 ) -> None:
     with probe.admin() as connection:
         _seed(connection)
@@ -110,7 +111,7 @@ def test_0700_downgrade_deletes_gateway_class_rows(
         _insert_span(connection, "07000000000000b2", error_class="timeout")
         _insert_span(connection, "07000000000000b3", status="ok")
 
-    downgrade_to(app_database_url, BELOW)
+    downgrade_to(migration_database_url, BELOW)
 
     with probe.admin() as connection:
         rows = connection.execute(
@@ -119,8 +120,9 @@ def test_0700_downgrade_deletes_gateway_class_rows(
     assert [row[0] for row in rows] == ["07000000000000b2", "07000000000000b3"]
 
 
-def test_0700_validates_under_rls(app_database_url: str, back_to_head: None) -> None:
-    downgrade_to(app_database_url, BELOW)
+@pytest.mark.migration_revision("0700")
+def test_0700_validates_under_rls(migration_database_url: str, back_to_target: None) -> None:
+    downgrade_to(migration_database_url, BELOW)
     with probe.admin() as connection:
         _seed(connection)
         # An interrupted earlier run left the columns behind (its first statement, verbatim, so
@@ -132,18 +134,18 @@ def test_0700_validates_under_rls(app_database_url: str, back_to_head: None) -> 
         )
     # The row is written by the app role under a project binding, so only that binding (or the
     # bypass) sees it; the migration runs with neither.
-    with psycopg.connect(app_database_url.replace("+psycopg", "")) as connection:
+    with psycopg.connect(migration_database_url.replace("+psycopg", "")) as connection:
         connection.execute("SELECT set_config('app.project_id', %s, true)", (str(PROJECT_ID),))
         _insert_span(connection, "07000000000000c1", rate_limit_kind="burst")
 
     with pytest.raises(exc.IntegrityError) as raised:
-        command.upgrade(alembic_config(app_database_url), "0700")
+        upgrade_to_target(migration_database_url)
     assert isinstance(raised.value.orig, psycopg.errors.CheckViolation)
-    assert probe.current_revision(app_database_url) == BELOW
+    assert probe.current_revision(migration_database_url) == BELOW
 
     with probe.admin() as connection:
         connection.execute(
             "UPDATE spans SET rate_limit_kind = NULL WHERE project_id = %s", (PROJECT_ID,)
         )
-    command.upgrade(alembic_config(app_database_url), "0700")
-    assert probe.current_revision(app_database_url) == "0700"
+    upgrade_to_target(migration_database_url)
+    assert probe.current_revision(migration_database_url) == "0700"

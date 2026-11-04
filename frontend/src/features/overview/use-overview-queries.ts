@@ -58,13 +58,14 @@ export function useOverviewQueries() {
 
   const overview = useQuery({
     queryKey: keys.overview(metricsWindow),
-    queryFn: () => projectsApi.overview(projectId, metricsWindow),
+    queryFn: ({ signal }) => projectsApi.overview(projectId, metricsWindow, signal),
     placeholderData: keepPreviousData,
   });
 
   const timeseries = useQuery({
     queryKey: keys.timeseries({ ...metricsWindow, bucket }),
-    queryFn: () => projectsApi.timeseries(projectId, { ...metricsWindow, bucket }),
+    queryFn: ({ signal }) =>
+      projectsApi.timeseries(projectId, { ...metricsWindow, bucket }, signal),
     placeholderData: keepPreviousData,
   });
 
@@ -77,27 +78,27 @@ export function useOverviewQueries() {
   };
   const monthToDate = useQuery({
     queryKey: keys.overview(monthToDateWindow),
-    queryFn: () => projectsApi.overview(projectId, monthToDateWindow),
+    queryFn: ({ signal }) => projectsApi.overview(projectId, monthToDateWindow, signal),
     enabled: range.value !== "custom" && range.durationMs <= PROJECTION_MAX_WINDOW_MS,
   });
 
   const models = useQuery({
     queryKey: keys.models(metricsWindow),
-    queryFn: () => projectsApi.models(projectId, metricsWindow),
+    queryFn: ({ signal }) => projectsApi.models(projectId, metricsWindow, signal),
     placeholderData: keepPreviousData,
   });
 
   // The Doctor's score for the same window and environment as the rest of the page.
   const health = useQuery({
     queryKey: keys.health(metricsWindow),
-    queryFn: () => insightsApi.health(projectId, metricsWindow),
+    queryFn: ({ signal }) => insightsApi.health(projectId, metricsWindow, signal),
     placeholderData: keepPreviousData,
   });
 
   // The last detector pass. Its own key under the Doctor prefix: the Doctor page caches one run.
   const detectorRuns = useQuery({
     queryKey: [...keys.detectorRuns, DETECTOR_RUNS_LIMIT],
-    queryFn: () => insightsApi.detectorRuns(projectId, DETECTOR_RUNS_LIMIT),
+    queryFn: ({ signal }) => insightsApi.detectorRuns(projectId, DETECTOR_RUNS_LIMIT, signal),
     placeholderData: keepPreviousData,
   });
 
@@ -108,7 +109,7 @@ export function useOverviewQueries() {
   } as const;
   const openInsights = useQuery({
     queryKey: keys.insights(openInsightsQuery),
-    queryFn: () => insightsApi.list(projectId, openInsightsQuery),
+    queryFn: ({ signal }) => insightsApi.list(projectId, openInsightsQuery, signal),
   });
 
   // Release markers: the releases API answers 422 above 30 days, so longer windows skip it (and
@@ -116,7 +117,7 @@ export function useOverviewQueries() {
   const releasesQuery: ReleaseListQuery = { from: range.from, to: range.to, environment };
   const releases = useQuery({
     queryKey: keys.releases(releasesQuery),
-    queryFn: () => releasesApi.list(projectId, releasesQuery),
+    queryFn: ({ signal }) => releasesApi.list(projectId, releasesQuery, signal),
     enabled: range.durationMs <= RELEASE_WINDOW_MAX_MS,
     placeholderData: keepPreviousData,
   });
@@ -128,7 +129,7 @@ export function useOverviewQueries() {
   const completenessQuery: CompletenessQuery = { from: range.from, to: range.to };
   const completeness = useQuery({
     queryKey: keys.completeness(completenessQuery),
-    queryFn: () => completenessApi.get(projectId, completenessQuery),
+    queryFn: ({ signal }) => completenessApi.get(projectId, completenessQuery, signal),
     placeholderData: keepPreviousData,
   });
 
@@ -141,7 +142,7 @@ export function useOverviewQueries() {
   };
   const incidents = useQuery({
     queryKey: keys.providerIncidents(incidentsQuery),
-    queryFn: () => providersApi.incidents(projectId, incidentsQuery),
+    queryFn: ({ signal }) => providersApi.incidents(projectId, incidentsQuery, signal),
     placeholderData: keepPreviousData,
   });
 
@@ -150,7 +151,7 @@ export function useOverviewQueries() {
   const rangeIsEmpty = overview.data?.current.traces === 0;
   const onboarding = useQuery({
     queryKey: keys.onboarding,
-    queryFn: () => projectsApi.onboarding(projectId),
+    queryFn: ({ signal }) => projectsApi.onboarding(projectId, signal),
     enabled: rangeIsEmpty,
     refetchInterval: (query) =>
       query.state.data?.has_traces === false ? FIRST_TRACE_POLL_MS : false,
@@ -217,9 +218,9 @@ export function useTracesTabQuery(tab: TracesTab) {
     queryKey: isLive
       ? [...keys.all, "latest-traces", { range: range.value, environment, limit: TAB_TRACES_LIMIT }]
       : keys.traces(query),
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       const window = isLive ? resolveRange({ range: range.value }) : range;
-      return projectsApi.traces(projectId, { ...query, from: window.from, to: window.to });
+      return projectsApi.traces(projectId, { ...query, from: window.from, to: window.to }, signal);
     },
     refetchInterval: isLive ? LIVE_REFRESH_MS : false,
     placeholderData: keepPreviousData,

@@ -1,9 +1,13 @@
 """Turn one alert or insight payload into outbox rows for a channel, and queue them.
 
-`outbox_rows_for` is pure: it says which rows a channel gets. An email channel gets one `email`
-row per allowed recipient, carrying the rendered message; every other kind gets one row whose
-target is `{"channel_id"}` and whose payload is the alert or insight payload (its deliverer
-renders it and opens the channel's secret at send time). Every row's payload carries the
+`outbox_rows_for` says which rows a channel gets. An email channel gets one `email` row per
+allowed recipient, carrying the rendered message. An email that cannot be rendered still gets
+its rows, written already `failed` with `EMAIL_RENDER_FAILED` and only the `summary`, so the
+channel's delivery log says why no email came; it is logged and counted as `failed` once, never
+sent and never retryable (a retry would render the same payload the same way, and raising would
+roll back the event and every other channel's rows). Every other kind gets one
+row whose target is `{"channel_id"}` and whose payload is the alert or insight payload (its
+deliverer renders it and opens the channel's secret at send time). Every row's payload carries the
 `summary` the delivery log shows after the row is settled, and every row is tied to its channel.
 
 `enqueue_for_channel` is the async shell that evaluation and the channel code call inside their
@@ -21,14 +25,18 @@ from app.alerts.channels.email_render import render_alert_email, render_insight_
 from app.alerts.channels.resolve import ResolvedChannel
 from app.alerts.payload import AlertPayload, InsightPayload, NotifyPayload
 from app.alerts.service import allowed_recipients
+from app.core.observability import NOTIFICATIONS_DELIVERED
 from app.db.models import AlertChannel, AlertChannelKind
 from app.email.message import EmailMessage
+from app.notifications.delivery import DeliveryOutcome
 from app.notifications.outbox import NotificationKind, enqueue
 
 if TYPE_CHECKING:
     from app.config import Settings
 
 logger = structlog.get_logger(__name__)
+
+EMAIL_RENDER_FAILED = "The alert could not be rendered as an email"
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +45,8 @@ class OutboxRowSpec:
     target: dict[str, Any]
     payload: dict[str, Any]
     channel_id: uuid.UUID
+    # Set when the row is written already failed, with this as its `last_error`.
+    failed: str | None = None
 
 
 def alert_summary(payload: AlertPayload) -> dict[str, Any]:
@@ -99,17 +109,34 @@ def outbox_rows_for(
     """
     summary = _summary(payload)
     if channel.kind is AlertChannelKind.EMAIL:
-        message = _render_email(payload, channel_name=channel.name)
-        body = {
-            "subject": message.subject,
-            "text": message.text,
-            "html": message.html,
-            "summary": summary,
-        }
-        return [
-            OutboxRowSpec(NotificationKind.EMAIL, {"to": address}, body, channel.id)
+        recipients = [
+            address
             for address in _recipients(channel)
             if allowed_emails is None or address.lower() in allowed_emails
+        ]
+        body: dict[str, Any] = {"summary": summary}
+        failed: str | None = None
+        try:
+            message = _render_email(payload, channel_name=channel.name)
+        except Exception as exc:  # permanent: see the module docstring
+            failed = EMAIL_RENDER_FAILED
+            NOTIFICATIONS_DELIVERED.labels(
+                NotificationKind.EMAIL.value, DeliveryOutcome.FAILED.value
+            ).inc(len(recipients))
+            logger.error(
+                "alert_render_failed",
+                channel_id=str(channel.id),
+                alert_event=summary["event"],
+                event_id=summary["event_id"],
+                recipients=len(recipients),
+                error_type=type(exc).__name__,
+                exc_info=exc,
+            )
+        else:
+            body |= {"subject": message.subject, "text": message.text, "html": message.html}
+        return [
+            OutboxRowSpec(NotificationKind.EMAIL, {"to": address}, body, channel.id, failed)
+            for address in recipients
         ]
     return [
         OutboxRowSpec(
@@ -152,5 +179,7 @@ async def enqueue_for_channel(
         logger.warning("alert_recipient_skipped", channel_id=str(channel.id), skipped=len(skipped))
     rows = outbox_rows_for(resolved, payload, allowed_emails=allowed)
     for row in rows:
-        await enqueue(db, row.kind, row.target, row.payload, channel_id=row.channel_id)
+        await enqueue(
+            db, row.kind, row.target, row.payload, channel_id=row.channel_id, failed=row.failed
+        )
     return len(rows)

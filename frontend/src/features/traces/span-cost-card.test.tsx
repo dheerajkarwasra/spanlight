@@ -51,6 +51,8 @@ const span: Span = {
   attributes: {},
   truncated: false,
   payload_omitted: false,
+  attributes_omitted: false,
+  retry_eligible: false,
   finish_reason: null,
   prompt_version_id: null,
   usage_rollup: false,

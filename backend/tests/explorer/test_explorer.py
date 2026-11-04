@@ -395,9 +395,10 @@ async def test_trace_detail_leaves_out_payloads_past_its_budget(
     await _ingest(client, workspace, spans)
     base = f"/api/v1/projects/{workspace.project_id}/traces/{trace_id}"
 
-    detail = (await workspace.owner.get(base)).json()
+    detail = (await workspace.owner.get(base, params={"span_content": "bounded"})).json()
 
     assert [s["payload_omitted"] for s in detail["spans"]] == [False, False, True]
+    assert [s["attributes_omitted"] for s in detail["spans"]] == [False, False, True]
     assert [s["input"] for s in detail["spans"]] == [contexts[0], contexts[1], None]
     omitted = detail["spans"][2]
     response = await workspace.owner.get(f"{base}/spans/{omitted['span_id']}")

@@ -87,11 +87,13 @@ async def save_state(
     value: Decimal | None,
     now: datetime,
     to_state: RuleStateName | None,
+    clear_since: datetime | None,
 ) -> None:
     """Record this evaluation on the rule's state row, creating it on the first one.
 
-    `last_value` and `last_evaluated_at` change on every pass; `state` and `since` only with a
-    transition (`to_state`). The rule's row lock makes the read-then-write safe.
+    `last_value`, `last_evaluated_at` and `clear_since` change on every pass; `state` and `since`
+    only with a transition (`to_state`), which also ends any recovery window. The rule's row lock
+    makes the read-then-write safe.
     """
     if current is None:
         current = AlertState(
@@ -100,6 +102,7 @@ async def save_state(
         db.add(current)
     current.last_value = value
     current.last_evaluated_at = now
+    current.clear_since = None if to_state is not None else clear_since
     if to_state is not None:
         current.state = to_state
         current.since = now

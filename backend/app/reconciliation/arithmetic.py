@@ -6,7 +6,9 @@ override pattern both sides were mapped with; a name with no pattern groups as
 
 `residual_usd = provider_usd - (spanlight_usd or 0) - explained_usd` is always present and
 signed: positive when Spanlight recorded less than the provider billed, negative when it
-recorded more. Credits and charges Spanlight cannot see (`other`, `code_execution`) are listed
+recorded more. A model the provider billed that no mapped project called is in the residual in
+full (its `untraced_traffic` line carries no USD), so spend entirely outside Spanlight reads
+as unexplained. Credits and charges Spanlight cannot see (`other`, `code_execution`) are listed
 apart and never enter the provider figure, the residual or the variance. Day totals are the
 sums of the groups.
 """
@@ -34,6 +36,7 @@ __all__ = [
     "GroupReconciliation",
     "ListedCharge",
     "TokenTotals",
+    "bypass_suspected",
     "group_key",
     "is_provisional",
     "reconcile_day",
@@ -48,6 +51,12 @@ UNMAPPED_PREFIX = "unmapped:"
 NO_PROVIDER_LINE_NOTE = (
     "no provider line: wrong source scope, or usage billed under another account"
 )
+
+# D10 of the hard gateway budgets design: a closed day's unexplained residual over both of these
+# suggests spend Spanlight never saw (calls outside the gateway and SDK, an unmapped project, a
+# leaked key).
+BYPASS_MIN_RATIO = Decimal("0.10")
+BYPASS_MIN_USD = Decimal(1)
 
 _ZERO = Decimal(0)
 _RATIO_QUANTUM = Decimal("0.0001")
@@ -130,6 +139,14 @@ def is_provisional(day: date, now: datetime, settled_fetch: bool) -> bool:
 
 def _day_start(day: date) -> datetime:
     return datetime.combine(day, time(), tzinfo=UTC)
+
+
+def bypass_suspected(*, provider_usd: Decimal | None, residual_usd: Decimal | None) -> bool:
+    """Whether a day's unexplained residual is above 10 % of the provider's bill and above $1.
+    An unknown side (None) can claim no residual, so it is never a bypass."""
+    if provider_usd is None or residual_usd is None:
+        return False
+    return residual_usd > max(provider_usd * BYPASS_MIN_RATIO, BYPASS_MIN_USD)
 
 
 def group_key(model_pattern: str | None, raw: str | None) -> str:

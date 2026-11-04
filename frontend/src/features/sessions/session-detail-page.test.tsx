@@ -35,6 +35,7 @@ function trace(index: number): TraceSummary {
     has_unpriced: false,
     models: ["claude-sonnet-4-5"],
     error_message: null,
+    root_received: true,
     has_scores: false,
     scores: [],
     error_class: null,
@@ -81,6 +82,7 @@ describe("SessionDetailPage", () => {
       "proj_1",
       "chat/1",
       expect.objectContaining({ cursor: null }),
+      expect.any(AbortSignal),
     );
     expect(traceDetail).not.toHaveBeenCalled();
   });
@@ -106,7 +108,7 @@ describe("SessionDetailPage", () => {
     expect(await screen.findByText("Question 1")).toBeInTheDocument();
     expect(screen.getByText("Answer 1")).toBeInTheDocument();
     expect(spanDetail).toHaveBeenCalledTimes(1);
-    expect(spanDetail).toHaveBeenCalledWith("proj_1", "trace-1", "span-1");
+    expect(spanDetail).toHaveBeenCalledWith("proj_1", "trace-1", "span-1", expect.any(AbortSignal));
     expect(traceDetail).not.toHaveBeenCalled();
   });
 });
@@ -141,7 +143,7 @@ describe("SessionDetailPage turns", () => {
 
     await userEvent.click(pill);
     const tree = await screen.findByRole("tree", { name: "Spans" });
-    expect(traceDetail).toHaveBeenCalledWith("proj_1", "trace-0");
+    expect(traceDetail).toHaveBeenCalledWith("proj_1", "trace-0", expect.any(AbortSignal));
     await userEvent.click(within(tree).getByRole("treeitem"));
     await waitFor(() => {
       expect(router.state.location.pathname).toMatch(/\/traces\/trace-0$/);
@@ -190,6 +192,7 @@ describe("SessionDetailPage turns", () => {
     expect(list).toHaveBeenCalledWith(
       "proj_1",
       expect.objectContaining({ kind: "context_growth", status: ["open"] }),
+      expect.any(AbortSignal),
     );
   });
 

@@ -54,6 +54,41 @@ export function CapturePayloadsField({ control, canEdit }: CapturePayloadsFieldP
   );
 }
 
+/** The "Redact contact information" switch tile of the Data card. */
+export function ContactRedactionField({ control, canEdit }: CapturePayloadsFieldProps) {
+  const switchId = useId();
+  const descriptionId = useId();
+
+  return (
+    <div className="flex items-start gap-4 border-t border-border pt-4">
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <Label htmlFor={switchId} className="text-sm">
+          Redact contact information
+        </Label>
+        <p id={descriptionId} className="text-sm text-muted-foreground">
+          Redacts built-in email and international phone patterns in spans ingested after you save.
+          Stored traces stay unchanged.
+        </p>
+      </div>
+      <Controller
+        control={control}
+        name="redact_contact_info"
+        render={({ field }) => (
+          <Switch
+            id={switchId}
+            aria-describedby={descriptionId}
+            checked={field.value}
+            onCheckedChange={field.onChange}
+            onBlur={field.onBlur}
+            ref={field.ref}
+            disabled={!canEdit}
+          />
+        )}
+      />
+    </div>
+  );
+}
+
 /** The "Weekly digest email" switch tile of the Data card. */
 export function WeeklyDigestField({ control, canEdit }: CapturePayloadsFieldProps) {
   const switchId = useId();

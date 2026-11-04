@@ -20,7 +20,7 @@ def ingest() -> FakeIngestApi:
 def tracer(ingest: FakeIngestApi) -> Iterator[spanlight.Spanlight]:
     client = spanlight.Spanlight(
         api_key="spl_live_testprefix_testsecret",
-        host="http://spanlight.test",
+        host="https://spanlight.test",
         environment="test",
         release="v0.0.1",
         flush_interval=0.05,
@@ -35,7 +35,7 @@ def global_tracer(ingest: FakeIngestApi) -> Iterator[spanlight.Spanlight]:
     """Install a global client (used by module-level ``observe``/``span``)."""
     client = spanlight.init(
         api_key="spl_live_testprefix_testsecret",
-        host="http://spanlight.test",
+        host="https://spanlight.test",
         environment="test",
         flush_interval=0.05,
         transport=ingest.transport(),

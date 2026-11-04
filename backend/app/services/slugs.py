@@ -10,18 +10,27 @@ import secrets
 # one of these slugs; `tests/orgs/test_reserved_slugs.py` fails when the two drift apart.
 RESERVED_ORG_SLUGS: frozenset[str] = frozenset(
     {
+        "accept-terms",
+        "accessibility",
         "account",
         "api",
         "assets",
+        "confirm-email-change",
         "docs",
+        "dpa",
         "forgot-password",
         "gw",
         "health",
+        "imprint",
         "invite",
         "login",
         "onboarding",
+        "privacy",
         "reset-password",
         "signup",
+        "subprocessors",
+        "terms",
+        "unsubscribe",
         "v1",
         "verify-email",
     }

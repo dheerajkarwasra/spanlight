@@ -220,6 +220,8 @@ export interface Delivery {
   last_error: string | null;
   created_at: string;
   summary: DeliverySummary | null;
+  /** Whether a retry would be taken; false for a failed email that was never rendered. */
+  retryable: boolean;
 }
 
 export interface DeliveryQuery {
@@ -247,6 +249,13 @@ export interface BudgetState {
   resets_at: string;
   state: "ok" | "firing";
   last_evaluated_at: string;
+  /**
+   * Gateway estimates held for calls in flight this period, a decimal string. Only a `block`
+   * budget has a gateway counter, so it is null for `notify`; `"0"` when nothing is held.
+   */
+  reserved_usd: string | null;
+  /** Gateway charges settled into the counter this period; null for `notify`. */
+  gateway_settled_usd: string | null;
 }
 
 export interface Budget {
@@ -279,12 +288,21 @@ export interface BudgetBurnPoint {
   cumulative_usd: string | null;
 }
 
-/** `GET …/budgets/{id}/burn`: spend per day of the current period, up to now. */
+/** `GET …/budgets/{id}/burn`: spend per day of the current period, up to now, and a forecast. */
 export interface BudgetBurn {
   period_start: string;
   resets_at: string;
   amount_usd: string;
   points: BudgetBurnPoint[];
+  /**
+   * The spend at the period's end at the trailing complete days' mean rate; null for a daily
+   * budget, under 3 days of spend history, or when one of those days is unknown.
+   */
+  forecast_usd: string | null;
+  /** How many complete days the rate is the mean of (up to 7). */
+  forecast_basis_days: number;
+  /** "YYYY-MM-DD": the first UTC day spend passes the amount, measured or forecast; else null. */
+  forecast_crosses_on: string | null;
 }
 
 export interface BudgetInput {

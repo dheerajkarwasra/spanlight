@@ -18,6 +18,7 @@ fields that changed; never `scope_id`, which can be an end user's identifier.
 import uuid
 from datetime import datetime
 
+from sqlalchemy import and_, exists, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,19 +27,30 @@ from app.alerts.rule_errors import UnknownChannelError
 from app.alerts.rules_queries import org_channel_ids
 from app.budgets import queries
 from app.budgets.errors import (
+    BudgetHistoryRetentionError,
     BudgetLimitError,
     BudgetNameTakenError,
     BudgetNotFoundError,
+    BudgetReservationsPendingError,
     UnknownScopeError,
 )
-from app.budgets.rule_sync import create_budget_rule, forget_counters, sync_budget_rule
+from app.budgets.periods import period_start
+from app.budgets.rule_sync import create_budget_rule, reclassify_history, sync_budget_rule
 from app.budgets.schemas import BudgetPatch, BudgetSpec
 from app.budgets.scope_parse import parse_metadata_scope, parse_trace_name_scope
-from app.budgets.types import BudgetScope
+from app.budgets.types import BudgetAction, BudgetPeriod, BudgetScope
 from app.config import Settings
 from app.core.redact import redact_text
 from app.db.errors import violated_constraint
-from app.db.models import AlertRule, AuditAction, Budget
+from app.db.models import (
+    AlertRule,
+    AuditAction,
+    Budget,
+    BudgetCounter,
+    BudgetReservation,
+    Project,
+    Span,
+)
 from app.services.audit import record_audit
 
 MAX_BUDGETS_PER_PROJECT = 50
@@ -64,8 +76,10 @@ async def create_budget(
     Raises `UnknownChannelError`, `UnknownScopeError`, `BudgetLimitError` and
     `BudgetNameTakenError`.
     """
+    await _check_history_retention(db, project_id, spec)
     await _check_channels(db, org_id, spec)
     spec = await _checked_scope(db, project_id, spec)
+    await _fence_ingest(db, project_id)
     if await queries.count_budgets(db, project_id) >= MAX_BUDGETS_PER_PROJECT:
         raise BudgetLimitError(MAX_BUDGETS_PER_PROJECT)
     rule = await create_budget_rule(db, project_id, actor_id, spec, now=now)
@@ -111,9 +125,53 @@ async def update_budget(
     changed = [column for column, value in values.items() if getattr(budget, column) != value]
     if not changed:
         return budget
+    await _check_history_retention(db, project_id, spec)
+    if REMEASURING_COLUMNS.intersection(changed):
+        pending = await db.scalar(
+            select(
+                exists().where(
+                    BudgetReservation.budget_id == budget.id,
+                    or_(
+                        BudgetReservation.status.in_(("held", "reaped")),
+                        and_(
+                            BudgetReservation.charged_usd > 0,
+                            BudgetReservation.period_start
+                            >= min(
+                                period_start(budget.period, now), period_start(spec.period, now)
+                            ),
+                            ~exists().where(
+                                Span.project_id == BudgetReservation.project_id,
+                                Span.trace_id == BudgetReservation.trace_id,
+                                Span.span_id == BudgetReservation.span_id,
+                                Span.cost_usd.is_not(None),
+                            ),
+                        ),
+                    ),
+                )
+            )
+        )
+        legacy = await db.scalar(
+            select(
+                exists().where(
+                    BudgetCounter.budget_id == budget.id,
+                    BudgetCounter.period_start
+                    >= min(period_start(budget.period, now), period_start(spec.period, now)),
+                    BudgetCounter.legacy_unattributed_usd > 0,
+                )
+            )
+        )
+        if pending or legacy:
+            raise BudgetReservationsPendingError
+    if ("enabled" in changed and spec.enabled) or {"scope", "scope_id"}.intersection(changed):
+        await _fence_ingest(db, project_id)
     await _settle_alert(db, rule, spec, changed, now=now, settings=settings)
     if REMEASURING_COLUMNS.intersection(changed):
-        await forget_counters(db, budget.id)
+        await reclassify_history(
+            db,
+            budget.id,
+            spec.period,
+            scope_changed=bool({"scope", "scope_id"}.intersection(changed)),
+        )
     for column in changed:
         setattr(budget, column, values[column])
     budget.updated_at = now
@@ -145,6 +203,7 @@ async def delete_budget(
     if found is None:
         raise BudgetNotFoundError
     budget, rule = found
+    await _fence_ingest(db, project_id)
     await close_firing_alert(db, rule, now, settings=settings)
     await _audit(db, org_id, budget, AuditAction.BUDGET_DELETE, actor_id, ip=ip)
     await db.delete(budget)
@@ -203,12 +262,39 @@ def spec_of(budget: Budget) -> BudgetSpec:
     )
 
 
+async def _check_history_retention(
+    db: AsyncSession, project_id: uuid.UUID, spec: BudgetSpec
+) -> None:
+    if not spec.enabled or spec.action is not BudgetAction.BLOCK:
+        return
+    days = 31 if spec.period is BudgetPeriod.MONTHLY else 1
+    retained = await db.scalar(select(Project.retention_days).where(Project.id == project_id))
+    if retained is not None and retained < days:
+        raise BudgetHistoryRetentionError(days)
+
+
 async def _check_channels(db: AsyncSession, org_id: uuid.UUID, spec: BudgetSpec) -> None:
     """Every channel the budget names is a channel of the organization."""
     known = await org_channel_ids(db, org_id, spec.channel_ids)
     unknown = [channel_id for channel_id in spec.channel_ids if channel_id not in known]
     if unknown:
         raise UnknownChannelError(unknown)
+
+
+async def _fence_ingest(db: AsyncSession, project_id: uuid.UUID) -> None:
+    """Wait for every ingest transaction in flight: they hold `KEY SHARE` on the project, which
+    `FOR UPDATE` conflicts with. The bucket-version triggers (migration 1032) skip a project with
+    no budget, so a batch that ran before this budget was visible must have committed before the
+    budget is; and the spans trigger (migration 1033) prices its deltas by the budget's scope,
+    so a batch that read the old scope must have committed before `reclassify_history` drops
+    the budget's rows and deltas, and a batch that read a budget being deleted must have
+    committed before its rows cascade. Always after `lock_budget`: an admission holds the
+    budget and then takes `KEY SHARE` on the project through its reservation insert, so a fence
+    taken before the budget lock could wait on an admission that waits on the budget."""
+    await db.execute(
+        text("SELECT id FROM projects WHERE id = :project_id FOR UPDATE"),
+        {"project_id": project_id},
+    )
 
 
 async def _checked_scope(db: AsyncSession, project_id: uuid.UUID, spec: BudgetSpec) -> BudgetSpec:

@@ -24,7 +24,8 @@ Run the checks for what you touched before you open a pull request. CI runs all 
 ```bash
 # Backend, which needs Postgres. See Test database below
 cd backend && uv sync --frozen
-uv run ruff check && uv run ruff format --check && uv run mypy app && uv run pytest -n auto
+uv run ruff check && uv run ruff format --check && uv run mypy app
+uv run pytest -n auto -m "not serial" && uv run pytest -m serial
 
 # Frontend
 cd frontend && npm ci
@@ -144,13 +145,13 @@ For the maintainer. A release is a pushed tag. `.github/workflows/release.yml` r
 | `sdk-python-v<semver>`, for example `sdk-python-v0.1.0`         | The `spanlight` package on PyPI                                                                                                         |
 | `sdk-typescript-v<semver>`, for example `sdk-typescript-v0.1.0` | The `spanlight` package on npm                                                                                                          |
 
-**Server images.** Image tags have no `v`: tag `v0.2.0` gives `:0.2.0`. The job builds both images, scans them, pushes the version tag, signs the image digests with cosign (keyless), moves `latest`, then attaches signed CycloneDX SBOMs to a GitHub Release with generated notes. `latest` moves only for a non-pre-release (a version with no `-`), and only after signing. A tag that is not `v<semver>` fails at the first step.
+**Server images.** Image tags have no `v`: tag `v0.2.0` gives `:0.2.0`. The server tag first runs the reusable CI workflow at the exact tagged SHA. Every required check must succeed, and the verified SHA must match before publication can start. The release job then builds both images once, smoke-tests those loaded candidates without rebuilding or pulling replacements, scans them, verifies their identities before pushing the version tag, checks the published digest identities, signs the image digests with cosign (keyless), moves `latest`, then attaches signed CycloneDX SBOMs to a GitHub Release with generated notes. Retain the evidence described in [Release verification](docs/runbooks/deploy.md#release-verification). `latest` moves only for a non-pre-release (a version with no `-`), and only after signing. A tag that is not `v<semver>` fails at the first step.
 
 **Python SDK.** Raise `version` in `sdks/python/pyproject.toml` and `__version__` in `sdks/python/src/spanlight/_version.py`, merge, then tag `sdk-python-v<that version>`. The job fails if the tag and either file disagree, and it runs the SDK tests before it builds or uploads anything. PyPI uploads are permanent and a version can never be reused, so check the number before you push the tag.
 
 **TypeScript SDK.** Raise `version` in `sdks/typescript/package.json` and `VERSION` in `sdks/typescript/src/version.ts`, merge, then tag `sdk-typescript-v<that version>`. The job fails if the tag and either file disagree, and runs lint, typecheck and tests before `npm publish --provenance`. An npm version can never be reused.
 
-**Action pins.** Every action in `release.yml` is pinned to a full commit SHA with a trailing `# vX.Y.Z` comment, because these jobs hold `id-token`, `packages` and `contents: write` and a tag such as `@v3` can be moved after review. `scripts/check-release-workflow.py` fails CI on a tag pin or a missing comment. Dependabot's `github-actions` updates raise the SHA and the comment together. `ci.yml` and `codeql.yml` hold no publish rights and stay on major-version tags. To pin by hand, find the commit with `git ls-remote https://github.com/<owner>/<repo> 'refs/tags/<tag>*'` and take the `^{}` line when the tag is annotated.
+**Action pins.** Every external action in `release.yml` and its reusable `ci.yml` is pinned to a full commit SHA with a trailing `# vX.Y.Z` comment, because these jobs hold `id-token`, `packages` and `contents: write` and a tag such as `@v3` can be moved after review. `scripts/check-release-workflow.py` fails CI on a tag pin or a missing comment. Dependabot's `github-actions` updates raise the SHA and the comment together. The repository-local reusable CI reference resolves at the caller's commit; its external actions are checked for SHA pins too. `codeql.yml` holds no publish rights and stays on major-version tags. To pin by hand, find the commit with `git ls-remote https://github.com/<owner>/<repo> 'refs/tags/<tag>*'` and take the `^{}` line when the tag is annotated.
 
 **One-time owner setup.**
 

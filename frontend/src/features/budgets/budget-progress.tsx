@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import {
   barFill,
   formatUsd,
+  inFlight,
   isExceeded,
   NOT_EVALUATED_REASON,
   percentLabel,
@@ -23,7 +24,8 @@ const UNMEASURED_REASON =
  * rests on colour alone). Before the first evaluation the spend is "—" and the bar is empty. The
  * bar repeats the printed figures, so it is hidden from assistive technology. Tick marks at 50, 80
  * and 100 % name their dollar figure on hover ("50 % · $250") and, for screen readers, in an
- * sr-only line.
+ * sr-only line. A `block` budget adds "In flight $0.42": gateway estimates held for calls still
+ * running (Figma "Budgets — Hard admission (G-007)"), "—" with its reason while unknown.
  */
 export function BudgetProgress({ budget }: { budget: Budget }) {
   const spent = budget.state?.spent_usd ?? null;
@@ -31,6 +33,7 @@ export function BudgetProgress({ budget }: { budget: Budget }) {
   const exceeded = isExceeded(ratio);
   const amount = formatUsd(budget.amount_usd) ?? budget.amount_usd;
   const ticks = tickPositions(Number(budget.amount_usd));
+  const flight = inFlight(budget);
 
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
@@ -88,6 +91,16 @@ export function BudgetProgress({ budget }: { budget: Budget }) {
           </Tooltip>
         ))}
       </div>
+      {flight === null ? null : (
+        <p className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+          <span>In flight</span>
+          {flight.text === null ? (
+            <UnknownValue reason={flight.reason} />
+          ) : (
+            <span className="font-semibold tabular">{flight.text}</span>
+          )}
+        </p>
+      )}
     </div>
   );
 }

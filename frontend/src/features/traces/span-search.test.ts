@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { filterTree, matchSpans } from "./span-search";
 import { buildSpanTree, flattenSpanTree } from "./span-tree";
-import { testSpan } from "./span-test-data";
+import { deepTestTree, testSpan } from "./span-test-data";
 
 describe("matchSpans", () => {
   const spans = [
@@ -10,11 +10,13 @@ describe("matchSpans", () => {
     testSpan("llm", "root", 1, 10, { name: "chat", input: { q: "Where is my ORDER?" } }),
     testSpan("omitted", "root", 2, 10, { name: "chat", payload_omitted: true, output: "order" }),
     testSpan("late", "root", 3, 10, { output: ["x".repeat(20_000), "order"] }),
+    // Attributes withheld, payloads loaded: the payloads are still searched.
+    testSpan("attrs", "root", 4, 10, { attributes_omitted: true, output: "order" }),
   ];
 
   it("matches names and loaded payloads, ignoring case", () => {
     expect(matchSpans(spans, "TICKET")).toEqual(new Set(["root"]));
-    expect(matchSpans(spans, "order")).toEqual(new Set(["llm"]));
+    expect(matchSpans(spans, "order")).toEqual(new Set(["llm", "attrs"]));
   });
 
   it("searches the payload's text, not its JSON", () => {
@@ -49,4 +51,17 @@ describe("filterTree", () => {
       "llm",
     ]);
   });
+});
+
+it("retains a matching leaf and its 4,999 ancestors when filtering", () => {
+  const { roots } = deepTestTree();
+  const kept = filterTree(roots, (span) => span.span_id === "4999");
+  let node = kept[0];
+  let count = 0;
+  while (node) {
+    count++;
+    node = node.children[0];
+  }
+  expect(count).toBe(5_000);
+  expect(filterTree(roots, () => false)).toEqual([]);
 });

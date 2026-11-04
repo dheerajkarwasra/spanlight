@@ -8,6 +8,7 @@ audit metadata holds the channel's name and kind and the delivery's id, never an
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,12 +29,15 @@ class DeliveryNotFoundError(Exception):
     """No delivery with this id on this channel."""
 
 
-class DeliveryNotRetryableError(Exception):
-    """The delivery is not a failed alert delivery, or its email recipient has left."""
+NotRetryableReason = Literal["not_failed", "never_rendered", "quarantined", "recipient_left"]
 
-    def __init__(self, *, recipient_left: bool = False) -> None:
-        super().__init__("recipient left" if recipient_left else "not failed")
-        self.recipient_left = recipient_left
+
+class DeliveryNotRetryableError(Exception):
+    """The delivery cannot go back in the queue; `reason` says why (`outbox.retryable`)."""
+
+    def __init__(self, reason: NotRetryableReason) -> None:
+        super().__init__(reason)
+        self.reason: NotRetryableReason = reason
 
 
 async def list_deliveries(
@@ -80,19 +84,21 @@ async def retry_delivery(
     """Queue a failed delivery again and return it as it now stands.
 
     Raises `ChannelNotFoundError` (no such channel in the organization), `DeliveryNotFoundError`
-    (no such delivery on the channel) and `DeliveryNotRetryableError` (it did not fail, or an
-    email's recipient is no longer a verified member: the fan-out check runs again).
+    (no such delivery on the channel) and `DeliveryNotRetryableError` (it did not fail, it was
+    never rendered, recovery quarantined it, or an email's recipient is no longer a verified
+    member: the fan-out check runs again).
     """
     if not await lock_org_for_write(db, org_id):
         raise ChannelNotFoundError
     channel = await queries.get_channel(db, org_id, channel_id)
     if channel is None:
         raise ChannelNotFoundError
-    if await delivery_queries.get_delivery(db, org_id, channel_id, delivery_id) is None:
+    row = await delivery_queries.get_delivery(db, org_id, channel_id, delivery_id)
+    if row is None:
         raise DeliveryNotFoundError
     await _require_recipient(db, org_id, channel_id, delivery_id, settings=settings)
     if not await outbox.retry_failed(db, org_id, channel_id, delivery_id, now):
-        raise DeliveryNotRetryableError
+        raise DeliveryNotRetryableError(_why_not_retryable(row))
     await record_audit(
         db,
         org_id=org_id,
@@ -113,6 +119,15 @@ async def retry_delivery(
     return retried
 
 
+def _why_not_retryable(row: DeliveryRow) -> NotRetryableReason:
+    """The one condition of `outbox.retryable` the row fails, in the order it checks them."""
+    if row.status is not NotificationStatus.FAILED:
+        return "not_failed"
+    if row.last_error is not None and row.last_error.startswith(outbox.RECOVERY_ERROR_PREFIX):
+        return "quarantined"
+    return "never_rendered"  # an email row with no `text`: it was never rendered
+
+
 async def _require_recipient(
     db: AsyncSession,
     org_id: uuid.UUID,
@@ -126,4 +141,4 @@ async def _require_recipient(
     if recipient is None:
         return
     if not await allowed_recipients(db, org_id, [recipient.lower()], settings=settings):
-        raise DeliveryNotRetryableError(recipient_left=True)
+        raise DeliveryNotRetryableError("recipient_left")

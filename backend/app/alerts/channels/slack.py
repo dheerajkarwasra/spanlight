@@ -10,6 +10,7 @@ import json
 import uuid
 from typing import TYPE_CHECKING, Any
 
+import structlog
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -28,6 +29,8 @@ NOT_A_SLACK_CHANNEL = "The channel is not a Slack channel"
 NO_URL = "The Slack channel has no webhook URL"
 BAD_TARGET = "The delivery names no valid channel"
 BAD_PAYLOAD = "The delivery carries no valid alert payload"
+RENDER_FAILED = "The alert could not be rendered as a Slack message"
+logger = structlog.get_logger(__name__)
 
 
 class SlackDeliverer:
@@ -44,9 +47,20 @@ class SlackDeliverer:
     async def deliver(self, target: dict[str, Any], payload: dict[str, Any]) -> None:
         url = await self._url(target)
         try:
-            message = format_slack(parse_payload(payload))
+            parsed = parse_payload(payload)
         except ValidationError:
             raise PermanentDeliveryError(BAD_PAYLOAD) from None
+        try:
+            message = format_slack(parsed)
+        except Exception as exc:  # a retry renders the same payload the same way
+            logger.error(
+                "alert_render_failed",
+                channel_id=str(target.get("channel_id")),
+                alert_event=parsed.event,
+                error_type=type(exc).__name__,
+                exc_info=exc,
+            )
+            raise PermanentDeliveryError(RENDER_FAILED) from None
         body = json.dumps(message, separators=(",", ":"), ensure_ascii=False).encode()
         await post_checked(self._client.get(), url, body=body)
 

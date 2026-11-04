@@ -10,8 +10,10 @@ from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
+import pytest
+
 from app.attribution.aggregate_sql import grouped_cte, retry_cost_sum
-from app.attribution.jobs import deep_days, pass_days, recent_days, refresh_all
+from app.attribution.jobs import recent_days, refresh_all
 from app.attribution.refresh import (
     VALUE_CAP,
     RefreshResult,
@@ -405,24 +407,15 @@ async def test_a_project_with_50000_distinct_values_yields_1001_rows_per_day(
     assert result.folded == 49_000
 
 
-def test_recent_pass_covers_yesterday_and_today_and_the_first_pass_of_a_day_covers_seven_more() -> (
-    None
-):
+def test_recent_pass_covers_only_yesterday_and_today_at_every_utc_slot() -> None:
     today = date(2026, 10, 16)
     day = timedelta(days=1)
-    midday = datetime(2026, 10, 16, 12, 7, tzinfo=UTC)
-    assert recent_days(midday) == [today - day, today]
-    assert deep_days(midday) == [today - offset * day for offset in range(7, 1, -1)]
-    assert pass_days(midday) == recent_days(midday)
-    # The pass whose 15-minute period starts at 00:00 UTC also recomputes [today - 7, today - 2].
-    first_of_day = datetime(2026, 10, 16, 0, 3, tzinfo=UTC)
-    assert pass_days(first_of_day) == [today - offset * day for offset in range(7, -1, -1)]
-    assert pass_days(datetime(2026, 10, 16, 0, 16, tzinfo=UTC)) == recent_days(midday)
-    assert pass_days(datetime(2026, 10, 15, 23, 59, tzinfo=UTC)) == [today - 2 * day, today - day]
-    # The day is the UTC day whatever zone the clock answers in: 02:03+02:00 is 00:03 UTC.
+    assert recent_days(datetime(2026, 10, 16, 12, 7, tzinfo=UTC)) == [today - day, today]
+    assert recent_days(datetime(2026, 10, 16, 0, 3, tzinfo=UTC)) == [today - day, today]
+    assert recent_days(datetime(2026, 10, 16, 0, 16, tzinfo=UTC)) == [today - day, today]
+    assert recent_days(datetime(2026, 10, 15, 23, 59, tzinfo=UTC)) == [today - 2 * day, today - day]
     ahead = datetime(2026, 10, 16, 2, 3, tzinfo=timezone(timedelta(hours=2)))
     assert recent_days(ahead) == [today - day, today]
-    assert pass_days(ahead) == pass_days(first_of_day)
 
 
 async def _promote(session_factory: SessionFactory, project_id: uuid.UUID, keys: list[str]) -> None:
@@ -474,3 +467,30 @@ async def test_promoted_key_backfills_seven_days_and_removal_deletes_rows(
     await refresh_all(session_factory, now=now)
     assert await _rows(session_factory, project_id, "metadata", "customer") == []
     assert await _days_of(session_factory, project_id, "trace_name") == {DAYS[1], DAYS[2]}
+
+
+@pytest.mark.parametrize("variant", ["omitted", "empty", "none"])
+async def test_optional_backfill_variants_keep_promoted_refresh_to_one_day(
+    session_factory: SessionFactory,
+    variant: str,
+) -> None:
+    project_id = await _project(session_factory)
+    await _seed(
+        session_factory,
+        project_id,
+        {
+            "first": _named("acme", "0.02", day=0),
+            "next": _named("acme", "0.03", day=1),
+        },
+    )
+    async with session_factory() as db:
+        await bind_project(db, project_id)
+        if variant == "omitted":
+            await refresh_attribution(db, project_id, ["customer"], [DAYS[0]])
+        elif variant == "empty":
+            await refresh_attribution(db, project_id, ["customer"], [DAYS[0]], backfill_days=())
+        else:
+            await refresh_attribution(db, project_id, ["customer"], [DAYS[0]], backfill_days=None)
+        await db.commit()
+    assert await _days_of(session_factory, project_id, "metadata", "customer") == {DAYS[0]}
+    assert await _days_of(session_factory, project_id, "trace_name") == {DAYS[0]}

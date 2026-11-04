@@ -44,6 +44,7 @@ from app.core.security import (
     parse_key,
     verify_csrf_token,
 )
+from app.core.throttle import check_and_record
 from app.db.models import (
     ApiKey,
     AuditAction,
@@ -61,6 +62,9 @@ from app.services.sessions import resolve_session
 
 SESSION_COOKIE = "spl_session"
 CSRF_COOKIE = "spl_csrf"
+# `__Host-` cookies are only accepted when Secure, host-only and on `/`, so a sibling subdomain
+# cannot plant or overwrite them. No fallback to the plain names over https: that would reopen it.
+HOST_PREFIX = "__Host-"
 CSRF_HEADER = "x-csrf-token"
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
@@ -115,11 +119,19 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+def session_cookie_name(settings: Settings) -> str:
+    return f"{HOST_PREFIX}{SESSION_COOKIE}" if settings.secure_cookies else SESSION_COOKIE
+
+
+def csrf_cookie_name(settings: Settings) -> str:
+    return f"{HOST_PREFIX}{CSRF_COOKIE}" if settings.secure_cookies else CSRF_COOKIE
+
+
 async def authenticate_session(
     request: Request, db: AsyncSession, settings: Settings
 ) -> SessionPrincipal:
     """Authenticate the session cookie; enforce CSRF on state-changing methods."""
-    token = request.cookies.get(SESSION_COOKIE)
+    token = request.cookies.get(session_cookie_name(settings))
     if not token:
         raise unauthorized()
     active = await resolve_session(db, token, now=utcnow())
@@ -128,7 +140,7 @@ async def authenticate_session(
 
     if request.method in _UNSAFE_METHODS:
         header_token = request.headers.get(CSRF_HEADER)
-        cookie_token = request.cookies.get(CSRF_COOKIE)
+        cookie_token = request.cookies.get(csrf_cookie_name(settings))
         if (
             not header_token
             or header_token != cookie_token
@@ -183,7 +195,7 @@ async def authenticate_api_key(request: Request, db: AsyncSession) -> ApiKeyPrin
 
 
 async def _authenticate_api_key(
-    db: AsyncSession, cache: KeyCache, credentials: str
+    db: AsyncSession, cache: KeyCache[CachedKey], credentials: str
 ) -> ApiKeyPrincipal:
     parsed = parse_key(credentials, API_KEY_PREFIX)
     if parsed is None:
@@ -584,11 +596,21 @@ async def _audit_denied(
     page load, and they change nothing. Neither is anything in a demo org.
 
     Its own session, committed now: the request's transaction ends with the refusal.
+
+    At most ten rows per member per org per fifteen minutes. A member looping on a refusal must
+    not grow the chain without bound or take its lock on every request; the refusal itself is
+    not throttled.
     """
     if request.method not in _UNSAFE_METHODS or org.is_demo:
         return
     target_type, target_id = ("project", project.id) if project else ("org", org.id)
     async with request.app.state.session_factory() as db:
+        wait = await check_and_record(
+            db, "audit_denied", f"{org.id}:{auth.user.id}", 10, timedelta(minutes=15)
+        )
+        if wait is not None:
+            await db.commit()
+            return
         await record_audit(
             db,
             org_id=org.id,

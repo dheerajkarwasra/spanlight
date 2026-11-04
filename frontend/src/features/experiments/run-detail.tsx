@@ -29,6 +29,7 @@ import {
 } from "./run-label";
 import { RunScores } from "./run-scores";
 import { RunStatusPill } from "./run-status-pill";
+import { RunTargetCard } from "./run-target-card";
 import { RunTotals } from "./run-totals";
 import { scoreMetas } from "./score-meta";
 import { targetVersionIds, useVersionIndex } from "./use-version-index";
@@ -120,6 +121,7 @@ function RunView({ experiment, run }: { experiment: Experiment; run: ExperimentR
           {runEndReason(run.error)}. The finished items are kept.
         </Notice>
       ) : null}
+      <RunTargetCard target={run.target} index={index} />
       <RunTotals run={run} />
       {run.totals ? <RunScores totals={run.totals} scores={scores} /> : null}
       <RunItems query={items} run={run} scores={scores} />

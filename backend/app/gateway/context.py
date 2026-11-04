@@ -41,6 +41,9 @@ UPSTREAM_ERROR_CODE = "UPSTREAM_ERROR"
 
 Clock = Callable[[], datetime]
 
+LARGE_BODY_BYTES = 64 * 1024
+"""A request body over this many bytes has its slow work moved off the event loop."""
+
 
 def _now() -> datetime:
     return datetime.now(UTC)
@@ -71,6 +74,7 @@ class GatewayRequest:
     `client_headers` are the request's headers; adapters copy only their allowlist upstream.
     `request_id` names the call in error bodies and the `X-Request-ID` header. `received` is
     when the call arrived; None (an in-process caller) starts the clocks when `execute` begins.
+    `body_bytes` is the body's JSON size as received (0 for an in-process caller).
     """
 
     surface: Surface
@@ -80,6 +84,7 @@ class GatewayRequest:
     client_headers: Mapping[str, str] = field(default_factory=dict)
     request_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     received: Received | None = None
+    body_bytes: int = 0
 
 
 class ByteStream(Protocol):
@@ -256,6 +261,7 @@ class GatewayResult:
     overhead_ms: float | None = None
     client_disconnected: bool = False
     disconnected_after_ms: float | None = None
+    stream_deadline: float | None = None  # event-loop time, fixed at first-byte acquisition
     stream_error: str | None = None  # why a stream ended before the provider finished it
     cut_by_fault: bool = False  # a `truncated_stream` fault withheld the end of the stream
     # Why a successful answer's usage is unknown (`usage.unreported_reason`): a stream cut short,

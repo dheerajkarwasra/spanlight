@@ -23,13 +23,13 @@ const NUMBER_CELL = "px-2 py-3 text-right font-mono text-label whitespace-nowrap
 function DayChips({ chips, plain = false }: { chips: DayChip[]; plain?: boolean }) {
   return chips.map((chip) =>
     plain ? (
-      <Badge key={chip.label}>
+      <Badge key={chip.label} variant={chip.tone}>
         {chip.label}
         <span className="sr-only">, </span>
       </Badge>
     ) : (
       <Tooltip key={chip.label} content={chip.tooltip} caret="start" side="bottom">
-        <Badge tabIndex={0} className="cursor-help">
+        <Badge tabIndex={0} variant={chip.tone} className="cursor-help">
           {chip.label}
         </Badge>
       </Tooltip>
@@ -42,7 +42,7 @@ function Chevron({ expanded }: { expanded: boolean }) {
     <ChevronDown
       aria-hidden
       className={cn(
-        "size-4 transition-transform duration-200 motion-reduce:transition-none",
+        "size-4 shrink-0 transition-transform duration-200 motion-reduce:transition-none",
         expanded && "rotate-180",
       )}
     />
@@ -144,7 +144,7 @@ export function DayTile({ row, expanded, onToggle, detailId }: DayRowProps) {
         className="flex w-full flex-col gap-2 rounded-tile p-3.5 text-left"
       >
         <span className="flex min-h-11 items-center gap-2">
-          <span className="font-mono text-label text-foreground">
+          <span className="font-mono text-label whitespace-nowrap text-foreground">
             {row.label}
             <span className="sr-only">. </span>
           </span>

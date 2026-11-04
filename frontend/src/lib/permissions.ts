@@ -17,6 +17,7 @@ export type Permission =
   | "export:create"
   | "gateway:write"
   | "credentials:manage"
+  | "prices:override"
   | "billing_sources:manage"
   | "alerts:write"
   | "insights:manage"
@@ -57,7 +58,13 @@ const ADMIN: Permission[] = [
   "billing_sources:manage",
   "datasets:lock",
 ];
-const OWNER: Permission[] = [...ADMIN, "org:delete", "org:security", "credentials:manage"];
+const OWNER: Permission[] = [
+  ...ADMIN,
+  "org:delete",
+  "org:security",
+  "credentials:manage",
+  "prices:override",
+];
 
 const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   viewer: new Set(VIEWER),

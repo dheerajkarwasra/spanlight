@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { ErrorState } from "@/components/error-state";
 import { NoAccess } from "@/components/no-access";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ReasonBanner, SaveFromReviewDialog } from "@/features/review";
+import { ReasonBanner, SaveFromReviewDialog, useReviewCopies } from "@/features/review";
 import { FAILURE_CATEGORY_SCORE } from "@/features/scores";
 import { usePermission, useProjectParams } from "@/features/shell";
 
@@ -54,7 +54,10 @@ function AnnotateWork() {
     () => (queue.data ? queueConfigs(queue.data, allConfigs.data) : []),
     [queue.data, allConfigs.data],
   );
-  const session = useWorkSession(queueId);
+  const copies = useReviewCopies();
+  const session = useWorkSession(queueId, {
+    onSettled: (itemId, action, scores) => void copies.settle(itemId, action, scores),
+  });
   const { state } = session;
   const item = visibleItem(state);
   const draft = useItemDraft(item?.id ?? null, configs);
@@ -193,6 +196,7 @@ function AnnotateWork() {
               }}
               open={review.saveOpen}
               onClose={() => review.setSaveOpen(false)}
+              onSaved={(copy) => copies.record(item.id, copy)}
             />
           ) : null}
         </main>

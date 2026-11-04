@@ -10,6 +10,15 @@ Call order, all in the request's transaction:
 So nothing about the key's project is read, and no project is bound, until the presented
 secret has been checked.
 
+`authenticated_context` runs those steps through the process's `KeyCache` of contexts, keyed by
+prefix, with the API keys' TTL (`api_key_cache_ttl_seconds`) and rules (`app.api.key_cache`).
+A hit skips steps 2 and 4, never the secret check, and binds the key's project as step 4 would.
+Only a context whose secret matched is cached. What a hit can serve stale is what changed after
+it was read: a key revoked or edited, a route, credential or fault profile changed, a project's
+capture settings. A change made through this process's API clears the cache at once (the
+gateway key, route, credential, Integration Lab and project handlers, and project or
+organization deletion); one made through another process is seen here within the TTL.
+
 The key is found by its prefix before its project is known. `gateway_keys` is under row-level
 security and request code never sets the bypass flag, so `find_key` goes through the read-only
 policy that migration 0202 adds: with the transaction-local setting `app.gateway_key_prefix`
@@ -25,7 +34,8 @@ from dataclasses import dataclass
 from sqlalchemy import Text, and_, cast, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import GATEWAY_KEY_PREFIX
+from app.api.key_cache import KeyCache
+from app.core.security import GATEWAY_KEY_PREFIX, key_secret_matches
 from app.db.models import FaultProfile, GatewayKey, GatewayRoute, Project, ProviderCredential
 from app.db.rls import bind_project
 from app.gateway.route_config import RouteConfig, load_stored
@@ -34,6 +44,9 @@ _SET_PREFIX = text("SELECT set_config('app.gateway_key_prefix', :prefix, true)")
 # A stored prefix as `parse_key` produces it: the kind prefix and a 12 character lowercase
 # base32 id (`app.core.security`).
 _PREFIX_FORMAT = re.compile(re.escape(GATEWAY_KEY_PREFIX) + "[a-z2-7]{12}")
+# Compared against when the presented prefix matches no key, so an unknown key costs the same
+# hash comparison as a known one with the wrong secret.
+_DUMMY_SECRET_HASH = bytes(32)
 
 
 @dataclass(frozen=True)
@@ -133,3 +146,26 @@ async def load_key_context(db: AsyncSession, key: GatewayKey) -> KeyContext | No
         },
         fault_profile=fault_profile,
     )
+
+
+async def authenticated_context(
+    db: AsyncSession, cache: KeyCache["KeyContext"], prefix: str, secret: str
+) -> KeyContext | None:
+    """The context of the key that `prefix` and `secret` present, or None to refuse it.
+
+    Steps 2 to 4 above, through `cache`. Leaves the key's project bound either way.
+    """
+    cached = cache.get(prefix)
+    if cached is not None:
+        if not key_secret_matches(secret, cached.key.secret_hash):
+            return None
+        await bind_project(db, cached.project_id)
+        return cached
+    key = await find_key(db, prefix)
+    stored = key.secret_hash if key is not None else _DUMMY_SECRET_HASH
+    if not key_secret_matches(secret, stored) or key is None:
+        return None
+    context = await load_key_context(db, key)
+    if context is not None:
+        cache.put(prefix, context)
+    return context

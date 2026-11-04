@@ -15,12 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import Settings
 from app.db.models import NotificationOutbox, NotificationStatus
 from app.email.deliverer import EmailDeliverer
-from app.email.message import EmailDeliveryError, EmailMessage
+from app.email.message import EmailMessage
 from app.email.providers.resend import ResendEmailSender
 from app.notifications import NotificationKind, enqueue
 from app.notifications.defaults import register_default_deliverers
 from app.notifications.jobs import deliver_due
-from app.notifications.registry import DelivererRegistry
+from app.notifications.registry import DelivererRegistry, PermanentDeliveryError
 
 SessionFactory = async_sessionmaker[AsyncSession]
 
@@ -87,9 +87,11 @@ async def test_deliverer_sends_text_only_when_there_is_no_html(payload: dict[str
 async def test_deliverer_rejects_a_malformed_row_by_name(
     target: dict[str, Any], payload: dict[str, Any], missing: str
 ) -> None:
+    """A row that cannot become a message never will: the failure is permanent, so an operator
+    replay of a text-less email does not spend every attempt."""
     sender = RecordingSender()
 
-    with pytest.raises(EmailDeliveryError, match=f"'{missing}'"):
+    with pytest.raises(PermanentDeliveryError, match=f"'{missing}'"):
         await EmailDeliverer(sender).deliver(target, payload)
 
     assert sender.sent == []

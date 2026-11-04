@@ -11,20 +11,28 @@ from tests.authz.matrix import Route
 # `tests/keys/` (`test_token_route_inventory.py`, `test_anonymous_routes.py`).
 _ACCOUNT = "no organization or project in the path; only the caller's own account"
 _SIGN_IN = "reachable before sign-in or part of signing in: there is no role yet"
-_TOKEN_IN_URL = "authorized by the invite token in the request, not by a membership"
+_INVITE_TOKEN = "authorized by the invite token in the request, not by a membership"
 _PUBLIC = "starts an anonymous demo session: no sign-in to check"
+_UNSUBSCRIBE_TOKEN = "anonymous; authorized by the emailed unsubscribe token, not by a membership"
 
 NOT_IN_MATRIX: dict[Route, str] = {
     ("POST", "/api/v1/auth/signup"): _SIGN_IN,
     ("POST", "/api/v1/auth/login"): _SIGN_IN,
     ("POST", "/api/v1/auth/logout"): _ACCOUNT,
     ("GET", "/api/v1/auth/me"): _ACCOUNT,
+    ("PATCH", "/api/v1/auth/me"): _ACCOUNT,
+    ("DELETE", "/api/v1/auth/me"): _ACCOUNT,
     ("PUT", "/api/v1/auth/me/activation-checklist"): _ACCOUNT,
+    ("GET", "/api/v1/auth/terms"): _SIGN_IN,
+    ("POST", "/api/v1/auth/terms/accept"): _ACCOUNT,
     ("GET", "/api/v1/auth/sessions"): _ACCOUNT,
     ("DELETE", "/api/v1/auth/sessions"): _ACCOUNT,
     ("DELETE", "/api/v1/auth/sessions/{session_id}"): _ACCOUNT,
     ("POST", "/api/v1/auth/email/verify/request"): _ACCOUNT,
     ("POST", "/api/v1/auth/email/verify/confirm"): _SIGN_IN,
+    ("POST", "/api/v1/auth/email/change"): _ACCOUNT,
+    ("POST", "/api/v1/auth/email/change/confirm"): _SIGN_IN,
+    ("POST", "/api/v1/email/unsubscribe"): _UNSUBSCRIBE_TOKEN,
     ("POST", "/api/v1/auth/password/forgot"): _SIGN_IN,
     ("POST", "/api/v1/auth/password/reset"): _SIGN_IN,
     ("GET", "/api/v1/auth/totp"): _ACCOUNT,
@@ -41,8 +49,8 @@ NOT_IN_MATRIX: dict[Route, str] = {
     ("GET", "/api/v1/auth/oauth/{provider}/start"): _SIGN_IN,
     ("GET", "/api/v1/auth/oauth/{provider}/callback"): _SIGN_IN,
     ("POST", "/api/v1/orgs"): "creates an organization of the caller's own: no membership to check",
-    ("GET", "/api/v1/invites/preview"): _TOKEN_IN_URL,
-    ("POST", "/api/v1/invites/accept"): _TOKEN_IN_URL,
+    ("POST", "/api/v1/invites/preview"): _INVITE_TOKEN,
+    ("POST", "/api/v1/invites/accept"): _INVITE_TOKEN,
     ("GET", "/api/v1/prices"): "the global price table: any signed-in user may read it",
     ("POST", "/api/v1/demo/session"): _PUBLIC,
 }

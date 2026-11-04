@@ -1,0 +1,5 @@
+# Report security issues privately through GitHub. Renew Expires before it lapses (a test fails 60 days ahead).
+Contact: https://github.com/dheerajkarwasra/spanlight/security/advisories/new
+Expires: 2027-11-01T00:00:00Z
+Preferred-Languages: en
+Policy: https://github.com/dheerajkarwasra/spanlight/blob/main/SECURITY.md

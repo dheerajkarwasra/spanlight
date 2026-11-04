@@ -95,8 +95,8 @@ describe("CompareSteps' Show diff", () => {
     await user.click(toggle);
 
     expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(span).toHaveBeenCalledWith("proj_1", "trace_a", "span_a");
-    expect(span).toHaveBeenCalledWith("proj_1", "trace_b", "span_b");
+    expect(span).toHaveBeenCalledWith("proj_1", "trace_a", "span_a", expect.any(AbortSignal));
+    expect(span).toHaveBeenCalledWith("proj_1", "trace_b", "span_b", expect.any(AbortSignal));
     const outputA = await screen.findByRole("list", { name: "A · Baseline output" });
     const outputB = screen.getByRole("list", { name: "B · Candidate output" });
     expect(within(outputA).getByText("Removed:").parentElement).toHaveTextContent(

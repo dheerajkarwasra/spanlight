@@ -3,7 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import type { CreatedApiKey, Membership, OnboardingStatus, Project } from "@/lib/api";
+import type { CreatedApiKey, Membership, Project } from "@/lib/api";
 import { can } from "@/lib/permissions";
 
 import { ApiKeyCard } from "./api-key-card";
@@ -14,13 +14,13 @@ import { SnippetTabs } from "./snippet-tabs";
 import { DEFAULT_ENVIRONMENT, type SnippetId } from "./snippets";
 import { newTestTraceIds } from "./test-trace";
 import { TestTraceButton } from "./test-trace-button";
-import { useFirstTrace } from "./use-onboarding-status";
+import type { ConnectionStatus } from "./use-onboarding-status";
 
 interface ConnectStepProps {
   membership: Membership;
   project: Project;
   /** The polling onboarding status, owned by the page so the step pills can show completion. */
-  status: UseQueryResult<OnboardingStatus>;
+  status: UseQueryResult<ConnectionStatus>;
 }
 
 /**
@@ -36,15 +36,14 @@ export function ConnectStep({ membership, project, status }: ConnectStepProps) {
   // not in the button, so switching tabs and back reuses them.
   const [testIds] = useState(newTestTraceIds);
   const [testSent, setTestSent] = useState(false);
-  const received = status.data?.has_traces === true;
+  const received = status.data?.activation?.first_trace === true;
   // Auto-open only for an arrival seen on this visit, not for a project that already had traces.
   const [waitedHere, setWaitedHere] = useState(false);
-  if (status.data?.has_traces === false && !waitedHere) {
+  if (status.data?.activation?.first_trace === false && !waitedHere) {
     setWaitedHere(true);
   }
-  const firstTraceAt = received ? (status.data?.first_trace_at ?? null) : null;
-  const firstTrace = useFirstTrace(project.id, firstTraceAt);
-  const traceId = firstTrace.data?.trace_id ?? null;
+  const firstTraceAt = received ? (status.data?.activation?.first_trace_at ?? null) : null;
+  const traceId = received ? (status.data?.activation?.first_trace_id ?? null) : null;
   const action = firstTraceAction({
     secretOnScreen: createdKey !== null,
     arrivedThisVisit: waitedHere,
@@ -92,7 +91,7 @@ export function ConnectStep({ membership, project, status }: ConnectStepProps) {
     <div className="flex flex-col gap-5">
       {/* Announces the switch to the success state; the visible cards live in different places. */}
       <p role="status" className="sr-only">
-        {received ? "Connected. Your first trace has arrived." : ""}
+        {received ? "Your app is connected. Application trace received." : ""}
       </p>
 
       {received ? (
@@ -100,6 +99,7 @@ export function ConnectStep({ membership, project, status }: ConnectStepProps) {
           orgId={membership.org.id}
           projectId={project.id}
           firstTraceAt={firstTraceAt}
+          traceId={traceId}
         />
       ) : null}
 
@@ -122,8 +122,8 @@ export function ConnectStep({ membership, project, status }: ConnectStepProps) {
       {received ? null : (
         <WaitingForTrace
           gateway={snippetId === "gateway"}
-          testSent={testSent}
-          error={status.isError && !status.data ? status.error : null}
+          testSent={testSent || status.data?.has_traces === true}
+          error={status.isError ? status.error : null}
           onRetry={() => {
             void status.refetch();
           }}

@@ -203,15 +203,14 @@ test("the peek opens at 1440, j moves on, Back closes, Open full page keeps the 
   await expectNoAxeViolations(page);
 
   const span = peek.getByRole("treeitem").first();
-  const spanId = ((await span.getAttribute("id")) ?? "").replace("span-row-", "");
-  expect(spanId).toMatch(/^[0-9a-f]{16}$/);
+  const spanText = await span.innerText();
   await span.click();
   await peek.getByRole("tab", { name: "Attributes" }).click();
   await peek.getByRole("link", { name: "Open full page" }).click();
   await expect(page).toHaveURL(/\/traces\/[0-9a-f]{32}\?/);
-  const opened = new URL(page.url()).searchParams;
-  expect(opened.get("span")).toBe(spanId);
-  expect(opened.get("tab")).toBe("attributes");
+  await expect(page.getByRole("treeitem", { selected: true })).toHaveText(spanText, {
+    useInnerText: true,
+  });
   await expect(page.getByRole("tab", { name: "Attributes", selected: true })).toBeVisible();
   await expect(page.getByRole("heading", { level: 1, name: firstName })).toBeVisible();
 });

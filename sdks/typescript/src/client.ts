@@ -6,6 +6,7 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
+import { BlockList, isIP } from "node:net";
 
 import { Exporter } from "./exporter.js";
 import { log } from "./log.js";
@@ -67,6 +68,47 @@ export interface TraceUpdate {
 }
 
 const DISABLED_VALUES: ReadonlySet<string> = new Set(["false", "0", "no", "off"]);
+// Plain http:// is allowed only for hosts that cannot be on the public internet. The Python SDK
+// applies the same rule (sdks/python/src/spanlight/_hosts.py).
+const LOCAL_NETWORKS = new BlockList();
+for (const [network, prefix] of [
+  ["127.0.0.0", 8],
+  ["10.0.0.0", 8],
+  ["172.16.0.0", 12],
+  ["192.168.0.0", 16],
+  ["169.254.0.0", 16],
+] as const)
+  LOCAL_NETWORKS.addSubnet(network, prefix, "ipv4");
+for (const [network, prefix] of [
+  ["::1", 128],
+  ["fc00::", 7],
+  ["fe80::", 10],
+] as const)
+  LOCAL_NETWORKS.addSubnet(network, prefix, "ipv6");
+const LOCAL_SUFFIXES = [".localhost", ".local", ".internal"];
+const SINGLE_LABEL = /^[a-z0-9-]+$/;
+
+/** True for an https:// URL, or plain http:// to a local or private-network host. */
+function isSafeHost(host: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(host);
+  } catch {
+    return false;
+  }
+  if (url.protocol === "https:") return url.hostname !== "";
+  return url.protocol === "http:" && isLocalHostname(url.hostname);
+}
+
+function isLocalHostname(hostname: string): boolean {
+  // URL already lowercases the name, keeps IPv6 brackets and turns "134744072" into "8.8.8.8".
+  let name = hostname.endsWith(".") ? hostname.slice(0, -1) : hostname;
+  if (name.startsWith("[")) name = name.slice(1, -1);
+  if (name === "localhost" || LOCAL_SUFFIXES.some((suffix) => name.endsWith(suffix))) return true;
+  const family = isIP(name);
+  if (family !== 0) return LOCAL_NETWORKS.check(name, family === 4 ? "ipv4" : "ipv6");
+  return SINGLE_LABEL.test(name);
+}
 /** The current span. Exported for `propagation.ts`; not part of the public API. */
 export const context = new AsyncLocalStorage<Span>();
 
@@ -93,6 +135,15 @@ export class Client {
     let host = options.host ?? (env.SPANLIGHT_HOST || "http://localhost:8000");
     // A loop, not /\/+$/: that pattern backtracks quadratically on a long run of slashes.
     while (host.endsWith("/")) host = host.slice(0, -1);
+    // The key is a bearer credential: never send it in clear text to another machine.
+    if (!isSafeHost(host)) {
+      log.warn(
+        "The host must be an https:// URL (plain http:// is allowed only for local and " +
+          "private-network hosts). " +
+          "The API key is not sent, so tracing is disabled.",
+      );
+      return;
+    }
     this.exporter = new Exporter({
       url: `${host}/v1/traces`,
       apiKey,

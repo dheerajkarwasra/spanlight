@@ -48,13 +48,15 @@ def assert_blocked(response: httpx.Response) -> None:
     assert body["error"]["spanlight_code"] == "BUDGET_EXCEEDED"
 
 
-async def test_block_budget_is_enforced_only_after_evaluation(budget_world: BudgetWorld) -> None:
+async def test_block_budget_enforces_ingested_history_before_evaluation(
+    budget_world: BudgetWorld,
+) -> None:
     world = budget_world
     budget = await create_budget(world)
     await ingest_spend(world)  # $0.002 against a $0.001 cap
 
-    # Not evaluated yet: the call goes through, the overrun ADR 0012 allows.
-    assert (await chat(world, scripted_tokens=0)).status_code == 200
+    # Fresh history protects admission even before the evaluator updates notification state.
+    assert_blocked(await chat(world))
 
     await evaluate(world, next_pass(world.clock))
     state = await state_of(world, budget)
@@ -67,10 +69,10 @@ async def test_block_budget_is_enforced_only_after_evaluation(budget_world: Budg
     assert_blocked(await chat(world))
     assert_blocked(await message(world))
     assert blocks.value == 2
-    assert len(world.fake.requests) == 1  # only the call made before the evaluation
+    assert len(world.fake.requests) == 0
     blocked = await blocked_spans(world)
-    assert [row["attributes"]["spanlight.budget.id"] for row in blocked] == [str(budget.id)] * 2
-    assert [row["cost_usd"] for row in blocked] == [None, None]
+    assert [row["attributes"]["spanlight.budget.id"] for row in blocked] == [str(budget.id)] * 3
+    assert [row["cost_usd"] for row in blocked] == [None, None, None]
     await ingest_spend(world)  # ingestion is never blocked
 
 

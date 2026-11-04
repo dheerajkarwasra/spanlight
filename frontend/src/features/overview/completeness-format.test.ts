@@ -6,6 +6,7 @@ import {
   completenessReason,
   completenessText,
   formatCompleteness,
+  INGEST_REFUSED_NOTE,
   lossTiles,
   SDK_UNREPORTED_REASON,
   storedLine,
@@ -97,14 +98,29 @@ describe("completenessReason", () => {
 describe("lossTiles", () => {
   it("keeps the three sources in order; the server's zeros are none, the SDK's are unknown", () => {
     expect(lossTiles([])).toEqual([
-      { source: "gateway", label: "Gateway", count: 0, detail: "none", unknownReason: null },
-      { source: "ingest", label: "Ingest rejected", count: 0, detail: "none", unknownReason: null },
+      {
+        source: "gateway",
+        label: "Gateway",
+        count: 0,
+        detail: "none",
+        unknownReason: null,
+        note: null,
+      },
+      {
+        source: "ingest",
+        label: "Ingest rejected",
+        count: 0,
+        detail: "none",
+        unknownReason: null,
+        note: null,
+      },
       {
         source: "sdk",
         label: "SDK dropped or failed",
         count: null,
         detail: "none reported",
         unknownReason: SDK_UNREPORTED_REASON,
+        note: null,
       },
     ]);
     expect(SDK_UNREPORTED_REASON).toBe(
@@ -135,6 +151,7 @@ describe("lossTiles", () => {
       count: 4,
       detail: "other 4",
       unknownReason: null,
+      note: null,
     });
   });
 });
@@ -153,5 +170,28 @@ describe("storedLine", () => {
     expect(storedLine(result({ completeness: null, stored_spans: 0 }))).toBe(
       "No spans stored or lost in this window",
     );
+  });
+});
+
+describe("quota reasons", () => {
+  it("names the three cap refusals in the ingest tile and keeps other reasons as they are", () => {
+    const [, ingest] = lossTiles([
+      { source: "ingest", reason: "quota_spans", count: 12_034 },
+      { source: "ingest", reason: "quota_rate", count: 3_210 },
+      { source: "ingest", reason: "quota_bytes", count: 7 },
+      { source: "ingest", reason: "validation", count: 9 },
+    ]);
+
+    expect(ingest?.detail).toBe(
+      "Daily span quota 12,034 · Rate limit 3,210 · validation 9 · Daily byte quota 7",
+    );
+    expect(ingest?.note).toBe(INGEST_REFUSED_NOTE);
+    expect(INGEST_REFUSED_NOTE).toMatch(/once per refused request/);
+  });
+
+  it("carries no note when nothing was refused by a cap", () => {
+    const [, ingest] = lossTiles([{ source: "ingest", reason: "validation", count: 9 }]);
+
+    expect(ingest?.note).toBeNull();
   });
 });

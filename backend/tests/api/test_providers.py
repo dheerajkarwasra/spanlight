@@ -15,6 +15,8 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 
 from app.api.window import TimeWindow
 from app.config import Settings
@@ -222,6 +224,36 @@ async def test_a_capitalised_provider_lists_its_incidents(
     assert [found["id"] for found in card["incidents"]] == [incident]
 
 
+async def test_health_reads_every_providers_incidents_in_one_query(
+    owner: tuple[Browser, uuid.UUID], session_factory: SessionFactory, now: datetime
+) -> None:
+    browser, project_id = owner
+    at = now - timedelta(minutes=10)
+    providers = ("openai", "anthropic", "google")
+    await seed_trace(session_factory, project_id, [Call(at, provider=p) for p in providers])
+    expected = {
+        p: await seed_incident(session_factory, f"one-{p}", now - timedelta(minutes=30), provider=p)
+        for p in providers
+    }
+    statements: list[str] = []
+
+    def record(_conn: Any, _cursor: Any, statement: str, *_: Any) -> None:
+        statements.append(statement)
+
+    event.listen(Engine, "before_cursor_execute", record)
+    try:
+        response = await browser.get(health_path(project_id), params=window(now - HOUR, now))
+    finally:
+        event.remove(Engine, "before_cursor_execute", record)
+
+    assert response.status_code == 200, response.text
+    cards = {card["provider"]: card for card in response.json()["providers"]}
+    assert {p: [i["id"] for i in cards[p]["incidents"]] for p in providers} == {
+        p: [incident] for p, incident in expected.items()
+    }
+    assert sum("FROM provider_incidents" in s for s in statements) == 1
+
+
 async def test_an_unpriced_retry_keeps_the_count_and_hides_the_cost(
     owner: tuple[Browser, uuid.UUID], session_factory: SessionFactory, now: datetime
 ) -> None:
@@ -316,15 +348,41 @@ async def test_timeseries_straddles_the_rollup_split(
 
     assert response.status_code == 200, response.text
     assert response.json() == [
-        {"bucket_start": z(hour - 4 * HOUR), "by_class": {"rate_limit": 1}, "approximate": False},
-        {"bucket_start": z(hour - 3 * HOUR), "by_class": {}, "approximate": True},
         {
+            "aggregate_status": "complete",
+            "oldest_pending_at": None,
+            "bucket_start": z(hour - 4 * HOUR),
+            "by_class": {"rate_limit": 1},
+            "approximate": False,
+        },
+        {
+            "aggregate_status": "complete",
+            "oldest_pending_at": None,
+            "bucket_start": z(hour - 3 * HOUR),
+            "by_class": {},
+            "approximate": True,
+        },
+        {
+            "aggregate_status": "complete",
+            "oldest_pending_at": None,
             "bucket_start": z(hour - 2 * HOUR),
             "by_class": {"provider_5xx": 2, "timeout": 1},
             "approximate": True,
         },
-        {"bucket_start": z(hour - HOUR), "by_class": {}, "approximate": False},
-        {"bucket_start": z(hour), "by_class": {"rate_limit": 1}, "approximate": False},
+        {
+            "aggregate_status": "complete",
+            "oldest_pending_at": None,
+            "bucket_start": z(hour - HOUR),
+            "by_class": {},
+            "approximate": False,
+        },
+        {
+            "aggregate_status": "complete",
+            "oldest_pending_at": None,
+            "bucket_start": z(hour),
+            "by_class": {"rate_limit": 1},
+            "approximate": False,
+        },
     ]
 
     by_provider = {**params, "provider": "anthropic"}

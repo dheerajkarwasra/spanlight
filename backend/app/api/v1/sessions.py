@@ -12,10 +12,17 @@ from sqlalchemy import select
 
 from app.api.deps import DbSession
 from app.api.params import NO_NUL, Environment
-from app.api.schemas import Page, SpanOut
+from app.api.schemas import Page
 from app.api.schemas.traces import SessionListItemOut, SessionPage, SessionTurnOut
 from app.api.trace_filters import OptionalText
-from app.api.v1.traces import NO_DETAILS, ProjectReader, trace_summary
+from app.api.v1.traces import (
+    NO_DETAILS,
+    SPAN_CONTENT_RESPONSES,
+    ProjectReader,
+    SpanContent,
+    span_out,
+    trace_summary,
+)
 from app.api.window import Window
 from app.core.pagination import DEFAULT_PAGE_SIZE, PageLimit
 from app.core.wire import unescape_path_name
@@ -23,7 +30,7 @@ from app.db.models import Trace
 from app.explorer import session_queries, trace_sort
 from app.explorer.session_queries import SessionSort
 from app.explorer.trace_previews import trace_previews
-from app.explorer.trace_queries import summary_details, turn_spans
+from app.explorer.trace_queries import span_content_too_large, summary_details, turn_spans
 from app.explorer.trace_sort import SortOrder
 from app.scores.queries import latest_scores_by_name
 
@@ -88,7 +95,11 @@ async def list_sessions(
 
 # `:path` lets an id that contains a slash through; `.`, `..` and ids starting with `~` arrive
 # `~`-escaped (`unescape_path_name`), as on the users routes. 256 is `TraceIn.session_id`'s limit.
-@router.get("/sessions/{session_id:path}/turns", response_model=Page[SessionTurnOut])
+@router.get(
+    "/sessions/{session_id:path}/turns",
+    response_model=Page[SessionTurnOut],
+    responses=SPAN_CONTENT_RESPONSES,
+)
 async def list_session_turns(
     project_id: uuid.UUID,
     session_id: Annotated[str, Path(min_length=1, max_length=257, pattern=NO_NUL)],
@@ -97,6 +108,7 @@ async def list_session_turns(
     environment: Environment = None,
     limit: PageLimit = DEFAULT_PAGE_SIZE,
     cursor: Annotated[str | None, Query()] = None,
+    span_content: SpanContent = None,
 ) -> Page[SessionTurnOut]:
     """The session's traces as `GET /traces?session_id=` lists them (newest first, same cursor),
     each with the few spans its conversation turn is read from. No time window: the session's
@@ -116,6 +128,10 @@ async def list_session_turns(
     details = await summary_details(db, project.id, trace_ids)
     scores = await latest_scores_by_name(db, project.id, trace_ids)
     spans = await turn_spans(db, project.id, trace_ids)
+    if span_content is None and any(
+        span.attributes_omitted for picks in spans.values() for span in picks
+    ):
+        raise span_content_too_large()
     tools = await session_queries.tool_calls(db, project.id, trace_ids)
     return Page[SessionTurnOut](
         items=[
@@ -125,12 +141,7 @@ async def list_session_turns(
                     *details.get(trace.trace_id, NO_DETAILS),
                     scores.get(trace.trace_id, []),
                 ),
-                spans=[
-                    SpanOut.model_validate(span, from_attributes=True).model_copy(
-                        update={"payload_omitted": omitted}
-                    )
-                    for span, omitted in spans.get(trace.trace_id, [])
-                ],
+                spans=[span_out(span) for span in spans.get(trace.trace_id, [])],
                 tool_calls=tools.get(trace.trace_id, 0),
             )
             for trace in page

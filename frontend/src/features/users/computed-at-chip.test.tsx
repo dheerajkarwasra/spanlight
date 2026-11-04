@@ -36,6 +36,20 @@ describe("ComputedAtChip", () => {
     expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
   });
 
+  it("names a retained snapshot and explains the removed source rows", () => {
+    render(
+      <TooltipProvider>
+        <ComputedAtChip value={AT_1405} pendingTraces={37} history="Retained snapshot" />
+      </TooltipProvider>,
+    );
+    const button = screen.getByRole("button", { name: "Retained snapshot" });
+    expect(screen.queryByText(UPDATED)).not.toBeInTheDocument();
+    tap(button);
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "Source rows were removed. Stored values are snapshots; missing values are unknown.",
+    );
+  });
+
   it("toggles the explanation on a touch tap", () => {
     renderChip(AT_1405);
     const button = screen.getByRole("button", { name: UPDATED });

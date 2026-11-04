@@ -1,20 +1,22 @@
 import { Link } from "@tanstack/react-router";
+import { Fragment } from "react";
 
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
+import { LEGAL_PAGES_ENABLED } from "@/features/legal/legal-enabled";
 
-import { DOCS_LINKS, EXTERNAL_LINKS, PYPI_URL, SECTION_IDS } from "./links";
+import { DOCS_LINKS, EXTERNAL_LINKS, LEGAL_PATHS, PYPI_URL, SECTION_IDS } from "./links";
 
 const LINK_CLASS =
   "rounded-sm text-sm whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground";
 
 const BOTTOM_LINK_CLASS =
-  "rounded-sm underline-offset-2 transition-colors hover:text-foreground hover:underline";
+  "inline-flex min-h-6 items-center rounded-sm underline-offset-2 md:min-h-0 transition-colors hover:text-foreground hover:underline";
 
 /** A footer entry: a plain link, an in-app route, or the "start the demo" action. */
 type FooterItem =
   | { label: string; href: string }
-  | { label: string; to: "/login" | "/signup" }
+  | { label: string; to: "/login" | "/signup" | (typeof LEGAL_PATHS)[keyof typeof LEGAL_PATHS] }
   | { label: string; action: "demo" };
 
 interface FooterColumnData {
@@ -26,9 +28,9 @@ const COLUMNS: readonly FooterColumnData[] = [
   {
     heading: "Product",
     items: [
-      { label: "Features", href: `#${SECTION_IDS.cost}` },
-      { label: "Beyond tracing", href: `#${SECTION_IDS.features}` },
-      { label: "How it works", href: `#${SECTION_IDS.howItWorks}` },
+      { label: "Features", href: `/#${SECTION_IDS.cost}` },
+      { label: "Beyond tracing", href: `/#${SECTION_IDS.features}` },
+      { label: "How it works", href: `/#${SECTION_IDS.howItWorks}` },
       { label: "Live demo", action: "demo" },
       { label: "Sign in", to: "/login" },
       { label: "Get started", to: "/signup" },
@@ -63,10 +65,30 @@ const COLUMNS: readonly FooterColumnData[] = [
       { label: "Changelog", href: DOCS_LINKS.changelog },
       { label: "Contributing", href: EXTERNAL_LINKS.contributing },
       { label: "Security", href: DOCS_LINKS.securityPolicy },
+      ...(LEGAL_PAGES_ENABLED
+        ? [
+            { label: "DPA", to: LEGAL_PATHS.dpa },
+            { label: "Subprocessors", to: LEGAL_PATHS.subprocessors },
+          ]
+        : []),
       { label: "License (MIT)", href: EXTERNAL_LINKS.license },
       { label: "PyPI package", href: PYPI_URL },
     ],
   },
+];
+
+/** Bottom row, after the copyright: in-app legal routes first, then the outbound links. */
+const BOTTOM_LINKS: readonly Exclude<FooterItem, { action: "demo" }>[] = [
+  ...(LEGAL_PAGES_ENABLED
+    ? [
+        { label: "Privacy", to: LEGAL_PATHS.privacy },
+        { label: "Terms", to: LEGAL_PATHS.terms },
+        { label: "Imprint", to: LEGAL_PATHS.imprint },
+        { label: "Accessibility", to: LEGAL_PATHS.accessibility },
+      ]
+    : []),
+  { label: "Security policy", href: DOCS_LINKS.securityPolicy },
+  { label: "Report an issue", href: EXTERNAL_LINKS.issues },
 ];
 
 interface LandingFooterProps {
@@ -116,14 +138,25 @@ export function LandingFooter({ onTryDemo, demoPending }: LandingFooterProps) {
 
         <div className="flex flex-col gap-1.5 text-xs leading-[1.4] font-medium text-subtle-foreground md:flex-row md:justify-between md:text-label md:leading-[1.4]">
           <p>© {year} Spanlight · MIT core</p>
-          <p className="flex items-center gap-2">
-            <a href={EXTERNAL_LINKS.issues} className={BOTTOM_LINK_CLASS}>
-              Report an issue
-            </a>
-            <span aria-hidden>·</span>
-            <a href={DOCS_LINKS.securityPolicy} className={BOTTOM_LINK_CLASS}>
-              Security policy
-            </a>
+          <p className="flex flex-wrap items-center gap-x-4 md:gap-x-2">
+            {BOTTOM_LINKS.map((item, index) => (
+              <Fragment key={item.label}>
+                {index > 0 && (
+                  <span aria-hidden className="hidden md:inline">
+                    ·
+                  </span>
+                )}
+                {"to" in item ? (
+                  <Link to={item.to} className={BOTTOM_LINK_CLASS}>
+                    {item.label}
+                  </Link>
+                ) : (
+                  <a href={item.href} className={BOTTOM_LINK_CLASS}>
+                    {item.label}
+                  </a>
+                )}
+              </Fragment>
+            ))}
           </p>
         </div>
       </div>

@@ -5,8 +5,8 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError, IntegrityError, InternalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.migrations import downgrade_to, head_revision, upgrade_to_head
 from app.db.models import OAuthIdentity, User
+from tests.db.migration_support import downgrade_to, expected_revision, upgrade_to_target
 
 SessionFactory = async_sessionmaker[AsyncSession]
 
@@ -93,8 +93,9 @@ async def test_a_new_identity_starts_with_its_timestamps_set(
         assert identity.email is None
 
 
+@pytest.mark.migration_revision("0005")
 def test_downgrade_refuses_to_strand_users_without_a_password(
-    app_database_url: str,
+    migration_database_url: str,
 ) -> None:
     """Going back would need a password for every user; it fails, and changes nothing.
 
@@ -102,9 +103,9 @@ def test_downgrade_refuses_to_strand_users_without_a_password(
     downgrade from head cannot be atomic. The database is first stepped down to 0005, the
     revision that adds the table; the refused step from there must leave it exactly as it was.
     """
-    engine = create_engine(app_database_url)
+    engine = create_engine(migration_database_url)
     try:
-        downgrade_to(app_database_url, "0005")
+        downgrade_to(migration_database_url, "0005")
         with engine.begin() as connection:
             connection.execute(
                 text(
@@ -114,7 +115,7 @@ def test_downgrade_refuses_to_strand_users_without_a_password(
             )
         try:
             with pytest.raises((InternalError, DBAPIError), match="no password"):
-                downgrade_to(app_database_url, "0004")
+                downgrade_to(migration_database_url, "0004")
             with engine.connect() as connection:
                 revision = connection.execute(
                     text("SELECT version_num FROM alembic_version")
@@ -130,22 +131,23 @@ def test_downgrade_refuses_to_strand_users_without_a_password(
             with engine.begin() as connection:
                 connection.execute(text("DELETE FROM users WHERE email = 'oauth-only@example.com'"))
     finally:
-        upgrade_to_head(app_database_url)
+        upgrade_to_target(migration_database_url)
         with engine.connect() as connection:
             revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
         engine.dispose()
-    assert revision == head_revision()
+    assert revision == expected_revision()
 
 
+@pytest.mark.migration_revision("0005")
 def test_downgrade_drops_the_oauth_audit_events_and_the_actions_they_used(
-    app_database_url: str,
+    migration_database_url: str,
 ) -> None:
     """The older schema cannot hold `user.oauth_*` events, so they go and the check shrinks."""
     insert_event = text(
         "INSERT INTO audit_events (id, org_id, action, target_type, target_id) "
         "VALUES (gen_random_uuid(), :org, :action, 'user', 'x')"
     )
-    engine = create_engine(app_database_url)
+    engine = create_engine(migration_database_url)
     try:
         with engine.begin() as connection:
             org = connection.execute(
@@ -156,7 +158,7 @@ def test_downgrade_drops_the_oauth_audit_events_and_the_actions_they_used(
             ).scalar()
             for action in ("user.oauth_link", "user.oauth_unlink", "member.add"):
                 connection.execute(insert_event, {"org": org, "action": action})
-        downgrade_to(app_database_url, "0004")
+        downgrade_to(migration_database_url, "0004")
         try:
             with engine.connect() as connection:
                 kept = connection.execute(text("SELECT action FROM audit_events")).scalars().all()
@@ -167,7 +169,7 @@ def test_downgrade_drops_the_oauth_audit_events_and_the_actions_they_used(
             ):
                 connection.execute(insert_event, {"org": org, "action": "user.oauth_link"})
         finally:
-            upgrade_to_head(app_database_url)
+            upgrade_to_target(migration_database_url)
         with engine.begin() as connection:
             connection.execute(insert_event, {"org": org, "action": "user.oauth_link"})
     finally:

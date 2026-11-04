@@ -37,7 +37,14 @@ describe("projectsApi.sessionTurns", () => {
     ["chat 1", "chat%201"],
   ])("sends session id %s as one path segment (%s)", async (sessionId, segment) => {
     await projectsApi.sessionTurns("proj_1", sessionId, { limit: 100, cursor: "c1" });
-    expect(lastUrl()).toBe(`/api/v1/projects/proj_1/sessions/${segment}/turns?limit=100&cursor=c1`);
+    expect(lastUrl()).toBe(
+      `/api/v1/projects/proj_1/sessions/${segment}/turns?limit=100&cursor=c1&span_content=bounded`,
+    );
+  });
+
+  it("asks for bounded span content on trace detail too (this client reads the omission flags)", async () => {
+    await projectsApi.trace("proj_1", "t1");
+    expect(lastUrl()).toBe("/api/v1/projects/proj_1/traces/t1?span_content=bounded");
   });
 });
 

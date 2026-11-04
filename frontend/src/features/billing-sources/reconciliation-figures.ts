@@ -15,6 +15,8 @@ export const REASONS = {
   notRetained:
     "Incomplete: spans no longer retained for this day, so Spanlight’s figure is partial.",
   notPriced: "Counted, not priced: Spanlight knows the calls or tokens but has no USD figure.",
+  untraced:
+    "Not explained: Spanlight has no call with this model on this day, so the provider’s amount stays in the residual.",
   noPrice: "No price: none of these calls has a price, so Spanlight has no USD figure.",
   noCalls: "No calls: Spanlight recorded no call for this on this day.",
   noProviderAmount:

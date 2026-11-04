@@ -15,6 +15,7 @@ from app.api.deps import Access, DbSession, SettingsDep, require
 from app.api.schemas import Page
 from app.core.errors import not_found
 from app.core.idempotency import idempotent
+from app.core.idempotency_store import StoredResponse, complete_operation
 from app.core.pagination import DEFAULT_PAGE_SIZE, PageLimit
 from app.core.permissions import Permission
 from app.core.security import mark_uncacheable
@@ -72,8 +73,12 @@ async def create_trace_export(
         target_id=export.id,
         metadata=body.model_dump(mode="json", by_alias=True),
     )
+    result = export_out(export, store)
+    await complete_operation(
+        db, StoredResponse(202, result.model_dump(mode="json", by_alias=True), "application/json")
+    )
     await db.commit()
-    return export_out(export, store)
+    return result
 
 
 @router.get("/exports", response_model=Page[ExportOut], summary="List a project's exports")

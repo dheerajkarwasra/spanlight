@@ -11,6 +11,7 @@ import { MetadataChips } from "./metadata-chips";
 import { NO_INPUT_REASON, PreviewPending } from "./preview-cell";
 import { RetryBadge } from "./retry-cell";
 import { hasUnknownRetries, RETRY_TILES_FOOTNOTE } from "./retry-format";
+import { rootStatusLabel } from "./root-status";
 import { TraceStatusDot } from "./status";
 import { TraceErrorLine } from "./trace-cells";
 
@@ -75,6 +76,7 @@ function TraceTile({ trace, stale, selected, promotedKeys, previews }: TraceTile
   const cost = formatCost(trace.cost_usd);
   const duration = formatDuration(trace.duration_ms);
   const started = formatRelativeTime(trace.started_at);
+  const rootLabel = rootStatusLabel(trace.root_received);
 
   return (
     <Link
@@ -86,7 +88,12 @@ function TraceTile({ trace, stale, selected, promotedKeys, previews }: TraceTile
       )}
     >
       <span className="flex min-w-0 items-center gap-2">
-        <TraceStatusDot static errorCount={trace.error_count} errorMessage={trace.error_message} />
+        <TraceStatusDot
+          static
+          errorCount={trace.error_count}
+          rootReceived={trace.root_received}
+          errorMessage={trace.error_message}
+        />
         <span
           className={cn(
             "min-w-0 flex-1 truncate font-semibold text-foreground",
@@ -96,6 +103,9 @@ function TraceTile({ trace, stale, selected, promotedKeys, previews }: TraceTile
           {hasName ? trace.name : "Unnamed trace"}
         </span>
       </span>
+      {rootLabel ? (
+        <span className="truncate pl-4 text-xs font-medium text-muted-foreground">{rootLabel}</span>
+      ) : null}
       {previews ? (
         <span className="truncate pl-4 text-xs text-muted-foreground">
           {/* As in the table: kept rows show a placeholder, an empty preview reads as none. */}
@@ -111,6 +121,7 @@ function TraceTile({ trace, stale, selected, promotedKeys, previews }: TraceTile
       <span className="flex min-w-0 items-center gap-2 pl-4 text-xs font-medium text-muted-foreground">
         <span className="shrink-0 text-foreground tabular">
           {duration ?? <UnknownInLink reason="Duration isn't known yet" />}
+          {trace.root_received === false && duration !== null ? " so far" : null}
         </span>
         <span aria-hidden className="text-subtle-foreground">
           ·

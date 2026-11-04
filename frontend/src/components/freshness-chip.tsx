@@ -1,7 +1,8 @@
 import { Clock, Info } from "lucide-react";
 
 import { TooltipContent, TooltipRoot, TooltipTrigger } from "@/components/ui/tooltip";
-import { freshnessLabel } from "@/lib/freshness";
+import { EmptyState } from "@/components/empty-state";
+import { freshnessLabel, SOURCE_HISTORY_UNAVAILABLE, SOURCE_REMOVED } from "@/lib/freshness";
 import { useNow } from "@/lib/use-now";
 import { useTapTooltip } from "@/lib/use-tap-tooltip";
 
@@ -15,6 +16,8 @@ export interface FreshnessChipProps {
   pendingTraces?: number | null;
   /** The tooltip's text, by state: the page's refresh schedule. */
   explanation: { computed: string; notComputed: string };
+  /** `sourceHistoryLabel`: replaces the time and pending count when source history is unavailable. */
+  history?: string | null;
 }
 
 /**
@@ -23,17 +26,59 @@ export interface FreshnessChipProps {
  * the page title) points at the icon, and its `after:` layer stretches the hit area over the
  * whole chip: hover, focus and a touch tap anywhere on the chip open it.
  */
-export function FreshnessChip({ value, pendingTraces = null, explanation }: FreshnessChipProps) {
+export function FreshnessChip({
+  value,
+  pendingTraces = null,
+  explanation,
+  history = null,
+}: FreshnessChipProps) {
   const now = useNow(REFRESH_MS);
-  const { rootProps, triggerProps } = useTapTooltip();
-  const label = freshnessLabel(value, pendingTraces, now);
+  if (history !== null) {
+    return <Chip label={history} tooltip={SOURCE_REMOVED} />;
+  }
   const computed = value !== null && !Number.isNaN(Date.parse(value));
+  return (
+    <Chip
+      label={freshnessLabel(value, pendingTraces, now)}
+      time={computed ? value : null}
+      tooltip={computed ? explanation.computed : explanation.notComputed}
+    />
+  );
+}
+
+/** Figma "Aggregate history": the chip alone, for a page without a computed time. */
+export function SourceHistoryChip({ label }: { label: string }) {
+  return <Chip label={label} tooltip={SOURCE_REMOVED} />;
+}
+
+/** Figma 806:324: a list with no retained rows and no source history to recompute them from. */
+export function SourceHistoryEmpty({ className }: { className?: string }) {
+  return (
+    <EmptyState
+      icon={Clock}
+      title={SOURCE_HISTORY_UNAVAILABLE}
+      description={SOURCE_REMOVED}
+      className={className}
+    />
+  );
+}
+
+function Chip({
+  label,
+  time = null,
+  tooltip,
+}: {
+  label: string;
+  time?: string | null;
+  tooltip: string;
+}) {
+  const { rootProps, triggerProps } = useTapTooltip();
 
   return (
     <span className="relative inline-flex min-w-0 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-xs font-medium text-muted-foreground has-[:focus-visible]:outline-[1.5px] has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ring">
       <Clock aria-hidden className="size-3.5 shrink-0" strokeWidth={2} />
       <span aria-hidden className="py-1.5">
-        {computed ? <time dateTime={value}>{label}</time> : label}
+        {time === null ? label : <time dateTime={time}>{label}</time>}
       </span>
       <TooltipRoot {...rootProps}>
         <TooltipTrigger asChild>
@@ -47,7 +92,7 @@ export function FreshnessChip({ value, pendingTraces = null, explanation }: Fres
           </button>
         </TooltipTrigger>
         <TooltipContent side="bottom" collisionPadding={16} className="max-w-52">
-          {computed ? explanation.computed : explanation.notComputed}
+          {tooltip}
         </TooltipContent>
       </TooltipRoot>
     </span>

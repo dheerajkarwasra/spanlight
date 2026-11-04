@@ -24,7 +24,7 @@ function scripted(replies: Reply[], options: Partial<ExporterOptions> = {}) {
       batches.push(body.spans.map((span) => span.span_id));
       const reply = replies.shift() ?? { status: 202 };
       return Promise.resolve(
-        new Response(JSON.stringify(reply.body ?? { accepted: 0, rejected: [] }), {
+        new Response(JSON.stringify(reply.body ?? { accepted: body.spans.length, rejected: [] }), {
           status: reply.status,
           headers: reply.headers,
         }),
@@ -144,3 +144,17 @@ describe("parseRetryAfter", () => {
     expect(parseRetryAfter(null)).toBeUndefined();
   });
 });
+
+it.each(["120", new Date(Date.now() + 122_000).toUTCString()])(
+  "preserves server minimum beyond exponential cap: %s",
+  async (header) => {
+    const { exporter, delays } = scripted([
+      { status: 503, headers: { "retry-after": header } },
+      { status: 202 },
+    ]);
+    exporter.export(span("a"));
+    await exporter.flush();
+    expect(delays[0]).toBeGreaterThanOrEqual(120_000);
+    expect(exporter.sentCount).toBe(1);
+  },
+);

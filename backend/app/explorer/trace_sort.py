@@ -11,14 +11,20 @@ The value sorts, `duration` (`ended_at - started_at`), `cost` (`cost_usd`), `tok
 directions, then `started_at` and `trace_id` in the same direction; the cursor is
 `(value, started_at, trace_id)` (a duration in milliseconds), its value `None` once the page
 reached the unknown values. The direction is not in the cursor: the request repeats it.
+
+A value sort has no index and sorts the whole window, so its page is late-materialized
+(`keys`, then `page`): the sort carries only `trace_id`, `started_at` and the value, and the
+page's rows are read by primary key afterwards. `started_at` reads its index in order and stops
+after one page, so it selects whole rows directly.
 """
 
 import operator
+import uuid
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any, Literal
 
-from sqlalchemy import Select, and_, func, or_, tuple_
+from sqlalchemy import Select, and_, func, or_, select, tuple_
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement, UnaryExpression
 
@@ -113,6 +119,39 @@ def _after_value(sort: TraceSort, order: SortOrder, cursor: str) -> ColumnElemen
         after(value, bound),
         and_(value == bound, later_in_tie),
         value.is_(None),
+    )
+
+
+def keys(sort: TraceSort) -> Select[Any]:
+    """The columns a page of `sort` is chosen by: whole rows for `started_at`, the keys and the
+    value for a value sort. Narrow it with the filters, then pass it to `page`."""
+    if sort == "started_at":
+        return select(Trace)
+    return select(Trace.trace_id, Trace.started_at, _value(sort).label("value"))
+
+
+def page(
+    query: Select[Any],
+    project_id: uuid.UUID,
+    *,
+    sort: TraceSort,
+    order: SortOrder,
+    cursor: str | None,
+    limit: int,
+) -> Select[Trace]:
+    """The page query: `limit + 1` traces of `query` (from `keys(sort)`) in order after `cursor`."""
+    query = apply(query, sort=sort, order=order, cursor=cursor).limit(limit + 1)
+    if sort == "started_at":
+        return query
+    chosen = query.subquery()
+    return (
+        select(Trace)
+        .join(chosen, and_(Trace.project_id == project_id, Trace.trace_id == chosen.c.trace_id))
+        .order_by(
+            _in(chosen.c.value, order).nulls_last(),
+            _in(chosen.c.started_at, order),
+            _in(chosen.c.trace_id, order),
+        )
     )
 
 

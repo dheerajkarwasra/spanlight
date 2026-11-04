@@ -8,31 +8,41 @@ output tokens, billed $0.012887 by Anthropic. Priced as plain input it would be 
 from datetime import UTC, datetime
 from decimal import Decimal
 
+import pytest
+from hypothesis import given
+from hypothesis import strategies as st
+
 from app.api.schemas.playground import PlaygroundResultOut, UsageOut
 from app.gateway.context import GatewayResult
+from app.gateway.sse import Usage
 from app.playground.output import result_of
 from app.pricing.cost import Price, PriceBook
+from app.pricing.fees import FeeBook, ServerToolFee
+from app.pricing.modifiers import reported_modifiers
 from app.pricing.prices import EFFECTIVE_FROM, PRICING_VERSION, SEED_PRICES
 from tests.gateway_support import PILOT_COST, PILOT_NATIVE
 
 AT = datetime(2026, 10, 25, 12, tzinfo=UTC)
 
 
-def _seed_book() -> PriceBook:
+def _seed_book(*, fees: FeeBook | None = None) -> PriceBook:
     return PriceBook(
-        Price(
-            provider=seed.provider,
-            model_pattern=seed.model_pattern,
-            input_per_mtok=seed.input_per_mtok,
-            output_per_mtok=seed.output_per_mtok,
-            cached_input_per_mtok=seed.cached_input_per_mtok,
-            effective_from=EFFECTIVE_FROM,
-            version=PRICING_VERSION,
-            cache_write_5m_per_mtok=seed.cache_write_5m_per_mtok,
-            cache_write_1h_per_mtok=seed.cache_write_1h_per_mtok,
-            min_prompt_tokens=seed.min_prompt_tokens,
-        )
-        for seed in SEED_PRICES
+        (
+            Price(
+                provider=seed.provider,
+                model_pattern=seed.model_pattern,
+                input_per_mtok=seed.input_per_mtok,
+                output_per_mtok=seed.output_per_mtok,
+                cached_input_per_mtok=seed.cached_input_per_mtok,
+                effective_from=EFFECTIVE_FROM,
+                version=PRICING_VERSION,
+                cache_write_5m_per_mtok=seed.cache_write_5m_per_mtok,
+                cache_write_1h_per_mtok=seed.cache_write_1h_per_mtok,
+                min_prompt_tokens=seed.min_prompt_tokens,
+            )
+            for seed in SEED_PRICES
+        ),
+        fees=fees,
     )
 
 
@@ -87,3 +97,100 @@ def test_playground_response_carries_the_write_fields() -> None:
         cache_write_1h_tokens=6404,
     )
     assert out.model_dump()["usage"]["cache_write_1h_tokens"] == 6404
+
+
+@pytest.mark.parametrize(
+    ("tier", "searches", "geo", "speed"),
+    [
+        ("batch", None, None, None),
+        ("priority", None, None, None),
+        ("flex", None, None, None),
+        (None, 2, None, None),
+        (None, None, "us", None),
+        (None, None, None, "fast"),
+        ("batch", 2, "us", "fast"),
+    ],
+)
+def test_playground_preserves_billing_dimensions(tier, searches, geo, speed) -> None:
+    usage = Usage(6423, 12, 0, 6404, 6404, tier, searches, inference_geo=geo, speed=speed)
+    book = _seed_book(
+        fees=FeeBook(
+            [
+                ServerToolFee(
+                    "anthropic", "web_search", Decimal("10"), EFFECTIVE_FROM, PRICING_VERSION
+                )
+            ]
+        ),
+    )
+    call = _pilot_result()
+    call.usage = usage
+    expected = book.cost(
+        provider="anthropic",
+        model=call.model,
+        at=AT,
+        input_tokens=6423,
+        output_tokens=12,
+        cached_tokens=0,
+        cache_write_tokens=6404,
+        cache_write_1h_tokens=6404,
+        service_tier=tier,
+        web_search_requests=searches,
+        modifiers=reported_modifiers({"usage.inference_geo": geo, "usage.speed": speed}),
+    )
+    assert expected is not None
+    shown = result_of(
+        call,
+        surface="messages",
+        provider="anthropic",
+        model=call.model,
+        prices=book,
+        latency_ms=1,
+        at=AT,
+    )
+    assert shown.cost_usd == expected.cost_usd
+
+
+@given(st.one_of(st.none(), st.integers(min_value=0, max_value=100000)))
+def test_missing_usage_never_becomes_a_known_total(output_tokens) -> None:
+    call = _pilot_result()
+    call.usage = (
+        None if output_tokens is None else Usage(output_tokens, None, 0, web_search_requests=2)
+    )
+    shown = result_of(
+        call,
+        surface="messages",
+        provider="anthropic",
+        model=call.model,
+        prices=_seed_book(),
+        latency_ms=1,
+        at=AT,
+    )
+    assert shown.cost_usd is None
+
+
+def test_cache_hit_cost_uses_zero_billed_usage_not_original_usage() -> None:
+    call = _pilot_result()
+    call.cache = "hit"
+    call.original_usage = call.usage
+    call.usage = Usage(0, 0, 0, 0, 0)
+    shown = result_of(
+        call,
+        surface="messages",
+        provider="anthropic",
+        model=call.model,
+        prices=_seed_book(),
+        latency_ms=1,
+        at=AT,
+    )
+    assert shown.cost_usd == Decimal("0.00000000")
+    assert shown.usage == Usage(0, 0, 0, 0, 0)
+
+
+@given(
+    tier=st.sampled_from([None, "standard", "batch", "priority", "flex"]),
+    searches=st.one_of(st.none(), st.integers(min_value=0, max_value=100)),
+    geo=st.sampled_from([None, "global", "us", "unknown"]),
+    speed=st.sampled_from([None, "standard", "fast", "unknown"]),
+)
+def test_billing_dimensions_preserved_property(tier, searches, geo, speed) -> None:
+    test_playground_preserves_billing_dimensions(tier, searches, geo, speed)

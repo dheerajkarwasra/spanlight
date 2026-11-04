@@ -14,11 +14,12 @@ from typing import Any
 import httpx
 import pytest
 from pydantic import SecretStr
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.auth.email_tokens import issue_token
 from app.auth.login_challenge import issue_challenge
+from app.auth.totp import hash_recovery_code
 from app.config import Settings
 from app.core.security import hash_password
 from app.db.models import (
@@ -32,7 +33,7 @@ from app.db.models import (
 from app.services.credentials import replace_password
 from tests.auth.conftest import FakeClock
 from tests.conftest import BrowserFactory, _make_client
-from tests.helpers import Browser, create_workspace
+from tests.helpers import Browser, create_workspace, verify_email
 
 SessionFactory = async_sessionmaker[AsyncSession]
 
@@ -92,15 +93,6 @@ async def password_hash_of(factory: SessionFactory, email: str) -> str | None:
         return await db.scalar(select(User.password_hash).where(User.email == email))
 
 
-async def verify_email(factory: SessionFactory, email: str) -> None:
-    async with factory() as db:
-        await db.execute(
-            text("UPDATE users SET email_verified_at = now() WHERE email = :email"),
-            {"email": email},
-        )
-        await db.commit()
-
-
 # --- status, setup and enable ------------------------------------------------------------------
 
 
@@ -110,7 +102,12 @@ async def test_status_is_off_for_a_new_account(totp_browser_factory: BrowserFact
     response = await ada.get(STATUS)
 
     assert response.status_code == 200
-    assert response.json() == {"enabled": False, "enabled_at": None, "recovery_codes_remaining": 0}
+    assert response.json() == {
+        "enabled": False,
+        "enabled_at": None,
+        "recovery_codes_remaining": 0,
+        "legacy_recovery_codes": False,
+    }
 
 
 async def test_setup_returns_a_secret_and_an_otpauth_url_for_the_account(
@@ -164,7 +161,7 @@ async def test_setup_then_enable_with_a_valid_code_returns_ten_recovery_codes(
 
 
 async def test_status_and_me_report_it_once_enabled(
-    totp_browser_factory: BrowserFactory, clock: FakeClock
+    totp_browser_factory: BrowserFactory, session_factory: SessionFactory, clock: FakeClock
 ) -> None:
     ada = await totp_browser_factory("ada@example.com")
     assert (await ada.get(ME)).json()["totp_enabled"] is False
@@ -175,8 +172,59 @@ async def test_status_and_me_report_it_once_enabled(
     assert status["enabled"] is True
     assert status["enabled_at"].startswith("2026-10-08T12:00:10")
     assert status["recovery_codes_remaining"] == 10
-    assert set(status) == {"enabled", "enabled_at", "recovery_codes_remaining"}
+    # Release 1 still issues 10-character codes, so a fresh set is the legacy format.
+    assert status["legacy_recovery_codes"] is True
+    assert set(status) == {
+        "enabled",
+        "enabled_at",
+        "recovery_codes_remaining",
+        "legacy_recovery_codes",
+    }
     assert (await ada.get(ME)).json()["totp_enabled"] is True
+    async with session_factory() as db:
+        lengths = (await db.scalars(select(RecoveryCode.code_length))).all()
+    assert lengths == [10] * 10
+
+
+async def test_status_with_codes_stored_before_code_length_existed_is_legacy(
+    totp_browser_factory: BrowserFactory, session_factory: SessionFactory, clock: FakeClock
+) -> None:
+    ada = await totp_browser_factory("ada@example.com")
+    await enroll(ada, clock)
+    async with session_factory() as db:
+        # Rows written before migration 1041 (or by a server that does not know it) are NULL.
+        await db.execute(update(RecoveryCode).values(code_length=None))
+        await db.commit()
+
+    status = (await ada.get(STATUS)).json()
+
+    assert status["recovery_codes_remaining"] == 10
+    assert status["legacy_recovery_codes"] is True
+
+
+async def test_status_with_only_28_character_codes_left_is_not_legacy(
+    totp_browser_factory: BrowserFactory, session_factory: SessionFactory, clock: FakeClock
+) -> None:
+    ada = await totp_browser_factory("ada@example.com")
+    _, codes = await enroll(ada, clock)
+    async with session_factory() as db:
+        # A used legacy code does not count; only unused codes decide the format.
+        await db.execute(
+            update(RecoveryCode)
+            .where(RecoveryCode.code_hash != hash_recovery_code(codes[0]))
+            .values(code_length=28)
+        )
+        await db.execute(
+            update(RecoveryCode)
+            .where(RecoveryCode.code_hash == hash_recovery_code(codes[0]))
+            .values(used_at=func.now())
+        )
+        await db.commit()
+
+    status = (await ada.get(STATUS)).json()
+
+    assert status["recovery_codes_remaining"] == 9
+    assert status["legacy_recovery_codes"] is False
 
 
 async def test_nothing_secret_is_in_the_status_or_me_bodies(
@@ -363,6 +411,7 @@ async def test_disable_with_a_valid_code_turns_it_off_and_deletes_the_recovery_c
         "enabled": False,
         "enabled_at": None,
         "recovery_codes_remaining": 0,
+        "legacy_recovery_codes": False,
     }
     assert await count(session_factory, RecoveryCode) == 0
     # Signing in no longer asks for a second step.
@@ -370,16 +419,27 @@ async def test_disable_with_a_valid_code_turns_it_off_and_deletes_the_recovery_c
     assert login.json()["status"] == "signed_in"
 
 
+@pytest.mark.parametrize("code", ["abcde-fghij", "abcdefg-hijklmn-opqrstu-vwxyz23"])
 async def test_disable_with_a_recovery_code_works(
-    totp_browser_factory: BrowserFactory, clock: FakeClock
+    totp_browser_factory: BrowserFactory,
+    session_factory: SessionFactory,
+    clock: FakeClock,
+    code: str,
 ) -> None:
     ada = await totp_browser_factory("ada@example.com")
-    _, codes = await enroll(ada, clock)
+    await enroll(ada, clock)
+    async with session_factory() as db:
+        db.add(RecoveryCode(user_id=uuid.UUID(ada.user["id"]), code_hash=hash_recovery_code(code)))
+        await db.commit()
 
-    response = await ada.post(DISABLE, json={"code": codes[0]})
+    response = await ada.post(DISABLE, json={"code": f"  {code.upper()}  "})
 
-    assert response.status_code == 204
+    assert response.status_code == 204, response.text
     assert (await ada.get(STATUS)).json()["enabled"] is False
+    assert await count(session_factory, RecoveryCode) == 0
+    again = await ada.post(DISABLE, json={"code": code})
+    assert again.status_code == 409, again.text
+    assert again.json()["code"] == "TOTP_NOT_ENABLED"
 
 
 async def test_disable_needs_a_valid_code(
@@ -683,6 +743,39 @@ async def test_a_recovery_code_signs_in_and_works_once(
     assert second.status_code == 401
     assert second.json()["code"] == "INVALID_TOTP_CODE"
     assert third.status_code == 200
+
+
+async def test_a_stored_28_character_recovery_code_signs_in(
+    totp_browser_factory: BrowserFactory,
+    totp_client: httpx.AsyncClient,
+    totp_app: Any,
+    session_factory: SessionFactory,
+    clock: FakeClock,
+) -> None:
+    ada = await totp_browser_factory("ada@example.com")
+    await enroll(ada, clock)
+    code28 = "abcdefghijklmnopqrstuvwxyz23"
+    async with session_factory() as db:
+        db.add(
+            RecoveryCode(user_id=uuid.UUID(ada.user["id"]), code_hash=hash_recovery_code(code28))
+        )
+        await db.commit()
+
+    first = await totp_client.post(
+        VERIFY,
+        json={
+            "challenge": await challenge_for(totp_client),
+            "code": "abcdefg-hijklmn-opqrstu-vwxyz23",
+        },
+    )
+    assert first.status_code == 200, first.text
+
+    async with _make_client(totp_app) as other:
+        second = await other.post(
+            VERIFY, json={"challenge": await challenge_for(other), "code": code28}
+        )
+    assert second.status_code == 401, second.text
+    assert second.json()["code"] == "INVALID_TOTP_CODE"
 
 
 async def test_two_verifies_of_the_same_code_at_once_let_exactly_one_in(

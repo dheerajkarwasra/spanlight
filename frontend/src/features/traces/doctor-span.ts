@@ -8,14 +8,19 @@ import { timeOf } from "./span-timeline";
  * first; else the first LLM span; else the first span. Ties go to the lower span id.
  */
 export function doctorSpanId(spans: readonly Span[]): string | null {
-  const failedFirst = (span: Span) => (span.status === "error" ? 0 : 1);
-  const llmFirst = (span: Span) => (span.kind === "llm" ? 0 : 1);
-  const [first] = [...spans].sort(
-    (a, b) =>
-      failedFirst(a) - failedFirst(b) ||
-      llmFirst(a) - llmFirst(b) ||
-      timeOf(a.started_at) - timeOf(b.started_at) ||
-      a.span_id.localeCompare(b.span_id),
-  );
-  return first?.span_id ?? null;
+  // One pass and one date parse per span: sorting a 5,000-span trace parsed dates ~100,000 times.
+  const tier = (span: Span) => (span.status === "error" ? 0 : 2) + (span.kind === "llm" ? 0 : 1);
+  let first: { span: Span; tier: number; start: number } | null = null;
+  for (const span of spans) {
+    const next = { span, tier: tier(span), start: timeOf(span.started_at) };
+    const before =
+      first === null ||
+      (next.tier - first.tier ||
+        next.start - first.start ||
+        span.span_id.localeCompare(first.span.span_id)) < 0;
+    if (before) {
+      first = next;
+    }
+  }
+  return first?.span.span_id ?? null;
 }

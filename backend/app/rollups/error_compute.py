@@ -59,7 +59,11 @@ INSERT_ERROR_ROLLUPS = text(
            count(*)                                 AS errors,
            count(*) FILTER (WHERE {WITH_RETRY_AFTER}) AS with_retry_after
     FROM spans AS s
-    JOIN traces AS t ON t.project_id = s.project_id AND t.trace_id = s.trace_id
+    -- Keep the PK lookup parameterized when stale statistics underestimate a new tenant.
+    JOIN LATERAL (
+        SELECT environment FROM traces t
+        WHERE t.project_id = s.project_id AND t.trace_id = s.trace_id OFFSET 0
+    ) t ON true
     WHERE s.project_id = :project_id
       AND s.started_at >= :start
       AND s.started_at < :end

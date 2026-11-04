@@ -118,6 +118,10 @@ async def delete_organization(db: AsyncSession, org_id: uuid.UUID) -> list[uuid.
     The caller has locked the organization (`lock_organization`).
     """
     await lift_statement_limit(db)  # as in `delete_project_rows`
+    # In id order, as the budget reaper takes them; the DELETE alone locks them in scan order.
+    await db.execute(
+        select(Project.id).where(Project.org_id == org_id).order_by(Project.id).with_for_update()
+    )
     project_ids = await db.scalars(
         delete(Project)
         .where(Project.org_id == org_id)

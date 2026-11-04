@@ -1,35 +1,38 @@
-"""Test fixtures: a real Postgres, migrated once, used through a non-superuser role.
+"""Real Postgres fixtures with invocation-owned disposable databases.
 
-TEST_DATABASE_URL must point at a database as a superuser (the stock postgres
-image's `postgres` is one), which creates the role and empties the tables between
-tests. The schema is rebuilt and migrated as the unprivileged `spanlight_app_test`
-role, and the app connects as that role too, because superusers bypass row-level
-security even when FORCEd.
-
-Under pytest-xdist (`pytest -n auto`) each worker builds and uses its own database,
-the TEST_DATABASE_URL one with the worker's name appended (`spanlight_test_gw0`, ...).
+By default each worker owns a Postgres 17 Testcontainer. TEST_DATABASE_URL may
+supply an admin connection to a disposable spanlight_test database; its schema
+is never reset. Each invocation creates and drops only its own UUID child DB.
+Application connections remain NOSUPERUSER NOBYPASSRLS to exercise real RLS.
 """
 
 import os
-from collections.abc import AsyncIterator, Awaitable, Callable
+import re
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
+from uuid import uuid4
 
 import httpx
 import psycopg
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from testcontainers.postgres import PostgresContainer
 
 from app.config import Settings
 from app.db.migrations import upgrade_to_head
 from app.db.session import create_engine, create_session_factory
 from app.main import create_app
 from app.pricing.cost import sync_seed_prices
+from app.rollups import dirty
+from app.rollups.activation import activate_aggregate_coverage
+from tests.database_lifecycle import owned_database
 from tests.helpers import Browser
 
-DEFAULT_TEST_DATABASE_URL = "postgresql+psycopg://postgres:postgres@localhost:55432/spanlight_test"
+_RUN_ID = uuid4().hex
+_ACTIVE_BASE_URL: str | None = None
 APP_ROLE = "spanlight_app_test"
 APP_PASSWORD = "spanlight_app_test"
 TEST_ORIGIN = "http://testserver"
@@ -94,17 +97,48 @@ SELECT
 
 
 def _base_database_url() -> str:
-    return os.environ.get("TEST_DATABASE_URL", DEFAULT_TEST_DATABASE_URL)
+    url = os.environ.get("TEST_DATABASE_URL") or _ACTIVE_BASE_URL
+    if url is None:
+        raise RuntimeError("Testcontainer fixture has not started")
+    parts = urlsplit(url)
+    if (
+        parts.scheme not in {"postgresql", "postgresql+psycopg"}
+        or not re.fullmatch(r"spanlight_test(?:_[a-zA-Z0-9_]+)?", parts.path.lstrip("/"))
+        or parts.query
+        or parts.fragment
+    ):
+        raise ValueError("TEST_DATABASE_URL must name a disposable spanlight_test database")
+    return url
 
 
 def admin_database_url() -> str:
-    """The test database as the admin user: under pytest-xdist, this worker's own database."""
-    url = _base_database_url()
-    worker = os.environ.get("PYTEST_XDIST_WORKER")
-    if worker is None:
-        return url
-    parts = urlsplit(url)
-    return urlunsplit(parts._replace(path=f"{parts.path}_{worker}"))
+    """Only this invocation and worker's owned database, never the supplied parent."""
+    parts = urlsplit(_base_database_url())
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
+    if not re.fullmatch(r"(?:gw[0-9]+|main)", worker):
+        raise ValueError("Invalid pytest worker name")
+    return urlunsplit(parts._replace(path=f"/spanlight_test_{_RUN_ID}_{worker}"))
+
+
+@pytest.fixture(scope="session")
+def database_server() -> Iterator[None]:
+    global _ACTIVE_BASE_URL  # noqa: PLW0603 - fixture owns the module-level URL for legacy callers.
+    if "TEST_DATABASE_URL" in os.environ:
+        _base_database_url()  # Reject unsafe names before any database connection.
+        yield
+        return
+    with PostgresContainer(
+        "postgres:17",
+        username="postgres",
+        password="postgres",
+        dbname="spanlight_test",
+        driver="psycopg",
+    ) as postgres:
+        _ACTIVE_BASE_URL = postgres.get_connection_url()
+        try:
+            yield
+        finally:
+            _ACTIVE_BASE_URL = None
 
 
 def _libpq(url: str) -> str:
@@ -119,7 +153,7 @@ def _with_credentials(url: str, user: str, password: str) -> str:
 
 
 @pytest.fixture(scope="session")
-def app_database_url() -> str:
+def app_database_url(database_server: None) -> Iterator[str]:
     admin_url = admin_database_url()
     libpq_url = _libpq(admin_url)
     with psycopg.connect(_libpq(_base_database_url()), autocommit=True) as connection:
@@ -127,26 +161,27 @@ def app_database_url() -> str:
         # take turns here. Advisory locks are per database: every worker takes it in the base one.
         connection.execute("SELECT pg_advisory_lock(hashtext(%s))", (APP_ROLE,))
         exists = connection.execute(
-            "SELECT 1 FROM pg_roles WHERE rolname = %s", (APP_ROLE,)
+            "SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = %s", (APP_ROLE,)
         ).fetchone()
         if exists is None:
             connection.execute(
                 f"CREATE ROLE {APP_ROLE} LOGIN PASSWORD '{APP_PASSWORD}' "
                 "NOSUPERUSER NOBYPASSRLS NOCREATEROLE"
             )
-        if admin_url != _base_database_url():
-            worker_database = urlsplit(libpq_url).path.lstrip("/")
-            connection.execute(f'DROP DATABASE IF EXISTS "{worker_database}" WITH (FORCE)')
-            connection.execute(f'CREATE DATABASE "{worker_database}"')
-    with psycopg.connect(libpq_url, autocommit=True) as connection:
-        connection.execute("DROP SCHEMA IF EXISTS public CASCADE")
-        connection.execute(f"CREATE SCHEMA public AUTHORIZATION {APP_ROLE}")
-        database = urlsplit(libpq_url).path.lstrip("/")
-        connection.execute(f'GRANT CREATE, CONNECT ON DATABASE "{database}" TO {APP_ROLE}')
+        elif exists != (False, False):
+            raise ValueError("Test application role must be NOSUPERUSER NOBYPASSRLS")
+        worker_database = urlsplit(libpq_url).path.lstrip("/")
+    with owned_database(_libpq(_base_database_url()), worker_database):
+        with psycopg.connect(libpq_url, autocommit=True) as connection:
+            connection.execute("DROP SCHEMA IF EXISTS public CASCADE")
+            connection.execute(f"CREATE SCHEMA public AUTHORIZATION {APP_ROLE}")
+            database = urlsplit(libpq_url).path.lstrip("/")
+            connection.execute(f'GRANT CREATE, CONNECT ON DATABASE "{database}" TO {APP_ROLE}')
 
-    url = _with_credentials(admin_url, APP_ROLE, APP_PASSWORD)
-    upgrade_to_head(url)
-    return url
+        url = _with_credentials(admin_url, APP_ROLE, APP_PASSWORD)
+        upgrade_to_head(url)
+        activate_aggregate_coverage(url, fresh_install=True)
+        yield url
 
 
 @pytest.fixture(scope="session")
@@ -155,7 +190,7 @@ def settings(app_database_url: str) -> Settings:
         database_url=app_database_url,
         app_base_url=TEST_ORIGIN,
         allowed_origins=["http://localhost:5173"],
-        secret_key="test-secret-key",
+        secret_key="test-secret-key-at-least-32-characters",
         metrics_token="test-metrics-token",
         anthropic_api_key=None,
         demo_enabled=True,
@@ -214,6 +249,13 @@ async def _empty_tables(
 @pytest.fixture(autouse=True)
 async def clean_database(engine: AsyncEngine, _empty_tables: Callable[[], Awaitable[None]]) -> None:
     await _empty_tables()
+
+
+@pytest.fixture(autouse=True)
+def _dirty_writer_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SPANLIGHT_TEST_WRITE_SHARDS=1 runs the suite with release-2 sharded dirty writes."""
+    if os.environ.get("SPANLIGHT_TEST_WRITE_SHARDS") == "1":
+        monkeypatch.setattr(dirty, "WRITE_SHARDS", True)
 
 
 @pytest.fixture

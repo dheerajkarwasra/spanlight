@@ -90,7 +90,7 @@ export function useProviderIncidents() {
   };
   return useQuery({
     queryKey: queryKeys.project(projectId).providerIncidents(query),
-    queryFn: () => providersApi.incidents(projectId, query),
+    queryFn: ({ signal }) => providersApi.incidents(projectId, query, signal),
     placeholderData: keepPreviousData,
   });
 }

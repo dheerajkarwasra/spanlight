@@ -140,10 +140,10 @@ describe("TestTraceButton", () => {
 });
 
 describe("WaitingForTrace", () => {
-  it("announces the sent test trace in a status region and drops the helper", () => {
+  it("announces ingestion success and keeps the application instrumentation helper", () => {
     render(<WaitingForTrace error={null} onRetry={vi.fn()} testSent />);
     const status = screen.getByRole("status");
-    expect(status).toHaveTextContent("Test trace sent. Waiting for it to arrive…");
+    expect(status).toHaveTextContent("Test trace received");
     expect(status).not.toHaveTextContent("Send a test trace or run a snippet.");
   });
 });

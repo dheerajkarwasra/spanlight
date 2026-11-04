@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 
 import { BudgetBurn } from "./budget-burn";
 import { BudgetDialog } from "./budget-dialog";
-import { softLimitBadgeTooltip } from "./budget-enforcement";
+import { blockingBadge } from "./budget-enforcement";
 import {
   ACTION_LABELS,
   isBlocking,
@@ -20,7 +20,7 @@ import {
   SCOPE_LABELS,
 } from "./budget-period";
 import { BudgetProgress } from "./budget-progress";
-import { BUDGET_COLUMNS } from "./budget-columns";
+import { BUDGET_GRID } from "./budget-columns";
 import { BudgetRowMenu } from "./budget-row-menu";
 
 interface BudgetRowProps {
@@ -32,37 +32,39 @@ interface BudgetRowProps {
 
 /**
  * Figma "Budgets/Budget row" (normal, blocking, unknown) and its 375 px tile: name with the
- * "Blocking (soft)" badge (Figma "Budgets / Soft-limit label", its tooltip on hover and focus), scope, period, spend, reset, Show burn, Edit and more. The tile stacks the same parts; the burn panel opens under them.
+ * blocking badge ("Blocking" for a gateway key, "Blocking (soft)" where SDK spend counts; Figma
+ * "Budgets — Hard admission (G-007)", its tooltip on hover and focus), scope, period, spend,
+ * reset, Show burn, Edit and more. The tile stacks the same parts; the burn panel opens under them.
  */
 export function BudgetRow({ budget, scopeName, canWrite }: BudgetRowProps) {
-  const blocking = isBlocking(budget);
+  const badge = isBlocking(budget) ? blockingBadge(budget.scope) : null;
   const mono = budget.scope !== "project";
   const scope = scopeName ?? <UnknownValue reason="This gateway key no longer exists." />;
   const [showBurn, setShowBurn] = useState(false);
   const burnId = useId();
 
   return (
-    <li className="flex flex-col gap-3 rounded-tile bg-surface-muted p-4 @[56rem]:py-2.5 @[56rem]:pr-3 @[56rem]:pl-4">
-      <div className="flex flex-col gap-3 @[56rem]:flex-row @[56rem]:items-center">
-        <div className={cn("flex flex-col gap-0.5", BUDGET_COLUMNS.name)}>
+    <li className="flex flex-col gap-3 rounded-tile bg-surface-muted p-4 @[64rem]:py-2.5 @[64rem]:pr-3 @[64rem]:pl-4">
+      <div className={cn("flex flex-col gap-3", BUDGET_GRID)}>
+        <div className="flex min-w-0 flex-col gap-0.5">
           <div className="flex min-w-0 items-center gap-2">
             <p className="truncate text-sm font-semibold text-foreground" title={budget.name}>
               {budget.name}
             </p>
-            {blocking ? (
-              <Tooltip content={softLimitBadgeTooltip()} caret="start" side="bottom">
+            {badge ? (
+              <Tooltip content={badge.tooltip} caret="start" side="bottom">
                 <Badge variant="danger" tabIndex={0}>
-                  Blocking (soft)
+                  {badge.label}
                 </Badge>
               </Tooltip>
             ) : null}
           </div>
-          <p className="hidden text-xs font-medium text-muted-foreground @[56rem]:block">
+          <p className="hidden text-xs font-medium text-muted-foreground @[64rem]:block">
             {ACTION_LABELS[budget.action]}
           </p>
         </div>
         {/* Narrow tile: one line of scope, kind and period. */}
-        <p className="flex min-w-0 flex-wrap items-baseline gap-x-1 text-xs text-muted-foreground @[56rem]:hidden">
+        <p className="flex min-w-0 flex-wrap items-baseline gap-x-1 text-xs text-muted-foreground @[64rem]:hidden">
           <span className={cn("truncate text-sm text-foreground", mono && "font-mono text-[13px]")}>
             {scope}
           </span>
@@ -70,7 +72,7 @@ export function BudgetRow({ budget, scopeName, canWrite }: BudgetRowProps) {
             · {SCOPE_LABELS[budget.scope]} · {PERIOD_LABELS[budget.period]}
           </span>
         </p>
-        <div className={cn("hidden flex-col gap-0.5 @[56rem]:flex", BUDGET_COLUMNS.scope)}>
+        <div className="hidden min-w-0 flex-col gap-0.5 @[64rem]:flex">
           <p
             className={cn(
               "truncate text-foreground",
@@ -81,18 +83,13 @@ export function BudgetRow({ budget, scopeName, canWrite }: BudgetRowProps) {
           </p>
           <p className="text-xs font-medium text-muted-foreground">{SCOPE_LABELS[budget.scope]}</p>
         </div>
-        <p
-          className={cn(
-            "hidden text-sm text-muted-foreground @[56rem]:block",
-            BUDGET_COLUMNS.period,
-          )}
-        >
+        <p className="hidden text-sm text-muted-foreground @[64rem]:block">
           {PERIOD_LABELS[budget.period]}
         </p>
-        <div className={BUDGET_COLUMNS.spend}>
+        <div className="min-w-0">
           <BudgetProgress budget={budget} />
         </div>
-        <p className={cn("text-[13px] text-muted-foreground", BUDGET_COLUMNS.resets)}>
+        <p className="text-[13px] text-muted-foreground">
           {budget.state === null ? (
             <UnknownValue reason={NOT_EVALUATED_REASON} />
           ) : (
@@ -101,11 +98,11 @@ export function BudgetRow({ budget, scopeName, canWrite }: BudgetRowProps) {
             ))
           )}
         </p>
-        <div className="flex items-center gap-1.5 @[56rem]:flex-1 @[56rem]:justify-end">
+        <div className="flex items-center gap-1.5 @[64rem]:justify-end">
           <RowAction
             aria-expanded={showBurn}
             aria-controls={burnId}
-            className="@max-[56rem]:h-11 @max-[56rem]:flex-1"
+            className="@max-[64rem]:h-11 @max-[64rem]:flex-1"
             onClick={() => {
               setShowBurn(!showBurn);
             }}
@@ -123,7 +120,7 @@ export function BudgetRow({ budget, scopeName, canWrite }: BudgetRowProps) {
                 trigger={
                   <RowAction
                     aria-label={`Edit ${budget.name}`}
-                    className="@max-[56rem]:h-11 @max-[56rem]:flex-1"
+                    className="@max-[64rem]:h-11 @max-[64rem]:flex-1"
                   >
                     Edit
                   </RowAction>

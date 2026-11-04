@@ -211,13 +211,13 @@ def test_429_honours_retry_after_seconds(make_exporter, ingest, sleeps):
     assert sleeps.delays == [7.0]
 
 
-def test_retry_after_is_capped_by_max_backoff(make_exporter, ingest, sleeps):
-    ingest.handler = status_sequence(503, headers={"Retry-After": "3600"})
+def test_retry_after_minimum_exceeds_client_backoff_cap(make_exporter, ingest, sleeps):
+    ingest.handler = status_sequence(503, headers={"Retry-After": "120"})
     exporter = make_exporter(max_backoff=30.0)
     exporter.export(make_span(1))
     exporter.flush(timeout=5)
 
-    assert sleeps.delays == [30.0]
+    assert sleeps.delays == [120.0]
 
 
 @pytest.mark.parametrize("status", [400, 401, 403, 404, 422])

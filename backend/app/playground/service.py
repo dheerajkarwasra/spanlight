@@ -32,6 +32,12 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import not_configured, not_found
+from app.core.idempotency_store import (
+    Reservation,
+    StoredResponse,
+    complete_operation,
+    operation_reservation,
+)
 from app.core.ratelimit import PostgresTokenBucket
 from app.db.models import Project, PromptVersion, ProviderCredential
 from app.gateway import service as gateway_service
@@ -45,7 +51,7 @@ from app.gateway.context import (
 from app.gateway.execute import execute as gateway_execute
 from app.gateway.in_process import single_credential_context
 from app.gateway.recorder import DirectSpans
-from app.gateway.settle_helpers import shielded
+from app.gateway.settle_helpers import may_have_billed, shielded
 from app.gateway.trace_headers import TraceHeaders
 from app.playground import request as build
 from app.playground.output import failed, result_of
@@ -101,6 +107,7 @@ async def run(
     *,
     clock: Clock,
     execute: Execute = gateway_execute,
+    receipt: Callable[[list[PlaygroundResult]], StoredResponse] | None = None,
 ) -> list[PlaygroundResult]:
     """Run every configuration and answer in order. Commits `db`.
 
@@ -112,8 +119,9 @@ async def run(
     plans = [await _plan(db, project, actor_id, config) for config in configs]
     prices = await load_price_book(db, project.org_id)
     await db.commit()  # no connection is held while the providers answer
+    operation = operation_reservation(db)
     results = await asyncio.gather(
-        *(_run_one(services, project, plan, prices, clock, execute) for plan in plans)
+        *(_run_one(services, project, plan, prices, clock, execute, operation) for plan in plans)
     )
     logger.info(
         "playground_run",
@@ -121,6 +129,9 @@ async def run(
         configs=len(plans),
         failed=sum(1 for result in results if result.error is not None),
     )
+    if receipt is not None:
+        await complete_operation(db, receipt(list(results)))
+        await db.commit()
     return list(results)
 
 
@@ -173,13 +184,16 @@ async def _run_one(
     prices: PriceBook,
     clock: Clock,
     execute: Execute,
+    operation: Reservation | None,
 ) -> PlaygroundResult:
     """One configuration's result; anything but a cancellation becomes its `error`."""
     if plan.request is None:
         return failed(plan.error or "invalid_configuration")
     try:
-        return await _call(services, project, plan, plan.request, prices, clock, execute)
+        return await _call(services, project, plan, plan.request, prices, clock, execute, operation)
     except Exception as error:  # noqa: BLE001 - one broken configuration must not stop the others
+        if operation is not None:
+            operation.keep_pending = True
         logger.error("playground_call_failed", error_type=type(error).__name__)
         return failed("playground_failed")
 
@@ -192,6 +206,7 @@ async def _call(
     prices: PriceBook,
     clock: Clock,
     execute: Execute,
+    operation: Reservation | None,
 ) -> PlaygroundResult:
     spans = _PlaygroundSpans(plan.version_id)
     context = single_credential_context(
@@ -210,6 +225,8 @@ async def _call(
         # `execute` raises only when cancelled (the client went away); the call may have been paid.
         await shielded(spans.write(context))
         raise
+    if operation is not None and result.error is not None and may_have_billed(result):
+        operation.keep_pending = True
     latency_ms = (time.monotonic() - started) * 1000
     # An answered call always leaves a span; none means it could not be built.
     stored = await shielded(spans.write(context, require_span=True))

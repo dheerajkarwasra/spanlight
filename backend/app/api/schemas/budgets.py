@@ -8,15 +8,18 @@ not be measured is `null`, never `"0"`.
 
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Self
 
 from app.alerts.payload import DecimalStr
 from app.alerts.types import RuleStateName
 from app.api.schemas.common import ApiModel
 from app.budgets.periods import next_reset, period_start
+from app.budgets.queries import Counters
 from app.budgets.schemas import BudgetPatch, BudgetSpec
 from app.budgets.types import BudgetAction, BudgetPeriod, BudgetScope
 from app.db.models import AlertState, Budget
+from app.db.models.budgets import BudgetCounter
 
 __all__ = [
     "BudgetBurnOut",
@@ -34,6 +37,10 @@ class BudgetStateOut(ApiModel):
     Until the first evaluation of a new period, the previous period's figures no longer apply:
     the state shows the current period with `spent_usd` null and `state` `ok` (a firing alert
     from a past period ends on that evaluation and never blocks).
+
+    `reserved_usd` and `gateway_settled_usd` are the budget's gateway counter this period
+    (ADR 0017): only a `block` budget has one, so both are null for a `notify` budget. A `block`
+    budget that admitted no gateway call this period reads `"0"` for both.
     """
 
     # Spend so far in the period; null when not measured yet in this period, or when it could
@@ -44,22 +51,37 @@ class BudgetStateOut(ApiModel):
     # `firing` once the spend passed the amount (a `block` budget then blocks gateway calls).
     state: RuleStateName
     last_evaluated_at: datetime
+    # Gateway estimates held in flight against this budget this period; null for `notify`.
+    reserved_usd: DecimalStr | None = None
+    # Gateway charges settled into the counter this period; null for `notify`.
+    gateway_settled_usd: DecimalStr | None = None
 
     @classmethod
-    def of(cls, budget: Budget, state: AlertState | None, now: datetime) -> Self | None:
-        """The state of `budget` at `now` from its rule's state row; None before its first
-        evaluation."""
+    def of(
+        cls,
+        budget: Budget,
+        state: AlertState | None,
+        now: datetime,
+        counter: BudgetCounter | None = None,
+    ) -> Self | None:
+        """The state of `budget` at `now` from its rule's state row and its current period's
+        gateway counter; None before its first evaluation."""
         if state is None or state.last_evaluated_at is None:
             return None
         evaluated = state.last_evaluated_at
         start = period_start(budget.period, now)
         current = period_start(budget.period, evaluated) >= start
+        counts = budget.action is BudgetAction.BLOCK
         return cls(
             spent_usd=state.last_value if current else None,
             period_start=start,
             resets_at=next_reset(budget.period, now),
             state=state.state if current else RuleStateName.OK,
             last_evaluated_at=evaluated,
+            reserved_usd=(counter.reserved_usd if counter else Decimal(0)) if counts else None,
+            gateway_settled_usd=(counter.settled_usd if counter else Decimal(0))
+            if counts
+            else None,
         )
 
 
@@ -83,9 +105,16 @@ class BudgetOut(ApiModel):
     state: BudgetStateOut | None = None
 
     @classmethod
-    def of(cls, budget: Budget, state: AlertState | None, now: datetime) -> Self:
+    def of(
+        cls,
+        budget: Budget,
+        state: AlertState | None,
+        now: datetime,
+        counters: Counters | None = None,
+    ) -> Self:
+        counter = (counters or {}).get((budget.id, period_start(budget.period, now)))
         return cls.model_validate(budget).model_copy(
-            update={"state": BudgetStateOut.of(budget, state, now)}
+            update={"state": BudgetStateOut.of(budget, state, now, counter)}
         )
 
 

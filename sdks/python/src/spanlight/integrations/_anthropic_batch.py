@@ -14,7 +14,7 @@ import logging
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from ._anthropic_message import PROVIDER, usage_fields
+from ._anthropic_message import PROVIDER, usage_attributes, usage_fields
 from ._batch import SUCCEEDED, record_batch_item
 from ._common import WRAPPED_MARKER, ClientGetter, get_field, patch_method
 
@@ -81,9 +81,14 @@ def _record_item(get_client: ClientGetter, batch_id: str, item: Any) -> None:
         stop_reason = get_field(message, "stop_reason")
         error_type = get_field(result, "error", "error", "type")
         error_message = get_field(result, "error", "error", "message")
+        attributes = usage_attributes(get_field(message, "usage"))
+        response_id = get_field(message, "id")
+        if isinstance(response_id, str):
+            attributes["response.id"] = response_id
         record_batch_item(
             get_client(),
             provider=PROVIDER,
+            attributes=attributes,
             batch_id=batch_id,
             custom_id=custom_id,
             result_type=result_type,

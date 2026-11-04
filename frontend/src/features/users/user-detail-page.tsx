@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectParams } from "@/features/shell/project-context";
 import { fromPathId, isApiError, type UserDetail } from "@/lib/api";
 import { formatInteger } from "@/lib/format";
+import { sourceHistoryLabel } from "@/lib/freshness";
 
 import { ComputedAtChip } from "./computed-at-chip";
 import { UserDailyChart, UserDailyChartSkeleton } from "./user-daily-chart";
@@ -146,7 +147,11 @@ function UserHeader({ detail, userId }: { detail: UserDetail; userId: string }) 
           First seen in window: {formatUtcDay(user.first_seen_day)} · last seen{" "}
           {lastSeenPhrase(user.last_seen_day)} · window {windowLabel(detail.window)} (UTC days)
         </p>
-        <ComputedAtChip value={detail.computed_at} />
+        {/* An existing user's detail always carries stored figures. */}
+        <ComputedAtChip
+          value={detail.computed_at}
+          history={sourceHistoryLabel(detail.aggregate_status, true)}
+        />
       </div>
       <dl className="grid grid-cols-2 gap-2 rounded-card bg-hero-card p-3 text-hero-card-foreground sm:grid-cols-3 lg:grid-cols-6 dark:border dark:border-border">
         <Stat label="Traces">{formatInteger(user.traces)}</Stat>

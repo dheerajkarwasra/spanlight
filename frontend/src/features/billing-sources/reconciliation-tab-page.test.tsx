@@ -71,6 +71,7 @@ const REPORT: ReconciliationReport = {
       credits_usd: "0",
       other_usd: "0",
       unattributed_calls: 0,
+      bypass_suspected: false,
       groups: [
         {
           group: "gpt-4.1",
@@ -182,6 +183,36 @@ describe("ReconciliationTabPage", () => {
     expect(
       await within(table).findByLabelText(/Spanlight recorded no priced call on these days/),
     ).toBeInTheDocument();
+  });
+});
+
+describe("Reconciliation report: suspected bypass", () => {
+  it("warns above the table and marks the day the server flags", async () => {
+    const [first] = REPORT.days;
+    vi.spyOn(billingSourcesApi, "get").mockResolvedValue(source("s1", "OpenAI prod", ["proj_1"]));
+    vi.spyOn(billingSourcesApi, "reconciliation").mockResolvedValue({
+      ...REPORT,
+      days: first ? [{ ...first, bypass_suspected: true }] : [],
+    });
+    renderApp(`/${ORG_ID}/proj_1/settings/billing-sources/s1?first=2026-01-10&last=2026-01-11`);
+
+    expect(await screen.findByText("Unexplained provider spend on Jan 10")).toBeInTheDocument();
+    expect(
+      screen.getByText(/rotate the key if you cannot account for the spend/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Unexplained spend")).toBeInTheDocument();
+    // The narrow tile has no tooltips, so the day spells out the causes.
+    expect(screen.getByText(/an unmapped project, or a leaked provider key/)).toBeInTheDocument();
+  });
+
+  it("says nothing when no day is flagged", async () => {
+    vi.spyOn(billingSourcesApi, "get").mockResolvedValue(source("s1", "OpenAI prod", ["proj_1"]));
+    vi.spyOn(billingSourcesApi, "reconciliation").mockResolvedValue(REPORT);
+    renderApp(`/${ORG_ID}/proj_1/settings/billing-sources/s1?first=2026-01-10&last=2026-01-11`);
+
+    expect(await screen.findByText("Daily reconciliation")).toBeInTheDocument();
+    expect(await screen.findByText("Jan 10")).toBeInTheDocument();
+    expect(screen.queryByText(/Unexplained/)).toBeNull();
   });
 });
 

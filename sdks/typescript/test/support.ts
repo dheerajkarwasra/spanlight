@@ -63,7 +63,7 @@ export function captureSpanlight(options: SpanlightOptions = {}): {
     const accepted = (body.spans as unknown[]).length;
     return Promise.resolve(Response.json({ accepted, rejected: [] }, { status: 202 }));
   };
-  init({ apiKey: "spl_live_test", host: "http://spanlight.test", fetch: fetchMock, ...options });
+  init({ apiKey: "spl_live_test", host: "https://spanlight.test", fetch: fetchMock, ...options });
   return {
     requests,
     spans: () => requests.flatMap((request) => request.body.spans as Json[]),

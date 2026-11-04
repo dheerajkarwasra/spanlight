@@ -5,7 +5,7 @@ from spans by the daily cost rollup job and read by the reconciliation report. I
 nullable, so its natural key is a unique expression index that treats a NULL dimension as the
 empty string: two rows with every dimension NULL for the same project and day collide.
 
-Every test here downgrades the session's shared database or writes rows under the truncated
+Historical round trips use owned databases; other tests write under the truncated
 `organizations`, and leaves the schema as it found it.
 """
 
@@ -15,8 +15,12 @@ import psycopg
 import pytest
 from sqlalchemy import create_engine, text
 
-from app.db.migrations import downgrade_to, head_revision, upgrade_to_head
-from tests.conftest import admin_database_url
+from tests.db.migration_support import (
+    admin_database_url,
+    downgrade_to,
+    expected_revision,
+    upgrade_to_target,
+)
 
 ORG = uuid.UUID("10000000-0000-4000-8000-000000000602")
 PROJECT = uuid.UUID("20000000-0000-4000-8000-000000000602")
@@ -111,7 +115,7 @@ def _current_revision(database_url: str) -> object:
 
 
 def _assert_at_head(database_url: str) -> None:
-    assert _current_revision(database_url) == head_revision()
+    assert _current_revision(database_url) == expected_revision()
     assert _columns(database_url, TABLE) == EXPECTED_COLUMNS
     assert _row_security(database_url) == (True, True)
     # The policies are the exact expressions of every project table, as 0505 wrote them.
@@ -136,22 +140,23 @@ def _assert_at_head(database_url: str) -> None:
     assert computed_at == ("timestamptz", "NO", "now()")
 
 
-def test_0602_round_trip(app_database_url: str) -> None:
-    _assert_at_head(app_database_url)
+@pytest.mark.migration_revision("0602")
+def test_0602_round_trip(migration_database_url: str) -> None:
+    _assert_at_head(migration_database_url)
 
-    downgrade_to(app_database_url, "0601")
+    downgrade_to(migration_database_url, "0601")
     try:
-        assert _current_revision(app_database_url) == "0601"
-        assert _columns(app_database_url, TABLE) == {}
-        assert _policies(app_database_url) == {}
-        assert _row_security(app_database_url) is None
-        assert "computed_at" not in _columns(app_database_url, "user_stats_daily")
+        assert _current_revision(migration_database_url) == "0601"
+        assert _columns(migration_database_url, TABLE) == {}
+        assert _policies(migration_database_url) == {}
+        assert _row_security(migration_database_url) is None
+        assert "computed_at" not in _columns(migration_database_url, "user_stats_daily")
     finally:
-        # The rest of the session shares this database, so it must end at head. Nothing between
+        # Complete the round-trip contract at its pinned upper revision. Nothing between
         # 0601 and 0602 touches the price tables, so the seed rows need no rebuilding here.
-        upgrade_to_head(app_database_url)
+        upgrade_to_target(migration_database_url)
 
-    _assert_at_head(app_database_url)
+    _assert_at_head(migration_database_url)
 
 
 def _admin() -> psycopg.Connection:

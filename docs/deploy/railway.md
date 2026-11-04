@@ -153,6 +153,8 @@ All variables, for reference. Values in `${{ }}` are Railway [reference variable
 |---|---|---|---|
 | `SPANLIGHT_TARGET` | api, worker | `backend` | no |
 | `SPANLIGHT_TARGET` | web | `web` | no |
+| `LEGAL_PAGES` | web | `1` only on spanlight.dev: a build argument that ships the legal pages, which name its operator. Leave it out for any other deployment. | no |
+| `TERMS_VERSION` | api, worker | `2026-11-01`, equal to `VERSION` in `frontend/src/features/legal/content/terms.tsx`. Users accept this version at signup, and anyone who accepted an older one sees the accept screen once. Set it together with `LEGAL_PAGES`; unset means no terms. | no |
 | `PORT` | api | `8000` | no |
 | `PORT` | web | `8080` | no |
 | `APP_BASE_URL` | api | `https://${{web.RAILWAY_PUBLIC_DOMAIN}}` | no |
@@ -169,7 +171,7 @@ All variables, for reference. Values in `${{ }}` are Railway [reference variable
 | `SENTRY_DSN` | api, worker | your Sentry project's DSN, step 3 | yes |
 | `WORKER_REQUIRED` | api | opt-in (see [Optional features](#optional-features)): `false` stops `/health/ready` answering 503 while no worker is beating, for an api-only setup; empty keeps the default, `true` | no |
 | `CREDENTIALS_KEYS` | api, worker | `v1:` followed by `openssl rand -base64 32`, the same value on both, step 3 | yes |
-| `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | api, worker | opt-in (see [Optional features](#optional-features)): an S3-compatible bucket and its keys; turn on backups and exports. Set all three or none, with the same values on both services | access key and secret: yes |
+| `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | api, worker | opt-in (see [Optional features](#optional-features)): an S3-compatible bucket and its keys; turn on exports. Set all three or none, with the same values on both services | access key and secret: yes |
 | `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_REGION`, `S3_FORCE_PATH_STYLE` | api, worker | opt-in (see [Optional features](#optional-features)): object-storage address for non-AWS services, the address browsers use for download links, the AWS region, and path-style bucket addressing (MinIO and most self-hosted stores) | no |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | api, worker | opt-in (see [Optional features](#optional-features)): OTLP HTTP collector that receives the app's own traces; self-tracing is off while empty | no |
 | `OTEL_SERVICE_NAME` | api, worker | opt-in (see [Optional features](#optional-features)): service name on those traces; empty keeps `spanlight-api` | no |
@@ -186,8 +188,9 @@ These settings are off by default and, because `preserve()` makes an apply stop 
 
 | Feature | Block, on which services | Variables |
 |---|---|---|
-| Object storage (exports and backups) | api and worker together, the same values on both | `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` (all three or none), plus `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_REGION`, `S3_FORCE_PATH_STYLE` as your store needs |
-| Nightly backups | worker | `BACKUPS_ENABLED`, `BACKUP_DATABASE_URL` |
+| Object storage (exports) | api and worker together, the same values on both | `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` (all three or none), plus `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_REGION`, `S3_FORCE_PATH_STYLE` as your store needs |
+| Nightly backups | worker only | `BACKUPS_ENABLED`, `BACKUP_DATABASE_URL`, independent `BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY`, `BACKUP_S3_SECRET_KEY`, optional `BACKUP_S3_ENDPOINT`, `BACKUP_S3_REGION`, `BACKUP_S3_FORCE_PATH_STYLE`, `BACKUP_S3_SSE` (default `AES256`; blank for a store without server-side encryption); upload principal needs Put/Abort only |
+| Backup retention | separate operator process | Daily `spanlight backup prune --apply` with independent List/Delete credentials through `BACKUP_S3_*`; preview first. Never share retention credentials with api/worker. No schedule means storage grows. |
 | Self-tracing | api and worker | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME` |
 | Worker metrics | worker | `METRICS_TOKEN` (the api's value) and `WORKER_METRICS_PORT` |
 | Api without a worker | api | `WORKER_REQUIRED` set to `false` |
@@ -225,6 +228,22 @@ To serve Spanlight on your own domain instead of the generated `*.up.railway.app
 4. **Point the app at the new origin.** Set `APP_BASE_URL=https://<your domain>` on every service that sets it, and change the same line in `railway.ts` so the next apply doesn't revert it. Railway stages variable changes, so deploy them, then redeploy `api` and `worker`. From then on the origin check accepts only the new domain: sign-ups and logins on the old `*.up.railway.app` address get 403 `ORIGIN_NOT_ALLOWED`. To keep both working during a move, add the old origin to `ALLOWED_ORIGINS` on the api.
 5. **Move the sign-in callbacks**, if GitHub or Google sign-in is configured. Register `https://<your domain>/api/v1/auth/oauth/github/callback` and `https://<your domain>/api/v1/auth/oauth/google/callback` with the providers. A GitHub OAuth app holds a single callback URL, so the old one stops working once you save. A Google OAuth client can list several, so add the new one first and remove the old one after sign-in works; also add the domain to the consent screen's authorized domains.
 6. **Verify** with `export DOMAIN=<your domain>` and the checks in [step 6](#6-verify). A resolver that looked the name up before the records existed keeps answering "not found" for as long as the zone's negative-cache TTL (30 minutes on Cloudflare). Wait it out, or purge the name from public resolvers' caches.
+
+### Email from your domain: SPF, DKIM and DMARC
+
+When `EMAIL_FROM` uses your own domain, publish three DNS records so receiving servers trust the mail and others cannot send in your name. The same applies to a Docker Compose install.
+
+1. **SPF and DKIM come from your email provider.** With Resend, add the domain under **Domains** and create the records it shows (an SPF `TXT` and an `MX` on its sending subdomain, and a DKIM `TXT`), then wait until Resend marks the domain verified. With SMTP, use your provider's records.
+2. **Add a DMARC record** at your DNS provider, a `TXT` record named `_dmarc.<your-domain>`:
+
+   ```text
+   v=DMARC1; p=none; rua=mailto:dmarc-reports@<your-domain>; adkim=s; aspf=r; pct=100
+   ```
+
+   `p=none` only collects reports: receivers send daily aggregate reports to the `rua` address and deliver mail as before. The address must receive mail. `adkim=s` requires the DKIM signing domain to match the `From` domain exactly; `aspf=r` lets the SPF domain be any subdomain of the same organizational domain. With Resend both align: DKIM signs with your domain, and SPF passes on its `send.` subdomain of your domain.
+3. **Tighten the policy.** After two weeks of reports that show only your provider sending, and passing, change `p=none` to `p=quarantine` (failing mail goes to spam). Once that runs clean, change it to `p=reject` (failing mail is refused).
+
+Check the record with `dig +short TXT _dmarc.<your-domain>`. A message received from the app should show `dmarc=pass` in its `Authentication-Results` header.
 
 ## 5. Deploy
 
@@ -328,7 +347,7 @@ What reaches Sentry, once the DSN is set:
 
 - **api:** unhandled exceptions and any 5xx response, plus error-level log lines. 4xx responses (401, 403, 404, 422, 429) are never reported.
 - **worker:** error-level log lines, so a failed job (`job_failed`) arrives as an error event whose message holds the log fields, and a crash while starting up arrives as an exception.
-- **Not sent:** request bodies, the local variables of stack frames (FastAPI holds the parsed body in one), query strings, cookies and the `Referer` header. Sensitive request headers (`Authorization`, `X-Real-IP`, `X-Forwarded-For`) are replaced with `[Filtered]`, no user or client IP is attached, and the database engine hides SQL parameters, so a failed `INSERT` doesn't put its values in the error text. This is why a failed `POST /v1/traces` or sign-up should not carry a customer's prompts, completions or email address, and why an invite token in `/api/v1/invites/preview?token=` or in the `/invite/<token>` page URL should not either. The SDK's own default would send most of this, so the code sets `max_request_body_size="never"`, `include_local_variables=False`, `send_default_pii=False`, a `before_send` hook that drops the query string and `Referer`, and `hide_parameters=True` on the engine. The cost is that stack traces show no variable values. [`tests/core/test_sentry.py`](../../backend/tests/core/test_sentry.py) and [`tests/db/test_db_session.py`](../../backend/tests/db/test_db_session.py) pin each of these.
+- **Not sent:** request bodies, the local variables of stack frames (FastAPI holds the parsed body in one), query strings, cookies and the `Referer` header. Sensitive request headers (`Authorization`, `X-Real-IP`, `X-Forwarded-For`) are replaced with `[Filtered]`, no user or client IP is attached, and the database engine hides SQL parameters, so a failed `INSERT` doesn't put its values in the error text. This is why a failed `POST /v1/traces` or sign-up should not carry a customer's prompts, completions or email address, and why an invite token in the `Referer` of an old `/invite/<token>` link should not either. The SDK's own default would send most of this, so the code sets `max_request_body_size="never"`, `include_local_variables=False`, `send_default_pii=False`, a `before_send` hook that drops the query string and `Referer`, and `hide_parameters=True` on the engine. The cost is that stack traces show no variable values. [`tests/core/test_sentry.py`](../../backend/tests/core/test_sentry.py) and [`tests/db/test_db_session.py`](../../backend/tests/db/test_db_session.py) pin each of these.
 - **Still sent:** exception messages and the traceback's source lines (nothing scrubs them, so a message that includes a request value is sent as written), the request URL path, other request headers (host, user agent, origin) and the server's hostname. A failed worker job arrives with its `error` text, which is the exception type and message. Treat the Sentry project as holding operational data, and keep customer content out of exception messages.
 
 ### Uptime check
@@ -386,9 +405,9 @@ railway usage projects --project spanlight
 
 Replicas are the knob. Each api replica runs one process, and rate limits, sessions and idempotency keys live in Postgres, so replicas share them; the worker scales the same way (jobs are claimed with `FOR UPDATE SKIP LOCKED`). Raise a service's replica count in its **Settings → Deploy**, then check three things:
 
-- **The connection budget.** An api replica opens up to 30 Postgres connections and a worker up to 4: `30 × api replicas + 4 × workers + 10 ≤ max_connections − 3`. Read `SHOW max_connections` on the Railway Postgres; at 100 that is two api replicas and one worker. The [scaling runbook](../runbooks/scale.md#2-the-connection-budget) has the details.
+- **The connection budget.** An api replica opens up to 30 Postgres connections and a worker up to 5 (4 plus the nightly backup's `pg_dump`). During a deploy the old replicas drain for up to `drainingSeconds` beside the new ones, so count every service twice: `2 × (30 × api replicas + 5 × workers) + 1 + 10 ≤ max_connections − 3`. Read `SHOW max_connections` on the Railway Postgres; at 100 that is one api replica and one worker, and a second api replica needs at least 144. The [scaling runbook](../runbooks/scale.md#railway) has the details.
 - **That every replica gets traffic.** `web` reaches the api through one private hostname. After scaling, each replica's deploy logs should show `http_request` lines; if one stays quiet, the traffic is not spread.
-- **What to expect.** One api process held about 20 modelled companies (1.2 ingest requests a second of 20 spans plus 6 dashboard reads a second each) on the machine it was measured on. How that scales with replicas has not been measured, so watch latency and `503` rates after each step instead of assuming N replicas hold N times as much.
+- **What to expect.** One api process handles requests on one core: on a dedicated Linux host with 10 million spans stored, one replica held 1,500 ingested spans/s and 100 gateway calls/s, three replicas 4,000 spans/s and 200 calls/s ([scaling runbook](../runbooks/scale.md#4-scale-the-api)). A bigger Railway instance does not raise what one replica holds; more replicas do. Watch latency and `503` rates after each step, since your traffic mix is not the benchmark's.
 
 A revoked API key keeps working on each api replica for up to `API_KEY_CACHE_TTL_SECONDS` (10 s), since each replica caches key rows that long.
 
@@ -431,12 +450,55 @@ If `railway config` isn't an option, set the same things in each service's **Set
 | The api or worker build runs `npm ci` and the service starts Caddy | `SPANLIGHT_TARGET` isn't `backend` on that service, or `deploy/Dockerfile` lacks the `ARG SPANLIGHT_TARGET` line and final `FROM ${SPANLIGHT_TARGET}` stage. |
 | Pre-deploy: `APP_DB_PASSWORD must be set to at least 16 characters` | Do step 3, then `railway up --service api` again. |
 | Pre-deploy can't connect to the database | Check that Postgres is running and that `railway variable list --service api` shows `MIGRATION_DATABASE_URL` resolved to a `postgres.railway.internal` host. |
-| api crashes with `SECRET_KEY must be set when APP_BASE_URL uses https` | Set `SECRET_KEY` (step 3). |
+| api crashes with `SECRET_KEY must be set when APP_BASE_URL uses https or is not local` | Set `SECRET_KEY` (step 3). |
 | api or worker crashes with `CREDENTIALS_KEYS is invalid: entry 1 …` | The value isn't `<key id>:<base64 of 32 bytes>`. The message names the entry and the rule it breaks and never prints the value. Fix the value on both services. If secrets are already sealed, edit the existing key back into shape; a freshly generated one can't open them. |
 | Sign-up returns 403 `ORIGIN_NOT_ALLOWED` | `APP_BASE_URL` doesn't match the address in the browser. If the domain was generated after the api deployed, run `railway redeploy --service api`. For a custom domain, set `APP_BASE_URL=https://your.domain` on the api and add it to `railway.ts` (see [Custom domain](#custom-domain)). Extra origins go in `ALLOWED_ORIGINS` (comma-separated). |
-| `/api/…` returns 502 from web | The api isn't live yet, or `API_UPSTREAM` on web (`GATEWAY_UPSTREAM` for `/gw/…`) isn't `api.railway.internal:8000`. Environments created before 16 October 2025 use IPv6-only private networking. There, uvicorn must listen on `::`: set the api start command to `/bin/sh -c "unset MIGRATION_DATABASE_URL; exec uvicorn app.main:app --host :: --port $PORT --proxy-headers --forwarded-allow-ips=*"`. |
+| `/api/…` returns 502 from web | The api isn't live yet, or `API_UPSTREAM` on web (`GATEWAY_UPSTREAM` for `/gw/…`) isn't `api.railway.internal:8000`. Environments created before 16 October 2025 use IPv6-only private networking. There, the shared launcher must listen on `::`: set the api start command to `python -c 'from app.server import run_application; run_application(host="::")'`. |
 | The worker restarts a few times on the first deploy | Expected until the api's pre-deploy has created `spanlight_app`. If it doesn't settle, check `railway logs --service worker --latest`. |
 | The live demo says it isn't configured | `DEMO_ENABLED` isn't `true` on the api, or the api hasn't been redeployed since it was set. |
 | No demo traffic arrives | `ANTHROPIC_API_KEY` is missing on the worker, or this month's $1 budget is spent. The worker logs say which. |
 | Sentry shows no events from one service | `SENTRY_DSN` isn't set on that service, or the service hasn't redeployed since it was set. Check the name with `railway variable list --service <name> --kv \| cut -d= -f1` (a sealed variable isn't listed; look in the dashboard), set it as in step 3 if it's missing, then `railway redeploy --service <name>`. |
 | Sessions show a private IP for everyone, and rate limits hit all visitors at once | `TRUSTED_PROXIES` isn't set on web, or `deploy/Caddyfile` lacks the `servers { trusted_proxies … client_ip_headers X-Real-IP }` block. |
+
+### Aggregate correction repair
+
+The worker defaults `AGGREGATE_REPAIR_ENABLED` to `false`. This disables consumption only: capture continues and affected materialized observations remain pending. Follow the [aggregate repair runbook](../runbooks/aggregate-repair.md) before normal-service cutover. Set the worker variable, uncomment its `preserve()` line in `deploy/railway/railway.ts`, and verify enabled-product backlog convergence after the approved deployment. Disabling it again deliberately restores degraded materialized observation service; synchronous complete-source live reads remain usable.
+
+
+### Process shutdown
+
+Run the API with `python -m app.server`, the standalone gateway with `python -m app.gateway`,
+and the worker with `python -m app.jobs.worker`. The shared HTTP launcher preserves proxy headers,
+API port8000 and gateway port8001 (override `PORT`; gateway also accepts `GATEWAY_HOST`).
+Serving processes remove `MIGRATION_DATABASE_URL` before loading application settings.
+Uvicorn is pinned to0.54.0: upgrading requires revalidating startup ownership, signal semantics,
+request/finalizer joins and the child-process matrix.
+
+`SHUTDOWN_TIMEOUT_SECONDS=60`, `SHUTDOWN_WORK_SECONDS=50`, `SHUTDOWN_FLUSH_SECONDS=3`, and
+`SHUTDOWN_CLOSE_SECONDS=2` use one monotonic first-signal deadline. Defaults allocate work through50s,
+producer joins through52.5s, settlement/recorder writes through53.75s, cancellation joins through55s,
+loss flush through58s, and resource close through60s. Earlier completion leaves time available.
+Values must be finite and positive, with work plus both reserves strictly below the total.
+Blank values use defaults. Repeated SIGTERM never resets the clock; repeated SIGINT explicitly forces
+termination without unsafe resource unwinding. Direct lifespan embedding retains the resource safety gate and teardown deadline, but its host
+must stop ingress and join all request producers before exiting the lifespan. App lifespan alone
+cannot establish that request barrier. Use the shared adapter for production HTTP serving.
+
+Compose requests75s stop grace for all backend roles. Railway requests75s `drainingSeconds` for the
+API and worker; apply the same request to a separately configured gateway. Installed railway3.13.0
+supports the field, but hosted enforcement and signal-delivery overhead remain unverified.
+Do not shorten external grace below the configured application total. A noncooperative database user
+can exceed the deadline: its pool is retained, shutdown is reported incomplete, and external SIGKILL
+may lose in-memory accounting. Joined uncertain terminal writes also remain incomplete.
+A blocked tracing exporter is bounded daemon work, never evidence of completed exporter cleanup.
+
+The production entrypoints also retain a public `shutdown_default_executor()` join before returning
+to the event-loop runner. This covers default-executor resolver work hidden inside HTTP libraries.
+If the join crosses the original deadline, shutdown remains incomplete and the process stays owned
+until completion or external hard stop. Uvicorn's INFO line `Application shutdown complete.` means
+only that the ASGI lifespan finished; the HTTP launcher logs `process.shutdown_finished` at INFO
+after this join, with `accounting_complete` false when shutdown was incomplete or recorded usage or
+telemetry-loss accounting could not be confirmed. Embedded hosts keep their shared executor; they own its final
+join. Explicit SMTP, file, heuristic, S3, password-hash and system-resolver awaits retain thread work
+through cancellation. A cancelled S3 acquisition closes a returned response body or aborts a known
+multipart upload; unacknowledged external effects retain their existing uncertainty.

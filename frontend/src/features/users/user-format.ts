@@ -61,8 +61,8 @@ export interface DailyPoint {
   day: string;
   label: string;
   tooltipLabel: string;
-  calls: number;
-  errors: number;
+  calls: number | null;
+  errors: number | null;
   cost: number | null;
   /** Some calls had no price: a known cost is only a lower bound. */
   lowerBound: boolean;
@@ -80,14 +80,14 @@ export function toDailyPoints(daily: readonly UserDayStats[]): DailyPoint[] {
       errors: day.errors,
       cost: parseMoney(day.cost_usd),
       costText: formatCost(day.cost_usd),
-      lowerBound: day.unpriced_calls > 0 && day.cost_usd !== null,
+      lowerBound: day.unpriced_calls !== null && day.unpriced_calls > 0 && day.cost_usd !== null,
     };
   });
 }
 
 /** Whether any day has LLM calls; an all-zero window shows an empty plot message instead. */
 export function hasDailyCalls(points: readonly DailyPoint[]): boolean {
-  return points.some((point) => point.calls > 0);
+  return points.some((point) => point.calls === null || point.calls > 0);
 }
 
 export const NO_USER_PRICE = "No price for the models this user called.";

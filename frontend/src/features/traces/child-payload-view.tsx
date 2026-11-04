@@ -29,7 +29,8 @@ export function ChildPayloadView({
   /** `candidates` holds the ones after `child`. */
   fallback: ChildFallback;
 }) {
-  const full = useSpanQuery(fallback.traceId, child);
+  // Only a withheld payload is worth a request: withheld attributes leave a null payload null.
+  const full = useSpanQuery(fallback.traceId, child, child.payload_omitted);
 
   const source = (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-input bg-surface-muted px-3 py-2">

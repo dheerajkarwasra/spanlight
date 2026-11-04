@@ -1,17 +1,20 @@
-"""Housekeeping for auth and throttle tables, idempotency keys, rate limit buckets, jobs, outbox,
-SDK exporter counters, the explain budget's stale reservations and old budget counters."""
+"""Housekeeping for auth and throttle tables, invites, idempotency keys, rate limit buckets, jobs,
+outbox, SDK exporter counters, ingest quota days, the explain budget's stale reservations and old
+budget counters."""
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
-from sqlalchemy import delete, or_
+from sqlalchemy import delete, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.budgets.jobs import prune_budget_counters
 from app.db.models import (
     EmailToken,
     IdempotencyKey,
+    IngestQuotaDay,
+    Invite,
     Job,
     JobStatus,
     LoginAttempt,
@@ -34,11 +37,16 @@ LOGIN_ATTEMPT_RETENTION = timedelta(days=1)  # the throttle only looks back 15 m
 THROTTLE_EVENT_RETENTION = timedelta(days=1)  # the longest throttle window is an hour
 EMAIL_TOKEN_RETENTION = timedelta(days=1)
 FINISHED_JOB_RETENTION = timedelta(days=7)
+# How long an invite is kept after it was accepted or expired: the period the privacy policy states.
+INVITE_RETENTION = timedelta(days=30)
 FINISHED_OUTBOX_RETENTION = timedelta(days=7)
 RATE_LIMIT_BUCKET_RETENTION = timedelta(hours=1)  # a bucket idle this long is full again anyway
 # An exporter is one SDK process; one silent this long has exited, and its last counters have
 # been read into the telemetry losses already.
 EXPORTER_COUNTER_RETENTION = timedelta(days=7)
+# A day row only matters while it is today; a month of history stays readable for an operator
+# answering "when did this project hit its cap".
+QUOTA_DAY_RETENTION = timedelta(days=35)
 # An explanation call is answered within the route's 60 s timeout, so a reservation this old
 # belongs to a request that died before it could complete or release it. It is completed at its
 # worst-case cost, never deleted: the provider may have billed it.
@@ -86,16 +94,24 @@ async def cleanup(
                 EmailToken.created_at < now - EMAIL_TOKEN_RETENTION,
             )
         )
-        # Past `expires_at` a key is ignored by the API already; this only frees the space. That
-        # includes a key left in flight by a request that died, which is long past its minute.
+        # Only known completed outcomes expire. Pending operations may have external effects
+        # and must retain their identity even when their original process has died.
         idempotency_keys = await db.execute(
-            delete(IdempotencyKey).where(IdempotencyKey.expires_at <= now)
+            delete(IdempotencyKey).where(
+                IdempotencyKey.expires_at <= now, IdempotencyKey.status.is_not(None)
+            )
         )
         # An idle bucket has refilled completely (the slowest one takes 1 hour), so dropping it
         # changes nothing for its caller and keeps the table to recent callers.
         rate_limit_buckets = await db.execute(
             delete(RateLimitBucket).where(
                 RateLimitBucket.updated_at < now - RATE_LIMIT_BUCKET_RETENTION
+            )
+        )
+        # Counted from whichever ended it: acceptance, or expiry for an invite never accepted.
+        invites = await db.execute(
+            delete(Invite).where(
+                func.coalesce(Invite.accepted_at, Invite.expires_at) < now - INVITE_RETENTION
             )
         )
         jobs = await db.execute(
@@ -119,11 +135,30 @@ async def cleanup(
         "email_tokens_deleted": int(getattr(email_tokens, "rowcount", 0)),
         "idempotency_keys_deleted": int(getattr(idempotency_keys, "rowcount", 0)),
         "rate_limit_buckets_deleted": int(getattr(rate_limit_buckets, "rowcount", 0)),
+        "invites_deleted": int(getattr(invites, "rowcount", 0)),
         "jobs_deleted": int(getattr(jobs, "rowcount", 0)),
         "outbox_rows_deleted": int(getattr(outbox, "rowcount", 0)),
     }
     counts["exporter_counters_deleted"] = await prune_exporter_counters(session_factory, now=now)
+    counts["quota_days_deleted"] = await prune_quota_days(session_factory, now=now)
     return counts
+
+
+async def prune_quota_days(
+    session_factory: async_sessionmaker[AsyncSession], *, now: datetime
+) -> int:
+    """Delete `ingest_quota_days` rows older than `QUOTA_DAY_RETENTION`, in every project.
+
+    Row-level secured and cross-project like the exporter counters: the worker bypass, in its
+    own transaction.
+    """
+    async with session_factory() as db:
+        await bypass_rls(db)
+        result = await db.execute(
+            delete(IngestQuotaDay).where(IngestQuotaDay.day < (now - QUOTA_DAY_RETENTION).date())
+        )
+        await db.commit()
+    return int(getattr(result, "rowcount", 0))
 
 
 async def prune_exporter_counters(

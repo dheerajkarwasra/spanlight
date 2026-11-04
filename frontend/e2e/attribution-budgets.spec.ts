@@ -139,7 +139,7 @@ test("attribution: empty, grouped by metadata, drill-down, promote, export", asy
   await expectNoAxeViolations(page);
 });
 
-test("budgets: a metadata block budget with the soft-limit hint", async ({ page }) => {
+test("budgets: a metadata block budget with the mixed-scope hint", async ({ page }) => {
   test.setTimeout(240_000);
   const { base } = await createWorkspace(page);
 
@@ -158,12 +158,14 @@ test("budgets: a metadata block budget with the soft-limit hint", async ({ page 
   await dialog.getByRole("radio", { name: "Daily" }).click();
   await dialog.getByLabel("Amount (USD)").fill("5");
   await dialog.getByRole("radio", { name: "Block" }).click();
-  // Spec §8.4: blocking is a soft limit, and the hint says how soft.
+  // G-007: gateway calls are refused before they pass the amount; SDK spend in a mixed scope is
+  // measured, not stopped.
   await expect(dialog).toContainText(
-    "Soft limit. Gateway calls in this scope get 402 BUDGET_EXCEEDED after spend is measured above the amount.",
+    "A gateway call that would take spend, plus calls in flight, past the amount gets 402 BUDGET_EXCEEDED before it reaches the provider.",
   );
-  await expect(dialog).toContainText("Spend is measured every 60 seconds");
-  await expect(dialog).toContainText("Traces sent with the SDK are never blocked.");
+  await expect(dialog).toContainText(
+    "SDK calls in this scope are measured every 60 seconds, not stopped",
+  );
   await checkAtWidths(page, "budget-dialog-metadata", async () => {
     await expect(dialog.getByRole("radio", { name: "Metadata" })).toBeVisible();
   });

@@ -4,9 +4,14 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
+    outputs:
+      verified_sha:
+        description: Commit whose required checks all succeeded
+        value: ${{ jobs.required.outputs.sha }}
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ github.workflow }}-ci-${{ github.ref }}
   # Only a superseded pull request run is worth cancelling; every push to main keeps its result.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
@@ -19,29 +24,31 @@ jobs:
     defaults:
       run:
         working-directory: backend
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: spanlight_test
-        ports: ["55432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 2s --health-timeout 3s --health-retries 30
-    env:
-      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:55432/spanlight_test
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - uses: astral-sh/setup-uv@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
           enable-cache: true
+      # Every runtime dependency the image ships must declare a licence; the image build writes
+      # their notices with the same script. Checked on the runtime set only, then dev is added.
+      - run: uv sync --frozen --no-dev --no-install-project
+      - run: uv run --no-sync python ../scripts/licenses/python_notices.py --check
       - run: uv sync --frozen
+      - run: uv run pytest -q -p no:cacheprovider ../scripts/licenses/test_python_notices.py
+      # Known vulnerabilities in the locked runtime dependencies (what the image ships).
+      # `shell: bash` adds pipefail, so a failed export fails the step instead of auditing nothing.
+      - shell: bash
+        run: uv export --frozen --no-dev --no-emit-project | uvx pip-audit@2.10.1 -r /dev/stdin --disable-pip --require-hashes --strict
       - run: uv run ruff check
       - run: uv run ruff format --check
       - run: uv run mypy app load accuracy
-      # One worker per runner CPU, each with its own database (see backend/tests/conftest.py).
-      - run: uv run pytest -q -n auto
+      # Each worker owns a disposable Postgres Testcontainer on this hosted runner.
+      - run: uv run pytest -q -n auto -m "not serial"
+      # Timing and capacity bounds are measured without parallel neighbours.
+      - run: uv run pytest -q -m serial
 
   sdk-python:
     runs-on: ubuntu-latest
@@ -53,10 +60,17 @@ jobs:
         python: ["3.10", "3.13"]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - uses: astral-sh/setup-uv@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
           enable-cache: true
       - run: uv sync --frozen --all-extras --python ${{ matrix.python }}
+      # The lock is the same for every Python in the matrix, so one audit is enough.
+      - if: matrix.python == '3.13'
+        shell: bash
+        run: uv export --frozen --no-dev --no-emit-project --all-extras | uvx pip-audit@2.10.1 -r /dev/stdin --disable-pip --require-hashes --strict
       - run: uv run ruff check
       - run: uv run ruff format --check
       - run: uv run mypy src
@@ -72,7 +86,10 @@ jobs:
         node: [22, 24]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - uses: actions/setup-node@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
           cache: npm
@@ -92,12 +109,18 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - uses: actions/setup-node@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      # Every production npm package the web image ships must declare a licence.
+      - run: node ../scripts/licenses/npm_notices.mjs --check
+      - run: node --test ../scripts/licenses/npm_notices.test.mjs
       - run: npm run lint
       - run: npm run format:check
       - run: npm run typecheck
@@ -116,18 +139,23 @@ jobs:
       ASTRO_TELEMETRY_DISABLED: "1"
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - uses: actions/setup-node@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: docs-site/package-lock.json
       - run: npm ci
         working-directory: docs-site
+      - run: node ../scripts/licenses/npm_notices.mjs --check
+        working-directory: docs-site
       - run: npm test
         working-directory: docs-site
       - run: npm run build
         working-directory: docs-site
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
           enable-cache: true
       - run: uv sync --frozen
@@ -146,7 +174,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - uses: astral-sh/setup-uv@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - run: uv run --no-project --with pyyaml python -m unittest discover -s scripts -p test_release_workflow.py
       - run: uv run --no-project --with pyyaml python scripts/check-release-workflow.py
       - run: uv run --no-project --with pyyaml python scripts/check-otlp-matrix-workflow.py
       - run: uv run --no-project --with pyyaml bash scripts/check-repo-files.sh
@@ -158,9 +190,12 @@ jobs:
     needs: [backend, frontend]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - uses: docker/setup-buildx-action@v3
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - name: Build backend image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: deploy/Dockerfile
@@ -169,7 +204,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Build web image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: deploy/Dockerfile
@@ -188,7 +223,10 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - uses: astral-sh/setup-uv@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
       - name: Write a throwaway env file
         run: |
           env_file="$RUNNER_TEMP/compose-smoke.env"
@@ -207,3 +245,27 @@ jobs:
           echo "SMOKE_ENV_FILE=$env_file" >> "$GITHUB_ENV"
       - name: Run the compose smoke test
         run: deploy/smoke.sh
+
+  # A reusable workflow can otherwise report success when an upstream job was skipped.
+  required:
+    if: always()
+    needs: [backend, sdk-python, sdk-typescript, frontend, docs-site, workflows, docker, compose-smoke]
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.verify.outputs.sha }}
+    steps:
+      - id: verify
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import sys
+
+          results = json.loads(os.environ["NEEDS_JSON"])
+          if not results or any(job.get("result") != "success" for job in results.values()):
+              sys.exit("Required checks did not all succeed")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"sha={os.environ['GITHUB_SHA']}\n")
+          PYTHON

@@ -57,6 +57,8 @@ function makeSpan(overrides: Partial<Span>): Span {
     attributes: {},
     truncated: false,
     payload_omitted: false,
+    attributes_omitted: false,
+    retry_eligible: false,
     finish_reason: null,
     prompt_version_id: null,
     usage_rollup: false,
@@ -130,7 +132,7 @@ describe("PayloadView — root I/O from a child span (D4)", () => {
     expect(
       await screen.findByText("Order #48213 arrived with a cracked screen."),
     ).toBeInTheDocument();
-    expect(fetchSpan).toHaveBeenCalledWith("proj_1", "trace_1", "child_1");
+    expect(fetchSpan).toHaveBeenCalledWith("proj_1", "trace_1", "child_1", expect.any(AbortSignal));
   });
 
   it("moves to the next child when a fetched omitted payload turns out empty", async () => {
@@ -154,6 +156,28 @@ describe("PayloadView — root I/O from a child span (D4)", () => {
     expect(await screen.findByText("Plan: replace the screen.")).toBeInTheDocument();
     expect(screen.getByText("chat plan")).toBeInTheDocument();
     expect(screen.queryByText(/Its children don't either/)).not.toBeInTheDocument();
+  });
+
+  it("never fetches a child whose only omission is its attributes: its null output is known", async () => {
+    const attributesOnly = makeSpan({
+      span_id: "child_attrs",
+      kind: "llm",
+      attributes_omitted: true,
+    });
+    const fetched = vi.spyOn(projectsApi, "span").mockResolvedValue(attributesOnly);
+    renderView(
+      <PayloadView
+        label="Output"
+        value={null}
+        spanTruncated={false}
+        fallback={{ candidates: [attributesOnly], traceId: "trace_1", onSelectSpan: vi.fn() }}
+      />,
+    );
+
+    expect(
+      await screen.findByText("This span has no output. Its children don't either."),
+    ).toBeVisible();
+    expect(fetched).not.toHaveBeenCalled();
   });
 
   it("says the children have none once every candidate turns out empty", async () => {

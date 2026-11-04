@@ -81,6 +81,8 @@ async def test_token_mix_sums_classes_across_models_and_days(
     mix = await _mix(workspace, "2026-01-05T00:00:00Z", "2026-01-07T00:00:00Z")
 
     assert mix == {
+        "aggregate_status": "complete",
+        "oldest_pending_at": None,
         "first_day": "2026-01-05",
         "last_day": "2026-01-06",
         "uncached_input_tokens": 1000,
@@ -130,6 +132,8 @@ async def test_token_mix_is_null_without_rows(browser_factory: Any) -> None:
     mix = await _mix(workspace, "2026-01-05T00:00:00Z", "2026-01-06T00:00:00Z")
 
     assert mix == {
+        "aggregate_status": "complete",
+        "oldest_pending_at": None,
         "first_day": "2026-01-05",
         "last_day": "2026-01-05",
         "uncached_input_tokens": None,

@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ids import new_id
 from app.datasets.schemas import DatasetItemIn, SpanSource, TraceWithSpans
-from app.db.models import Dataset, DatasetItem, Experiment, Span, Trace
+from app.db.models import Dataset, DatasetItem, Experiment, Project, Span, Trace
 from app.db.models.telemetry import SpanKind
 
 
@@ -55,6 +55,13 @@ async def get_dataset(
     if lock:
         query = query.with_for_update().execution_options(populate_existing=True)
     return await db.scalar(query)
+
+
+async def redacts_contacts(db: AsyncSession, project_id: uuid.UUID) -> bool:
+    """The project's `redact_contact_info`: whether emails and phones are redacted too."""
+    return bool(
+        await db.scalar(select(Project.redact_contact_info).where(Project.id == project_id))
+    )
 
 
 async def dataset_in_use(db: AsyncSession, dataset_id: uuid.UUID) -> bool:

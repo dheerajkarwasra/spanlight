@@ -4,8 +4,9 @@ The scheduler enqueues one job per period (see `jobs/scheduler.py`); it becomes 
 Monday 08:00 UTC and summarises the seven whole UTC days that ended at Monday 00:00. One query,
 with row-level security bypassed, lists the projects that have the digest on and had traffic that
 week. Each project is then handled in its own transaction, bound to it alone: its figures and
-its Doctor insights (`app.insights.digest`) are read, the message is rendered once, and one
-`email` outbox row per verified member is queued.
+its Doctor insights (`app.insights.digest`) are read, and one `email` outbox row per verified member
+who did not opt out is queued, each with its own unsubscribe link and RFC 8058 one-click headers
+(`app.alerts.unsubscribe`).
 
 Idempotency: a job that is retried (it has three attempts) or runs twice must not mail anyone
 twice. Every row carries `summary.digest_key = weekly_digest:<project>:<week start>`, which the
@@ -35,6 +36,7 @@ from app.alerts.digest_queries import (
     lock_digest,
     queued_digest_keys,
 )
+from app.alerts.unsubscribe import unsubscribe_links
 from app.api.window import TimeWindow
 from app.db.rls import bind_project
 from app.insights.digest import insights_digest_section
@@ -123,11 +125,11 @@ class _Pass:
 
     week: TimeWindow
     now: datetime
-    app_base_url: str
+    settings: "Settings"
     # Digest keys already in the outbox when the run started; grows as projects are queued.
     queued: set[str]
-    # Verified member addresses per organization: its projects share one read.
-    recipients: dict[uuid.UUID, list[str]] = field(default_factory=dict)
+    # Verified members (id, address) per organization: its projects share one read.
+    recipients: dict[uuid.UUID, list[tuple[uuid.UUID, str]]] = field(default_factory=dict)
 
 
 async def send_digests(
@@ -144,7 +146,7 @@ async def send_digests(
     async with session_factory() as db:
         targets = await eligible_projects(db, week)
         queued = await queued_digest_keys(db, week.end)
-    shared = _Pass(week, now, settings.app_base_url, queued)
+    shared = _Pass(week, now, settings, queued)
     run = DigestRun(projects=len(targets))
     for index, target in enumerate(targets):
         if time.monotonic() >= deadline:
@@ -207,14 +209,15 @@ async def _queue_project(
         await db.rollback()
         return 0
     data = await digest_data(
-        db, target, shared.week, now=shared.now, app_base_url=shared.app_base_url
+        db, target, shared.week, now=shared.now, app_base_url=shared.settings.app_base_url
     )
     insights = await insights_digest_section(db, target.project_id, shared.week)
     if insights is not None:
         data = replace(data, sections=[*data.sections, insights])
-    message = render_digest(data)
     summary = {"event": "weekly_digest", "digest_key": key, "project_id": str(target.project_id)}
-    for address in recipients:
+    for user_id, address in recipients:
+        unsubscribe_url, headers = unsubscribe_links(user_id, shared.settings)
+        message = render_digest(data, unsubscribe_url)
         await enqueue(
             db,
             NotificationKind.EMAIL,
@@ -223,6 +226,7 @@ async def _queue_project(
                 "subject": message.subject,
                 "text": message.text,
                 "html": message.html,
+                "headers": headers,
                 "summary": summary,
             },
         )

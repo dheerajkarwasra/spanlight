@@ -1,6 +1,7 @@
 """`api_keys.scopes` and `api_keys.expires_at`, and migration 0007."""
 
 from datetime import UTC, datetime, timedelta
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -8,8 +9,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.scopes import KeyScope
-from app.db.migrations import downgrade_to, upgrade_to_head
 from app.db.models import ApiKey, Organization, Project
+from tests.db.migration_support import downgrade_to, upgrade_to_target
 
 SessionFactory = async_sessionmaker[AsyncSession]
 
@@ -97,8 +98,46 @@ def _api_key_rows(database_url: str, sql: str) -> list[tuple[object, ...]]:
         engine.dispose()
 
 
+async def _historical_project(db: AsyncSession) -> UUID:
+    project = uuid4()
+    await db.execute(
+        text("INSERT INTO organizations (id, name, slug) VALUES (:id, 'Acme', 'acme')"),
+        {"id": project},
+    )
+    await db.execute(
+        text("INSERT INTO projects (id, org_id, name, slug) VALUES (:id, :id, 'P', 'p')"),
+        {"id": project},
+    )
+    return project
+
+
+async def _historical_key(
+    db: AsyncSession,
+    project: UUID,
+    prefix: str,
+    *,
+    scopes: list[str] | None = None,
+    expires_at: datetime | None = None,
+) -> None:
+    await db.execute(
+        text(
+            "INSERT INTO api_keys (id, project_id, name, prefix, secret_hash, scopes, expires_at) "
+            "VALUES (:id, :project, :prefix, :prefix, :secret, :scopes, :expires)"
+        ),
+        {
+            "id": uuid4(),
+            "project": project,
+            "prefix": prefix,
+            "secret": b"x" * 32,
+            "scopes": scopes if scopes is not None else ["ingest:write"],
+            "expires": expires_at,
+        },
+    )
+
+
+@pytest.mark.migration_revision("0007")
 async def test_downgrading_revokes_the_keys_the_old_schema_would_misread(
-    app_database_url: str, session_factory: SessionFactory
+    migration_database_url: str, migration_session_factory: SessionFactory
 ) -> None:
     """Scopes and expiry disappear on downgrade, so a key that relied on them must not survive.
 
@@ -106,22 +145,18 @@ async def test_downgrading_revokes_the_keys_the_old_schema_would_misread(
     """
     future = datetime.now(UTC) + timedelta(days=30)
     past = datetime.now(UTC) - timedelta(days=1)
-    async with session_factory() as db:
-        project = await _project(db)
-        db.add_all(
-            [
-                _key(project, "spl_live_plain"),
-                _key(project, "spl_live_readonly", scopes=["traces:read"]),
-                _key(project, "spl_live_both", scopes=["ingest:write", "traces:read"]),
-                _key(project, "spl_live_expired", expires_at=past),
-                _key(project, "spl_live_later", expires_at=future),
-            ]
-        )
+    async with migration_session_factory() as db:
+        project = await _historical_project(db)
+        await _historical_key(db, project, "spl_live_plain")
+        await _historical_key(db, project, "spl_live_readonly", scopes=["traces:read"])
+        await _historical_key(db, project, "spl_live_both", scopes=["ingest:write", "traces:read"])
+        await _historical_key(db, project, "spl_live_expired", expires_at=past)
+        await _historical_key(db, project, "spl_live_later", expires_at=future)
         await db.commit()
 
-    downgrade_to(app_database_url, "0006")
+    downgrade_to(migration_database_url, "0006")
     try:
-        rows = _api_key_rows(app_database_url, "SELECT prefix, revoked_at FROM api_keys")
+        rows = _api_key_rows(migration_database_url, "SELECT prefix, revoked_at FROM api_keys")
         revoked = {prefix: revoked_at is not None for prefix, revoked_at in rows}
         assert revoked == {
             "spl_live_plain": False,
@@ -131,11 +166,11 @@ async def test_downgrading_revokes_the_keys_the_old_schema_would_misread(
             "spl_live_later": False,
         }
     finally:
-        upgrade_to_head(app_database_url)
+        upgrade_to_target(migration_database_url)
 
     # Upgrading again gives the surviving keys the default, as it does for every existing key.
     upgraded = _api_key_rows(
-        app_database_url, "SELECT prefix, scopes, expires_at FROM api_keys ORDER BY prefix"
+        migration_database_url, "SELECT prefix, scopes, expires_at FROM api_keys ORDER BY prefix"
     )
     assert {prefix: (scopes, expires_at) for prefix, scopes, expires_at in upgraded} == {
         prefix: (["ingest:write"], None)
@@ -149,19 +184,22 @@ async def test_downgrading_revokes_the_keys_the_old_schema_would_misread(
     }
 
 
+@pytest.mark.migration_revision("0007")
 async def test_existing_keys_get_the_ingest_scope_when_upgrading(
-    app_database_url: str, session_factory: SessionFactory
+    migration_database_url: str, migration_session_factory: SessionFactory
 ) -> None:
-    async with session_factory() as db:
-        project = await _project(db)
-        db.add(_key(project, "spl_live_before"))
+    async with migration_session_factory() as db:
+        project = await _historical_project(db)
+        await _historical_key(db, project, "spl_live_before")
         await db.commit()
 
-    downgrade_to(app_database_url, "0006")
+    downgrade_to(migration_database_url, "0006")
     try:
-        _api_key_rows(app_database_url, "SELECT prefix FROM api_keys")  # still there, no scopes
+        _api_key_rows(
+            migration_database_url, "SELECT prefix FROM api_keys"
+        )  # still there, no scopes
     finally:
-        upgrade_to_head(app_database_url)
+        upgrade_to_target(migration_database_url)
 
-    rows = _api_key_rows(app_database_url, "SELECT scopes, expires_at FROM api_keys")
+    rows = _api_key_rows(migration_database_url, "SELECT scopes, expires_at FROM api_keys")
     assert rows == [(["ingest:write"], None)]

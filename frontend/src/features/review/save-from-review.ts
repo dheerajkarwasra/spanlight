@@ -6,6 +6,14 @@ import { replaySpanOf } from "./reason-copy";
 export const RECORDED_NOTE =
   "Edit the expected output; the recorded output is only a starting point.";
 
+/**
+ * The copy's expected output is the span's stored output (`items_from_traces`), so a span that
+ * recorded none saves an item with a null expected output.
+ */
+export function hasRecordedOutput(span: Pick<Span, "output">): boolean {
+  return span.output !== null && span.output !== undefined;
+}
+
 /** Why the item was kept, as the dataset item's `metadata.review`. */
 export interface ReviewMark {
   queue_id: string;

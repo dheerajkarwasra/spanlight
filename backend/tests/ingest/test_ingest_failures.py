@@ -16,7 +16,6 @@ from prometheus_client import REGISTRY
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api import ingest as ingest_api
-from app.ingest import pipeline
 from tests.helpers import (
     Workspace,
     count_project_rows,
@@ -148,8 +147,8 @@ async def test_replay_after_an_injected_failure_matches_a_clean_ingest(
 @pytest.mark.parametrize(
     "step",
     [
-        pytest.param("_store", id="before-the-project-is-read"),
-        pytest.param("ingest_spans", id="before-the-project-is-locked"),
+        pytest.param("_store", id="before-the-request-is-stored"),
+        pytest.param("bind_and_lock_project", id="before-the-project-is-locked"),
     ],
 )
 async def test_project_deleted_between_auth_and_write_is_401_and_writes_nothing(
@@ -201,8 +200,9 @@ async def test_a_batch_queued_behind_a_project_deletion_is_401_and_writes_nothin
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The deletion holds the project row when the batch asks for it: the batch's FOR KEY SHARE
-    # waits, then finds no project, and nothing it wrote can outlive the deletion.
-    original = pipeline.ingest_spans
+    # (the route's binding statement, `app.ingest.quota.bind_and_lock_project`) waits, then finds
+    # no project, and nothing it wrote can outlive the deletion.
+    original = ingest_api.bind_and_lock_project
 
     async def racing_deletion(*args: Any, **kwargs: Any) -> Any:
         async with await psycopg.AsyncConnection.connect(admin_libpq_url()) as admin:
@@ -212,7 +212,7 @@ async def test_a_batch_queued_behind_a_project_deletion_is_401_and_writes_nothin
             await admin.commit()
             return await batch
 
-    monkeypatch.setattr(ingest_api, "ingest_spans", racing_deletion)
+    monkeypatch.setattr(ingest_api, "bind_and_lock_project", racing_deletion)
 
     response = await ingest_native(client, workspace, _batch())
 

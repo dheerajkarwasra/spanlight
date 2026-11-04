@@ -4,22 +4,27 @@ A judge compiles its prompt version with the evaluation's `input`, `output` and 
 (`app.evals.judge_templates.judge_variables`) and sends one call through the gateway in process,
 on a route built in memory with the configured credential and nothing else (one attempt, no
 fallbacks): OpenAI gets `chat_completions` with the system message first, Anthropic `messages`
-with the system message in `system`. The call's trace has environment `evals`, name
+with the system message in `system`. Both get one tool, `record_verdict`, and a closing system
+sentence that overrides any stored "reply with JSON": OpenAI is forced to call it; Anthropic gets
+`auto`, since its newest models reject a forced tool. The call's trace has environment `evals`, name
 `judge:<evaluator name>` and tag `spanlight:judge` (the sampler never samples it); its span is
 written into the project like any other call and awaited before the judge returns.
 
 The run splits in two so the runner can reserve the budget in between (ADR 0015): `prepare` is
-pure and gives the request and its cost estimate; `call` sends it and reads the verdict
-(`app.evals.verdict`). The verdict's score is the score, its reasoning the comment; the cost is
-the price book's cost of the reported usage, or the estimate when the usage is missing or
-unpriced. A failed call raises `JudgeCallError` with what it should be charged
-(`app.evals.budget.failed_call_charge`). `evaluate` does both steps with no reservation, for a
-caller that has already reserved. Prompts, answers and reasoning are never logged.
+pure and gives the request and its cost estimate (the tool definition counts as input); `call`
+sends it and reads the verdict from the tool call's arguments only (`app.evals.verdict`): an
+answer without the call fails `verdict_unparseable`, whatever its text says. The verdict's score
+is the score, its reasoning the comment; the cost is the price book's cost of the reported usage,
+or the estimate when the usage is missing or unpriced. A failed call raises `JudgeCallError` with
+what it should be charged (`app.evals.budget.failed_call_charge`). `evaluate` does both steps with
+no reservation, for a caller that has already reserved. Prompts, answers and reasoning are never
+logged.
 """
 
 import asyncio
+import json
 import re
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -33,7 +38,7 @@ from app.evals.config import JudgeConfig
 from app.evals.evaluators.base import EvaluatorError
 from app.evals.judge_templates import judge_variables
 from app.evals.schemas import EvalInput, EvalResult
-from app.evals.verdict import VerdictUnparseable, parse_verdict
+from app.evals.verdict import VERDICT_TOOL_NAME, VerdictUnparseable, parse_verdict_arguments
 from app.gateway.context import GatewayContext, GatewayRequest, GatewayResult, GatewayServices
 from app.gateway.errors import Surface
 from app.gateway.execute import execute as gateway_execute
@@ -68,6 +73,19 @@ _THINKS_BY_DEFAULT = re.compile(
 )
 # Finish reasons of an answer cut off by its token limit: Anthropic's, then OpenAI's.
 _TRUNCATED = ("max_tokens", "length")
+_VERDICT_SCHEMA = {
+    "type": "object",
+    "properties": {"score": {"type": "number"}, "reasoning": {"type": "string"}},
+    "required": ["score", "reasoning"],
+}
+_VERDICT_DESCRIPTION = (
+    "Record the verdict: a score from 0 to 1 as the instructions define it, and one or two "
+    "sentences of reasoning."
+)
+# Appended last to every judge prompt, so it overrides a stored prompt's "reply with JSON".
+_USE_TOOL = (
+    f"Do not write the verdict as text; record it only by calling the {VERDICT_TOOL_NAME} tool."
+)
 
 Execute = Callable[[GatewayRequest, GatewayContext], Awaitable[GatewayResult]]
 
@@ -146,9 +164,10 @@ class JudgeEvaluator:
         if provider not in (ProviderKind.OPENAI, ProviderKind.ANTHROPIC):
             raise EvaluatorError("judge_provider_unsupported")
         input_chars = sum(len(message.content) for message in messages)
+        body = _body(provider, self.config, messages)
         estimate = estimate_call_cost(
             self.config.model,
-            "".join(message.content for message in messages),
+            _prompt_text(body),
             self.config.max_tokens,
             self._prices,
             provider=provider.value,
@@ -159,7 +178,7 @@ class JudgeEvaluator:
             raise EvaluatorError("evaluator_model_unpriced")
         request = GatewayRequest(
             surface=_surface(provider),
-            body=_body(provider, self.config, messages),
+            body=body,
             stream=False,
             trace=TraceHeaders(tags=[JUDGE_TAG]),
         )
@@ -191,20 +210,19 @@ class JudgeEvaluator:
         if result.budget is not None:  # a project `block` budget stopped it before sending
             raise JudgeCallError("gateway_budget_blocked", Decimal(0))
         usage_cost = self._usage_cost(prepared, result)
-        text = None
-        truncated = False
-        if result.error is None and result.status == 200 and result.body is not None:
-            summary = summarize_response(prepared.request.surface, result.body)
-            text = _answer_text(summary.output)
-            truncated = summary.finish_reason in _TRUNCATED
-        if text is None:
+        if result.error is not None or result.status != 200 or result.body is None:
             billed = may_have_billed(result)
             charge = failed_call_charge(
                 may_have_billed=billed, usage_cost=usage_cost, estimate=prepared.estimate
             )
-            raise JudgeCallError("judge_truncated" if truncated else _failure_code(result), charge)
+            raise JudgeCallError(_failure_code(result), charge)
+        summary = summarize_response(prepared.request.surface, result.body)
+        truncated = summary.finish_reason in _TRUNCATED
         try:
-            verdict = parse_verdict(text)
+            arguments = _verdict_arguments(summary.output)
+            if arguments is None:
+                raise VerdictUnparseable
+            verdict = parse_verdict_arguments(arguments)
         except VerdictUnparseable as error:
             charge = failed_call_charge(
                 may_have_billed=True, usage_cost=usage_cost, estimate=prepared.estimate
@@ -266,7 +284,7 @@ def _body(provider: ProviderKind, config: JudgeConfig, messages: list[Message]) 
     non-default sampling parameters. A Claude model that thinks by default gets `low` effort: a
     verdict needs little reasoning, and the thinking shares `max_tokens` with the answer.
     """
-    system = [m.content for m in messages if m.role == "system"]
+    system = [m.content for m in messages if m.role == "system"] + [_USE_TOOL]
     rest = [{"role": m.role, "content": m.content} for m in messages if m.role != "system"]
     body: dict[str, Any] = {"model": config.model}
     if config.temperature is not None:
@@ -275,36 +293,64 @@ def _body(provider: ProviderKind, config: JudgeConfig, messages: list[Message]) 
         body["max_tokens"] = config.max_tokens
         if _THINKS_BY_DEFAULT.match(config.model):
             body["output_config"] = {"effort": "low"}
-        if system:
-            body["system"] = "\n\n".join(system)
+        body["system"] = "\n\n".join(system)
         body["messages"] = rest
+        # Claude Opus 5.5, Sonnet 5.5 and Fable 5.1 reject a forced `tool_choice` with a 400.
+        tool = {
+            "name": VERDICT_TOOL_NAME,
+            "description": _VERDICT_DESCRIPTION,
+            "input_schema": _VERDICT_SCHEMA,
+        }
+        body["tools"] = [tool]
+        body["tool_choice"] = {"type": "auto"}
     else:
         # OpenAI's newer models reject `max_tokens`.
         body["max_completion_tokens"] = config.max_tokens
         body["messages"] = [{"role": "system", "content": text} for text in system] + rest
+        function = {
+            "name": VERDICT_TOOL_NAME,
+            "description": _VERDICT_DESCRIPTION,
+            "parameters": _VERDICT_SCHEMA,
+        }
+        body["tools"] = [{"type": "function", "function": function}]
+        body["tool_choice"] = {"type": "function", "function": {"name": VERDICT_TOOL_NAME}}
     return body
 
 
-def _answer_text(output: dict[str, Any] | None) -> str | None:
-    """The text of a summarized provider answer; None when it has none."""
-    content = output.get("content") if output is not None else None
-    if isinstance(content, list):
-        content = "".join(
-            block["text"]
-            for block in content
-            if isinstance(block, dict)
-            and block.get("type") == "text"
-            and isinstance(block.get("text"), str)
-        )
-    if not isinstance(content, str):
+def _prompt_text(body: dict[str, Any]) -> str:
+    """What the estimate counts as input: the system text, the messages and the tool definition."""
+    messages = "".join(message["content"] for message in body["messages"])
+    system: str = body.get("system", "")
+    return system + messages + json.dumps(body["tools"])
+
+
+def _verdict_arguments(output: dict[str, Any] | None) -> Mapping[str, Any] | str | None:
+    """The arguments of the answer's `record_verdict` call: OpenAI's JSON string or Anthropic's
+    input object. None when the answer made no such call; its text is never read."""
+    if output is None:
         return None
-    return content.strip() or None
+    calls = output.get("tool_calls")
+    for call in calls if isinstance(calls, list) else []:
+        function = call.get("function") if isinstance(call, dict) else None
+        if isinstance(function, dict) and function.get("name") == VERDICT_TOOL_NAME:
+            arguments = function.get("arguments")
+            return arguments if isinstance(arguments, str) else None
+    content = output.get("content")
+    for block in content if isinstance(content, list) else []:
+        if (
+            isinstance(block, dict)
+            and block.get("type") == "tool_use"
+            and block.get("name") == VERDICT_TOOL_NAME
+        ):
+            arguments = block.get("input")
+            return arguments if isinstance(arguments, Mapping) else None
+    return None
 
 
 def _failure_code(result: GatewayResult) -> str:
-    """`judge_status_<code>` for an error status, else `judge_no_answer` (a success without
-    readable text, or a call that ended without a response). A success cut off by `max_tokens`
-    before a readable verdict is `judge_truncated`, decided by the caller."""
+    """`judge_status_<code>` for an error status, else `judge_no_answer` (a call that ended
+    without a response). A response without a usable verdict call is `verdict_unparseable`, or
+    `judge_truncated` when cut off by `max_tokens`, decided by the caller."""
     if result.status >= 400:
         return f"judge_status_{result.status}"
     return "judge_no_answer"

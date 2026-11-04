@@ -6,27 +6,13 @@ Caddy's `GATEWAY_UPSTREAM` here. `PORT` (default 8001) and `GATEWAY_HOST` (defau
 interfaces, as in the container) choose where it listens.
 """
 
-import os
-
-import uvicorn
+from app.server import run_application
 
 DEFAULT_PORT = 8001
 
 
 def main() -> None:
-    # The migration role's URL is for `spanlight migrate` only; the api's image command drops
-    # it the same way, so no request-serving process holds the owner credentials.
-    os.environ.pop("MIGRATION_DATABASE_URL", None)
-    uvicorn.run(
-        "app.main:create_gateway_app",
-        factory=True,
-        # A blank variable means unset, as for every setting.
-        host=os.environ.get("GATEWAY_HOST") or "0.0.0.0",  # noqa: S104 - the container's interface
-        port=int(os.environ.get("PORT") or DEFAULT_PORT),
-        # Behind Caddy, like the api: the client address comes from X-Forwarded-For.
-        proxy_headers=True,
-        forwarded_allow_ips="*",
-    )
+    run_application(gateway=True)
 
 
 if __name__ == "__main__":

@@ -36,7 +36,7 @@ export function PasteForm({ trace }: { trace: ThisTrace }) {
       // The comparison names both start times; the compare page reuses this cached response.
       const comparison = await queryClient.query({
         queryKey: queryKeys.project(projectId).traceComparison(a, b),
-        queryFn: () => projectsApi.compareTraces(projectId, a, b),
+        queryFn: ({ signal }) => projectsApi.compareTraces(projectId, a, b, signal),
         staleTime: 60_000,
       });
       if (Date.parse(comparison.a.started_at) > Date.parse(comparison.b.started_at)) {

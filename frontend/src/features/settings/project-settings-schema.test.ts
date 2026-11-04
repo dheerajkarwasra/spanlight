@@ -14,6 +14,7 @@ const project = {
   name: "Support bot",
   retention_days: 30,
   capture_payloads: true,
+  redact_contact_info: false,
   weekly_digest_enabled: true,
   insight_channel_ids: [] as string[],
   promoted_metadata_keys: [] as string[],
@@ -37,6 +38,19 @@ describe("changedProjectFields", () => {
     expect(changedProjectFields(project, { capture_payloads: false })).toEqual({
       capture_payloads: false,
     });
+  });
+
+  it("sends redact_contact_info only when it changed", () => {
+    expect(changedProjectFields(project, { redact_contact_info: true })).toEqual({
+      redact_contact_info: true,
+    });
+    expect(changedProjectFields(project, { redact_contact_info: false })).toEqual({});
+    expect(
+      changedProjectFields(
+        { ...project, redact_contact_info: true },
+        { redact_contact_info: false },
+      ),
+    ).toEqual({ redact_contact_info: false });
   });
 
   it("treats an unchanged form as an empty update", () => {
@@ -81,6 +95,11 @@ describe("projectSavedMessage", () => {
     expect(projectSavedMessage({ capture_payloads: true })).toBe(
       "Prompts and completions will be captured.",
     );
+  });
+
+  it("does not describe a contact redaction change as a payload capture change", () => {
+    expect(projectSavedMessage({ redact_contact_info: true })).toBe("Project settings saved.");
+    expect(projectSavedMessage({ redact_contact_info: false })).toBe("Project settings saved.");
   });
 
   it("stays general when several settings changed", () => {

@@ -110,7 +110,7 @@ export function GroupCost({ figures, plain = false }: PlainProps & { figures: At
     return (
       <span className="inline-flex items-center gap-1 tabular">
         {cost}
-        {figures.unpriced_calls > 0 ? (
+        {figures.unpriced_calls !== null && figures.unpriced_calls > 0 ? (
           <CircleDashed
             role="img"
             aria-label={LOWER_BOUND_REASON}
@@ -123,15 +123,17 @@ export function GroupCost({ figures, plain = false }: PlainProps & { figures: At
   return (
     <CostValue
       cost={figures.cost_usd}
-      hasUnpriced={figures.unpriced_calls > 0}
+      hasUnpriced={figures.unpriced_calls !== null && figures.unpriced_calls > 0}
       unknownReason={NO_GROUP_PRICE}
     />
   );
 }
 
-export function ErrorCount({ count }: { count: number }) {
+export function ErrorCount({ count }: { count: number | null }) {
   return (
-    <span className={cn("tabular", count > 0 && "text-danger-text")}>{formatInteger(count)}</span>
+    <span className={cn("tabular", count !== null && count > 0 && "text-danger-text")}>
+      {formatInteger(count) ?? <UnknownValue reason="Not reported for this period" />}
+    </span>
   );
 }
 

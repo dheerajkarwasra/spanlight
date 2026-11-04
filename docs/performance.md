@@ -2,6 +2,8 @@
 
 How fast Spanlight ingests and serves traces, how that is measured, and how to repeat the measurement. The numbers come from a load test that anyone can run against the Compose stack; this page records the method and, once a run has produced them, the results.
 
+**Current measured baseline:** the [10-million-span Linux campaign](#final-load-campaign-at-10-million-spans-2026-11-02) records both passing paths and capacity limits. Earlier sections retain their original hardware, dates and methods; an unfilled historical workflow table does not mean the later Linux campaign was not run. No 100-million-span capacity result is established here.
+
 ## Targets
 
 | Path                 | Load                                                                                                                                                                                        | Target                                                          |
@@ -26,7 +28,7 @@ A script that misses any of them exits non-zero.
 - **Request path.** Through the `web` service (Caddy) on port 8080, to the API and on to Postgres: the path of every self-hosted request, including authentication and the rate-limit check.
 - **Stack.** `deploy/compose.yaml` as shipped: one `api`, one `worker`, `web` and Postgres 17 (its stock settings plus `jit=off`; see [Tuning Postgres](../docs-site/src/content/docs/self-hosting.mdx) for the ones a larger host should change). The only change is an override file ([`backend/load/compose.load.yaml`](../backend/load/compose.load.yaml)) that publishes Postgres on `127.0.0.1` for the seeder, turns the demo traffic job off and, for the gateway scenario, adds a fake provider, allows the gateway to call it over plain `http://` (`GATEWAY_ALLOW_INSECURE_BASE_URLS`) and gives the api and worker a throwaway `CREDENTIALS_KEYS`. It changes no limit, pool size or code path.
 - **Credentials.** Ingestion uses one API key with `ingest:write`. A key is limited to 50 requests a second, and the test sends 5. The read routes accept API keys with `traces:read`, and a key is limited to 20 reads a second (bursts of 40), which is the same as the target rate. The read scripts therefore spread their requests over ten keys, one per virtual user, so the limit never caps the test.
-- **Overview.** The window rotates through 1 hour, 24 hours, 7 days and 30 days. The first two read the raw spans and give exact percentiles. The other two read the hourly rollups and say `"approximate": true`. Two checks in the script confirm that each response reports the source its window length calls for (`approximate`), and that the window has data, which for the 7-day and 30-day windows means the rollups hold rows. The p95 of each window is shown in the results but is not a threshold; the threshold is the p95 over all requests.
+- **Overview.** The window rotates through 1 hour, 24 hours, 7 days and 30 days. The hour reads the raw spans and gives exact percentiles. The others read their whole hours from the hourly rollups and the recent tail from the raw spans, and say `"approximate": true`. Two checks in the script confirm that each response reports the source its window length calls for (`approximate`), and that the window has data, which for the 7-day and 30-day windows means the rollups hold rows. The p95 of each window is shown in the results but is not a threshold; the threshold is the p95 over all requests.
 - **Between scripts.** Before each k6 script the workflow waits for the database to settle ([`settle.sh`](../backend/load/settle.sh)): it polls `pg_stat_activity` until no query of the application role is executing and no job is running, for at most 2 minutes, and carries on either way. k6 gives up on a slow request after its timeout, but the server keeps running the query, and the worker may still be rolling up hours, so without the pause one scenario would start on the leftovers of the one before.
 - **Trace list.** Three requests in ten are the first page the dashboard opens with (last 24 hours, no filter), three filter by one model (two) or to traces with errors (one), and four sort the first page by duration, cost, tokens or retry cost (one each). Each variant is a metric of its own (`traces_duration_<variant>`), and the summary has a table of each variant's median, p95 and maximum below the thresholds.
 
@@ -86,7 +88,7 @@ Run [37997565780](https://github.com/dheerajkarwasra/spanlight/actions/runs/3799
 
 The overhead includes the Caddy hop and the gateway's own request to the provider, which the direct scenario does not make, so it reads slightly high. The same run measured the dashboard again: ingestion p95 114.7 ms, overview p95 47.5 ms, trace list p95 15.1 ms.
 
-The `full` stress run with 10 million spans has not been recorded yet.
+The original GitHub-hosted `full` profile has no result recorded here. A later, separate [Linux campaign at 10 million spans](#final-load-campaign-at-10-million-spans-2026-11-02) is recorded below; its hardware and workload differ from this runner.
 
 ## Reads during ingestion
 
@@ -102,7 +104,7 @@ The scenarios above run one after another, so none of them shows what the dashbo
   - `near-knee`: 10 requests a second, 1 000 spans a second, about twice the target. It is reported and not gated: its latency on a shared runner varies from run to run, and its purpose is to show the trade-off, not to fail the job.
 - **Profiles.** Every profile runs the three stages after the trace list script. With `full`, the rows are also the query stage at 10 million stored spans.
 
-**Results.** None yet. The table is filled from the first workflow run that records the stages, with that run's commit, runner, PostgreSQL and k6 versions, the number of spans stored, the trace size (3.5 spans on average) and the retention (30 days) in a lead line, as for the results above. Figures are never extrapolated from a smaller run.
+**Original workflow results.** This CI-runner table remains unfilled. The later [10-million-span Linux campaign](#final-load-campaign-at-10-million-spans-2026-11-02) includes mixed-load results on different hardware. Fill this table only from the workflow and runner described here, with the run's commit, runner, PostgreSQL and k6 versions, spans stored, trace size and retention. Figures are never extrapolated from a smaller run or copied between environments.
 
 | Stored spans | Stage     | Ingest (requests/s · spans/s) | Overview p50 / p95 | Trace list p50 / p95 | Ingest p95 | Failed % | Dropped |
 | ------------ | --------- | ----------------------------- | ------------------ | -------------------- | ---------- | -------- | ------- |
@@ -132,7 +134,7 @@ The [`evaluate_alerts` job](runbooks/alerts.md) runs once a minute and evaluates
 
 ### Sorts
 
-The trace list sorts by `duration`, `cost`, `tokens` and `retry_cost_usd` in either direction, with unknown values last (see [API deviations](api-deviations.md)). No index backs these sorts, on purpose: Postgres reads every trace of the window from the `(project_id, started_at)` index or the table, and keeps the page with a top-N heapsort, so the time grows with the number of traces in the window and not with the page or its position. A keyset page costs the same as the first page. `started_at` reads the index in order and stops after one page in either direction.
+The trace list sorts by `duration`, `cost`, `tokens` and `retry_cost_usd` in either direction, with unknown values last (see [API deviations](api-deviations.md)). No index backs these sorts, on purpose: Postgres reads every trace of the window from the `(project_id, started_at)` index or the table, and keeps the page with a top-N heapsort, so the time grows with the number of traces in the window and not with the page or its position. A keyset page costs the same as the first page. `started_at` reads the index in order and stops after one page in either direction. Since 2026-11-03 a value sort's page query is late-materialized: an inner query sorts only `trace_id`, `started_at` and the value and keeps the page, and the page's rows are then read by primary key, so the window's sort no longer carries whole trace rows. `started_at` keeps selecting whole rows, since it reads one page. The table below was measured before that change.
 
 **Budget.** `EXPLAIN (ANALYZE, BUFFERS)` of the first page and of a keyset page at most 150 ms each over a 30-day window, and the request p95 at most twice that of the `started_at` sort under [`traces.js`](../backend/load/traces.js), which sends one request in ten sorted by each of `duration`, `cost`, `tokens` and `retry_cost_usd`. A sort that misses it is removed from the API and the dashboard.
 
@@ -280,16 +282,281 @@ The budgets of the dashboard's core screens, measured in a real browser against 
 
 **Watch.** The trace page's open cost is parsing and building the tree of all 5 000 spans in one task; on a saturated machine it crosses 200 ms. Splitting that work is the next step if a production build on a normal laptop ever does too.
 
+## Exact experiment comparisons
+
+The paired McNemar and sign tests calculate exact binomial probabilities. Previously each
+coefficient was computed independently with `math.comb`; the current implementation reuses
+adjacent coefficients with integer arithmetic and preserves the exact `Fraction` result.
+
+Measured on 2026-10-29 with Python 3.13.9 on an Apple Silicon Mac, comparing `66957cfa` with
+the working-tree optimization. Three repetitions per input, before and after interleaved in
+one process, with exact equality checked each time. Other local workloads were active; these
+are CPU calculation medians, not API response times or application-wide speedups.
+
+| Discordant pairs (`n`) | Smaller side (`k`) | Before | After |
+| --- | --- | --- | --- |
+| 1,000 | 450 | 7.93 ms | 0.17 ms |
+| 10,000 | 4,500 | 3,495.84 ms | 10.65 ms |
+| 10,000 | 5,000 | 3,595.58 ms | 10.75 ms |
+
+The measured function is `app.evals.stats.exact_binomial_two_sided(k, n)`. The public paired-test
+regression in `backend/tests/evals/test_paired_stats.py` checks a 10,000-pair comparison against
+a generous 500 ms CPU budget alongside exact significance and rounding examples.
+
+## Budget admission
+
+A gateway call under an enabled `block` budget reserves its estimate before it is forwarded (ADR 0017). The reservation locks the budget's counter row and, under that lock, sums the period's priced spans of the budget's scope (`app.budgets.history.read_history`). The gate: with 1 million spans in the budget's month, a call under the budget may add less than 5 ms to the p95 of the same call without one, at 50 requests a second, with no `5xx`.
+
+**Method.** `seed_gateway.py --budget-spans 1000000` adds a second gateway key, 1 000 000 priced `gpt-4o-mini` spans of that key (100 000 traces) spread from the start of the UTC month to the seeding time, and one enabled monthly `block` budget of $1,000,000 on that key, which never refuses, raises the project's retention to 31 days (a monthly budget needs that much retained history; the default is 30), then runs `VACUUM ANALYZE spans`. `gateway.js` with `GATEWAY_SCENARIOS=gateway,budget` sends the gateway request with the plain key, then the same request with the budget key; the figure is `budget_overhead_ms`, the p95 of `budget` minus the p95 of `gateway`. A second run sets `FAKE_PROVIDER_DELAY_MS=1000` and `GATEWAY_VUS=32` (32 virtual users in a loop instead of a fixed rate), to see how many calls a second the budget lets through when calls overlap.
+
+**Machine.** Measured on 2026-11-01 on an Apple M4 Mac (10 cores, 16 GB), Docker Desktop 29.9.2 with 5 CPUs and 6.4 GB for the VM, PostgreSQL 17.11 with the shipped settings, k6 1.7.1, at commit `5342f263` plus the uncommitted working tree (migration 1031 included). Other work ran on the machine; the 1-minute load average is given with each run.
+
+**Result: the gate fails by two orders of magnitude, and a covering index does not fix it.** The index was tried and reverted: `spans_budget_history_idx ON spans (project_id, started_at) INCLUDE (cost_usd, trace_id, span_id, source_key_id, model) WHERE NOT usage_rollup AND cost_usd > 0`, plus `AND s.cost_usd > 0` in the spans term, measured as a trial migration and then removed. The rows marked "trial index" are that build; it is not in the schema.
+
+| Run | Load avg (start → end) | `gateway` p50 / p95 | `budget` p50 / p95 | `budget_overhead_ms` | Failed `gateway` / `budget` |
+| --- | --- | --- | --- | --- | --- |
+| 50 req/s, shipped schema | 2.30 → 3.92 | 5.1 / 35.5 ms | 1.0 / 703.5 ms | **668.0** | 0.3 % / 76.2 % (`503`) |
+| 50 req/s, trial index (reverted) | 3.04 → 4.35 | 6.0 / 45.5 ms | 1.1 / 899.9 ms | **854.3** | 0.7 % / 81.6 % (`503`) |
+
+The failed requests are `503` answers of the gateway's admission cap (`GATEWAY_MAX_IN_FLIGHT`, 8 per process): calls under the budget wait for the counter row one after another, the eight slots fill, and the rest are refused at once, which is also why the `budget` median is about 1 ms. The `gateway` p95 is over its own 25 ms threshold in both runs, on a machine that was not idle; that figure is not part of this gate.
+
+With a provider that takes 1 second and 32 virtual users per scenario, 60 s each:
+
+| Run | Load avg (start → end) | `gateway` p50 / p95 · answered/s | `budget` p50 / p95 · answered/s | p95 difference | Failed `gateway` / `budget` |
+| --- | --- | --- | --- | --- | --- |
+| Shipped cap of 8 in flight, shipped schema | 2.17 → 6.14 | 3.0 / 5.8 ms · 7.3 | 6.3 / 14.8 ms · 3.7 | 9.1 ms | 99.9 % / 99.9 % (`503`) |
+| `GATEWAY_MAX_IN_FLIGHT=64`, shipped schema | 3.47 → 4.17 | 1 124 / 1 223 ms · 28.6 | 3 066 / 3 909 ms · 10.7 | 2 687 ms | 0 % / 0 % |
+| `GATEWAY_MAX_IN_FLIGHT=64`, trial index (reverted) | 3.77 → 3.32 | 1 133 / 1 273 ms · 28.3 | 2 942 / 4 039 ms · 10.9 | 2 766 ms | 0 % / 0.3 % (`503`, pool timeout) |
+
+With the shipped cap, 32 overlapping one-second calls are mostly refused whatever the budget does: 8 slots hold about 8 calls a second. With 64 slots the plain key answers about 28 calls a second, and the budget key about 11: the history read runs one call at a time under the counter lock, so one budget admits about 1 / 0.09 s calls a second whatever the provider's latency, and the waiting calls hold database connections (the two `503` answers in the last run were pool timeouts).
+
+**The history read.** `EXPLAIN (ANALYZE, BUFFERS)` of the `read_history` statement for that budget, run as the application role with the project bound, after `VACUUM ANALYZE`, data in cache. The spans term dominates. The reservation term took 5 ms with 735 settled reservations and 13 ms with about 2 900, since it grows with the budget's calls in the period; the deleted-span term took 0.01 ms.
+
+```text
+Shipped schema: Execution Time 115.6 ms (117 to 173 ms on repeats)
+  Finalize Aggregate (actual time=110.280..110.401 rows=1)  Buffers: shared hit=30296
+    Gather  Workers Launched: 2
+      Hash Anti Join (actual rows=333333 loops=3)  Hash Cond: (s.trace_id = r.trace_id AND s.span_id = r.span_id)
+        Parallel Seq Scan on spans s (actual time=0.015..59.233 rows=333578 loops=3)  Buffers: shared hit=30166
+
+Trial index (reverted): Execution Time 101.5 ms (98 to 241 ms on repeats)
+  Finalize Aggregate (actual time=87.880..88.034 rows=1)  Buffers: shared hit=17320
+    Gather  Workers Launched: 2
+      Hash Anti Join (actual time=0.729..70.378 rows=333333 loops=3)
+        Parallel Index Only Scan using spans_budget_history_idx on spans s (actual time=0.016..39.904 rows=333333 loops=3)  Heap Fetches: 0  Buffers: shared hit=16956
+```
+
+The index removed the heap visits (about 30 000 buffers down to 17 000) but not the work: the read still aggregates every priced span of the month and anti-joins it with the budget's reservations, about 0.1 µs a span, so it grows with the month's traffic. It saved about 15 % (115 ms to 100 ms steady) for 133 MB of index per million spans, written on every ingested span, so it was reverted. Ingestion met its target while the index was in place (`ingest.js`, 60 s: p95 133.7 ms, 0 % failed, load average 3.81 → 2.78; an earlier attempt at load average 7.9 was discarded). The next remedy, closed-day snapshots per budget, changes ADR 0017's accounting and needs its own decision.
+
+**Hourly snapshots (migration 1032).** Admission now sums the period's closed UTC hours from per-budget snapshot rows (`budget_bucket_snapshots`, valid while their generation matches the hour's `budget_bucket_versions` row, which statement triggers on `spans` and `budget_reservations` bump) and scans only the live tail: the open hour plus the 12-minute lease (`docs/specs/2026-11-01-budget-day-snapshots.md`, ADR 0017 amendment of 2026-11-01). The total is proven equal to the full period scan by `backend/tests/budgets/test_snapshot_equality.py`. Measured on 2026-11-01 (the first of the month, so the seeder's 1 000 000 spans fell into 12 hours, about 81 000 an hour), same machine, at commit `5342f263` plus the uncommitted working tree; `budget_overhead_ms` now compares successful calls only and any failed `budget` call fails the figure.
+
+| Run | Load avg (start → end) | `gateway` p50 / p95 | `budget` p50 / p95 | `budget_overhead_ms` | Failed `gateway` / `budget` | Dropped |
+| --- | --- | --- | --- | --- | --- | --- |
+| 50 req/s, seed as made (about 22 000 seeded spans in the open hour) | 1.83 → 2.71 | 4.6 / 6.3 ms | 473 / 2 349 ms | **2 345** | 0 % / 3.2 % (92 × `503`, pool timeouts) | 146 |
+| 50 req/s, seeded spans moved out of the open hour (a month-even seed) | 1.47 → 2.37 | 4.5 / 5.7 ms | 20.0 / 86.1 ms | **80.4** | 0 / 0 | 0 |
+
+With a provider that takes 1 second, 32 virtual users per scenario and `GATEWAY_MAX_IN_FLIGHT=64` (the run the shipped cap of 8 refused before; the shipped default is now 512):
+
+| Run | Load avg (start → end) | `gateway` p50 / p95 · answered/s | `budget` p50 / p95 · answered/s | p95 difference | Failed |
+| --- | --- | --- | --- | --- | --- |
+| Hourly snapshots | 1.90 → 2.39 | 1 134 / 1 219 ms · 28.5 | 1 059 / 1 247 ms · 29.5 | 28 ms | 0 / 0 |
+
+**Result: throughput is fixed, the 5 ms overhead at 50 requests a second is not.** The budget key now admits at the gateway's own rate (29.5 against 28.5 calls a second, from 10.7 against 28.6), with no `503`, and the second 50 req/s run has zero failures and zero dropped iterations where the shipped schema had 76 % failures. The 12 closed hours cost 0.27 ms a call from their snapshots (statement (1), `generate_series` left-joined to both tables, 245 buffers) and were computed once, in one pass. What remains is the live tail, which grows with the calls of the open hour: the budget scenario's own calls. `EXPLAIN (ANALYZE, BUFFERS)` of the live statement at the end of the second 50 req/s run, with 3 021 settled reservations admitted in the open hour:
+
+```text
+Execution Time 38.5 ms (statement (3), live range [12:00, 2026-12-01), gateway_key scope)
+  spans term:        Hash Anti Join (actual rows=0)  8.7 ms
+    Index Scan using spans_project_gateway_started_idx (actual rows=3021)   the run's own gateway spans
+  reservation term:  Nested Loop Left Join (actual rows=3021)  28.9 ms
+    Seq Scan on budget_reservations r (actual rows=3021)
+    Index Scan using spans_pkey on spans s (actual time=0.009 rows=1 loops=3021)   one probe per settled call
+  ledger term:       0.02 ms (no rows)
+```
+
+Each settled call of the open hour costs about 9 µs (its span probe) plus about 3 µs (its span in the uncorrelated scan) on every later admission until the hour closes, so the locked section grows from about 1 ms at the start of a run to about 40 ms after 3 000 calls; at 50 calls a second that queue is what the p50 of 20 ms and the p95 of 86 ms show. The first run adds the seeded spans of the open hour on top (about 22 000, 10 ms, and more as the hour fills), which is the seed's shape on the first of the month rather than the design. The reservation and span terms of the open hour are bounded by the hour's call count, not by the month's spans, so a budget that admits a few calls a second stays well under a millisecond per call, while a busy budget still serialises on its own recent calls: a counter-based open hour, or a finer bucket for it, is the next decision.
+
+**Ingest upkeep.** The span triggers run on every span write. `ingest.js` for 60 s on a freshly migrated stack: without a budget on the project the trigger returns after one `EXISTS` on `budgets` (p50 65.5 ms, p95 127.4 ms, p99 293.1 ms, load average 4.95 → 2.79); with a monthly `block` budget on the project it also upserts the version row of each touched hour (p50 64.5 ms, p95 83.6 ms, p99 132.0 ms, load average 2.39 → 1.80). Both under the 200 ms threshold, 0 % failed, nothing dropped; the Task 3 figure on this tree was about 115 ms. With the `traces` trigger and the batch's own sorted pre-bump (`app.budgets.buckets.bump_hours_of_traces`, which replaces the old-hours read, so the statement count of a batch is unchanged), the same run with a block budget on the project: p50 67.0 ms, p95 121.2 ms, p99 400.1 ms, load average 3.11 → 2.44, 0 % failed, nothing dropped, no deadlock.
+
+**Running hour total (migration 1033).** Every hour of the period is now a snapshot row, the open one included; a writer that can price its change exactly appends it to `budget_bucket_deltas` (an uncorrelated span stored or corrected, a settled call's charge), and admission folds the pending deltas of the hours it reads into their rows under the row lock in one statement (`app.budgets.compaction`), so nothing it runs grows with the calls or spans of the open hour (spec §8, ADR 0017 amendment "running hour total"). Changes a writer cannot price (a deleted span, a reaped or reclassified call, a trace-field change) still bump the hour's version, and the next admission recomputes that hour once. Measured on 2026-11-01 on the same machine (seeded at 13:50 UTC on the first of the month: 1 000 000 spans over 14 hours, about 72 000 an hour, before the budget existed), at commit `5342f263` plus the uncommitted working tree. Compose project `spanlight-load-w0-2c`, torn down with its volumes afterwards.
+
+| Run | Load avg (start → end) | `gateway` p50 / p95 | `budget` p50 / p95 | `budget_overhead_ms` | Failed | Dropped |
+| --- | --- | --- | --- | --- | --- | --- |
+| 50 req/s for 60 s, open hour fresh (3 000 calls by the end) | 2.23 → 2.00 | 4.3 / 5.6 ms | 10.0 / 14.0 ms | **8.3** (median difference 5.7) | 0 / 0 | 0 |
+| 50 req/s for 420 s started at 14:00:15, `budget` only (21 021 settled calls in the open hour by the end) | 1.74 → 3.04 | 5.5 / 6.7 ms (a 420 s `gateway` run on the same stack, 14:08) | 11.5 / 41.0 ms, p90 14.1 | **34.3** | 0 | 0 |
+| 50 req/s for 60 s, open hour holding 24 000 settled calls | 2.84 → 3.23 | 5.3 / 7.0 ms | 10.7 / 51.9 ms, p90 18.1 | **44.8** | 0 / 0 | 0 |
+| 50 req/s for 420 s started at 15:00:12, `budget` only, final build (21 020 settled calls in the open hour by the end) | 1.42 → 2.77 | 5.5 / 6.7 ms (same reference) | 9.8 / 47.3 ms over the run; **8.6 / 11.5 ms over its last four minutes** (9 000 to 21 000 calls in the hour), p99 41 to 50 ms | **40.6** over the run, **4.8** over the last four minutes | 0 | 1 (at 15:00, the worker's five-minute jobs) |
+
+With a provider that takes 1 second, 32 virtual users per scenario and `GATEWAY_MAX_IN_FLIGHT=64`:
+
+| Run | Load avg (start → end) | `gateway` p50 / p95 · requests | `budget` p50 / p95 · requests | Failed |
+| --- | --- | --- | --- | --- |
+| Running hour total | 2.15 → 2.61 | 1 118 / 1 218 ms · 1 732 | 1 045 / 1 262 ms · 1 785 (103 %) | 0 / 0 |
+
+**Result: the open hour no longer costs anything per call; the 5 ms p95 gate is met once the planner's statistics are fresh, and missed before that for a reason outside the history read.** The last run tells both halves: for its first three minutes the budget median was 11.5 ms and the p95 45 to 135 ms; at 15:02:52 autovacuum analysed `spans` for the first time since the seed (the seeder's `VACUUM ANALYZE` ran before any gateway span carried a `request_hash`), the recorder's trace-total statement (below) switched from the partial request-hash index to `spans_pkey` (69 ms to 0.18 ms), and for the remaining four minutes, with the open hour filling from 9 000 to 21 000 calls, the budget path ran at p50 8.6 ms, p90 9.8 ms, p95 11.5 ms per minute: an overhead of 3.1 ms at the median and 4.8 ms at p95 against the 420 s `gateway` run, flat while the hour filled. Over the 420 s run the median admission moved from 10.1 ms in its first minute to 11.1 ms in its seventh while 21 000 settled calls accumulated in the open hour; no hour was ever recomputed (`budget_bucket_versions` stayed empty: the gateway's own span writes and settles are deltas, not bumps) and the delta table held one or two rows at any moment (autovacuum kept it at 16 kB). `EXPLAIN (ANALYZE, BUFFERS)` as the app role at the end of that run: statement (1), the hours of the period with their row, version and pending deltas (16 rows from `generate_series`, index probes on the three bucket tables), 0.34 ms, 342 buffers (0.39 ms and 12 buffers at 3 000 calls; the difference is the hot rows' version chains); the compaction statement (row lock, delete of the hour's deltas, fold, update), 0.37 ms, 16 buffers (0.49 ms at 3 000 calls). Neither plan has a scan whose rows grow with the hour. The old live statement read 38.5 ms at 3 000 calls and would have read about 270 ms at 21 000.
+
+What remains is queueing on the admission's critical section, which is now about five milliseconds of round trips (the guard's budget lock, the counter lock, the two history statements, the counter update, the reservation insert and the commit, then the settle's counter update and commit in the recorder's transaction) and not database work: `log_lock_waits` during a 60 s `budget` run showed admissions queued four deep on the budget row (`guard.py` takes `FOR NO KEY UPDATE OF budgets`; SQLAlchemy's `with_for_update(key_share=True)` without `read=True` is not `FOR KEY SHARE`) for 30 to 75 ms, with no statement of the admission itself over 20 ms. `synchronous_commit = off` for one diagnostic run changed nothing (p95 49.9 ms), so it is not commit latency. During a `budget`-only run the single api process sits at 65 to 78 % of a core and Postgres at 130 to 170 %, a third of which is the recorder's trace-total recompute (`_RECOMPUTE_ROLLUPS` in `app/ingest/store.py`): the planner serves `trace_id = ANY(...)` from the partial `spans_project_request_hash_started_idx` and walks every gateway span of the project, 66 854 buffers and 69 ms for one trace at 27 000 gateway spans, growing with them; that statement is outside this change and is the next thing to fix. The tail is therefore the event loop and the database stalling inside a serialised section at 50 calls a second on one api process, which the plain path, having no serialised section, does not show; with that statement planned well, the section is short enough for the gate. Measuring on a freshly seeded stack: run `ANALYZE spans` after the first gateway calls, or the first minutes measure the stale plan.
+
+**Ingest upkeep with deltas.** `ingest.js` for 60 s on the rebuilt stack, project with a monthly `block` budget: p50 69.0 ms, **p95 93.7 ms** (pass), p99 152.7 ms, 0 % failed, nothing dropped; 300 batches wrote 300 deltas and bumped no version row (the open hour stayed exact), and the reaper's minute job folded them into the hour row (`spanlight_budget_deltas_compacted_total`), as it does for every budget nobody admits against.
+
+## Gateway admission
+
+Gateway HTTP admission (`app.gateway.admission`) admits a call while three per-process limits hold: `GATEWAY_MAX_IN_FLIGHT` calls (default 512), `GATEWAY_MAX_IN_FLIGHT_BYTES` of declared request bodies (default 80 MiB, a chunked or undeclared body counting as the full 10 MiB cap and `GET`, `HEAD` and `OPTIONS` as nothing) and `GATEWAY_MAX_IN_FLIGHT_PER_KEY` calls per caller key (default 256). The earlier single cap of 8 was sized for ~10 MiB bodies (about 32 MB of RSS each) and refused the ninth small stream (about 0.35 MB each). The gate: 200 virtual users of streaming chat against a provider that takes 1 second, 60 s, at the shipped defaults, with no `503`; the peak RSS recorded; and the 50 requests a second overhead threshold still met.
+
+**Method.** `gateway.js` with `GATEWAY_SCENARIOS=concurrency` and `FAKE_PROVIDER_DELAY_MS=1000` on the stack: 200 virtual users in a loop, alternating over the two keys `seed_gateway.py` writes (100 a key), each sending `"stream": true`; the fake provider waits 1 s, then streams three chunks and `[DONE]`. Latency counts successful calls only (a fast `503` would pull a p95 over every response down), and any refused call fails the run. Peak RSS is the api process's `VmHWM` (`/proc/1/status`), the api recreated before each run. Same machine and setup as [Budget admission](#budget-admission), at commit `5342f263` plus the uncommitted working tree.
+
+Shipped defaults (512 calls, 80 MiB, 256 per key):
+
+| Run | Load avg (start → end) | Successes p50 / p95 · answered/s | Refused (`503`) | Peak RSS |
+| --- | --- | --- | --- | --- |
+| 50 req/s overhead (`gateway,direct`, no delay) | 3.12 → 2.56 | `gateway` 4.3 / 5.7 ms, `direct` p95 2.0 ms; overhead **3.7 ms** (limit 20) | 0 | 181 MiB |
+| 200 users | 1.86 → 3.07 | 2 454 / 2 732 ms · 84.2 | **0 of 5 052** | 207 MiB |
+
+**Result: the gate passes.** No call was refused, the overhead stayed at 3.7 ms and the peak RSS was 207 MiB, against 446 MB for eight ~10 MiB bodies in the calibration. The latency is the provider pool's (below), not admission's.
+
+The defaults were first set at 256 calls and 128 per key, which this gate refused:
+
+| Run | Load avg (start → end) | Successes p50 / p95 · answered/s | Refused (`503`) | Peak RSS |
+| --- | --- | --- | --- | --- |
+| 200 users, 256 / 128 | 1.72 → 2.16 | 2 449 / 2 742 ms · 83.4 | **95 of 5 099** (84 `key`, 11 `count`) | 207 MiB |
+| 200 users, 256 / 128, start times spread over 2.4 s | 2.06 → 2.80 | 2 451 / 2 727 ms · 83.4 | **110 of 5 114** | 208 MiB |
+| 200 users, 512 / 256 | 2.31 → 2.42 | 2 444 / 2 789 ms · 84.6 | 0 of 5 076 | 207 MiB |
+
+200 users never hold more than 200 calls from the client's side, but a slot lasts until the call's finalization ends, which runs after the last byte has been sent: a probe build measured that tail at p50 28 ms, p95 44 to 68 ms, max 141 ms. The provider HTTP pool (`app.gateway.http.POOL_SIZE`, 100 connections a process) serves the 200 streams in two batches, so calls finish in waves of about 100 (upstream time averaged 1.86 s for a 1 s provider, hence the 2.4 s latency); during a wave each user's next call arrives while its last one is still finishing, and the probe saw in-flight calls reach 256 and one key reach 128. Spreading the start times does not help, because the pool re-forms the waves. With 512 and 256 the same load is refused nothing, at the same memory, so those became the defaults: the byte budget (200 × about 200 bytes here) is far from full, and RSS stays near the 195 MB calibration for small streams.
+
+## Ingest round trips
+
+Before writing, an ingest batch locks the identity of every trace it touches (`app.ingest.aggregate_changes.lock_identities`), so a concurrent batch or usage correction cannot interleave with it. That lock used to be one `pg_advisory_xact_lock` statement per trace, after a second project bind and `KEY SHARE` that the pipeline had already done, and the dirty hours were read again after the writes. A batch of 100 traces of 2 spans made 115 statements. It now makes 12, whatever the number of traces: all the advisory locks are one statement over the sorted keys (the same lock order as before), the project is bound and share-locked once, and the hours after the writes are derived from the batch (`app.ingest.store.batch_hours`), a superset of what the second read returned. `backend/tests/ingest/test_ingest_round_trips.py` keeps the bound.
+
+**Measured** on 2026-11-01 on an Apple M4 Mac (10 cores, 16 GB), Docker Desktop 29.9.2 with 5 CPUs and 6.4 GB for the VM, PostgreSQL 17 with the shipped settings, k6 1.7.1, on top of commit `5342f263`, before this change was committed: once without it (before) and once with it (after). Each run is `ingest.js` for 60 s on a freshly migrated stack with only a workspace and an ingest key, so no stored spans; before and after alternate in one window. `mixed.js` was not run, so these are ingest-only figures on an empty database. Other work ran on the machine; the 1-minute load average is given with each run.
+
+| Run | Load avg (start → end) | Median | p95 | p99 | Failed |
+| --- | --- | --- | --- | --- | --- |
+| Before, 1 | 5.92 → 3.62 | 68.9 ms | 132.0 ms | 291.1 ms | 0 % |
+| After, 1 | 2.13 → 2.53 | 65.6 ms | 112.2 ms | 300.0 ms | 0 % |
+| After, 2 | 2.10 → 1.59 | 65.5 ms | 117.6 ms | 295.7 ms | 0 % |
+| Before, 2 | 1.40 → 1.52 | 68.3 ms | 128.6 ms | 300.8 ms | 0 % |
+
+Each `ingest.js` request carries 29 traces (1 to 6 spans each), so the change saves 31 of its 43 statements. At 500 spans a second it takes about 3 ms off the median and 10 to 20 ms off the p95. An empty database flatters both; the realistic-seed comparison is still to be run.
+
+## Speed work, before and after (2026-11-02)
+
+The same local run twice, before and after a set of speed changes (price book and gateway key caching, the trace list's model filter bounded to the window with statistics on `spans (project_id, model)`, the trace-total recompute, read-only gateway cache hits, fewer budget-admission statements, gateway span writes kept below the request pool, the load-test harness fixes): the smoke seed (100 000 spans) plus `seed_gateway.py --budget-spans 1000000`, then every script at its smoke duration with [`settle.sh`](../backend/load/settle.sh) before each, and the gateway pair three times. Apple M4 Mac (10 cores, 16 GB), Docker Desktop with 5 CPUs and 6.4 GB for the VM, PostgreSQL 17 with the shipped settings, k6 1.7.1, one `api` replica; other work ran on the machine (1-minute load average 1.7 to 3.1 before each script). Before: 07:20 UTC, at commit `5342f263` plus the uncommitted tree of the time; after: 10:09 UTC, with the changes. These are local smoke figures, not the `realistic` profile on a CI runner.
+
+| Script | Scope | p50 before → after | p95 before → after | p99 before → after | Thresholds after |
+| --- | --- | --- | --- | --- | --- |
+| `overview.js` | all | 20.5 → 19.2 ms | 34.2 → 30.0 ms | 236.1 → 56.3 ms | pass |
+| `traces.js` | all | 8.6 → 10.9 ms | **59.8 → 26.5 ms** | 94.7 → 29.1 ms | pass |
+| `traces.js` | one model | 53.4 → 24.2 ms | 69.2 → 28.0 ms | | |
+| `mixed.js` baseline | overview / traces | 26.5 → 31.3 / 12.6 → 14.5 ms | 39.6 → 40.2 / 59.1 → 27.7 ms | | pass |
+| `mixed.js` half | ingest / overview / traces | 54.1 → 52.0 / 26.5 → 26.6 / 12.2 → 11.6 ms | **122.7 → 80.0** / 54.1 → 52.2 / 50.2 → 23.4 ms | | pass |
+| `ingest.js` | all | 64.6 → 61.7 ms | **131.3 → 74.1 ms** | 195.4 → 125.6 ms | pass |
+
+No read or ingest request failed and no iteration of those scripts was dropped in either run. Before, `overview.js` and both `mixed.js` stages failed their `checks` threshold because the script expected an exact source for the 24-hour window, which the hybrid read reports as approximate; the script now matches the API.
+
+Gateway, median of three passes (each pass: `gateway,direct`, then `gateway,budget`, 50 requests a second for 60 s each):
+
+| | Before | After |
+| --- | --- | --- |
+| Through the gateway, p95 | 11.9 ms (passes 5.5 to 61.2) | 5.6 ms (4.4 to 10.0) |
+| **Overhead** (limit 20 ms) | **9.7 ms** (3.8 to 59.0) | **3.7 ms** (2.5 to 7.4) |
+| Budget key, p95 | 13.6 ms | 8.8 ms |
+| **Budget overhead** (limit 5 ms) | **7.7 ms**, over the limit in every pass | **3.6 ms** in two passes of four; 272.6 and 364.2 ms in the other two |
+
+The budget overhead is under its limit whenever no stall lands in the `budget` scenario: the admission itself adds about 3.6 ms at p95. In two of four passes a stall of one to three seconds did land there (in one, the request pool's connections were all taken for about a second and 11 calls got `503`), which puts the scenario's p95 at 330 to 370 ms; the stalls line up with no worker job or checkpoint.
+
+**After the budget lock change.** The stalls were a convoy on the budget row: the guard locked it `FOR NO KEY UPDATE` for the whole admission, so every call of one budget waited for the one before it, and the waiters held request-pool connections until the pool ran out (`503` for every request of the process). The guard now holds the budget `FOR SHARE`, and calls queue only on the period's counter row while the reservation is written. A later quiet re-run of the same gateway pair (a fresh load stack on the same seed; 1-minute load average 2.8 to 3.2, a different session from the run above): budget key p95 9.1 / 9.6 / 9.3 ms over three passes, **budget overhead 2.9 / 4.4 / 3.5 ms**, every pass under the 5 ms limit, with no `503` and no request-pool timeout.
+
+`pg_stat_statements` over one `mixed.js` half stage (a diagnostic run, not part of the shipped stack): database time fell from 6 160 to 4 142 ms for about 8 700 statements, and the trace list's model filter, which was half of it (53.5 ms a call, about 124 000 buffers), now takes 6.6 ms a call (2 200 buffers).
+
+## Final load campaign at 10 million spans (2026-11-02)
+
+One production-like campaign on a rented Linux server, to find where a single Spanlight stack stops meeting the targets above and what breaks first. Every request went through Caddy, as in a self-hosted install. No real LLM provider was called: the gateway scenarios use `backend/load/fake_provider.py`.
+
+| | |
+| --- | --- |
+| Host | Hetzner Cloud CPX62: AMD EPYC Genoa, 16 shared vCPU, 30 GiB RAM, 610 GB local NVMe, Ubuntu 26.04, Docker 29.1 |
+| Split | Spanlight (Caddy, `api`, `worker`, Postgres) pinned to cores 0–11; k6 and the fake provider on cores 12–15 |
+| Noise | CPU steal recorded every 5 s; mean steal was 0.00 % in every run reported here. Idle disk: 46 800 random 8 KiB IOPS |
+| Stack | `deploy/compose.yaml` + `backend/load/compose.load.yaml`, Postgres 17 with the shipped settings plus `pg_stat_statements` (diagnostic), one `api` process unless stated |
+| Tools | k6 2.3.0 (`grafana/k6:2.3.0`), the scripts in `backend/load/` |
+| Data | `seed.py --spans 10000000`: 10 000 000 spans in 2 862 605 traces over 28 days in one project (`spans` table 25 GB, about 2.5 GB per million spans), then `seed_gateway.py --budget-spans 1000000`, 20 tenant projects with one ingest key each, and `seed_tour.py`; 11 million spans and 27 GB before the runs, 16 million and 35 GB after |
+
+### Baseline: the scripts above at 10 million spans
+
+Three passes of each script, `settle.sh` before each. Ranges are the three passes.
+
+| Script | p95 | Target | Result |
+| --- | --- | --- | --- |
+| `overview.js` | 74.8–78.2 ms | 300 ms | pass |
+| `traces.js` | 76.6–84.5 ms | 300 ms | pass |
+| `mixed.js` baseline (no ingestion): overview / traces | 74.4–87.9 / 78.3–90.4 ms | 300 ms | pass |
+| `mixed.js` half (500 spans/s): ingest / overview / traces | **308–1 094** / 209–283 / 166–233 ms | 200 / 300 / 300 ms | **ingest fails** |
+| `mixed.js` near knee (1 000 spans/s): ingest / overview / traces | **446–560 / 376–459 / 322–385 ms** | 200 / 300 / 300 ms | **fails** |
+| `ingest.js` (500 spans/s) | **210–379 ms** | 200 ms | **fails** |
+| `gateway.js` overhead | 10.9–14.0 ms | 20 ms | pass |
+| `gateway.js` budget admission overhead | **38.6–62.2 ms** | 5 ms | **fails** |
+
+No request failed in any of these runs; the misses are latency.
+
+`tour.js`, 50 requests a second over every other product area for 3 minutes, p95 of three passes: trace detail 507–566 ms, the 5 000-span trace 729–774 ms, sessions list 811–884 ms (all over the script's 500 ms threshold); span detail 386–418, end users 328–382, attribution 295–327, datasets 262–296, experiments 253–301, prompts 266–306, insights 259–294, annotation queue items 257–302, OTLP JSON 392 and protobuf 388, scores 326 ms; experiment compare, runs, dataset items, prompt versions, cost explanation, attribution series and the insights summary 55–110 ms. Login p95 928 ms (one password hash per sign-in). Most endpoints have a median of 30–65 ms; their p95 of 250–400 ms is time spent queued behind the other requests on the one `api` process. No tour request failed.
+
+### Breaking points
+
+60 s steps at a constant arrival rate; ingestion with 100-span requests over 20 project keys, so neither the per-key limit nor the per-project cap is what is measured. Knee: highest step with p95 under 500 ms, under 1 % failures and no dropped iterations.
+
+| Workload | `api` processes | Knee | Break | First limit |
+| --- | --- | --- | --- | --- |
+| Ingestion | 1 | 1 500 spans/s (p95 451 ms) | 2 000 spans/s: 15.6 % `503`, p95 2.5 s | the `api` process at 97 % of one core; requests then time out waiting for a database connection (`db_pool_timeout`) |
+| Ingestion | 3 | 4 000 spans/s (p95 477 ms) | 6 000 spans/s: 14.5 % `503` | the three processes at 85–95 % and lock waits on the project's current-hour `aggregate_dirty_hours` row |
+| Gateway, 0 ms provider | 1 | 100 calls/s (p95 460 ms) | 200 calls/s: 53 % failed | the `api` process |
+| Gateway, 0 ms provider | 3 | 200 calls/s (p95 45 ms) | 400 calls/s: p95 1.2 s | the `aggregate_dirty_hours` row: 149 ms per insert on average, up to 20 sessions waiting on it |
+| Reads (20/s) during ingestion | 1 | with 1 000 spans/s: p95 328–380 ms, no failures | with 2 000 spans/s: p95 1.8–2.0 s, 27–36 % failed | shared `api` process |
+
+**Spike** (1 `api`): 700 → 3 000 → 700 spans/s, 60 s each. During the spike 53 % of requests got a fast `503`; in the two minutes after it no request failed and p95 was back at 265 ms.
+
+**Soak** (1 `api`): 700 spans/s plus 10 dashboard reads a second for 60 minutes. Ingest p95 fell from 366 ms in the first 15 minutes to 288 ms in minutes 32–47, the overview from 313 to 225 ms, the trace list from 1 384 to 589 ms (the cache warming); `api` memory stayed at 292 MB and the worker at 213–218 MB throughout. From minute 47 every ingest request got `429 INGEST_QUOTA_EXCEEDED` with `Retry-After`: the run had used the project's daily byte quota (the cap was raised to 2 GB a day for this run and the 100-span requests carry about 110 KB). Reads were unaffected, and ingestion resumed within a minute of raising the cap.
+
+**Noisy tenant** (1 `api`): ten tenants ingesting 100 spans/s each while one tenant sends 5 000 spans/s, five times its default rate cap of 1 000 spans/s.
+
+| | Alone | With the flooding tenant |
+| --- | --- | --- |
+| Other tenants' p95 | 311 ms | **2 066 ms** |
+| Other tenants' failed requests | 0 % | **48 %** (`503`) |
+| Flooding tenant answered `429` (all with `Retry-After`) | — | 37 % |
+
+The per-project cap protects storage, not the `api` process: a refused request still costs a full request's work up to the cap check, and 50 requests a second from one tenant saturate the single process for everyone.
+
+**Faults under load** (1 `api`, 700 spans/s plus reads): a Postgres restart failed 16 requests within one 10-second window, then none. `docker kill` of the `api` and of the worker counts as a manual stop for Docker's `unless-stopped` policy, so neither came back until Compose restarted them (the `api` was healthy about 20 s later); a process crash, which the policy does restart, was not simulated.
+
+### Correctness after the load
+
+- Trace totals equal a recount from their spans for 10 000 random traces: 0 mismatches in span count, error count, tokens or cost.
+- During the fault run, k6 received 1 676 successful ingest responses (167 600 spans) between 20:08 and 20:12 UTC, and exactly 167 600 spans were stored for that window. The batches that failed during the Postgres restart stored nothing.
+- The same 50-span batch sent twice is stored once and leaves the trace totals unchanged.
+- A span with an unknown model has a `NULL` cost, never 0; no priced span with tokens has a cost of 0.
+- A read key of one project asking for another project's traces gets `404`.
+
+### What breaks first, and why
+
+1. **Span inserts at 10 million spans.** `INSERT INTO spans` averaged 118 ms per 100-span batch in the half-load mixed run (a few milliseconds at 100 000 spans). The largest index on `spans` is `spans_content_trgm_idx`, a 7.9 GB trigram GIN index for content search; GIN indexes buffer new entries and flush them inside whichever insert fills the buffer, which matches the shape seen (median 139 ms, p95 1.1 s) with idle CPU and no I/O wait.
+2. **One `api` process.** Ingestion, reads and the gateway share one process, which saturates at about 1 500 spans/s or 100 gateway calls/s and turns overload into `503` for every tenant. Three processes give 2.7× the ingestion knee.
+3. **The current-hour `aggregate_dirty_hours` row.** Every span write of a project updates its row for the current hour. Under gateway load each write waited 51 ms on it (budget run) and 149 ms with three `api` processes; this is what the budget admission overhead and the 3-process gateway limit consist of.
+4. **Per-tenant isolation.** Rate and quota caps answer `429` correctly but do not keep one tenant from using up the shared process.
+
+### Not measured
+
+Real provider latency and errors, email delivery, billing fetches from provider APIs, network latency between client and server (k6 ran on the same host), a process crash restarted by Docker, and more than 10 million stored spans.
+
 ## Known slower paths
 
 These are real requests that the scripts do not send yet, so no threshold covers them.
 
-- **Overview, time series or model table with an `environment` filter, for a window of 24 hours or less.** The environment belongs to the trace, so the query joins `traces` to the spans of the window and reads every trace of the project to do it. Without the filter the query reads the spans alone, from the index. In a test database of 2 million spans the filtered 24-hour overview took about four times as long as the unfiltered one, and the gap grows with the number of traces. Windows over 24 hours read the hourly rollups and are not affected. The overview script never sends `environment`, and there is no threshold for this path yet.
+- **Overview, time series or model table with an `environment` filter, for a window of 24 hours or less.** The environment belongs to the trace, so the query joins `traces` to the spans of the window and reads every trace of the project to do it. Without the filter the query reads the spans alone, from the index. In a test database of 2 million spans the filtered 24-hour overview took about four times as long as the unfiltered one, and the gap grows with the number of traces. Windows over 24 hours read the hourly rollups and are not affected. The overview script never sends `environment`, and there is no threshold for this path yet. Since 2026-11-02 the filtered reads look up each trace's environment once per trace instead of once per span, 1.4 to 2 times faster on a 35 000-span raw tail; alert rules with a trace filter (environment, user, metadata, trace name) still join per span, about 50 to 80 ms on such a range.
 
 ## Reading the numbers
 
 - The seeded data is one project, so the figures say nothing about many busy projects at once.
 - The seeder ends with `VACUUM ANALYZE`, so every page of the table is marked all-visible and the dashboard's index-only scans never visit the table. A live system gets there through autovacuum, and the migration that added the covering index also makes autovacuum visit `spans` after every 1 % of new rows, so recent pages are marked soon after they are written. A project that ingests faster than autovacuum keeps up will read the table for the newest rows.
 - Ingestion is measured at a steady rate. A burst above 50 requests a second per key is limited by design and answered with `429` and `Retry-After`; see the [ingestion spike runbook](runbooks/ingestion-spike.md).
-- Percentiles of the 7-day and 30-day windows are estimated from histograms and can be off by up to a quarter of the value; the latency of the request is exact either way.
+- Percentiles of windows using hourly histograms are approximate; request latency measurements are exact either way. Historical percentile figures below retain their original estimator. The 2026-11-03 correction uses continuous ranks and gives about 20.1% worst-case relative error for bounded interior buckets; first and final buckets have no such guarantee. It needs no migration or new datastore. See the [ADR amendment](decisions/0006-hourly-rollups-with-bucketed-histograms.md#2026-11-03-accuracy-amendment).
 - For capacity beyond what one stack handles, see [Scale Spanlight](runbooks/scale.md).

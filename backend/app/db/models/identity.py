@@ -50,6 +50,7 @@ class AuditAction(enum.StrEnum):
     USER_OAUTH_UNLINK = "user.oauth_unlink"
     USER_TOTP_ENABLE = "user.totp_enable"
     USER_TOTP_DISABLE = "user.totp_disable"
+    USER_TOTP_RECOVERY_REGENERATE = "user.totp_recovery_regenerate"
     ORG_UPDATE = "org.update"
     CREDENTIAL_CREATE = "credential.create"
     CREDENTIAL_ROTATE = "credential.rotate"
@@ -132,6 +133,10 @@ class AuditAction(enum.StrEnum):
     END_USER_ERASE_REQUEST = "end_user.erase_request"
     END_USER_ERASE = "end_user.erase"
     EXPERIMENT_SCHEDULE_CHANGE = "experiment.schedule_change"
+    USER_TERMS_ACCEPT = "user.terms_accept"
+    USER_UPDATE = "user.update"
+    USER_EMAIL_CHANGE = "user.email_change"
+    USER_DELETE = "user.delete"
 
 
 class AuditActorType(enum.StrEnum):
@@ -164,6 +169,12 @@ class User(Base):
     activation_checklist_dismissed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
+    # The terms version the user accepted (the server's `TERMS_VERSION` at the time) and when.
+    # Both NULL until a version is accepted; `users_terms_pair_check` keeps them set together.
+    terms_version: Mapped[str | None] = mapped_column(Text)
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The user turned the weekly digest off for themselves, in every project they belong to.
+    weekly_digest_opt_out: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
 
     @property
     def email_verified(self) -> bool:

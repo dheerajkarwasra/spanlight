@@ -67,7 +67,8 @@ export function useTraceListQuery(search: TraceFilters, preview = false) {
 
   return useInfiniteQuery({
     queryKey: queryKeys.project(projectId).traces(query),
-    queryFn: ({ pageParam }) => projectsApi.traces(projectId, { ...query, cursor: pageParam }),
+    queryFn: ({ pageParam, signal }) =>
+      projectsApi.traces(projectId, { ...query, cursor: pageParam }, signal),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor,
     placeholderData: keepPreviousData,
@@ -92,8 +93,8 @@ export function useTraceHistogramQuery(search: TraceFilters) {
 
   return useQuery({
     queryKey: queryKeys.project(projectId).traceHistogram(query),
-    queryFn: async () => {
-      const histogram = await projectsApi.traceHistogram(projectId, query);
+    queryFn: async ({ signal }) => {
+      const histogram = await projectsApi.traceHistogram(projectId, query, signal);
       const bars = histogram.buckets.length > 0 ? fillBuckets(histogram, query) : [];
       return { bucket: histogram.bucket, bars, window: { from: query.from, to: query.to } };
     },
@@ -112,26 +113,29 @@ export function useTraceCountQuery() {
 
   return useQuery({
     queryKey: queryKeys.project(projectId).overview(metricsWindow),
-    queryFn: () => projectsApi.overview(projectId, metricsWindow),
+    queryFn: ({ signal }) => projectsApi.overview(projectId, metricsWindow, signal),
     select: (overview) => overview.current.traces,
   });
 }
 
 /**
- * One span with its payloads: trace detail leaves them out (`payload_omitted`) once a trace's
- * payloads pass its budget. Runs only for such a span.
+ * One span with all of its content: trace detail leaves attributes and payloads out
+ * (`attributes_omitted`, `payload_omitted`) once a trace's stored content passes its budget.
+ * The caller says when it needs the request: the inspector on either flag, a payload reader on
+ * `payload_omitted` only (a span with known-null payloads has nothing more to fetch for it).
  */
-export function useSpanQuery(traceId: string, span: Span) {
+export function useSpanQuery(traceId: string, span: Span, enabled: boolean) {
   const { projectId } = useProjectParams();
-  return useQuery(spanQuery(projectId, traceId, span));
+  return useQuery(spanQuery(projectId, traceId, span, enabled));
 }
 
-function spanQuery(projectId: string, traceId: string, span: Span) {
+function spanQuery(projectId: string, traceId: string, span: Span, enabled: boolean) {
   return {
     queryKey: queryKeys.project(projectId).span(traceId, span.span_id),
-    queryFn: () => projectsApi.span(projectId, traceId, span.span_id),
+    queryFn: ({ signal }: { signal: AbortSignal }) =>
+      projectsApi.span(projectId, traceId, span.span_id, signal),
     staleTime: 60_000,
-    enabled: span.payload_omitted,
+    enabled,
   };
 }
 
@@ -143,7 +147,7 @@ export function useStepSpanQuery(traceId: string, spanId: string | undefined) {
   const { projectId } = useProjectParams();
   return useQuery({
     queryKey: queryKeys.project(projectId).span(traceId, spanId ?? ""),
-    queryFn: () => projectsApi.span(projectId, traceId, spanId ?? ""),
+    queryFn: ({ signal }) => projectsApi.span(projectId, traceId, spanId ?? "", signal),
     staleTime: 60_000,
     enabled: spanId !== undefined,
   });
@@ -157,7 +161,7 @@ export function useStepSpanQuery(traceId: string, spanId: string | undefined) {
 export function useSpansWithPayloads(traceId: string, spans: readonly Span[]) {
   const { projectId } = useProjectParams();
   return useQueries({
-    queries: spans.map((span) => spanQuery(projectId, traceId, span)),
+    queries: spans.map((span) => spanQuery(projectId, traceId, span, span.payload_omitted)),
     combine: (results) => ({
       spans: spans.map(
         (span, index) => (span.payload_omitted ? results[index]?.data : span) ?? span,
@@ -188,7 +192,7 @@ export function usePreviousRunsQuery(name: string | null, before: string) {
   const query = { from, to: before, name: name ?? undefined, limit: 6 };
   return useQuery({
     queryKey: queryKeys.project(projectId).traces(query),
-    queryFn: () => projectsApi.traces(projectId, query),
+    queryFn: ({ signal }) => projectsApi.traces(projectId, query, signal),
     staleTime: 60_000,
     enabled: name !== null,
   });
@@ -199,7 +203,7 @@ export function useTraceComparisonQuery(a: string | undefined, b: string | undef
   const { projectId } = useProjectParams();
   return useQuery({
     queryKey: queryKeys.project(projectId).traceComparison(a ?? "", b ?? ""),
-    queryFn: () => projectsApi.compareTraces(projectId, a ?? "", b ?? ""),
+    queryFn: ({ signal }) => projectsApi.compareTraces(projectId, a ?? "", b ?? "", signal),
     staleTime: 60_000,
     enabled: a !== undefined && b !== undefined && a !== b,
   });
@@ -210,7 +214,7 @@ export function useTraceQuery(traceId: string, options: { enabled?: boolean } = 
   const { projectId } = useProjectParams();
   return useQuery({
     queryKey: queryKeys.project(projectId).trace(traceId),
-    queryFn: () => projectsApi.trace(projectId, traceId),
+    queryFn: ({ signal }) => projectsApi.trace(projectId, traceId, signal),
     staleTime: 60_000,
     enabled: options.enabled ?? true,
   });

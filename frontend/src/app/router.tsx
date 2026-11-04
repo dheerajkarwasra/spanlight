@@ -11,11 +11,8 @@ import {
 
 import { bindSlugSource, ensureCanonicalProjectUrl, projectParams } from "@/app/project-params";
 import { NotFoundPage, RootLayout, RouteErrorPage } from "@/app/route-pages";
-import { LoginPage } from "@/features/auth/login-page";
-import { ensureMe } from "@/features/auth/queries";
+import { ensureMe, termsPending } from "@/features/auth/queries";
 import { authSearchSchema, safeNextPath } from "@/features/auth/search";
-import { SignupPage } from "@/features/auth/signup-page";
-import { TwoFactorPage } from "@/features/auth/two-factor-page";
 import { attributionSearchSchema } from "@/features/attribution/search";
 import { budgetsSearchSchema } from "@/features/budgets/budget-prefill";
 import { doctorSearchSchema } from "@/features/doctor/search";
@@ -24,12 +21,12 @@ import {
   experimentSearchSchema,
   newExperimentSearchSchema,
 } from "@/features/experiments/search";
+import { LEGAL_PATHS } from "@/features/landing/links";
 import { onboardingSearchSchema } from "@/features/onboarding/search";
 import { playgroundSearchSchema } from "@/features/playground/search";
 import { pricingSearchSchema } from "@/features/pricing/price-override-form";
 import { promptDetailSearchSchema, promptsSearchSchema } from "@/features/prompts/search";
 import { releasesSearchSchema } from "@/features/releases/search";
-import { AppShell } from "@/features/shell/app-shell";
 import { resolveHomeDestination } from "@/features/shell/home-redirect";
 import { reconciliationSearchSchema } from "@/features/billing-sources/reconciliation-search";
 import { auditSearchSchema } from "@/features/settings/audit-search";
@@ -44,8 +41,9 @@ import { usersSearchSchema } from "@/features/users/search";
 import { projectSearchSchema } from "@/lib/time-range";
 
 /*
- * Public pages and the app shell load eagerly; every page inside the shell is
- * code-split so the first paint doesn't pay for charts or the trace viewer.
+ * Every page is code-split, the sign-in screens and the app shell included, so the entry chunk
+ * holds only the router and its guards. Guards run in `beforeLoad` before any page chunk renders,
+ * so a signed-in visitor never sees the sign-in page and a signed-out one never sees the shell.
  */
 
 export interface RouterContext {
@@ -90,6 +88,63 @@ const landingRoute = createRoute({
   component: lazyRouteComponent(() => import("@/features/landing/landing-page"), "LandingPage"),
 });
 
+/*
+ * Legal pages: public, with no redirect, so signed-in users can read them too. They are built
+ * inside a function so a build without VITE_LEGAL_PAGES drops the routes and their chunks.
+ */
+function legalRoutes() {
+  return [
+    createRoute({
+      getParentRoute: () => rootRoute,
+      path: LEGAL_PATHS.privacy,
+      head: () => pageTitle("Privacy policy"),
+      component: lazyRouteComponent(
+        () => import("@/features/legal/content/privacy"),
+        "PrivacyPage",
+      ),
+    }),
+    createRoute({
+      getParentRoute: () => rootRoute,
+      path: LEGAL_PATHS.terms,
+      head: () => pageTitle("Terms of service"),
+      component: lazyRouteComponent(() => import("@/features/legal/content/terms"), "TermsPage"),
+    }),
+    createRoute({
+      getParentRoute: () => rootRoute,
+      path: LEGAL_PATHS.dpa,
+      head: () => pageTitle("Data processing agreement"),
+      component: lazyRouteComponent(() => import("@/features/legal/content/dpa"), "DpaPage"),
+    }),
+    createRoute({
+      getParentRoute: () => rootRoute,
+      path: LEGAL_PATHS.subprocessors,
+      head: () => pageTitle("Subprocessors"),
+      component: lazyRouteComponent(
+        () => import("@/features/legal/content/subprocessors"),
+        "SubprocessorsPage",
+      ),
+    }),
+    createRoute({
+      getParentRoute: () => rootRoute,
+      path: LEGAL_PATHS.imprint,
+      head: () => pageTitle("Imprint"),
+      component: lazyRouteComponent(
+        () => import("@/features/legal/content/imprint"),
+        "ImprintPage",
+      ),
+    }),
+    createRoute({
+      getParentRoute: () => rootRoute,
+      path: LEGAL_PATHS.accessibility,
+      head: () => pageTitle("Accessibility"),
+      component: lazyRouteComponent(
+        () => import("@/features/legal/content/accessibility"),
+        "AccessibilityPage",
+      ),
+    }),
+  ];
+}
+
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
@@ -101,7 +156,7 @@ const loginRoute = createRoute({
     }
   },
   head: () => pageTitle("Sign in"),
-  component: LoginPage,
+  component: lazyRouteComponent(() => import("@/features/auth/login-page"), "LoginPage"),
 });
 
 const signupRoute = createRoute({
@@ -115,7 +170,7 @@ const signupRoute = createRoute({
     }
   },
   head: () => pageTitle("Create an account"),
-  component: SignupPage,
+  component: lazyRouteComponent(() => import("@/features/auth/signup-page"), "SignupPage"),
 });
 
 /** The second step of signing in. The challenge is never in this URL; see `login-challenge.ts`. */
@@ -130,7 +185,7 @@ const twoFactorRoute = createRoute({
     }
   },
   head: () => pageTitle("Two-factor sign-in"),
-  component: TwoFactorPage,
+  component: lazyRouteComponent(() => import("@/features/auth/two-factor-page"), "TwoFactorPage"),
 });
 
 /*
@@ -168,12 +223,67 @@ const verifyEmailRoute = createRoute({
   ),
 });
 
+const confirmEmailChangeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/confirm-email-change",
+  head: () => pageTitle("Change your email"),
+  component: lazyRouteComponent(
+    () => import("@/features/auth/confirm-email-change-page"),
+    "ConfirmEmailChangePage",
+  ),
+});
+
+/** Where a weekly digest's unsubscribe link lands: `/unsubscribe#token=…`; needs no session. */
+const unsubscribeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/unsubscribe",
+  head: () => pageTitle("Weekly digest"),
+  component: lazyRouteComponent(
+    () => import("@/features/auth/unsubscribe-page"),
+    "UnsubscribePage",
+  ),
+});
+
+/** Where an invite link lands: `/invite#token=…`, the token in the fragment like a reset link. */
 const inviteRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/invite/$token",
+  path: "/invite",
   beforeLoad: async ({ context }) => ({ me: await ensureMe(context.queryClient) }),
   head: () => pageTitle("Invitation"),
   component: lazyRouteComponent(() => import("@/features/auth/invite-page"), "InvitePage"),
+});
+
+/** Links mailed before the token moved to the fragment; replaced, so the path form leaves history. */
+const legacyInviteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/invite/$token",
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: "/invite", hash: `token=${params.token}`, replace: true });
+  },
+});
+
+/**
+ * The terms gate's page. It sits outside `authedRoute`, whose gate sends people here, so it can
+ * never redirect to itself; with nothing to accept it goes on to `next`.
+ */
+const acceptTermsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/accept-terms",
+  validateSearch: authSearchSchema.pick({ next: true }),
+  beforeLoad: async ({ context, location, search }) => {
+    const me = await ensureMe(context.queryClient);
+    if (!me) {
+      throw redirect({ to: "/login", search: { next: location.href } });
+    }
+    if (!termsPending(me)) {
+      throw redirect({ href: safeNextPath(search.next) ?? "/" });
+    }
+  },
+  head: () => pageTitle("Accept the terms"),
+  component: lazyRouteComponent(
+    () => import("@/features/auth/accept-terms-page"),
+    "AcceptTermsPage",
+  ),
 });
 
 /* ---------- Authenticated routes ---------- */
@@ -185,6 +295,9 @@ const authedRoute = createRoute({
     const me = await ensureMe(context.queryClient);
     if (!me) {
       throw redirect({ to: "/login", search: { next: location.href } });
+    }
+    if (termsPending(me)) {
+      throw redirect({ to: "/accept-terms", search: { next: location.href } });
     }
     return { me };
   },
@@ -234,7 +347,7 @@ const projectRoute = createRoute({
       params,
       location,
     }),
-  component: AppShell,
+  component: lazyRouteComponent(() => import("@/features/shell/app-shell"), "AppShell"),
 });
 
 const projectIndexRoute = createRoute({
@@ -771,13 +884,21 @@ const tokensRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   landingRoute,
+  // Only the spanlight.dev build ships the legal pages. Same check as LEGAL_PAGES_ENABLED, but
+  // inline: Vite folds it before bundling, so the legal chunks are not emitted at all. Through
+  // the imported constant the routes are tree-shaken but orphan chunks still land in dist/.
+  ...(import.meta.env.VITE_LEGAL_PAGES === "1" ? legalRoutes() : []),
   loginRoute,
   twoFactorRoute,
   signupRoute,
   forgotPasswordRoute,
   resetPasswordRoute,
   verifyEmailRoute,
+  confirmEmailChangeRoute,
+  unsubscribeRoute,
   inviteRoute,
+  legacyInviteRoute,
+  acceptTermsRoute,
   authedRoute.addChildren([
     onboardingRoute,
     accountSecurityRoute,

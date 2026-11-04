@@ -23,7 +23,7 @@ import { useUnpricedModelsQuery } from "./pricing-queries";
 const NO_PROVIDER = "The calls didn't report a provider.";
 
 interface UnpricedModelsCardProps {
-  /** Opens the override dialog for a row; null without `gateway:write`. */
+  /** Opens the override dialog for a row; null without `prices:override`. */
   onAddPrice: ((prefill: OverridePrefill) => void) | null;
   className?: string;
 }

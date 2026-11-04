@@ -2,6 +2,7 @@
 
 from app.alerts.digest_job import run_weekly_digest
 from app.alerts.jobs import run_evaluate_alerts
+from app.attribution.daily_jobs import run_refresh_attribution_daily, run_schedule_attribution_daily
 from app.attribution.jobs import run_refresh_attribution
 from app.backups.jobs import run_backup_database
 from app.budgets.jobs import REAP_JOB, run_reap_budget_reservations
@@ -20,7 +21,7 @@ from app.evals.reservation import RUN_JOB
 from app.exports.jobs import run_create_export
 from app.exports.purge import PURGE_JOB, run_purge_project_objects
 from app.gateway.jobs import run_prune_gateway_cache
-from app.insights.jobs import run_detectors
+from app.insights.jobs import PROJECT_JOB, run_detectors, run_detectors_project
 from app.jobs.context import TaskHandler
 from app.jobs.tasks.cleanup import run_cleanup_sessions
 from app.jobs.tasks.demo_traffic import run_demo_traffic
@@ -38,6 +39,7 @@ from app.reconciliation.rollup_jobs import (
 from app.reconciliation.runs import FETCH_SOURCE_JOB
 from app.review.job_keys import SELECT_JOB, SELECT_PROJECT_JOB
 from app.review.jobs import run_select_for_review, run_select_for_review_project
+from app.rollups.dirty_jobs import run_repair_aggregates
 from app.rollups.jobs import run_rollup_hourly
 from app.services.audit_stream import run_deliver_audit_streams
 
@@ -48,11 +50,13 @@ TASKS: dict[str, TaskHandler] = {
     "deliver_notifications": run_deliver_notifications,
     "demo_traffic": run_demo_traffic,
     "rollup_hourly": run_rollup_hourly,
+    "repair_aggregates": run_repair_aggregates,
     "backup_database": run_backup_database,
     "create_export": run_create_export,
     "evaluate_alerts": run_evaluate_alerts,
     "weekly_digest": run_weekly_digest,
     "run_detectors": run_detectors,
+    PROJECT_JOB: run_detectors_project,
     "refresh_user_stats": run_refresh_user_stats,
     "sample_for_evaluation": run_sample_for_evaluation,
     RUN_JOB: run_run_evaluator,
@@ -67,6 +71,8 @@ TASKS: dict[str, TaskHandler] = {
     FETCH_SOURCE_JOB: run_fetch_billing_source,
     "poll_provider_status": run_poll_provider_status,
     "refresh_attribution": run_refresh_attribution,
+    "schedule_attribution_daily": run_schedule_attribution_daily,
+    "refresh_attribution_daily": run_refresh_attribution_daily,
     SELECT_JOB: run_select_for_review,
     SELECT_PROJECT_JOB: run_select_for_review_project,
     "deliver_audit_streams": run_deliver_audit_streams,

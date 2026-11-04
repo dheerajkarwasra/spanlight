@@ -8,13 +8,15 @@ import { ScoreConfigsCard } from "@/features/scores";
 import { useCurrentOrg, usePermission, useProjectQuery } from "@/features/shell";
 import { viewOnlyCopy } from "@/lib/permissions";
 
+import { IngestQuotaCard } from "./ingest-quota-card";
 import { ProjectDangerZone } from "./project-danger-zone";
 import { ProjectSettingsForm } from "./project-settings-form";
 import { SelfSavingHeading } from "./settings-save-bar";
 
 /**
  * The project form and its save bar, the self-saving score configs (`#score-configs`, linked from
- * Evaluate), then the "Danger zone". Deleting a project needs `project:delete`
+ * Evaluate), the read-only ingest quota card (`#ingest-quota`, linked from the refused-spans
+ * notice), then the "Danger zone". Deleting a project needs `project:delete`
  * (admins and owners), and the public demo's project can't be deleted, so neither sees the card.
  */
 export function ProjectSettingsPage() {
@@ -61,6 +63,9 @@ export function ProjectSettingsPage() {
       >
         {canEdit ? <SelfSavingHeading id={selfSavingId} /> : null}
         <ScoreConfigsCard />
+      </section>
+      <section id="ingest-quota" className="scroll-mt-6">
+        <IngestQuotaCard />
       </section>
       {canDelete ? <ProjectDangerZone project={projectQuery.data} /> : null}
     </div>

@@ -4,11 +4,13 @@ import { ChartDataTableView } from "@/components/chart-data-table";
 import { SeriesKey } from "@/components/chart-parts";
 import { ChartViewToggle } from "@/components/chart-view-toggle";
 import { ErrorState } from "@/components/error-state";
+import { UnknownValue } from "@/components/unknown-value";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Bucket, ErrorClass } from "@/lib/api";
 import { errorClassColor, errorClassLabel } from "@/lib/error-class";
 import { formatInteger } from "@/lib/format";
+import { SOURCE_HISTORY_UNAVAILABLE } from "@/lib/freshness";
 import { providerLabel } from "@/lib/provider-label";
 import { useChartView, type ChartView } from "@/lib/use-stored-choice";
 import { cn } from "@/lib/utils";
@@ -75,7 +77,14 @@ export function ErrorsByClassChart({ providers, bucket }: ErrorsByClassChartProp
             title="Couldn't load errors by class"
           />
         ) : (
-          <ChartBody points={toStackedPoints(series.data)} bucket={bucket} view={view} />
+          <ChartBody
+            points={toStackedPoints(series.data.items)}
+            bucket={bucket}
+            view={view}
+            unavailable={
+              series.data.aggregate_status === "unavailable" && series.data.items.length === 0
+            }
+          />
         )}
       </div>
     </Card>
@@ -86,20 +95,28 @@ interface ChartBodyProps {
   points: StackedPoint[];
   bucket: Bucket;
   view: ChartView;
+  /** No stored bucket and no source history: "no failed calls" is not known. */
+  unavailable: boolean;
 }
 
-function ChartBody({ points, bucket, view }: ChartBodyProps) {
+function ChartBody({ points, bucket, view, unavailable }: ChartBodyProps) {
   const classes = presentClasses(points);
   if (classes.length === 0) {
     return (
       <div className="flex h-[200px] items-center justify-center rounded-tile border border-dashed border-border px-6 text-center text-sm text-muted-foreground">
-        No failed LLM calls in this window
+        {unavailable ? (
+          SOURCE_HISTORY_UNAVAILABLE
+        ) : points.every((point) => point.total === 0) ? (
+          "No failed LLM calls in this window"
+        ) : (
+          <UnknownValue reason="Not reported for this period" />
+        )}
       </div>
     );
   }
   const totals = classTotals(points, classes);
   const summary = `Failed LLM calls per ${bucket} by class: ${classes
-    .map((name) => `${errorClassLabel(name)} ${formatInteger(totals[name]) ?? "0"}`)
+    .map((name) => `${errorClassLabel(name)} ${formatInteger(totals[name]) ?? "—"}`)
     .join(", ")}`;
 
   return (
@@ -109,7 +126,11 @@ function ChartBody({ points, bucket, view }: ChartBodyProps) {
           <li key={name} className="flex items-center gap-1.5 text-xs font-medium">
             <SeriesKey color={errorClassColor(name)} shape="bar" />
             <span className="text-foreground">{errorClassLabel(name)}</span>
-            <span className="text-muted-foreground tabular">{formatInteger(totals[name])}</span>
+            <span className="text-muted-foreground tabular">
+              {formatInteger(totals[name]) ?? (
+                <UnknownValue reason="Not reported for this period" />
+              )}
+            </span>
           </li>
         ))}
       </ul>
@@ -129,7 +150,7 @@ function ChartBody({ points, bucket, view }: ChartBodyProps) {
                 key: point.bucketStart,
                 cells: [
                   bucketRange(point.bucketStart, bucket),
-                  ...classes.map((name) => formatInteger(point.counts[name] ?? 0) ?? "0"),
+                  ...classes.map((name) => formatInteger(point.counts[name]) ?? "—"),
                 ],
               })),
             }}
@@ -149,10 +170,14 @@ function ChartBody({ points, bucket, view }: ChartBodyProps) {
   );
 }
 
-function classTotals(points: StackedPoint[], classes: ErrorClass[]): Record<string, number> {
-  const totals: Record<string, number> = {};
+function classTotals(points: StackedPoint[], classes: ErrorClass[]): Record<string, number | null> {
+  const totals: Record<string, number | null> = {};
   for (const name of classes) {
-    totals[name] = points.reduce((sum, point) => sum + (point.counts[name] ?? 0), 0);
+    totals[name] = points.reduce<number | null>(
+      (sum, point) =>
+        sum === null || point.counts[name] === null ? null : sum + (point.counts[name] ?? 0),
+      0,
+    );
   }
   return totals;
 }

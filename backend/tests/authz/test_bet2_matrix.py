@@ -1,7 +1,9 @@
 """The authorization matrix for the provider path routes (`rows_c.py`), on the harness of
 `test_phase_2_to_5_matrix.py`: role outcomes from the permission table, 404 for a non-member,
-401 without a credential, 403 `KEY_SCOPE` for a project API key, and a read-scoped personal
-access token let in on every read and refused (403 `TOKEN_SCOPE`) on every write.
+401 without a credential, 403 `KEY_SCOPE` for the workspace's ingest-only project API key, and a
+read-scoped personal access token let in on every read and refused (403 `TOKEN_SCOPE`) on every
+write. The ingest quota is the one row a `traces:read` key may read (`tests/key_readable.py`); the
+key route inventory (`tests/keys/test_key_route_inventory.py`) proves that side.
 """
 
 import httpx
@@ -36,7 +38,9 @@ def test_the_rows_cover_the_bet_2_routes() -> None:
     # A broken import must not pass by leaving the matrix empty.
     assert len(ROWS_C) >= 5
     assert len({row.route for row in ROWS_C}) == len(ROWS_C)
-    assert not {row.route for row in ROWS_C} & KEY_READABLE
+    assert {row.route for row in ROWS_C} & KEY_READABLE == {
+        ("GET", "/api/v1/projects/{project_id}/ingest-quota")
+    }
 
 
 @ROWS

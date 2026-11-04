@@ -5,7 +5,7 @@ traces no batch touches again, or the backfill nulls a total some span did repor
 traces at the 1015 shape, upgrades, and checks that only unreported totals became NULL (usage
 rollups do not count as reporting, as in the recompute); the downgrade restores 0 and NOT NULL.
 
-Every test here leaves the session's shared database at head.
+Historical round trips use an owned database at the pinned revision.
 """
 
 import uuid
@@ -14,9 +14,13 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from app.db.migrations import downgrade_to, head_revision, upgrade_to_head
-from tests.conftest import admin_database_url
 from tests.db import schema_probe as probe
+from tests.db.migration_support import (
+    admin_database_url,
+    downgrade_to,
+    expected_revision,
+    upgrade_to_target,
+)
 
 BELOW = "1015"
 ORG_ID = uuid.UUID("10000000-0000-4000-8000-000000001016")
@@ -35,10 +39,10 @@ DOWNGRADED = [(10, 5), (0, 0), (7, 0), (0, 0), (0, 0)]
 
 
 @pytest.fixture
-def back_to_head(app_database_url: str) -> Iterator[None]:
+def back_to_target(migration_database_url: str) -> Iterator[None]:
     yield
-    upgrade_to_head(app_database_url)
-    assert probe.current_revision(app_database_url) == head_revision()
+    upgrade_to_target(migration_database_url)
+    assert probe.current_revision(migration_database_url) == expected_revision()
 
 
 def _seed_at_1015() -> None:
@@ -91,16 +95,17 @@ def _nullable(database_url: str) -> set[object]:
     return {columns[name][1] for name in ("input_tokens", "output_tokens")}
 
 
+@pytest.mark.migration_revision("1016")
 def test_1016_nulls_only_unreported_totals_and_restores_zeros(
-    app_database_url: str, back_to_head: None
+    migration_database_url: str, back_to_target: None
 ) -> None:
-    downgrade_to(app_database_url, BELOW)
+    downgrade_to(migration_database_url, BELOW)
     _seed_at_1015()
 
-    upgrade_to_head(app_database_url)
+    upgrade_to_target(migration_database_url)
     assert _totals() == UPGRADED
-    assert _nullable(app_database_url) == {"YES"}
+    assert _nullable(migration_database_url) == {"YES"}
 
-    downgrade_to(app_database_url, BELOW)
+    downgrade_to(migration_database_url, BELOW)
     assert _totals() == DOWNGRADED
-    assert _nullable(app_database_url) == {"NO"}
+    assert _nullable(migration_database_url) == {"NO"}

@@ -11,6 +11,7 @@ the fidelity and the charge, never content. Answers are never logged.
 """
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Any
@@ -19,6 +20,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.idempotency_store import Reservation, StoredResponse, complete_operation
 from app.core.observability import REPLAY_COST, REPLAY_RUNS
 from app.db.models import AuditAction, Project, ProviderCredential, Span
 from app.db.rls import bind_project
@@ -85,9 +87,13 @@ class Settlement:
     context: GatewayContext
     clock: Clock
     ip: str | None
+    operation: Reservation | None = None
+    receipt: Callable[[ReplayOutcome], StoredResponse] | None = None
 
     async def unanswered(self) -> ReplayOutcome:
         """The call raised or was cancelled: the worst case stays charged."""
+        if self.operation is not None:
+            self.operation.keep_pending = True
         await self.spans.write(self.context)
         failed = PlaygroundResult(None, None, None, None, None, None, None, REPLAY_FAILED)
         return await self._settle(failed, charge=self.prepared.estimate, stored=False)
@@ -127,12 +133,15 @@ class Settlement:
             )
             same_hash = await _same_request_hash(db, self.project.id, self.prepared.span, outcome)
             await self._audit(db, charge)
+            result = self._outcome(outcome, same_hash)
+            if self.receipt is not None:
+                await complete_operation(db, self.receipt(result), reservation=self.operation)
         if settled:
             REPLAY_RUNS.labels(outcome=_outcome_label(error)).inc()
             REPLAY_COST.inc(float(charge))
         else:  # the reaper failed it first, charging and counting its reservation
             logger.warning("replay_settled_late", replay_id=str(self.prepared.replay_id))
-        return self._outcome(outcome, same_hash)
+        return result
 
     def _outcome(self, result: PlaygroundResult, same_hash: bool | None) -> ReplayOutcome:
         prepared = self.prepared

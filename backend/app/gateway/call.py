@@ -56,6 +56,7 @@ class Call:
         self.span_id = new_span_id()
         self.fault: AppliedFault | None = None
         self.budget: BudgetDecision | None = None
+        self.budgeted = False  # a blocking budget reserved this call's estimate or refused it
         self.cache: CacheStatus = _cache_status(request, context)
         self.loop: LoopResult | None = None  # the attempt loop's result, once the loop has begun
 
@@ -162,9 +163,10 @@ class Call:
         overhead = max(0.0, elapsed - upstream - self.waits.total_s)
         result.overhead_ms = round(overhead * 1000, 3)
         surface = self.request.surface
-        GATEWAY_OVERHEAD.labels(surface).observe(overhead)
+        GATEWAY_OVERHEAD.labels(surface, "with" if self.budgeted else "without").observe(overhead)
         GATEWAY_REQUESTS.labels(surface, _outcome(result)).inc()
         if loop is not None and loop.stream is not None and result.error is None:
+            result.stream_deadline = loop.stream_deadline
             result.stream = GatewayStream(
                 self.request,
                 self.context,
@@ -178,7 +180,8 @@ class Call:
         try:
             ended_at = self.context.clock()
             span = build_span(self.request, result, self.context, self.started_at, ended_at)
-            record_soon(self.context, span, credentials_used(result))
+            used = credentials_used(result)
+            record_soon(self.context, span, used, body_bytes=self.request.body_bytes)
         except Exception as failure:  # noqa: BLE001 - counted and logged, the client was answered
             span_not_built(self.request.request_id, self.context.project_id, failure)
         return result

@@ -1,3 +1,4 @@
+import { Info } from "lucide-react";
 import type { CSSProperties } from "react";
 
 import { Card } from "@/components/ui/card";
@@ -142,9 +143,10 @@ export function GhostRow({
       aria-setsize={setSize}
       title={parentSpanId}
       style={{ ...style, paddingLeft: `${indentPx(depth) + 18}px` }}
-      className="flex h-10 items-center rounded-input border border-dashed border-border-strong text-sm text-muted-foreground"
+      className="flex h-10 items-center gap-1.5 rounded-input border border-dashed border-border-strong text-sm text-muted-foreground"
     >
-      <span className="truncate">Missing parent span · {parentSpanId.slice(0, 4)}…</span>
+      <Info aria-hidden className="size-3.5 shrink-0" />
+      <span className="truncate">Parent span not received · {parentSpanId.slice(0, 8)}…</span>
     </div>
   );
 }

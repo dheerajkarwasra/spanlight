@@ -54,11 +54,11 @@ async def test_failed_call_charges(
     answer(world.fake, None, content="", status=429)
     await _failed_run(world, judge, error="judge_status_429", charge=Decimal(0))
 
-    # An answer with no verdict in it was generated and billed: its usage's cost.
+    # An answer with no verdict tool call in it was generated and billed: its usage's cost.
     answer(world.fake, SMALL_USAGE, content="I would rather not say.")
     await _failed_run(world, judge, error=VERDICT_UNPARSEABLE, charge=SMALL_USAGE_COST)
     answer(world.fake, SMALL_USAGE, content="")
-    await _failed_run(world, judge, error="judge_no_answer", charge=SMALL_USAGE_COST)
+    await _failed_run(world, judge, error=VERDICT_UNPARSEABLE, charge=SMALL_USAGE_COST)
 
     # A call that timed out after it was sent may have been billed, with no usage to say how
     # much: the whole estimate.

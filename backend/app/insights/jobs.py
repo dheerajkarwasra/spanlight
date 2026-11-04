@@ -1,32 +1,34 @@
-"""The `run_detectors` job: run every detector over every active project, every 15 minutes.
+"""The Doctor's jobs: `run_detectors` every 15 minutes lists the active projects and enqueues
+one `run_detectors_project` job per project; that job runs every detector over its project.
 
 One query, with row-level security bypassed, lists the projects that have a span in the last
-24 hours; each project then runs in a session of its own, bound to it alone (see `engine.py`).
-All projects of a pass share one `now`.
+24 hours, the project whose detectors ran longest ago first; the queue keeps that order. Each
+project job runs in a session of its own, bound to its project alone (see `engine.py`), under
+the queue's own lease and fence; all projects of a pass share one `now`, carried in the payload.
 
-The job has a single attempt: the next pass is the retry. A pass stops starting projects after
-`RUN_BUDGET_SECONDS` so it ends inside the worker's task timeout; the projects whose detectors
-ran longest ago go first, so the ones a slow pass did not reach lead the next one.
-
-Each project also runs under its own time bound, so one slow project cannot hold the pass until
-the worker kills it (and, never recording a run, come first again on every pass). A project
-that fails or runs out of time gets an error row for each detector that had not recorded one;
-it moves to the back of the order and the failure shows in detector health. The pass goes on
-with the others.
+Both jobs have a single attempt: the next pass is the retry. A project job is deduplicated per
+pass (one job per project per 15-minute period), so a slow pass cannot pile up copies, and a
+project's slow scan or failure holds up nothing but its own job. The project jobs of a pass are
+due `STAGGER` apart (the whole set within `STAGGER_SPAN`): the worker claims by due time, so the
+notification and alert jobs that share its short lane run between the project jobs instead of
+behind all of them. A project job whose pass is older than one period is skipped without work:
+when the lane falls behind, the backlog stays at most one pass deep, and the next pass covers
+the project with a fresh `now`. A project runs under its own time bound inside the worker's
+task timeout, so a timed-out project still records an error row for each detector that had not
+recorded one; the failure shows in detector health and the project moves to the back of the
+order.
 """
 
 import asyncio
 import time
 import uuid
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.observability import DETECTOR_PROJECTS_SKIPPED, INSIGHTS_OPEN
+from app.core.observability import DETECTOR_PROJECTS_STALE, INSIGHTS_OPEN
 from app.insights.engine import (
     DETECTORS,
     DetectorRunResult,
@@ -36,96 +38,83 @@ from app.insights.engine import (
 )
 from app.insights.job_queries import active_project_ids, open_insights_by_severity
 from app.jobs.context import TaskContext
+from app.jobs.queue import enqueue
+from app.jobs.scheduler import RUN_DETECTORS, period_key
 
 if TYPE_CHECKING:
     from app.config import Settings
 
 logger = structlog.get_logger(__name__)
 
-# The worker cancels a task after 50 s. No project starts after 40 s, and none runs past 45 s,
-# which leaves time to record a timed-out project's error rows and refresh the gauge.
-RUN_BUDGET_SECONDS = 40.0
-HARD_STOP_SECONDS = 45.0
+PROJECT_JOB = "run_detectors_project"
+# The worker cancels a task after 50 s; this leaves time to record a timed-out project's error
+# rows and refresh the gauge.
 PROJECT_TIMEOUT_SECONDS = 30.0
 ACTIVE_WINDOW = timedelta(hours=24)
-
-
-@dataclass(slots=True)
-class DetectorPass:
-    projects: int = 0
-    projects_failed: int = 0
-    projects_gone: int = 0
-    projects_left: int = 0
-    runs: int = 0
-    errors: int = 0
-    opened: int = 0
-    notified: int = 0
-
-    def add(self, results: list[DetectorRunResult]) -> None:
-        if not results:  # deleted since the project list was read
-            self.projects_gone += 1
-            return
-        self.projects += 1
-        self.runs += len(results)
-        self.errors += sum(1 for result in results if result.error is not None)
-        self.opened += sum(result.opened for result in results)
-        self.notified += sum(result.notified for result in results)
+# Gap between the due times of a pass's project jobs, and the most the last one may trail the
+# pass: well inside the 15-minute period, so an on-time pass ends before the next one starts.
+STAGGER = timedelta(seconds=5)
+STAGGER_SPAN = timedelta(minutes=10)
 
 
 async def run_detectors(context: TaskContext, _: dict[str, Any]) -> None:
-    run = await detect_all(
-        context.session_factory,
-        context.settings,
-        now=datetime.now(UTC),
-        heartbeat=context.heartbeat,
-    )
-    await _refresh_open_gauge(context.session_factory)
-    logger.info(
-        "detectors_ran",
-        projects=run.projects,
-        projects_failed=run.projects_failed,
-        projects_gone=run.projects_gone,
-        projects_left=run.projects_left,
-        runs=run.runs,
-        errors=run.errors,
-        opened=run.opened,
-        notified=run.notified,
-    )
-
-
-async def detect_all(
-    session_factory: async_sessionmaker[AsyncSession],
-    settings: "Settings",
-    *,
-    now: datetime,
-    heartbeat: Callable[[], Awaitable[None]] | None = None,
-    budget_seconds: float = RUN_BUDGET_SECONDS,
-    hard_stop_seconds: float = HARD_STOP_SECONDS,
-) -> DetectorPass:
-    """Run the detectors over every active project at `now`. `heartbeat` runs between projects."""
-    started = time.monotonic()
-    deadline = started + budget_seconds
-    hard_stop = started + hard_stop_seconds
-    async with session_factory() as db:
+    """List the active projects and enqueue this pass's job for each."""
+    now = datetime.now(UTC)
+    async with context.session_factory() as db:
         project_ids = await active_project_ids(db, now - ACTIVE_WINDOW, now)
-    run = DetectorPass()
-    for index, project_id in enumerate(project_ids):
-        if heartbeat is not None:
-            await heartbeat()
-        # Checked after the heartbeat, so a project that starts has at least the gap between the
-        # budget and the hard stop.
-        if time.monotonic() >= deadline:
-            run.projects_left = len(project_ids) - index
-            DETECTOR_PROJECTS_SKIPPED.inc(run.projects_left)
-            logger.warning("detectors_out_of_time", projects_left=run.projects_left)
-            break
-        time_limit = min(PROJECT_TIMEOUT_SECONDS, hard_stop - time.monotonic())
-        results = await _run_one_project(session_factory, settings, project_id, now, time_limit)
-        if results is None:
-            run.projects_failed += 1
-        else:
-            run.add(results)
-    return run
+    created = await schedule_projects(context.session_factory, project_ids, now)
+    logger.info("detectors_scheduled", projects=len(project_ids), jobs=created)
+
+
+async def schedule_projects(
+    session_factory: async_sessionmaker[AsyncSession], project_ids: list[uuid.UUID], now: datetime
+) -> int:
+    """One `run_detectors_project` job per project, keyed by the pass's period and due `STAGGER`
+    apart in the listing's order; returns how many were new. Commits."""
+    period = period_key(RUN_DETECTORS, now)
+    step = min(STAGGER, STAGGER_SPAN / max(len(project_ids), 1))
+    created = 0
+    async with session_factory() as db:
+        for index, project_id in enumerate(project_ids):
+            created += await enqueue(
+                db,
+                PROJECT_JOB,
+                {"project_id": str(project_id), "now": now.isoformat()},
+                run_after=now + index * step,
+                dedupe_key=f"{period}:{project_id}",
+                max_attempts=1,
+            )
+        await db.commit()
+    return created
+
+
+async def run_detectors_project(context: TaskContext, payload: dict[str, Any]) -> None:
+    """Run every detector over one project at the pass's `now`, then refresh the open gauge.
+    A job from a pass older than one period is skipped (logged and counted, never failed)."""
+    project_id = uuid.UUID(payload["project_id"])
+    now = datetime.fromisoformat(payload["now"])
+    age = datetime.now(UTC) - now
+    if age > RUN_DETECTORS.every:
+        DETECTOR_PROJECTS_STALE.inc()
+        logger.warning(
+            "detector_project_stale",
+            project_id=str(project_id),
+            pass_age_s=round(age.total_seconds()),
+        )
+        return
+    results = await _run_one_project(context.session_factory, context.settings, project_id, now)
+    await _refresh_open_gauge(context.session_factory)
+    if results is None:
+        return  # logged and recorded by `_run_one_project`
+    logger.info(
+        "detector_project_ran",
+        project_id=str(project_id),
+        project_gone=not results,  # deleted since the pass listed it
+        runs=len(results),
+        errors=sum(1 for result in results if result.error is not None),
+        opened=sum(result.opened for result in results),
+        notified=sum(result.notified for result in results),
+    )
 
 
 async def _run_one_project(
@@ -133,23 +122,22 @@ async def _run_one_project(
     settings: "Settings",
     project_id: uuid.UUID,
     now: datetime,
-    time_limit: float,
 ) -> list[DetectorRunResult] | None:
-    """The project's run results, or None when the project failed or ran out of `time_limit`
-    seconds (logged, and recorded by `_record_project_failure`).
+    """The project's run results, or None when the project failed or ran out of
+    `PROJECT_TIMEOUT_SECONDS` (logged, and recorded by `_record_project_failure`).
 
     Detector failures are recorded inside; this only catches a failure around them, such as the
-    context read or the connection failing, so one project cannot end the pass for the others.
+    context read or the connection failing, so the job still ends and records the failure.
     """
     started = time.monotonic()
     progress: list[DetectorRunResult] = []
     try:
-        async with asyncio.timeout(time_limit), session_factory() as db:
+        async with asyncio.timeout(PROJECT_TIMEOUT_SECONDS), session_factory() as db:
             return await run_project(
                 db, project_id, now, DETECTORS, settings=settings, progress=progress
             )
     except TimeoutError as exc:
-        error = f"TimeoutError: the project's run took longer than {time_limit:.0f} s"
+        error = f"TimeoutError: the project's run took longer than {PROJECT_TIMEOUT_SECONDS:.0f} s"
         logger.error("detector_project_timed_out", project_id=str(project_id), exc_info=exc)
     except Exception as exc:  # isolate the project; the next pass tries it again
         error = error_text(exc)
@@ -195,7 +183,7 @@ async def _refresh_open_gauge(session_factory: async_sessionmaker[AsyncSession])
     try:
         async with session_factory() as db:
             counts = await open_insights_by_severity(db)
-    except Exception as exc:  # the gauge is a convenience; the pass itself succeeded
+    except Exception as exc:  # the gauge is a convenience; the project's run itself succeeded
         logger.warning("insights_open_gauge_failed", error_type=type(exc).__name__, exc_info=exc)
         return
     for severity, count in counts.items():

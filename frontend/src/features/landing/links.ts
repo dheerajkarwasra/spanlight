@@ -55,6 +55,17 @@ export const DOCS_LINKS = {
   attribution: docsLink("concepts/attribution/"),
   changelog: docsLink("changelog/"),
   securityPolicy: docsLink("security/policy/"),
+  limits: docsLink("reference/limits/"),
+} as const;
+
+/** Public legal pages, served by this app (not the docs site). */
+export const LEGAL_PATHS = {
+  privacy: "/privacy",
+  terms: "/terms",
+  dpa: "/dpa",
+  subprocessors: "/subprocessors",
+  imprint: "/imprint",
+  accessibility: "/accessibility",
 } as const;
 
 /** Ids of the landing sections that the nav and footer scroll to. */
@@ -73,8 +84,8 @@ export interface NavLink {
 
 /** Header navigation (desktop bar and mobile sheet). */
 export const NAV_LINKS: readonly NavLink[] = [
-  { label: "Product", href: `#${SECTION_IDS.cost}` },
-  { label: "How it works", href: `#${SECTION_IDS.howItWorks}` },
-  { label: "Self-hosting", href: `#${SECTION_IDS.openSource}` },
+  { label: "Product", href: `/#${SECTION_IDS.cost}` },
+  { label: "How it works", href: `/#${SECTION_IDS.howItWorks}` },
+  { label: "Self-hosting", href: `/#${SECTION_IDS.openSource}` },
   { label: "Docs", href: DOCS_LINKS.quickstart },
 ];

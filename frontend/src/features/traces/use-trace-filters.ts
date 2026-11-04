@@ -191,7 +191,10 @@ export function normaliseFilterPatch(patch: FilterPatch): FilterPatch {
   return normalised;
 }
 
-function clearedFilters(): Record<FilterKey | ScoreKey | MetadataParam | "has_retries", undefined> {
+export function clearedFilters(): Record<
+  FilterKey | ScoreKey | MetadataParam | "has_retries",
+  undefined
+> {
   return {
     ...CLEARED_SCORE_FILTER,
     metadata_key: undefined,

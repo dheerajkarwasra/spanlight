@@ -53,6 +53,38 @@ describe("UsersPage freshness", () => {
   });
 });
 
+describe("UsersPage source history", () => {
+  beforeEach(() => {
+    mockSignedIn([makeProject("proj_1", "Checkout")]);
+  });
+
+  it("says source history is unavailable for an unavailable empty list", async () => {
+    vi.spyOn(endUsersApi, "list").mockResolvedValue(list({ aggregate_status: "unavailable" }));
+    renderApp(`/${ORG_ID}/proj_1/users`);
+
+    expect(
+      await screen.findByRole("heading", { name: "Source history unavailable" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Source history unavailable" })).toBeInTheDocument();
+    expect(screen.queryByText("No end users in this window")).not.toBeInTheDocument();
+    expect(screen.queryByText(/0 end users/)).not.toBeInTheDocument();
+    expect(
+      screen.getByLabelText(
+        "Unknown: Source rows were removed. Stored values are snapshots; missing values are unknown.",
+      ),
+    ).toHaveTextContent("—");
+  });
+
+  it("labels retained rows a snapshot", async () => {
+    vi.spyOn(endUsersApi, "list").mockResolvedValue(
+      list({ items: [ADA], aggregate_status: "unavailable", computed_at: "2026-10-21T14:05:00Z" }),
+    );
+    renderApp(`/${ORG_ID}/proj_1/users`);
+
+    expect(await screen.findByRole("button", { name: "Retained snapshot" })).toBeInTheDocument();
+  });
+});
+
 describe("UsersPage search and sort", () => {
   beforeEach(() => {
     mockSignedIn([makeProject("proj_1", "Checkout")]);

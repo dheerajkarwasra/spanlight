@@ -30,7 +30,12 @@ from tests.helpers import (
     new_trace_id,
     span,
 )
-from tests.ingest.support import another_project, ingest_native, telemetry_rows
+from tests.ingest.support import (
+    another_project,
+    ingest_native,
+    lift_project_concurrency,
+    telemetry_rows,
+)
 
 CONCURRENT_BATCHES = 10
 ROUNDS = 20
@@ -79,10 +84,13 @@ def _twenty_spans_in_three_traces() -> list[dict[str, Any]]:
 
 
 async def test_ten_concurrent_identical_batches_converge(
+    app: Any,
     client: httpx.AsyncClient,
     workspace: Workspace,
     session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    lift_project_concurrency(app, monkeypatch)
     batch = _twenty_spans_in_three_traces()
     control = await another_project(workspace, "Single ingest")
     assert (await ingest_native(client, control, batch)).status_code == 200
@@ -101,11 +109,14 @@ async def test_ten_concurrent_identical_batches_converge(
 
 
 async def test_concurrent_batches_on_the_same_trace_in_opposite_order_do_not_deadlock(
+    app: Any,
     client: httpx.AsyncClient,
     workspace: Workspace,
     session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    lift_project_concurrency(app, monkeypatch)
     caplog.set_level(logging.WARNING)
     start = datetime.now(UTC) - timedelta(minutes=5)
     batches = []
@@ -127,6 +138,7 @@ async def test_concurrent_batches_on_the_same_trace_in_opposite_order_do_not_dea
 
 
 async def test_opposite_order_batches_do_not_deadlock_when_each_trace_lock_takes_time(
+    app: Any,
     client: httpx.AsyncClient,
     workspace: Workspace,
     session_factory: async_sessionmaker[AsyncSession],
@@ -142,6 +154,7 @@ async def test_opposite_order_batches_do_not_deadlock_when_each_trace_lock_takes
     the opposite-order batch always runs in between. The traces must be taken in sorted order
     (unsorted, the two batches wait for each other and Postgres cancels one of them).
     """
+    lift_project_concurrency(app, monkeypatch)
     caplog.set_level(logging.WARNING)
     original = store._upsert_traces
 
@@ -170,11 +183,14 @@ async def test_opposite_order_batches_do_not_deadlock_when_each_trace_lock_takes
 
 
 async def test_concurrent_batches_with_overlapping_spans_keep_one_row_per_span(
+    app: Any,
     client: httpx.AsyncClient,
     workspace: Workspace,
     session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Two writers racing on the same span key end with one row, not a unique violation."""
+    lift_project_concurrency(app, monkeypatch)
     trace_id, span_id = new_trace_id(), new_span_id()
     batches = [
         [

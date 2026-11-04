@@ -1,9 +1,9 @@
 """The matrix rows for the provider path: provider health, provider incidents, telemetry
-completeness and the Doctor's feedback.
+completeness, the ingest quota and the Doctor's feedback.
 
 One row per route, with the permission that is meant to guard it. Every route but the feedback
-vote is a read for any member; voting needs `insights:feedback` (members and up). None lets an
-API key in (`tests/key_readable.py` does not list them).
+vote is a read for any member; voting needs `insights:feedback` (members and up). Only the ingest
+quota lets an API key in (`tests/key_readable.py`).
 """
 
 from app.core.permissions import Permission as P  # noqa: N817 - short, because every row names one
@@ -17,6 +17,7 @@ PROVIDER_ROWS = (
     Row("GET", f"{PRJ}/providers/errors/samples", P.PROJECT_READ),
     Row("GET", f"{PRJ}/provider-incidents", P.PROJECT_READ),
     Row("GET", f"{PRJ}/telemetry-completeness", P.PROJECT_READ),
+    Row("GET", f"{PRJ}/ingest-quota", P.PROJECT_READ),
 )
 
 FEEDBACK_ROWS = (

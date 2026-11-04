@@ -187,3 +187,11 @@ export function markAsGatewayTraffic(projectId: string, traceId: string): void {
     },
   );
 }
+
+/** Forgets that the account accepted any terms version, as for an account made before terms. */
+export function clearTermsAcceptance(email: string): void {
+  psql(
+    "UPDATE users SET terms_version = NULL, terms_accepted_at = NULL WHERE lower(email) = lower(:'email');",
+    { email },
+  );
+}

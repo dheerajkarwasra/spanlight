@@ -11,7 +11,15 @@ WORKDIR /src/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
+# The legal pages (/privacy, /terms, ...) name the spanlight.dev operator. Set to 1 only for
+# spanlight.dev; leave it empty for a self-hosted build so they are left out.
+ARG LEGAL_PAGES=
+ENV VITE_LEGAL_PAGES=$LEGAL_PAGES
 RUN npm run build
+# Licence notices for the production npm packages, served at /third-party-notices.txt. The run
+# fails if a package declares no licence.
+COPY scripts/licenses/npm_notices.mjs /src/scripts/licenses/
+RUN node /src/scripts/licenses/npm_notices.mjs --output dist/third-party-notices.txt
 
 # ---------- Documentation site ----------
 # Built from docs-site/ plus the repository documents it publishes (runbooks, security pages,
@@ -24,6 +32,9 @@ FROM node:24-alpine AS docs-build
 # and llms.txt. Leave it empty for a self-hosted build: those three are then skipped.
 ARG DOCS_SITE_URL=
 ENV ASTRO_TELEMETRY_DISABLED=1 DOCS_SYNC_SKIP_TARGET_CHECK=1 DOCS_SITE_URL=$DOCS_SITE_URL
+# Same flag as the frontend: 1 only for spanlight.dev, whose operator the legal pages name.
+ARG LEGAL_PAGES=
+ENV LEGAL_PAGES=$LEGAL_PAGES
 WORKDIR /src/docs-site
 COPY docs-site/package.json docs-site/package-lock.json ./
 # npm skips an optional dependency it fails to download, so Pagefind's binary for this platform
@@ -43,6 +54,9 @@ COPY docs/deploy /src/docs/deploy
 COPY docs/api-deviations.md /src/docs/api-deviations.md
 COPY docs-site/ ./
 RUN npm run build
+# Licence notices for the docs site's production npm packages, served at /docs/third-party-notices.txt.
+COPY scripts/licenses/npm_notices.mjs /src/scripts/licenses/
+RUN node /src/scripts/licenses/npm_notices.mjs --output dist/third-party-notices.txt
 
 # ---------- Python dependencies ----------
 FROM python:3.13-slim AS backend-deps
@@ -52,6 +66,11 @@ ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv \
 WORKDIR /app
 COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
+# Licence notices for every Python package in the runtime venv, written before the project
+# itself is installed so only third-party packages are listed. The run fails if a package
+# declares no licence.
+COPY scripts/licenses/python_notices.py /tmp/python_notices.py
+RUN /opt/venv/bin/python /tmp/python_notices.py --output /app/THIRD_PARTY_NOTICES.txt
 COPY backend/ ./
 RUN uv sync --frozen --no-dev
 
@@ -92,8 +111,8 @@ HEALTHCHECK --interval=10s --timeout=3s --retries=5 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live')"
 # Railway / compose override the command for the worker: python -m app.jobs.worker
 # The owner URL a platform hands to a pre-deploy migration step never reaches the app process,
-# and exec makes uvicorn PID 1 so it gets SIGTERM and shuts down gracefully.
-CMD ["sh", "-c", "unset MIGRATION_DATABASE_URL; exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"]
+# and exec makes the shared launcher PID 1 so it gets SIGTERM and shuts down gracefully.
+CMD ["sh", "-c", "unset MIGRATION_DATABASE_URL; exec python -m app.server"]
 
 # ---------- Caddy binary ----------
 # The official caddy:2.11-alpine image (Caddy 2.11.7) ships a binary built with Go 1.26.8 and
@@ -112,10 +131,27 @@ RUN printf '%s\n' 'package main' \
     && go get github.com/caddyserver/caddy/v2@v2.11.7 golang.org/x/net@v0.60.0 \
     && go mod tidy \
     && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /caddy .
+# Licence notices for what the binary statically links: the Go standard library and every module
+# `go version -m` lists, with each module's LICENSE / COPYING / NOTICE files from the module
+# cache. A module without a licence file fails the build.
+RUN set -eu -o pipefail; \
+    rule() { printf '%80s\n' '' | tr ' ' "$1"; }; \
+    out=/third-party-notices-caddy.txt; \
+    { echo 'Third-party software compiled into the Caddy web server binary of this image, with'; \
+      echo 'their licences: Caddy and the Go modules it is built from, and the Go standard library.'; \
+      echo; rule '='; echo "Go standard library $(go env GOVERSION)"; rule '-'; \
+      cat "$(go env GOROOT)/LICENSE"; } > "$out"; \
+    go list -m -f '{{.Path}} {{.Version}} {{.Dir}}' $(go version -m /caddy | awk '$1 == "dep" {print $2}') \
+    | while read -r path version dir; do \
+        files=$(find "$dir" -maxdepth 1 -type f \( -iname 'licen[cs]e*' -o -iname 'copying*' -o -iname 'notice*' \) | sort); \
+        [ -n "$files" ] || { echo "Go module without a licence file: $path $version" >&2; exit 1; }; \
+        { echo; rule '='; echo "$path $version"; rule '-'; for f in $files; do cat "$f"; echo; done; } >> "$out"; \
+    done
 
 # ---------- Web (Caddy serving the SPA, proxying API) ----------
 FROM caddy:2.11-alpine AS web
 COPY --from=caddy-build /caddy /usr/bin/caddy
+COPY --from=caddy-build /third-party-notices-caddy.txt /srv/third-party-notices-caddy.txt
 COPY deploy/Caddyfile /etc/caddy/Caddyfile
 COPY --from=frontend-build /src/frontend/dist /srv
 COPY --from=docs-build /src/docs-site/dist /srv/docs

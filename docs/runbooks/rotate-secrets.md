@@ -58,7 +58,7 @@ If the rotation is because a session may have been stolen, `SECRET_KEY` is not t
 
 ### Steps (Docker Compose)
 
-1. Generate a value and put it in `deploy/.env` as `SECRET_KEY=` (replace the old line). It must not be the built-in development value, and it is required when `APP_BASE_URL` is https, or the api refuses to start with `SECRET_KEY must be set when APP_BASE_URL uses https`.
+1. Generate a value and put it in `deploy/.env` as `SECRET_KEY=` (replace the old line). It must not be the built-in development value, and it is required when `APP_BASE_URL` is https or not local, or the api refuses to start with `SECRET_KEY must be set when APP_BASE_URL uses https or is not local`. Outside `localhost`, `127.0.0.1` and `[::1]` it must also be at least 32 characters.
 2. Recreate the containers that use it:
 
    ```bash

@@ -90,8 +90,11 @@ export function CompletenessCard({ result, rangeLabel, className }: Completeness
                 key={tile.source}
                 className="flex min-w-0 flex-col gap-1 px-4 first:pl-0 last:pr-0 max-sm:px-3"
               >
-                <span className="text-xs font-medium break-words text-muted-foreground">
+                <span className="flex items-center gap-1.5 text-xs font-medium break-words text-muted-foreground">
                   {tile.label}
+                  {tile.note ? (
+                    <InfoButton label={`About ${tile.label}`} content={tile.note} />
+                  ) : null}
                 </span>
                 <span className="text-h2 text-foreground tabular">
                   {tile.count === null ? (

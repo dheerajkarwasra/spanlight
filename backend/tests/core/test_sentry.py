@@ -30,8 +30,8 @@ TEST_ORIGIN = "http://testserver"
 # the source lines and local variables of the test frames that sit under the failing request.
 CUSTOMER_TEXT = "ada@example.com asks why " + "her invoice was charged twice"
 CUSTOMER_BODY = {"content": CUSTOMER_TEXT}
-# An invite token, split like CUSTOMER_TEXT. The invite page lives at /invite/<token>, so the
-# browser also sends it as the Referer of the API calls that page makes.
+# An invite token, split like CUSTOMER_TEXT. Links mailed before the token moved to the fragment
+# open /invite/<token>, so the browser can send it as the Referer of the API calls that page makes.
 INVITE_TOKEN = "invite-token-" + "s3cr3t-value"
 UNREACHABLE_DATABASE = "postgresql+psycopg://nobody:nothing@127.0.0.1:1/none"
 
@@ -235,7 +235,7 @@ async def test_request_bodies_are_never_sent(reporting_api: ReportingApi, route:
 
 
 async def test_invite_tokens_in_the_url_never_reach_sentry(reporting_api: ReportingApi) -> None:
-    """GET /api/v1/invites/preview?token=... carries a bearer secret in its query string."""
+    """A token in a query string or in the Referer of an old /invite/<token> page is dropped."""
     response = await reporting_api.http.get(
         "/api/test-explode",
         params={"token": INVITE_TOKEN},

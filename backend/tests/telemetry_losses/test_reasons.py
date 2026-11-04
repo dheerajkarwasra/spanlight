@@ -49,8 +49,11 @@ def test_each_ingest_reason_has_a_real_rejection_text(text: str, bucket: str) ->
 
 
 def test_the_parametrised_cases_cover_every_ingest_reason() -> None:
-    assert len(INGEST_REASONS) == 10
-    assert INGEST_REASONS[-1] == "other"
+    # The ten rejection buckets, then the three cap refusals: those refuse whole requests
+    # (`app.ingest.quota`), so no rejection text maps to them.
+    assert len(INGEST_REASONS) == 13
+    assert INGEST_REASONS[9] == "other"
+    assert INGEST_REASONS[10:] == ("quota_rate", "quota_spans", "quota_bytes")
 
 
 @pytest.mark.parametrize(

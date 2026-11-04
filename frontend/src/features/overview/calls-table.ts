@@ -31,11 +31,14 @@ export function callsTable(
     caption: `LLM calls and errors per ${noun}`,
     columns: bands === null ? columns : [...columns, "Provider incidents"],
     rows: points.map((point) => {
-      const rate = point.llmCalls > 0 ? point.errors / point.llmCalls : null;
+      const rate =
+        point.llmCalls !== null && point.errors !== null && point.llmCalls > 0
+          ? point.errors / point.llmCalls
+          : null;
       const cells = [
         formatBucketLabel(point.bucketStart, bucket),
-        formatInteger(point.llmCalls) ?? "0",
-        formatInteger(point.errors) ?? "0",
+        formatInteger(point.llmCalls) ?? "—",
+        formatInteger(point.errors) ?? "—",
         formatPercent(rate) ?? "—",
         point.partial ? "✓" : "",
       ];

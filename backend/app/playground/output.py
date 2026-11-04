@@ -11,6 +11,7 @@ from app.gateway.sse import Usage
 from app.gateway.tracing import status_message
 from app.playground.schemas import PlaygroundResult
 from app.pricing.cost import PriceBook
+from app.pricing.modifiers import reported_modifiers
 
 BUDGET_EXCEEDED = "BUDGET_EXCEEDED"
 MAX_ERROR_CHARS = 500
@@ -91,6 +92,11 @@ def _cost(
         cached_tokens=usage.cached_tokens,
         cache_write_tokens=usage.cache_write_tokens,
         cache_write_1h_tokens=usage.cache_write_1h_tokens,
+        service_tier=usage.service_tier,
+        web_search_requests=usage.web_search_requests,
+        modifiers=reported_modifiers(
+            {"usage.inference_geo": usage.inference_geo, "usage.speed": usage.speed}
+        ),
     )
     return priced.cost_usd if priced is not None else None
 

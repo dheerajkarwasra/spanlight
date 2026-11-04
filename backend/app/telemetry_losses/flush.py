@@ -12,8 +12,10 @@ failure is logged as `telemetry_losses.flush_failed` by the error's type and SQL
 message, with `kept` saying which way it went.
 
 `start` runs the flush every `FLUSH_INTERVAL_S` on the running loop; `stop` runs the last one
-and waits for it at most `timeout_s`, logging one `flush_failed` line (`stage="shutdown"`) when
-it gives up. Counts not written by then stay in the counter: a process
+and allows it `timeout_s` before cancelling and joining cleanup. Cancellation remains
+cooperative unless the process owner supplies an absolute join deadline and retains the pool
+when tasks remain. A failed final flush logs `process.shutdown_incomplete` and `flush_failed`
+(`stage="shutdown"`). Counts not written by then stay in the counter: a process
 that exits loses them, as it loses up to a minute of counts when it is killed. A flush cut short
 puts back the counts of every project it had not finished, so a project whose commit went through
 just as it was cut may be counted twice: an overcount keeps the completeness ratio a lower bound.
@@ -35,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.db_errors import sqlstate
 from app.db.rls import bind_project
+from app.gateway.cleanup_join import join, retained
 from app.gateway.span_losses import loss_counter
 from app.telemetry_losses.counter import LossCounter, LossKey
 from app.telemetry_losses.service import upsert_losses
@@ -54,6 +57,8 @@ class _Flusher:
     loop: asyncio.AbstractEventLoop
     task: "asyncio.Task[None]"
     stopping: asyncio.Event
+    counter: LossCounter
+    sessions: async_sessionmaker[AsyncSession]
     users: int = 1  # the lifespans that started it and have not stopped it
 
 
@@ -91,25 +96,60 @@ def start(sessions: async_sessionmaker[AsyncSession], counter: LossCounter | Non
         _flusher.users += 1
         return
     stopping = asyncio.Event()
-    task = loop.create_task(_run(sessions, counter or loss_counter(), stopping))
-    _flusher = _Flusher(loop=loop, task=task, stopping=stopping)
+    counter = counter if counter is not None else loss_counter()
+    task = loop.create_task(_run(sessions, counter, stopping))
+    _flusher = _Flusher(loop=loop, task=task, stopping=stopping, counter=counter, sessions=sessions)
 
 
-async def stop(*, timeout_s: float) -> None:
-    """Run the last flush and wait for it at most `timeout_s`, then stop the flush."""
+async def stop(*, timeout_s: float, deadline: float | None = None) -> bool:
+    """Stop and join the flush; true means its counter is empty after a successful join.
+
+    This is final accounting only after producers have joined. Without a deadline, driver
+    cancellation is cooperative. With one, false requires the owner to check pending_tasks
+    before disposing any pool. In-memory counts can still disappear on process exit.
+    """
+    return await retained(_stop(timeout_s=timeout_s, deadline=deadline))
+
+
+def pending_tasks(
+    *, sessions: async_sessionmaker[AsyncSession] | None = None
+) -> tuple[asyncio.Task[None], ...]:
+    """Database users a process owner must join before disposing the loss-flush pool."""
+    flusher = _flusher
+    if flusher is None or flusher.loop is not asyncio.get_running_loop() or flusher.task.done():
+        return ()
+    if sessions is not None and flusher.sessions is not sessions:
+        return ()
+    return (flusher.task,)
+
+
+async def _stop(*, timeout_s: float, deadline: float | None) -> bool:
     global _flusher  # noqa: PLW0603 - one flush per process
     flusher = _flusher
     if flusher is None or flusher.loop is not asyncio.get_running_loop():
-        return
-    flusher.users -= 1
-    if flusher.users > 0:
-        return
-    _flusher = None
-    flusher.stopping.set()
-    try:
-        await asyncio.wait_for(flusher.task, timeout_s)
-    except TimeoutError:
-        # The counts it had not written are back in the counter (`flush_once`).
+        return True
+    if not flusher.stopping.is_set():
+        flusher.users -= 1
+        if flusher.users > 0:
+            return False  # another lifespan still owns a producer
+        flusher.stopping.set()
+    joined = await join(
+        lambda: {flusher.task},
+        cancel_at=flusher.loop.time() + timeout_s,
+        deadline=deadline,
+    )
+    complete = joined and not flusher.task.cancelled() and flusher.counter.pending_count() == 0
+    if joined:
+        _flusher = None
+        if not flusher.task.cancelled():
+            flusher.task.result()
+    if not complete:
+        logger.warning(
+            "process.shutdown_incomplete",
+            phase="loss_flush",
+            reason="flush_timeout",
+            accounting_complete=False,
+        )
         logger.warning(
             "telemetry_losses.flush_failed",
             stage="shutdown",
@@ -117,6 +157,7 @@ async def stop(*, timeout_s: float) -> None:
             kept=True,
             timeout_s=timeout_s,
         )
+    return complete
 
 
 async def _run(

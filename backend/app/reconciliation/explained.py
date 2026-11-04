@@ -1,11 +1,14 @@
 """The explained lines of one reconciliation group (spec §7.5). Pure: no I/O.
 
 An explained line names one known cause of a gap between the provider's bill and Spanlight's
-figure. Only `batch_spend`, `server_tool_fees`, `untraced_traffic` and `priority_commitment`
-carry USD, because only they are computed from amounts on both sides (or, for priority, from
-an amount the provider is known never to bill); the others state a count or a token total and
-leave the USD to the residual, which is never folded into a line. A line appears only when it
-has something to say (a non-zero amount, count or token total).
+figure. Only `batch_spend`, `server_tool_fees` and `priority_commitment` carry USD, because
+only they are computed from amounts on both sides (or, for priority, from an amount the
+provider is known never to bill); the others state a count or a token total and leave the USD
+to the residual, which is never folded into a line. `untraced_traffic` is one of them: a bill
+for a model no mapped project called is spend Spanlight never saw (calls outside the gateway
+and the SDK, an unmapped project, a leaked key), which is what the residual and the bypass
+alert exist to show (D10, RD17), so it is named but never explained away. A line appears only
+when it has something to say (a non-zero amount, count or token total).
 
 Spanlight's side of a comparison reads only rows whose `cost_usd` is known, and a row's
 `cost_usd` already holds its `fee_usd` (§6.8): token dollars are `cost_usd - fee_usd`. The
@@ -69,10 +72,10 @@ def explain_group(
 ) -> tuple[ExplainedLine, ...]:
     """The group's explained lines, in the order of `ExplainedKind`.
 
-    A group with no Spanlight call is explained by `untraced_traffic` alone: its batch and fee
-    gaps are part of that amount, and listing them too would explain the same dollars twice.
-    Past a mapped project's retention the batch and fee gaps carry no USD either: the spans
-    behind them may have been deleted, and the gap must stay in the residual.
+    A group with no Spanlight call gets `untraced_traffic` alone, a note without USD: the whole
+    bill stays in the residual, and listing its batch and fee gaps too would say the same thing
+    twice. Past a mapped project's retention the batch and fee gaps carry no USD either: the
+    spans behind them may have been deleted, and the gap must stay in the residual.
     `multipliers` is the tier table in force for the day, which says which tiers the provider
     bills under a commitment rather than per token.
     """
@@ -173,17 +176,18 @@ def _usage_not_reported(rows: Sequence[CostRollupRow]) -> ExplainedLine | None:
 
 
 def _untraced_traffic(provider_usd: Decimal, *, past_retention: bool) -> ExplainedLine | None:
-    """The provider USD of a group with no Spanlight call.
+    """A group the provider billed and Spanlight has no call for: a note, never an amount.
 
-    Past retention the spans may have existed and been deleted, so the line carries no USD and
-    the gap stays in the residual: such a day must never read as a match.
+    The bill stays in the residual, so a day of spend entirely outside Spanlight reads as
+    unexplained (and trips the bypass alert) rather than as a match. Past retention the spans
+    may have existed and been deleted, which the note says.
     """
     if provider_usd <= _ZERO:
         return None
+    note = "no span with this model"
     if past_retention:
-        note = f"no span with this model; {_PAST_RETENTION}"
-        return ExplainedLine("untraced_traffic", None, None, None, note)
-    return ExplainedLine("untraced_traffic", provider_usd, None, None, "no span with this model")
+        note = f"{note}; {_PAST_RETENTION}"
+    return ExplainedLine("untraced_traffic", None, None, None, note)
 
 
 def _priority_commitment(inputs: GroupInputs, multipliers: TierMultipliers) -> ExplainedLine | None:

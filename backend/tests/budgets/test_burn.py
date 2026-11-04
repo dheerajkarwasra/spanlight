@@ -17,7 +17,6 @@ from sqlalchemy import text
 from app.budgets.periods import period_start
 from app.budgets.types import BudgetPeriod
 from app.db.rls import bypass_rls
-from app.rollups.jobs import roll_up_all
 from tests.budgets.support import (
     PRICED_MODEL,
     STEP_COST,
@@ -25,10 +24,13 @@ from tests.budgets.support import (
     BudgetRef,
     BudgetWorld,
     create_budget,
+    hourly_status,
     ingest_spend,
+    repair_aggregates,
 )
 from tests.gateway_support import ManualClock
 from tests.helpers import create_workspace, new_trace_id, span
+from tests.rollups.recent_support import run_recent
 
 UNPRICED_MODEL = "house-model-1"  # not in the price book
 DAY = timedelta(days=1)
@@ -85,7 +87,7 @@ def series(body: dict[str, Any]) -> list[tuple[date, Decimal | None, Decimal | N
 
 async def roll_up(world: BudgetWorld) -> None:
     """Roll up the period's hours, as the worker would have by `NOW`."""
-    await roll_up_all(world.sessions, now=NOW)
+    await run_recent(world.sessions, world.settings, NOW)
 
 
 async def test_burn_project_scope_cumulative(budget_world: BudgetWorld) -> None:
@@ -97,6 +99,15 @@ async def test_burn_project_scope_cumulative(budget_world: BudgetWorld) -> None:
     await ingest_at(world, MONTH + DAY + timedelta(hours=23, minutes=59))
     await ingest_at(world, NOW - timedelta(minutes=30))  # after the rollup split: read raw
     await roll_up(world)
+
+    assert await hourly_status(world, MONTH, NOW - timedelta(hours=1)) == "pending"
+    assert series(await burn(world, budget)) == [
+        (DAYS[0], None, None),
+        (DAYS[1], None, None),
+        (DAYS[2], STEP_COST, STEP_COST),  # the authoritative raw tail stays usable
+    ]
+    await repair_aggregates(world)
+    assert await hourly_status(world, MONTH, NOW - timedelta(hours=1)) == "complete"
 
     body = await burn(world, budget)
 
@@ -159,6 +170,15 @@ async def test_burn_unknown_day_is_null_and_cumulative_carries(
     await ingest_at(world, MONTH + 2 * DAY + timedelta(hours=4), model=UNPRICED_MODEL)
     await roll_up(world)
 
+    assert await hourly_status(world, MONTH, NOW - timedelta(hours=1)) == "pending"
+    assert series(await burn(world, budget)) == [
+        (DAYS[0], None, None),
+        (DAYS[1], None, None),
+        (DAYS[2], None, None),
+    ]
+    await repair_aggregates(world)
+    assert await hourly_status(world, MONTH, NOW - timedelta(hours=1)) == "complete"
+
     assert series(await burn(world, budget)) == [
         (DAYS[0], None, None),  # spans, none priced: unknown, not $0
         (DAYS[1], STEP_COST, STEP_COST),  # the priced part, a lower bound
@@ -203,7 +223,7 @@ async def test_burn_forecast_at_the_trailing_days_rate(budget_world: BudgetWorld
             await ingest_spend(
                 world, start=MONTH + day * DAY + timedelta(hours=1), user="quiet", tokens=2_500_000
             )
-    await roll_up_all(world.sessions, now=now)
+    await run_recent(world.sessions, world.settings, now)
 
     remaining = Decimal((NEXT_MONTH - now) / DAY)
     body = await burn(world, steady)

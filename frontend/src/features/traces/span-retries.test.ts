@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { groupRetries, retryCounts, retryGroupIds } from "./span-retries";
 import { buildSpanTree, type SpanNode } from "./span-tree";
-import { testSpan } from "./span-test-data";
+import { deepTestTree, testSpan } from "./span-test-data";
 
 function call(id: string, start: number, hash: string | null, failed = false) {
   return testSpan(id, "root", start, 10, {
@@ -53,16 +53,23 @@ describe("groupRetries", () => {
     const hit = (id: string, start: number) => ({
       ...call(id, start, "h"),
       attributes: { "spanlight.cache": "hit" },
+      retry_eligible: false,
     });
     const tool = (id: string, start: number) => ({
       ...call(id, start, "t"),
       kind: "tool" as const,
+      retry_eligible: false,
     });
     const fault = (id: string, start: number) => ({
       ...call(id, start, "f"),
       attributes: { "spanlight.fault.scenario": "timeout" },
+      retry_eligible: false,
     });
-    const rollup = (id: string, start: number) => ({ ...call(id, start, "r"), usage_rollup: true });
+    const rollup = (id: string, start: number) => ({
+      ...call(id, start, "r"),
+      usage_rollup: true,
+      retry_eligible: false,
+    });
     const grouped = groupRetries(
       children(
         hit("c1", 1),
@@ -79,6 +86,27 @@ describe("groupRetries", () => {
     expect(retryGroupIds(grouped)).toEqual([]);
   });
 
+  it("reads eligibility from the server, not from attributes that may be omitted", () => {
+    // Over the content budget the attributes come back as `{}`: a cache hit there must not
+    // join the group, and an ordinary attempt still does.
+    const omitted = (id: string, start: number, eligible: boolean) => ({
+      ...call(id, start, "h"),
+      attributes: {},
+      attributes_omitted: true,
+      retry_eligible: eligible,
+    });
+    const grouped = groupRetries(
+      children(call("a1", 1, "h"), omitted("hit", 10, false), omitted("a2", 20, true)),
+    );
+
+    // The hit stays a sibling and breaks the run; nothing groups.
+    expect(ids(grouped)).toEqual(["a1", "hit", "a2"]);
+    expect(retryGroupIds(grouped)).toEqual([]);
+    expect(
+      retryGroupIds(groupRetries(children(call("b1", 1, "h"), omitted("b2", 10, true)))),
+    ).toEqual(["b2"]);
+  });
+
   it("groups retries at every depth", () => {
     const roots = buildSpanTree([
       testSpan("root", null, 0, 100),
@@ -90,4 +118,16 @@ describe("groupRetries", () => {
     const tool = groupRetries(roots)[0]?.children[0];
     expect(ids(tool?.children ?? [])).toEqual(["c2"]);
   });
+});
+
+it("groups and discovers retries at depth 5,000", () => {
+  const { roots } = deepTestTree();
+  let leaf = roots[0] as SpanNode;
+  while (leaf.children[0]) leaf = leaf.children[0];
+  leaf.children = children(call("retry-1", 1, "deep", true), call("retry-2", 2, "deep"));
+  expect(retryGroupIds(groupRetries(roots))).toEqual(["retry-2"]);
+});
+it("discovers groups in an already assembled 5,000-deep forest", () => {
+  const { roots } = deepTestTree();
+  expect(retryGroupIds(roots)).toEqual([]);
 });

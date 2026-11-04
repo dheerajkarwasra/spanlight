@@ -49,7 +49,14 @@ export function TraceInfoPanel({ id, trace }: { id: string; trace: TraceDetail }
         <Stat label="Environment">
           <SummaryValue value={trace.environment} reason="The SDK didn't send an environment" />
         </Stat>
-        <Stat label="Duration" narrowOnly>
+        <Stat
+          label={
+            trace.root_received === false && formatDuration(trace.duration_ms) !== null
+              ? "Duration so far"
+              : "Duration"
+          }
+          narrowOnly
+        >
           <SummaryValue
             value={formatDuration(trace.duration_ms)}
             reason="Duration isn't known yet"

@@ -9,12 +9,15 @@ import { formatUsd, percentLabel } from "./budget-period";
 import { shortUsd } from "./budget-ticks";
 import { useBudgetBurnQuery } from "./budgets-queries";
 import { BurnChart } from "./burn-chart";
-import { burnPoints, burnTooltip, dayLabel } from "./burn-series";
+import { burnForecast, burnPoints, burnTooltip, dayLabel } from "./burn-series";
 
 /** Per viewer, per browser: every burn panel opens the way the last one was left. */
 const BURN_VIEW_KEY = "spanlight-budget-burn-view";
 
 const NO_PRICED_SPEND_REASON = "No priced spend in this period up to this day.";
+
+const NO_FORECAST_REASON =
+  "Needs 3 complete days of priced spend in this period; a day with unpriced spend leaves it unknown.";
 
 interface BudgetBurnProps {
   budgetId: string;
@@ -41,10 +44,12 @@ export function BudgetBurn({ budgetId, id }: BudgetBurnProps) {
           </p>
           {burn ? (
             <p className="text-xs font-medium text-muted-foreground">
-              Line: spend to date · dashed: amount {shortUsd(Number(burn.amount_usd))} · dotted: 50
-              and 80 %
+              Line: spend to date
+              {burnForecast(burn)?.usd != null ? ", dashes after today: forecast" : ""} · dashed:
+              amount {shortUsd(Number(burn.amount_usd))} · dotted: 50 and 80 %
             </p>
           ) : null}
+          {burn ? <ForecastLine burn={burn} /> : null}
         </div>
         {burn ? <ChartViewToggle view={view} onChange={setView} /> : null}
       </div>
@@ -70,12 +75,59 @@ export function BudgetBurn({ budgetId, id }: BudgetBurnProps) {
   );
 }
 
+/**
+ * "Forecast $465 by Oct 31 · average of the last 7 days", or the day spend passes the amount in
+ * the warning colour. Nothing for a daily budget; an unknown forecast is "—", never $0.
+ */
+function ForecastLine({ burn }: { burn: BudgetBurnData }) {
+  const forecast = burnForecast(burn);
+  if (!forecast) return null;
+  const by = dayLabel(forecast.lastDay);
+  const amount = shortUsd(Number(burn.amount_usd));
+  const usd = forecast.usd === null ? null : shortUsd(forecast.usd);
+  const { crossing } = forecast;
+  if (crossing) {
+    const verb = crossing.passed ? "Passed" : "Passes";
+    return (
+      <p className="text-xs font-medium text-warning">
+        <span className="font-semibold">
+          {verb} {amount} on {dayLabel(crossing.day)}
+        </span>{" "}
+        · forecast {usd === null ? <UnknownValue reason={NO_FORECAST_REASON} /> : usd} by {by}
+      </p>
+    );
+  }
+  return (
+    <p className="text-xs font-medium text-muted-foreground">
+      {usd === null ? (
+        <>
+          Forecast <UnknownValue reason={NO_FORECAST_REASON} /> by {by}
+        </>
+      ) : (
+        <>
+          <span className="font-semibold text-foreground">
+            Forecast {usd} by {by}
+          </span>{" "}
+          · average of the last {forecast.basisDays} days
+        </>
+      )}
+    </p>
+  );
+}
+
 /** "Spend to date per day since Oct 1. Latest: Oct 14 · $182 of $500 (36 %)". */
 function summary(burn: BudgetBurnData): string {
   const known = burnPoints(burn).filter((point) => point.cumulative !== null);
   const latest = known.at(-1);
   const start = `Spend to date per day since ${dayLabel(burn.period_start.slice(0, 10))}.`;
-  return latest ? `${start} Latest: ${burnTooltip(latest)}` : `${start} No priced spend yet.`;
+  const forecast = burnForecast(burn);
+  const ahead =
+    forecast?.usd != null
+      ? `. Forecast ${shortUsd(forecast.usd)} by ${dayLabel(forecast.lastDay)}.`
+      : "";
+  return latest
+    ? `${start} Latest: ${burnTooltip(latest)}${ahead}`
+    : `${start} No priced spend yet.`;
 }
 
 function BurnTable({ burn }: { burn: BudgetBurnData }) {
@@ -112,8 +164,22 @@ function BurnTable({ burn }: { burn: BudgetBurnData }) {
               </tr>
             );
           })}
+          <ForecastRow burn={burn} />
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** The table's last row: "Forecast, Oct 31 · $465 · 93 %"; none without a known forecast. */
+function ForecastRow({ burn }: { burn: BudgetBurnData }) {
+  const forecast = burnForecast(burn);
+  if (forecast?.usd == null) return null;
+  return (
+    <tr className="border-t border-border-strong text-muted-foreground">
+      <td className="py-1.5">Forecast, {dayLabel(forecast.lastDay)}</td>
+      <td className="py-1.5 text-right">{shortUsd(forecast.usd)}</td>
+      <td className="py-1.5 text-right">{percentLabel(forecast.usd / Number(burn.amount_usd))}</td>
+    </tr>
   );
 }

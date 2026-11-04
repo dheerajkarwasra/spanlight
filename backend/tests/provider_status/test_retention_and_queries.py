@@ -8,23 +8,22 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app.config import Settings
+from app.jobs.context import TaskContext
 from app.jobs.tasks.retention import run_retention
-from app.provider_status.retention import (
-    PROVIDER_INCIDENT_RETENTION_DAYS,
-    apply_provider_incident_retention,
-)
+from app.provider_status.retention import PROVIDER_INCIDENT_RETENTION_DAYS
 from app.provider_status.service import (
     list_incidents,
     list_sources,
     overlapping_api_incidents,
 )
+from tests.attribution.daily_support import queued
 from tests.gateway_support import logged
+from tests.jobs.retention_support import drain
 from tests.provider_status.poll_support import (
     NOW,
     SessionFactory,
     execute,
     rows,
-    task_context,
 )
 
 
@@ -71,16 +70,20 @@ async def test_retention_deletes_incidents_older_than_730_days(
     await _incident(session_factory, "old", now - timedelta(days=731))
     await _incident(session_factory, "kept", now - timedelta(days=729))
 
-    assert await apply_provider_incident_retention(session_factory, now=now) == 1
+    assert await drain(session_factory, "provider_incidents", now) == 1
 
     remaining = await rows(session_factory, "SELECT external_id FROM provider_incidents")
     assert remaining == [{"external_id": "kept"}]
 
     await _incident(session_factory, "old-again", now - timedelta(days=800))
     caplog.set_level(logging.INFO)
-    await run_retention(task_context(session_factory, settings), {})
+    job = await queued(session_factory, "retention", {})
+    context = TaskContext(
+        job=job, settings=settings, session_factory=session_factory, clock=lambda: now
+    )
+    await run_retention(context, {})
     [line] = logged(caplog, "retention_applied")
-    assert line["provider_incidents_deleted"] == 1
+    assert line["deleted"]["provider_incidents"] == 1
 
 
 async def test_list_incidents_selects_by_overlap_provider_and_api_only(

@@ -2,7 +2,10 @@
 
 import asyncio
 import contextlib
+import hashlib
 from collections.abc import AsyncIterator, Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from botocore.exceptions import ClientError
 
@@ -20,11 +23,25 @@ class RestoreError(Exception):
     """A restore could not be done. The message is safe to print."""
 
 
-async def restore_backup(store: ObjectStore, key: str, target_url: str) -> None:
+@dataclass(frozen=True, slots=True)
+class RestoreReceipt:
+    """What was restored: the SHA-256 and size of the exact bytes `pg_restore` consumed, the
+    target (no password) and the time bounds. Only a successful restore produces one."""
+
+    key: str
+    sha256: str
+    bytes: int
+    target: dict[str, str]
+    started_at: datetime
+    finished_at: datetime
+
+
+async def restore_backup(store: ObjectStore, key: str, target_url: str) -> RestoreReceipt:
     """Restore the dump under `key` into an empty database, all or nothing.
 
-    Refuses a target that has any table in `public`. The dump is streamed into `pg_restore`
-    without touching disk, and runs as one transaction, so a failure leaves the target empty.
+    Refuses a target that has any relation outside the system schemas. The dump is streamed into
+    `pg_restore` without touching disk, and runs as one transaction, so a failure leaves the
+    target empty.
 
     The target URL must name the host and the database. The emptiness check and `pg_restore` run
     as child processes with the same explicit settings and the same minimal environment, so the
@@ -43,6 +60,7 @@ async def restore_backup(store: ObjectStore, key: str, target_url: str) -> None:
 
     await _require_empty_database(conninfo, environment, params.get("password"))
 
+    started_at = datetime.now(UTC)
     try:
         spawned = await asyncio.create_subprocess_exec(
             PG_RESTORE,
@@ -62,13 +80,17 @@ async def restore_backup(store: ObjectStore, key: str, target_url: str) -> None:
 
     process = ChildProcess(spawned, params.get("password"))
     try:
-        await _feed(process, store, key)
+        sha256, size = await _feed(process, store, key)
         code, tail = await process.finish()
     except BaseException:
         await process.stop()
         raise
     if code != 0:
         raise RestoreError(f"{PG_RESTORE} exited with status {code}: {tail}")
+    target: dict[str, str] = {
+        name: params[name] for name in ("host", "port", "dbname") if name in params
+    }
+    return RestoreReceipt(key, sha256, size, target, started_at, datetime.now(UTC))
 
 
 def _conninfo_value(value: str) -> str:
@@ -89,12 +111,17 @@ async def _closing[IteratorT: AsyncIterator[bytes]](
             await aclose()
 
 
-async def _feed(process: ChildProcess, store: ObjectStore, key: str) -> None:
+async def _feed(process: ChildProcess, store: ObjectStore, key: str) -> tuple[str, int]:
+    """Stream the object into `pg_restore`; the SHA-256 and count of the bytes it was fed."""
     stdin = process.process.stdin
     assert stdin is not None  # noqa: S101 - spawned with stdin=PIPE
+    digest = hashlib.sha256()
+    size = 0
     try:
         async with _closing(store.open(key)) as chunks:
             async for chunk in chunks:
+                digest.update(chunk)
+                size += len(chunk)
                 stdin.write(chunk)
                 await stdin.drain()
     except (BrokenPipeError, ConnectionResetError):
@@ -108,19 +135,24 @@ async def _feed(process: ChildProcess, store: ObjectStore, key: str) -> None:
         with contextlib.suppress(BrokenPipeError, ConnectionResetError):
             stdin.close()
             await stdin.wait_closed()
+    return digest.hexdigest(), size
 
 
-_COUNT_TABLES = """
+# Tables, views, sequences and foreign tables in any schema an application could have created.
+_COUNT_RELATIONS = """
     SELECT count(*)
     FROM pg_class AS c JOIN pg_namespace AS n ON n.oid = c.relnamespace
-    WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
+    WHERE n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\\_%'
+      AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
 """
 
 
 async def _require_empty_database(
     conninfo: str, environment: Mapping[str, str], secret: str | None
 ) -> None:
-    """Fail unless the target has no table in `public`. Asks through `psql`, in a child process."""
+    """Fail unless the target has no relation outside the system schemas. Asks through `psql`, in
+    a child process. An empty target is necessary, not proof that it was created for this
+    restore: the runbook asks for a newly created database and retained creation evidence."""
     try:
         child = await asyncio.create_subprocess_exec(
             PSQL,
@@ -134,7 +166,7 @@ async def _require_empty_database(
             "-d",
             conninfo,
             "-c",
-            _COUNT_TABLES,
+            _COUNT_RELATIONS,
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -164,6 +196,6 @@ async def _require_empty_database(
         raise RestoreError("cannot check the target database: unexpected answer") from None
     if tables:
         raise RestoreError(
-            f"the target database already has {tables} table(s) in the public schema; "
+            f"the target database already has {tables} relation(s) outside the system schemas; "
             "restore into a new, empty database"
         )

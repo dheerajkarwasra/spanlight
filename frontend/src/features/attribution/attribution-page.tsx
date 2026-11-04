@@ -10,6 +10,7 @@ import {
   useProjectQuery,
 } from "@/features/shell/project-context";
 import type { AttributionGroupBy, AttributionSort } from "@/lib/api";
+import { sourceHistoryGone } from "@/lib/freshness";
 
 import { AttributionExportButton } from "./attribution-export-dialog";
 import { useAttributionQuery } from "./attribution-queries";
@@ -17,6 +18,7 @@ import { AttributionResults } from "./attribution-results";
 import { withSort } from "./attribution-sort";
 import { AttributionEmpty, AttributionLoading, PickKeyPrompt } from "./attribution-states";
 import { CostStrip } from "./cost-strip";
+import { attributionHasRows } from "./cost-strip/cost-strip-data";
 import { drillWindow } from "./drill-down";
 import { isFetchDisabled } from "./fetch-rule";
 import { GroupByPicker } from "./group-by-picker";
@@ -107,6 +109,7 @@ export function AttributionPage() {
             groupBy={page.group_by}
             metadataKey={page.key}
             pendingTraces={page.pending_traces}
+            unavailable={sourceHistoryGone(page.aggregate_status, attributionHasRows(page))}
           />
         </Card>
       );

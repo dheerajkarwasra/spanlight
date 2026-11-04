@@ -5,7 +5,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, LargeBinary, Text, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, LargeBinary, SmallInteger, Text, func
 from sqlalchemy.dialects.postgresql import CITEXT, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,6 +16,7 @@ from app.db.models.base import Base, _pg_enum
 class EmailTokenKind(enum.StrEnum):
     VERIFY = "verify"
     RESET = "reset"
+    EMAIL_CHANGE = "email_change"
 
 
 class TokenScope(enum.StrEnum):
@@ -34,6 +35,9 @@ class EmailToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The address an `email_change` token moves the user to; NULL for every other kind. The
+    # database does not check that pairing (see migration 1030): the app sets it.
+    new_email: Mapped[str | None] = mapped_column(CITEXT)
 
 
 class ThrottleEvent(Base):
@@ -69,7 +73,8 @@ class RecoveryCode(Base):
     """A one-time code that signs a user in when their authenticator app is lost.
 
     Only the SHA-256 of the code is stored; the code itself is shown once, when two-factor
-    authentication is enabled. A used code stays as a row with `used_at` set.
+    authentication is enabled. A used code stays as a row with `used_at` set. `code_length` is
+    the length of the stored code (10 legacy, 28 current); NULL rows predate it and are legacy.
     """
 
     __tablename__ = "recovery_codes"
@@ -79,6 +84,7 @@ class RecoveryCode(Base):
     )
     code_hash: Mapped[bytes] = mapped_column(LargeBinary, primary_key=True)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    code_length: Mapped[int | None] = mapped_column(SmallInteger)
 
 
 class PersonalAccessToken(Base):

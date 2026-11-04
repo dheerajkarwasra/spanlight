@@ -32,6 +32,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.window import TimeWindow
 from app.providers.series import ErrorCount
+from app.rollups.compute import floor_hour
+from app.rollups.coverage_reads import CoverageState, read_covered
+from app.rollups.dirty import HOURLY
 from app.rollups.error_compute import FAILED_LLM_SPAN, WITH_RETRY_AFTER
 
 _ROLLUP_CALLS = text(
@@ -105,6 +108,7 @@ async def _read_raw(
     project_id: uuid.UUID,
     ranges: Sequence[TimeWindow],
     filters: dict[str, str | None],
+    coverage: CoverageState | None = None,
 ) -> Sequence[Any]:
     ranges = [r for r in ranges if r.start < r.end]
     if not ranges:
@@ -117,7 +121,17 @@ async def _read_raw(
         "ends": [r.end for r in ranges],
     }
     statement = _raw_statement(select, frozenset(set_filters))
-    return (await db.execute(statement, params)).all()
+    return await read_covered(
+        db,
+        statement,
+        params,
+        project_id,
+        floor_hour(min(r.start for r in ranges)),
+        max(r.end for r in ranges),
+        coverage,
+        raw=True,
+        relevant_consumers=0,
+    )
 
 
 async def read_rollup_calls(
@@ -125,6 +139,7 @@ async def read_rollup_calls(
     project_id: uuid.UUID,
     hours: tuple[datetime, datetime],
     environment: str | None,
+    coverage: CoverageState | None = None,
 ) -> list[tuple[str | None, int]]:
     """llm calls per provider over the rollup hours starting in ``[hours[0], hours[1])``."""
     params = {
@@ -133,23 +148,40 @@ async def read_rollup_calls(
         "end": hours[1],
         "environment": environment,
     }
-    rows = (await db.execute(_ROLLUP_CALLS, params)).all()
+    rows = await read_covered(
+        db,
+        _ROLLUP_CALLS,
+        params,
+        project_id,
+        floor_hour(hours[0]),
+        hours[1],
+        coverage,
+        relevant_consumers=HOURLY,
+    )
     return [(row.provider, int(row.llm_calls)) for row in rows]
 
 
 async def read_raw_calls(
-    db: AsyncSession, project_id: uuid.UUID, ranges: Sequence[TimeWindow], environment: str | None
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    ranges: Sequence[TimeWindow],
+    environment: str | None,
+    coverage: CoverageState | None = None,
 ) -> list[tuple[str | None, int]]:
     """llm calls per provider over the raw ``ranges``."""
-    rows = await _read_raw(db, "calls", project_id, ranges, {"environment": environment})
+    rows = await _read_raw(db, "calls", project_id, ranges, {"environment": environment}, coverage)
     return [(row.provider, int(row.llm_calls)) for row in rows]
 
 
 async def read_raw_errors(
-    db: AsyncSession, project_id: uuid.UUID, ranges: Sequence[TimeWindow], environment: str | None
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    ranges: Sequence[TimeWindow],
+    environment: str | None,
+    coverage: CoverageState | None = None,
 ) -> list[ErrorCount]:
     """Failed llm calls per provider, error class and rate-limit kind over the raw ``ranges``."""
-    rows = await _read_raw(db, "errors", project_id, ranges, {"environment": environment})
+    rows = await _read_raw(db, "errors", project_id, ranges, {"environment": environment}, coverage)
     return [
         ErrorCount(
             provider=row.provider,
@@ -169,8 +201,9 @@ async def read_raw_error_hours(
     *,
     environment: str | None,
     provider: str | None,
+    coverage: CoverageState | None = None,
 ) -> list[ErrorHourCount]:
     """Failed llm calls per UTC hour and error class over the raw ``ranges``."""
     filters = {"environment": environment, "provider": provider}
-    rows = await _read_raw(db, "hours", project_id, ranges, filters)
+    rows = await _read_raw(db, "hours", project_id, ranges, filters, coverage)
     return [ErrorHourCount(row.hour, row.error_class, int(row.errors)) for row in rows]

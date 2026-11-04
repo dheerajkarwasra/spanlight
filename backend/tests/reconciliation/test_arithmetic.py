@@ -256,14 +256,16 @@ def test_untraced_traffic_group() -> None:
     untraced = groups["claude-opus-4-8"]
     assert untraced.spanlight_usd is None
     assert untraced.spanlight_models == ()
-    # One explanation for the whole group: the batch and fee lines would count it twice.
+    # One line for the whole group, and it carries no USD: spend Spanlight never saw is the
+    # residual the bypass alert watches (D10), not a known cause.
     assert kinds(untraced) == ["untraced_traffic"]
     item = untraced.explained[0]
-    assert item.usd == Decimal("2.05")
+    assert item.usd is None
     assert item.note == "no span with this model"
-    assert untraced.residual_usd == Decimal(0)
-    assert untraced.variance_ratio == Decimal("0.0000")
-    assert result.residual_usd == Decimal(0)
+    assert untraced.explained_usd == Decimal(0)
+    assert untraced.residual_usd == Decimal("2.05")
+    assert untraced.variance_ratio == Decimal("1.0000")
+    assert result.residual_usd == Decimal("2.05")
 
 
 def test_spanlight_only_group_has_zero_provider_and_null_variance() -> None:
@@ -658,7 +660,7 @@ def test_day_totals_are_group_sums() -> None:
     assert result.provider_usd == sum((group.provider_usd for group in groups), Decimal(0))
     assert result.spanlight_usd == Decimal("13.201")
     assert result.explained_usd == sum((group.explained_usd for group in groups), Decimal(0))
-    assert result.explained_usd == Decimal("2.00")
+    assert result.explained_usd == Decimal(0)  # the untraced Haiku bill stays in the residual
     assert result.residual_usd == sum((group.residual_usd for group in groups), Decimal(0))
     assert result.residual_usd == (
         result.provider_usd - (result.spanlight_usd or 0) - result.explained_usd
@@ -666,8 +668,9 @@ def test_day_totals_are_group_sums() -> None:
     assert result.variance_ratio == (result.residual_usd / result.provider_usd).quantize(
         Decimal("0.0001")
     )
-    # claude-tiny is under one cent on the provider side, so its 80% gap does not count.
-    assert result.max_abs_variance_ratio == Decimal("0.1000")
+    # The untraced Haiku group is 100 % unexplained; claude-tiny is under one cent on the
+    # provider side, so its 80 % gap does not count.
+    assert result.max_abs_variance_ratio == Decimal("1.0000")
     assert result.credits == ()
     assert result.credits_usd == Decimal(0)
 

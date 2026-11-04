@@ -20,8 +20,16 @@ permissions:
   contents: read
 
 jobs:
-  server:
+  # Local reusable workflows execute the version at this tagged commit, never branch-head CI.
+  verify:
     if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  server:
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/v') && needs.verify.result == 'success' && needs.verify.outputs.verified_sha == github.sha
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -31,6 +39,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false # no step pushes, so keep the token out of .git/config
 
       - name: Resolve version and registry
@@ -60,6 +69,8 @@ jobs:
           file: deploy/Dockerfile
           target: backend
           load: true
+          # Keep a single image manifest; signed SBOMs are generated below.
+          provenance: false
           push: false
           tags: ${{ steps.meta.outputs.registry }}/spanlight:${{ steps.meta.outputs.version }}
           labels: |
@@ -76,6 +87,8 @@ jobs:
           file: deploy/Dockerfile
           target: web
           load: true
+          # Keep a single image manifest; signed SBOMs are generated below.
+          provenance: false
           push: false
           tags: ${{ steps.meta.outputs.registry }}/spanlight-web:${{ steps.meta.outputs.version }}
           labels: |
@@ -84,6 +97,48 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=release-web
           cache-to: type=gha,mode=max,scope=release-web
+
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+
+      # Smoke the loaded candidates, not another build. Removing build sections makes the
+      # smoke script's --build inert; pull_policy prevents replacing a candidate from GHCR.
+      - name: Test release candidate images
+        env:
+          SPANLIGHT_IMAGE: ${{ steps.meta.outputs.registry }}/spanlight:${{ steps.meta.outputs.version }}
+          SPANLIGHT_WEB_IMAGE: ${{ steps.meta.outputs.registry }}/spanlight-web:${{ steps.meta.outputs.version }}
+          SMOKE_PROJECT: spanlight-release-smoke
+        run: |
+          env_file="$RUNNER_TEMP/release-smoke.env"
+          : > "$env_file"
+          for key in POSTGRES_PASSWORD APP_DB_PASSWORD SECRET_KEY METRICS_TOKEN; do
+            value=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+            echo "::add-mask::$value"
+            echo "$key=$value" >> "$env_file"
+          done
+          echo "APP_BASE_URL=http://localhost:8080" >> "$env_file"
+          echo "WEB_PORT=8080" >> "$env_file"
+          export SMOKE_ENV_FILE="$env_file"
+          docker image inspect --format '{{.Id}}' "$SPANLIGHT_IMAGE" "$SPANLIGHT_WEB_IMAGE" > "$RUNNER_TEMP/candidate-ids"
+          docker compose -p "$SMOKE_PROJECT" -f deploy/compose.yaml --env-file "$env_file" config --format json > "$RUNNER_TEMP/candidate-compose.json"
+          python3 - <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+
+          config = json.loads((Path(os.environ["RUNNER_TEMP"]) / "candidate-compose.json").read_text())
+          for service in config["services"].values():
+              if "build" in service:
+                  del service["build"]
+                  service["pull_policy"] = "never"
+          Path("deploy/compose.yaml").write_text(json.dumps(config))
+          PYTHON
+          deploy/smoke.sh
+          docker image inspect --format '{{.Id}}' "$SPANLIGHT_IMAGE" "$SPANLIGHT_WEB_IMAGE" > "$RUNNER_TEMP/tested-ids"
+          cmp "$RUNNER_TEMP/candidate-ids" "$RUNNER_TEMP/tested-ids"
+          echo "Tested source: ${GITHUB_SHA}; candidate image IDs (backend, web):" >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/tested-ids" >> "$GITHUB_STEP_SUMMARY"
+          # Restore source for review tooling; images remain loaded and are pushed below.
+          git checkout -- deploy/compose.yaml
 
       # Scan first, push second: a failing scan leaves nothing in GHCR to take back. Trivy runs
       # from its container pinned by digest (its GitHub Action publishes no major tag to pin to).
@@ -108,7 +163,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Pushes the exact images that were scanned, under their version tag only, then records
+      # Pushes the exact images that were smoke-tested and scanned, under their version tag only, then records
       # their digests: signing and the SBOMs refer to the digest, not to a tag that could later
       # move. The moving `latest` tag waits until the signatures exist (see "Move latest").
       - name: Push images
@@ -117,6 +172,8 @@ jobs:
           REGISTRY: ${{ steps.meta.outputs.registry }}
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
+          docker image inspect --format '{{.Id}}' "${REGISTRY}/spanlight:${VERSION}" "${REGISTRY}/spanlight-web:${VERSION}" > "$RUNNER_TEMP/publish-ids"
+          cmp "$RUNNER_TEMP/tested-ids" "$RUNNER_TEMP/publish-ids"
           for pair in backend:spanlight web:spanlight-web; do
             output="${pair%%:*}"
             ref="${REGISTRY}/${pair#*:}"
@@ -126,7 +183,15 @@ jobs:
               echo "::error::No digest recorded for ${ref}:${VERSION} after push"
               exit 1
             fi
+            # Docker exposes a manifest ID with containerd, or a config ID with the classic store.
+            local_id=$(docker image inspect --format '{{.Id}}' "${ref}:${VERSION}")
+            remote_id=$(docker buildx imagetools inspect --raw "${digest_ref}" | jq -er '.config.digest')
+            if [[ "$local_id" != "$remote_id" && "$local_id" != "${digest_ref#*@}" ]]; then
+              echo "::error::Published digest does not match tested ${ref}:${VERSION}"
+              exit 1
+            fi
             echo "${output}=${digest_ref}" >> "${GITHUB_OUTPUT}"
+            echo "${output}: ${digest_ref} (tested image ID ${local_id})" >> "$GITHUB_STEP_SUMMARY"
           done
 
       - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
@@ -200,6 +265,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false # no step pushes, so keep the token out of .git/config
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
 
@@ -246,6 +312,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false # no step pushes, so keep the token out of .git/config
       # No dependency cache: a publish job should not restore state another run wrote.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

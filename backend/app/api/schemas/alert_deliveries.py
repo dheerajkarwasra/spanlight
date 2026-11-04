@@ -42,6 +42,9 @@ class DeliveryOut(ApiModel):
     last_error: str | None
     created_at: datetime
     summary: DeliverySummaryOut | None
+    # Whether `POST .../retry` would take it: a `failed` row with a message to send that recovery
+    # has not quarantined. False for an email that could not be rendered.
+    retryable: bool
 
 
 def delivery_out(row: DeliveryRow) -> DeliveryOut:
@@ -61,4 +64,5 @@ def delivery_out(row: DeliveryRow) -> DeliveryOut:
         last_error=row.last_error,
         created_at=row.created_at,
         summary=summary,
+        retryable=row.retryable,
     )

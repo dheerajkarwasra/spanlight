@@ -175,6 +175,8 @@ async def update_profile(
         raise _lab_problem(error) from None
     updated = await _found_profile(db, project_id, profile_id, clock)
     await db.commit()
+    # This process's gateway calls read the change from the next call, not after the key cache TTL.
+    request.app.state.gateway_key_cache.clear()
     _log("fault_profile_updated", access, profile_id, fields=sorted(body.model_fields_set))
     return updated
 
@@ -198,4 +200,5 @@ async def delete_profile(
     except LAB_ERRORS as error:
         raise _lab_problem(error) from None
     await db.commit()
+    request.app.state.gateway_key_cache.clear()
     _log("fault_profile_deleted", access, profile_id)

@@ -63,7 +63,8 @@ class BatchExporter:
         jitter: Function returning a float in ``[0, 1)`` used to randomize
             backoff delays.
         base_backoff: Backoff before the first retry, in seconds.
-        max_backoff: Upper bound for any single wait, in seconds.
+        max_backoff: Upper bound for client exponential backoff, in seconds.
+            A valid server ``Retry-After`` minimum may exceed this bound.
     """
 
     def __init__(

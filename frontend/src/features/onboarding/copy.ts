@@ -10,7 +10,7 @@ interface StepCopy {
 
 /**
  * The prose each setup step shows by default. Kept in one place so a test can hold every step
- * to 25 words; labels, buttons, code and conditional notices are not counted and live with
+ * to 30 words; labels, buttons, code and conditional notices are not counted and live with
  * their components.
  */
 export const ONBOARDING_COPY: Record<OnboardingStepId, StepCopy> = {
@@ -27,6 +27,9 @@ export const ONBOARDING_COPY: Record<OnboardingStepId, StepCopy> = {
   connect: {
     cardTitle: "API key",
     cardDescription: "Shown once. Revoke it in Settings › API keys.",
-    helper: ["Waiting for your first trace…", "Send a test trace or run a snippet."],
+    helper: [
+      "Waiting for an application trace…",
+      "Verify ingestion with a test trace, then instrument your app.",
+    ],
   },
 };

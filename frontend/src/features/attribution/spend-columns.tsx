@@ -36,7 +36,8 @@ export function spendColumns({ drill, onFocus }: ColumnContext): DataColumn<Spen
       header: "Traces",
       width: "80px",
       align: "end",
-      cell: (row) => formatInteger(row.figures.traces),
+      cell: (row) =>
+        formatInteger(row.figures.traces) ?? <UnknownValue reason="Not reported for this period" />,
     },
     {
       id: "calls",
@@ -47,7 +48,10 @@ export function spendColumns({ drill, onFocus }: ColumnContext): DataColumn<Spen
       hideable: true,
       align: "end",
       sortKey: "calls",
-      cell: (row) => formatInteger(row.figures.llm_calls),
+      cell: (row) =>
+        formatInteger(row.figures.llm_calls) ?? (
+          <UnknownValue reason="Not reported for this period" />
+        ),
     },
     {
       id: "errors",

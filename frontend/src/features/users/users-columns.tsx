@@ -15,7 +15,7 @@ export const USER_COLUMNS: DataColumn<UserStats>[] = [
   {
     id: "user",
     header: "User",
-    width: "minmax(220px,1fr)",
+    width: "minmax(220px,1.5fr)",
     sticky: true,
     cell: (user) => (
       <span className="flex min-w-0 items-center gap-2.5">
@@ -32,7 +32,7 @@ export const USER_COLUMNS: DataColumn<UserStats>[] = [
   {
     id: "traces",
     header: "Traces",
-    width: "88px",
+    width: "minmax(88px,1fr)",
     align: "end",
     sortKey: "traces",
     cell: (user) => formatInteger(user.traces),
@@ -40,7 +40,7 @@ export const USER_COLUMNS: DataColumn<UserStats>[] = [
   {
     id: "llm_calls",
     header: "LLM calls",
-    width: "96px",
+    width: "minmax(96px,1fr)",
     align: "end",
     hideable: true,
     minContainer: 760,
@@ -49,7 +49,7 @@ export const USER_COLUMNS: DataColumn<UserStats>[] = [
   {
     id: "errors",
     header: "Errors",
-    width: "88px",
+    width: "minmax(88px,1fr)",
     align: "end",
     sortKey: "errors",
     cell: (user) => <ErrorCount count={user.errors} />,
@@ -57,7 +57,7 @@ export const USER_COLUMNS: DataColumn<UserStats>[] = [
   {
     id: "cost",
     header: "Cost",
-    width: "104px",
+    width: "minmax(104px,1fr)",
     align: "end",
     sortKey: "cost",
     cell: (user) => <UserCost user={user} />,
@@ -65,7 +65,7 @@ export const USER_COLUMNS: DataColumn<UserStats>[] = [
   {
     id: "tokens",
     header: "Tokens",
-    width: "104px",
+    width: "minmax(104px,1fr)",
     align: "end",
     hideable: true,
     minContainer: 860,
@@ -74,7 +74,7 @@ export const USER_COLUMNS: DataColumn<UserStats>[] = [
   {
     id: "last_seen",
     header: "Last seen",
-    width: "104px",
+    width: "minmax(104px,1fr)",
     hideable: true,
     cell: (user) => (
       <span className="truncate text-muted-foreground">{lastSeenLabel(user.last_seen_day)}</span>

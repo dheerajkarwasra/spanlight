@@ -39,7 +39,7 @@ export function useEnvironmentsQuery() {
   const { projectId } = useProjectParams();
   return useQuery({
     queryKey: queryKeys.project(projectId).filters,
-    queryFn: () => projectsApi.filters(projectId),
+    queryFn: ({ signal }) => projectsApi.filters(projectId, signal),
     staleTime: 5 * 60_000,
     select: (filters) => filters.environments,
   });
@@ -107,6 +107,8 @@ interface SaveFromReviewResult {
   rejected: string | null;
   /** Other datasets that already held the trace; empty on a retry that only marks the copy. */
   alsoIn: TracesAdded["also_in"];
+  /** The dataset item written; null when the copy was rejected. */
+  itemId: string | null;
 }
 
 /**
@@ -131,7 +133,7 @@ export function useSaveFromReview() {
         const rejected = added.rejected[0];
         itemId = added.item_ids[0] ?? null;
         if (rejected !== undefined || itemId === null) {
-          return { rejected: rejected?.reason ?? "not copied", alsoIn };
+          return { rejected: rejected?.reason ?? "not copied", alsoIn, itemId: null };
         }
         alsoIn = added.also_in;
         input.onCopied(itemId, alsoIn);
@@ -139,7 +141,7 @@ export function useSaveFromReview() {
       await datasetsApi.updateItem(projectId, input.datasetId, itemId, {
         metadata: input.metadata,
       });
-      return { rejected: null, alsoIn };
+      return { rejected: null, alsoIn, itemId };
     },
     onSettled: () =>
       queryClient.invalidateQueries({ queryKey: queryKeys.project(projectId).datasets.all }),

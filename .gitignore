@@ -75,3 +75,6 @@ graphify-out/
 .ponytail-active
 
 .taste-skills/
+
+# Hypothesis generated examples
+.hypothesis/

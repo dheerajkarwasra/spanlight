@@ -53,7 +53,7 @@ const OVERRIDE: PriceOverride = {
   created_at: "2026-09-18T00:00:00Z",
 };
 
-function asRole(role: "viewer" | "owner") {
+function asRole(role: "viewer" | "admin" | "owner") {
   const membership = ME.memberships[0];
   if (membership === undefined) {
     throw new Error("ME has no membership");
@@ -200,6 +200,22 @@ describe("PricingPage", () => {
     await waitFor(() => {
       expect(remove).toHaveBeenCalledWith(ORG_ID, "po_1");
     });
+  });
+
+  it("shows an admin the prices without Add or Delete: only owners change overrides", async () => {
+    asRole("admin");
+    renderApp(`${PATH}?provider=openai&model=ft:custom-v2`);
+
+    const dialog = await screen.findByRole("dialog", { name: "Add price override" });
+    expect(dialog).toHaveTextContent(
+      "You have view-only access. Owners can change price overrides.",
+    );
+    expect(within(dialog).queryByLabelText("Provider")).not.toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+
+    await screen.findByRole("table", { name: "Price book" });
+    expect(screen.queryByRole("button", { name: /^Add/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Delete override/ })).not.toBeInTheDocument();
   });
 
   it("shows a viewer the prices without Add or Delete, and explains why in the dialog", async () => {

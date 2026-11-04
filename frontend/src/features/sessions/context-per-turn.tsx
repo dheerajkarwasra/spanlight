@@ -75,7 +75,13 @@ export function ContextPerTurn({ traces }: { traces: readonly TraceSummary[] }) 
       <div className="flex flex-col gap-1">
         {/* The total sits in "Total cost" above; the line shows how it built up. */}
         <p className="text-xs font-medium text-muted-foreground">Cumulative cost</p>
-        <Sparkline values={costs} tone="cost" zeroBased className="h-9" />
+        <Sparkline
+          data={costs.map((value, index) => ({ label: `Turn ${String(index + 1)}`, value }))}
+          tone="cost"
+          name="Cumulative cost"
+          format={formatCost}
+          className="h-9"
+        />
         <p className="sr-only">{costLine}</p>
       </div>
       <ContextGrowthLink traceIds={traces.map((trace) => trace.trace_id)} />

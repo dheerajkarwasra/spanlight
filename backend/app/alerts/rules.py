@@ -61,10 +61,22 @@ def rule_condition(rule: AlertRule, threshold: Decimal | None = None) -> RuleCon
 
 
 def rule_state(state: AlertState | None) -> RuleState:
-    """The stored state as the state machine's; a rule never evaluated is `ok` since never."""
+    """The stored state as the state machine's; a rule never evaluated is `ok` since never.
+
+    A `clear_since` before `since` predates the current firing (a row written by a worker
+    without the column, during the 1035 -> 1036 rolling deploy) and is read as no window.
+    """
     if state is None:
         return NO_STATE
-    return RuleState(state=state.state, since=state.since, last_value=state.last_value)
+    clear_since = state.clear_since
+    if clear_since is not None and state.since is not None and clear_since < state.since:
+        clear_since = None
+    return RuleState(
+        state=state.state,
+        since=state.since,
+        last_value=state.last_value,
+        clear_since=clear_since,
+    )
 
 
 def trailing_window(end: datetime, minutes: int) -> TimeWindow:

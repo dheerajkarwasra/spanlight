@@ -124,10 +124,20 @@ def bearer(api_key: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {api_key}"}
 
 
+async def verify_email(factory: async_sessionmaker[AsyncSession], email: str) -> None:
+    """Mark the user's email verified, as clicking the verification link would."""
+    async with factory() as db:
+        await db.execute(
+            text("UPDATE users SET email_verified_at = now() WHERE email = :email"),
+            {"email": email},
+        )
+        await db.commit()
+
+
 async def join_with_role(owner: Browser, member: Browser, org_id: str, role: str) -> None:
     invite = await owner.post(f"/api/v1/orgs/{org_id}/invites", json={"role": role})
     assert invite.status_code == 201, invite.text
-    token = invite.json()["url"].rsplit("/", 1)[1]
+    token = invite.json()["url"].split("#token=", 1)[1]
     accepted = await member.post("/api/v1/invites/accept", json={"token": token})
     assert accepted.status_code == 200, accepted.text
 

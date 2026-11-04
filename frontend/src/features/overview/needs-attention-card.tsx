@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, Info, OctagonAlert, TriangleAlert, type LucideIcon } from "lucide-react";
-import { useId } from "react";
+import { useEffect, useId, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -8,7 +8,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectParams } from "@/features/shell/project-context";
 import { cn } from "@/lib/utils";
 
-import { lastPassSummary, providerStatusLine, type StatusLine } from "./doctor-format";
+import {
+  HEALTH_FAILED_REASON,
+  lastPassSummary,
+  providerStatusLine,
+  type StatusLine,
+} from "./doctor-format";
 import { DoctorScore } from "./doctor-score";
 import { usedProviders } from "./incident-overlay";
 import { attentionItems, type AttentionItem, type AttentionSeverity } from "./needs-attention";
@@ -44,6 +49,28 @@ export function NeedsAttention({ queries, now, className }: NeedsAttentionProps)
   }));
   const pending = sources.some(({ query }) => query.isPending);
   const failed = sources.filter(({ query }) => query.isError);
+  const { health } = queries;
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const healthRetryRef = useRef<HTMLButtonElement>(null);
+  const sourcesRetryRef = useRef<HTMLButtonElement>(null);
+  const retried = useRef<"health" | "sources" | null>(null);
+  const sourcesFailed = failed.length > 0;
+  const sourcesFetching = sources.some(({ query }) => query.isFetching);
+  // Once a retry settles, focus lost to the page comes back: to the card's title when the alert
+  // went away, to the same Try again when it failed again. Focus the user moved stays put.
+  useEffect(() => {
+    const which = retried.current;
+    if (which === null || (which === "health" ? health.isFetching : sourcesFetching)) {
+      return;
+    }
+    retried.current = null;
+    if (document.activeElement !== document.body) {
+      return;
+    }
+    const stillFailing = which === "health" ? health.isError : sourcesFailed;
+    const retry = which === "health" ? healthRetryRef : sourcesRetryRef;
+    (stillFailing ? retry : titleRef).current?.focus();
+  }, [health.isError, health.isFetching, sourcesFailed, sourcesFetching]);
   const items = attentionItems({
     insights: queries.openInsights.data?.items ?? [],
     rules: queries.alertRules.data ?? [],
@@ -57,7 +84,33 @@ export function NeedsAttention({ queries, now, className }: NeedsAttentionProps)
       aria-labelledby={titleId}
       className={cn("@container flex min-w-0 flex-col gap-3 p-5 sm:p-6", className)}
     >
-      <CardTitle id={titleId}>Needs attention</CardTitle>
+      <CardTitle ref={titleRef} id={titleId} tabIndex={-1}>
+        Needs attention
+      </CardTitle>
+      {health.isError ? (
+        <div role="alert" className="flex gap-3 rounded-tile bg-surface-muted p-3">
+          <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
+          <div className="flex min-w-0 flex-col items-start gap-2">
+            <div className="flex flex-col gap-0.5">
+              <p className="text-sm font-semibold text-foreground">
+                Couldn&apos;t load Doctor health
+              </p>
+              <p className="text-xs text-muted-foreground">{HEALTH_FAILED_REASON}</p>
+            </div>
+            <Button
+              ref={healthRetryRef}
+              variant="primary"
+              loading={health.isFetching}
+              onClick={() => {
+                retried.current = "health";
+                void health.refetch();
+              }}
+            >
+              Try again
+            </Button>
+          </div>
+        </div>
+      ) : null}
       {pending ? (
         <div aria-hidden className="flex flex-col gap-2">
           {Array.from({ length: 3 }, (_, index) => (
@@ -72,7 +125,7 @@ export function NeedsAttention({ queries, now, className }: NeedsAttentionProps)
             </li>
           ))}
         </ul>
-      ) : failed.length === 0 ? (
+      ) : failed.length === 0 && !health.isError ? (
         <p className="py-4 text-sm font-medium text-muted-foreground">Nothing needs attention.</p>
       ) : null}
       {failed.length > 0 ? (
@@ -82,8 +135,10 @@ export function NeedsAttention({ queries, now, className }: NeedsAttentionProps)
         >
           Couldn&apos;t load {failed.map(({ key }) => SOURCE_NAMES[key]).join(" and ")}.
           <Button
+            ref={sourcesRetryRef}
             size="sm"
             onClick={() => {
+              retried.current = "sources";
               for (const { query } of failed) {
                 void query.refetch();
               }
@@ -123,24 +178,26 @@ function AttentionRow({ item }: { item: AttentionItem }) {
 
 /** "Last check 12 min ago · …" and the providers' open incidents, each when known. */
 function Footer({ queries, now }: { queries: OverviewQueries; now: Date }) {
-  const { detectorRuns, incidents, models, health, overview } = queries;
+  const { detectorRuns, incidents, models, overview } = queries;
+  // A failed refresh keeps the last response cached: its score must not read as current.
+  const health = queries.health.isError ? undefined : queries.health.data;
   const lines: StatusLine[] = [];
   if (detectorRuns.data) {
     lines.push(lastPassSummary(detectorRuns.data, now));
   }
   if (incidents.data && models.data) {
-    lines.push(providerStatusLine(incidents.data, usedProviders(models.data)));
+    lines.push(providerStatusLine(incidents.data, usedProviders(models.data.items)));
   }
-  const score = health.data && overview.data;
+  const score = health && overview.data;
   // Nothing loaded yet (or nothing known): no empty bordered strip.
   if (!score && lines.length === 0) {
     return null;
   }
   return (
     <div className="mt-auto flex flex-col gap-3 border-t border-border pt-3">
-      {health.data && overview.data ? (
+      {health && overview.data ? (
         <DoctorScore
-          health={health.data}
+          health={health}
           metrics={overview.data.current}
           hasPass={detectorRuns.data === undefined || detectorRuns.data.length > 0}
         />

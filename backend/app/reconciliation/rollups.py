@@ -53,6 +53,7 @@ from app.pricing.tiers import multipliers_for
 from app.pricing.unreported import CUT_STREAM_REASONS, UNREPORTED_REASONS
 from app.reconciliation.line_items import model_pattern_for
 from app.reconciliation.queries import mapping_patterns
+from app.rollups.coverage import complete_day_ranges, lock_aggregate_sources
 
 # One statement, so the aggregate is computed once for both writes. `classed` is the range's LLM
 # spans with their tokens split into classes; a blank provider or model groups with the unknown
@@ -222,11 +223,21 @@ async def refresh_cost_rollups(
     """
     if not days:
         return 0
-    await db.execute(_LOCK_PROJECT, {"key": f"cost_rollups:{project_id}"})
+    if not await lock_aggregate_sources(db, project_id):
+        return 0
     org_id = (await db.execute(_ORG_OF_PROJECT, {"project_id": project_id})).scalar_one_or_none()
     if org_id is None:
         return 0
-    first_day, last_day = min(days), max(days)
+    await db.execute(_LOCK_PROJECT, {"key": f"cost_rollups:{project_id}"})
+    written = 0
+    for first_day, last_day in await complete_day_ranges(db, project_id, days):
+        written += await _refresh_range(db, project_id, org_id, first_day, last_day)
+    return written
+
+
+async def _refresh_range(
+    db: AsyncSession, project_id: uuid.UUID, org_id: uuid.UUID, first_day: date, last_day: date
+) -> int:
     params = {
         "project_id": project_id,
         "start": midnight(first_day),

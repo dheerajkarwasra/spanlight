@@ -5,10 +5,12 @@ leakproof, so under the tables' FORCE row-level security Postgres never turns th
 conditions for the app role (see `tests/rls/test_index_usability.py`). Downgrade rebuilds both.
 """
 
+import pytest
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 
-from app.db.migrations import alembic_config, downgrade_to, upgrade_to_head
+from app.db.migrations import alembic_config
+from tests.db.migration_support import downgrade_to, upgrade_to_target
 
 REVISION = "1009"
 EXPECTED_DEFINITIONS = {
@@ -49,13 +51,14 @@ def test_1009_indexes_are_gone_at_head(app_database_url: str) -> None:
     assert _indexes(app_database_url) == {}
 
 
-def test_1009_downgrade_rebuilds_both_indexes(app_database_url: str) -> None:
+@pytest.mark.migration_revision("1009")
+def test_1009_downgrade_rebuilds_both_indexes(migration_database_url: str) -> None:
     try:
-        downgrade_to(app_database_url, _down_revision())
+        downgrade_to(migration_database_url, _down_revision())
         expected = {name: (definition, True) for name, definition in EXPECTED_DEFINITIONS.items()}
-        assert _indexes(app_database_url) == expected
+        assert _indexes(migration_database_url) == expected
 
-        upgrade_to_head(app_database_url)
-        assert _indexes(app_database_url) == {}
+        upgrade_to_target(migration_database_url)
+        assert _indexes(migration_database_url) == {}
     finally:
-        upgrade_to_head(app_database_url)
+        upgrade_to_target(migration_database_url)

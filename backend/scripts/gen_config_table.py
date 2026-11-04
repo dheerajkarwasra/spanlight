@@ -43,7 +43,14 @@ GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "Core",
         "The settings every deployment needs to look at.",
-        ("database_url", "app_base_url", "allowed_origins", "secret_key", "credentials_keys"),
+        (
+            "database_url",
+            "app_base_url",
+            "allowed_origins",
+            "secret_key",
+            "credentials_keys",
+            "terms_version",
+        ),
     ),
     (
         "Email",
@@ -75,7 +82,7 @@ GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "Object storage",
-        "Backups and trace exports need an S3-compatible store. It is on when the bucket and "
+        "Trace exports need an S3-compatible store. It is on when the bucket and "
         "both keys are set; setting only some of them stops the application at startup. A "
         "request that needs storage while it is off answers `409 NOT_CONFIGURED`.",
         (
@@ -90,14 +97,32 @@ GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "Backups",
-        "The nightly backup job runs when `BACKUPS_ENABLED` is true, object storage is on and "
+        "The nightly backup job runs when `BACKUPS_ENABLED` is true, explicit backup storage "
+        "is configured and "
         "`BACKUP_DATABASE_URL` is set. Otherwise it ends as `skipped_not_configured`.",
-        ("backups_enabled", "backup_database_url"),
+        (
+            "backups_enabled",
+            "backup_database_url",
+            "backup_s3_bucket",
+            "backup_s3_access_key",
+            "backup_s3_secret_key",
+            "backup_s3_endpoint",
+            "backup_s3_region",
+            "backup_s3_force_path_style",
+            "backup_s3_sse",
+        ),
     ),
     (
         "Worker and health",
         "",
-        ("worker_required", "worker_metrics_port"),
+        (
+            "worker_required",
+            "worker_metrics_port",
+            "shutdown_timeout_seconds",
+            "shutdown_work_seconds",
+            "shutdown_flush_seconds",
+            "shutdown_close_seconds",
+        ),
     ),
     (
         "Demo workspace",
@@ -112,6 +137,9 @@ GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "`409 NOT_CONFIGURED`.",
         (
             "gateway_mode",
+            "gateway_max_in_flight",
+            "gateway_max_in_flight_bytes",
+            "gateway_max_in_flight_per_key",
             "gateway_allow_insecure_base_urls",
             "gateway_org_rpm_ceiling",
             "gateway_record_concurrency",
@@ -144,6 +172,7 @@ GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             "provider_status_polling_enabled",
             "explain_model",
             "explain_monthly_budget_usd",
+            "aggregate_repair_enabled",
             "user_stats_enabled",
         ),
     ),
@@ -203,6 +232,26 @@ GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         ),
     ),
     (
+        "Ingest caps",
+        "What one project may send through `POST /v1/traces` and `POST /v1/otlp/traces`, on top "
+        "of the per-key request limit. Over a cap the request is `429` with `Retry-After`. "
+        "Concurrency refusals happen before the body is read, so their span count is unknown "
+        "and they are not counted as telemetry losses. Span-rate and daily-quota refusals are "
+        "counted and shown to the project (the completeness card and the notices on Overview "
+        "and Traces). `0` disables only the span-rate and daily-quota caps. One project's own "
+        "span-rate and daily-quota caps: "
+        "`spanlight set-ingest-caps <project-id> --spans-per-day N` (and `--bytes-per-day`, "
+        "`--spans-per-second`; `default` clears one). The gateway's own spans are governed by "
+        "the gateway key limits instead. See the "
+        "[ingestion spike runbook](/docs/runbooks/ingestion-spike/#per-project-caps).",
+        (
+            "ingest_max_in_flight_per_project",
+            "ingest_spans_per_second",
+            "ingest_spans_per_day",
+            "ingest_bytes_per_day",
+        ),
+    ),
+    (
         "Connection pools",
         "Idempotency keys and rate limiting each use a small pool of their own, so they cannot "
         "starve the main one. Change these only after reading the "
@@ -212,6 +261,8 @@ GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             "idempotency_pool_timeout_seconds",
             "rate_limit_pool_size",
             "rate_limit_pool_timeout_seconds",
+            "rate_limit_lock_timeout_ms",
+            "rate_limit_statement_timeout_ms",
         ),
     ),
     (
@@ -245,7 +296,8 @@ DESCRIPTIONS: dict[str, str] = {
     "app_base_url": (
         "The public URL the dashboard is served from. It is the allowed `Origin` for "
         "state-changing requests and the base of the links in emails and OAuth callbacks. An "
-        "`https` URL turns on `Secure` cookies and requires a real `SECRET_KEY`."
+        "`https` URL turns on `Secure` cookies with `__Host-` names. An `https` URL, or any host "
+        "other than `localhost`, `127.0.0.1` or `[::1]`, requires a real `SECRET_KEY`."
     ),
     "allowed_origins": (
         "Extra origins allowed to make state-changing requests, comma-separated. Leave empty "
@@ -253,9 +305,10 @@ DESCRIPTIONS: dict[str, str] = {
     ),
     "secret_key": (
         "HMAC key for CSRF tokens and for the short-lived signed state of two-factor and "
-        "GitHub or Google sign-in. Required when `APP_BASE_URL` uses `https`: the application "
-        "refuses to start with the built-in development value. Generate a long random string. "
-        "Rotating it does not sign anyone out."
+        "GitHub or Google sign-in. Required when `APP_BASE_URL` uses `https` or is not local: "
+        "the application refuses to start with the built-in development value. It must be at "
+        "least 32 characters unless `APP_BASE_URL` is `localhost`, `127.0.0.1` or `[::1]`. "
+        "Generate a long random string. Rotating it does not sign anyone out."
     ),
     "credentials_keys": (
         "Master keys that encrypt stored secrets such as two-factor seeds and gateway provider "
@@ -268,6 +321,12 @@ DESCRIPTIONS: dict[str, str] = {
         "not delivered, and demo traffic is skipped. The worker logs a "
         "`worker_credentials_keys_missing` warning at start-up. Back the value up: a lost key "
         "cannot be recovered."
+    ),
+    "terms_version": (
+        "The version of the hosted terms of service that users must accept, for example "
+        "`2026-11-01`. Set, signup asks for acceptance and signed-in users are asked to accept "
+        "when the version changes. Leave it unset on a self-hosted instance: no terms are asked "
+        "for anywhere."
     ),
     "ee_license_key": (
         "An enterprise license key, `spl_lic_...`. Unset runs the community edition. A key that "
@@ -306,7 +365,7 @@ DESCRIPTIONS: dict[str, str] = {
         "`<APP_BASE_URL>/api/v1/auth/oauth/google/callback`."
     ),
     "oauth_google_client_secret": "Client secret of the Google OAuth client.",
-    "s3_bucket": "Bucket for backups and exports. Keep it private and encrypted at rest.",
+    "s3_bucket": "Bucket for trace exports. Keep it private and encrypted at rest.",
     "s3_access_key": "Access key ID for the bucket.",
     "s3_secret_key": "Secret access key for the bucket.",
     "s3_region": "Region of the bucket. AWS buckets need it, for example `eu-west-1`.",
@@ -320,11 +379,40 @@ DESCRIPTIONS: dict[str, str] = {
         "Address buckets as `<endpoint>/<bucket>` instead of `<bucket>.<endpoint>`. MinIO and "
         "most self-hosted services need this."
     ),
+    "backup_s3_bucket": "Independent private backup bucket; never falls back to S3_BUCKET.",
+    "backup_s3_access_key": "Backup principal access key; routine workers need Put/Abort only.",
+    "backup_s3_secret_key": (
+        "Backup principal secret; supply independent recovery or retention keys only to operators."
+    ),
+    "backup_s3_endpoint": "Independent S3-compatible backup endpoint; unset uses AWS.",
+    "backup_s3_region": "Independent backup signing region; defaults to us-east-1.",
+    "backup_s3_force_path_style": "Use path-style addressing for backup storage (MinIO).",
+    "backup_s3_sse": (
+        "Server-side encryption requested on backup uploads; blank sends none (MinIO without KMS)."
+    ),
     "backups_enabled": "Set to `false` to turn the nightly backup off.",
     "backup_database_url": (
         "Connection URL `pg_dump` uses. It must use a superuser or a role with `BYPASSRLS`, "
         "never the application role: the tenant tables force row-level security and a dump "
         "fails without bypassing it."
+    ),
+    "shutdown_timeout_seconds": (
+        "Total first-signal shutdown envelope; later signals never reset it. External stop "
+        "grace must exceed it (75s requested by default). Unjoined database users retain "
+        "their pools past expiry until external hard stop; accounting remains incomplete."
+    ),
+    "shutdown_work_seconds": (
+        "Work allowance before cancellation. With defaults, producer joins end at 52.5s, "
+        "writes at 53.75s and cancellation joins at 55s. Must leave room for joins and both "
+        "reserves."
+    ),
+    "shutdown_flush_seconds": (
+        "Final loss-flush reserve before resource close (default 55-58s). Failed or "
+        "uncertain writes remain incomplete."
+    ),
+    "shutdown_close_seconds": (
+        "Resource-close reserve at the end of the original deadline (default 58-60s); "
+        "tracing uses only remaining time."
     ),
     "worker_required": (
         "`/health/ready` answers `503` when no worker has reported in the last 120 seconds. "
@@ -350,6 +438,24 @@ DESCRIPTIONS: dict[str, str] = {
         "it to a separate `python -m app.gateway` process (point `GATEWAY_UPSTREAM` at it) and "
         "`disabled` turns it off. In the last two the API answers `/gw/*` with `404`."
     ),
+    "gateway_max_in_flight": (
+        "Most concurrent HTTP gateway requests per process in embedded or standalone mode. "
+        "Excess requests get provider-shaped 503 with Retry-After before body/authentication. "
+        "A slot lasts through stream cleanup. Dashboard/health capacity is independent; internal "
+        "playground and worker calls are outside this cap. Replicas/processes multiply capacity "
+        "and memory; `GATEWAY_MAX_IN_FLIGHT_BYTES` is what bounds memory."
+    ),
+    "gateway_max_in_flight_bytes": (
+        "Most declared request-body bytes of in-flight gateway requests per process (80 MiB, at "
+        "least 10 MiB). A request reserves its `Content-Length`, or the full 10 MiB request cap "
+        "when the body is chunked or undeclared; `GET`, `HEAD` and `OPTIONS` reserve nothing. One "
+        "that does not fit gets the same 503."
+    ),
+    "gateway_max_in_flight_per_key": (
+        "Most in-flight gateway requests per process with the same gateway key, read as "
+        "authentication reads it from `Authorization` or `x-api-key`, so one caller cannot take "
+        "every slot. Excess requests get the same 503."
+    ),
     "gateway_allow_insecure_base_urls": (
         "Allow provider credentials to use `http://` base URLs and private, loopback or "
         "link-local addresses, for a local model server. Off, a base URL must be `https://` and "
@@ -362,7 +468,9 @@ DESCRIPTIONS: dict[str, str] = {
     ),
     "gateway_record_concurrency": (
         "Most gateway spans written to the database at once. Spans are written after the answer "
-        "has been sent, and each write holds a connection."
+        "has been sent, and each write holds a connection of the pool requests use (10, with 10 "
+        "more on overflow), so keep it at or below 10: more writers than that let a burst of span "
+        "writes take the connections gateway calls need."
     ),
     "gateway_record_backlog": (
         "Most gateway spans waiting or being written, a failed write waiting to be retried "
@@ -414,6 +522,12 @@ DESCRIPTIONS: dict[str, str] = {
     "user_stats_enabled": (
         "Schedule the refresh of per-user daily statistics behind the Users page. Off, the page "
         "stops updating."
+    ),
+    "aggregate_repair_enabled": (
+        "Consume durable correction markers every five minutes. Capture and pending metadata "
+        "remain active when off; affected materialized observations and alerts remain pending. "
+        "Enable after the aggregate repair cutover procedure and verify relevant backlog "
+        "convergence."
     ),
     "evals_enabled": (
         "Schedule online evaluation, which samples recent spans for every enabled evaluator "
@@ -470,10 +584,37 @@ DESCRIPTIONS: dict[str, str] = {
         "`/gw` and `/health` are not counted. Blank keeps the default."
     ),
     "api_key_cache_ttl_seconds": (
-        "Seconds one api process reuses a project API key's row before reading it again. A key "
-        "revoked or deleted through another api process keeps working on this one for up to this "
-        "long; a revocation on the same process takes effect at once. `0` reads the key on every "
-        "request. Blank keeps the default."
+        "Seconds one api process reuses a project API key's row, and a gateway key's context "
+        "(project, route, provider credential, Integration Lab profile and the project's payload "
+        "capture and contact redaction settings), before reading it again. A key revoked or "
+        "edited, or a route, credential, profile, capture or redaction setting changed, through "
+        "another api process keeps its old value on this one for up to this long; a change on "
+        "the same process takes effect at once. `0` reads them on every request. Blank keeps the "
+        "default."
+    ),
+    "ingest_max_in_flight_per_project": (
+        "Concurrent span-ingest requests one project may hold per process, shared across its "
+        "keys and both ingest routes. Minimum 1; blank keeps the default. Checked after key "
+        "authentication, scope and the per-key bucket, before reading the body; held until "
+        "the request finishes. Over it the request is `429 RATE_LIMITED` with `Retry-After: 1`. "
+        "The default leaves most of a process's database connections (20) to other projects; "
+        "replicas multiply this limit. "
+        "Refusals increment `spanlight_rate_limit_rejections_total` with "
+        '`scope="ingest_project_concurrency"`.'
+    ),
+    "ingest_spans_per_second": (
+        "Sustained spans a second one project may ingest, with bursts of at least a full "
+        "1,000-span batch. Over it the request is `429 RATE_LIMITED` with `Retry-After` in "
+        "seconds. `0` is no rate cap."
+    ),
+    "ingest_spans_per_day": (
+        "Spans one project may store per UTC day (replays of stored spans count nothing). Once "
+        "used up, a request with new spans is `429 INGEST_QUOTA_EXCEEDED` with `Retry-After` "
+        "until midnight UTC. `0` is no daily span cap."
+    ),
+    "ingest_bytes_per_day": (
+        "Decompressed request body bytes one project may ingest per UTC day; the same `429` as "
+        "the span quota once used up. `0` is no daily byte cap."
     ),
     "idempotency_pool_size": "Connections in the idempotency-key pool.",
     "idempotency_pool_timeout_seconds": (
@@ -483,6 +624,17 @@ DESCRIPTIONS: dict[str, str] = {
     "rate_limit_pool_timeout_seconds": (
         "Seconds a rate-limit check waits for a connection. A check that cannot get one is "
         "skipped and the request goes through, so keep this short."
+    ),
+    "rate_limit_lock_timeout_ms": (
+        "Milliseconds each token-bucket SQL lock wait may take. Must be positive and less than "
+        "RATE_LIMIT_STATEMENT_TIMEOUT_MS. SQL errors skip the check and increment unavailable "
+        "metrics. Separate from connection checkout and request/cancellation cleanup time."
+    ),
+    "rate_limit_statement_timeout_ms": (
+        "Milliseconds a token-bucket SQL statement may take. Must exceed "
+        "RATE_LIMIT_LOCK_TIMEOUT_MS. "
+        "Applies only to the dedicated limiter pool; authentication throttles and budgets retain "
+        "their existing failure policies. This is not a full request deadline."
     ),
     "metrics_token": (
         "Bearer token that protects `/metrics`. Unset makes `/metrics` answer `404`. The "

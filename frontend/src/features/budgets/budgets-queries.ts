@@ -11,7 +11,7 @@ export function useBudgetsQuery() {
   const { projectId } = useProjectParams();
   return useQuery({
     queryKey: queryKeys.project(projectId).budgets,
-    queryFn: () => budgetsApi.list(projectId),
+    queryFn: ({ signal }) => budgetsApi.list(projectId, signal),
     refetchInterval: 60_000,
   });
 }

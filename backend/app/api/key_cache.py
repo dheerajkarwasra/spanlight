@@ -1,5 +1,8 @@
 """Per-process cache of project API key rows, keyed by the key's public prefix.
 
+The gateway keeps its keys' contexts in an instance of its own (`app.gateway.key_context`), with
+the same TTL and the same rules: a hit skips the reads, never the secret check.
+
 Every ingest batch and every key read used to look its key up by prefix. A hit here skips that
 round trip and the ORM row; it does not skip the checks. The presented secret is compared with
 the cached hash on every request, and `revoked_at` and `expires_at` are judged from the cached
@@ -28,8 +31,8 @@ class CachedKey:
     last_used_at: datetime | None
 
 
-class KeyCache:
-    """Bounded, TTL'd map from prefix to `CachedKey`. `ttl_s` 0 turns it off.
+class KeyCache[V]:
+    """Bounded, TTL'd map from prefix to a key's cached value. `ttl_s` 0 turns it off.
 
     Not thread-safe; it is used from the event loop only, and no method awaits.
     """
@@ -38,9 +41,9 @@ class KeyCache:
         self._ttl_s = ttl_s
         self._max_entries = max_entries
         # Insertion order is age order (`put` re-inserts), so the oldest entries are first.
-        self._entries: dict[str, tuple[float, CachedKey]] = {}
+        self._entries: dict[str, tuple[float, V]] = {}
 
-    def get(self, prefix: str) -> CachedKey | None:
+    def get(self, prefix: str) -> V | None:
         entry = self._entries.get(prefix)
         if entry is None:
             return None
@@ -50,7 +53,7 @@ class KeyCache:
             return None
         return key
 
-    def put(self, prefix: str, key: CachedKey) -> None:
+    def put(self, prefix: str, key: V) -> None:
         if self._ttl_s <= 0:
             return
         now = time.monotonic()
@@ -62,7 +65,7 @@ class KeyCache:
             del self._entries[oldest]
         self._entries[prefix] = (now + self._ttl_s, key)
 
-    def touch(self, prefix: str, last_used_at: datetime) -> None:
+    def touch(self: "KeyCache[CachedKey]", prefix: str, last_used_at: datetime) -> None:
         """Record a `last_used_at` write, so the once-a-minute skip keeps working on hits."""
         entry = self._entries.get(prefix)
         if entry is not None:

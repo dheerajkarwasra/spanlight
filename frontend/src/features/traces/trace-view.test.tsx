@@ -32,8 +32,13 @@ vi.mock("./insight-badges", () => ({
 }));
 vi.mock("./span-replays-tab", () => ({ SpanReplaysTab: () => null }));
 vi.mock("@/features/scores", () => ({ ScoresPanel: () => null, SpanScores: () => null }));
+/** Every span the bar's Replay was rendered for, in order. */
+const replayTargets = vi.hoisted(() => [] as string[]);
 vi.mock("./replay-button", () => ({
-  ReplayButton: ({ span }: { span: Span }) => <p>Replay target: {span.span_id}</p>,
+  ReplayButton: ({ span }: { span: Span }) => {
+    replayTargets.push(span.span_id);
+    return <p>Replay target: {span.span_id}</p>;
+  },
 }));
 
 function makeSpan(id: string, overrides: Partial<Span>): Span {
@@ -69,6 +74,8 @@ function makeSpan(id: string, overrides: Partial<Span>): Span {
     attributes: {},
     truncated: false,
     payload_omitted: false,
+    attributes_omitted: false,
+    retry_eligible: false,
     finish_reason: null,
     prompt_version_id: null,
     usage_rollup: false,
@@ -133,6 +140,7 @@ const TRACE: TraceDetail = {
   models: ["gpt-4.1"],
   error_message: null,
   error_class: null,
+  root_received: true,
   has_scores: false,
   retry_calls: 0,
   retry_cost_usd: "0",
@@ -141,12 +149,54 @@ const TRACE: TraceDetail = {
   spans: SPANS,
 };
 
-/** The peek's selection lives in the sheet; this stands in for it. */
-function PeekHarness({ spans }: { spans: Span[] }) {
+/** The peek's selection lives in the sheet; this stands in for it. `next` adds a step to it. */
+function PeekHarness({
+  trace,
+  spans,
+  next,
+}: {
+  trace: TraceDetail;
+  spans: Span[];
+  next?: TraceDetail;
+}) {
   const [selection, setSelection] = useState<PeekSelection>({});
+  const [shown, setShown] = useState(trace);
+  return (
+    <>
+      {next ? (
+        <button
+          type="button"
+          onClick={() => {
+            setShown(next);
+          }}
+        >
+          Next trace
+        </button>
+      ) : null}
+      <TraceViewPeek
+        trace={shown}
+        spans={shown === trace ? spans : shown.spans}
+        selection={selection}
+        onSelectionChange={setSelection}
+      />
+    </>
+  );
+}
+
+function TraceViewPeek({
+  trace,
+  spans,
+  selection,
+  onSelectionChange: setSelection,
+}: {
+  trace: TraceDetail;
+  spans: Span[];
+  selection: PeekSelection;
+  onSelectionChange: (next: PeekSelection) => void;
+}) {
   return (
     <TraceView
-      trace={TRACE}
+      trace={trace}
       spans={spans}
       variant="peek"
       selection={selection}
@@ -157,7 +207,13 @@ function PeekHarness({ spans }: { spans: Span[] }) {
   );
 }
 
-function renderView(variant: "page" | "peek", search = "", spans = TRACE.spans) {
+function renderView(
+  variant: "page" | "peek",
+  search = "",
+  spans = TRACE.spans,
+  trace: Partial<TraceDetail> = {},
+  next?: TraceDetail,
+) {
   const rootRoute = createRootRoute();
   const authed = createRoute({ getParentRoute: () => rootRoute, id: "_authed" });
   const traceRoute = createRoute({
@@ -166,9 +222,9 @@ function renderView(variant: "page" | "peek", search = "", spans = TRACE.spans) 
     validateSearch: traceDetailSearchSchema,
     component: () =>
       variant === "page" ? (
-        <TraceView trace={{ ...TRACE, spans }} spans={spans} variant="page" />
+        <TraceView trace={{ ...TRACE, ...trace, spans }} spans={spans} variant="page" />
       ) : (
-        <PeekHarness spans={spans} />
+        <PeekHarness trace={{ ...TRACE, ...trace }} spans={spans} next={next} />
       ),
   });
   const router = createRouter({
@@ -232,6 +288,55 @@ describe("TraceView summary bar", () => {
     ).not.toHaveLength(0);
   });
 
+  it.each(["page", "peek"] as const)(
+    "keeps errors first and says the %s's totals cover received spans while the root is missing",
+    async (variant) => {
+      renderView(variant, "", TRACE.spans, { root_received: false, error_count: 2 });
+
+      const name = await screen.findByRole("heading", { level: 1, name: "answer_ticket" });
+      const bar = name.closest("div.sticky") as HTMLElement;
+      expect(within(bar).getByText("Error: 2 errors")).toBeInTheDocument();
+      expect(within(bar).getByText("Duration so far").nextElementSibling).toHaveTextContent(
+        "2.00 s",
+      );
+      expect(name.nextElementSibling).toHaveTextContent(/^Duration so far 2\.00 s · /);
+      const disclosure = screen.getByText(
+        (_, element) =>
+          element?.tagName === "P" &&
+          /^Root span not received\. Duration, tokens and cost cover received spans only\. Last span ended .+\.$/.test(
+            element.textContent,
+          ),
+      );
+      expect(disclosure.querySelector("time")).toHaveAttribute("dateTime", TRACE.ended_at);
+    },
+  );
+
+  it("calls a trace whose root status is unknown neither OK nor missing its root", async () => {
+    renderView("page", "", TRACE.spans, { root_received: null });
+
+    const name = await screen.findByRole("heading", { level: 1, name: "answer_ticket" });
+    const bar = name.closest("div.sticky") as HTMLElement;
+    expect(within(bar).queryByText("OK")).toBeNull();
+    expect(within(bar).getByText("Root status unavailable")).toBeInTheDocument();
+    expect(within(bar).getByText("Duration")).toBeInTheDocument();
+    expect(screen.queryByText(/Root span not received/)).toBeNull();
+  });
+
+  it("labels an unknown duration plainly even while the root is missing", async () => {
+    const user = userEvent.setup();
+    renderView("page", "", TRACE.spans, { root_received: false, duration_ms: Number.NaN });
+
+    const name = await screen.findByRole("heading", { level: 1, name: "answer_ticket" });
+    const bar = name.closest("div.sticky") as HTMLElement;
+    expect(within(bar).queryByText("Duration so far")).toBeNull();
+    expect(within(bar).getByText("Duration").nextElementSibling).toHaveTextContent(/^—$/);
+
+    await user.click(screen.getByRole("button", { name: "Trace info" }));
+    const panel = screen.getByRole("region", { name: "Trace info" });
+    expect(within(panel).queryByText("Duration so far")).toBeNull();
+    expect(within(panel).getByText("Duration")).toBeInTheDocument();
+  });
+
   it("keeps Trace info closed until its button opens it", async () => {
     const user = userEvent.setup();
     renderView("page");
@@ -271,7 +376,7 @@ describe("TraceView summary bar", () => {
     renderView("page", "?span=root");
 
     expect(await screen.findByText("Replay target: call_1")).toBeInTheDocument();
-    await user.click(treeItem("call_2"));
+    await user.click(await screen.findByRole("treeitem", { name: /call_2/ }));
     expect(await screen.findByText("Replay target: call_2")).toBeInTheDocument();
     // One Replay: the inspector's span header no longer has its own.
     expect(screen.getAllByText(/Replay target/)).toHaveLength(1);
@@ -365,12 +470,57 @@ describe("TraceView stacked panes", () => {
     const scroll = vi.spyOn(Element.prototype, "scrollIntoView");
     renderView("page", "?span=root", [...SPANS, makeSpan("orphan", { parent_span_id: "gone" })]);
 
-    await user.click(await screen.findByText(/Missing parent span/));
+    await user.click(await screen.findByText(/Parent span not received/));
     expect(inspectorScrolls(scroll)).toBe(0);
   });
 });
 
 describe("TraceView tree pane", () => {
+  it("commits the bar over busy placeholder panes first, so a big tree never blocks it", async () => {
+    // Checked as each commit lands (a microtask), so it holds however the renders are batched.
+    const busy = '[aria-busy="true"]';
+    let sawBusyPanes = false;
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        record.addedNodes.forEach((node) => {
+          if (node instanceof Element && (node.matches(busy) || node.querySelector(busy))) {
+            sawBusyPanes = true;
+          }
+        });
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    renderView("page");
+
+    expect(await screen.findByRole("tree")).toBeInTheDocument();
+    observer.disconnect();
+    expect(sawBusyPanes).toBe(true);
+  });
+
+  it("names the linked span in the bar from the first render, before the tree arrives", async () => {
+    replayTargets.length = 0;
+    renderView("page", "?span=call_2");
+
+    expect(await screen.findByText("Replay target: call_2")).toBeInTheDocument();
+    await screen.findByRole("tree");
+    expect(new Set(replayTargets)).toEqual(new Set(["call_2"]));
+  });
+
+  it("starts another trace with its own folds and search, not the last trace's", async () => {
+    const user = userEvent.setup();
+    renderView("peek", "", TRACE.spans, {}, { ...TRACE, trace_id: "trace_2" });
+    await screen.findByRole("tree");
+    const rows = screen.getAllByRole("treeitem").length;
+
+    await user.click(screen.getByRole("button", { name: "Collapse all" }));
+    await user.type(screen.getByRole("searchbox", { name: "Find span" }), "nothing-matches");
+    expect(screen.getAllByRole("treeitem").length).toBeLessThan(rows);
+
+    await user.click(screen.getByRole("button", { name: "Next trace" }));
+    expect(await screen.findByRole("searchbox", { name: "Find span" })).toHaveValue("");
+    expect(screen.getAllByRole("treeitem")).toHaveLength(rows);
+  });
+
   it("virtualizes a big tree against its rows box, which scrolls on its own under the toolbar", async () => {
     // The last call failed, so the root stays open and all 400 rows are visible.
     const spans = [
@@ -387,7 +537,7 @@ describe("TraceView tree pane", () => {
     renderView("peek", "", spans);
 
     await screen.findByRole("heading", { level: 1 });
-    const pane = screen.getByRole("tree").closest(".overflow-auto") as HTMLElement;
+    const pane = (await screen.findByRole("tree")).closest(".overflow-auto") as HTMLElement;
     // The 220 px cap holds the rows only: the toolbar stays above the scroll box.
     expect(pane).toHaveClass("max-h-[220px]");
     expect(within(pane).queryByRole("searchbox", { name: "Find span" })).toBeNull();

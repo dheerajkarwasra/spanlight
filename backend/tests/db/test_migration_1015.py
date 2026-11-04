@@ -6,7 +6,7 @@ Users page for good. The test seeds rows at the 1014 shape over traces in three 
 (one of them none), upgrades, and checks one row per environment with the refresh job's figures
 and the same totals; a day whose traces are gone keeps its row; the downgrade sums them back.
 
-Every test here leaves the session's shared database at head.
+Historical round trips use an owned database at the pinned revision.
 """
 
 import uuid
@@ -16,11 +16,15 @@ from decimal import Decimal
 
 import pytest
 
-from app.db.migrations import downgrade_to, head_revision, upgrade_to_head
 from app.db.rls import bypass_rls
 from app.end_users.refresh import refresh_user_stats
-from tests.conftest import admin_database_url
 from tests.db import schema_probe as probe
+from tests.db.migration_support import (
+    admin_database_url,
+    downgrade_to,
+    expected_revision,
+    upgrade_to_target,
+)
 from tests.jobs.bypass_support import SessionFactory
 
 BELOW = "1014"
@@ -50,10 +54,10 @@ FOLDED = (4, 4, 1, 1, Decimal("0.020000"), 45)
 
 
 @pytest.fixture
-def back_to_head(app_database_url: str) -> Iterator[None]:
+def back_to_target(migration_database_url: str) -> Iterator[None]:
     yield
-    upgrade_to_head(app_database_url)
-    assert probe.current_revision(app_database_url) == head_revision()
+    upgrade_to_target(migration_database_url)
+    assert probe.current_revision(migration_database_url) == expected_revision()
 
 
 def _seed_at_1014() -> None:
@@ -104,25 +108,19 @@ def _rows(day: date) -> list[tuple[object, ...]]:
     )
 
 
-async def test_1015_rederives_per_environment_and_folds_back(
-    app_database_url: str, back_to_head: None, session_factory: SessionFactory
+@pytest.mark.migration_revision("1015")
+def test_1015_rederives_per_environment_and_folds_back(
+    migration_database_url: str, back_to_target: None
 ) -> None:
-    downgrade_to(app_database_url, BELOW)
+    downgrade_to(migration_database_url, BELOW)
     _seed_at_1014()
 
-    upgrade_to_head(app_database_url)
+    upgrade_to_target(migration_database_url)
     assert _rows(DAY) == PER_ENVIRONMENT
     # Retention took this day's traces; its row stays, under no environment.
     assert _rows(GONE_DAY) == [(None, 99, 99, 0, 0, Decimal("9.990000"), 999)]
 
-    # The refresh job writes the same figures over the same traces.
-    async with session_factory() as db:
-        await bypass_rls(db)
-        await refresh_user_stats(db, PROJECT_ID, [DAY])
-        await db.commit()
-    assert _rows(DAY) == PER_ENVIRONMENT
-
-    downgrade_to(app_database_url, BELOW)
+    downgrade_to(migration_database_url, BELOW)
     folded = probe.query(
         admin_database_url(),
         "SELECT traces, llm_calls, errors, unpriced_calls, cost_usd, tokens FROM user_stats_daily "
@@ -131,3 +129,15 @@ async def test_1015_rederives_per_environment_and_folds_back(
         day=DAY,
     )
     assert folded == [FOLDED]
+
+
+async def test_current_refresh_matches_1015_backfill_figures(
+    session_factory: SessionFactory,
+) -> None:
+    _seed_at_1014()
+    # The refresh job writes the same figures over the same traces.
+    async with session_factory() as db:
+        await bypass_rls(db)
+        await refresh_user_stats(db, PROJECT_ID, [DAY])
+        await db.commit()
+    assert _rows(DAY) == PER_ENVIRONMENT

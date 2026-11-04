@@ -2,7 +2,7 @@
 export kind and the metadata and trace-name budget scopes) apply, hold their invariants, and can
 be undone.
 
-Every test that downgrades does so on the session's shared database and leaves it at head; the
+Round trips use owned databases at pinned revisions; the
 others write rows through the superuser, under the truncated `organizations`.
 """
 
@@ -12,9 +12,8 @@ import uuid
 import psycopg
 import pytest
 
-from alembic import command
-from app.db.migrations import alembic_config, downgrade_to, head_revision, upgrade_to_head
 from tests.db import schema_probe as probe
+from tests.db.migration_support import downgrade_to, expected_revision, upgrade_to_target
 
 ORG_ID = uuid.UUID("10000000-0000-4000-8000-000000000800")
 PROJECT_ID = uuid.UUID("20000000-0000-4000-8000-000000000800")
@@ -106,7 +105,7 @@ def _assert_0800_to_0804_absent(database_url: str) -> None:
 
 
 def test_0800_column_and_function_at_head(app_database_url: str) -> None:
-    assert probe.current_revision(app_database_url) == head_revision()
+    assert probe.current_revision(app_database_url) == expected_revision()
     _assert_0800_to_0804_present(app_database_url)
 
 
@@ -143,39 +142,41 @@ def test_0800_merge_function_follows_the_merge_rules(app_database_url: str) -> N
     assert merged == {**thirty_one, "a-b": "2"}
 
 
-def test_0800_is_repeatable_after_an_interrupted_run(app_database_url: str) -> None:
-    downgrade_to(app_database_url, "0800")
+@pytest.mark.migration_revision("0800")
+def test_0800_is_repeatable_after_an_interrupted_run(migration_database_url: str) -> None:
+    downgrade_to(migration_database_url, "0800")
     try:
         before = (
-            probe.columns(app_database_url, "traces"),
-            probe.constraints(app_database_url, "traces"),
-            probe.indexes(app_database_url, "traces"),
-            _functions(app_database_url),
+            probe.columns(migration_database_url, "traces"),
+            probe.constraints(migration_database_url, "traces"),
+            probe.indexes(migration_database_url, "traces"),
+            _functions(migration_database_url),
         )
         # The autocommit steps landed but the revision was never stamped: run 0800 again.
         with probe.admin() as connection:
             connection.execute("UPDATE alembic_version SET version_num = %s", (BELOW_0800,))
-        command.upgrade(alembic_config(app_database_url), "0800")
-        assert probe.current_revision(app_database_url) == "0800"
+        upgrade_to_target(migration_database_url)
+        assert probe.current_revision(migration_database_url) == "0800"
         assert before == (
-            probe.columns(app_database_url, "traces"),
-            probe.constraints(app_database_url, "traces"),
-            probe.indexes(app_database_url, "traces"),
-            _functions(app_database_url),
+            probe.columns(migration_database_url, "traces"),
+            probe.constraints(migration_database_url, "traces"),
+            probe.indexes(migration_database_url, "traces"),
+            _functions(migration_database_url),
         )
     finally:
-        upgrade_to_head(app_database_url)
+        upgrade_to_target(migration_database_url)
 
 
-def test_0800_round_trip(app_database_url: str) -> None:
-    _assert_0800_to_0804_present(app_database_url)
-    downgrade_to(app_database_url, BELOW_0800)
+@pytest.mark.migration_revision("0804")
+def test_0800_round_trip(migration_database_url: str) -> None:
+    _assert_0800_to_0804_present(migration_database_url)
+    downgrade_to(migration_database_url, BELOW_0800)
     try:
-        assert probe.current_revision(app_database_url) == BELOW_0800
-        _assert_0800_to_0804_absent(app_database_url)
+        assert probe.current_revision(migration_database_url) == BELOW_0800
+        _assert_0800_to_0804_absent(migration_database_url)
     finally:
-        upgrade_to_head(app_database_url)
-    _assert_0800_to_0804_present(app_database_url)
+        upgrade_to_target(migration_database_url)
+    _assert_0800_to_0804_present(migration_database_url)
 
 
 def _promote(connection: psycopg.Connection, keys: list[str | None]) -> None:
@@ -281,24 +282,27 @@ def test_0803_adds_the_attribution_kind(app_database_url: str) -> None:
     assert _enum(app_database_url, "export_kind") == ["traces", "attribution"]
 
 
+@pytest.mark.migration_revision("0803")
 def test_0803_downgrade_deletes_attribution_exports_and_keeps_trace_exports(
-    app_database_url: str,
+    migration_database_url: str,
 ) -> None:
     with probe.admin() as connection:
         probe.seed_project(connection, ORG_ID, PROJECT_ID)
         traces_export = _export(connection, "traces")
         _export(connection, "attribution")
 
-    downgrade_to(app_database_url, "0802")
+    downgrade_to(migration_database_url, "0802")
     try:
-        assert _enum(app_database_url, "export_kind") == ["traces"]
-        assert probe.columns(app_database_url, "exports")["kind"][-1] == "'traces'::export_kind"
+        assert _enum(migration_database_url, "export_kind") == ["traces"]
+        assert (
+            probe.columns(migration_database_url, "exports")["kind"][-1] == "'traces'::export_kind"
+        )
         with probe.admin() as connection:
             rows = connection.execute("SELECT id FROM exports").fetchall()
             assert rows == [(traces_export,)]
     finally:
-        upgrade_to_head(app_database_url)
-    assert _enum(app_database_url, "export_kind") == ["traces", "attribution"]
+        upgrade_to_target(migration_database_url)
+    assert _enum(migration_database_url, "export_kind") == ["traces", "attribution"]
 
 
 def _budget(connection: psycopg.Connection, scope: str, scope_id: str | None) -> uuid.UUID:
@@ -325,13 +329,16 @@ def test_0804_scopes_and_scope_id_length() -> None:
             _budget(connection, "user", "u" * 401)
 
 
-def test_0804_downgrade_deletes_budgets_too_long_for_the_0304_check(app_database_url: str) -> None:
+@pytest.mark.migration_revision("0804")
+def test_0804_downgrade_deletes_budgets_too_long_for_the_0304_check(
+    migration_database_url: str,
+) -> None:
     with probe.admin() as connection:
         probe.seed_project(connection, ORG_ID, PROJECT_ID)
         _budget(connection, "user", "u" * 201)
         kept_rule = _budget(connection, "user", "u" * 200)
 
-    downgrade_to(app_database_url, "0803")
+    downgrade_to(migration_database_url, "0803")
     try:
         with probe.admin() as connection:
             rules = connection.execute("SELECT id FROM alert_rules").fetchall()
@@ -339,23 +346,26 @@ def test_0804_downgrade_deletes_budgets_too_long_for_the_0304_check(app_database
         assert rules == [(kept_rule,)]
         assert budgets == [(kept_rule,)]
     finally:
-        upgrade_to_head(app_database_url)
+        upgrade_to_target(migration_database_url)
 
 
-def test_0804_downgrade_deletes_new_scope_budgets_and_their_rules(app_database_url: str) -> None:
+@pytest.mark.migration_revision("0804")
+def test_0804_downgrade_deletes_new_scope_budgets_and_their_rules(
+    migration_database_url: str,
+) -> None:
     with probe.admin() as connection:
         probe.seed_project(connection, ORG_ID, PROJECT_ID)
         _budget(connection, "metadata", "customer_id=acme")
         project_rule = _budget(connection, "project", None)
 
-    downgrade_to(app_database_url, "0803")
+    downgrade_to(migration_database_url, "0803")
     try:
-        assert _enum(app_database_url, "budget_scope") == SCOPES_0304
+        assert _enum(migration_database_url, "budget_scope") == SCOPES_0304
         with probe.admin() as connection:
             rules = connection.execute("SELECT id FROM alert_rules").fetchall()
             budgets = connection.execute("SELECT rule_id, scope::text FROM budgets").fetchall()
         assert rules == [(project_rule,)]
         assert budgets == [(project_rule, "project")]
     finally:
-        upgrade_to_head(app_database_url)
-    assert _enum(app_database_url, "budget_scope") == [*SCOPES_0304, "metadata", "trace_name"]
+        upgrade_to_target(migration_database_url)
+    assert _enum(migration_database_url, "budget_scope") == [*SCOPES_0304, "metadata", "trace_name"]

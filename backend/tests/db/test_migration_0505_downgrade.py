@@ -9,12 +9,15 @@ hand. The downgrade now does what `ON DELETE SET NULL` would have done.
 import uuid
 
 import psycopg
+import pytest
 from sqlalchemy import create_engine, text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.migrations import downgrade_to, head_revision, upgrade_to_head
-from app.pricing.cost import sync_seed_prices
-from tests.conftest import admin_database_url
+from tests.db.migration_support import (
+    admin_database_url,
+    downgrade_to,
+    expected_revision,
+    upgrade_to_target,
+)
 
 USER_ID = uuid.UUID("00000000-0000-4000-8000-0000000005a1")
 ORG_ID = uuid.UUID("10000000-0000-4000-8000-0000000005a1")
@@ -71,28 +74,25 @@ def _score_run_link() -> list[tuple[uuid.UUID, uuid.UUID | None]]:
         engine.dispose()
 
 
+@pytest.mark.migration_revision("0505")
 async def test_downgrade_below_0505_with_an_evaluator_score_can_upgrade_again(
-    app_database_url: str, session_factory: async_sessionmaker[AsyncSession]
+    migration_database_url: str,
 ) -> None:
     _seed_an_evaluator_score()
 
-    downgrade_to(app_database_url, "0504")
+    downgrade_to(migration_database_url, "0504")
     try:
         # The score outlives its run, as `ON DELETE SET NULL` promises, and keeps no dangling id.
         assert _score_run_link() == [(SCORE_ID, None)]
     finally:
-        # The rest of the session shares this database, so it must end at head; this upgrade is
-        # also the step that failed before the fix.
-        upgrade_to_head(app_database_url)
-        async with session_factory() as db:
-            await sync_seed_prices(db)
-            await db.commit()
+        # This upgrade is the step that failed before the dangling-reference fix.
+        upgrade_to_target(migration_database_url)
 
-    engine = create_engine(app_database_url)
+    engine = create_engine(migration_database_url)
     try:
         with engine.connect() as connection:
             version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
     finally:
         engine.dispose()
-    assert version == head_revision()
+    assert version == expected_revision()
     assert _score_run_link() == [(SCORE_ID, None)]

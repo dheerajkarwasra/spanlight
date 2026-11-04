@@ -1,4 +1,5 @@
 import { ErrorState } from "@/components/error-state";
+import { SourceHistoryChip } from "@/components/freshness-chip";
 import { Card } from "@/components/ui/card";
 import { useMe } from "@/features/auth/queries";
 import { useProjectQuery } from "@/features/shell/project-context";
@@ -10,7 +11,7 @@ import { formatHeroDate, greetingFor, joinEyebrow, shortRangeLabel } from "./her
 import { EmptyRangeState } from "./overview-empty-states";
 import { OverviewDashboard, OverviewSkeleton } from "./overview-dashboard";
 import { OverviewHero } from "./overview-hero";
-import { pageStateOf, statusFor, type PageState } from "./page-state";
+import { historyLabelFor, pageStateOf, statusFor, type PageState } from "./page-state";
 import { useOverviewQueries, type OverviewQueries } from "./use-overview-queries";
 
 export function OverviewPage() {
@@ -20,6 +21,7 @@ export function OverviewPage() {
   const now = new Date();
   const state = pageStateOf(queries);
   const status = statusFor(state, queries);
+  const history = historyLabelFor(queries);
   const { range, environment } = queries;
   const environmentLabel = environment ?? "All environments";
 
@@ -40,7 +42,16 @@ export function OverviewPage() {
       : {
           full: joinEyebrow([date, environmentLabel, describeRange(range)]),
           compact: joinEyebrow([date, shortRangeLabel(range)]),
-          trailing: estimated ? <EstimatedChip /> : null,
+          trailing: (
+            <>
+              {estimated ? <EstimatedChip /> : null}
+              {history ? (
+                <span className="tracking-normal normal-case">
+                  <SourceHistoryChip label={history} />
+                </span>
+              ) : null}
+            </>
+          ),
         };
 
   return (
@@ -49,7 +60,7 @@ export function OverviewPage() {
         eyebrow={eyebrow}
         greeting={greetingFor(now, me.user.name)}
         status={status}
-        isLoading={status === null && state !== "error"}
+        isLoading={status === null && state !== "error" && history === null}
         listeningEnvironment={environment ?? null}
       />
       <OverviewBody

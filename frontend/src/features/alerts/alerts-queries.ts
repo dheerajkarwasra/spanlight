@@ -18,7 +18,7 @@ export function useAlertRulesQuery() {
   const { projectId } = useProjectParams();
   return useQuery({
     queryKey: queryKeys.project(projectId).alertRules,
-    queryFn: () => alertsApi.rules(projectId),
+    queryFn: ({ signal }) => alertsApi.rules(projectId, signal),
     refetchInterval: REFRESH_MS,
   });
 }

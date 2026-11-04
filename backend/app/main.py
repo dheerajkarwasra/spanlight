@@ -1,7 +1,7 @@
 """Application factory: `uvicorn app.main:app`."""
 
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 import httpx
 import structlog
@@ -13,9 +13,9 @@ from app.alerts.channels import register_channel_deliverers
 from app.api import gw, health, ingest, scores_ingest, v1
 from app.api.deps import Clock, utcnow
 from app.api.gw_errors import install_gateway_error_handlers
-from app.api.key_cache import KeyCache
+from app.api.key_cache import CachedKey, KeyCache
 from app.api.v1.prompts_read import key_router as prompt_read_router
-from app.config import Settings, get_settings
+from app.config import REQUEST_POOL_SIZE, Settings, get_settings
 from app.core.admission import AdmissionMiddleware
 from app.core.body_limit import BodyLimitMiddleware
 from app.core.egress import Resolver
@@ -31,17 +31,20 @@ from app.core.sentry import init_sentry
 from app.core.tracing import configure_tracing, shutdown_tracing
 from app.db.session import create_engine, create_session_factory
 from app.ee import hooks as ee
+from app.gateway.admission import GatewayAdmissionMiddleware
 from app.gateway.http import build_http_client
+from app.gateway.key_context import KeyContext
 from app.gateway.runtime import GatewayRuntime, build_runtime, close_runtime
 from app.gateway.settle_helpers import drain_settling
 from app.notifications.defaults import register_default_deliverers
 from app.pricing.cost import sync_seed_prices
+from app.process_shutdown import LossFlushOwner, disposal_gate, shutdown_scope
 from app.telemetry_losses import flush as loss_flush
 
 logger = structlog.get_logger(__name__)
 
 
-def create_app(
+def create_app(  # noqa: PLR0915 - keep application composition and ordered resource registrations
     settings: Settings | None = None,
     *,
     oauth_transport: httpx.AsyncBaseTransport | None = None,
@@ -82,28 +85,36 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-        await _sync_prices(session_factory)
-        # Built whatever GATEWAY_MODE says: credential checks use the client, and in-process
-        # callers the runtime, even when `/gw/*` is served by a standalone gateway.
-        runtime = _start_gateway(
-            application,
-            settings,
-            session_factory,
-            rate_limit_session_factory,
-            transport=gateway_transport,
-            resolver=gateway_resolver,
-        )
-        yield
-        # Explanations whose request went away settle in the background; they need the engine.
-        await drain_settling()
-        # The server has stopped taking requests and let in-flight ones finish (each stream's
-        # `aclose()` queues its span), so the spans are drained while the engine is still open.
-        await _stop_gateway(runtime)
-        await alert_http.aclose()
-        await engine.dispose()
-        await idempotency_engine.dispose()
-        await rate_limit_engine.dispose()
-        await shutdown_tracing(getattr(application.state, "tracer_provider", None))
+        flush_owner = LossFlushOwner(session_factory)
+        async with shutdown_scope(settings), AsyncExitStack() as cleanup:
+            cleanup.push_async_callback(
+                shutdown_tracing, getattr(application.state, "tracer_provider", None)
+            )
+            cleanup.push_async_callback(rate_limit_engine.dispose)
+            cleanup.push_async_callback(idempotency_engine.dispose)
+            cleanup.push_async_callback(engine.dispose)
+            cleanup.push_async_callback(alert_http.aclose)
+            async with disposal_gate(flush_owned=True):
+                await _sync_prices(session_factory)
+                # Built whatever GATEWAY_MODE says: credential checks use the client, and in-process
+                # callers the runtime, even when `/gw/*` is served by a standalone gateway.
+                runtime = await _start_gateway(
+                    application,
+                    settings,
+                    session_factory,
+                    rate_limit_session_factory,
+                    transport=gateway_transport,
+                    resolver=gateway_resolver,
+                )
+                # The server has stopped taking requests and let in-flight ones finish (each
+                # stream's `aclose()` queues its span), so the spans are drained while the engine
+                # is still open.
+                flush_owner.acquired = True
+                cleanup.push_async_callback(_stop_gateway, runtime, flush_owner)
+                # Explanations whose request went away settle in the background; they need
+                # the engine.
+                cleanup.push_async_callback(drain_settling)
+                yield
 
     app = FastAPI(
         title="Spanlight API",
@@ -125,7 +136,8 @@ def create_app(
     app.state.ee_license = ee.load(settings, app.state.clock())
     app.state.rate_limit_engine = rate_limit_engine
     app.state.rate_limit_session_factory = rate_limit_session_factory
-    app.state.key_cache = KeyCache(settings.api_key_cache_ttl_seconds)
+    app.state.key_cache = KeyCache[CachedKey](settings.api_key_cache_ttl_seconds)
+    app.state.gateway_key_cache = KeyCache[KeyContext](settings.api_key_cache_ttl_seconds)
 
     install_error_handlers(app)
     embedded_gateway = settings.gateway_mode == "embedded"
@@ -139,9 +151,7 @@ def create_app(
     # Outside the idempotency middleware (which reads bodies) and inside the ones below, so a
     # refusal is logged with a request id.
     app.add_middleware(BodyLimitMiddleware)
-    # Outside the body limit and idempotency layers, so a rejected request's body is never read,
-    # and inside the request-id one, so a rejection carries a request id and is counted.
-    app.add_middleware(AdmissionMiddleware, limit=settings.api_max_in_flight)
+    _install_api_admission(app, settings, embedded_gateway=embedded_gateway)
     # Added last = outermost: every response, including Origin rejections,
     # carries a request id and is logged.
     app.add_middleware(OriginCheckMiddleware, allowed_origins=settings.origin_allowlist)
@@ -162,6 +172,23 @@ def create_app(
     if embedded_gateway:
         app.include_router(gw.router)
     return app
+
+
+def _install_api_admission(app: FastAPI, settings: Settings, *, embedded_gateway: bool) -> None:
+    # Outside the body limit and idempotency layers, so a rejected request's body is never read,
+    # and inside the request-id one, so a rejection carries a request id and is counted.
+    app.add_middleware(AdmissionMiddleware, limit=settings.api_max_in_flight)
+    if embedded_gateway:
+        _install_gateway_admission(app, settings)
+
+
+def _install_gateway_admission(app: FastAPI, settings: Settings) -> None:
+    app.add_middleware(
+        GatewayAdmissionMiddleware,
+        limit=settings.gateway_max_in_flight,
+        limit_bytes=settings.gateway_max_in_flight_bytes,
+        limit_per_key=settings.gateway_max_in_flight_per_key,
+    )
 
 
 def create_gateway_app(
@@ -189,19 +216,26 @@ def create_gateway_app(
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-        runtime = _start_gateway(
-            application,
-            settings,
-            session_factory,
-            rate_limit_session_factory,
-            transport=gateway_transport,
-            resolver=gateway_resolver,
-        )
-        yield
-        await _stop_gateway(runtime)  # spans first, while the engine is open
-        await engine.dispose()
-        await rate_limit_engine.dispose()
-        await shutdown_tracing(getattr(application.state, "tracer_provider", None))
+        flush_owner = LossFlushOwner(session_factory)
+        async with shutdown_scope(settings), AsyncExitStack() as cleanup:
+            cleanup.push_async_callback(
+                shutdown_tracing, getattr(application.state, "tracer_provider", None)
+            )
+            cleanup.push_async_callback(rate_limit_engine.dispose)
+            cleanup.push_async_callback(engine.dispose)
+            async with disposal_gate(flush_owned=True):
+                runtime = await _start_gateway(
+                    application,
+                    settings,
+                    session_factory,
+                    rate_limit_session_factory,
+                    transport=gateway_transport,
+                    resolver=gateway_resolver,
+                )
+                # spans first, while the engine is open
+                flush_owner.acquired = True
+                cleanup.push_async_callback(_stop_gateway, runtime, flush_owner)
+                yield
 
     # No OpenAPI or docs pages: the api serves the one OpenAPI document, gateway routes included.
     app = FastAPI(
@@ -218,11 +252,13 @@ def create_gateway_app(
     app.state.rate_limit_engine = rate_limit_engine
     app.state.rate_limit_session_factory = rate_limit_session_factory
     app.state.clock = clock or utcnow
+    app.state.gateway_key_cache = KeyCache[KeyContext](settings.api_key_cache_ttl_seconds)
 
     install_error_handlers(app)  # `/health/*` and `/metrics` answer problem+json, as on the api
     install_gateway_error_handlers(app)
     # Its own service name (`spanlight-gateway`), so its spans are told apart from the api's.
     configure_tracing(settings, app, engine, role="gateway")
+    _install_gateway_admission(app, settings)
     app.add_middleware(RequestContextMiddleware)
 
     for router in (gw.router, health.router):
@@ -237,6 +273,7 @@ def _request_engine(settings: Settings) -> AsyncEngine:
     # first request on each stale connection answers 503 `Retry-After` instead (`app.core.errors`).
     return create_engine(
         settings.database_url,
+        pool_size=REQUEST_POOL_SIZE,
         pool_timeout=settings.api_pool_timeout_seconds,
         pre_ping=False,
         statement_timeout_ms=round(settings.api_statement_timeout_seconds * 1000),
@@ -252,6 +289,8 @@ def _rate_limit_engine(settings: Settings) -> AsyncEngine:
         pool_size=settings.rate_limit_pool_size,
         max_overflow=0,
         pool_timeout=settings.rate_limit_pool_timeout_seconds,
+        lock_timeout_ms=settings.rate_limit_lock_timeout_ms,
+        statement_timeout_ms=settings.rate_limit_statement_timeout_ms,
         # A stale connection fails one check, which fails open and is logged; a ping on every
         # checkout would add a round trip to every ingest and bearer read.
         pre_ping=False,
@@ -261,7 +300,7 @@ def _rate_limit_engine(settings: Settings) -> AsyncEngine:
     )
 
 
-def _start_gateway(
+async def _start_gateway(
     application: FastAPI,
     settings: Settings,
     sessions: async_sessionmaker[AsyncSession],
@@ -277,14 +316,20 @@ def _start_gateway(
     flush of the gateway's span losses (`app.telemetry_losses.flush`), which `_stop_gateway` stops.
     """
     http = build_http_client(settings, transport=transport, resolver=resolver)
-    runtime = build_runtime(settings, sessions, http=http, rate_limit_sessions=rate_limit_sessions)
-    application.state.gateway_http = http
-    application.state.gateway_runtime = runtime
-    loss_flush.start(sessions)
+    try:
+        runtime = build_runtime(
+            settings, sessions, http=http, rate_limit_sessions=rate_limit_sessions
+        )
+        application.state.gateway_http = http
+        application.state.gateway_runtime = runtime
+        loss_flush.start(sessions)
+    except BaseException:
+        await http.aclose()
+        raise
     return runtime
 
 
-async def _stop_gateway(runtime: GatewayRuntime) -> None:
+async def _stop_gateway(runtime: GatewayRuntime, flush_owner: LossFlushOwner | None = None) -> None:
     """Write the spans still queued, then the loss counts, the drain's own losses included.
 
     Both before the engines are disposed; the loss flush waits at most `SHUTDOWN_BUDGET_S`.
@@ -292,7 +337,10 @@ async def _stop_gateway(runtime: GatewayRuntime) -> None:
     try:
         await close_runtime(runtime)
     finally:
-        await loss_flush.stop(timeout_s=loss_flush.SHUTDOWN_BUDGET_S)
+        if flush_owner is None:
+            await loss_flush.stop(timeout_s=loss_flush.SHUTDOWN_BUDGET_S)
+        else:
+            await flush_owner.stop()
 
 
 async def _sync_prices(session_factory: async_sessionmaker[AsyncSession]) -> None:

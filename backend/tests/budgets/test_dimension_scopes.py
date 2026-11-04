@@ -21,7 +21,7 @@ from app.budgets.periods import period_start
 from app.budgets.types import BudgetPeriod
 from app.core.observability import FEATURE_USED
 from app.db.rls import bypass_rls
-from tests.budgets.clock import next_pass
+from tests.budgets.clock import catch_up, next_pass
 from tests.budgets.support import (
     BUDGET_NAME,
     CAP,
@@ -215,6 +215,7 @@ async def test_firing_and_resolving_on_a_metadata_scope(budget_world: BudgetWorl
     fired_at = rollover - timedelta(minutes=10)
     after = rollover + timedelta(minutes=1)
     budget = await create_budget(world, scope="metadata", scope_id="customer_id=acme")
+    catch_up(world.clock, fired_at)
     await ingest_trace(
         world,
         name="answer",

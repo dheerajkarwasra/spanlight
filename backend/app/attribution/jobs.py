@@ -1,14 +1,7 @@
-"""The attribution refresh job: yesterday and today every 15 minutes, a week more once a day.
+"""Refresh yesterday/today every 15 minutes, including promoted-key bootstrap.
 
-`refresh_attribution` recomputes yesterday and today (UTC) on every pass. The first pass of each
-UTC day (the one whose 15-minute period starts at 00:00, detected from the clock alone, so no
-state is kept anywhere) also recomputes `[today - 7, today - 2]`, to absorb spans that arrived
-late for those days and price-change replays. One query, with row-level security bypassed, lists
-the projects that have a trace since the first day of the pass; each then refreshes in a session
-of its own, bound to it alone, under the time bounds and stalest-first order of
-`app.jobs.project_pass`. A promoted key with no rows in the last seven days (just promoted) is
-backfilled over `[today - 6, today]`, and the rows of keys no longer promoted are deleted
-(spec §5.1). The job has a single attempt: the next pass is the retry.
+Daily historical work has its own durable cursor in daily_jobs. This recent path
+retains seven-day bootstrap and pruning for promoted metadata keys.
 """
 
 import time
@@ -26,6 +19,7 @@ from app.attribution.refresh import refresh_attribution
 from app.core.observability import ATTRIBUTION_REFRESH_DURATION
 from app.end_users.days import ONE_DAY, midnight
 from app.jobs.context import TaskContext
+from app.jobs.outcome import JobOutcome
 from app.jobs.project_pass import (
     HARD_STOP_SECONDS,
     RUN_BUDGET_SECONDS,
@@ -58,36 +52,19 @@ def recent_days(now: datetime) -> list[date]:
     return [today - ONE_DAY, today]
 
 
-def deep_days(now: datetime) -> list[date]:
-    """`[today - 7, today - 2]` (UTC): the days the first pass of each day recomputes as well."""
-    today = _today(now)
-    return [today - offset * ONE_DAY for offset in range(7, 1, -1)]
-
-
 def backfill_days(now: datetime) -> list[date]:
     """`[today - 6, today]` (UTC): the days a newly promoted key is backfilled over."""
     today = _today(now)
     return [today - offset * ONE_DAY for offset in range(BACKFILL_DAYS - 1, -1, -1)]
 
 
-def is_first_pass_of_day(now: datetime) -> bool:
-    """Whether the pass at `now` is the first of its UTC day: its period starts at 00:00."""
-    this_period = period_start(REFRESH_ATTRIBUTION, now)
-    previous_period = period_start(REFRESH_ATTRIBUTION, now - REFRESH_ATTRIBUTION.every)
-    return this_period.astimezone(UTC).date() != previous_period.astimezone(UTC).date()
-
-
-def pass_days(now: datetime) -> list[date]:
-    """The days the pass at `now` recomputes: the recent ones, and the deep ones once a day."""
-    recent = recent_days(now)
-    return deep_days(now) + recent if is_first_pass_of_day(now) else recent
-
-
 def _today(now: datetime) -> date:
     return period_start(REFRESH_ATTRIBUTION, now).astimezone(UTC).date()
 
 
-async def run_refresh_attribution(context: TaskContext, _: dict[str, Any]) -> None:
+async def run_refresh_attribution(context: TaskContext, _: dict[str, Any]) -> JobOutcome | None:
+    if not context.settings.attribution_enabled:
+        return JobOutcome.SKIPPED_NOT_CONFIGURED
     now = context.clock()
     run = await refresh_all(context.session_factory, now=now, heartbeat=context.heartbeat)
     logger.info(
@@ -99,6 +76,8 @@ async def run_refresh_attribution(context: TaskContext, _: dict[str, Any]) -> No
         folded=run.folded,
     )
 
+    return None
+
 
 async def refresh_all(
     session_factory: async_sessionmaker[AsyncSession],
@@ -109,10 +88,10 @@ async def refresh_all(
     budget_seconds: float = RUN_BUDGET_SECONDS,
     hard_stop_seconds: float = HARD_STOP_SECONDS,
 ) -> RefreshPass:
-    """Refresh `days` (`pass_days(now)` by default) for every project with a trace since the
+    """Refresh `days` (`recent_days(now)` by default) for every project with a trace since the
     first of them, backfilling newly promoted keys over `backfill_days(now)`. `heartbeat` runs
     between projects."""
-    window = list(days) if days is not None else pass_days(now)
+    window = list(days) if days is not None else recent_days(now)
     if not window:
         return RefreshPass()
     since = midnight(min(window))

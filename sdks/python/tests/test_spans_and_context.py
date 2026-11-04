@@ -301,7 +301,7 @@ def test_update_trace_applies_to_all_spans_of_the_trace(tracer, ingest):
 def test_trace_fields_are_made_to_fit_the_server_limits(ingest):
     tracer = spanlight.Spanlight(
         api_key="spl_live_testprefix_testsecret",
-        host="http://spanlight.test",
+        host="https://spanlight.test",
         environment="e" * 65,
         release="r" * 129,
         transport=ingest.transport(),

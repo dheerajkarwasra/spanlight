@@ -9,7 +9,9 @@ then writes the lines, the run and the source in one transaction, and refreshes 
 rollups of the source's projects over the window. A failed fetch writes nothing but the failed
 run. Retries follow `retry_for`: never for a refused key or an invalid answer, after the
 provider's `Retry-After` (at most 15 minutes) when rate limited, after 5 then 30 minutes on a
-provider or network error; the attempt that gives up marks the source `failing`.
+provider or network error; the attempt that gives up marks the source `failing`. A stored fetch
+ends with the bypass check (`bypass_alert.py`): admins are told about closed days whose bill is
+largely unexplained.
 
 The fetch runs under `FETCH_DEADLINE_S` so the job ends inside the worker's task timeout, and
 it heartbeats before the provider is called. Log lines name the source and the run by id and
@@ -35,6 +37,7 @@ from app.gateway.http import build_http_client
 from app.jobs.context import TaskContext
 from app.jobs.outcome import JobOutcome, RetryAfter
 from app.jobs.queue import enqueue
+from app.reconciliation.bypass_alert import notify_bypass
 from app.reconciliation.fetch_policy import (
     MAX_ATTEMPTS,
     ChildRequest,
@@ -117,6 +120,7 @@ async def run_fetch_billing_source(
         raise
     if outcome is None:  # stored: the run is `ok` and stays so whatever happens next
         await refresh_rollups(context, source, request, started)
+        await notify_bypass(context, source, request, started)
         return JobOutcome.OK
     return outcome
 

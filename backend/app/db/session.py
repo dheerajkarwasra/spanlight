@@ -19,6 +19,7 @@ def create_engine(
     pre_ping: bool = True,
     isolation_level: Literal["AUTOCOMMIT"] | None = None,
     statement_timeout_ms: int | None = None,
+    lock_timeout_ms: int | None = None,
 ) -> AsyncEngine:
     """An async engine.
 
@@ -28,10 +29,13 @@ def create_engine(
     handle a failed statement and cannot afford the extra round trip. `isolation_level`
     `AUTOCOMMIT` is for a pool that only runs single statements: no BEGIN or COMMIT round trips.
     `statement_timeout_ms` cancels any statement on these connections that runs longer.
+    `lock_timeout_ms` bounds each lock wait on these connections.
     """
     options = "-c timezone=UTC"
     if statement_timeout_ms is not None:
         options += f" -c statement_timeout={statement_timeout_ms}"
+    if lock_timeout_ms is not None:
+        options += f" -c lock_timeout={lock_timeout_ms}"
     return create_async_engine(
         database_url,
         pool_size=pool_size,

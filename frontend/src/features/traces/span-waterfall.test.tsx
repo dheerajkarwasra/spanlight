@@ -7,7 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import type { Insight, Span } from "@/lib/api";
 
 import { buildSpanTree } from "./span-tree";
-import { testSpan } from "./span-test-data";
+import { deepTestTree, testSpan } from "./span-test-data";
 import { SpanWaterfall } from "./span-waterfall";
 
 const BASE = Date.parse("2026-10-07T12:00:00.000Z");
@@ -46,6 +46,8 @@ function span(spanId: string, parentSpanId: string | null, status: Span["status"
     attributes: {},
     truncated: false,
     payload_omitted: false,
+    attributes_omitted: false,
+    retry_eligible: false,
     finish_reason: null,
     prompt_version_id: null,
     usage_rollup: false,
@@ -304,6 +306,24 @@ describe("SpanWaterfall toolbar", () => {
     expect(inline?.querySelector(".bg-kind-llm")).not.toBeNull();
   });
 
+  it("says search is partial only while a span's input/output was left out", () => {
+    const note = "Search covers span names and loaded input/output.";
+    const { rerender } = render(<Harness spans={traceSpans} />);
+    expect(screen.queryByText(note)).toBeNull();
+
+    rerender(
+      <Harness
+        spans={[...traceSpans, testSpan("attrs", "root", 5, 1, { attributes_omitted: true })]}
+      />,
+    );
+    expect(screen.queryByText(note)).toBeNull();
+
+    rerender(
+      <Harness spans={[...traceSpans, testSpan("big", "root", 6, 1, { payload_omitted: true })]} />,
+    );
+    expect(screen.getByText(note)).toBeInTheDocument();
+  });
+
   it("hides the retries switch when the trace has no retry group", () => {
     render(<Harness spans={traceSpans} />);
     expect(screen.queryByRole("switch", { name: "Collapse retries" })).toBeNull();
@@ -359,7 +379,9 @@ describe("SpanWaterfall rows", () => {
       <Harness spans={[testSpan("root", null, 0, 100), testSpan("orphan", "7f3a9c01", 10, 10)]} />,
     );
 
-    const ghost = screen.getByText("Missing parent span · 7f3a…").closest("[role=treeitem]");
+    const ghost = screen
+      .getByText("Parent span not received · 7f3a9c01…")
+      .closest("[role=treeitem]");
     expect(ghost).toHaveAttribute("aria-disabled", "true");
     // The ghost counts among the top-level rows: root 1, ghost 2, orphan 3 of 3.
     expect(row("root")).toHaveAttribute("aria-posinset", "1");
@@ -369,5 +391,30 @@ describe("SpanWaterfall rows", () => {
     row("root").focus();
     await user.keyboard("{ArrowDown}");
     expect(document.activeElement).toBe(row("orphan"));
+  });
+});
+
+describe("SpanWaterfall on a 5,000-deep trace", () => {
+  it("reveals a searched leaf and keeps keyboard navigation and tree semantics", async () => {
+    const user = userEvent.setup();
+    const { spans } = deepTestTree();
+    spans[4_999] = { ...(spans[4_999] as Span), name: "deep target" };
+    render(<Harness spans={spans} />);
+    expect(row("0")).toHaveAttribute("aria-expanded", "false");
+    expect(within(row("0")).getByText("+4,999 spans")).toBeInTheDocument();
+
+    await user.type(screen.getByRole("searchbox", { name: "Find span" }), "deep target{Enter}");
+    expect(screen.getByRole("status")).toHaveTextContent("1 of 1");
+    expect(row("4999")).toHaveAttribute("aria-selected", "true");
+    expect(row("4999")).toHaveAttribute("aria-level", "5000");
+    expect(row("4999")).toHaveAttribute("aria-posinset", "1");
+    expect(row("4999")).toHaveAttribute("aria-setsize", "1");
+    expect(screen.getAllByRole("treeitem").length).toBeLessThan(100);
+
+    row("4999").focus();
+    await user.keyboard("{ArrowUp}");
+    expect(document.activeElement).toHaveAttribute("id", "span-row-4998");
+    await user.keyboard("{Home}");
+    expect(document.activeElement).toHaveAttribute("id", "span-row-0");
   });
 });

@@ -4,7 +4,7 @@ The downgrade is lossy for one metric: rules that count failed calls are deleted
 project, whatever row-level security hides), because the enum it restores has no such value. Every
 other rule, and the CHECK that ties `spend` to budget rules, survives the round trip.
 
-The round trip downgrades the session's shared database and leaves it at head.
+The round trip uses an explicitly owned database at the pinned historical revision.
 """
 
 import uuid
@@ -12,8 +12,8 @@ import uuid
 import psycopg
 import pytest
 
-from app.db.migrations import downgrade_to, head_revision, upgrade_to_head
 from tests.db import schema_probe as probe
+from tests.db.migration_support import downgrade_to, expected_revision, upgrade_to_target
 
 ORG_ID = uuid.UUID("10000000-0000-4000-8000-000000000705")
 PROJECT_ID = uuid.UUID("20000000-0000-4000-8000-000000000705")
@@ -45,18 +45,19 @@ def _rules(connection: psycopg.Connection) -> set[uuid.UUID]:
     return {row[0] for row in rows}
 
 
-def test_0705_round_trip(app_database_url: str) -> None:
-    assert probe.current_revision(app_database_url) == head_revision()
-    assert _metrics(app_database_url) == [*METRICS_0303, "error_calls"]
+@pytest.mark.migration_revision("0705")
+def test_0705_round_trip(migration_database_url: str) -> None:
+    assert probe.current_revision(migration_database_url) == expected_revision()
+    assert _metrics(migration_database_url) == [*METRICS_0303, "error_calls"]
     with probe.admin() as connection:
         probe.seed_project(connection, ORG_ID, PROJECT_ID)
         failed_calls, latency = _rule(connection, "error_calls"), _rule(connection, "p95_ms")
 
-    downgrade_to(app_database_url, "0704")
+    downgrade_to(migration_database_url, "0704")
     try:
-        assert probe.current_revision(app_database_url) == "0704"
-        assert _metrics(app_database_url) == METRICS_0303
-        assert probe.constraints(app_database_url, "alert_rules")[SPEND_CHECK] == (
+        assert probe.current_revision(migration_database_url) == "0704"
+        assert _metrics(migration_database_url) == METRICS_0303
+        assert probe.constraints(migration_database_url, "alert_rules")[SPEND_CHECK] == (
             "CHECK (((metric = 'spend'::alert_metric) = (kind = 'budget'::alert_rule_kind)))",
             True,
         )
@@ -65,9 +66,9 @@ def test_0705_round_trip(app_database_url: str) -> None:
             with pytest.raises(psycopg.errors.InvalidTextRepresentation):
                 _rule(connection, "error_calls")
     finally:
-        upgrade_to_head(app_database_url)
+        upgrade_to_target(migration_database_url)
 
-    assert _metrics(app_database_url) == [*METRICS_0303, "error_calls"]
+    assert _metrics(migration_database_url) == [*METRICS_0303, "error_calls"]
     with probe.admin() as connection:
         assert failed_calls not in _rules(connection)
         _rule(connection, "error_calls")

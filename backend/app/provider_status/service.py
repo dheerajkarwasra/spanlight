@@ -7,7 +7,7 @@ are global and carry no row-level security, so nothing here binds or bypasses it
 """
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -162,6 +162,15 @@ async def list_incidents(
     """Incidents overlapping `window`, newest first by `(started_at, id)`, after the cursor."""
     return await queries.list_incidents(
         db, window=window, provider=provider, api_only=api_only, limit=limit, after=after
+    )
+
+
+async def api_incidents_by_provider(
+    db: AsyncSession, *, window: TimeRange, providers: Collection[str], limit_each: int
+) -> dict[str, list[ProviderIncident]]:
+    """Each provider's API-affecting incidents overlapping `window`, at most `limit_each` each."""
+    return await queries.api_incidents_by_provider(
+        db, window=window, providers=providers, limit_each=limit_each
     )
 
 

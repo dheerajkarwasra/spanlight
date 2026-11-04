@@ -27,6 +27,7 @@ from app.api.schemas.experiments import (
 )
 from app.core.errors import not_found
 from app.core.idempotency import idempotent
+from app.core.idempotency_store import StoredResponse, complete_operation
 from app.core.observability import feature_used
 from app.core.pagination import PageLimit, decode_uuid_cursor, encode_cursor
 from app.core.permissions import Permission
@@ -161,6 +162,9 @@ async def start_run(
     except EXPERIMENT_ERRORS as error:
         raise experiment_problem(error) from None
     queued = ExperimentRunOut.of(run)
+    await complete_operation(
+        db, StoredResponse(202, queued.model_dump(mode="json", by_alias=True), "application/json")
+    )
     await db.commit()
     _log("experiment_run_queued", access, experiment_id, run_id=str(run.id))
     return queued

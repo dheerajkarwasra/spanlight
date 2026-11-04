@@ -113,7 +113,7 @@ class PagerDutyDeliverer:
         try:
             parsed = parse_payload(payload)
         except ValidationError:
-            logger.warning("alert_payload_unparseable", event=summary_event(payload))
+            logger.warning("alert_payload_unparseable", alert_event=summary_event(payload))
             raise PermanentDeliveryError(BAD_PAYLOAD) from None
         is_test = isinstance(parsed, ChannelTestPayload)
         event = build_event(

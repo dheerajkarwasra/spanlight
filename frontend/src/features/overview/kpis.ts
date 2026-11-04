@@ -11,7 +11,7 @@ import {
 import type { ResolvedRange } from "@/lib/time-range";
 
 import type { ChartPoint } from "./chart-data";
-import { NO_SCORE_REASON } from "./doctor-format";
+import { HEALTH_FAILED_REASON, NO_SCORE_REASON } from "./doctor-format";
 import { errorCountFrom } from "./hero";
 import { formatCompactCost, formatTileCost, projectMonthlySpend } from "./spend";
 
@@ -211,15 +211,16 @@ export function ribbonKpis({
       unknownReason: "No price for any model in this period",
       denominator: spendLine(projection, previousCost, range),
       delta: delta(percentDelta(cost, previousCost), "percent", false),
-      lowerBound: cost !== null && current.unpriced_calls > 0,
+      trend: trend((point) => point.costUsd),
+      lowerBound: cost !== null && current.unpriced_calls !== null && current.unpriced_calls > 0,
     },
     {
       ...base,
       id: "doctor",
       label: "Doctor",
       value: health?.value == null ? null : String(health.value),
-      unknownReason: health ? NO_SCORE_REASON : "The Doctor's score didn't load",
-      denominator: health ? pluralize(open, "open finding") : null,
+      unknownReason: health ? NO_SCORE_REASON : HEALTH_FAILED_REASON,
+      denominator: health ? pluralize(open, "open finding") : "Unavailable",
       critical: health?.open_critical ?? 0,
       approximate: health?.approximate ?? false,
     },

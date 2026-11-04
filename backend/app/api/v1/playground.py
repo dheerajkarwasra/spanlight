@@ -18,6 +18,7 @@ from app.api.schemas.playground import (
     ReplayBudgetOut,
 )
 from app.core.idempotency import idempotent
+from app.core.idempotency_store import StoredResponse
 from app.core.permissions import Permission
 from app.core.ratelimit import enforce_rate_limit
 from app.gateway.context import GatewayServices
@@ -61,6 +62,13 @@ async def run_playground(
         access.user_id,
         body.configs,
         clock=clock,
+        receipt=lambda results: StoredResponse(
+            200,
+            PlaygroundRunOut(
+                results=[PlaygroundResultOut.of(result) for result in results]
+            ).model_dump(mode="json", by_alias=True),
+            "application/json",
+        ),
     )
     return PlaygroundRunOut(results=[PlaygroundResultOut.of(result) for result in results])
 

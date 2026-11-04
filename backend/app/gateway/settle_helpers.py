@@ -14,6 +14,7 @@ from typing import Any
 import structlog
 
 from app.core.errors import ProblemError
+from app.gateway.cleanup_join import join, retained
 from app.gateway.context import GatewayResult
 
 logger = structlog.get_logger(__name__)
@@ -49,15 +50,31 @@ def _settled(task: "asyncio.Task[Any]") -> None:
 
 
 async def drain_settling() -> None:
-    """Wait up to `DRAIN_TIMEOUT_SECONDS` for settlements still running; for the app's shutdown,
-    before the database engine is disposed. One that does not finish in time stays a
-    reservation, which the cleanup job or the reaper later charges at its worst-case cost."""
-    pending = set(_settling)
-    if not pending:
-        return
-    _, unfinished = await asyncio.wait(pending, timeout=DRAIN_TIMEOUT_SECONDS)
-    if unfinished:
-        logger.warning("insight_explain_settle_unfinished", settlements=len(unfinished))
+    """Drain settlements, then cancel and join them while the database stays usable.
+
+    Driver cancellation remains cooperative; this legacy callback has no process bound.
+    """
+    await retained(
+        join_settling(cancel_at=asyncio.get_running_loop().time() + DRAIN_TIMEOUT_SECONDS)
+    )
+
+
+def pending_settlements() -> tuple[asyncio.Task[Any], ...]:
+    """Retained settlement database users for the process owner's final join barrier."""
+    return tuple(task for task in _settling if not task.done())
+
+
+async def join_settling(*, cancel_at: float, deadline: float | None = None) -> bool:
+    """Join retained settlements; false means a process owner must keep pools alive."""
+    joined = await join(lambda: set(_settling), cancel_at=cancel_at, deadline=deadline)
+    if not joined:
+        logger.warning(
+            "process.shutdown_incomplete",
+            phase="finalizers",
+            reason="join_timeout",
+            accounting_complete=False,
+        )
+    return joined
 
 
 def may_have_billed(result: GatewayResult) -> bool:

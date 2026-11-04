@@ -199,6 +199,8 @@ async def update_key(
         raise not_found()
     updated = _key_out(*found)
     await db.commit()
+    # This process's gateway calls read the change from the next call, not after the key cache TTL.
+    request.app.state.gateway_key_cache.clear()
     _log("gateway_key_updated", access, key, fields=sorted(body.model_fields_set))
     return updated
 
@@ -212,7 +214,8 @@ async def revoke_key(
     db: DbSession,
     clock: ClockDep,
 ) -> None:
-    """Revoke the key. Apps using it get `401` from the next call. Revoking twice is a no-op."""
+    """Revoke the key. Apps using it get `401` from the next call to this api process, and within
+    `API_KEY_CACHE_TTL_SECONDS` (10 s by default) on other processes. Revoking twice is a no-op."""
     locked_project_id = await lock_project_of(access, db)
     try:
         await key_service.revoke_key(
@@ -227,6 +230,7 @@ async def revoke_key(
     except KEY_ERRORS as error:
         raise _key_problem(error) from None
     await db.commit()
+    request.app.state.gateway_key_cache.clear()
     logger.info(
         "gateway_key_revoked",
         org_id=str(access.org.id),

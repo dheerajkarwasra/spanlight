@@ -4,7 +4,7 @@ that project alone: its own counts, nothing from a neighbour, nothing for a proj
 
 from datetime import UTC, datetime, timedelta
 
-from app.rollups.jobs import roll_up_all
+from app.config import Settings
 from app.scores.repair import REPAIR_WINDOW, repair_has_scores
 from tests.jobs.bypass_support import (
     SessionFactory,
@@ -15,6 +15,7 @@ from tests.jobs.bypass_support import (
     seed_row,
     visible_to,
 )
+from tests.rollups.recent_support import run_recent
 
 _SPAN_COUNTS = "SELECT project_id, sum(span_count) AS spans FROM span_rollups_hourly GROUP BY 1"
 _TRACE_COUNTS = "SELECT project_id, sum(traces) AS traces FROM trace_rollups_hourly GROUP BY 1"
@@ -25,6 +26,7 @@ _CLASSIFY_FAILURES = "UPDATE spans SET error_class = 'rate_limit' WHERE status =
 
 async def test_rollups_land_under_the_project_that_owns_the_spans(
     session_factory: SessionFactory,
+    settings: Settings,
 ) -> None:
     now = datetime.now(UTC)
     a, b, quiet = await new_projects(session_factory, 3)
@@ -34,20 +36,19 @@ async def test_rollups_land_under_the_project_that_owns_the_spans(
     )
     await seed_llm_spans(session_factory, b, 1, started_at=now - timedelta(hours=2), model="b-2")
     await execute(session_factory, _CLASSIFY_FAILURES)
-    # A rollup row the quiet project already has; the job must leave it alone.
-    quiet_row = await seed_row(session_factory, "span_rollups_hourly", quiet)
+    # A stale group in a complete empty current hour must be removed.
+    await seed_row(session_factory, "span_rollups_hourly", quiet)
 
-    projects, _ = await roll_up_all(session_factory, now=now)
+    await run_recent(session_factory, settings, now)
 
-    assert projects == 2  # the quiet project has no spans in the window
     spans = {row["project_id"]: row["spans"] for row in await fetch(session_factory, _SPAN_COUNTS)}
-    assert spans == {a: 3, b: 5, quiet: 1}
+    assert spans == {a: 3, b: 5}
     quiet_rows = await fetch(
         session_factory,
         "SELECT * FROM span_rollups_hourly WHERE project_id = :project_id",
         {"project_id": quiet},
     )
-    assert quiet_rows == [quiet_row]
+    assert quiet_rows == []
     traces = {
         row["project_id"]: row["traces"] for row in await fetch(session_factory, _TRACE_COUNTS)
     }
@@ -70,6 +71,7 @@ async def test_rollups_land_under_the_project_that_owns_the_spans(
 
 async def test_a_project_cannot_read_the_rollups_the_job_wrote_for_another(
     session_factory: SessionFactory,
+    settings: Settings,
 ) -> None:
     now = datetime.now(UTC)
     a, b = await new_projects(session_factory, 2)
@@ -77,7 +79,7 @@ async def test_a_project_cannot_read_the_rollups_the_job_wrote_for_another(
     await seed_llm_spans(session_factory, b, 6, started_at=now - timedelta(hours=1))
     await seed_llm_spans(session_factory, b, 1, started_at=now - timedelta(hours=1), status="error")
     await execute(session_factory, _CLASSIFY_FAILURES)
-    await roll_up_all(session_factory, now=now)
+    await run_recent(session_factory, settings, now)
 
     for table in ("span_rollups_hourly", "trace_rollups_hourly", "error_rollups_hourly"):
         assert (
@@ -108,6 +110,7 @@ async def test_a_project_cannot_read_the_rollups_the_job_wrote_for_another(
 
 async def test_backfill_fills_a_gap_for_the_project_that_has_it_only(
     session_factory: SessionFactory,
+    settings: Settings,
 ) -> None:
     now = datetime.now(UTC)
     old = now - timedelta(days=5)
@@ -120,9 +123,8 @@ async def test_backfill_fills_a_gap_for_the_project_that_has_it_only(
         session_factory, "UPDATE projects SET retention_days = 1 WHERE id = :p", {"p": expired}
     )
 
-    _, backfilled = await roll_up_all(session_factory, now=now)
+    await run_recent(session_factory, settings, now)
 
-    assert backfilled > 0
     rows = await fetch(
         session_factory,
         "SELECT project_id, min(bucket_start) AS first, sum(span_count) AS spans "

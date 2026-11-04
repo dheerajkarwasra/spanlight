@@ -30,6 +30,7 @@ class Permission(enum.StrEnum):
     EXPORT_CREATE = "export:create"
     GATEWAY_WRITE = "gateway:write"
     CREDENTIALS_MANAGE = "credentials:manage"
+    PRICES_OVERRIDE = "prices:override"
     ALERTS_WRITE = "alerts:write"
     INSIGHTS_MANAGE = "insights:manage"
     INSIGHTS_FEEDBACK = "insights:feedback"
@@ -65,6 +66,7 @@ PERMISSION_CLASSES: dict[Permission, PermissionClass] = {
     Permission.EXPORT_CREATE: "write",
     Permission.GATEWAY_WRITE: "write",
     Permission.CREDENTIALS_MANAGE: "write",
+    Permission.PRICES_OVERRIDE: "write",
     Permission.ALERTS_WRITE: "write",
     Permission.INSIGHTS_MANAGE: "write",
     Permission.INSIGHTS_FEEDBACK: "write",
@@ -109,7 +111,13 @@ _ADMIN = _MEMBER | {
     Permission.BILLING_SOURCES_MANAGE,
     Permission.DATASETS_LOCK,
 }
-_OWNER = _ADMIN | {Permission.ORG_DELETE, Permission.ORG_SECURITY, Permission.CREDENTIALS_MANAGE}
+_OWNER = _ADMIN | {
+    Permission.ORG_DELETE,
+    Permission.ORG_SECURITY,
+    Permission.CREDENTIALS_MANAGE,
+    # An override reprices the spend and budget admission of every project of the organization.
+    Permission.PRICES_OVERRIDE,
+}
 
 ROLE_PERMISSIONS: dict[MembershipRole, frozenset[Permission]] = {
     MembershipRole.VIEWER: _VIEWER,

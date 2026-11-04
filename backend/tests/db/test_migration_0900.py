@@ -4,10 +4,12 @@ The flag is `boolean NOT NULL DEFAULT false`: a constant default, so the column 
 row, and every span stored before the upgrade reads as billable until a batch touches its trace.
 """
 
+import pytest
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 
-from app.db.migrations import alembic_config, downgrade_to, head_revision, upgrade_to_head
+from app.db.migrations import alembic_config
+from tests.db.migration_support import downgrade_to, expected_revision, upgrade_to_target
 
 EXPECTED_COLUMN = ("bool", "NO", "false")
 
@@ -40,19 +42,20 @@ def _current_revision(database_url: str) -> str | None:
         engine.dispose()
 
 
-def test_0900_round_trip(app_database_url: str) -> None:
+@pytest.mark.migration_revision("0900")
+def test_0900_round_trip(migration_database_url: str) -> None:
     previous = ScriptDirectory.from_config(alembic_config()).get_revision("0900").down_revision
     assert isinstance(previous, str)
-    assert _current_revision(app_database_url) == head_revision()
-    assert _usage_rollup_column(app_database_url) == EXPECTED_COLUMN
+    assert _current_revision(migration_database_url) == expected_revision()
+    assert _usage_rollup_column(migration_database_url) == EXPECTED_COLUMN
 
-    downgrade_to(app_database_url, previous)
+    downgrade_to(migration_database_url, previous)
     try:
-        assert _current_revision(app_database_url) == previous
-        assert _usage_rollup_column(app_database_url) is None
+        assert _current_revision(migration_database_url) == previous
+        assert _usage_rollup_column(migration_database_url) is None
     finally:
-        # The rest of the session shares this database, so it must end at head.
-        upgrade_to_head(app_database_url)
+        # Complete the round-trip contract at its pinned upper revision.
+        upgrade_to_target(migration_database_url)
 
-    assert _current_revision(app_database_url) == head_revision()
-    assert _usage_rollup_column(app_database_url) == EXPECTED_COLUMN
+    assert _current_revision(migration_database_url) == expected_revision()
+    assert _usage_rollup_column(migration_database_url) == EXPECTED_COLUMN

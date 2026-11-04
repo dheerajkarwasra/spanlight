@@ -49,6 +49,15 @@ def next_pass(clock: ManualClock) -> datetime:
     return upcoming
 
 
+def catch_up(clock: ManualClock, moment: datetime) -> None:
+    """Move `clock` on to `moment`, never back.
+
+    Ingestion judges span times against the app clock and refuses a span that ends more than ten
+    minutes after it, so a test reporting spend at a later time first lets the clock reach it.
+    """
+    clock.advance(max((moment - clock.wall()).total_seconds(), 0))
+
+
 async def write_heartbeat(sessions: Sessions, age: timedelta) -> None:
     """A worker whose last beat was `age` ago."""
     async with sessions() as db:

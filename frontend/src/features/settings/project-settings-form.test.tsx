@@ -8,6 +8,9 @@ import { ApiError, type Project } from "@/lib/api";
 import { ProjectSettingsForm } from "./project-settings-form";
 
 const mutate = vi.fn();
+const toasts = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+
+vi.mock("sonner", () => ({ toast: toasts }));
 
 vi.mock("./use-update-project", () => ({
   useUpdateProject: () => ({ mutate, isPending: false }),
@@ -24,6 +27,7 @@ const project: Project = {
   slug: "support-bot",
   retention_days: 30,
   capture_payloads: true,
+  redact_contact_info: false,
   weekly_digest_enabled: true,
   insight_channel_ids: [],
   promoted_metadata_keys: ["customer_id"],
@@ -83,5 +87,63 @@ describe("ProjectSettingsForm", () => {
       expect.anything(),
     );
     expect(screen.getByText("at most 5 promoted keys")).toBeInTheDocument();
+  });
+
+  it("saves the contact redaction switch through Save changes", async () => {
+    mutate.mockReset();
+    const user = userEvent.setup();
+    render(
+      <TooltipProvider>
+        <ProjectSettingsForm project={project} canEdit />
+      </TooltipProvider>,
+    );
+
+    const data = within(screen.getByRole("region", { name: "Data" }));
+    const redact = data.getByRole("switch", { name: "Redact contact information" });
+    expect(redact).toHaveAccessibleDescription(
+      "Redacts built-in email and international phone patterns in spans ingested after you save. Stored traces stay unchanged.",
+    );
+    expect(redact).not.toBeChecked();
+
+    await user.click(redact);
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(mutate).toHaveBeenCalledWith({ redact_contact_info: true }, expect.anything());
+  });
+
+  it("disables the contact redaction switch without project:write", () => {
+    render(
+      <TooltipProvider>
+        <ProjectSettingsForm project={{ ...project, redact_contact_info: true }} canEdit={false} />
+      </TooltipProvider>,
+    );
+
+    const redact = screen.getByRole("switch", { name: "Redact contact information" });
+    expect(redact).toBeDisabled();
+    expect(redact).toBeChecked();
+  });
+
+  it("keeps the edits and says so when saving fails", async () => {
+    mutate.mockReset();
+    mutate.mockImplementation((_update, { onError }: { onError: (error: unknown) => void }) => {
+      onError(new ApiError(503, { code: "SERVICE_UNAVAILABLE", detail: "The server is busy." }));
+    });
+    const user = userEvent.setup();
+    render(
+      <TooltipProvider>
+        <ProjectSettingsForm project={project} canEdit />
+      </TooltipProvider>,
+    );
+
+    const redact = screen.getByRole("switch", { name: "Redact contact information" });
+    await user.click(redact);
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(toasts.error).toHaveBeenCalledWith(
+      "Could not save changes. Your edits are kept. Try Save changes again.",
+      expect.anything(),
+    );
+    expect(redact).toBeChecked();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
   });
 });

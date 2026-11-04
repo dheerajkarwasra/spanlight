@@ -1,55 +1,27 @@
-"""Idempotency keys: a retried POST runs once and is answered with the first answer.
+"""Durable operation identity and response replay for explicitly opted-in POST routes.
 
-A route opts in by wrapping its authorization dependency: `Depends(idempotent(require(...)))`. A
-client that sends an `Idempotency-Key` header (at most 128 visible ASCII characters) gets this:
+Authorization runs before every lookup, including replay. The first request reserves a logical
+operation; a matching retry receives its stored receipt for 24 hours. A different fingerprint
+is rejected. Completed outcomes may reuse the key after that retention interval.
 
-* The first request runs. Its status, JSON body and content type are stored for 24 hours,
-  whatever the status, except a 5xx: then the key is released so the retry can run.
-* The same key with the same request (method, path and canonical body) after that is answered
-  with the stored response and `Idempotent-Replayed: true`, and the route does not run again.
-* The same key with a different request is 422 `IDEMPOTENCY_MISMATCH`.
-* The same key while the first request is still running is 409 `IDEMPOTENCY_IN_PROGRESS`, unless
-  that request has been silent for over a minute: it is then taken to have died and is replaced.
+An unanswered operation never becomes permission to repeat work: it returns in-progress,
+then explicitly unknown after 60 seconds, and is retained indefinitely. HTTP errors, cancellation,
+unsupported responses and response-store failures cannot establish that effects rolled back.
 
-A key belongs to one principal (`principal_key`), so two people can use the same key. Without the
-header the dependency does nothing but authorize.
+Database-only handlers persist their safe receipt with their business transaction using
+`complete_operation`. External calls keep the pending identity across their call and persist
+known outcomes afterwards; a process death in the external-success gap remains unknown.
+Middleware response storage is a fallback for ordinary validation/error responses, not the
+atomicity boundary for business work.
 
-Using it on a route::
+Six routes opt in: export, experiment run, playground, replay, alert channel test and erasure.
+Channel creation returns a one-time signing secret and deliberately does not opt in. Never
+persist one-time secrets in a receipt. Receipt lookup always reauthorizes the current caller.
 
-    @router.post("/projects/{project_id}/things", status_code=202)
-    async def create_thing(
-        access: Annotated[Access, Depends(idempotent(require(Permission.X)))],
-        body: ThingIn,
-    ) -> ThingOut: ...
-
-Today six routes opt in: creating an alert channel, creating an export, starting an experiment
-run, running the playground, starting a replay and requesting an end-user erasure.
-`tests/core/test_idempotency_replays.py` replays the export, experiment run and playground routes.
-
-`idempotent(authorize)` runs `authorize` as its own dependency and hands its result to the route,
-so a request is always authorized before a key is reserved, and a replay is authorized exactly like
-the request it replays: a caller who lost access since gets the 403 or 404, not the stored answer.
-Do not declare `authorize` on the route as well; FastAPI would run it twice.
-
-How it works, and why in two parts. Reserving the key has to happen after the caller has been
-authenticated and before the handler runs, so it is a dependency, which can also short-circuit a
-replay by raising `IdempotentReplay`. Storing the answer needs the response as the client receives
-it, including errors that exception handlers turn into responses, and no dependency or route class
-sees that. `IdempotencyMiddleware` sits just outside the exception handlers: once the dependency
-has reserved a key it holds the response back until its last chunk, stores it (or releases the key
-on a 5xx, a crash or an answer it cannot keep), and only then lets it go, so a client that retries
-the moment it has an answer always finds one. A request that did not reserve a key, which is every
-request without the header, passes through untouched.
-
-The answer must be JSON and under 1 MiB, as it is kept in a `jsonb` column. The middleware decides
-when the response starts or as soon as it grows too large: anything else (a 5xx, another content
-type, a file) is released and passed on without being held. Only the status, body and content type
-are replayed, not other headers. The answer is kept as plain text in the database for a day, so a
-route whose answer carries a secret that is shown once (a new API key, a new token) must not use
-this.
-
-The store uses its own small connection pool (`app.state.idempotency_session_factory`): it takes a
-connection while the request still holds one from the main pool.
+The response middleware holds JSON responses up to 1 MiB until the store attempt completes.
+Unsupported responses pass through while their operation identity remains pending. Only status,
+body and content type are replayed. The store uses its own short-lived connection pool, while
+atomic business receipts use the authorized request transaction and retain its RLS binding.
 """
 
 import hashlib
@@ -62,14 +34,14 @@ from fastapi import Depends, FastAPI, Header, Request, Response
 from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from app.api.deps import CurrentPrincipal
+from app.api.deps import CurrentPrincipal, DbSession
 from app.api.principals import ApiKeyPrincipal, Principal
 from app.core.idempotency_store import (
+    MAX_KEPT_BODY_BYTES,
     Reservation,
     SessionFactory,
     StoredResponse,
     complete,
-    release,
     reserve,
 )
 
@@ -78,7 +50,6 @@ logger = structlog.get_logger(__name__)
 IDEMPOTENCY_KEY_HEADER = "Idempotency-Key"
 REPLAYED_HEADER = "Idempotent-Replayed"
 MAX_KEY_LENGTH = 128
-MAX_KEPT_BODY_BYTES = 1024 * 1024
 _KEY_PATTERN = r"^[\x21-\x7e]+$"  # visible ASCII: no spaces, controls or non-ASCII
 
 _SCOPE_KEY = "spanlight.idempotency"
@@ -150,6 +121,7 @@ def idempotent[T](authorize: Callable[..., Awaitable[T]]) -> Callable[..., Await
         request: Request,
         access: Annotated[T, Depends(authorize)],
         principal: CurrentPrincipal,
+        db: DbSession,
         idempotency_key: Annotated[
             str | None,
             Header(
@@ -163,6 +135,7 @@ def idempotent[T](authorize: Callable[..., Awaitable[T]]) -> Callable[..., Await
     ) -> T:
         if idempotency_key is not None:
             await _reserve(request, principal, idempotency_key)
+            db.info["idempotency_operation"] = request.scope[_SCOPE_KEY].reservation
         return access
 
     return dependency
@@ -184,7 +157,7 @@ async def _reserve(request: Request, principal: Principal, key: str) -> None:
 
 
 class IdempotencyMiddleware:
-    """Stores the response of a request that reserved a key, or releases the key."""
+    """Stores responses while retaining the identity of operations with uncertain outcomes."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -216,7 +189,7 @@ class _Exchange:
     Until the dependency has reserved the key the response is not ours to keep (it is an
     authentication error, a validation error, or the answer to a replay) and passes through.
     After that the response is held only while it can still be kept: it is decided when it starts
-    (a 5xx or a content type other than JSON is released and passed on), when it outgrows
+    (a 5xx or a content type other than JSON passes through), when it outgrows
     `MAX_KEPT_BODY_BYTES`, or when a message arrives that is not a plain body (a file sent by
     path). Otherwise it is held until its last chunk, stored, and only then delivered. That moment,
     not the end of the app, is used because Starlette runs a response's background tasks after the
@@ -229,7 +202,7 @@ class _Exchange:
         self._send = send
         self._held: list[Message] = []
         self._held_bytes = 0
-        self._decided = False  # nothing more will be held: stored, released or passed through
+        self._decided = False  # nothing more will be held: stored or passed through
 
     async def send(self, message: Message) -> None:
         reservation = self.slot.reservation
@@ -254,23 +227,23 @@ class _Exchange:
             await self._pass_through(reservation, "unstorable")
 
     async def finish(self) -> None:
-        """The app has returned: free a key whose response never completed, and let it go."""
+        """The app returned without a complete response: retain identity and flush held bytes."""
         reservation = self.slot.reservation
         if reservation is not None and not self._decided:
             await self._pass_through(reservation, "no_response")
 
     async def abandon(self) -> None:
-        """The app raised: free the key and drop what was held."""
+        """The app raised: retain the operation and drop the held response."""
         reservation = self.slot.reservation
         if reservation is not None and not self._decided:
             self._decided = True
             self._held.clear()
-            await _give_up(self._session_factory, reservation, "unhandled_exception")
+            _retain_unknown(reservation, "unhandled_exception")
 
     async def _pass_through(self, reservation: Reservation, reason: str) -> None:
-        """Give up the key and deliver what is held, and everything after it, as it comes."""
+        """Retain the operation and deliver held and subsequent messages as they arrive."""
         self._decided = True
-        await _give_up(self._session_factory, reservation, reason)
+        _retain_unknown(reservation, reason)
         await self._flush()
 
     async def _flush(self) -> None:
@@ -279,22 +252,22 @@ class _Exchange:
             await self._send(message)
 
     async def _settle(self, reservation: Reservation) -> None:
-        """Store the held response under the reservation, or release the key if not kept."""
+        """Store the held response; retain uncertain identity when the answer cannot be kept."""
         start = next((m for m in self._held if m["type"] == "http.response.start"), None)
         body = b"".join(m.get("body", b"") for m in self._held if m["type"] == "http.response.body")
         stored = None if start is None else _storable(start, body)
         if stored is None:
-            await _give_up(self._session_factory, reservation, "not_keepable")
+            _retain_unknown(reservation, "not_keepable")
             return
         try:
             owned = await complete(self._session_factory, reservation, stored)
         except Exception:
             # The request has run and has an answer: failing it now would be worse than not
-            # remembering it. The key stays in flight and is taken over after a minute.
+            # remembering it. Its durable identity remains pending and cannot be repeated.
             logger.exception("idempotency_store_failed", principal_id=reservation.principal_id)
             return
         if not owned:
-            logger.warning("idempotency_lease_lost", principal_id=reservation.principal_id)
+            logger.info("idempotency_receipt_not_written", principal_id=reservation.principal_id)
 
 
 def _is_json(content_type: str) -> bool:
@@ -337,14 +310,9 @@ def _header(start: Message, name: bytes) -> str | None:
     return None
 
 
-async def _give_up(session_factory: SessionFactory, reservation: Reservation, reason: str) -> None:
-    """Release the key so a retry can run. Never raises: a stuck key frees itself in a minute."""
-    try:
-        await release(session_factory, reservation)
-    except Exception:
-        logger.exception("idempotency_release_failed", principal_id=reservation.principal_id)
-        return
-    logger.info("idempotency_released", principal_id=reservation.principal_id, reason=reason)
+def _retain_unknown(reservation: Reservation, reason: str) -> None:
+    """An HTTP failure cannot prove that business or external effects rolled back."""
+    logger.info("idempotency_outcome_pending", principal_id=reservation.principal_id, reason=reason)
 
 
 async def _replay(_: Request, exc: Exception) -> Response:

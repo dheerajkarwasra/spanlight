@@ -1,4 +1,4 @@
-import { useSuspenseQuery, type QueryClient } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery, type QueryClient } from "@tanstack/react-query";
 
 import { authApi, isApiError, queryKeys, type Me } from "@/lib/api";
 
@@ -42,4 +42,29 @@ export function useMe(): Me {
     throw new Error("useMe() called outside the authenticated layout");
   }
   return data;
+}
+
+/**
+ * Whether every signed-in page is locked until `me` accepts the server's terms version. The server
+ * reports no version to the demo account, which can't accept.
+ */
+export function termsPending(me: Me): boolean {
+  return (
+    me.terms_current_version !== null && me.terms_accepted_version !== me.terms_current_version
+  );
+}
+
+/**
+ * Whether signup shows the terms line: the server asks new accounts to accept a terms version.
+ * The form sends `accept_terms` only when it does.
+ */
+export function useShowsTermsLine(): boolean {
+  const terms = useQuery({
+    queryKey: queryKeys.authTerms,
+    queryFn: authApi.terms,
+    // The version changes with the operator's settings, not with use (as `useOAuthProviders`).
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  return Boolean(terms.data?.version);
 }

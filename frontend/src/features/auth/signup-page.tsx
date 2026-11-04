@@ -7,6 +7,7 @@ import { AuthFooter } from "./auth-footer";
 import { AuthLayout } from "./auth-layout";
 import { OAuthButtons } from "./oauth-buttons";
 import { SignupForm } from "./signup-form";
+import { TermsLine } from "./terms-line";
 import { useDemoSession } from "./use-demo-session";
 
 const routeApi = getRouteApi("/signup");
@@ -21,7 +22,7 @@ export function SignupPage() {
       accent="account."
       description="Start sending traces in a couple of minutes."
     >
-      <OAuthButtons next={next} dividerLabel="or sign up with email" />
+      <OAuthButtons next={next} dividerLabel="or sign up with email" note={<TermsLine />} />
       <SignupForm next={next} />
 
       <Button

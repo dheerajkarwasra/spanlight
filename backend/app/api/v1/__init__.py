@@ -8,6 +8,7 @@ keep their paths.
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    account,
     alert_deliveries,
     alert_events,
     alert_rules,
@@ -37,6 +38,7 @@ from app.api.v1 import (
     gateway_keys,
     gateway_lab,
     gateway_routes,
+    ingest_quota,
     insight_feedback,
     insights,
     keys,
@@ -71,6 +73,8 @@ DOMAIN_ROUTERS = (
     traces.router,
     sessions.router,
     auth.router,
+    account.router,
+    account.email_router,
     totp.router,
     tokens.router,
     oauth.router,
@@ -120,6 +124,7 @@ DOMAIN_ROUTERS = (
     providers.router,
     provider_incidents.router,
     telemetry_completeness.router,
+    ingest_quota.router,
     demo.router,
 )
 

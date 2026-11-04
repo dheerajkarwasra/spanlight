@@ -13,7 +13,11 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from app.alerts import deliveries
 from app.alerts.channels.errors import ChannelNotFoundError
-from app.alerts.deliveries import DeliveryNotFoundError, DeliveryNotRetryableError
+from app.alerts.deliveries import (
+    DeliveryNotFoundError,
+    DeliveryNotRetryableError,
+    NotRetryableReason,
+)
 from app.api.deps import Access, ClockDep, DbSession, SettingsDep, client_ip, require
 from app.api.schemas import DeliveryOut, Page
 from app.api.schemas.alert_deliveries import delivery_out
@@ -25,6 +29,13 @@ from app.db.models import NotificationStatus
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/orgs/{org_id}/alert-channels/{channel_id}/deliveries", tags=["alerts"])
+
+NOT_RETRYABLE_DETAILS: dict[NotRetryableReason, str] = {
+    "not_failed": "Only a delivery that failed can be retried.",
+    "never_rendered": "This delivery could not be rendered and cannot be retried.",
+    "quarantined": "This delivery was quarantined by restore-reconcile and is replayed there.",
+    "recipient_left": "The recipient is no longer a verified member of this organization.",
+}
 
 DeliveryReader = Annotated[Access, Depends(require(Permission.ORG_READ))]
 DeliveryRetrier = Annotated[Access, Depends(require(Permission.ALERTS_WRITE))]
@@ -64,7 +75,7 @@ async def retry_delivery(
     """Queue a failed delivery again, with the same id, so receivers still deduplicate on it.
 
     Its attempts start over and the worker picks it up at once; the last error stays until the
-    next attempt. `409 NOT_RETRYABLE` unless the delivery is `failed`.
+    next attempt. `409 NOT_RETRYABLE` unless the delivery is `failed` and `retryable`.
     """
     try:
         row = await deliveries.retry_delivery(
@@ -80,12 +91,7 @@ async def retry_delivery(
     except (ChannelNotFoundError, DeliveryNotFoundError):
         raise not_found() from None
     except DeliveryNotRetryableError as error:
-        detail = (
-            "The recipient is no longer a verified member of this organization."
-            if error.recipient_left
-            else "Only a delivery that failed can be retried."
-        )
-        raise conflict("NOT_RETRYABLE", detail) from None
+        raise conflict("NOT_RETRYABLE", NOT_RETRYABLE_DETAILS[error.reason]) from None
     retried = delivery_out(row)
     await db.commit()
     logger.info(

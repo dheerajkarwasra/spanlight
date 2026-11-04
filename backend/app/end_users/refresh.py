@@ -25,6 +25,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.end_users.days import ONE_DAY, midnight
+from app.rollups.coverage import complete_day_ranges, lock_aggregate_sources
 
 # One statement, so the aggregate is computed once for both writes. `fresh` is the traces of the
 # range, each with its LLM spans (the span side is bounded below by the range start: a trace
@@ -98,7 +99,17 @@ async def refresh_user_stats(db: AsyncSession, project_id: uuid.UUID, days: Sequ
     """
     if not days:
         return 0
-    first_day, last_day = min(days), max(days)
+    if not await lock_aggregate_sources(db, project_id):
+        return 0
+    written = 0
+    for first_day, last_day in await complete_day_ranges(db, project_id, days):
+        written += await _refresh_range(db, project_id, first_day, last_day)
+    return written
+
+
+async def _refresh_range(
+    db: AsyncSession, project_id: uuid.UUID, first_day: date, last_day: date
+) -> int:
     params = {
         "project_id": project_id,
         "start": midnight(first_day),

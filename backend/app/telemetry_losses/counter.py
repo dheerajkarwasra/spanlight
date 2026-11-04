@@ -32,6 +32,11 @@ class LossCounter:
         with self._lock:
             self._add_locked((project_id, source, reason, hour), n)
 
+    def pending_count(self) -> int:
+        """Counts still awaiting persistence; final only after producers are quiescent."""
+        with self._lock:
+            return sum(self._counts.values())
+
     def drain(self) -> dict[LossKey, int]:
         """Every count so far, leaving the counter empty."""
         with self._lock:

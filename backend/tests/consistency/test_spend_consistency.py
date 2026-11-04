@@ -14,8 +14,13 @@ from typing import Any
 
 from app.attribution.refresh import refresh_attribution
 from app.db.rls import bind_project, bypass_rls
+from app.gateway.context import GatewayResult
+from app.gateway.response_summary import summarize_response
+from app.playground.output import result_of
+from app.pricing.cost import load_price_book
 from tests.attribution.support import SpanSeed, TraceSeed, seed_traces
 from tests.attribution.test_unpriced_excludes_usage_rollup import nest_and_recompute
+from tests.gateway_support import MESSAGES_BODY, PILOT_MESSAGE, PILOT_USAGE, read_gateway_span
 from tests.helpers import Browser, create_workspace
 from tests.jobs.bypass_support import SessionFactory
 
@@ -98,3 +103,52 @@ async def test_overview_traces_and_attribution_agree_on_spend(
     for env, (spend, unpriced) in expected.items():
         rollup = await _figures(owner, workspace.project_id, rollup_end, env)
         assert rollup == [spend, spend, spend, unpriced, unpriced, "rollup"], env
+
+
+async def test_gateway_storage_and_playground_price_the_same_billing_dimensions(
+    gateway_workspace, fake_provider, session_factory
+) -> None:
+
+    fake_provider.reply_json(
+        {
+            **PILOT_MESSAGE,
+            "usage": {
+                **PILOT_USAGE,
+                "service_tier": "batch",
+                "inference_geo": "us",
+                "speed": "fast",
+                "server_tool_use": {"web_search_requests": 2},
+            },
+        }
+    )
+    response = await gateway_workspace.gw.post("/gw/v1/messages", json=MESSAGES_BODY)
+    assert response.status_code == 200
+    stored = await read_gateway_span(session_factory, gateway_workspace.project_id)
+    summary = summarize_response("messages", response.content)
+    async with session_factory() as db:
+        prices = await load_price_book(db)
+    shown = result_of(
+        GatewayResult(
+            status=200,
+            headers={},
+            body=response.content,
+            stream=None,
+            trace_id=stored["trace_id"],
+            span_id=stored["span_id"],
+            model=summary.model,
+            usage=summary.usage,
+            output=summary.output,
+        ),
+        surface="messages",
+        provider="anthropic",
+        model=PILOT_MESSAGE["model"],
+        prices=prices,
+        latency_ms=1,
+        at=stored["started_at"],
+    )
+    assert stored["service_tier"] == "batch"
+    assert stored["fee_usd"] == Decimal("0.02000000")
+    assert stored["attributes"]["usage.inference_geo"] == "us"
+    assert stored["attributes"]["usage.speed"] == "fast"
+    assert shown.cost_usd == stored["cost_usd"]
+    assert shown.cost_usd is not None

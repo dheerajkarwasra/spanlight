@@ -156,7 +156,7 @@ function LevelOption({ item, level, checked }: LevelOptionProps) {
         value={level}
         aria-labelledby={`${id}-name`}
         aria-describedby={`${id}-desc`}
-        className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border border-border-strong bg-surface outline-none focus-visible:outline-[1.5px] focus-visible:outline-offset-2 focus-visible:outline-ring data-[state=checked]:border-foreground"
+        className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border border-border-strong bg-surface outline-none focus-visible:outline-[1.5px] focus-visible:outline-offset-2 focus-visible:outline-ring focus-visible:outline-solid data-[state=checked]:border-foreground"
       >
         <RadioGroupPrimitive.Indicator className="size-2.5 rounded-full bg-foreground" />
       </RadioGroupPrimitive.Item>

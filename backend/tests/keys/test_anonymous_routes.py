@@ -36,7 +36,12 @@ ANONYMOUS_ROUTES = [
     pytest.param(
         "POST", "/api/v1/auth/totp/verify", {"challenge": "x", "code": "123456"}, id="totp"
     ),
+    pytest.param(
+        "POST", "/api/v1/auth/email/change/confirm", {"token": "x"}, id="email-change-confirm"
+    ),
+    pytest.param("POST", "/api/v1/email/unsubscribe", {"token": "x"}, id="unsubscribe"),
     pytest.param("POST", "/api/v1/demo/session", None, id="demo"),
+    pytest.param("GET", "/api/v1/auth/terms", None, id="terms"),
     pytest.param("GET", "/api/v1/auth/oauth/providers", None, id="oauth-providers"),
     pytest.param("GET", "/api/v1/auth/oauth/github/start", None, id="oauth-start"),
     pytest.param("GET", "/api/v1/auth/oauth/github/callback", None, id="oauth-callback"),

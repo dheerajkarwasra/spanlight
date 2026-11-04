@@ -8,6 +8,7 @@ import type {
   ReconciliationTokens,
 } from "@/lib/api";
 import { formatInteger, pluralize } from "@/lib/format";
+import { SOURCE_REMOVED, sourceHistoryLabel } from "@/lib/freshness";
 
 import {
   money,
@@ -41,9 +42,15 @@ export const PROVISIONAL_TOOLTIP =
 const COUNTED_NOT_PRICED =
   "— means counted, not priced: Spanlight knows how many calls or tokens but has no USD figure, so their cost stays in the residual.";
 
+/** The likely causes of an unexplained day, as the bypass email names them (spec D10). */
+export const BYPASS_TOOLTIP =
+  "More than 10 % and more than $1 of this day’s bill is unexplained. Likely causes: calls outside the gateway and the SDK, an unmapped project, or a leaked provider key.";
+
 export interface DayChip {
   label: string;
   tooltip: string;
+  /** A warning chip; neutral when unset. */
+  tone?: "warning";
 }
 
 export interface TokenRow {
@@ -99,7 +106,7 @@ export interface DayRow {
   /** False while no fetch covers the day: its credits and other charges are unknown. */
   chargesKnown: boolean;
   footnote: string | null;
-  /** The provisional rule and why figures are missing, as visible sentences (tile layout). */
+  /** The bypass causes, the provisional rule and why figures are missing, as visible sentences (tile layout). */
   notes: string[];
 }
 
@@ -119,7 +126,8 @@ const ROLLUP_PENDING_NOTE = "rollup pending";
  * the "rollup pending" note, and lists a `beyond_retention` line in its groups; either says so.
  */
 function pastRetention(day: ReconciliationDay): boolean {
-  const flagged = day.incomplete && day.note !== ROLLUP_PENDING_NOTE;
+  const flagged =
+    day.incomplete && day.note !== ROLLUP_PENDING_NOTE && day.aggregate_status !== "unavailable";
   return (
     flagged ||
     day.groups.some((group) => group.explained.some((line) => line.kind === "beyond_retention"))
@@ -132,6 +140,8 @@ export function renderRules(day: ReconciliationDay): RenderRules {
   let unknownReason: string | null = null;
   if (day.fetched_at === null) {
     unknownReason = REASONS.notFetched;
+  } else if (day.aggregate_status === "unavailable") {
+    unknownReason = SOURCE_REMOVED;
   } else if (day.note === ROLLUP_PENDING_NOTE) {
     unknownReason = REASONS.rollupPending;
   } else if (retentionChip) {
@@ -145,10 +155,26 @@ export function renderRules(day: ReconciliationDay): RenderRules {
   };
 }
 
-function dayChips(rules: RenderRules): DayChip[] {
+/**
+ * "Retained snapshot" when the day still has a Spanlight figure, "Source history unavailable"
+ * when it has none; null when its source history is complete.
+ */
+function dayHistory(day: ReconciliationDay): string | null {
+  const retained =
+    day.spanlight_usd !== null || day.groups.some((group) => group.spanlight_usd !== null);
+  return sourceHistoryLabel(day.aggregate_status, retained);
+}
+
+function dayChips(rules: RenderRules, history: string | null, bypass: boolean): DayChip[] {
   const chips: DayChip[] = [];
+  if (bypass) {
+    chips.push({ label: "Unexplained spend", tooltip: BYPASS_TOOLTIP, tone: "warning" });
+  }
   if (rules.provisionalChip) {
     chips.push({ label: "Provisional", tooltip: PROVISIONAL_TOOLTIP });
+  }
+  if (history !== null) {
+    chips.push({ label: history, tooltip: SOURCE_REMOVED });
   }
   if (rules.incompleteChip) {
     chips.push({ label: "Rollup pending", tooltip: REASONS.rollupPending });
@@ -168,7 +194,9 @@ interface SideReasons {
 /** Null for a side that was read; a missing figure on it then has no price. */
 function sideReasons(day: ReconciliationDay): SideReasons {
   let spanlight: string | null = null;
-  if (day.note === ROLLUP_PENDING_NOTE) {
+  if (day.aggregate_status === "unavailable") {
+    spanlight = SOURCE_REMOVED;
+  } else if (day.note === ROLLUP_PENDING_NOTE) {
     spanlight = REASONS.rollupPending;
   } else if (pastRetention(day)) {
     spanlight = REASONS.notRetained;
@@ -240,7 +268,7 @@ function explainedRow(line: ExplainedLine): ExplainedRow {
     key: line.kind,
     label: EXPLAINED_LABELS[line.kind],
     note: line.note,
-    usd: money(line.usd, REASONS.notPriced),
+    usd: money(line.usd, line.kind === "untraced_traffic" ? REASONS.untraced : REASONS.notPriced),
   };
 }
 
@@ -283,7 +311,7 @@ function dayMeta(day: ReconciliationDay): string {
     day.fetched_at === null ? "not fetched yet" : `fetched ${formatUtc(day.fetched_at)}`,
     pluralize(day.groups.length, "model group"),
   ];
-  if (day.unattributed_calls > 0) {
+  if (day.unattributed_calls !== null && day.unattributed_calls > 0) {
     parts.push(
       `${pluralize(day.unattributed_calls, "call")} named no provider, so no source bills them`,
     );
@@ -296,7 +324,9 @@ function dayFootnote(day: ReconciliationDay): string | null {
   if (day.fetched_at !== null && day.credits.length === 0 && day.other.length === 0) {
     parts.push("No credits or other provider charges on this day.");
   }
-  if (day.groups.some((group) => group.explained.some((line) => line.usd === null))) {
+  const countedNotPriced = (line: ExplainedLine) =>
+    line.usd === null && line.kind !== "untraced_traffic";
+  if (day.groups.some((group) => group.explained.some(countedNotPriced))) {
     parts.push(COUNTED_NOT_PRICED);
   }
   return parts.length > 0 ? parts.join(" ") : null;
@@ -304,7 +334,11 @@ function dayFootnote(day: ReconciliationDay): string | null {
 
 function dayNotes(day: ReconciliationDay): string[] {
   const { provisionalChip, unknownReason } = renderRules(day);
-  return [provisionalChip ? PROVISIONAL_NOTE : null, unknownReason].filter((note) => note !== null);
+  return [
+    day.bypass_suspected ? BYPASS_TOOLTIP : null,
+    provisionalChip ? PROVISIONAL_NOTE : null,
+    unknownReason,
+  ].filter((note) => note !== null);
 }
 
 /** Which project reads the report: its own traces are the only ones a group can link to. */
@@ -319,7 +353,7 @@ function dayRow(day: ReconciliationDay, reader: Reader): DayRow {
   return {
     day: day.day,
     label: dayLabel(day.day),
-    chips: dayChips(renderRules(day)),
+    chips: dayChips(renderRules(day), dayHistory(day), day.bypass_suspected),
     provider: money(day.provider_usd, sides.provider ?? REASONS.notFetched),
     spanlight: money(day.spanlight_usd, sides.spanlight ?? unpricedReason(day.groups)),
     explained: money(day.explained_usd, compared),
@@ -362,6 +396,11 @@ export function pendingDayRanges(report: ReconciliationReport): {
     .filter((day) => day.fetched_at !== null && day.provisional)
     .map((day) => day.day);
   return { unfetched: formatDayRanges(unfetched), provisional: formatDayRanges(provisional) };
+}
+
+/** The days the server flags `bypass_suspected` ("Oct 3, Oct 9"), or null when none is. */
+export function bypassDayRange(report: ReconciliationReport): string | null {
+  return formatDayRanges(report.days.filter((day) => day.bypass_suspected).map((day) => day.day));
 }
 
 export { summaryTiles, type SummaryTile } from "./reconciliation-summary";

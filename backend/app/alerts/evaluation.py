@@ -18,7 +18,7 @@ import structlog
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.alerts.evaluate import Transition, evaluate_rule
+from app.alerts.evaluate import Transition, clear_since, evaluate_rule
 from app.alerts.evaluation_guards import fired_last_period, judged_by_newer_pass, last_reading
 from app.alerts.evaluation_queries import (
     ProjectNames,
@@ -203,9 +203,12 @@ async def _evaluate(
             db, rule, now, settings=settings, reason="period_rollover", value=reading.value
         )
     transition: Transition | None = None
+    state = rule_state(stored)
+    recovering = state.clear_since  # no data (or no baseline yet) leaves the window as it is
     if reading.has_data:
         condition = rule_condition(rule, reading.threshold)
-        transition = evaluate_rule(condition, reading.value, rule_state(stored), now)
+        transition = evaluate_rule(condition, reading.value, state, now)
+        recovering = clear_since(condition, reading.value, state, now)
     await save_state(
         db,
         rule,
@@ -213,6 +216,7 @@ async def _evaluate(
         value=reading.value,
         now=now,
         to_state=None if transition is None else transition.to_state,
+        clear_since=recovering,
     )
     if transition is not None:
         described = None
@@ -240,7 +244,7 @@ async def _announce(
     if payload is None:
         return
     if rule.muted_until is not None and rule.muted_until > now:
-        logger.info("alert_notification_muted", rule_id=str(rule.id), event=payload.event)
+        logger.info("alert_notification_muted", rule_id=str(rule.id), alert_event=payload.event)
         return
     await notify_channels(db, rule.channel_ids, payload, settings=settings)
 
@@ -270,6 +274,7 @@ async def close_firing_alert(
     measured, measured_at = last_reading(stored, event, now, value)
     stored.state = RuleStateName.OK
     stored.since = now
+    stored.clear_since = None
     names = await project_names(db, rule.project_id)
     threshold = event.threshold if event is not None else None
     if names is None or event is None or measured is None or threshold is None:

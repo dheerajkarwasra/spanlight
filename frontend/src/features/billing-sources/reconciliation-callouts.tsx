@@ -2,8 +2,8 @@ import { Callout } from "@/components/callout";
 import { Button } from "@/components/ui/button";
 import type { BillingSource, ReconciliationReport } from "@/lib/api";
 
-import { failingCopy, neverFetchedCopy } from "./reconciliation-copy";
-import { pendingDayRanges } from "./reconciliation-table";
+import { bypassCopy, failingCopy, neverFetchedCopy } from "./reconciliation-copy";
+import { bypassDayRange, pendingDayRanges } from "./reconciliation-table";
 import { RotateSourceDialog } from "./rotate-source-dialog";
 
 interface SourceCalloutProps {
@@ -44,6 +44,20 @@ export function SourceCallout({ source, report, canManage }: SourceCalloutProps)
     ) : undefined;
   return (
     <Callout tone="danger" title={copy.title} action={action}>
+      {copy.body}
+    </Callout>
+  );
+}
+
+/** Figma "Callout · Bypass suspected" (warning): nothing unless the server flags a day. */
+export function BypassCallout({ report }: { report: ReconciliationReport | undefined }) {
+  const days = report ? bypassDayRange(report) : null;
+  if (days === null) {
+    return null;
+  }
+  const copy = bypassCopy(days);
+  return (
+    <Callout tone="warning" title={copy.title}>
       {copy.body}
     </Callout>
   );

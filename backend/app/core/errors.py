@@ -129,6 +129,16 @@ def idempotency_in_progress() -> ProblemError:
     )
 
 
+def idempotency_outcome_unknown() -> ProblemError:
+    """The original operation may have completed; a retry must not repeat its effects."""
+    return ProblemError(
+        409,
+        "IDEMPOTENCY_OUTCOME_UNKNOWN",
+        "The outcome of this operation is not yet known. It will not be run again automatically. "
+        "Retry with the same key to check for a completed result.",
+    )
+
+
 def key_not_promoted(key: str) -> ProblemError:
     """422 for an attribution read over more than 24 hours on a metadata key the project has
     not promoted: only promoted keys have daily rollup rows. `key` is a validated identifier."""

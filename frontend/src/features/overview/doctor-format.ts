@@ -15,6 +15,9 @@ import { errorCountFrom } from "./hero";
 /** Shown (as the "—" tooltip) when the window has no LLM calls, so there is nothing to score. */
 export const NO_SCORE_REASON = "No LLM calls in this window";
 
+/** The health request failed: the score, its band and the finding totals are unknown. */
+export const HEALTH_FAILED_REASON = "The Doctor's score didn't load";
+
 /** How the score is made: the score ring's tooltip. */
 export const FORMULA_LINE = "100 minus penalties for findings, errors, latency and cost";
 /** `Health.approximate`: some of the metrics behind the score come from hourly rollups. */
@@ -150,7 +153,7 @@ export function componentRows(health: Health, metrics: Kpis, hasPass: boolean): 
         const note =
           errors === null
             ? null
-            : `${formatInteger(errors) ?? "0"} of ${formatInteger(metrics.llm_calls) ?? "0"} ${pluralNoun(metrics.llm_calls, "call")}`;
+            : `${formatInteger(errors) ?? "0"} of ${formatInteger(metrics.llm_calls) ?? "0"} ${pluralNoun(metrics.llm_calls ?? 0, "call")}`;
         return { ...row, value: observed, note, penalty: component.penalty };
       }
       case "latency":

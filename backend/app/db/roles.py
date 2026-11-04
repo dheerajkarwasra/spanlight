@@ -17,7 +17,13 @@ _ROLE_NAME = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 # Functions the migrations revoke from PUBLIC because only the app may call them, by signature.
 # Each is granted to the app role by name, so a function added later stays revoked until it is
 # listed here.
-APP_FUNCTIONS = ("public.explain_month_to_date_cost(uuid, timestamptz)",)
+APP_FUNCTIONS = (
+    "public.explain_month_to_date_cost(uuid, timestamptz)",
+    "public.admit_aggregate_job_progress()",
+    "public.aggregate_job_progress_immutable()",
+    "public.budget_reserve_fast(uuid, uuid[], timestamptz[], timestamptz[], numeric[], "
+    "boolean[], numeric, text, text, uuid[], timestamptz, timestamptz)",
+)
 
 
 def ensure_app_role(admin_url: str, role: str, password: str) -> None:

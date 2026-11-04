@@ -13,8 +13,8 @@ x-s3-env: &s3-env
   S3_PUBLIC_ENDPOINT: http://localhost:${MINIO_API_PORT:-9000}
   S3_BUCKET: ${S3_BUCKET:-spanlight}
   S3_REGION: us-east-1
-  S3_ACCESS_KEY: ${MINIO_ROOT_USER:-spanlight-minio}
-  S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-spanlight-minio-secret}
+  S3_ACCESS_KEY: ${MINIO_EXPORT_USER:-spanlight-exports}
+  S3_SECRET_KEY: ${MINIO_EXPORT_PASSWORD:-spanlight-exports-secret}
   S3_FORCE_PATH_STYLE: "true"
 
 services:
@@ -36,7 +36,7 @@ services:
       timeout: 3s
       retries: 30
 
-  # One-shot: creates the bucket (a no-op if it already exists), then exits.
+  # One-shot: creates buckets and separate local users/policies; root credentials stay here.
   minio-init:
     image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z
     restart: "no"
@@ -47,12 +47,48 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-spanlight-minio}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-spanlight-minio-secret}
       S3_BUCKET: ${S3_BUCKET:-spanlight}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-spanlight-backups}
+      MINIO_EXPORT_USER: ${MINIO_EXPORT_USER:-spanlight-exports}
+      MINIO_EXPORT_PASSWORD: ${MINIO_EXPORT_PASSWORD:-spanlight-exports-secret}
+      MINIO_UPLOAD_USER: ${MINIO_UPLOAD_USER:-spanlight-backup-upload}
+      MINIO_UPLOAD_PASSWORD: ${MINIO_UPLOAD_PASSWORD:-spanlight-backup-upload-secret}
+      MINIO_RECOVERY_USER: ${MINIO_RECOVERY_USER:-spanlight-backup-recovery}
+      MINIO_RECOVERY_PASSWORD: ${MINIO_RECOVERY_PASSWORD:-spanlight-backup-recovery-secret}
+      MINIO_RETENTION_USER: ${MINIO_RETENTION_USER:-spanlight-backup-retention}
+      MINIO_RETENTION_PASSWORD: ${MINIO_RETENTION_PASSWORD:-spanlight-backup-retention-secret}
     entrypoint:
       - sh
       - -c
       - |
-        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" &&
+        set -eu
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        test "$$S3_BUCKET" != "$$BACKUP_S3_BUCKET"
         mc mb --ignore-existing "local/$$S3_BUCKET"
+        mc mb --ignore-existing "local/$$BACKUP_S3_BUCKET"
+        cat > /tmp/exports.json <<EOF
+        {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:ListBucket"],"Resource":["arn:aws:s3:::$$S3_BUCKET"],"Condition":{"StringLike":{"s3:prefix":["exports/*"]}}},{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject","s3:AbortMultipartUpload"],"Resource":["arn:aws:s3:::$$S3_BUCKET/exports/*"]},{"Effect":"Deny","Action":["s3:*"],"Resource":["arn:aws:s3:::$$BACKUP_S3_BUCKET","arn:aws:s3:::$$BACKUP_S3_BUCKET/*"]}]}
+        EOF
+        cat > /tmp/upload.json <<EOF
+        {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:PutObject","s3:AbortMultipartUpload"],"Resource":["arn:aws:s3:::$$BACKUP_S3_BUCKET/backups/*"]}]}
+        EOF
+        cat > /tmp/recovery.json <<EOF
+        {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:ListBucket"],"Resource":["arn:aws:s3:::$$BACKUP_S3_BUCKET"],"Condition":{"StringLike":{"s3:prefix":["backups/*"]}}},{"Effect":"Allow","Action":["s3:GetObject"],"Resource":["arn:aws:s3:::$$BACKUP_S3_BUCKET/backups/*"]}]}
+        EOF
+        cat > /tmp/retention.json <<EOF
+        {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:ListBucket"],"Resource":["arn:aws:s3:::$$BACKUP_S3_BUCKET"],"Condition":{"StringLike":{"s3:prefix":["backups/*"]}}},{"Effect":"Allow","Action":["s3:DeleteObject"],"Resource":["arn:aws:s3:::$$BACKUP_S3_BUCKET/backups/*"],"Condition":{"Null":{"s3:versionid":"true"}}}]}
+        EOF
+        mc admin user add local "$$MINIO_EXPORT_USER" "$$MINIO_EXPORT_PASSWORD"
+        mc admin user add local "$$MINIO_UPLOAD_USER" "$$MINIO_UPLOAD_PASSWORD"
+        mc admin user add local "$$MINIO_RECOVERY_USER" "$$MINIO_RECOVERY_PASSWORD"
+        mc admin user add local "$$MINIO_RETENTION_USER" "$$MINIO_RETENTION_PASSWORD"
+        mc admin policy create local spanlight-exports /tmp/exports.json
+        mc admin policy create local spanlight-upload /tmp/upload.json
+        mc admin policy create local spanlight-recovery /tmp/recovery.json
+        mc admin policy create local spanlight-retention /tmp/retention.json
+        mc admin policy attach local spanlight-exports --user "$$MINIO_EXPORT_USER"
+        mc admin policy attach local spanlight-upload --user "$$MINIO_UPLOAD_USER"
+        mc admin policy attach local spanlight-recovery --user "$$MINIO_RECOVERY_USER"
+        mc admin policy attach local spanlight-retention --user "$$MINIO_RETENTION_USER"
 
   api:
     environment: *s3-env
@@ -61,7 +97,16 @@ services:
         condition: service_completed_successfully
 
   worker:
-    environment: *s3-env
+    environment:
+      <<: *s3-env
+      BACKUP_S3_ENDPOINT: http://minio:9000
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-spanlight-backups}
+      BACKUP_S3_REGION: us-east-1
+      BACKUP_S3_ACCESS_KEY: ${MINIO_UPLOAD_USER:-spanlight-backup-upload}
+      BACKUP_S3_SECRET_KEY: ${MINIO_UPLOAD_PASSWORD:-spanlight-backup-upload-secret}
+      BACKUP_S3_FORCE_PATH_STYLE: "true"
+      # MinIO without a KMS rejects SSE-S3 uploads; encrypt its disk instead.
+      BACKUP_S3_SSE: ""
     depends_on:
       minio-init:
         condition: service_completed_successfully

@@ -15,6 +15,8 @@ function span(overrides: Partial<Span>): Span {
     input: null,
     output: null,
     payload_omitted: false,
+    attributes_omitted: false,
+    retry_eligible: false,
     ...overrides,
   } as unknown as Span;
 }

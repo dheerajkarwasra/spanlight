@@ -1,3 +1,4 @@
+import type { AggregateMetadata } from "./aggregate";
 /**
  * Provider health, provider incident and telemetry completeness types, mirroring the backend's
  * bodies (`app/api/schemas/providers.py`, `completeness.py`) exactly: snake_case, rates and money
@@ -56,7 +57,7 @@ export interface ProviderHealth {
   incidents: IncidentRef[];
 }
 
-export interface HealthReport {
+export interface HealthReport extends AggregateMetadata {
   window: ProviderWindow;
   /** Whole hours were read from the hourly rollups, as of their last run. */
   approximate: boolean;
@@ -74,10 +75,10 @@ export interface ProviderHealthQuery {
 
 /* ---------- Errors over time and samples ---------- */
 
-export interface ErrorBucket {
+export interface ErrorBucket extends AggregateMetadata {
   bucket_start: string;
   /** Failed LLM calls per class; classes with no failures are absent. */
-  by_class: Partial<Record<ErrorClass, number>>;
+  by_class: Partial<Record<ErrorClass, number>> | null;
   /** The bucket holds an hour read from the hourly rollup. */
   approximate: boolean;
 }
@@ -193,4 +194,42 @@ export interface Completeness {
 export interface CompletenessQuery {
   from?: string | undefined;
   to?: string | undefined;
+}
+
+/* ---------- Ingest quota ---------- */
+
+export interface IngestLimit {
+  /** The effective cap; null when unlimited. */
+  value: number | null;
+  /** `project` for a cap set on this project, `default` for the instance setting. */
+  source: "project" | "default";
+}
+
+/** `GET …/ingest-quota`: the project's effective ingest caps, today's usage and refused spans. */
+export interface IngestQuota {
+  limits: {
+    spans_per_second: IngestLimit;
+    spans_per_day: IngestLimit;
+    bytes_per_day: IngestLimit;
+  };
+  today: {
+    /** The current UTC day on the server, `YYYY-MM-DD`. */
+    day: string;
+    /** Spans admitted today (new rows; replays count nothing). Clamped to 2^53 - 1. */
+    spans: number;
+    /** Decompressed request body bytes admitted today. Clamped to 2^53 - 1. */
+    bytes: number;
+    /** The next UTC midnight, when the daily quotas reset. */
+    resets_at: string;
+  };
+  /** Days in the window with refused spans, ascending; empty when none. */
+  rejected_days: RefusedDay[];
+}
+
+export interface RefusedDay {
+  day: string;
+  /** Spans in requests refused by any of the project's caps that day. */
+  spans: number;
+  /** Of those, spans refused by the span rate limit; clients usually resend them. */
+  rate_spans: number;
 }

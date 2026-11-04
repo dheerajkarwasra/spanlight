@@ -11,6 +11,7 @@ import json
 from typing import Any
 
 import anthropic
+import pytest
 from provider_mocks import MockProvider, provider_httpx
 from support import FakeIngestApi, flushed_spans
 
@@ -153,6 +154,7 @@ def test_succeeded_item_becomes_batch_span(tracer, ingest):
         "batch.request_available": False,
         "timing.synthetic": True,
         "usage.service_tier_raw": "standard",
+        "response.id": SUCCEEDED["result"]["message"]["id"],
     }
     assert span["start_time"] == span["end_time"]
     assert span["trace"]["name"] == f"batch {BATCH_ID}"
@@ -233,3 +235,100 @@ def test_unreadable_item_is_skipped_and_iteration_continues(tracer, ingest):
     assert len(items) == 2
     spans = flushed_spans(tracer, ingest)
     assert [s["attributes"]["batch.custom_id"] for s in spans] == ["refund-question-3"]
+
+
+def test_batch_preserves_billed_modifiers_and_response_identity(tracer, ingest):
+    from copy import deepcopy
+
+    item = deepcopy(SUCCEEDED)
+    message = item["result"]["message"]
+    message["usage"].update(inference_geo="us", speed="fast")
+    client = make_client(respond_with([item]), tracer)
+
+    returned = list(client.messages.batches.results(BATCH_ID))
+    span = spans_by_custom_id(flushed_spans(tracer, ingest))["refund-question-1"]
+
+    assert returned[0].result.message.id == message["id"]
+    assert span["attributes"]["response.id"] == message["id"]
+    assert span["attributes"]["usage.inference_geo"] == "us"
+    assert span["attributes"]["usage.speed"] == "fast"
+    assert span["usage"]["service_tier"] == "batch"
+    assert span["attributes"]["usage.service_tier_raw"] == "standard"
+    assert span["start_time"] == span["end_time"]
+
+
+async def test_local_http_batch_compatibility_sync_and_async(tracer, ingest):
+    """Installed SDK compatibility fixture; no live provider or provider billing proof."""
+    from copy import deepcopy
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+
+    item = deepcopy(SUCCEEDED)
+    item["result"]["message"]["usage"].update(inference_geo="us", speed="fast")
+    body = (json.dumps(item) + "\n").encode()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            payload = (
+                body
+                if self.path.endswith("/results")
+                else json.dumps(
+                    {
+                        **MESSAGE_BATCH,
+                        "results_url": f"http://127.0.0.1:{self.server.server_port}/results",
+                    }
+                ).encode()
+            )
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, *args):
+            pass
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base_url = f"http://127.0.0.1:{server.server_port}"
+        try:
+            with anthropic.Anthropic(api_key=API_KEY, base_url=base_url, max_retries=0) as raw:
+                client = spanlight.wrap_anthropic(raw, spanlight=tracer)
+                sync_items = list(client.messages.batches.results(BATCH_ID))
+            async with anthropic.AsyncAnthropic(
+                api_key=API_KEY, base_url=base_url, max_retries=0
+            ) as raw_async:
+                client_async = spanlight.wrap_anthropic(raw_async, spanlight=tracer)
+                decoder = await client_async.messages.batches.results(BATCH_ID)
+                async_items = [entry async for entry in decoder]
+        finally:
+            server.shutdown()
+            thread.join()
+
+    assert sync_items[0].result.message.id == async_items[0].result.message.id
+    spans = flushed_spans(tracer, ingest)
+    assert len(spans) == 2
+    for span in spans:
+        assert span["usage"]["service_tier"] == "batch"
+        assert span["usage"]["server_tool_use"] == {"web_search_requests": 2}
+        assert span["attributes"]["usage.inference_geo"] == "us"
+        assert span["attributes"]["usage.speed"] == "fast"
+        assert span["attributes"]["response.id"] == item["result"]["message"]["id"]
+        assert span["start_time"] == span["end_time"]
+
+
+@pytest.mark.parametrize("usage", [None, {}, {"input_tokens": 12}])
+def test_batch_missing_usage_counts_stay_unknown(tracer, ingest, usage):
+    from copy import deepcopy
+
+    item = deepcopy(SUCCEEDED)
+    item["result"]["message"]["usage"] = usage
+    client = make_client(respond_with([item]), tracer)
+    list(client.messages.batches.results(BATCH_ID))
+    span = spans_by_custom_id(flushed_spans(tracer, ingest))["refund-question-1"]
+    assert span["usage"] == (
+        {"service_tier": "batch"} if not usage else {"input_tokens": 12, "service_tier": "batch"}
+    )
+    assert "usage.inference_geo" not in span["attributes"]
+    assert "usage.speed" not in span["attributes"]

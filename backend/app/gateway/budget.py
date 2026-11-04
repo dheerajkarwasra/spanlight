@@ -1,7 +1,7 @@
 """Budget guard protocol: decide before any upstream call whether a request may proceed.
 
-Pure protocol and value types. ``execute`` calls the guard once per request, after the model
-is resolved and before the cache and the attempt loop. A blocked decision becomes a
+Pure protocol and value types. ``execute`` calls the guard once per request that the cache does
+not answer, after the model is resolved and before the attempt loop. A blocked decision becomes a
 ``BUDGET_EXCEEDED`` error with zero attempts and no upstream call. ``execute`` records
 ``spanlight.budget.blocked=true`` and ``spanlight.budget.id`` on the error span. The real
 implementation is ``app.budgets.guard.StateBudgetGuard``.
@@ -28,6 +28,7 @@ class BudgetDecision:
     allowed: bool
     budget_id: UUID | None = None
     reason: str | None = None
+    reserved: bool = False  # an admitted call whose estimate was reserved against a budget
 
 
 class BudgetGuard(Protocol):
@@ -44,6 +45,8 @@ class BudgetGuard(Protocol):
     and ``org_id`` picks the organization's price overrides; without them the guard only reads
     the evaluated state and reserves nothing. ``target_providers`` are the providers of
     ``target_models``, in the same order, for the service tier's price factor.
+    ``stored_trace_id`` requests a stored-dimension fallback for a keyed joining call; headers
+    win per key. The guard joins that trace only for trace-name and metadata budgets.
     """
 
     async def check(
@@ -63,6 +66,7 @@ class BudgetGuard(Protocol):
         trace_id: str | None = None,
         span_id: str | None = None,
         org_id: UUID | None = None,
+        stored_trace_id: str | None = None,
     ) -> BudgetDecision: ...
 
 

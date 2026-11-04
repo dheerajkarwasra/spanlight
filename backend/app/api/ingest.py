@@ -1,21 +1,21 @@
 """Telemetry ingestion: the native format and OTLP/HTTP (JSON and protobuf).
 
 Authenticated with a project API key (`Authorization: Bearer spl_live_…`) that has the
-`ingest:write` scope, rate limited per key, and bounded in body size and span count.
+`ingest:write` scope, rate limited per key, bounded in body size and span count, and held to the
+project's ingest caps (`app.ingest.quota`): a span rate and a daily span and byte quota.
 """
 
 import uuid
-from collections.abc import Callable
-from datetime import UTC, datetime
+from collections.abc import AsyncIterator, Callable
+from datetime import datetime
 from typing import Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
-from sqlalchemy import select
 
-from app.api.deps import DbSession, require_key_scope
+from app.api.deps import ClockDep, DbSession, require_key_scope
 from app.api.principals import ApiKeyPrincipal
 from app.core.body import (
     BodyTooLarge,
@@ -25,11 +25,15 @@ from app.core.body import (
     UnsupportedEncoding,
     read_bounded_body,
 )
-from app.core.errors import ProblemError, unauthorized
-from app.core.observability import INGESTED_SPANS, OTLP_CONVENTION_SPANS, REJECTED_SPANS
+from app.core.errors import ProblemError, too_many_requests, unauthorized
+from app.core.observability import (
+    INGESTED_SPANS,
+    OTLP_CONVENTION_SPANS,
+    RATE_LIMIT_REJECTIONS,
+    REJECTED_SPANS,
+)
 from app.core.ratelimit import INGEST_LIMITER, enforce_rate_limit
 from app.core.scopes import KeyScope
-from app.db.models import Project
 from app.ingest import otlp
 from app.ingest.otlp import OtlpSpan
 from app.ingest.otlp_values import OtlpDecodeError, TooManySpansError
@@ -37,10 +41,10 @@ from app.ingest.pipeline import (
     IngestOutcome,
     IngestTarget,
     InvalidJsonError,
-    ProjectGoneError,
     ingest_spans,
     parse_json_body,
 )
+from app.ingest.quota import IngestRefusedError, add_usage, bind_and_lock_project, check_caps
 from app.ingest.schemas import (
     MAX_BODY_BYTES,
     MAX_COMPRESSION_RATIO,
@@ -59,15 +63,17 @@ router = APIRouter(tags=["ingest"])
 logger = structlog.get_logger(__name__)
 
 PROTOBUF_CONTENT_TYPE = "application/x-protobuf"
+# One event loop owns these per-process counts; an entry leaves when its last request finishes.
+_project_in_flight: dict[uuid.UUID, int] = {}
 
 
 async def authenticate_ingest(
     request: Request,
     key: Annotated[ApiKeyPrincipal, Depends(require_key_scope(KeyScope.INGEST_WRITE))],
-) -> ApiKeyPrincipal:
+) -> AsyncIterator[ApiKeyPrincipal]:
     """The key behind an ingest request, after its scope is checked and its rate limit applied.
 
-    The limit comes last, so a key that may not ingest at all does not spend tokens on it.
+    The per-key bucket follows scope checks; the project slot is held through commit and cleanup.
     """
     await enforce_rate_limit(
         request,
@@ -76,7 +82,18 @@ async def authenticate_ingest(
         scope="ingest",
         detail="Ingestion rate limit exceeded for this key.",
     )
-    return key
+    held = _project_in_flight.get(key.project_id, 0)
+    if held >= request.app.state.settings.ingest_max_in_flight_per_project:
+        RATE_LIMIT_REJECTIONS.labels(scope="ingest_project_concurrency").inc()
+        raise too_many_requests(1, "Too many concurrent ingest requests for this project.")
+    _project_in_flight[key.project_id] = held + 1
+    try:
+        yield key
+    finally:
+        if (left := _project_in_flight[key.project_id] - 1) > 0:
+            _project_in_flight[key.project_id] = left
+        else:
+            del _project_in_flight[key.project_id]
 
 
 AuthenticatedKey = Annotated[ApiKeyPrincipal, Depends(authenticate_ingest)]
@@ -135,13 +152,13 @@ async def _record_losses(
     project_id: uuid.UUID,
     outcome: IngestOutcome,
     counters: ClientCountersIn | None,
+    now: datetime,
 ) -> None:
     """The batch's rejections and the SDK's counter increases, in the batch's transaction.
 
     Each statement runs only when it has something to write: a clean batch without counters
     costs nothing.
     """
-    now = datetime.now(UTC)
     if outcome.rejected:
         await record_ingest_rejections(db, project_id, outcome.rejected, now)
     if counters is not None and counters.dropped_total + counters.failed_total > 0:
@@ -149,33 +166,50 @@ async def _record_losses(
 
 
 async def _store(
+    request: Request,
     db: DbSession,
     key: ApiKeyPrincipal,
     raw_spans: list[Any],
     source: str,
+    *,
+    body_bytes: int,
+    now: datetime,
     client: Any = None,
 ) -> IngestOutcome:
+    """Check the project's caps, run the pipeline and count the usage, in one transaction.
+
+    `now` is the request's one timestamp (from the app clock): the quota day, the loss hour and
+    the pipeline's freshness checks all read it. A request over a cap is refused whole with
+    `429` and stores nothing.
+    """
     counters, client_ignored = check_client(client)
-    project = (
-        await db.execute(
-            select(Project.capture_payloads, Project.redact_contact_info, Project.org_id).where(
-                Project.id == key.project_id
-            )
-        )
-    ).one_or_none()
+    state = request.app.state
+    project = await bind_and_lock_project(db, key.project_id, state.settings)
     if project is None:  # the project was deleted after the key was checked
         raise unauthorized("Missing, invalid or revoked API key.")
+    if raw_spans:  # an empty batch stores nothing and is not load the caps protect against
+        try:
+            await check_caps(db, state.rate_limit_session_factory, project, raw_spans, now)
+        except IngestRefusedError as exc:
+            raise ProblemError(
+                429,
+                exc.code,
+                exc.detail,
+                headers={"Retry-After": str(exc.retry_after)},
+                extensions=exc.extensions,
+            ) from None
     target = IngestTarget(
-        project_id=key.project_id,
+        project_id=project.id,
         capture_payloads=project.capture_payloads,
         org_id=project.org_id,
         redact_contact_info=project.redact_contact_info,
     )
-    try:
-        outcome = await ingest_spans(db, target, raw_spans)
-    except ProjectGoneError:  # deleted while this request waited for the project's lock
-        raise unauthorized("Missing, invalid or revoked API key.") from None
-    await _record_losses(db, key.project_id, outcome, counters)
+    outcome = await ingest_spans(db, target, raw_spans, now=now, project_locked=True)
+    await _record_losses(db, project.id, outcome, counters, now)
+    if outcome.inserted:
+        # Last before commit: the day row is the project's hottest row, so it is held across the
+        # commit only. A pure replay inserted nothing and neither counts nor takes the lock.
+        await add_usage(db, project.id, now, spans=outcome.inserted, bytes_=body_bytes)
     await db.commit()
 
     INGESTED_SPANS.labels(source).inc(outcome.accepted)
@@ -188,6 +222,7 @@ async def _store(
         project_id=str(key.project_id),
         accepted=outcome.accepted,
         rejected=len(outcome.rejected),
+        inserted=outcome.inserted,
         **extra,
     )
     return outcome
@@ -228,14 +263,28 @@ def _decode_otlp(body: bytes, *, protobuf: bool) -> list[OtlpSpan]:
 
 
 @router.post("/v1/traces", response_model=IngestResponse)
-async def ingest_native(request: Request, key: AuthenticatedKey, db: DbSession) -> IngestResponse:
-    batch = await run_in_threadpool(_native_batch, await read_ingest_body(request))
-    outcome = await _store(db, key, batch.spans, source="native", client=batch.client)
+async def ingest_native(
+    request: Request, key: AuthenticatedKey, db: DbSession, clock: ClockDep
+) -> IngestResponse:
+    body = await read_ingest_body(request)
+    batch = await run_in_threadpool(_native_batch, body)
+    outcome = await _store(
+        request,
+        db,
+        key,
+        batch.spans,
+        source="native",
+        body_bytes=len(body),
+        now=clock(),
+        client=batch.client,
+    )
     return IngestResponse(accepted=outcome.accepted, rejected=outcome.rejected)
 
 
 @router.post("/v1/otlp/traces")
-async def ingest_otlp(request: Request, key: AuthenticatedKey, db: DbSession) -> Response:
+async def ingest_otlp(
+    request: Request, key: AuthenticatedKey, db: DbSession, clock: ClockDep
+) -> Response:
     content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
     body = await read_ingest_body(request)
 
@@ -260,7 +309,9 @@ async def ingest_otlp(request: Request, key: AuthenticatedKey, db: DbSession) ->
             ttft=dropped.ttft,
             messages=dropped.messages,
         )
-    outcome = await _store(db, key, native_spans, source="otlp")
+    outcome = await _store(
+        request, db, key, native_spans, source="otlp", body_bytes=len(body), now=clock()
+    )
     rejected_indexes = {rejection.index for rejection in outcome.rejected}
     for convention, count in otlp.count_conventions(native_spans, rejected_indexes).items():
         OTLP_CONVENTION_SPANS.labels(convention=convention).inc(count)

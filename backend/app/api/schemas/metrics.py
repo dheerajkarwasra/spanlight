@@ -4,19 +4,19 @@ from datetime import date, datetime
 
 from pydantic import BaseModel
 
-from app.api.schemas.common import Money
+from app.api.schemas.common import AggregateMetadata, Money
 
 
-class KpisOut(BaseModel):
-    traces: int
-    llm_calls: int
+class KpisOut(AggregateMetadata):
+    traces: int | None
+    llm_calls: int | None
     error_rate: float | None
     p50_ms: float | None
     p95_ms: float | None
     cost_usd: Money | None
-    unpriced_calls: int
-    input_tokens: int
-    output_tokens: int
+    unpriced_calls: int | None
+    input_tokens: int | None
+    output_tokens: int | None
 
 
 class OverviewOut(BaseModel):
@@ -25,17 +25,17 @@ class OverviewOut(BaseModel):
     approximate: bool
 
 
-class TimeseriesPointOut(BaseModel):
+class TimeseriesPointOut(AggregateMetadata):
     bucket_start: datetime
-    llm_calls: int
-    errors: int
+    llm_calls: int | None
+    errors: int | None
     p95_ms: float | None
     cost_usd: Money | None
-    tokens: int
+    tokens: int | None
     approximate: bool
 
 
-class ModelMetricsOut(BaseModel):
+class ModelMetricsOut(AggregateMetadata):
     provider: str | None
     model: str | None
     calls: int
@@ -48,7 +48,7 @@ class ModelMetricsOut(BaseModel):
     approximate: bool
 
 
-class TokenMixOut(BaseModel):
+class TokenMixOut(AggregateMetadata):
     """LLM tokens by price class over the whole UTC days `first_day`..`last_day`, all
     environments. Every figure is null when the project has no cost rollup in those days."""
 

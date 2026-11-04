@@ -57,9 +57,10 @@ export function TraceSummaryBar({
   // Replay targets the selected span when it is a model call, else the trace's first one.
   const replaySpan =
     selectedSpan?.kind === "llm" ? selectedSpan : trace.spans.find((span) => span.kind === "llm");
-  const duration = formatDuration(trace.duration_ms) ?? (
-    <UnknownValue reason="Duration isn't known yet" />
-  );
+  const knownDuration = formatDuration(trace.duration_ms);
+  const duration = knownDuration ?? <UnknownValue reason="Duration isn't known yet" />;
+  const durationLabel =
+    trace.root_received === false && knownDuration !== null ? "Duration so far" : "Duration";
   const cost = (
     <CostValue
       cost={trace.cost_usd}
@@ -70,7 +71,7 @@ export function TraceSummaryBar({
   return (
     <div ref={ref} className={cn(BAR, className)}>
       <div className="flex min-w-40 flex-[1_1_10rem] items-center gap-2">
-        <TraceStatusIcon errorCount={trace.error_count} />
+        <TraceStatusIcon errorCount={trace.error_count} rootReceived={trace.root_received} />
         <div className="min-w-0">
           <h1
             title={trace.name ?? undefined}
@@ -83,6 +84,7 @@ export function TraceSummaryBar({
           </h1>
           {/* Narrow (Figma 375): duration · tokens · cost on a second line under the name. */}
           <p className="truncate text-xs font-medium text-muted-foreground tabular @3xl:hidden">
+            {trace.root_received === false ? `${durationLabel} ` : null}
             {duration} · <TraceTokens trace={trace} compact /> · {cost}
           </p>
         </div>
@@ -91,7 +93,7 @@ export function TraceSummaryBar({
         <InsightBadges traceId={trace.trace_id} compact />
       </div>
       <dl className="hidden shrink-0 items-baseline gap-4 @3xl:flex">
-        <BarStat label="Duration">{duration}</BarStat>
+        <BarStat label={durationLabel}>{duration}</BarStat>
         <BarStat label="Tokens">
           <TraceTokens trace={trace} />
         </BarStat>

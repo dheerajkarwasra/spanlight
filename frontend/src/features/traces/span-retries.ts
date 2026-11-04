@@ -5,19 +5,15 @@
 import type { Span } from "@/lib/api";
 
 import type { SpanNode } from "./span-tree";
+import { walkSpanTree } from "./span-traversal";
 
 /**
- * The spans `traces.retry_calls` considers (`_RECOMPUTE_ROLLUPS` in
- * `backend/app/ingest/store.py`): LLM calls with a request hash, not cache hits, not
- * fault-injected, not usage rollups. Null when the span can't be an attempt.
+ * The request hash of a span `traces.retry_calls` considers (`retry_eligible`, computed by the
+ * server from the stored attributes, which trace detail may leave out). Null when the span
+ * can't be an attempt.
  */
 function retryKey(span: Span): string | null {
-  const counted =
-    span.kind === "llm" &&
-    !span.usage_rollup &&
-    span.attributes["spanlight.cache"] !== "hit" &&
-    !("spanlight.fault.scenario" in span.attributes);
-  return counted ? span.request_hash : null;
+  return span.retry_eligible ? span.request_hash : null;
 }
 
 /**
@@ -26,7 +22,15 @@ function retryKey(span: Span): string | null {
  * children, so expanding the group shows them. Applied at every depth.
  */
 export function groupRetries(siblings: readonly SpanNode[]): SpanNode[] {
-  const nodes = siblings.map((node) => ({ ...node, children: groupRetries(node.children) }));
+  const groupedChildren = new Map<SpanNode, SpanNode[]>();
+  for (const { node } of Array.from(walkSpanTree(siblings)).reverse()) {
+    groupedChildren.set(node, groupSiblings(node.children, groupedChildren));
+  }
+  return groupSiblings(siblings, groupedChildren);
+}
+
+function groupSiblings(siblings: readonly SpanNode[], children: ReadonlyMap<SpanNode, SpanNode[]>) {
+  const nodes = siblings.map((node) => ({ ...node, children: children.get(node) ?? [] }));
   const grouped: SpanNode[] = [];
   let run: SpanNode[] = [];
   const flush = () => {
@@ -66,8 +70,7 @@ export function retryCounts(node: SpanNode): { attempts: number; failed: number 
 
 /** The ids of every retry group in the forest (empty when the trace has no retries). */
 export function retryGroupIds(nodes: readonly SpanNode[]): string[] {
-  return nodes.flatMap((node) => [
-    ...(node.attempts ? [node.span.span_id] : []),
-    ...retryGroupIds(node.children),
-  ]);
+  return Array.from(walkSpanTree(nodes))
+    .filter(({ node }) => node.attempts !== undefined)
+    .map(({ node }) => node.span.span_id);
 }

@@ -29,7 +29,7 @@ function incidentBands(queries: OverviewQueries) {
   if (!incidents.data || !models.data) {
     return undefined;
   }
-  return overviewBands(incidents.data.items, usedProviders(models.data), {
+  return overviewBands(incidents.data.items, usedProviders(models.data.items), {
     start: new Date(range.from),
     end: new Date(range.to),
   });
@@ -55,7 +55,7 @@ export function CallsSection({ queries, now, className }: SectionProps) {
     <CallsErrorsChart
       className={className}
       data={{
-        points: toChartPoints(timeseries.data, range),
+        points: toChartPoints(timeseries.data.items, range),
         bucket,
         rangeLabel: shortRangeLabel(range),
         now,
@@ -65,6 +65,7 @@ export function CallsSection({ queries, now, className }: SectionProps) {
       releases={windowMarkers(releases.data, range, bucket)}
       releasesNote={range.durationMs > RELEASE_WINDOW_MAX_MS ? RELEASE_WINDOW_NOTE : null}
       isRefreshing={timeseries.isPlaceholderData}
+      unavailable={timeseries.data.aggregate_status === "unavailable"}
     />
   );
 }
@@ -113,5 +114,11 @@ export function ModelsSection({ queries }: { queries: OverviewQueries }) {
       />
     );
   }
-  return <ModelTable models={models.data} isRefreshing={models.isPlaceholderData} />;
+  return (
+    <ModelTable
+      models={models.data.items}
+      isRefreshing={models.isPlaceholderData}
+      unavailable={models.data.aggregate_status === "unavailable"}
+    />
+  );
 }

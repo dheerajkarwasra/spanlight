@@ -1,5 +1,5 @@
-import type { ExperimentRun, ExperimentTarget, PromptListItem } from "@/lib/api";
-import { formatPromptVersion, formatRelativeTime } from "@/lib/format";
+import type { ExperimentParams, ExperimentRun, ExperimentTarget, PromptListItem } from "@/lib/api";
+import { formatInteger, formatPromptVersion, formatRelativeTime } from "@/lib/format";
 
 /** The prompt name and version number a prompt version id stands for. */
 export interface PromptRef {
@@ -48,6 +48,38 @@ export function targetLabel(target: ExperimentTarget, index: VersionIndex): stri
   }
   const ref = index.get(target.prompt_version_id);
   return ref ? formatPromptVersion(ref.name, ref.version) : "Prompt version";
+}
+
+/** The sampling parameters a target can set, in the order the form asks for them. */
+export const PARAM_LABELS = {
+  temperature: "temperature",
+  max_tokens: "max tokens",
+  top_p: "top p",
+} as const satisfies Record<keyof ExperimentParams, string>;
+
+/** "0.2", "512"; a parameter left unset is the provider's default, which is known, not "—". */
+export function paramValue(
+  key: keyof ExperimentParams,
+  params: ExperimentParams | undefined,
+): string {
+  const value = params?.[key];
+  if (value === null || value === undefined) return "provider default";
+  return key === "max_tokens" ? (formatInteger(value) ?? String(value)) : String(value);
+}
+
+/** "temperature 0.2 · max tokens 512", the set parameters only; "provider defaults" for none. */
+export function paramsLabel(params: ExperimentParams | undefined): string {
+  const keys = (Object.keys(PARAM_LABELS) as (keyof ExperimentParams)[]).filter(
+    (key) => params?.[key] !== null && params?.[key] !== undefined,
+  );
+  return keys.length === 0
+    ? "provider defaults"
+    : keys.map((key) => `${PARAM_LABELS[key]} ${paramValue(key, params)}`).join(" · ");
+}
+
+/** True when the run sets at least one sampling parameter. */
+export function hasParams(params: ExperimentParams | undefined): boolean {
+  return paramsLabel(params) !== "provider defaults";
 }
 
 /** "Run #2 · support/answer v1 · 2 hours ago", as the compare pickers read. */

@@ -146,25 +146,30 @@ class Delivery:
             body = gzip.compress(body)
 
         for attempt in range(self._max_retries + 1):
+            if self._abort_retries.is_set():
+                self.failed += len(batch)
+                return
             retry_after: float | None = None
             try:
                 response = self._http_client().post(target.url, content=body, headers=self._headers)
             except httpx.HTTPError as exc:
-                failure = f"{type(exc).__name__}: {exc}"
+                failure = type(exc).__name__
             else:
                 status = response.status_code
                 if 200 <= status < 300:
-                    self._handle_success(target, response, batch)
-                    return
-                if status == 413 and len(batch) > 1:
+                    if self._handle_success(target, response, batch):
+                        return
+                    failure = "ambiguous acknowledgment"
+                elif status == 413 and len(batch) > 1:
                     self._split_and_send(target, batch, client)
                     return
-                if not _is_retryable(status):
+                elif not _is_retryable(status):
                     self.failed += len(batch)
                     self._log_rejected_batch(target, response, len(batch))
                     return
-                failure = f"HTTP {status}"
-                retry_after = parse_retry_after(response.headers.get("Retry-After"))
+                else:
+                    failure = f"HTTP {status}"
+                    retry_after = parse_retry_after(response.headers.get("Retry-After"))
 
             if attempt >= self._max_retries or self._abort_retries.is_set():
                 self.failed += len(batch)
@@ -228,20 +233,35 @@ class Delivery:
 
     def _handle_success(
         self, target: _Target, response: httpx.Response, batch: list[SpanPayload]
-    ) -> None:
+    ) -> bool:
         batch_size = len(batch)
         try:
             result: Any = response.json()
         except ValueError:
-            self.sent += batch_size
-            return
-        rejected = result.get("rejected") if isinstance(result, dict) else None
-        if not isinstance(rejected, list) or not rejected:
-            self.sent += batch_size
-            return
+            return False
+        if not isinstance(result, dict):
+            return False
+        accepted, rejected = result.get("accepted"), result.get("rejected")
+        if (
+            type(accepted) is not int
+            or accepted < 0
+            or not isinstance(rejected, list)
+            or accepted + len(rejected) != batch_size
+        ):
+            return False
+        indexes: set[int] = set()
+        for item in rejected:
+            if not isinstance(item, dict):
+                return False
+            index = item.get("index")
+            if type(index) is not int or not 0 <= index < batch_size or index in indexes:
+                return False
+            indexes.add(index)
 
-        self.sent += batch_size - len(rejected)
+        self.sent += accepted
         self.failed += len(rejected)
+        if not rejected:
+            return True
         logger.warning(
             "Spanlight rejected %d of %d %s",
             len(rejected),
@@ -260,21 +280,26 @@ class Delivery:
                     item.get("reason"),
                 )
 
+        return True
+
     def retry_delay(self, attempt: int, retry_after: float | None) -> float:
         """Return seconds to wait before retry number ``attempt + 1``.
 
-        ``Retry-After`` wins when present. Otherwise use "equal jitter"
+        ``Retry-After`` sets a minimum when present. Use "equal jitter"
         exponential backoff: half of the exponential step is fixed and the
         other half random, which spreads retries out without ever retrying
         immediately.
         """
-        if retry_after is not None:
-            return min(max(retry_after, 0.0), self._max_backoff)
-        step = min(self._max_backoff, self._base_backoff * (2.0**attempt))
-        return step / 2 + self._jitter() * step / 2
+        step = min(self._max_backoff, self._base_backoff * (2.0 ** min(attempt, 1023)))
+        return max(retry_after or 0.0, step / 2 + self._jitter() * step / 2)
 
     def _interruptible_sleep(self, seconds: float) -> None:
-        self._abort_retries.wait(seconds)
+        # Event.wait overflows on very large valid server delays; wait in bounded chunks.
+        while seconds > 0 and not self._abort_retries.is_set():
+            started = time.monotonic()
+            if self._abort_retries.wait(min(seconds, threading.TIMEOUT_MAX)):
+                return
+            seconds -= time.monotonic() - started
 
 
 def _is_retryable(status: int) -> bool:
@@ -286,6 +311,10 @@ def parse_retry_after(value: str | None) -> float | None:
     if value is None:
         return None
     value = value.strip()
+    if value.isascii() and value.isdecimal():
+        seconds = float(value)
+        # Beyond exact integer representation, keep the minimum indefinite until shutdown.
+        return seconds if seconds <= 2**53 else math.inf
     try:
         seconds = float(value)
     except ValueError:
@@ -297,7 +326,11 @@ def parse_retry_after(value: str | None) -> float | None:
         moment = email.utils.parsedate_to_datetime(value)
     except (TypeError, ValueError):
         return None
-    return max(moment.timestamp() - time.time(), 0.0)
+    try:
+        seconds = moment.timestamp() - time.time()
+    except (OverflowError, OSError, ValueError):
+        return None
+    return max(seconds, 0.0) if math.isfinite(seconds) else None
 
 
 def _short_body(response: httpx.Response) -> str:

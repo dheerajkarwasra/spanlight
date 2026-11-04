@@ -10,18 +10,18 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote
 
 import httpx
 
 from ._experiments_parse import PromptRef
+from ._hosts import is_safe_host
 from ._version import __version__
 
 _PAGE_SIZE = 200
 # A guard against a server that keeps returning cursors: 50 pages of 200 is 10 000 rows.
 _MAX_PAGES = 50
 _ESCAPE = "~"
-_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
 class ExperimentError(Exception):
@@ -39,15 +39,12 @@ class ResolvedPrompt:
 
 def _require_safe_host(host: str) -> None:
     """Refuse to send the access token over plain http, except to the local machine."""
-    parts = urlsplit(host)
-    if parts.scheme == "https" and parts.hostname:
-        return
-    if parts.scheme == "http" and parts.hostname in _LOCAL_HOSTS:
-        return
-    raise ExperimentError(
-        "the host must be an https:// URL (http:// is allowed only for localhost); "
-        "the access token is never sent in clear text"
-    )
+    if not is_safe_host(host):
+        raise ExperimentError(
+            "the host must be an https:// URL (http:// is allowed only for local and "
+            "private-network hosts); "
+            "the access token is never sent in clear text"
+        )
 
 
 def wire_name(name: str) -> str:

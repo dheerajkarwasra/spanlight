@@ -20,6 +20,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
+from app.gateway import upstream_io
 from app.gateway.adapters import ProviderAdapter, UpstreamRequest, UpstreamResponse
 from app.gateway.context import GatewayContext, GatewayRequest
 from app.gateway.errors import GatewayError, upstream_redirect
@@ -48,6 +49,7 @@ class AttemptEnd:
     stream: AsyncIterator[bytes] | None = None
     response: UpstreamResponse | None = None  # a stream's provider response, still open
     error: GatewayError | None = None  # the client's answer if this attempt is the last
+    stream_deadline: float | None = None
     label: str | None = None  # names the failure in `Attempt.error` and the metric, if not the kind
 
 
@@ -108,8 +110,11 @@ async def _read(
         return AttemptEnd(None, status, headers, await read_all(answer))
     iterator = aiter(answer.body)
     first = await anext(iterator, None)
-    stream = idle_bounded(first, iterator, answer)
-    return AttemptEnd(None, status, headers, stream=stream, response=response)
+    stream_deadline = asyncio.get_running_loop().time() + upstream_io.STREAM_TOTAL_TIMEOUT_S
+    stream = idle_bounded(first, iterator, deadline=stream_deadline)
+    return AttemptEnd(
+        None, status, headers, stream=stream, response=answer, stream_deadline=stream_deadline
+    )
 
 
 def _failed(kind: FailureKind, error: GatewayError | None) -> AttemptEnd:

@@ -65,7 +65,7 @@ from app.exports.audit import (
     too_large,
 )
 from app.services.audit import record_audit
-from app.services.deletion import delete_organization, lock_organization
+from app.services.deletion import delete_organization, lock_org_for_write, lock_organization
 from app.services.demo import is_demo_user
 from app.services.invites import check_invite_email_limit, enqueue_invite_email
 from app.services.slugs import RESERVED_ORG_SLUGS, slugify, with_random_suffix
@@ -236,6 +236,7 @@ async def delete_org(
     await db.commit()
     # The keys went with their projects; this process stops accepting them now, not after the TTL.
     request.app.state.key_cache.clear()
+    request.app.state.gateway_key_cache.clear()
     # After the commit, so a rolled-back delete is never reported. Ids only.
     logger.info(
         "org_deleted",
@@ -265,32 +266,45 @@ async def list_members(org_id: uuid.UUID, access: OrgReader, db: DbSession) -> l
     ]
 
 
-async def _locked_membership(db: DbSession, org_id: uuid.UUID, user_id: uuid.UUID) -> Membership:
-    membership = await db.scalar(
-        select(Membership)
-        .where(Membership.org_id == org_id, Membership.user_id == user_id)
-        .with_for_update()
-    )
-    if membership is None:
-        raise not_found()
-    return membership
+async def _locked_membership(
+    db: DbSession, org_id: uuid.UUID, user_id: uuid.UUID
+) -> tuple[Membership, int]:
+    """The member's row and the org's number of owners, with that row and every owner row locked.
 
-
-async def _ensure_not_last_owner(db: DbSession, membership: Membership) -> None:
-    """Refuse to demote or remove the only owner.
-
-    Owner rows are locked, so two concurrent demotions cannot both succeed.
+    The organization first, as every writer under one does (`app.services.deletion`): a
+    deletion of the organization holds its row and cascades into these memberships, while the
+    audit event the caller writes needs a shared lock on that row, so holding the memberships
+    first deadlocks the two. Then one statement in `user_id` order, the order account deletion
+    locks an org's rows in too (`account.delete_account`), so no two of them wait on each other
+    in a cycle.
     """
-    if membership.role is not MembershipRole.OWNER:
-        return
-    owners = (
+    if not await lock_org_for_write(db, org_id):
+        raise not_found()
+    rows = (
         await db.scalars(
-            select(Membership.user_id)
-            .where(Membership.org_id == membership.org_id, Membership.role == MembershipRole.OWNER)
+            select(Membership)
+            .where(
+                Membership.org_id == org_id,
+                or_(Membership.user_id == user_id, Membership.role == MembershipRole.OWNER),
+            )
+            .order_by(Membership.user_id)
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
     ).all()
-    if len(owners) <= 1:
+    membership = next((row for row in rows if row.user_id == user_id), None)
+    if membership is None:
+        raise not_found()
+    return membership, sum(row.role is MembershipRole.OWNER for row in rows)
+
+
+def _ensure_not_last_owner(membership: Membership, owners: int) -> None:
+    """Refuse to demote or remove the only owner.
+
+    `owners` is counted from rows `_locked_membership` holds, so two concurrent demotions cannot
+    both succeed.
+    """
+    if membership.role is MembershipRole.OWNER and owners <= 1:
         raise conflict("LAST_OWNER", "An organization must keep at least one owner.")
 
 
@@ -303,7 +317,7 @@ async def update_member(
     access: MemberManager,
     db: DbSession,
 ) -> MemberOut:
-    membership = await _locked_membership(db, access.org.id, user_id)
+    membership, owners = await _locked_membership(db, access.org.id, user_id)
     if not can_assign_role(access.role, membership.role) or not can_assign_role(
         access.role, body.role
     ):
@@ -312,7 +326,7 @@ async def update_member(
     previous_role = membership.role
     if previous_role is not body.role:
         if body.role is not MembershipRole.OWNER:
-            await _ensure_not_last_owner(db, membership)
+            _ensure_not_last_owner(membership, owners)
         membership.role = body.role
         await record_audit(
             db,
@@ -344,10 +358,10 @@ async def remove_member(
     if not leaving_self and not access.can(Permission.MEMBER_MANAGE):
         raise forbidden()
 
-    membership = await _locked_membership(db, access.org.id, user_id)
+    membership, owners = await _locked_membership(db, access.org.id, user_id)
     if not leaving_self and not can_assign_role(access.role, membership.role):
         raise forbidden("Only owners can remove an owner.")
-    await _ensure_not_last_owner(db, membership)
+    _ensure_not_last_owner(membership, owners)
 
     await db.delete(membership)
     await record_audit(
@@ -398,7 +412,8 @@ async def create_invite(
             )
 
     token = new_token()
-    url = f"{settings.app_base_url}/invite/{token}"
+    # In the fragment, which browsers send to no server and put in no `Referer`.
+    url = f"{settings.app_base_url}/invite#token={token}"
     invite = Invite(
         org_id=access.org.id,
         role=body.role,
@@ -477,18 +492,19 @@ async def revoke_invite(
     await db.commit()
 
 
-@router.get("/invites/preview", response_model=InvitePreviewOut)
+@router.post("/invites/preview", response_model=InvitePreviewOut)
 async def preview_invite(
-    token: Annotated[str, Query(min_length=1, max_length=128)],
+    body: InviteAcceptIn,
     _auth: CurrentSession,  # only signed-in users may look up an invite
     db: DbSession,
 ) -> InvitePreviewOut:
     """Show the org and role an invite grants, without accepting it.
 
-    Requires a signed-in user (the invitee), like accepting does. Unknown, used and expired
-    tokens all get the same 404, so the endpoint does not reveal which invites exist.
+    A POST so the token travels in the body, never in a URL that access logs record. Requires a
+    signed-in user (the invitee), like accepting does. Unknown, used and expired tokens all get
+    the same 404, so the endpoint does not reveal which invites exist.
     """
-    invite = await db.scalar(select(Invite).where(Invite.token_hash == token_digest(token)))
+    invite = await db.scalar(select(Invite).where(Invite.token_hash == token_digest(body.token)))
     if invite is None or invite.accepted_at is not None or invite.expires_at <= utcnow():
         raise not_found("This invite is invalid or has expired.")
 
@@ -506,9 +522,16 @@ async def accept_invite(
         # Joining would open the org to every demo visitor, not to the person invited.
         raise forbidden("The demo account cannot accept invites.")
     now = utcnow()
-    invite = await db.scalar(
-        select(Invite).where(Invite.token_hash == token_digest(body.token)).with_for_update()
-    )
+    # The organization before the invite row, as every writer under one does
+    # (`app.services.deletion`): a deletion of the organization holds its row and cascades into
+    # the invites, while the membership insert and the audit event below need a shared lock on
+    # it, so holding the invite row first deadlocks the two. The token is read unlocked to learn
+    # the organization, then the row is locked and checked again.
+    by_token = select(Invite).where(Invite.token_hash == token_digest(body.token))
+    org_id = await db.scalar(by_token.with_only_columns(Invite.org_id))
+    if org_id is None or not await lock_org_for_write(db, org_id):
+        raise not_found("This invite is invalid or has expired.")
+    invite = await db.scalar(by_token.with_for_update())
     if invite is None or invite.accepted_at is not None or invite.expires_at <= now:
         raise not_found("This invite is invalid or has expired.")
 

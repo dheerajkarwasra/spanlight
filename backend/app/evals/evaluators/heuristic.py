@@ -22,6 +22,7 @@ from typing import Annotated, Any, Literal
 import regex
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.thread_ownership import owned_thread
 from app.evals.evaluators.base import EvaluatorError
 from app.evals.schemas import EvalInput, EvalResult
 from app.scores.schemas import ScoreIn
@@ -230,8 +231,8 @@ class HeuristicEvaluator:
         if isinstance(cfg, RegexRule):
             # In the default executor: the matcher stops itself after REGEX_TIMEOUT_SECONDS, so
             # the thread is always handed back.
-            return await asyncio.to_thread(
-                rule_regex, text, cfg.pattern, ignore_case=cfg.ignore_case
+            return await owned_thread(
+                asyncio.to_thread(rule_regex, text, cfg.pattern, ignore_case=cfg.ignore_case)
             )
         if isinstance(cfg, JsonValidRule):
             return rule_json_valid(text)
@@ -256,7 +257,9 @@ class HeuristicEvaluator:
                     case_sensitive=cfg.case_sensitive,
                 ),
             )
-        return self._result(input, await asyncio.to_thread(rule_levenshtein, text, expected))
+        return self._result(
+            input, await owned_thread(asyncio.to_thread(rule_levenshtein, text, expected))
+        )
 
     def _result(self, input: EvalInput, value: bool | int | Decimal) -> EvalResult:
         # A JSON boolean makes the score (and an implicit config) boolean, stored as 1 or 0.

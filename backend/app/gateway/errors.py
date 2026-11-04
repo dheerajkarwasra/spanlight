@@ -172,8 +172,8 @@ def invalid_request(
     return _error("INVALID_REQUEST", message, param=param)
 
 
-def request_too_large() -> GatewayError:
-    return _error("PAYLOAD_TOO_LARGE", "Request body exceeds the 10 MB limit.")
+def request_too_large(message: str = "Request body exceeds the 10 MB limit.") -> GatewayError:
+    return _error("PAYLOAD_TOO_LARGE", message)
 
 
 def upstream_unreachable(attempts: int) -> GatewayError:

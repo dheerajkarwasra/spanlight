@@ -37,6 +37,13 @@ async def _seed(session_factory: Sessions, table: str) -> Seeded:
     async with session_factory() as db:
         await bypass_rls(db)
         project_a, project_b = await create_project(db), await create_project(db)
+        if table == "aggregate_job_progress":
+            # Only this generic forbidden-write fixture replaces its own admitted rows.
+            # Admission/concurrency tests retain both rows throughout their real lifecycle.
+            await db.execute(
+                text("DELETE FROM aggregate_job_progress WHERE project_id IN (:a, :b)"),
+                {"a": project_a, "b": project_b},
+            )
         params = await create_parents(db, table, project_a)
         await insert(db, table, params)
         await db.commit()

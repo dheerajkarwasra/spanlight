@@ -13,7 +13,7 @@ import {
 } from "@/lib/api";
 import { makeProject, ME, mockSignedIn, ORG_ID, renderApp } from "@/test/render-app";
 
-import { softLimitNote } from "./budget-enforcement";
+import { enforcementNote } from "./budget-enforcement";
 
 const BUDGET: Budget = {
   id: "bud_1",
@@ -32,6 +32,8 @@ const BUDGET: Budget = {
     resets_at: "2026-11-01T00:00:00Z",
     state: "ok",
     last_evaluated_at: "2026-10-14T12:00:00Z",
+    reserved_usd: null,
+    gateway_settled_usd: null,
   },
   created_by: null,
   created_at: "2026-10-01T00:00:00Z",
@@ -42,6 +44,9 @@ const BURN: BudgetBurn = {
   period_start: "2026-10-01T00:00:00Z",
   resets_at: "2026-11-01T00:00:00Z",
   amount_usd: "500.0000",
+  forecast_usd: null,
+  forecast_basis_days: 0,
+  forecast_crosses_on: null,
   points: [
     { day: "2026-10-01", spend_usd: null, cumulative_usd: null },
     { day: "2026-10-14", spend_usd: "182.0000", cumulative_usd: "182.0000" },
@@ -55,12 +60,50 @@ describe("BudgetsPage", () => {
     vi.spyOn(alertsApi, "channels").mockResolvedValue([]);
   });
 
-  it("states the soft limit once, in the footnote, not in the empty state", async () => {
+  it("states how blocking works once, in the footnote, not in the empty state", async () => {
     vi.spyOn(budgetsApi, "list").mockResolvedValue([]);
     renderApp(`/${ORG_ID}/proj_1/budgets`);
 
     expect(await screen.findByText("No budgets")).toBeInTheDocument();
-    expect(screen.getAllByText(softLimitNote(), { exact: false })).toHaveLength(1);
+    expect(screen.getAllByText(enforcementNote(), { exact: false })).toHaveLength(1);
+  });
+
+  it("shows the gateway spend in flight for block budgets only, and drops 'soft' for a gateway key", async () => {
+    const state = BUDGET.state;
+    vi.spyOn(budgetsApi, "list").mockResolvedValue([
+      BUDGET,
+      {
+        ...BUDGET,
+        id: "bud_2",
+        name: "prod key cap",
+        scope: "gateway_key",
+        scope_id: "key_1",
+        action: "block",
+        state: state && {
+          ...state,
+          state: "firing",
+          reserved_usd: "0.4200",
+          gateway_settled_usd: "0",
+        },
+      },
+      { ...BUDGET, id: "bud_3", name: "fresh cap", action: "block", state: null },
+    ]);
+    renderApp(`/${ORG_ID}/proj_1/budgets`);
+
+    const keyRow = (await screen.findByText("prod key cap")).closest("li") as HTMLElement;
+    expect(within(keyRow).getByText("$0.42")).toBeInTheDocument();
+    expect(within(keyRow).getByText("Blocking")).toBeInTheDocument();
+    expect(within(keyRow).queryByText(/soft/i)).not.toBeInTheDocument();
+    // Never evaluated: the in-flight figure is unknown, not $0.00.
+    const fresh = screen.getByText("fresh cap").closest("li") as HTMLElement;
+    const freshLine = within(fresh).getByText("In flight").parentElement as HTMLElement;
+    expect(
+      within(freshLine).getByLabelText("Unknown: Not evaluated yet. Spend shows within a minute."),
+    ).toHaveTextContent("—");
+    expect(within(fresh).queryByText("$0.00")).not.toBeInTheDocument();
+    // A notify budget has no gateway counter, so no in-flight line.
+    const notify = screen.getByText("app-agent monthly").closest("li") as HTMLElement;
+    expect(within(notify).queryByText("In flight")).not.toBeInTheDocument();
   });
 
   it("marks 50, 80 and 100 % on the progress bar, each named in its tooltip", async () => {
@@ -98,6 +141,30 @@ describe("BudgetsPage", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
     expect(router.state.location.search).toEqual({ range: "7d" });
+  });
+
+  it("shows a refused block budget's retention requirement under Action, not as a toast", async () => {
+    vi.spyOn(budgetsApi, "list").mockResolvedValue([]);
+    vi.spyOn(budgetsApi, "create").mockRejectedValue(
+      new ApiError(422, {
+        code: "BUDGET_HISTORY_RETENTION",
+        detail: "An enabled block budget requires at least 31 days of project retention.",
+      }),
+    );
+    renderApp(`/${ORG_ID}/proj_1/budgets?new=1`);
+    const user = userEvent.setup();
+
+    const dialog = await screen.findByRole("dialog", { name: "Create budget" });
+    await user.type(within(dialog).getByLabelText("Name"), "Monthly cap");
+    await user.type(within(dialog).getByLabelText("Amount (USD)"), "50");
+    await user.click(within(dialog).getByRole("radio", { name: "Block" }));
+    expect(dialog).toHaveTextContent("at least 31 days of project retention");
+    await user.click(within(dialog).getByRole("button", { name: "Create budget" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "An enabled block budget requires at least 31 days of project retention.",
+    );
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("drops the create params for a member, who can't create budgets", async () => {

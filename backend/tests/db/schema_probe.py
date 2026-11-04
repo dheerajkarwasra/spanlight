@@ -9,7 +9,7 @@ import uuid
 import psycopg
 from sqlalchemy import create_engine, text
 
-from tests.conftest import admin_database_url
+from tests.db.migration_support import admin_database_url
 
 
 def query(database_url: str, sql: str, **params: object) -> list[tuple[object, ...]]:

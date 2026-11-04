@@ -11,6 +11,7 @@ vi.mock("@/features/shell", () => ({
   usePermission: (permission: string) => permission === "project:write" && permissions.canEdit,
 }));
 vi.mock("@/features/scores", () => ({ ScoreConfigsCard: () => <p>Score configs card</p> }));
+vi.mock("./ingest-quota-card", () => ({ IngestQuotaCard: () => <p>Ingest quota card</p> }));
 vi.mock("./project-settings-form", () => ({
   ProjectSettingsForm: ({ canEdit }: { canEdit: boolean }) =>
     canEdit ? <button type="submit">Save changes</button> : null,

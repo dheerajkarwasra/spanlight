@@ -32,7 +32,7 @@ dependencies = [
     "structlog>=26.1.0",
     "typer>=0.27.3",
     "uuid6>=2025.0.1 ; python_full_version < '3.14'",
-    "uvicorn[standard]>=0.54.0",
+    "uvicorn[standard]==0.54.0",
 ]
 
 [project.scripts]
@@ -50,11 +50,14 @@ dev = [
     "aiosmtpd>=1.4.6",
     "anthropic>=1.12.0",
     "boto3-stubs[s3]>=1.43.110",
+    "hypothesis==6.151.9",
+    "mutmut==3.6.0",
     "mypy>=2.4.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-xdist>=3.8.0",
     "ruff>=0.16.10",
+    "testcontainers[postgres]==4.14.2",
     "types-defusedxml>=0.7.0.20260504",
     "types-regex>=2026.9.29.20261005",
 ]
@@ -65,6 +68,9 @@ asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 filterwarnings = ["error"]
+markers = [
+    "serial: asserts a wall-clock bound or drives timed child processes; run it in the serial pass, not under xdist",
+]
 
 [tool.coverage.run]
 # SQLAlchemy's async engine runs ORM code inside greenlets; without greenlet

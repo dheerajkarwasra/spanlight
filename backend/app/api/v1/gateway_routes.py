@@ -191,6 +191,8 @@ async def update_route(
     except ROUTE_ERRORS as error:
         raise _route_problem(error) from None
     await db.commit()
+    # This process's gateway calls read the change from the next call, not after the key cache TTL.
+    request.app.state.gateway_key_cache.clear()
     _log("gateway_route_updated", access, route.id, version=route.version)
     return _route_out(route, access.auth.user)
 
@@ -247,6 +249,7 @@ async def revert_route(
     except ROUTE_ERRORS as error:
         raise _route_problem(error) from None
     await db.commit()
+    request.app.state.gateway_key_cache.clear()
     _log(
         "gateway_route_reverted", access, route.id, version=route.version, from_version=body.version
     )

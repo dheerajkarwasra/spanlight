@@ -52,3 +52,32 @@ export function burnTooltip(point: BurnPoint): string {
     ? `${dayLabel(point.day)} · — ${of}`
     : `${dayLabel(point.day)} · ${shortUsd(point.cumulative)} ${of} (${percentLabel(point.cumulative / point.amount)})`;
 }
+
+/** The period's last UTC day and the forecast spend on it; null without a forecast. */
+export interface BurnForecast {
+  lastDay: string;
+  usd: number | null;
+  basisDays: number;
+  /** The day spend passes the amount, and whether that day has already come. */
+  crossing: { day: string; passed: boolean } | null;
+}
+
+/** Null for a one-day period (a daily budget has no forecast); otherwise what the API forecast. */
+export function burnForecast(burn: BudgetBurn): BurnForecast | null {
+  const days = periodDays(burn);
+  const lastDay = days.at(-1);
+  if (lastDay === undefined || days.length === 1) return null;
+  const crossesOn = burn.forecast_crosses_on;
+  // Measured when that day's spend to date is already over the amount; a forecast crossing can
+  // fall on today while today's spend is still under it.
+  const spentThen = parseMoney(
+    burn.points.find((point) => point.day === crossesOn)?.cumulative_usd,
+  );
+  const passed = spentThen !== null && spentThen > Number(burn.amount_usd);
+  return {
+    lastDay,
+    usd: parseMoney(burn.forecast_usd),
+    basisDays: burn.forecast_basis_days,
+    crossing: crossesOn === null ? null : { day: crossesOn, passed },
+  };
+}

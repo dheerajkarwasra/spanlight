@@ -30,12 +30,14 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import User
+from app.auth.email_tokens import retire_unused_tokens
+from app.db.models import EmailTokenKind, User
 from app.services.sessions import revoke_all_sessions
 
 
 async def replace_password(db: AsyncSession, user: User, password_hash: str) -> None:
-    """Set the user's password hash and end every session they have. The caller commits.
+    """Set the user's password hash, end every session they have and cancel a pending email
+    change. The caller commits.
 
     The hash is flushed before the sessions are deleted, not left to autoflush, because that
     order is what makes a concurrent sign-in either wait or get deleted (see the module
@@ -45,6 +47,8 @@ async def replace_password(db: AsyncSession, user: User, password_hash: str) -> 
     user.password_hash = password_hash
     await db.flush()
     await revoke_all_sessions(db, user.id)
+    # Someone who knew the old password may have asked to move the account to their address.
+    await retire_unused_tokens(db, user.id, EmailTokenKind.EMAIL_CHANGE)
 
 
 @dataclass(frozen=True)

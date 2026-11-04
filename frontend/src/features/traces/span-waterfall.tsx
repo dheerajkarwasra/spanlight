@@ -1,4 +1,11 @@
-import { useRef, useState, type CSSProperties, type KeyboardEvent, type RefObject } from "react";
+import {
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
 
 import { Card } from "@/components/ui/card";
 import type { Insight, Span } from "@/lib/api";
@@ -46,10 +53,13 @@ export function SpanWaterfall(props: SpanWaterfallProps) {
   const { spans, roots, selectedSpanId, onSelect, insights = [] } = props;
   const view = useWaterfallTree(props);
   const { rows, items, matches } = view;
-  const timeline = computeTimeline(spans);
+  // 10,000 date parses on a 5,000-span trace: not again on every expand, keystroke or scroll.
+  const timeline = useMemo(() => computeTimeline(spans), [spans]);
   const phone = useMediaQuery(PHONE_QUERY);
   const ticks = timelineTicks(timeline.durationMs, phone ? PHONE_MAX_TICKS : undefined);
   const failed = failedSpanCount(spans);
+  // Find reads names and loaded payloads; a span whose payloads were left out makes it partial.
+  const partialSearch = spans.some((span) => span.payload_omitted);
   const doctor = insights.find((insight) => insight.severity === "critical") ?? insights[0];
   const focusableId = rows.some((row) => row.span.span_id === selectedSpanId)
     ? selectedSpanId
@@ -160,6 +170,11 @@ export function SpanWaterfall(props: SpanWaterfallProps) {
           }
         }}
       />
+      {partialSearch ? (
+        <p className="text-xs font-medium text-muted-foreground">
+          Search covers span names and loaded input/output.
+        </p>
+      ) : null}
 
       <div
         ref={setRowsBox}

@@ -3,7 +3,7 @@
 One verdict per user per insight (a second vote replaces the first in the application), a note of
 at most 500 characters, and the vote goes when its insight or its user does.
 
-The round trip downgrades the session's shared database and leaves it at head.
+The round trip uses an explicitly owned database at the pinned historical revision.
 """
 
 import uuid
@@ -11,8 +11,8 @@ import uuid
 import psycopg
 import pytest
 
-from app.db.migrations import downgrade_to, head_revision, upgrade_to_head
 from tests.db import schema_probe as probe
+from tests.db.migration_support import downgrade_to, expected_revision, upgrade_to_target
 
 TABLE = "insight_feedback"
 ORG_ID = uuid.UUID("10000000-0000-4000-8000-000000000704")
@@ -37,7 +37,7 @@ EXPECTED_CONSTRAINTS = {
 
 
 def _assert_at_head(database_url: str) -> None:
-    assert probe.current_revision(database_url) == head_revision()
+    assert probe.current_revision(database_url) == expected_revision()
     assert probe.columns(database_url, TABLE) == EXPECTED_COLUMNS
     probe.assert_project_policies(database_url, TABLE)
     constraints = probe.constraints(database_url, TABLE)
@@ -87,8 +87,9 @@ def _votes(connection: psycopg.Connection) -> int:
     return int(row[0])
 
 
-def test_0704_round_trip(app_database_url: str) -> None:
-    _assert_at_head(app_database_url)
+@pytest.mark.migration_revision("0704")
+def test_0704_round_trip(migration_database_url: str) -> None:
+    _assert_at_head(migration_database_url)
     with probe.admin() as connection:
         probe.seed_project(connection, ORG_ID, PROJECT_ID)
         insight_id, user_id = _insight(connection), _user(connection)
@@ -106,11 +107,11 @@ def test_0704_round_trip(app_database_url: str) -> None:
         connection.execute("DELETE FROM users WHERE id = %s", (user_id,))
         assert _votes(connection) == 0
 
-    downgrade_to(app_database_url, "0703")
+    downgrade_to(migration_database_url, "0703")
     try:
-        assert probe.current_revision(app_database_url) == "0703"
-        assert probe.row_security(app_database_url, TABLE) is None
+        assert probe.current_revision(migration_database_url) == "0703"
+        assert probe.row_security(migration_database_url, TABLE) is None
     finally:
-        upgrade_to_head(app_database_url)
+        upgrade_to_target(migration_database_url)
 
-    _assert_at_head(app_database_url)
+    _assert_at_head(migration_database_url)

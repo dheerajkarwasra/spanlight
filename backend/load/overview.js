@@ -1,7 +1,7 @@
 // Dashboard overview load: 20 requests a second on GET /api/v1/projects/{id}/metrics/overview,
 // read with API keys that hold `traces:read`. The time window rotates through 1 hour, 24 hours,
-// 7 days and 30 days: the first two read the raw spans, the other two the hourly rollups. Every
-// window ends at `data_end` of the credentials file, the instant the seeded data ends at, and not
+// 7 days and 30 days: the hour reads the raw spans, the others read whole hours from the hourly
+// rollups and the recent tail from the raw spans. Every window ends at `data_end` of the credentials file, the instant the seeded data ends at, and not
 // at the wall clock: a seed that took hours would otherwise leave the 1 hour window empty. The
 // target is the web service (Caddy). Threshold: p95 of the request time below 300 ms; the p95 of
 // each window is shown in the summary but is not a threshold.
@@ -24,11 +24,18 @@ const credentials = JSON.parse(open(__ENV.CREDENTIALS_FILE || '/creds/credential
 
 const REQUESTS_PER_SECOND = 20;
 const HOUR_MS = 3600 * 1000;
+// On the hour, the hour before `data_end` is whole and may already be rolled up, so a raw-only
+// window may answer either way.
+const DATA_END_ON_THE_HOUR = new Date(credentials.data_end).getTime() % HOUR_MS === 0;
 
-// `rollup` is what the API reports in `approximate`: windows over 24 hours read the rollups.
+// `rollup` is what the API reports in `approximate`, which is true when the window or the
+// previous period of equal length reads a rollup hour (docs/api-deviations.md, "Metrics source").
+// The raw part never reaches back more than 24 hours and the seed builds the rollups, so from
+// 24 hours up the previous period always reads rollup hours. An hour-long window and the hour
+// before it hold no whole UTC hour unless `data_end` falls on the hour, so they are read raw.
 const WINDOWS = [
   { name: '1h', lengthMs: HOUR_MS, rollup: false },
-  { name: '24h', lengthMs: 24 * HOUR_MS, rollup: false },
+  { name: '24h', lengthMs: 24 * HOUR_MS, rollup: true },
   { name: '7d', lengthMs: 7 * 24 * HOUR_MS, rollup: true },
   { name: '30d', lengthMs: 30 * 24 * HOUR_MS, rollup: true },
 ];
@@ -86,11 +93,12 @@ export default function () {
   const served = check(response, {
     'status is 200': (r) => r.status === 200,
     // The seeded data covers every window. An empty one is fast for the wrong reason, and for 7
-    // and 30 days it is what missing rollups look like (`approximate` follows the window length
-    // alone, not whether rollup rows exist).
+    // and 30 days it is what missing rollups look like.
     'the window has traces': (r) => r.status === 200 && r.json('current.traces') > 0,
     'reported the expected source': (r) =>
-      r.status === 200 && r.json('approximate') === timeWindow.rollup,
+      r.status === 200 &&
+      (r.json('approximate') === timeWindow.rollup ||
+        (!timeWindow.rollup && DATA_END_ON_THE_HOUR)),
   });
   if (!served && !reportedFailure) {
     reportedFailure = true; // once per virtual user, so a broken run does not flood the log
@@ -103,7 +111,7 @@ export function windowRows(data) {
     const metric = data.metrics[`overview_duration_${timeWindow.name}`];
     const values = metric && metric.values ? metric.values : {};
     const cell = (stat) => formatValue(values[stat], metric && metric.contains);
-    const source = timeWindow.rollup ? 'hourly rollups' : 'raw spans';
+    const source = timeWindow.rollup ? 'hourly rollups and raw tail' : 'raw spans';
     return `| ${timeWindow.name} | ${source} | ${cell('med')} | ${cell('p(95)')} | ${cell('max')} |`;
   });
 }

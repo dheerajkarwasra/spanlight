@@ -23,6 +23,9 @@ export const ME: Me = {
   email_verification_required: false,
   // Dismissed, so shell tests don't depend on the activation call; checklist tests set it false.
   activation_checklist_dismissed: true,
+  terms_accepted_version: null,
+  terms_current_version: null,
+  weekly_digest: true,
   capabilities: {
     gateway_mode: "embedded",
     credentials_configured: true,
@@ -38,6 +41,7 @@ export function makeProject(id: string, name: string): Project {
     slug: name.toLowerCase(),
     retention_days: 30,
     capture_payloads: true,
+    redact_contact_info: false,
     weekly_digest_enabled: true,
     insight_channel_ids: [],
     promoted_metadata_keys: [],

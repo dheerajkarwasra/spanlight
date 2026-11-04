@@ -13,7 +13,7 @@ import {
   SheetDescription,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { VerifyEmailBanner } from "@/features/auth";
+import { useMe, VerifyEmailBanner } from "@/features/auth";
 import { isApiError, isTwoFactorRequired } from "@/lib/api";
 import { writeLastProject } from "@/lib/last-project";
 import { useMediaQuery } from "@/lib/use-media-query";
@@ -49,6 +49,10 @@ import { useRailCollapsed } from "./use-rail-collapsed";
  * spacing and a 1440px max width. Pages should not add their own outer padding.
  */
 export function AppShell() {
+  const { user } = useMe();
+  const { orgId, projectId } = useProjectParams();
+  // Observers and local selections may keep previous data only inside this identity and project.
+  const scope = JSON.stringify([user.id, orgId, projectId]);
   // Review work mode is a focus screen: the page draws its own frame, without rail or top bar.
   // Read from the matches the outlet renders, not the location: while a navigation is pending
   // the location is still the old one, so the page would mount in one shell and then remount in
@@ -58,9 +62,9 @@ export function AppShell() {
     shouldThrow: false,
   });
   if (workMode !== undefined) {
-    return <FocusShell />;
+    return <FocusShell key={scope} />;
   }
-  return <ChromeShell />;
+  return <ChromeShell key={scope} />;
 }
 
 function ChromeShell() {

@@ -6,11 +6,12 @@ instead: 32 buckets whose upper bounds grow geometrically from 1 ms to
 for the same dimensions add element-wise, so any number of hours can be merged
 into one without going back to the raw spans.
 
-Percentiles read from a histogram are an approximation. Everything that falls
-into a bucket is assumed to be spread evenly across it, and the answer is
-interpolated linearly between the bucket's edges. Because a bucket is about
-1.5x wide, the estimate is within roughly 25 % of the true value, which is
-enough for a dashboard chart and is why those responses are labelled
+Percentiles read from a histogram are an approximation. Continuous percentile
+ranks identify the two contributing order statistics. Each bucket's harmonic
+midpoint minimizes its worst-case relative error; interpolating these estimates
+preserves the bound, about 20.066 % for bounded interior buckets. The
+first bucket has no positive lower bound and the last is open-ended, so that
+relative guarantee excludes both extremes. Responses remain labelled
 approximate. A window that reads no rollup hour (in practice the last hour)
 reads the raw spans and stays exact.
 
@@ -76,42 +77,34 @@ def bucket_index(ms: float) -> int:
 def approx_percentile(counts: Sequence[int], q: float) -> float | None:
     """Estimate the ``q`` quantile (0 to 1) of the durations behind a histogram.
 
-    The rank ``q * total`` is located in the bucket that holds it, and the result
-    is interpolated linearly between that bucket's lower edge (0 ms for the first
-    bucket, otherwise the previous bound) and its upper bound. The result is never
-    above ``MAX_BOUND_MS``: the last bucket is open-ended, so its estimate is
-    capped at the last bound. The error of the estimate is bounded by the width
-    of one bucket, about 25 % of the value (see the module docstring).
+    Like ``percentile_cont``, interpolate the observations around ``q * (n - 1)``.
+    Only their bucket intervals survive storage: interpolate the buckets'
+    minimax relative estimates. At a zero lower bound use the absolute-error
+    midpoint instead. The last bucket uses its stored cap;
+    true overflow values cannot be recovered from the histogram.
 
     Returns ``None`` when the histogram is empty, so an unknown percentile is
     never reported as ``0``.
 
     Raises:
         ValueError: ``q`` is outside ``[0, 1]`` (or NaN), ``counts`` does not have
-            ``BUCKET_COUNT`` entries, or a count is negative.
+            ``BUCKET_COUNT`` entries, or a count is not a nonnegative integer.
     """
     if not 0.0 <= q <= 1.0:
         raise ValueError(f"q must be between 0 and 1, got {q}")
     _require_length(counts)
-    if any(count < 0 for count in counts):
-        raise ValueError("bucket counts must not be negative")
+    if any(type(count) is not int or count < 0 for count in counts):
+        raise ValueError("bucket counts must be nonnegative integers")
     total = sum(counts)
     if total == 0:
         return None
 
-    rank = q * total
-    cumulative = 0
-    last_filled = 0
-    for index, count in enumerate(counts):
-        if count == 0:
-            continue
-        last_filled = index
-        if cumulative + count >= rank:
-            return _interpolate(index, (rank - cumulative) / count)
-        cumulative += count
-    # Only reachable when q * total rounds above total (counts beyond 2**53):
-    # the quantile is then the top of the last bucket that has data.
-    return BOUNDS_MS[last_filled]
+    # Keep order-statistic ranks exact even when accumulated counts exceed 2**53.
+    numerator, denominator = float(q).as_integer_ratio()
+    rank, remainder = divmod((total - 1) * numerator, denominator)
+    lower = _rank_estimate(counts, rank)
+    upper = _rank_estimate(counts, rank + bool(remainder))
+    return lower + (remainder / denominator) * (upper - lower)
 
 
 def merge(a: Sequence[int], b: Sequence[int]) -> list[int]:
@@ -125,11 +118,17 @@ def merge(a: Sequence[int], b: Sequence[int]) -> list[int]:
     return [x + y for x, y in zip(a, b, strict=True)]
 
 
-def _interpolate(index: int, fraction: float) -> float:
-    """Point ``fraction`` (0 to 1) of the way through bucket ``index``."""
-    lower = 0.0 if index == 0 else BOUNDS_MS[index - 1]
-    upper = BOUNDS_MS[index]
-    return min(lower + min(max(fraction, 0.0), 1.0) * (upper - lower), MAX_BOUND_MS)
+def _rank_estimate(counts: Sequence[int], rank: int) -> float:
+    """Monotone bucket representative of a zero-based order statistic."""
+    cumulative = 0
+    for index, count in enumerate(counts):
+        cumulative += count
+        if rank < cumulative:
+            if index == 0:
+                return BOUNDS_MS[0] / 2
+            lower, upper = BOUNDS_MS[index - 1], BOUNDS_MS[index]
+            return 2 * lower * upper / (lower + upper)
+    raise ValueError("rank is outside the histogram")
 
 
 def _require_length(counts: Sequence[int]) -> None:

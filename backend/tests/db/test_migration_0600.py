@@ -5,7 +5,7 @@ non-token part of `cost_usd`; each has a CHECK under its own name, so an insert 
 names it. `server_tool_fees` is the global, versioned price list for server-side tools: one row
 per provider, tool and effective date, with the tool name limited to the tools priced today.
 
-Every test here downgrades the session's shared database or writes rows outside the truncated
+Historical round trips use owned databases; other tests write outside the truncated
 tables, and leaves both as it found them.
 """
 
@@ -15,11 +15,13 @@ from decimal import Decimal
 import psycopg
 import pytest
 from sqlalchemy import create_engine, text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.migrations import downgrade_to, head_revision, upgrade_to_head
-from app.pricing.cost import sync_seed_prices
-from tests.conftest import admin_database_url
+from tests.db.migration_support import (
+    admin_database_url,
+    downgrade_to,
+    expected_revision,
+    upgrade_to_target,
+)
 
 ORG_ID = uuid.UUID("10000000-0000-4000-8000-000000000600")
 PROJECT_ID = uuid.UUID("20000000-0000-4000-8000-000000000600")
@@ -149,7 +151,7 @@ def _insert_fee(
 
 
 def _assert_at_head(database_url: str) -> None:
-    assert _current_revision(database_url) == head_revision()
+    assert _current_revision(database_url) == expected_revision()
     columns = _columns(database_url)
     for key, expected in EXPECTED_COLUMNS.items():
         assert columns.get(key) == expected, key
@@ -208,24 +210,22 @@ def test_0600_server_tool_fees_refuses_unknown_tools_and_duplicates() -> None:
             connection.execute("DELETE FROM server_tool_fees WHERE provider = 'fee-test'")
 
 
-async def test_0600_round_trip(
-    app_database_url: str, session_factory: async_sessionmaker[AsyncSession]
-) -> None:
-    downgrade_to(app_database_url, "0508")
+@pytest.mark.migration_revision("0600")
+async def test_0600_round_trip(migration_database_url: str) -> None:
+    downgrade_to(migration_database_url, "0508")
     try:
-        assert _current_revision(app_database_url) == "0508"
-        columns = _columns(app_database_url)
+        assert _current_revision(migration_database_url) == "0508"
+        columns = _columns(migration_database_url)
         assert not EXPECTED_COLUMNS.keys() & columns.keys()
-        assert not EXPECTED_SPAN_CHECKS.keys() & _constraints(app_database_url, "spans").keys()
-        assert _constraints(app_database_url, "server_tool_fees") == {}
+        assert (
+            not EXPECTED_SPAN_CHECKS.keys() & _constraints(migration_database_url, "spans").keys()
+        )
+        assert _constraints(migration_database_url, "server_tool_fees") == {}
     finally:
-        # The rest of the session shares this database, so it must end at head.
-        upgrade_to_head(app_database_url)
-        async with session_factory() as db:
-            await sync_seed_prices(db)
-            await db.commit()
+        # Complete the round-trip contract at its pinned upper revision.
+        upgrade_to_target(migration_database_url)
 
-    _assert_at_head(app_database_url)
+    _assert_at_head(migration_database_url)
     # The rebuilt table keeps the stored form of `provider` the only form.
     with (
         _admin() as connection,
@@ -234,11 +234,10 @@ async def test_0600_round_trip(
         _insert_fee(connection, provider="Anthropic")
 
 
-async def test_0600_is_idempotent_on_rerun(
-    app_database_url: str, session_factory: async_sessionmaker[AsyncSession]
-) -> None:
+@pytest.mark.migration_revision("0600")
+async def test_0600_is_idempotent_on_rerun(migration_database_url: str) -> None:
     """An interrupted run leaves the span columns and checks behind; the next run completes."""
-    downgrade_to(app_database_url, "0508")
+    downgrade_to(migration_database_url, "0508")
     try:
         with _admin() as connection:
             connection.execute(
@@ -249,11 +248,8 @@ async def test_0600_is_idempotent_on_rerun(
             # A row written through the half-applied schema is still checked.
             _seed_trace(connection)
             _insert_span(connection, "0620" * 4, "batch", 2, Decimal("0.02"))
-        upgrade_to_head(app_database_url)
+        upgrade_to_target(migration_database_url)
     finally:
-        upgrade_to_head(app_database_url)
-        async with session_factory() as db:
-            await sync_seed_prices(db)
-            await db.commit()
+        upgrade_to_target(migration_database_url)
 
-    _assert_at_head(app_database_url)
+    _assert_at_head(migration_database_url)

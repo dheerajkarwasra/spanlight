@@ -39,6 +39,7 @@ function trace(id: string, metadata: Record<string, string>): TraceSummary {
     models: [],
     error_message: null,
     error_class: null,
+    root_received: true,
     has_scores: false,
     retry_calls: 0,
     retry_cost_usd: "0",
@@ -161,6 +162,7 @@ describe("the trace list's metadata chips", () => {
         metadata_value: "acme",
         name: "summarize",
       }),
+      expect.any(AbortSignal),
     );
   });
 });

@@ -25,6 +25,7 @@ HELPER = "app.db.rls"  # defines `bypass_rls`; the request path imports it for `
 
 ALLOWED = {
     HELPER,
+    "app.jobs.aggregate_progress",  # worker-only durable candidate discovery
     "app.alerts.cli_support",  # the dry-run CLI clears the flag at the start of each session
     "app.alerts.digest_queries",
     "app.alerts.job_queries",
@@ -42,8 +43,7 @@ ALLOWED = {
     "app.jobs.tasks.retention",
     "app.reconciliation.job_queries",
     "app.review.jobs",  # the nightly selection lists every enabled policy across projects
-    "app.rollups.jobs",
-    "app.rollups.refresh",  # the rollup job's due refresh slices, across projects
+    "app.rollups.dirty_candidates",  # repair job only: cross-project candidates and backlog
     "app.rollups.usage_rollup_backfill",  # `spanlight recompute-usage-rollups`, across projects
     "app.scores.repair",
 }

@@ -58,6 +58,11 @@ async def budget_world(
     app_clock: ManualClock,
 ) -> AsyncIterator[BudgetWorld]:
     owner = gateway_workspace.owner
+    # Monthly hard budgets require a complete maximum-length UTC month of history.
+    retention = await owner.patch(
+        f"/api/v1/projects/{gateway_workspace.project_id}", json={"retention_days": 31}
+    )
+    assert retention.status_code == 200, retention.text
     key = await create_api_key(owner, str(gateway_workspace.project_id))
     channel = await owner.post(
         f"/api/v1/orgs/{gateway_workspace.org_id}/alert-channels",

@@ -25,6 +25,7 @@ Request bodies and answers are never logged.
 import json
 import time
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
 
@@ -34,6 +35,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.core.errors import not_configured, not_found
+from app.core.idempotency_store import (
+    Reservation,
+    StoredResponse,
+    complete_operation,
+    operation_reservation,
+)
 from app.core.ids import new_id
 from app.core.observability import REPLAY_RUNS
 from app.db.models import Project, Span, Trace
@@ -141,6 +148,7 @@ async def run_replay(
     clock: Clock,
     ip: str | None,
     execute: Execute = gateway_execute,
+    receipt: Callable[[ReplayOutcome | ReplayBudgetExceededError], StoredResponse] | None = None,
 ) -> ReplayOutcome:
     """Replay one stored request and answer with the result. Commits `db`.
 
@@ -153,9 +161,19 @@ async def run_replay(
         raise not_configured("Replay is turned off: REPLAY_MONTHLY_BUDGET_USD is 0.")
     now = clock()
     prepared = await _prepare(db, project, body, now)
-    await _reserve(db, project, actor_id, body, prepared, settings, now)
+    await _reserve(db, project, actor_id, body, prepared, settings, now, receipt)
     await db.commit()  # no connection is held while the provider answers
-    return await _call(services, project, actor_id, prepared, clock, ip, execute)
+    return await _call(
+        services,
+        project,
+        actor_id,
+        prepared,
+        clock,
+        ip,
+        execute,
+        operation_reservation(db),
+        receipt,
+    )
 
 
 async def _prepare(db: AsyncSession, project: Project, body: ReplayIn, now: datetime) -> Prepared:
@@ -200,6 +218,7 @@ async def _reserve(
     prepared: Prepared,
     settings: Settings,
     now: datetime,
+    receipt: Callable[[ReplayOutcome | ReplayBudgetExceededError], StoredResponse] | None,
 ) -> None:
     """Admit the replay under the budget (the row is inserted either way), or commit the refused
     row and raise with the month's figures, read under the same lock."""
@@ -218,9 +237,12 @@ async def _reserve(
     if await reserve_replay(db, replay, estimate=prepared.estimate, budget=budget, now=now):
         return
     spend = await month_spend(db, project.id, now)
+    error = ReplayBudgetExceededError(spend, budget, month_start(now))
+    if receipt is not None:
+        await complete_operation(db, receipt(error))
     await db.commit()
     REPLAY_RUNS.labels(outcome=BUDGET_EXCEEDED).inc()
-    raise ReplayBudgetExceededError(spend, budget, month_start(now))
+    raise error
 
 
 async def _call(
@@ -231,6 +253,8 @@ async def _call(
     clock: Clock,
     ip: str | None,
     execute: Execute,
+    operation: Reservation | None,
+    receipt: Callable[[ReplayOutcome], StoredResponse] | None,
 ) -> ReplayOutcome:
     request = GatewayRequest(
         surface=prepared.plan.surface,
@@ -248,7 +272,9 @@ async def _call(
         span_sink=spans,
         clock=clock,
     )
-    settle = Settlement(services, project, actor_id, prepared, spans, context, clock, ip)
+    settle = Settlement(
+        services, project, actor_id, prepared, spans, context, clock, ip, operation, receipt
+    )
     started = time.monotonic()
     try:
         result = await execute(request, context)
@@ -259,6 +285,8 @@ async def _call(
         # Cancelled (the client went away); whether the provider was paid is unknown.
         await shielded(settle.unanswered())
         raise
+    if operation is not None and result.error is not None and may_have_billed(result):
+        operation.keep_pending = True
     outcome = result_of(
         result,
         surface=request.surface,

@@ -24,18 +24,27 @@ export interface SlugMap {
  * in `backend/app/services/slugs.py` (a backend test compares the two).
  */
 export const RESERVED_FIRST_SEGMENTS: ReadonlySet<string> = new Set([
+  "accept-terms",
+  "accessibility",
   "account",
   "api",
   "assets",
+  "confirm-email-change",
   "docs",
+  "dpa",
   "forgot-password",
   "gw",
   "health",
+  "imprint",
   "invite",
   "login",
   "onboarding",
+  "privacy",
   "reset-password",
   "signup",
+  "subprocessors",
+  "terms",
+  "unsubscribe",
   "v1",
   "verify-email",
 ]);

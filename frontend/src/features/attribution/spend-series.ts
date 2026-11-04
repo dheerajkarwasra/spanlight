@@ -10,7 +10,7 @@ export interface SpendBar {
   cost: number | null;
   /** Some of the bucket's calls had no price, so the bar is a lower bound. */
   lowerBound: boolean;
-  unpriced: number;
+  unpriced: number | null;
 }
 
 const dayFormat = new Intl.DateTimeFormat("en-US", {
@@ -32,7 +32,7 @@ export function seriesBars(series: AttributionSeries): SpendBar[] {
         ? formatBucketTime(point.bucket_start, series.points.length)
         : dayFormat.format(new Date(point.bucket_start)),
       cost,
-      lowerBound: cost !== null && point.unpriced_calls > 0,
+      lowerBound: cost !== null && point.unpriced_calls !== null && point.unpriced_calls > 0,
       unpriced: point.unpriced_calls,
     };
   });
@@ -41,7 +41,7 @@ export function seriesBars(series: AttributionSeries): SpendBar[] {
 /** "Oct 14 · $4.12 · 3 unpriced calls" (spec §3.3). */
 export function barSummary(bar: SpendBar): string {
   const cost = formatCost(bar.cost) ?? "No priced calls";
-  return `${bar.label} · ${cost} · ${pluralize(bar.unpriced, "unpriced call")}`;
+  return `${bar.label} · ${cost} · ${bar.unpriced === null ? "—" : pluralize(bar.unpriced, "unpriced call")}`;
 }
 
 /**

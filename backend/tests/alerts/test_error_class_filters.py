@@ -21,12 +21,14 @@ from app.alerts.metrics import metric_value, plan_window, rollup_split
 from app.alerts.rules import metric_filters
 from app.alerts.types import Metric, MetricFilters
 from app.api.window import TimeWindow
+from app.config import Settings
 from app.db.rls import bind_project, bypass_rls
 from app.rollups.compute import floor_hour
 from tests.conftest import BrowserFactory
 from tests.helpers import create_workspace
 from tests.jobs.bypass_support import SessionFactory, new_projects
 from tests.rollups.error_support import compute
+from tests.rollups.recent_support import run_recent
 
 USER = "user-1"
 FAULT = {"spanlight.fault.scenario": "rate_limited"}
@@ -301,7 +303,7 @@ async def test_unknown_class_value_is_422(browser_factory: BrowserFactory) -> No
 
 
 async def test_preview_accepts_the_filters(
-    browser_factory: BrowserFactory, session_factory: SessionFactory
+    browser_factory: BrowserFactory, session_factory: SessionFactory, settings: Settings
 ) -> None:
     workspace = await create_workspace(await browser_factory("owner@example.com"))
     project = uuid.UUID(workspace.project_id)
@@ -319,6 +321,8 @@ async def test_preview_accepts_the_filters(
         ],
     )
     filters = {"error_class": "rate_limit", "rate_limit_kind": "spend_cap"}
+    # Settle the admitted closed hours as the scheduled job does; unsettled ones read as pending.
+    await run_recent(session_factory, settings)
 
     preview = await workspace.owner.post(f"{url}/preview", json=_definition("error_calls", filters))
     assert preview.status_code == 200, preview.text

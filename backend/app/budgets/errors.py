@@ -34,3 +34,14 @@ class UnknownScopeError(Exception):
     def __init__(self, message: str = GATEWAY_KEY) -> None:
         super().__init__(message)
         self.message = message
+
+
+class BudgetReservationsPendingError(Exception):
+    """Changing scope would discard unresolved or unattributed period charges."""
+
+
+class BudgetHistoryRetentionError(Exception):
+    """A hard budget's period exceeds the project's configured history retention."""
+
+    def __init__(self, days: int) -> None:
+        self.days = days

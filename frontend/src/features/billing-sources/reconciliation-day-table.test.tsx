@@ -36,6 +36,7 @@ const REPORT: ReconciliationReport = {
       credits_usd: "-5.0000",
       other_usd: "0",
       unattributed_calls: 0,
+      bypass_suspected: false,
       groups: [
         {
           group: "claude-sonnet-4-6",
@@ -78,6 +79,7 @@ const REPORT: ReconciliationReport = {
       credits_usd: null,
       other_usd: null,
       unattributed_calls: 0,
+      bypass_suspected: false,
       groups: [],
       credits: [],
       other: [],
@@ -118,5 +120,13 @@ describe("DayTable (narrow: one disclosure tile per day)", () => {
     expect(day).toHaveAccessibleName(expect.stringContaining("Not fetched yet") as string);
     expect(day).toHaveAccessibleName(expect.stringContaining("Provisional") as string);
     expect(within(day).queryByText("$0.00")).toBeNull();
+  });
+
+  it("keeps the tile's chevron at full size when chips fill the top line", () => {
+    renderTable();
+    const day = screen.getByRole("button", { name: /^Oct 2\b/ });
+    // The chips and the variance take the row's width; without `shrink-0` the chevron is
+    // squeezed to a sliver on a 375 px tile (D10 defect 2).
+    expect(day.querySelector("svg.lucide-chevron-down")).toHaveClass("shrink-0");
   });
 });

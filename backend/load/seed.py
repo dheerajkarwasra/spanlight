@@ -8,6 +8,10 @@ oldest first, see `seed_data.py`). It skips HTTP on purpose: the ingest limit of
 second per key would turn 10 million spans into hours of waiting, and the load test would then
 measure the seeder instead of the server.
 
+With --processes N, N processes store the batches in parallel, each taking every N-th batch, so
+all of them move through the 28 days together and the rows stay roughly in time order. One
+process runs at about one CPU core, so this is what makes 100 million spans a matter of hours.
+
 It prints its rate every million spans and stops early when the seed is projected to take longer
 than --max-minutes. Afterwards it builds the hourly rollups, runs VACUUM ANALYZE and prints the
 table sizes and the free disk. The credentials are written to a JSON file only the current user can
@@ -28,11 +32,13 @@ import argparse
 import asyncio
 import json
 import math
+import multiprocessing
 import os
 import sys
 import time
 import uuid
 from collections.abc import Iterator
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -40,7 +46,11 @@ from pathlib import Path
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from app.attribution.job_queries import promoted_keys_of
+from app.attribution.refresh import refresh_attribution
+from app.db.rls import bind_project
 from app.db.session import create_engine, create_session_factory
+from app.end_users.refresh import refresh_user_stats
 from app.ingest.pipeline import IngestTarget, ingest_spans
 from app.ingest.schemas import MAX_SPANS_PER_BATCH
 from app.rollups.compute import backfill_rollups
@@ -80,6 +90,7 @@ class Options:
     credentials_file: Path
     seed: int
     max_minutes: float
+    processes: int = 1
 
     @property
     def batch_count(self) -> int:
@@ -121,6 +132,7 @@ class Progress:
     total: int
     started: float
     max_minutes: float
+    label: str = ""
     done: int = 0
     next_report: int = PROGRESS_EVERY
 
@@ -139,8 +151,8 @@ class Progress:
         rate = self.done / (minutes * 60)
         projected = self.total / rate / 60
         say(
-            f"{self.done:,} of {self.total:,} spans stored ({minutes:.1f} min, {rate:,.0f} "
-            f"spans/s, about {max(projected - minutes, 0):.0f} min left)"
+            f"{self.label}{self.done:,} of {self.total:,} spans stored ({minutes:.1f} min, "
+            f"{rate:,.0f} spans/s, about {max(projected - minutes, 0):.0f} min left)"
         )
         if projected > self.max_minutes:
             raise SeedError(
@@ -150,9 +162,10 @@ class Progress:
             )
 
 
-def _batches(total: int) -> Iterator[tuple[int, int]]:
-    """(batch index, span count) for every batch; the last one holds the remainder."""
-    for index in range(math.ceil(total / SPANS_PER_BATCH)):
+def _batches(total: int, shard: int = 0, shards: int = 1) -> Iterator[tuple[int, int]]:
+    """(batch index, span count) for every `shards`-th batch from `shard`; the last batch of all
+    holds the remainder."""
+    for index in range(shard, math.ceil(total / SPANS_PER_BATCH), shards):
         yield index, min(SPANS_PER_BATCH, total - index * SPANS_PER_BATCH)
 
 
@@ -182,16 +195,61 @@ async def store_spans(
     org_id: uuid.UUID,
     options: Options,
     now: datetime,
+    shard: int = 0,
 ) -> None:
     target = IngestTarget(project_id=project_id, capture_payloads=True, org_id=org_id)
+    shards = options.processes
     progress = Progress(
-        total=options.spans, started=time.monotonic(), max_minutes=options.max_minutes
+        total=sum(count for _, count in _batches(options.spans, shard, shards)),
+        started=time.monotonic(),
+        max_minutes=options.max_minutes,
+        label=f"process {shard + 1}/{shards}: " if shards > 1 else "",
     )
-    batches = _batches(options.spans)
+    batches = _batches(options.spans, shard, shards)
     # A TaskGroup cancels the other workers as soon as one fails.
     async with asyncio.TaskGroup() as group:
         for _ in range(WORKERS):
             group.create_task(_worker(session_factory, target, batches, options, now, progress))
+
+
+def _store_shard(
+    database_url: str,
+    project_id: uuid.UUID,
+    org_id: uuid.UUID,
+    options: Options,
+    now: datetime,
+    shard: int,
+) -> None:
+    """One seeder process: its own engine and event loop, every `processes`-th batch."""
+
+    async def store() -> None:
+        engine = create_engine(database_url, pool_size=WORKERS + 1)
+        try:
+            await store_spans(
+                create_session_factory(engine), project_id, org_id, options, now, shard
+            )
+        finally:
+            await engine.dispose()
+
+    asyncio.run(store())
+
+
+async def store_in_processes(
+    database_url: str, project_id: uuid.UUID, org_id: uuid.UUID, options: Options, now: datetime
+) -> None:
+    # All processes share `now`, so every batch gets the timestamps a single process would give it.
+    # shortcut: a failing process does not stop the others; they finish their batches first.
+    loop = asyncio.get_running_loop()
+    context = multiprocessing.get_context("spawn")
+    with ProcessPoolExecutor(options.processes, mp_context=context) as pool:
+        await asyncio.gather(
+            *(
+                loop.run_in_executor(
+                    pool, _store_shard, database_url, project_id, org_id, options, now, shard
+                )
+                for shard in range(options.processes)
+            )
+        )
 
 
 # ---------- after seeding ----------
@@ -207,6 +265,29 @@ async def build_rollups(
         # empty and fast, and the run would measure nothing.
         raise SeedError("the rollup backfill wrote no rows")
     say(f"rollups built: {rows:,} rows")
+
+
+async def build_day_aggregates(
+    session_factory: async_sessionmaker[AsyncSession], project_id: uuid.UUID, now: datetime
+) -> None:
+    """Per-user stats and cost attribution for every seeded day.
+
+    Their jobs only recompute the last few days, so without this the 7 and 30 day user and
+    attribution reads would answer "not computed" for older days and measure nothing.
+    """
+    first = (now - SPREAD).date()
+    days = [first + timedelta(days=offset) for offset in range((now.date() - first).days + 1)]
+    users = attributed = 0
+    for start in range(0, len(days), 7):
+        chunk = days[start : start + 7]
+        async with session_factory() as session:
+            await bind_project(session, project_id)
+            users += await refresh_user_stats(session, project_id, chunk)
+            promoted = await promoted_keys_of(session, project_id) or []
+            await refresh_attribution(session, project_id, promoted, chunk)
+            attributed += len(chunk)
+            await session.commit()
+    say(f"user stats built: {users:,} rows; attribution built for {attributed} days")
 
 
 async def vacuum_analyze(engine: AsyncEngine) -> None:
@@ -249,7 +330,15 @@ def parse_options(argv: list[str]) -> Options:
         "share of the 330 minute `full` job left once the build, the rollups and the scenarios "
         "are counted)",
     )
+    parser.add_argument(
+        "--processes",
+        type=int,
+        default=1,
+        help="seeder processes storing batches in parallel (default: 1)",
+    )
     args = parser.parse_args(argv)
+    if args.processes < 1:
+        parser.error("--processes must be at least 1")
     if args.spans < 1:
         parser.error("--spans must be at least 1")
     if args.max_minutes <= 0:
@@ -259,6 +348,7 @@ def parse_options(argv: list[str]) -> Options:
         credentials_file=args.credentials_file,
         seed=args.seed,
         max_minutes=args.max_minutes,
+        processes=args.processes,
     )
 
 
@@ -269,8 +359,14 @@ async def run(options: Options, database_url: str) -> None:
     try:
         workspace = await create_workspace(session_factory)
         say(f"project {workspace.project_id} created; storing {options.spans:,} spans")
-        await store_spans(session_factory, workspace.project_id, workspace.org_id, options, now)
+        if options.processes == 1:
+            await store_spans(session_factory, workspace.project_id, workspace.org_id, options, now)
+        else:
+            await store_in_processes(
+                database_url, workspace.project_id, workspace.org_id, options, now
+            )
         await build_rollups(session_factory, workspace.project_id, now)
+        await build_day_aggregates(session_factory, workspace.project_id, now)
         await vacuum_analyze(engine)
         await verify_and_report(engine, workspace.project_id, options.spans)
         write_credentials(options.credentials_file, workspace, data_end=now)

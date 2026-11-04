@@ -1,25 +1,25 @@
-"""The retention job's DELETE statements, one per table it prunes (`app.jobs.tasks.retention`).
+"""The retention job's statements, one DELETE per table it prunes (`app.jobs.tasks.retention`).
 
 Each deletes at most `:batch_size` rows of one project (`:project_id`) older than `:cutoff`, so
-every transaction and its locks stay short on a large project; the job repeats a statement until
-a batch comes back short.
+every transaction and its locks stay short on a large project; the job runs one statement per
+opportunity and leaves the rest for the project's next turn.
 """
 
 from datetime import timedelta
 
 from sqlalchemy import text
 
+# The project's current policy, read under KEY SHARE in the work transaction so a deletion of
+# the project waits, and so an extension committed before this read is honored.
+SELECT_POLICY = text("SELECT retention_days FROM projects WHERE id = :project_id FOR KEY SHARE")
+
 # Small batches keep each transaction (and its locks) short on large projects.
+SELECT_BATCH = text(
+    "SELECT trace_id FROM traces WHERE project_id = :project_id AND started_at < :cutoff "
+    "ORDER BY trace_id LIMIT :batch_size FOR UPDATE"
+)
 DELETE_BATCH = text(
-    """
-    DELETE FROM traces
-    WHERE (project_id, trace_id) IN (
-        SELECT project_id, trace_id
-        FROM traces
-        WHERE project_id = :project_id AND started_at < :cutoff
-        LIMIT :batch_size
-    )
-    """
+    "DELETE FROM traces WHERE project_id = :project_id AND trace_id = ANY(:trace_ids)"
 )
 
 

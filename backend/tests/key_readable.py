@@ -45,5 +45,8 @@ KEY_READABLE: frozenset[Route] = frozenset(
         ("GET", "/api/v1/projects/{project_id}/metrics/token-mix"),
         # UX Phase 4: the Spend chart's series, as readable as the attribution list.
         ("GET", "/api/v1/projects/{project_id}/attribution/series"),
+        # Stage E C5: the project's ingest caps and refusals, for a sender checking its own quota
+        # (spec: "session or API key as the other project reads").
+        ("GET", "/api/v1/projects/{project_id}/ingest-quota"),
     }
 )

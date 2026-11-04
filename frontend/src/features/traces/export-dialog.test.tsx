@@ -70,6 +70,7 @@ function trace(id: string, startedAt: string): TraceSummary {
     models: [],
     error_message: null,
     error_class: null,
+    root_received: true,
     has_scores: false,
     retry_calls: 0,
     retry_cost_usd: "0",

@@ -34,6 +34,7 @@ from app.api.v1.auth import set_auth_cookies
 from app.auth import totp_service
 from app.auth.login_challenge import read_challenge
 from app.auth.login_throttle import enforce_login_throttle
+from app.auth.reauth import confirm_account_owner
 from app.config import Settings
 from app.core.crypto import CryptoNotConfigured
 from app.core.errors import (
@@ -43,7 +44,7 @@ from app.core.errors import (
     not_configured,
     too_many_requests,
 )
-from app.core.security import mark_uncacheable, verify_password_async
+from app.core.security import mark_uncacheable
 from app.core.throttle import check_and_record
 from app.db.models import AuditAction, LoginAttempt, User
 from app.services.audit import record_user_audit_in_each_org
@@ -63,10 +64,8 @@ NEEDS_KEYS = (
 DISABLE_SCOPE = "totp_disable"
 MAX_DISABLE_ATTEMPTS = 5
 DISABLE_WINDOW = timedelta(minutes=15)
-# Setup proves it is the account's owner, not just a holder of its cookie: the current password,
-# or for an account without one, a sign-in this recent. Password guesses are limited like codes.
+# Setup proves it is the account's owner, not just a holder of its cookie (see `app.auth.reauth`).
 SETUP_REAUTH_SCOPE = "totp_setup_reauth"
-REAUTH_WINDOW = timedelta(minutes=10)
 
 
 def _require_crypto(settings: Settings) -> None:
@@ -94,36 +93,17 @@ def _no_store(response: Response) -> None:
 @router.get("", response_model=TotpStatusOut)
 async def totp_status(auth: CurrentSession, db: DbSession) -> TotpStatusOut:
     user = auth.user
+    codes = (
+        await totp_service.recovery_code_status(db, user.id)
+        if user.totp_enabled
+        else totp_service.RecoveryCodeStatus(remaining=0, legacy=False)
+    )
     return TotpStatusOut(
         enabled=user.totp_enabled,
         enabled_at=user.totp_enabled_at,
-        recovery_codes_remaining=(
-            await totp_service.recovery_codes_remaining(db, user.id) if user.totp_enabled else 0
-        ),
+        recovery_codes_remaining=codes.remaining,
+        legacy_recovery_codes=codes.legacy,
     )
-
-
-async def _confirm_owner(db: DbSession, auth: CurrentSession, password: str | None) -> None:
-    """Refuse unless the caller re-proves the account: a stolen session cookie alone must not
-    be able to put a second factor between the owner and their account."""
-    user = auth.user
-    if user.password_hash is None:
-        if utcnow() - auth.session.created_at > REAUTH_WINDOW:
-            raise ProblemError(
-                403,
-                "REAUTH_REQUIRED",
-                "Sign in again, then turn on two-factor authentication within 10 minutes.",
-            )
-        return
-    retry_after = await check_and_record(
-        db, SETUP_REAUTH_SCOPE, str(user.id), MAX_DISABLE_ATTEMPTS, DISABLE_WINDOW
-    )
-    if retry_after is not None:
-        raise too_many_requests(math.ceil(retry_after), "Too many password attempts.")
-    if password is None or not await verify_password_async(user.password_hash, password):
-        # The attempt must stay counted even though the request fails.
-        await db.commit()
-        raise ProblemError(422, "INVALID_PASSWORD", "That password is not correct.")
 
 
 @router.post("/setup", response_model=TotpSetupOut)
@@ -132,6 +112,7 @@ async def totp_setup(
     auth: CurrentSession,
     db: DbSession,
     settings: SettingsDep,
+    clock: ClockDep,
     body: TotpSetupIn | None = None,
 ) -> TotpSetupOut:
     """Make a secret for an authenticator app. Replaces one from an earlier, unconfirmed setup.
@@ -141,7 +122,19 @@ async def totp_setup(
     # Not configured first: it is the operator's state, not something about the user.
     _require_crypto(settings)
     _refuse_demo(auth.user)
-    await _confirm_owner(db, auth, body.password if body else None)
+    # Before the re-proof, which would otherwise ask an enabled account for a code. `begin_setup`
+    # checks again under the row lock.
+    if auth.user.totp_enabled:
+        raise conflict("TOTP_ALREADY_ENABLED", "Two-factor authentication is already turned on.")
+    await confirm_account_owner(
+        db,
+        auth,
+        body.password if body else None,
+        None,
+        scope=SETUP_REAUTH_SCOPE,
+        settings=settings,
+        now=clock(),
+    )
     try:
         info = await totp_service.begin_setup(db, settings, auth.user)
     except totp_service.TotpAlreadyEnabledError:

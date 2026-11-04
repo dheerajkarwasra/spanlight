@@ -34,6 +34,7 @@ from app.core.errors import FieldError, ProblemError, key_not_promoted
 from app.core.pagination import decode_value_cursor, encode_value_cursor
 from app.end_users.days import ONE_DAY, day_bounds, midnight
 from app.rollups.compute import HOUR, floor_hour
+from app.rollups.coverage_reads import CoverageState
 
 RAW_WINDOW = timedelta(hours=24)
 ROLLUP_LAG_MINUTES = 15
@@ -143,12 +144,24 @@ async def _read_raw(
     project_id: uuid.UUID,
     request: AttributionRequest,
     after: queries.Cursor | None,
+    coverage: CoverageState,
 ) -> tuple[list[Row[Any]], list[Row[Any]], AttributionWindowOut]:
     kind, key, env = request.group_by, request.key, request.environment
     rows = await queries.read_raw_groups(
-        db, project_id, kind, key, request.window, env, request.sort, request.limit + 1, after
+        db,
+        project_id,
+        kind,
+        key,
+        request.window,
+        env,
+        request.sort,
+        request.limit + 1,
+        after,
+        coverage,
     )
-    totals = await queries.read_totals(db, project_id, kind, key, env, window=request.window)
+    totals = await queries.read_totals(
+        db, project_id, kind, key, env, window=request.window, coverage=coverage
+    )
     window = AttributionWindowOut(from_=request.window.start, to=request.window.end)
     return rows, totals, window
 
@@ -158,13 +171,14 @@ async def _read_rollup(
     project_id: uuid.UUID,
     request: AttributionRequest,
     after: queries.Cursor | None,
+    coverage: CoverageState,
 ) -> tuple[list[Row[Any]], list[Row[Any]], AttributionWindowOut]:
     kind, key, env = request.group_by, request.key, request.environment
     days = day_bounds(request.window)
     rows = await queries.read_rollup_groups(
-        db, project_id, kind, key, days, env, request.sort, request.limit + 1, after
+        db, project_id, kind, key, days, env, request.sort, request.limit + 1, after, coverage
     )
-    totals = await queries.read_totals(db, project_id, kind, key, env, days=days)
+    totals = await queries.read_totals(db, project_id, kind, key, env, days=days, coverage=coverage)
     window = AttributionWindowOut(from_=midnight(days[0]), to=midnight(days[1]))
     return rows, totals, window
 
@@ -179,16 +193,23 @@ async def read_attribution(
     buckets and the totals of the same source."""
     source = check_request(request.group_by, request.key, request.window, promoted_keys)
     after = decode_value_cursor(request.cursor) if request.cursor else None
+    coverage = CoverageState()
     if source == "raw":
-        rows, totals, window = await _read_raw(db, project_id, request, after)
+        rows, totals, window = await _read_raw(db, project_id, request, after, coverage)
     else:
-        rows, totals, window = await _read_rollup(db, project_id, request, after)
+        rows, totals, window = await _read_rollup(db, project_id, request, after, coverage)
+    if coverage.unavailable and source == "raw":
+        source = "rollup"
+        rows, totals, window = await _read_rollup(db, project_id, request, after, coverage)
     buckets = _by_bucket(totals)
     overall = _totals(buckets[None])
+    if coverage.unavailable and buckets[None].traces is None:
+        for field in AttributionTotalsOut.model_fields:
+            setattr(overall, field, None)
     items, next_cursor = _page(rows, overall.cost_usd, request)
     computed_at = buckets[None].computed_at
     pending = None
-    if source == "rollup":
+    if source == "rollup" and not coverage.unavailable:
         days = day_bounds(request.window)
         kind, key, env = request.group_by, request.key, request.environment
         pending = await queries.count_pending(db, project_id, kind, key, days, env)
@@ -197,7 +218,10 @@ async def read_attribution(
         key=request.key,
         window=window,
         source=source,
-        updated_within_minutes=0 if source == "raw" else ROLLUP_LAG_MINUTES,
+        updated_within_minutes=None
+        if coverage.unavailable
+        else (0 if source == "raw" else ROLLUP_LAG_MINUTES),
+        **coverage.metadata(),
         computed_at=computed_at,
         pending_traces=pending,
         items=items,
@@ -221,21 +245,38 @@ async def read_attribution_series(
     """The list's source and window, bucketed: per hour on `raw`, per UTC day on `rollup`,
     every bucket present (one without traces costs a known 0). `value` keeps that group only."""
     source = check_request(kind, key, window, promoted_keys)
+    coverage = CoverageState()
     if source == "raw":
-        rows = await queries.read_series(db, project_id, kind, key, env, value, window=window)
+        rows = await queries.read_series(
+            db, project_id, kind, key, env, value, window=window, coverage=coverage
+        )
         start, end, step = window.start, window.end, HOUR
         current = floor_hour(start)
     else:
         days = day_bounds(window)
-        rows = await queries.read_series(db, project_id, kind, key, env, value, days=days)
+        rows = await queries.read_series(
+            db, project_id, kind, key, env, value, days=days, coverage=coverage
+        )
+        start, end, step = midnight(days[0]), midnight(days[1]), ONE_DAY
+        current = start
+    if coverage.unavailable and source == "raw":
+        source = "rollup"
+        days = day_bounds(window)
+        rows = await queries.read_series(
+            db, project_id, kind, key, env, value, days=days, coverage=coverage
+        )
         start, end, step = midnight(days[0]), midnight(days[1]), ONE_DAY
         current = start
     stored = {_bucket_start(row.bucket_start): row for row in rows}
     points: list[SeriesPointOut] = []
     while current < end:
         row = stored.get(current)
-        cost = Decimal(0) if row is None else _money(row.cost_usd)
-        unpriced = 0 if row is None else _count(row.unpriced_calls)
+        cost = (
+            (None if coverage.unavailable else Decimal(0)) if row is None else _money(row.cost_usd)
+        )
+        unpriced = (
+            (None if coverage.unavailable else 0) if row is None else _count(row.unpriced_calls)
+        )
         points.append(SeriesPointOut(bucket_start=current, cost_usd=cost, unpriced_calls=unpriced))
         current += step
     return AttributionSeriesOut(
@@ -243,6 +284,7 @@ async def read_attribution_series(
         source=source,
         window=AttributionWindowOut(from_=start, to=end),
         points=points,
+        **coverage.metadata(),
     )
 
 

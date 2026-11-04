@@ -28,7 +28,7 @@ const COST_COLOR = "var(--warning)";
 
 function costCell(point: DailyPoint): string {
   if (point.costText === null) {
-    return point.calls > 0 ? "No price" : "—";
+    return point.calls !== null && point.calls > 0 ? "No price" : "—";
   }
   return point.lowerBound ? `${point.costText} (lower bound)` : point.costText;
 }
@@ -46,7 +46,10 @@ function costAxisTick(value: number): string {
 export function UserDailyChart({ points }: { points: DailyPoint[] }) {
   const byDay = new Map(points.map((point) => [point.day, point]));
   const showAxes = useMediaQuery("(min-width: 640px)");
-  const totalCalls = points.reduce((sum, point) => sum + point.calls, 0);
+  const totalCalls = points.reduce<number | null>(
+    (sum, point) => (sum === null || point.calls === null ? null : sum + point.calls),
+    0,
+  );
 
   return (
     <DailyCard>
@@ -54,7 +57,7 @@ export function UserDailyChart({ points }: { points: DailyPoint[] }) {
         <>
           <div
             role="img"
-            aria-label={`LLM calls and cost per UTC day: ${formatInteger(totalCalls) ?? "0"} calls over ${points.length} days`}
+            aria-label={`LLM calls and cost per UTC day: ${formatInteger(totalCalls) ?? "—"} calls over ${points.length} days`}
             className={PLOT_HEIGHT_CLASSES}
           >
             <ComposedChart
@@ -94,7 +97,7 @@ export function UserDailyChart({ points }: { points: DailyPoint[] }) {
                   if (!point) {
                     return null;
                   }
-                  const unpriced = point.cost === null && point.calls > 0;
+                  const unpriced = point.cost === null && point.calls !== null && point.calls > 0;
                   return (
                     <ChartTooltip
                       active={active}
@@ -153,8 +156,8 @@ export function UserDailyChart({ points }: { points: DailyPoint[] }) {
                 key: point.day,
                 cells: [
                   point.label,
-                  formatInteger(point.calls) ?? "0",
-                  formatInteger(point.errors) ?? "0",
+                  formatInteger(point.calls) ?? "—",
+                  formatInteger(point.errors) ?? "—",
                   costCell(point),
                 ],
               })),

@@ -12,14 +12,14 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import (
     ANONYMOUS,
-    CSRF_COOKIE,
-    SESSION_COOKIE,
     ClockDep,
     CurrentSession,
     CurrentUser,
     DbSession,
     SettingsDep,
     client_ip,
+    csrf_cookie_name,
+    session_cookie_name,
     utcnow,
 )
 from app.api.principals import SessionPrincipal, TokenPrincipal
@@ -42,7 +42,7 @@ from app.api.schemas import (
 from app.api.schemas.auth import ActivationChecklistIn, CapabilitiesOut
 from app.auth.email_tokens import consume_token
 from app.auth.login_challenge import issue_challenge
-from app.auth.login_throttle import enforce_login_throttle
+from app.auth.login_throttle import enforce_hash_budget, enforce_login_throttle
 from app.auth.password_reset import (
     check_forgot_limits,
     complete_password_reset,
@@ -109,7 +109,7 @@ def set_auth_cookies(
 ) -> None:
     max_age_seconds = int(max_age.total_seconds())
     response.set_cookie(
-        SESSION_COOKIE,
+        session_cookie_name(settings),
         session_token,
         max_age=max_age_seconds,
         httponly=True,
@@ -125,7 +125,7 @@ def set_csrf_cookie(
 ) -> None:
     # Readable by frontend JavaScript, which echoes it in the X-CSRF-Token header.
     response.set_cookie(
-        CSRF_COOKIE,
+        csrf_cookie_name(settings),
         new_csrf_token(settings.secret_key.get_secret_value(), session_token),
         max_age=max_age_seconds,
         httponly=False,
@@ -136,7 +136,7 @@ def set_csrf_cookie(
 
 
 def clear_auth_cookies(response: Response, settings: Settings) -> None:
-    for name in (SESSION_COOKIE, CSRF_COOKIE):
+    for name in (session_cookie_name(settings), csrf_cookie_name(settings)):
         response.delete_cookie(name, path="/", secure=settings.secure_cookies, samesite="lax")
 
 
@@ -163,9 +163,15 @@ async def signup(
         # (for example `EMAIL_TAKEN`), and a rolled-back attempt would not count, so probing
         # existing addresses would be an unthrottled stream of hashes.
         await db.commit()
+    if settings.terms_version is not None and not body.accept_terms:
+        raise ProblemError(422, "TERMS_NOT_ACCEPTED", "Accept the terms to create an account.")
     user = User(
         email=body.email, password_hash=await hash_password_async(body.password), name=body.name
     )
+    if settings.terms_version is not None:
+        # The server's own version, never one the client sent.
+        user.terms_version = settings.terms_version
+        user.terms_accepted_at = now
     db.add(user)
     try:
         await db.flush()
@@ -207,7 +213,11 @@ async def login(
     """
     now = utcnow()
     ip = client_ip(request)
+    # A first look, so a locked-out client does not get a password hashed. The commit below ends
+    # its lock; the count that decides is the one taken before the attempt is recorded. The hash
+    # budget is what bounds a burst that arrives before any failure is recorded.
     await enforce_login_throttle(db, email=body.email, ip=ip, now=now)
+    await enforce_hash_budget(db, email=body.email, ip=ip)
 
     user = await db.scalar(select(User).where(User.email == body.email))
     # A user who signed up with GitHub or Google has no hash: like an unknown address, they get
@@ -229,6 +239,9 @@ async def login(
         # read too, never from `user`, which was read before the hashing.
         locked = await lock_user_for_sign_in(db, user.id)
         password_ok = locked is not None and locked.has_password_hash(verified_hash)
+    # Under the email's lock, in the transaction that records the attempt: guesses that all
+    # passed the first look while nothing was recorded yet are counted here one after another.
+    await enforce_login_throttle(db, email=body.email, ip=ip, now=now)
     db.add(LoginAttempt(email=body.email, ip=ip, succeeded=password_ok, created_at=now))
     if user is None or locked is None or not password_ok:
         if user is not None:
@@ -311,6 +324,10 @@ async def me(
             and not is_demo_user(auth.user)
         ),
         activation_checklist_dismissed=auth.user.activation_checklist_dismissed_at is not None,
+        terms_accepted_version=auth.user.terms_version,
+        # The demo account can't accept terms (403), so it is never asked to.
+        terms_current_version=None if is_demo_user(auth.user) else settings.terms_version,
+        weekly_digest=not auth.user.weekly_digest_opt_out,
         capabilities=CapabilitiesOut(
             gateway_mode=settings.gateway_mode,
             credentials_configured=settings.is_crypto_configured,
@@ -354,8 +371,8 @@ def _reissue_csrf_cookie(
     The session cookie is what authenticated this request (a session principal never comes from
     anything else), and the CSRF token is bound to its value.
     """
-    session_token = request.cookies.get(SESSION_COOKIE, "")
-    csrf_cookie = request.cookies.get(CSRF_COOKIE)
+    session_token = request.cookies.get(session_cookie_name(settings), "")
+    csrf_cookie = request.cookies.get(csrf_cookie_name(settings))
     secret = settings.secret_key.get_secret_value()
     if not csrf_cookie or not verify_csrf_token(secret, session_token, csrf_cookie):
         remaining = auth.session.absolute_expires_at - utcnow()

@@ -79,9 +79,17 @@ export function deliveryTitle(delivery: Pick<Delivery, "summary">): string | nul
   return summary.rule_name ?? null;
 }
 
-/** "3 of 8". */
-export function attemptsLabel(attempts: number): string {
-  return `${attempts} of ${MAX_ATTEMPTS}`;
+/**
+ * "3 of 8"; a failed row that cannot be retried (an email that was never rendered) shows only
+ * its attempts, since no more will come.
+ */
+export function attemptsLabel(
+  delivery: Pick<Delivery, "status" | "attempts" | "retryable">,
+): string {
+  if (delivery.status === "failed" && !delivery.retryable) {
+    return `${delivery.attempts}`;
+  }
+  return `${delivery.attempts} of ${MAX_ATTEMPTS}`;
 }
 
 /**
@@ -101,9 +109,9 @@ export function nextAttemptLabel(
   return formatRelativeTime(delivery.next_attempt_at, now);
 }
 
-/** Only a failed row can be retried (`409 NOT_RETRYABLE` otherwise). */
-export function canRetry(delivery: Pick<Delivery, "status">): boolean {
-  return delivery.status === "failed";
+/** Only a failed row the server would take back can be retried (`409 NOT_RETRYABLE` otherwise). */
+export function canRetry(delivery: Pick<Delivery, "status" | "retryable">): boolean {
+  return delivery.status === "failed" && delivery.retryable;
 }
 
 export interface TestResultView {

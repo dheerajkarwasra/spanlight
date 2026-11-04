@@ -67,7 +67,9 @@ def _handler(request: httpx.Request) -> httpx.Response:
         # Prompts: nothing is stored, so `prompts.get(..., fallback=...)` falls back.
         return httpx.Response(404, json={"title": "Not found"})
     if path.endswith("/v1/scores"):
-        return httpx.Response(200, json={"accepted": 1, "rejected": []})
+        return httpx.Response(
+            200, json={"accepted": len(decode_body(request)["scores"]), "rejected": []}
+        )
     return accept_all(request)
 
 
@@ -96,7 +98,7 @@ def snippet_sdk(ingest: FakeIngestApi, monkeypatch: pytest.MonkeyPatch) -> FakeI
     def init(**options: Any) -> spanlight.Spanlight:
         options["transport"] = ingest.transport()
         options.setdefault("api_key", "spl_live_test")
-        options.setdefault("host", "http://test")
+        options.setdefault("host", "https://test")
         return real_init(**options)
 
     monkeypatch.setattr(spanlight, "init", init)

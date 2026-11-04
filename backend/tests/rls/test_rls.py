@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import Span, Trace
 from app.db.rls import bind_project, bypass_rls
-from tests.helpers import Browser, bearer, create_workspace, new_trace_id, span
+from tests.helpers import Browser, bearer, create_api_key, create_workspace, new_trace_id, span
 
 
 @pytest.fixture
@@ -118,4 +118,56 @@ async def test_trace_histogram_counts_only_own_project(two_tenants: Any) -> None
     assert own.status_code == 200
     assert sum(bucket["traces"] for bucket in own.json()["buckets"]) == 1
     other = await alice.get(f"/api/v1/projects/{bob_ws.project_id}/traces/histogram")
+    assert other.status_code == 404
+
+
+async def _seed_quota_day(db: AsyncSession, project_id: str, spans: int) -> None:
+    await db.execute(
+        text(
+            "INSERT INTO ingest_quota_days (project_id, day, spans, bytes) "
+            "VALUES (:p, CURRENT_DATE - 1, :spans, 0)"
+        ),
+        {"p": project_id, "spans": spans},
+    )
+
+
+async def test_ingest_quota_days_are_invisible_across_projects(
+    two_tenants: Any, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    alice_ws, bob_ws, *_ = two_tenants
+    # The fixture's ingest left each project today's row (one span); yesterday's are seeded.
+    async with session_factory() as db:
+        await bypass_rls(db)
+        await _seed_quota_day(db, alice_ws.project_id, 5)
+        await _seed_quota_day(db, bob_ws.project_id, 7)
+        await db.commit()
+    async with session_factory() as db:
+        await bind_project(db, alice_ws.project_id)
+        # No WHERE clause: the policy alone filters the rows.
+        visible = (await db.execute(text("SELECT spans FROM ingest_quota_days"))).scalars().all()
+        with pytest.raises(DBAPIError, match="row-level security"):
+            await _seed_quota_day(db, bob_ws.project_id, 1)
+    assert sorted(visible) == [1, 5]
+    async with session_factory() as db:
+        assert await db.scalar(text("SELECT count(*) FROM ingest_quota_days")) == 0
+
+
+async def test_ingest_quota_endpoint_is_404_for_a_non_member(two_tenants: Any) -> None:
+    alice_ws, bob_ws, *_ = two_tenants
+    response = await alice_ws.owner.get(f"/api/v1/projects/{bob_ws.project_id}/ingest-quota")
+    assert response.status_code == 404
+    own = await alice_ws.owner.get(f"/api/v1/projects/{alice_ws.project_id}/ingest-quota")
+    assert own.status_code == 200
+
+
+async def test_ingest_quota_endpoint_with_a_read_key_is_404_for_another_project(
+    two_tenants: Any, client: httpx.AsyncClient
+) -> None:
+    alice_ws, bob_ws, *_ = two_tenants
+    key = await create_api_key(alice_ws.owner, alice_ws.project_id, scopes=["traces:read"])
+    headers = bearer(key["secret"])
+    own = await client.get(f"/api/v1/projects/{alice_ws.project_id}/ingest-quota", headers=headers)
+    other = await client.get(f"/api/v1/projects/{bob_ws.project_id}/ingest-quota", headers=headers)
+    assert own.status_code == 200, own.text
+    assert own.json()["today"]["spans"] == 1  # the fixture's one ingested span, Alice's only
     assert other.status_code == 404

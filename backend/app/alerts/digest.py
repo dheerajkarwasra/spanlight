@@ -70,8 +70,8 @@ def digest_subject(data: DigestData) -> str:
     return subject_safe(f"Your week in {data.project.name}: {spend} spent, {calls} LLM calls")
 
 
-def render_digest(data: DigestData) -> EmailMessage:
-    """The weekly summary email for one project."""
+def render_digest(data: DigestData, unsubscribe_url: str) -> EmailMessage:
+    """The weekly summary email for one project, to the recipient `unsubscribe_url` was made for."""
     body: list[_Paragraph] = [
         f"Here is how {data.project.name} did from {_day(data.week_start)} to "
         f"{_day(data.week_end - timedelta(days=1))} (UTC).",
@@ -86,6 +86,7 @@ def render_digest(data: DigestData) -> EmailMessage:
         f"You get this weekly summary as a member of {data.project.org_name}. "
         "Project admins can turn it off in project settings."
     )
+    body.append(("To stop getting it for every project, unsubscribe here:", unsubscribe_url))
     return _compose(subject=digest_subject(data), paragraphs=body)
 
 

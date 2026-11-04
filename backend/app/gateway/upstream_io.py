@@ -144,32 +144,33 @@ async def read_all(response: UpstreamResponse) -> bytes:
 
 
 async def idle_bounded(
-    first: bytes | None, rest: AsyncIterator[bytes], response: UpstreamResponse
+    first: bytes | None, rest: AsyncIterator[bytes], *, deadline: float
 ) -> AsyncIterator[bytes]:
-    """The stream from its first chunk on; a gap over `STREAM_IDLE_TIMEOUT_S` raises TimeoutError,
-    a stream still going `STREAM_TOTAL_TIMEOUT_S` after its first chunk `StreamTooLong`.
+    """Forward within the construction-time deadline and the upstream idle limit.
 
-    Closes the upstream response however the stream ends.
+    GatewayStream owns closing the response, including when iteration never begins.
     """
-    try:
-        if first is None:
+    loop = asyncio.get_running_loop()
+    if loop.time() >= deadline:
+        raise StreamTooLong
+    if first is None:
+        return
+    yield first
+    while True:
+        if loop.time() >= deadline:
+            raise StreamTooLong
+        try:
+            async with asyncio.timeout_at(min(deadline, loop.time() + STREAM_IDLE_TIMEOUT_S)):
+                chunk = await anext(rest)
+        except StopAsyncIteration:
             return
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + STREAM_TOTAL_TIMEOUT_S
-        yield first
-        while True:
-            try:
-                async with asyncio.timeout_at(min(deadline, loop.time() + STREAM_IDLE_TIMEOUT_S)):
-                    chunk = await anext(rest)
-            except StopAsyncIteration:
-                return
-            except TimeoutError:
-                if loop.time() >= deadline:
-                    raise StreamTooLong from None
-                raise
-            yield chunk
-    finally:
-        await close_quietly(response)
+        except TimeoutError:
+            if loop.time() >= deadline:
+                raise StreamTooLong from None
+            raise
+        if loop.time() >= deadline:
+            raise StreamTooLong
+        yield chunk
 
 
 async def close_quietly(response: UpstreamResponse | None) -> None:

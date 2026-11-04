@@ -16,6 +16,46 @@
         "title": "AcceptedOut",
         "type": "object"
       },
+      "AccountDeleteIn": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "confirm": {
+            "maxLength": 200,
+            "title": "Confirm",
+            "type": "string"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "AccountDeleteIn",
+        "type": "object"
+      },
       "ActivationChecklistIn": {
         "description": "Hide the setup checklist (`true`) or show it again (`false`), for the caller only.",
         "properties": {
@@ -44,6 +84,29 @@
           "first_trace": {
             "title": "First Trace",
             "type": "boolean"
+          },
+          "first_trace_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Trace At"
+          },
+          "first_trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Trace Id"
           },
           "session": {
             "title": "Session",
@@ -1036,8 +1099,15 @@
             "title": "Cost Usd"
           },
           "errors": {
-            "title": "Errors",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errors"
           },
           "folded_values": {
             "anyOf": [
@@ -1051,16 +1121,37 @@
             "title": "Folded Values"
           },
           "input_tokens": {
-            "title": "Input Tokens",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
           },
           "llm_calls": {
-            "title": "Llm Calls",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Calls"
           },
           "output_tokens": {
-            "title": "Output Tokens",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
           },
           "retries": {
             "anyOf": [
@@ -1085,12 +1176,26 @@
             "title": "Retry Cost Usd"
           },
           "traces": {
-            "title": "Traces",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Traces"
           },
           "unpriced_calls": {
-            "title": "Unpriced Calls",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unpriced Calls"
           }
         },
         "required": [
@@ -1194,6 +1299,16 @@
       "AttributionOut": {
         "description": "A page of groups, with the `none` and `other` buckets and the totals on every page.\n\n`source` is `raw` (a window of 24 hours or less, read live from the traces: exact, any\nmetadata key, no `other`) or `rollup` (a longer window, read from the daily rollup rows of\npromoted keys: exact per day, up to `updated_within_minutes` behind). `none` and `other`\nare `None` when they hold no traces.\n\nOn the rollup source, `computed_at` is the latest recompute among the rows read (the last\nrefresh pass; `None` when no row was read) and `pending_traces` counts the traces of the\nwindow and environment started after the latest recompute of their own UTC day, every trace\nof a day without rows, up to 10,000. Both are `None` on the raw source, where nothing is\npending.",
         "properties": {
+          "aggregate_status": {
+            "default": "complete",
+            "enum": [
+              "complete",
+              "pending",
+              "unavailable"
+            ],
+            "title": "Aggregate Status",
+            "type": "string"
+          },
           "computed_at": {
             "anyOf": [
               {
@@ -1255,6 +1370,18 @@
               }
             ]
           },
+          "oldest_pending_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Pending At"
+          },
           "other": {
             "anyOf": [
               {
@@ -1288,8 +1415,15 @@
             "$ref": "#/components/schemas/AttributionTotalsOut"
           },
           "updated_within_minutes": {
-            "title": "Updated Within Minutes",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated Within Minutes"
           },
           "window": {
             "$ref": "#/components/schemas/AttributionWindowOut"
@@ -1327,20 +1461,48 @@
             "title": "Cost Usd"
           },
           "errors": {
-            "title": "Errors",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errors"
           },
           "input_tokens": {
-            "title": "Input Tokens",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
           },
           "llm_calls": {
-            "title": "Llm Calls",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Calls"
           },
           "output_tokens": {
-            "title": "Output Tokens",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
           },
           "retries": {
             "anyOf": [
@@ -1376,12 +1538,26 @@
             "title": "Share Of Cost"
           },
           "traces": {
-            "title": "Traces",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Traces"
           },
           "unpriced_calls": {
-            "title": "Unpriced Calls",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unpriced Calls"
           },
           "value": {
             "title": "Value",
@@ -1407,6 +1583,16 @@
       "AttributionSeriesOut": {
         "description": "The spend of the window per bucket, from the same source as the list: hourly on `raw` (a\nwindow of 24 hours or less), per UTC day on `rollup` (`window` widened to whole days). Every\nbucket of the window is present; the points add up to the list's `totals`, or to the group's\nrow when `value` was given.",
         "properties": {
+          "aggregate_status": {
+            "default": "complete",
+            "enum": [
+              "complete",
+              "pending",
+              "unavailable"
+            ],
+            "title": "Aggregate Status",
+            "type": "string"
+          },
           "bucket": {
             "enum": [
               "hour",
@@ -1414,6 +1600,18 @@
             ],
             "title": "Bucket",
             "type": "string"
+          },
+          "oldest_pending_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Pending At"
           },
           "points": {
             "items": {
@@ -1458,20 +1656,48 @@
             "title": "Cost Usd"
           },
           "errors": {
-            "title": "Errors",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errors"
           },
           "input_tokens": {
-            "title": "Input Tokens",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
           },
           "llm_calls": {
-            "title": "Llm Calls",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Calls"
           },
           "output_tokens": {
-            "title": "Output Tokens",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
           },
           "retries": {
             "anyOf": [
@@ -1496,12 +1722,26 @@
             "title": "Retry Cost Usd"
           },
           "traces": {
-            "title": "Traces",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Traces"
           },
           "unpriced_calls": {
-            "title": "Unpriced Calls",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unpriced Calls"
           }
         },
         "required": [
@@ -2760,8 +3000,19 @@
         "type": "object"
       },
       "BudgetStateOut": {
-        "description": "Where the budget stands in the current period (by the server's clock).\n\nUntil the first evaluation of a new period, the previous period's figures no longer apply:\nthe state shows the current period with `spent_usd` null and `state` `ok` (a firing alert\nfrom a past period ends on that evaluation and never blocks).",
+        "description": "Where the budget stands in the current period (by the server's clock).\n\nUntil the first evaluation of a new period, the previous period's figures no longer apply:\nthe state shows the current period with `spent_usd` null and `state` `ok` (a firing alert\nfrom a past period ends on that evaluation and never blocks).\n\n`reserved_usd` and `gateway_settled_usd` are the budget's gateway counter this period\n(ADR 0017): only a `block` budget has one, so both are null for a `notify` budget. A `block`\nbudget that admitted no gateway call this period reads `\"0\"` for both.",
         "properties": {
+          "gateway_settled_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gateway Settled Usd"
+          },
           "last_evaluated_at": {
             "format": "date-time",
             "title": "Last Evaluated At",
@@ -2771,6 +3022,17 @@
             "format": "date-time",
             "title": "Period Start",
             "type": "string"
+          },
+          "reserved_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserved Usd"
           },
           "resets_at": {
             "format": "date-time",
@@ -4357,24 +4619,59 @@
             "type": "string"
           },
           "errors": {
-            "title": "Errors",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errors"
           },
           "llm_calls": {
-            "title": "Llm Calls",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Calls"
           },
           "tokens": {
-            "title": "Tokens",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens"
           },
           "traces": {
-            "title": "Traces",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Traces"
           },
           "unpriced_calls": {
-            "title": "Unpriced Calls",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unpriced Calls"
           }
         },
         "required": [
@@ -4425,6 +4722,10 @@
             "title": "Next Attempt At",
             "type": "string"
           },
+          "retryable": {
+            "title": "Retryable",
+            "type": "boolean"
+          },
           "status": {
             "enum": [
               "pending",
@@ -4453,7 +4754,8 @@
           "next_attempt_at",
           "last_error",
           "created_at",
-          "summary"
+          "summary",
+          "retryable"
         ],
         "title": "DeliveryOut",
         "type": "object"
@@ -4639,6 +4941,61 @@
         "title": "DetectorRunOut",
         "type": "object"
       },
+      "EmailChangeConfirmIn": {
+        "properties": {
+          "token": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "EmailChangeConfirmIn",
+        "type": "object"
+      },
+      "EmailChangeIn": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "new_email": {
+            "format": "email",
+            "title": "New Email",
+            "type": "string"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          }
+        },
+        "required": [
+          "new_email"
+        ],
+        "title": "EmailChangeIn",
+        "type": "object"
+      },
       "EmailConfig": {
         "additionalProperties": false,
         "description": "Who gets the email: 1 to 10 addresses, stored lower-cased and without repeats.",
@@ -4715,6 +5072,16 @@
       },
       "ErrorBucketOut": {
         "properties": {
+          "aggregate_status": {
+            "default": "complete",
+            "enum": [
+              "complete",
+              "pending",
+              "unavailable"
+            ],
+            "title": "Aggregate Status",
+            "type": "string"
+          },
           "approximate": {
             "description": "The bucket holds an hour read from the hourly rollup.",
             "title": "Approximate",
@@ -4726,12 +5093,31 @@
             "type": "string"
           },
           "by_class": {
-            "additionalProperties": {
-              "type": "integer"
-            },
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "description": "Failed llm calls per class; zero classes absent.",
-            "title": "By Class",
-            "type": "object"
+            "title": "By Class"
+          },
+          "oldest_pending_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Pending At"
           }
         },
         "required": [
@@ -8366,10 +8752,32 @@
       },
       "HealthReportOut": {
         "properties": {
+          "aggregate_status": {
+            "default": "complete",
+            "enum": [
+              "complete",
+              "pending",
+              "unavailable"
+            ],
+            "title": "Aggregate Status",
+            "type": "string"
+          },
           "approximate": {
             "description": "Whole hours were read from the hourly rollups, as of their last run.",
             "title": "Approximate",
             "type": "boolean"
+          },
+          "oldest_pending_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Pending At"
           },
           "providers": {
             "description": "Busiest first.",
@@ -8628,6 +9036,82 @@
         "title": "IncidentRefOut",
         "type": "object"
       },
+      "IngestLimitOut": {
+        "properties": {
+          "source": {
+            "description": "`project` for an override set on this project, `default` for the instance setting.",
+            "enum": [
+              "project",
+              "default"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The effective cap; null when unlimited.",
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value",
+          "source"
+        ],
+        "title": "IngestLimitOut",
+        "type": "object"
+      },
+      "IngestLimitsOut": {
+        "properties": {
+          "bytes_per_day": {
+            "$ref": "#/components/schemas/IngestLimitOut"
+          },
+          "spans_per_day": {
+            "$ref": "#/components/schemas/IngestLimitOut"
+          },
+          "spans_per_second": {
+            "$ref": "#/components/schemas/IngestLimitOut"
+          }
+        },
+        "required": [
+          "spans_per_second",
+          "spans_per_day",
+          "bytes_per_day"
+        ],
+        "title": "IngestLimitsOut",
+        "type": "object"
+      },
+      "IngestQuotaOut": {
+        "properties": {
+          "limits": {
+            "$ref": "#/components/schemas/IngestLimitsOut"
+          },
+          "rejected_days": {
+            "description": "Days in the window with refused spans, ascending; empty when none.",
+            "items": {
+              "$ref": "#/components/schemas/RefusedDayOut"
+            },
+            "title": "Rejected Days",
+            "type": "array"
+          },
+          "today": {
+            "$ref": "#/components/schemas/IngestUsageTodayOut"
+          }
+        },
+        "required": [
+          "limits",
+          "today",
+          "rejected_days"
+        ],
+        "title": "IngestQuotaOut",
+        "type": "object"
+      },
       "IngestResponse": {
         "properties": {
           "accepted": {
@@ -8647,6 +9131,40 @@
           "rejected"
         ],
         "title": "IngestResponse",
+        "type": "object"
+      },
+      "IngestUsageTodayOut": {
+        "properties": {
+          "bytes": {
+            "description": "Decompressed request body bytes admitted today.",
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "day": {
+            "description": "The current UTC day on the server clock.",
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "resets_at": {
+            "description": "The next UTC midnight, when the daily quotas reset.",
+            "format": "date-time",
+            "title": "Resets At",
+            "type": "string"
+          },
+          "spans": {
+            "description": "Spans admitted today (new rows; replays count nothing).",
+            "title": "Spans",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "spans",
+          "bytes",
+          "resets_at"
+        ],
+        "title": "IngestUsageTodayOut",
         "type": "object"
       },
       "InsightDetailOut": {
@@ -9624,6 +10142,16 @@
       },
       "KpisOut": {
         "properties": {
+          "aggregate_status": {
+            "default": "complete",
+            "enum": [
+              "complete",
+              "pending",
+              "unavailable"
+            ],
+            "title": "Aggregate Status",
+            "type": "string"
+          },
           "cost_usd": {
             "anyOf": [
               {
@@ -9647,16 +10175,49 @@
             "title": "Error Rate"
           },
           "input_tokens": {
-            "title": "Input Tokens",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
           },
           "llm_calls": {
-            "title": "Llm Calls",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Calls"
+          },
+          "oldest_pending_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Pending At"
           },
           "output_tokens": {
-            "title": "Output Tokens",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
           },
           "p50_ms": {
             "anyOf": [
@@ -9681,12 +10242,26 @@
             "title": "P95 Ms"
           },
           "traces": {
-            "title": "Traces",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Traces"
           },
           "unpriced_calls": {
-            "title": "Unpriced Calls",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unpriced Calls"
           }
         },
         "required": [
@@ -9986,12 +10561,38 @@
             "title": "Memberships",
             "type": "array"
           },
+          "terms_accepted_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terms Accepted Version"
+          },
+          "terms_current_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terms Current Version"
+          },
           "totp_enabled": {
             "title": "Totp Enabled",
             "type": "boolean"
           },
           "user": {
             "$ref": "#/components/schemas/UserOut"
+          },
+          "weekly_digest": {
+            "title": "Weekly Digest",
+            "type": "boolean"
           }
         },
         "required": [
@@ -10001,6 +10602,9 @@
           "totp_enabled",
           "email_verification_required",
           "activation_checklist_dismissed",
+          "terms_accepted_version",
+          "terms_current_version",
+          "weekly_digest",
           "capabilities"
         ],
         "title": "MeOut",
@@ -10162,6 +10766,16 @@
       },
       "ModelMetricsOut": {
         "properties": {
+          "aggregate_status": {
+            "default": "complete",
+            "enum": [
+              "complete",
+              "pending",
+              "unavailable"
+            ],
+            "title": "Aggregate Status",
+            "type": "string"
+          },
           "approximate": {
             "title": "Approximate",
             "type": "boolean"
@@ -10199,6 +10813,18 @@
               }
             ],
             "title": "Model"
+          },
+          "oldest_pending_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Pending At"
           },
           "output_tokens": {
             "title": "Output Tokens",
@@ -12159,6 +12785,37 @@
         "title": "PriceOverrideOut",
         "type": "object"
       },
+      "ProfileIn": {
+        "description": "The fields to change; a field left out stays as it is.",
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "weekly_digest": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weekly Digest"
+          }
+        },
+        "title": "ProfileIn",
+        "type": "object"
+      },
       "ProjectCreateIn": {
         "properties": {
           "name": {
@@ -13170,12 +13827,34 @@
       },
       "ReconciliationOut": {
         "properties": {
+          "aggregate_status": {
+            "default": "complete",
+            "enum": [
+              "complete",
+              "pending",
+              "unavailable"
+            ],
+            "title": "Aggregate Status",
+            "type": "string"
+          },
           "days": {
             "items": {
               "$ref": "#/components/schemas/ReportDayOut"
             },
             "title": "Days",
             "type": "array"
+          },
+          "oldest_pending_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Pending At"
           },
           "projects": {
             "items": {
@@ -13235,6 +13914,32 @@
           "detail"
         ],
         "title": "RefusalOut",
+        "type": "object"
+      },
+      "RefusedDayOut": {
+        "properties": {
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "rate_spans": {
+            "description": "Of those, spans refused by the span rate limit; clients usually resend them.",
+            "title": "Rate Spans",
+            "type": "integer"
+          },
+          "spans": {
+            "description": "Spans in requests refused by any of the project's caps that day.",
+            "title": "Spans",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "spans",
+          "rate_spans"
+        ],
+        "title": "RefusedDayOut",
         "type": "object"
       },
       "RegexRule": {
@@ -13906,6 +14611,20 @@
       },
       "ReportDayOut": {
         "properties": {
+          "aggregate_status": {
+            "default": "complete",
+            "enum": [
+              "complete",
+              "pending",
+              "unavailable"
+            ],
+            "title": "Aggregate Status",
+            "type": "string"
+          },
+          "bypass_suspected": {
+            "title": "Bypass Suspected",
+            "type": "boolean"
+          },
           "credits": {
             "items": {
               "$ref": "#/components/schemas/ListedChargeOut"
@@ -13974,6 +14693,18 @@
             ],
             "title": "Note"
           },
+          "oldest_pending_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Pending At"
+          },
           "other": {
             "items": {
               "$ref": "#/components/schemas/ListedChargeOut"
@@ -14030,8 +14761,15 @@
             "title": "Spanlight Usd"
           },
           "unattributed_calls": {
-            "title": "Unattributed Calls",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unattributed Calls"
           },
           "variance_ratio": {
             "anyOf": [
@@ -14059,6 +14797,7 @@
           "credits_usd",
           "other_usd",
           "unattributed_calls",
+          "bypass_suspected",
           "groups",
           "credits",
           "other"
@@ -16194,8 +16933,15 @@
             "title": "Cost Usd"
           },
           "unpriced_calls": {
-            "title": "Unpriced Calls",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unpriced Calls"
           }
         },
         "required": [
@@ -16512,6 +17258,11 @@
       },
       "SignupIn": {
         "properties": {
+          "accept_terms": {
+            "default": false,
+            "title": "Accept Terms",
+            "type": "boolean"
+          },
           "email": {
             "format": "email",
             "title": "Email",
@@ -16603,6 +17354,11 @@
             "additionalProperties": true,
             "title": "Attributes",
             "type": "object"
+          },
+          "attributes_omitted": {
+            "default": false,
+            "title": "Attributes Omitted",
+            "type": "boolean"
           },
           "cache_write_1h_tokens": {
             "anyOf": [
@@ -16828,6 +17584,10 @@
             ],
             "title": "Request Hash"
           },
+          "retry_eligible": {
+            "title": "Retry Eligible",
+            "type": "boolean"
+          },
           "service_tier": {
             "anyOf": [
               {
@@ -16935,6 +17695,7 @@
           "output",
           "attributes",
           "truncated",
+          "retry_eligible",
           "finish_reason",
           "prompt_version_id",
           "usage_rollup",
@@ -17268,6 +18029,41 @@
         "title": "TargetOverride",
         "type": "object"
       },
+      "TermsAcceptIn": {
+        "description": "The version the caller read; it must be the server's current one.",
+        "properties": {
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "TermsAcceptIn",
+        "type": "object"
+      },
+      "TermsOut": {
+        "description": "The terms version this server asks for; null when it asks for none.",
+        "properties": {
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "TermsOut",
+        "type": "object"
+      },
       "TextTemplateIn": {
         "additionalProperties": false,
         "properties": {
@@ -17306,6 +18102,16 @@
       },
       "TimeseriesPointOut": {
         "properties": {
+          "aggregate_status": {
+            "default": "complete",
+            "enum": [
+              "complete",
+              "pending",
+              "unavailable"
+            ],
+            "title": "Aggregate Status",
+            "type": "string"
+          },
           "approximate": {
             "title": "Approximate",
             "type": "boolean"
@@ -17327,12 +18133,38 @@
             "title": "Cost Usd"
           },
           "errors": {
-            "title": "Errors",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errors"
           },
           "llm_calls": {
-            "title": "Llm Calls",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Calls"
+          },
+          "oldest_pending_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Pending At"
           },
           "p95_ms": {
             "anyOf": [
@@ -17346,8 +18178,15 @@
             "title": "P95 Ms"
           },
           "tokens": {
-            "title": "Tokens",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens"
           }
         },
         "required": [
@@ -17365,6 +18204,16 @@
       "TokenMixOut": {
         "description": "LLM tokens by price class over the whole UTC days `first_day`..`last_day`, all\nenvironments. Every figure is null when the project has no cost rollup in those days.",
         "properties": {
+          "aggregate_status": {
+            "default": "complete",
+            "enum": [
+              "complete",
+              "pending",
+              "unavailable"
+            ],
+            "title": "Aggregate Status",
+            "type": "string"
+          },
           "cache_read_tokens": {
             "anyOf": [
               {
@@ -17418,6 +18267,18 @@
             "format": "date",
             "title": "Last Day",
             "type": "string"
+          },
+          "oldest_pending_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Pending At"
           },
           "output_tokens": {
             "anyOf": [
@@ -17623,6 +18484,10 @@
             ],
             "title": "Enabled At"
           },
+          "legacy_recovery_codes": {
+            "title": "Legacy Recovery Codes",
+            "type": "boolean"
+          },
           "recovery_codes_remaining": {
             "title": "Recovery Codes Remaining",
             "type": "integer"
@@ -17631,7 +18496,8 @@
         "required": [
           "enabled",
           "enabled_at",
-          "recovery_codes_remaining"
+          "recovery_codes_remaining",
+          "legacy_recovery_codes"
         ],
         "title": "TotpStatusOut",
         "type": "object"
@@ -18592,6 +19458,16 @@
       "UserDetailOut": {
         "description": "`computed_at` is when the user's figures were last recomputed (the latest of the days\nsummed).",
         "properties": {
+          "aggregate_status": {
+            "default": "complete",
+            "enum": [
+              "complete",
+              "pending",
+              "unavailable"
+            ],
+            "title": "Aggregate Status",
+            "type": "string"
+          },
           "computed_at": {
             "anyOf": [
               {
@@ -18610,6 +19486,18 @@
             },
             "title": "Daily",
             "type": "array"
+          },
+          "oldest_pending_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Pending At"
           },
           "recent_sessions": {
             "items": {
@@ -18638,6 +19526,16 @@
       "UserListOut": {
         "description": "`computed_at` is when the figures of the window were last recomputed (the latest of the\ndays summed), `None` when no day of the window has been computed yet. `pending_traces` is\nhow many user traces of the window (and environment) are not counted yet: they started after\nthe latest recompute of their own UTC day, or their day has none yet. At most 10,000; 0 when\nnone is pending, `None` only when the window has neither computed figures nor traces.",
         "properties": {
+          "aggregate_status": {
+            "default": "complete",
+            "enum": [
+              "complete",
+              "pending",
+              "unavailable"
+            ],
+            "title": "Aggregate Status",
+            "type": "string"
+          },
           "computed_at": {
             "anyOf": [
               {
@@ -18667,6 +19565,18 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "oldest_pending_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Pending At"
           },
           "pending_traces": {
             "anyOf": [
@@ -19102,6 +20012,83 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/auth/email/change": {
+      "post": {
+        "description": "Mail the new address a link that moves the account to it, and the current one a notice.\n\nNeeds the current password, or a sign-in in the last 10 minutes for an account without one,\nand a two-factor code when two-factor authentication is on. Nothing changes until the link is\nopened; only the newest link works.",
+        "operationId": "request_email_change_api_v1_auth_email_change_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailChangeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Email Change",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/email/change/confirm": {
+      "post": {
+        "description": "Move the account to the address the emailed link was sent to, end every session and revoke\nevery personal access token.\n\nNo session is needed: the token proves the new inbox. Unknown, used, expired and wrong-kind\ntokens all answer the same 404 as a reset does. Sign-in providers stay linked.",
+        "operationId": "confirm_email_change_api_v1_auth_email_change_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailChangeConfirmIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Email Change",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/auth/email/verify/confirm": {
       "post": {
         "description": "Verify an address with the token from the emailed link.\n\nNo session is needed: the link is often opened in a browser that is not signed in, and the\ntoken alone proves the inbox. Unknown, used, expired and wrong-kind tokens all answer the\nsame 404.",
@@ -19238,6 +20225,39 @@
       }
     },
     "/api/v1/auth/me": {
+      "delete": {
+        "description": "Delete the caller's account for good, and sign this browser out.\n\nNeeds `confirm: \"delete\"` and the current password (or a sign-in in the last 10 minutes for an\naccount without one), plus a two-factor code when two-factor authentication is on. Refused\nwith `409 SOLE_OWNER`, listing the organizations, while the caller is the only owner of any.\nSessions, tokens, sign-in providers, recovery codes and memberships go with the account; what\nthe caller made in a project stays, without an author.",
+        "operationId": "delete_account_api_v1_auth_me_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountDeleteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Account",
+        "tags": [
+          "auth"
+        ]
+      },
       "get": {
         "description": "The caller's account and memberships: for a browser session, and for a personal access token.\n\nThis is the one `/auth` route a token may call, so a tool can check that its token works and\nwhose it is.",
         "operationId": "me_api_v1_auth_me_get",
@@ -19254,6 +20274,46 @@
           }
         },
         "summary": "Me",
+        "tags": [
+          "auth"
+        ]
+      },
+      "patch": {
+        "description": "Change the caller's name, or turn their weekly digest off or on (every project).",
+        "operationId": "update_profile_api_v1_auth_me_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Profile",
         "tags": [
           "auth"
         ]
@@ -19723,6 +20783,63 @@
         ]
       }
     },
+    "/api/v1/auth/terms": {
+      "get": {
+        "description": "The terms version this server asks for, for the signed-out signup page.",
+        "operationId": "terms_api_v1_auth_terms_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Terms",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/terms/accept": {
+      "post": {
+        "description": "Accept the server's current terms. Idempotent: accepting the same version again keeps the\ntime it was first accepted, and writes no second audit event.",
+        "operationId": "accept_terms_api_v1_auth_terms_accept_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermsAcceptIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Terms",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/auth/tokens": {
       "get": {
         "description": "The caller's tokens that can still be used. Never includes a secret.",
@@ -20036,6 +21153,56 @@
         ]
       }
     },
+    "/api/v1/email/unsubscribe": {
+      "post": {
+        "description": "Turn the weekly digest off for the user an unsubscribe token was made for.\n\nRFC 8058 one-click: a mail client POSTs `List-Unsubscribe=One-Click` (form-encoded) to the URL\nin the digest's `List-Unsubscribe` header, token in the query, with no cookie and no Origin.\nThe `/unsubscribe` page sends `{\"token\": …}` as JSON instead, read from its URL fragment. Every\ntoken, valid, forged or missing, gets the same 200, so the route tells nobody which tokens are\nreal; repeating it changes nothing.",
+        "operationId": "unsubscribe_api_v1_email_unsubscribe_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unsubscribe",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/invites/accept": {
       "post": {
         "operationId": "accept_invite_api_v1_invites_accept_post",
@@ -20078,22 +21245,19 @@
       }
     },
     "/api/v1/invites/preview": {
-      "get": {
-        "description": "Show the org and role an invite grants, without accepting it.\n\nRequires a signed-in user (the invitee), like accepting does. Unknown, used and expired\ntokens all get the same 404, so the endpoint does not reveal which invites exist.",
-        "operationId": "preview_invite_api_v1_invites_preview_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "token",
-            "required": true,
-            "schema": {
-              "maxLength": 128,
-              "minLength": 1,
-              "title": "Token",
-              "type": "string"
+      "post": {
+        "description": "Show the org and role an invite grants, without accepting it.\n\nA POST so the token travels in the body, never in a URL that access logs record. Requires a\nsigned-in user (the invitee), like accepting does. Unknown, used and expired tokens all get\nthe same 404, so the endpoint does not reveal which invites exist.",
+        "operationId": "preview_invite_api_v1_invites_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteAcceptIn"
+              }
             }
-          }
-        ],
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -20663,7 +21827,7 @@
     },
     "/api/v1/orgs/{org_id}/alert-channels/{channel_id}/deliveries/{delivery_id}/retry": {
       "post": {
-        "description": "Queue a failed delivery again, with the same id, so receivers still deduplicate on it.\n\nIts attempts start over and the worker picks it up at once; the last error stays until the\nnext attempt. `409 NOT_RETRYABLE` unless the delivery is `failed`.",
+        "description": "Queue a failed delivery again, with the same id, so receivers still deduplicate on it.\n\nIts attempts start over and the worker picks it up at once; the last error stays until the\nnext attempt. `409 NOT_RETRYABLE` unless the delivery is `failed` and `retryable`.",
         "operationId": "retry_delivery_api_v1_orgs__org_id__alert_channels__channel_id__deliveries__delivery_id__retry_post",
         "parameters": [
           {
@@ -28020,7 +29184,7 @@
     },
     "/api/v1/projects/{project_id}/gateway/keys/{key_id}": {
       "delete": {
-        "description": "Revoke the key. Apps using it get `401` from the next call. Revoking twice is a no-op.",
+        "description": "Revoke the key. Apps using it get `401` from the next call to this api process, and within\n`API_KEY_CACHE_TTL_SECONDS` (10 s by default) on other processes. Revoking twice is a no-op.",
         "operationId": "revoke_key_api_v1_projects__project_id__gateway_keys__key_id__delete",
         "parameters": [
           {
@@ -28751,6 +29915,84 @@
         "summary": "Score the project's health",
         "tags": [
           "insights"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/ingest-quota": {
+      "get": {
+        "description": "The project's effective ingest caps (`value` null when unlimited, `source` saying whether it\nis this project's own setting or the instance default), what it admitted today, and the spans\nits caps refused per UTC day over the window. Refused spans are counted once per refused\nrequest; a client that retried may have stored them after all. Readable with a session, a\npersonal access token or a `traces:read` API key of the project.",
+        "operationId": "get_ingest_quota_api_v1_projects__project_id__ingest_quota_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestQuotaOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ingest quota",
+        "tags": [
+          "providers"
         ]
       }
     },
@@ -29687,7 +30929,27 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "Aggregate-Oldest-Pending-At": {
+                "description": "Oldest pending correction time; omitted when no correction is pending.",
+                "schema": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "Aggregate-Status": {
+                "description": "Source coverage, including when the response array is empty.",
+                "schema": {
+                  "enum": [
+                    "complete",
+                    "pending",
+                    "unavailable"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
           },
           "422": {
             "content": {
@@ -29893,7 +31155,27 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "Aggregate-Oldest-Pending-At": {
+                "description": "Oldest pending correction time; omitted when no correction is pending.",
+                "schema": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "Aggregate-Status": {
+                "description": "Source coverage, including when the response array is empty.",
+                "schema": {
+                  "enum": [
+                    "complete",
+                    "pending",
+                    "unavailable"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
           },
           "422": {
             "content": {
@@ -31473,7 +32755,27 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "Aggregate-Oldest-Pending-At": {
+                "description": "Oldest pending correction time; omitted when no correction is pending.",
+                "schema": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "Aggregate-Status": {
+                "description": "Source coverage, including when the response array is empty.",
+                "schema": {
+                  "enum": [
+                    "complete",
+                    "pending",
+                    "unavailable"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
           },
           "422": {
             "content": {
@@ -32805,6 +34107,23 @@
               ],
               "title": "Cursor"
             }
+          },
+          {
+            "in": "query",
+            "name": "span_content",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "const": "bounded",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Span Content"
+            }
           }
         ],
         "responses": {
@@ -32819,14 +34138,7 @@
             "description": "Successful Response"
           },
           "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
+            "description": "The spans' stored content passes the 8 MiB budget and the request did not ask for `span_content=bounded` (`SPAN_CONTENT_TOO_LARGE`)."
           }
         },
         "summary": "List Session Turns",
@@ -33875,6 +35187,23 @@
               "title": "Trace Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "span_content",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "const": "bounded",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Span Content"
+            }
           }
         ],
         "responses": {
@@ -33889,14 +35218,7 @@
             "description": "Successful Response"
           },
           "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
+            "description": "The spans' stored content passes the 8 MiB budget and the request did not ask for `span_content=bounded` (`SPAN_CONTENT_TOO_LARGE`)."
           }
         },
         "summary": "Get Trace",
@@ -34025,7 +35347,7 @@
     },
     "/api/v1/projects/{project_id}/traces/{trace_id}/spans/{span_id}": {
       "get": {
-        "description": "One span with its payloads: what trace detail leaves out past its payload budget.",
+        "description": "One span with its attributes and payloads: what trace detail leaves out past its content\nbudget.",
         "operationId": "get_span_api_v1_projects__project_id__traces__trace_id__spans__span_id__get",
         "parameters": [
           {

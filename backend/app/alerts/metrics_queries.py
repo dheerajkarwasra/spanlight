@@ -29,7 +29,8 @@ never ``llm_calls``, which a class error rate is divided by.
 
 Percentiles are exact (``percentile_cont``). When the caller merges the raw part of a window with
 hourly rollups it asks for a latency histogram as well, bucketed exactly as the rollup job does
-(``app.rollups.compute``), so both halves add up element-wise.
+(``app.rollups.compute``), so both halves add up element-wise. That form is read in two levels,
+as in ``app.metrics.queries`` (see ``_by_bucket``).
 
 The queries run in the caller's session and rely on its project binding for row-level security;
 the explicit ``project_id`` filter is a second guard, not the only one.
@@ -51,6 +52,7 @@ from app.api.window import TimeWindow
 from app.core.model_match import like_prefix, model_filter_sql
 from app.rollups.buckets import BUCKET_COUNT
 from app.rollups.compute import BUCKET_INDEX_SQL, NEGATED_BOUNDS
+from app.rollups.coverage_reads import CoverageState, read_covered
 from app.rollups.error_compute import FAILED_LLM_SPAN
 
 LatencyColumn = Literal["duration_ms", "time_to_first_token_ms"]
@@ -116,19 +118,33 @@ class RawAggregate:
 EMPTY = RawAggregate(0, 0, 0, 0, 0, None, None, None)
 
 
-def llm_histogram(column: str) -> str:
-    """A 32-element ``integer[]`` counting the llm spans whose ``column`` is in each bucket.
+_COUNT_NAMES = ("spans", "llm_calls", "llm_errors", "cost_usd", "input_tokens", "output_tokens")
 
-    The NULL test is required: ``least`` ignores NULL arguments, so the index of a NULL value
-    would be the last bucket, not NULL.
+_HISTOGRAM = (
+    "CAST(ARRAY["
+    + ", ".join(f"coalesce(sum(n) FILTER (WHERE b = {k}), 0)" for k in range(BUCKET_COUNT))
+    + "] AS integer[]) AS histogram"
+)
+
+
+def _by_bucket(columns: Sequence[str], names: Sequence[str], column: str, spans: str) -> str:
+    """The histogram form, in two levels: the inner level groups each group's spans by the bucket
+    index of ``column``, computed once per span, and the outer one adds those few rows up into
+    the 32-element ``integer[]`` (32 filtered counts per span cost more than the rest of the read).
+
+    Only an llm span with a value has a bucket; any other has -1. The NULL test is required:
+    ``least`` ignores NULL arguments, so the index of a NULL value would be the last bucket. The
+    exact percentile cannot be added up, so the inner level also groups without the index
+    (``b IS NULL``), and that row gives ``columns``, named ``names``, unchanged.
     """
-    measured = f"s.kind = 'llm' AND s.{column} IS NOT NULL"
     index = BUCKET_INDEX_SQL.format(value=f"s.{column}")
-    counts = ", ".join(
-        f"count(*) FILTER (WHERE {measured} AND {index} = {position})"
-        for position in range(BUCKET_COUNT)
+    bucket = f"CASE WHEN s.kind = 'llm' AND s.{column} IS NOT NULL THEN {index} ELSE -1 END AS b"
+    totals = ", ".join(f"max({name}) FILTER (WHERE b IS NULL) AS {name}" for name in names)
+    return (
+        f"SELECT grp, {totals}, {_HISTOGRAM}\n"
+        f"FROM (SELECT w.grp, {bucket}, count(*) AS n, {', '.join(columns)}\n{spans}\n"
+        "      GROUP BY GROUPING SETS ((1, 2), (1))) AS h\nGROUP BY grp"
     )
-    return f"CAST(ARRAY[{counts}] AS integer[])"
 
 
 def _class_errors(error_filters: frozenset[str]) -> str:
@@ -143,19 +159,19 @@ def _statement(
 ) -> TextClause:
     """The statement for one combination of set filters and requested latency columns."""
     error_filters, dimensions = filters & _ERROR_FILTERS, filters - _ERROR_FILTERS
-    columns = [_COUNTS, _class_errors(error_filters)] if error_filters else [_COUNTS]
+    columns, names = [_COUNTS], [*_COUNT_NAMES]
+    if error_filters:
+        columns.append(_class_errors(error_filters))
+        names.append("class_errors")
     if latency is not None:
         columns.append(
             f"percentile_cont(0.95) WITHIN GROUP (ORDER BY s.{latency}) "
             "FILTER (WHERE s.kind = 'llm') AS percentile"
         )
-        if with_histogram:
-            columns.append(f"{llm_histogram(latency)} AS histogram")
+        names.append("percentile")
     join = _TRACE_JOIN if dimensions & _TRACE_FILTERS else ""
     conditions = "".join(f"\n      AND {_CONDITIONS[name]}" for name in sorted(dimensions))
-    statement = text(
-        f"""
-        SELECT w.grp, {", ".join(columns)}
+    spans = f"""
         FROM unnest(
                  CAST(:starts AS timestamptz[]),
                  CAST(:ends AS timestamptz[]),
@@ -166,10 +182,12 @@ def _statement(
          AND s.started_at >= w.start_at
          AND s.started_at < w.end_at
         {join}
-        WHERE TRUE{conditions}
-        GROUP BY w.grp
-        """
-    ).bindparams(
+        WHERE TRUE{conditions}"""
+    if latency is not None and with_histogram:
+        sql = _by_bucket(columns, names, latency, spans)
+    else:
+        sql = f"SELECT w.grp, {', '.join(columns)}{spans}\n        GROUP BY w.grp"
+    statement = text(sql).bindparams(
         bindparam("starts", type_=ARRAY(DateTime(timezone=True))),
         bindparam("ends", type_=ARRAY(DateTime(timezone=True))),
         bindparam("groups", type_=ARRAY(Integer())),
@@ -211,6 +229,7 @@ async def read_window_aggregates(
     filters: MetricFilters,
     latency: LatencyColumn | None = None,
     with_histogram: bool = False,
+    coverage: CoverageState | None = None,
 ) -> list[RawAggregate]:
     """Aggregates for each group of disjoint ranges, in order. A group without a non-empty range
     yields :data:`EMPTY`.
@@ -240,7 +259,17 @@ async def read_window_aggregates(
     if with_histogram:
         params["neg_bounds"] = list(NEGATED_BOUNDS)
     statement = _statement(_dimension_names(filters), latency, with_histogram)
-    for row in (await db.execute(statement, params)).all():
+    for row in await read_covered(
+        db,
+        statement,
+        params,
+        project_id,
+        min(r.start for _, r in readable).replace(minute=0, second=0, microsecond=0),
+        max(r.end for _, r in readable),
+        coverage,
+        raw=True,
+        relevant_consumers=0,
+    ):
         results[int(row.grp)] = _aggregate(row, latency, with_histogram, narrows)
     return results
 

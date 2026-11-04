@@ -24,6 +24,8 @@ import {
   treeItemMeta,
 } from "./span-tree";
 
+import { countedStartReads, deepTestTree } from "./span-test-data";
+
 const BASE = Date.parse("2026-10-07T12:00:00.000Z");
 
 function makeSpan(
@@ -64,6 +66,8 @@ function makeSpan(
     attributes: {},
     truncated: false,
     payload_omitted: false,
+    attributes_omitted: false,
+    retry_eligible: false,
     finish_reason: null,
     prompt_version_id: null,
     usage_rollup: false,
@@ -73,6 +77,14 @@ function makeSpan(
 }
 
 describe("buildSpanTree", () => {
+  it("reads each start time once while ordering siblings", () => {
+    const { spans, reads } = countedStartReads(5_000);
+    const [root] = buildSpanTree([makeSpan("root", null, 0, 10_000), ...spans]);
+    expect(root?.children).toHaveLength(5_000);
+    expect(root?.children[0]?.span.span_id).toBe("s0");
+    expect(reads()).toBeLessThanOrEqual(spans.length);
+  });
+
   it("nests children under parents and orders siblings by start time", () => {
     const spans = [
       makeSpan("child-late", "root", 50, 10),
@@ -369,5 +381,106 @@ describe("llmInputCandidates and llmOutputCandidates", () => {
   it("finds a nested node by id", () => {
     expect(findSpanNode(roots, "plan-llm")?.span.span_id).toBe("plan-llm");
     expect(findSpanNode(roots, "missing")).toBeNull();
+  });
+});
+
+describe("5,000-deep traces", () => {
+  const { spans, roots } = deepTestTree();
+  it("builds the reproduced chain and preserves every span", () => {
+    expect(flattenSpanTree(buildSpanTree(spans), new Set())).toHaveLength(5_000);
+  });
+  it("flattens all rows with their accessible depth", () => {
+    const rows = flattenSpanTree(roots, new Set());
+    expect(rows).toHaveLength(5_000);
+    expect(rows.at(-1)).toMatchObject({ depth: 4_999, span: { span_id: "4999" } });
+  });
+  it("reveals all ancestors of a deep selection and overlapping search matches", () => {
+    const ancestors = ancestorIds(roots, new Set(spans.map((span) => span.span_id)));
+    expect(ancestors.size).toBe(4_999);
+    expect(ancestors.has("0")).toBe(true);
+    expect(ancestors.has("4998")).toBe(true);
+    expect(ancestors.has("4999")).toBe(false);
+  });
+  it("collapses every healthy parent", () => {
+    expect(healthyParentIds(roots).size).toBe(4_999);
+  });
+  it("counts descendants and sibling positions at every depth", () => {
+    const meta = treeItemMeta(roots);
+    expect(meta.size).toBe(5_000);
+    expect(meta.get("0")).toEqual({ descendants: 4_999, posInSet: 1, setSize: 1 });
+    expect(meta.get("4999")).toEqual({ descendants: 0, posInSet: 1, setSize: 1 });
+  });
+  it("finds payload candidates in display order", () => {
+    const inputs = llmInputCandidates(roots);
+    const outputs = llmOutputCandidates(roots);
+    expect(inputs).toHaveLength(5_000);
+    expect(inputs[0]?.span_id).toBe("0");
+    expect(inputs.at(-1)?.span_id).toBe("4999");
+    expect(outputs[0]?.span_id).toBe("4999");
+    expect(outputs.at(-1)?.span_id).toBe("0");
+  });
+});
+
+describe("malformed and wide trace graphs", () => {
+  it.each(["cycle", "orphan"])("keeps all 5,000 spans in a deep %s", (shape) => {
+    const { spans } = deepTestTree();
+    spans[0] = { ...(spans[0] as Span), parent_span_id: shape === "cycle" ? "4999" : "missing" };
+    const roots = buildSpanTree(spans);
+    const rows = flattenSpanTree(roots, new Set());
+    expect(rows).toHaveLength(5_000);
+    expect(new Set(rows.map((row) => row.span.span_id)).size).toBe(5_000);
+    expect(roots).toHaveLength(1);
+    expect(roots[0]?.orphaned).toBe(shape === "orphan");
+    expect(ancestorIds(roots, new Set(["4999"])).size).toBe(4_999);
+  });
+
+  it("keeps a failed leaf's entire 5,000-deep path open", () => {
+    const { roots } = deepTestTree();
+    const leaf = findSpanNode(roots, "4999");
+    expect(leaf).not.toBeNull();
+    if (!leaf) return;
+    leaf.span.status = "error";
+    expect(healthyParentIds(roots)).toEqual(new Set());
+  });
+
+  it("walks 130,000 siblings without exceeding the argument stack limit", () => {
+    const base = makeSpan("root", null, 0, 1);
+    const children = Array.from({ length: 130_000 }, (_, index) => ({
+      span: { ...base, span_id: String(index), parent_span_id: "root" },
+      children: [],
+      orphaned: false,
+    }));
+    const roots = [{ span: base, children, orphaned: false }];
+    expect(parentSpanIds(roots)).toEqual(["root"]);
+    expect(findSpanNode(roots, "absent")).toBeNull();
+    expect(flattenSpanTree(roots, new Set())).toHaveLength(130_001);
+    expect(treeItemMeta(roots).get("129999")).toEqual({
+      posInSet: 130_000,
+      setSize: 130_000,
+      descendants: 0,
+    });
+  });
+
+  it("preserves unique spans, orphans and collapse behavior for all 1,296 four-node parent graphs", () => {
+    const parentOptions = [null, "missing", "0", "1", "2", "3"];
+    for (let graph = 0; graph < 1_296; graph++) {
+      const spans = Array.from({ length: 4 }, (_, i) =>
+        makeSpan(String(i), parentOptions[Math.floor(graph / 6 ** i) % 6] ?? null, i, 1),
+      );
+      const roots = buildSpanTree([...spans, spans[0] as Span]);
+      const rows = flattenSpanTree(roots, new Set());
+      expect(rows.map((row) => row.span.span_id).sort()).toEqual(["0", "1", "2", "3"]);
+      expect(
+        rows
+          .filter((row) => row.orphaned)
+          .map((row) => row.span.span_id)
+          .sort(),
+      ).toEqual(
+        spans.filter((span) => span.parent_span_id === "missing").map((span) => span.span_id),
+      );
+      expect(flattenSpanTree(roots, new Set(parentSpanIds(roots)))).toHaveLength(roots.length);
+      expect(treeItemMeta(roots).size).toBe(4);
+      expect(healthyParentIds(roots)).toEqual(new Set(parentSpanIds(roots)));
+    }
   });
 });

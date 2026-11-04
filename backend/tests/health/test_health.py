@@ -77,6 +77,8 @@ def test_https_deployment_requires_a_real_secret_key() -> None:
     with pytest.raises(ValidationError, match="SECRET_KEY"):
         Settings(app_base_url="https://spanlight.example.com", _env_file=None)
     configured = Settings(
-        app_base_url="https://spanlight.example.com", secret_key="s3cret-value", _env_file=None
+        app_base_url="https://spanlight.example.com",
+        secret_key="s3cret-value-" + "x" * 20,
+        _env_file=None,
     )
     assert configured.secure_cookies is True

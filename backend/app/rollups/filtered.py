@@ -30,6 +30,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.window import TimeWindow
 from app.core.model_match import like_prefix, model_filter_sql
 from app.rollups.compute import floor_hour
+from app.rollups.coverage_reads import CoverageState, read_covered
+from app.rollups.dirty import HOURLY
 from app.rollups.queries import summed_histogram
 
 # A NULL parameter means "any value" for that dimension.
@@ -99,7 +101,11 @@ class FilteredHour:
 
 
 async def read_filtered_rollups(
-    db: AsyncSession, project_id: uuid.UUID, window: TimeWindow, filters: RollupFilters
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    window: TimeWindow,
+    filters: RollupFilters,
+    coverage: CoverageState | None = None,
 ) -> list[FilteredHour]:
     """One row per hour that has matching rollup rows, oldest first. Empty hours are absent."""
     params = {
@@ -111,7 +117,16 @@ async def read_filtered_rollups(
         "model": filters.model,
         "model_like": None if filters.model is None else like_prefix(filters.model),
     }
-    rows = (await db.execute(_FILTERED_HOURS, params)).all()
+    rows = await read_covered(
+        db,
+        _FILTERED_HOURS,
+        params,
+        project_id,
+        floor_hour(window.start),
+        window.end,
+        coverage,
+        relevant_consumers=HOURLY,
+    )
     return [
         FilteredHour(
             bucket_start=row.bucket_start,

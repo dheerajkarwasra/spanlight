@@ -2,9 +2,10 @@
 """What each kind of insight says: its label, layer, certainty and the copy for a person.
 
 `title` and `summary` are `str.format` templates over `Finding.params`; `render` fills them
-and is what `insights` stores. A placeholder a detector did not supply renders as "—". A count
-that can be 1 arrives with its noun (`1 burst`, `3 bursts`, see `format.count_noun`), so no
-template has to pluralise.
+and is what `insights` stores. A finding with no `baseline_*` param (its slice has no 7-day
+baseline yet) takes the kind's `no_baseline` title and summary when it has them. A placeholder
+a detector did not supply renders as "—". A count that can be 1 arrives with its noun
+(`1 burst`, `3 bursts`, see `format.count_noun`), so no template has to pluralise.
 """
 
 from collections.abc import Mapping
@@ -30,6 +31,8 @@ class KindInfo:
     summary: str
     suggested_fix: str
     verification: str
+    # (title, summary) for a finding whose slice has no 7-day baseline yet.
+    no_baseline: tuple[str, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +69,11 @@ KIND_INFO: dict[str, KindInfo] = {
             "trim the input.",
             "The error rate on Overview stays under the threshold; the insight resolves after "
             "24 hours without a recurrence.",
+            (
+                "Error rate is {error_rate} on {model} in {environment}",
+                "{errors} of {calls} LLM calls failed in the last 24 hours. No baseline yet for "
+                "the 7 days before the last 24 hours, so the check fires at 25 % errors or more.",
+            ),
         ),
         KindInfo(
             "latency_regression",
@@ -285,9 +293,12 @@ def _fill(template: str, params: Mapping[str, str]) -> str:
 def render(finding: Finding) -> RenderedCopy:
     """The copy for a finding: templates filled from its params, the rest from the catalogue."""
     info = KIND_INFO[finding.kind]
+    title, summary = info.title, info.summary
+    if info.no_baseline and not any(key.startswith("baseline_") for key in finding.params):
+        title, summary = info.no_baseline
     return RenderedCopy(
-        title=_fill(info.title, finding.params),
-        summary=_fill(info.summary, finding.params),
+        title=_fill(title, finding.params),
+        summary=_fill(summary, finding.params),
         suggested_fix=info.suggested_fix,
         verification=info.verification,
         label=info.label,

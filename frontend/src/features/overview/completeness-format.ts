@@ -73,6 +73,17 @@ export function completenessReason(result: Completeness): string {
     : `${COMPLETENESS_DEFINITION}.`;
 }
 
+/** The ingest tile's info tooltip once a cap refused spans: they can be counted twice. */
+export const INGEST_REFUSED_NOTE =
+  "Refused spans count once per refused request; a client that retried may have stored them after all, so this share is a lower bound.";
+
+/** Readable names for the three cap refusals; every other reason is shown as the API spells it. */
+const REASON_LABELS: Record<string, string> = {
+  quota_rate: "Rate limit",
+  quota_spans: "Daily span quota",
+  quota_bytes: "Daily byte quota",
+};
+
 export interface LossTile {
   source: string;
   label: string;
@@ -82,6 +93,8 @@ export interface LossTile {
   detail: string;
   /** Why `count` is unknown, or null when it is known. */
   unknownReason: string | null;
+  /** An info tooltip for the tile, or null: the ingest tile's once a cap refused spans. */
+  note: string | null;
 }
 
 interface Source {
@@ -103,15 +116,29 @@ function lossTile({ source, label, silentReason }: Source, losses: readonly Tele
     .sort((a, b) => b.count - a.count);
   if (reasons.length === 0) {
     return silentReason === null
-      ? { source, label, count: 0, detail: "none", unknownReason: null }
-      : { source, label, count: null, detail: "none reported", unknownReason: silentReason };
+      ? { source, label, count: 0, detail: "none", unknownReason: null, note: null }
+      : {
+          source,
+          label,
+          count: null,
+          detail: "none reported",
+          unknownReason: silentReason,
+          note: null,
+        };
   }
+  const refused = reasons.some((loss) => loss.reason in REASON_LABELS);
   return {
     source,
     label,
     count: totalLost(reasons),
-    detail: reasons.map((loss) => `${loss.reason} ${formatInteger(loss.count) ?? "0"}`).join(" · "),
+    detail: reasons
+      .map(
+        (loss) =>
+          `${REASON_LABELS[loss.reason] ?? loss.reason} ${formatInteger(loss.count) ?? "0"}`,
+      )
+      .join(" · "),
     unknownReason: null,
+    note: refused ? INGEST_REFUSED_NOTE : null,
   };
 }
 

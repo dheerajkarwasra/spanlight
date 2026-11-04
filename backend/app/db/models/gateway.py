@@ -231,6 +231,8 @@ class GatewayCacheEntry(Base):
     usage: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # shortcut: no longer written (a hit is read-only; the hit rate comes from the spans) and
+    # stays 0; drop the column in the next migration that touches this table.
     hit_count: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
 
 

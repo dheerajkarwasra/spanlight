@@ -41,3 +41,29 @@ export function freshnessLabel(
   const updated = `Updated ${when.replace(/^Today /, "").replace(/^Yesterday/, "yesterday")}`;
   return pending > 0 ? `${updated} · ${pendingPhrase(pending, "since then")}` : updated;
 }
+
+/** Figma "Aggregate history" (806:302, 806:324): the tooltip and empty-state explanation. */
+export const SOURCE_REMOVED =
+  "Source rows were removed. Stored values are snapshots; missing values are unknown.";
+
+/** Figma "Aggregate history" (806:324): the label and title when nothing was retained. */
+export const SOURCE_HISTORY_UNAVAILABLE = "Source history unavailable";
+
+type AggregateStatus = "complete" | "pending" | "unavailable" | undefined;
+
+/** Source history is unavailable and nothing was retained: the figures are unknown, not 0. */
+export function sourceHistoryGone(status: AggregateStatus, hasFigures: boolean): boolean {
+  return status === "unavailable" && !hasFigures;
+}
+
+/**
+ * The label for figures whose source history is unavailable: "Retained snapshot" when the
+ * response still carries stored figures, "Source history unavailable" when it carries none.
+ * Null for complete, pending or legacy responses, which keep their usual freshness line.
+ */
+export function sourceHistoryLabel(status: AggregateStatus, hasFigures: boolean): string | null {
+  if (status !== "unavailable") {
+    return null;
+  }
+  return hasFigures ? "Retained snapshot" : SOURCE_HISTORY_UNAVAILABLE;
+}

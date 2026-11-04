@@ -32,3 +32,15 @@ The bucket arithmetic lives in one small module with no database access, and the
 - **Editing the buckets is a migration.** The bounds are baked into stored arrays. Changing them means recomputing every rollup row from the raw spans, which is possible only while the spans are still within retention.
 - **The write path does not change.** Ingestion stays [synchronous and idempotent](0004-synchronous-idempotent-ingestion.md), and rollups are derived data that can be rebuilt at any time from the spans.
 - **Plain Postgres has a ceiling too.** If the rollup tables themselves grow too large, partitioning them by month is the next step, taken when measurements show it is needed.
+
+## 2026-11-03 accuracy amendment
+
+The original within-bucket uniform interpolation and approximate 25% claim above are superseded. The old `q * n` method could estimate the median of `[2, 2000]` ms as 2.256 ms instead of PostgreSQL's exact 1001 ms. An open-ended bucket does not preserve the actual duration, and an overflow percentile was never guaranteed to equal 300 s.
+
+The shared estimator now follows the continuous rank `q * (n - 1)`. Each contributing order statistic uses its bucket's harmonic midpoint, `2LU / (L + U)`, which minimizes worst-case relative error within a bounded positive interval `[L, U]`. Interpolate those two representatives with the fractional rank, preserving monotonic percentiles, including across the first bucket. The first bucket uses its absolute-error midpoint, 0.5 ms. Integer-ratio rank arithmetic avoids losing ranks when counts exceed `2**53`.
+
+For bounded interior buckets, the edge ratio is about 1.50204 and the relative error bound is `(ratio - 1) / (ratio + 1)`, about 20.066%. Interpolating representative values preserves this bound because each observation's absolute error is bounded by that fraction of its value. This is a worst-case bound, not a promise that every estimate improves. It excludes the first bucket (no positive lower bound) and final bucket (open-ended); estimates cannot exceed 300 s. Raw-only reads remain exact.
+
+This is a read-time correction: boundaries, stored histograms, exact sums, tenancy, and API shapes stay unchanged, so existing rollups need no migration or backfill. Estimated latency and TTFT alerts near thresholds can change; Doctor latency baselines also use this estimator. Historical benchmark figures retain their original values; new measurements must identify their source revision. A tighter error target would need separately versioned denser buckets or a mergeable sketch and a backfill decision.
+
+[PostgreSQL's continuous percentile semantics](https://www.postgresql.org/docs/17/functions-aggregate.html) define the rank behavior. [Datadog's DDSketch paper](https://arxiv.org/abs/1908.10693) motivates relative-error evaluation; this correction uses Spanlight's existing histograms and does not implement DDSketch.

@@ -70,6 +70,8 @@ Redaction looks at the span and trace names and every string in the input, outpu
 - Anthropic and OpenAI-style API keys.
 - `Bearer` tokens.
 - AWS access key ids, and AWS secret keys that are labelled as such.
+- Stripe live keys, GitHub tokens, Google API keys, Slack tokens and Groq keys.
+- JSON Web Tokens, `x-api-key` header values and PEM private key blocks.
 - Card numbers: groups of 13 to 19 digits that pass the Luhn check.
 
 A project can also turn on `redact_contact_info`, which redacts email addresses and phone numbers written with a leading `+` in the span name, input, output, attributes and status message. It is off by default. [Redact email addresses and phone numbers](/docs/guides/privacy/#redact-email-addresses-and-phone-numbers) lists the patterns and what they miss.

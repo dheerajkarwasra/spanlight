@@ -193,7 +193,7 @@ describe("AppShell", () => {
       });
       renderApp(`/${ORG_ID}/proj_1/settings/project`);
       await waitFor(() => {
-        expect(projectsApi.onboarding).toHaveBeenCalledWith("proj_1");
+        expect(projectsApi.onboarding).toHaveBeenCalledWith("proj_1", expect.any(AbortSignal));
       });
 
       const nav = await screen.findByRole("navigation", { name: "Main" });

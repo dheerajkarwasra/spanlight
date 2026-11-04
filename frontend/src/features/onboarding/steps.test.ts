@@ -16,6 +16,7 @@ const project: Project = {
   slug: "my-app",
   retention_days: 30,
   capture_payloads: true,
+  redact_contact_info: false,
   weekly_digest_enabled: true,
   insight_channel_ids: [],
   promoted_metadata_keys: [],

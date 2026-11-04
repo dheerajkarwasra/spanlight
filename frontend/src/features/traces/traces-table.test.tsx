@@ -32,6 +32,7 @@ function trace(index: number, extra: Partial<TraceSummary> = {}): TraceSummary {
     models: ["gpt-4.1"],
     error_message: null,
     error_class: null,
+    root_received: true,
     has_scores: false,
     retry_calls: 0,
     retry_cost_usd: "0",
@@ -76,7 +77,11 @@ describe("the traces table", () => {
     expect(
       within(table).getAllByLabelText("Unknown: No input captured on this trace"),
     ).toHaveLength(1);
-    expect(list).toHaveBeenCalledWith(PROJECT_ID, expect.objectContaining({ preview: true }));
+    expect(list).toHaveBeenCalledWith(
+      PROJECT_ID,
+      expect.objectContaining({ preview: true }),
+      expect.any(AbortSignal),
+    );
   });
 
   it("shows a placeholder, not 'not captured', while rows fetched without previews wait for them", async () => {
@@ -150,6 +155,84 @@ describe("the traces table", () => {
     expect(output).not.toHaveTextContent("partial answer");
   });
 
+  it("keeps errors first and never calls a trace without a known root OK", async () => {
+    mockTraces([
+      trace(1),
+      trace(2, { root_received: false }),
+      trace(3, { root_received: null }),
+      trace(4, { root_received: false, error_count: 2 }),
+    ]);
+    renderApp(TRACES_URL);
+
+    const table = await loadedTable();
+    const headers = within(table).getAllByRole("columnheader");
+    const durationAt = headers.findIndex((header) => header.textContent === "Sort by Duration");
+    const [ok, noRoot, unknownRoot, failed] = within(table)
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => ({ row, duration: within(row).getAllByRole("cell")[durationAt] }));
+    if (!ok || !noRoot || !unknownRoot || !failed) {
+      throw new Error("expected four rows");
+    }
+
+    expect(within(ok.row).getByRole("img", { name: "OK" })).toBeInTheDocument();
+    expect(ok.row).not.toHaveTextContent(/Root/);
+    expect(ok.duration).not.toHaveTextContent("so far");
+
+    expect(within(noRoot.row).queryByRole("img", { name: "OK" })).toBeNull();
+    expect(within(noRoot.row).getByText("Root span not received")).toBeInTheDocument();
+    expect(noRoot.duration).toHaveTextContent(/so far$/);
+
+    expect(within(unknownRoot.row).queryByRole("img", { name: "OK" })).toBeNull();
+    expect(within(unknownRoot.row).getByText("Root status unavailable")).toBeInTheDocument();
+    expect(unknownRoot.duration).not.toHaveTextContent("so far");
+
+    expect(within(failed.row).getByRole("img", { name: "Failed, 2 errors" })).toBeInTheDocument();
+    expect(within(failed.row).getByText("Root span not received")).toBeInTheDocument();
+  });
+
+  it("sizes two-line name and duration cells to fit a compact 32 px row", async () => {
+    mockTraces([trace(1, { root_received: false })]);
+    renderApp(TRACES_URL);
+
+    const table = await loadedTable();
+    const row = within(table).getAllByRole("row")[1] as HTMLElement;
+    // Two caption lines at the 12 px token's 1.4 line height (16.8 px each) overflow the
+    // 31 px a compact row leaves inside its divider; each line must stay at 15 px.
+    const captions = [...row.querySelectorAll<HTMLElement>("[class*='text-xs']")];
+    expect(captions.length).toBeGreaterThan(0);
+    for (const caption of captions) {
+      expect(caption.className).toContain("text-xs/[15px]");
+    }
+  });
+
+  it("gives the 13 px name a 16 px line in comfortable rows so descenders are not clipped", async () => {
+    mockTraces([trace(1, { root_received: false })]);
+    renderApp(TRACES_URL);
+
+    const table = await loadedTable();
+    const row = within(table).getAllByRole("row")[1] as HTMLElement;
+    // Comfortable rows leave 39 px: a 16 px name line and the 15 px caption fit; compact keeps 15 px.
+    expect(row).toHaveAttribute("data-density", "comfortable");
+    const link = within(row).getByRole("link");
+    const lines = link.closest<HTMLElement>(".flex-col");
+    expect(lines?.className).toContain("leading-[15px]");
+    expect(lines?.className).toContain("group-data-[density=comfortable]/row:leading-4");
+  });
+
+  it("shows an unknown duration as plain —, never — so far", async () => {
+    mockTraces([trace(1, { root_received: false, duration_ms: Number.NaN })]);
+    renderApp(TRACES_URL);
+
+    const table = await loadedTable();
+    const headers = within(table).getAllByRole("columnheader");
+    const durationAt = headers.findIndex((header) => header.textContent === "Sort by Duration");
+    const cell = within(within(table).getAllByRole("row")[1] as HTMLElement).getAllByRole("cell")[
+      durationAt
+    ];
+    expect(cell).toHaveTextContent(/^—$/);
+  });
+
   it("sorts by duration from its header: descending first, then ascending", async () => {
     const list = mockTraces([trace(1)]);
     const router = renderApp(TRACES_URL);
@@ -165,6 +248,7 @@ describe("the traces table", () => {
       expect(list).toHaveBeenLastCalledWith(
         PROJECT_ID,
         expect.objectContaining({ sort: "duration", order: undefined }),
+        expect.any(AbortSignal),
       );
     });
 
@@ -222,6 +306,30 @@ describe("the phone tiles", () => {
 
     const tiles = await screen.findByRole("list", { name: "Traces" });
     expect(within(tiles).getByText("Where is my order?")).toBeInTheDocument();
+  });
+
+  it("name a missing or unknown root instead of calling the trace OK", async () => {
+    mockTraces([trace(1, { root_received: false }), trace(2, { root_received: null })]);
+    mockPhone();
+    renderApp(TRACES_URL);
+
+    const tiles = await screen.findByRole("list", { name: "Traces" });
+    const [noRoot, unknownRoot] = within(tiles).getAllByRole("listitem");
+    expect(within(tiles).queryByRole("img", { name: "OK" })).toBeNull();
+    expect(noRoot).toHaveTextContent("Root span not received");
+    expect(noRoot).toHaveTextContent("so far");
+    expect(unknownRoot).toHaveTextContent("Root status unavailable");
+    expect(unknownRoot).not.toHaveTextContent("so far");
+  });
+
+  it("show an unknown duration as plain —, never — so far", async () => {
+    mockTraces([trace(1, { root_received: false, duration_ms: Number.NaN })]);
+    mockPhone();
+    renderApp(TRACES_URL);
+
+    const tiles = await screen.findByRole("list", { name: "Traces" });
+    expect(tiles).toHaveTextContent("—");
+    expect(tiles).not.toHaveTextContent("so far");
   });
 
   it("show a placeholder, not 'not captured', while kept tiles wait for the new request", async () => {

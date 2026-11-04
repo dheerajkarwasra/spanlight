@@ -137,7 +137,7 @@ describe("ribbonKpis", () => {
       }),
       "spend",
     );
-    expect(spend).toMatchObject({ value: "$1.00", lowerBound: true, trend: null });
+    expect(spend).toMatchObject({ value: "$1.00", lowerBound: true, trend: [0.1] });
     expect(spend.denominator).toBe("Projected $30.60 this month");
   });
 
@@ -153,6 +153,44 @@ describe("ribbonKpis", () => {
       denominator: "3 open findings",
       critical: 1,
     });
+  });
+
+  it("labels a failed Doctor score Unavailable, with no finding count", () => {
+    const doctor = find(
+      ribbonKpis({
+        metrics: { current: kpis(), previous: kpis(), approximate: true },
+        monthToDateUsd: null,
+        points,
+        health: null,
+        range,
+        now,
+      }),
+      "doctor",
+    );
+    expect(doctor).toMatchObject({
+      value: null,
+      unknownReason: "The Doctor's score didn't load",
+      denominator: "Unavailable",
+      critical: 0,
+    });
+  });
+
+  it("keeps the no-LLM explanation for a successful score of null", () => {
+    const noScore = { value: null, open_critical: 0, open_warning: 0, approximate: false };
+    const doctor = find(
+      ribbonKpis({
+        metrics: { current: kpis(), previous: kpis(), approximate: true },
+        monthToDateUsd: null,
+        points,
+        health: noScore as unknown as Health,
+        range,
+        now,
+      }),
+      "doctor",
+    );
+    expect(doctor.value).toBeNull();
+    expect(doctor.denominator).toBe("0 open findings");
+    expect(doctor.unknownReason).not.toBe("The Doctor's score didn't load");
   });
 
   it("keeps every value short enough for a phone tile, the exact spend aside", () => {

@@ -27,27 +27,27 @@ Detectors are deterministic code over your stored spans. They call no model, sen
 
 ## Is the job running?
 
-The scheduler enqueues one `run_detectors` job every 15 minutes (dedupe key `run_detectors:<period start>`); the worker runs it. The job has a single attempt: the next period is the retry.
+The scheduler enqueues one `run_detectors` job every 15 minutes (dedupe key `run_detectors:<period start>`). That job lists the projects with a span in the last 24 hours and enqueues one `run_detectors_project` job per project (dedupe key `run_detectors:<period start>:<project id>`, the project whose detectors ran longest ago first); each project job runs every detector over its project. The project jobs are spread 5 seconds apart (the whole set within 10 minutes), so the notification and alert jobs that share the worker's short lane run between them instead of behind all of them. Both kinds have a single attempt: the next period is the retry.
 
 ```bash
 spl exec postgres psql -U postgres -d spanlight -c \
   "SELECT id, status, outcome, attempts, now() - created_at AS age, left(last_error, 100) AS last_error
-     FROM jobs WHERE kind = 'run_detectors' ORDER BY id DESC LIMIT 5"
+     FROM jobs WHERE kind IN ('run_detectors', 'run_detectors_project') ORDER BY id DESC LIMIT 20"
 ```
 
-Healthy: a `done` row about every 15 minutes. Rows that stay `queued` and grow older mean the worker is down or busy: see [Is the worker alive?](README.md#is-the-worker-alive). No rows at all means `DETECTORS_ENABLED` is off (see [Disable the detectors](#disable-the-detectors)).
+Healthy: a `done` `run_detectors` row about every 15 minutes, followed by one `done` `run_detectors_project` row per active project. Project rows that stay `queued` past their `run_after` and grow older mean the worker is down or behind (the project jobs share the worker's short lane with the other periodic jobs); the queue gauge `spanlight_jobs_queued_oldest_age_seconds{kind="run_detectors_project"}` shows the same thing: see [Is the worker alive?](README.md#is-the-worker-alive). No rows at all means `DETECTORS_ENABLED` is off (see [Disable the detectors](#disable-the-detectors)).
 
-The worker logs one line per pass:
+The worker logs one line per pass and one per project:
 
 ```bash
-spl logs --since 20m worker | grep -E 'detectors_ran|detectors_out_of_time|detector_project_failed|detector_project_timed_out|detector_failed'
+spl logs --since 20m worker | grep -E 'detectors_scheduled|detector_project_ran|detector_project_failed|detector_project_timed_out|detector_failed'
 ```
 
-`detectors_ran` carries `projects`, `projects_failed`, `projects_gone`, `projects_left`, `runs`, `errors`, `opened` and `notified`. `projects_left` above 0 (and `detectors_out_of_time`) means the pass hit its time budget; see [A project that times out](#a-project-that-times-out).
+`detectors_scheduled` carries `projects` (active) and `jobs` (newly enqueued; fewer means the period's jobs already existed). `detector_project_ran` carries `project_id`, `runs`, `errors`, `opened`, `notified` and `project_gone` (deleted since the pass listed it). A project that failed or timed out logs `detector_project_failed` or `detector_project_timed_out` instead; see [A project that times out](#a-project-that-times-out). A project job whose pass is older than 15 minutes logs `detector_project_stale` and does nothing (counted in `spanlight_detector_projects_stale_total`): the worker is behind, the backlog stays one pass deep, and the next pass covers the project with a fresh `now`.
 
 ## Read the detector runs
 
-Every detector writes one row to `detector_runs` per project per pass, whether or not it found anything. This is the Doctor's own health record.
+Every detector writes one row to `detector_runs` per project per pass it runs, whether or not it found anything. A project job skipped as stale writes no rows for that pass. This is the Doctor's own health record.
 
 With the API (newest first, at most 100):
 
@@ -73,7 +73,7 @@ How to read a row:
 | --- | --- |
 | `findings` | How many findings the detector returned, `0` for a clean run. `null` when the run failed. |
 | `error` | `null` on success; otherwise the exception class and the first line of its message, at most 500 characters. A failed detector opens nothing and resolves nothing in that pass, so its insights keep their state. |
-| `truncated` | The project had more than 50 000 LLM spans (or tool spans) in 24 hours, so the detectors saw only the newest 50 000. Short-window detectors are unaffected; the 24-hour ones (`context_growth`, `cache_opportunity`, `client_timeout_misconfigured`, `unpriced_spend`, `model_retiring`) may miss older calls. |
+| `truncated` | The project had more than 50 000 LLM spans in 24 hours (or more than 50 000 tool spans in the last hour), so the detectors saw only the newest 50 000 of that kind. Short-window detectors are unaffected; the 24-hour ones (`error_spike` on a slice with no baseline, `context_growth`, `cache_opportunity`, `client_timeout_misconfigured`, `unpriced_spend`, `model_retiring`) may miss older calls. |
 | `duration_ms` | The detector's own time over the loaded data. Every detector should take milliseconds; seconds means a very large project. |
 | `ran_at` | When the row was written. A project with no recent `ran_at` has not been reached: see below. |
 
@@ -85,9 +85,9 @@ Rows older than 7 days are deleted by the nightly retention job.
 
 ## A project that times out
 
-A pass stops starting new projects after 40 seconds, so it ends inside the worker's 50-second task limit, and each project may take at most 30 seconds (never past 45 seconds into the pass). The projects whose detectors ran longest ago go first, so a project the pass did not reach leads the next pass.
+Each project runs in a job of its own and may take at most 30 seconds, inside the worker's 50-second task limit. A slow or failing project holds up nothing but its own job: the other projects' jobs run as the worker reaches them. The projects whose detectors ran longest ago are enqueued first.
 
-A project that fails or runs out of time gets an error row for each detector that had not already recorded one, for example `TimeoutError: the project's run took longer than 30 s`. Because that row has a fresh `ran_at`, the project moves to the back of the order, and the other projects are not held up by it. Its insights keep their state and nothing new is found for it until it succeeds.
+A project that fails or runs out of time gets an error row for each detector that had not already recorded one, for example `TimeoutError: the project's run took longer than 30 s`; its job still ends `done` (the failure is in detector health, not on the job). Because that row has a fresh `ran_at`, the project moves to the back of the next pass's order. Its insights keep their state and nothing new is found for it until it succeeds.
 
 1. Find the projects that are failing:
 
@@ -99,7 +99,7 @@ A project that fails or runs out of time gets an error row for each detector tha
        GROUP BY project_id ORDER BY rows DESC"
    ```
 
-2. Find the cause. The slow step is almost always reading the project's last 24 hours of spans, which is capped at 50 000 spans per kind:
+2. Find the cause. The slow step is almost always reading the project's last 24 hours of LLM spans (tool spans are read for the last hour only), each capped at 50 000 spans:
 
    - Is the project very large? Check its volume: `SELECT count(*) FROM spans WHERE project_id = '<project-id>' AND started_at > now() - interval '24 hours'`.
    - Is the database busy or short of memory or connections? See [Scale Spanlight](scale.md). The detectors share the database with ingestion and the dashboard.
@@ -108,7 +108,7 @@ A project that fails or runs out of time gets an error row for each detector tha
 
 3. Relieve it. Add database capacity, shorten the project's retention if its history is the problem, or turn the feature off while you fix it (see [Disable the detectors](#disable-the-detectors)). There is no per-project switch and no tunable cap: the limits are fixed so that every operator sees the same behaviour.
 
-4. Verify: the next pass writes `ok` rows for the project (`error IS NULL`), `spanlight_detector_projects_skipped_total` stops growing, and the `detectors_ran` line shows `projects_failed=0`.
+4. Verify: the next pass writes `ok` rows for the project (`error IS NULL`) and its `detector_project_ran` line shows `errors=0`.
 
 ## Metrics and the Grafana row
 
@@ -118,17 +118,21 @@ The worker exports:
 | --- | --- |
 | `spanlight_detector_runs_total{detector,outcome}` | Detector runs by outcome, `ok` or `error`. |
 | `spanlight_detector_duration_seconds{detector}` | How long a detector took over one project (histogram). |
-| `spanlight_insights_open{severity}` | Open insights across every project, refreshed at the end of each pass. |
-| `spanlight_detector_projects_skipped_total` | Projects a pass did not start because its time budget ran out. |
+| `spanlight_insights_open{severity}` | Open insights across every project, refreshed after each project's run. |
+| `spanlight_detector_projects_stale_total` | Project jobs skipped because their pass was older than one period (the worker is behind). |
 
-The bundled Grafana dashboard (`deploy/grafana/spanlight-dashboard.json`) has a **Doctor** row with four panels: *Detector runs by outcome*, *Detector duration (p95)*, *Open insights by severity* and *Projects skipped by the run budget*. Useful queries when you build your own alerts:
+The bundled Grafana dashboard (`deploy/grafana/spanlight-dashboard.json`) has a **Doctor** row with four panels: *Detector runs by outcome*, *Detector duration (p95)*, *Open insights by severity* and *Project jobs waiting* (the oldest due `run_detectors_project` job, from the worker's queue gauges). Useful queries when you build your own alerts:
 
 ```promql
 # Any detector failing in the last hour
 sum by (detector) (increase(spanlight_detector_runs_total{outcome="error"}[1h])) > 0
 
-# Passes that cannot reach every project (sustained for an hour)
-sum(increase(spanlight_detector_projects_skipped_total[1h])) > 0
+# Project jobs waiting five minutes past their due time: the worker cannot keep up with the active
+# projects (the gauge counts due jobs only, so the 5-second stagger never trips it)
+max(spanlight_jobs_queued_oldest_age_seconds{kind="run_detectors_project"}) > 300
+
+# Project jobs skipped because their pass was too old: the worker fell a whole period behind
+increase(spanlight_detector_projects_stale_total[1h]) > 0
 
 # A detector slower than a second at p95
 histogram_quantile(0.95, sum by (le, detector) (rate(spanlight_detector_duration_seconds_bucket[1h]))) > 1

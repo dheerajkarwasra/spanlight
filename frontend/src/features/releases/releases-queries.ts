@@ -11,7 +11,7 @@ export function useReleaseListQuery() {
   const query: ReleaseListQuery = { from: range.from, to: range.to, environment };
   return useQuery({
     queryKey: queryKeys.project(projectId).releases(query),
-    queryFn: () => releasesApi.list(projectId, query),
+    queryFn: ({ signal }) => releasesApi.list(projectId, query, signal),
     placeholderData: keepPreviousData,
   });
 }

@@ -7,13 +7,14 @@ answers in the provider envelope of the path (`app.api.gw_errors`):
 1. the key, from `Authorization: Bearer spl_gw_…` or `x-api-key: spl_gw_…` (both present with
    different values is refused): parsed, found by its prefix, its secret compared in constant
    time (an unknown prefix still runs a comparison), then its project, route and credentials
-   loaded (`UNAUTHORIZED`);
+   loaded, or all of it but the secret check reused from the process's key cache
+   (`app.gateway.key_context`) (`UNAUTHORIZED`);
 2. the organization ceiling, the key's requests per minute, then its tokens per minute
    (`RATE_LIMITED`); the request's transaction ends here, before any upstream call. A refused
    model call is recorded as a span of the key's project (`app.gateway.refusal_span`, queued,
    no database round trip); a refused `/models` call records nothing, like an admitted one;
-3. the body: at most 10 MB (`PAYLOAD_TOO_LARGE`), a JSON object with a string `model`
-   (`INVALID_REQUEST`);
+3. the body: at most 10 MB, and a gzip or deflate body inflating at most 100-fold
+   (`PAYLOAD_TOO_LARGE`), a JSON object with a string `model` (`INVALID_REQUEST`);
 4. `execute`, which applies the route (model allowlist, budget, cache, faults, retries and
    fallbacks) and answers with the provider's bytes or a gateway error.
 
@@ -31,27 +32,25 @@ are scoped to `/api/`), and the 1 MiB body limit is `/api/v1` only.
 
 import asyncio
 import json
-from collections.abc import Mapping
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from starlette.datastructures import Headers
-from starlette.responses import StreamingResponse
-from starlette.types import Receive, Scope, Send
 
 from app.api.gw_errors import request_id_of
 from app.config import Settings
 from app.core.body import (
     BodyTooLarge,
     ClientDisconnected,
+    CompressionRatioTooHigh,
     UndecodableBody,
     UnsupportedEncoding,
     read_bounded_body,
 )
 from app.core.observability import GATEWAY_REQUESTS
-from app.core.security import GATEWAY_KEY_PREFIX, key_secret_matches, parse_key
+from app.core.security import GATEWAY_KEY_PREFIX, parse_key
 from app.core.text import clean_text
-from app.gateway.context import ByteStream, GatewayRequest, Received, context_for_key
+from app.gateway.context import GatewayRequest, Received, context_for_key
 from app.gateway.errors import (
     GatewayError,
     Surface,
@@ -63,12 +62,14 @@ from app.gateway.errors import (
     surface_for_path,
 )
 from app.gateway.execute import execute
-from app.gateway.key_context import KeyContext, find_key, load_key_context
+from app.gateway.http_response import GatewayStreamingResponse
+from app.gateway.key_context import KeyContext, authenticated_context
 from app.gateway.key_limits import check_limits
 from app.gateway.models_endpoint import answer_models
 from app.gateway.refusal_span import record_refusal
 from app.gateway.runtime import GatewayRuntime
 from app.gateway.trace_headers import TraceHeaders
+from app.ingest.schemas import MAX_COMPRESSION_RATIO
 
 router = APIRouter(prefix="/gw/v1", tags=["gateway"])
 
@@ -77,13 +78,9 @@ router = APIRouter(prefix="/gw/v1", tags=["gateway"])
 MAX_REQUEST_BYTES = 10 * 1024 * 1024
 # A client that trickles its body would otherwise hold a request slot for as long as it likes.
 BODY_READ_TIMEOUT_S = 30.0
-# Compared against when the presented prefix matches no key, so an unknown key costs the same
-# hash comparison as a known one with the wrong secret.
-_DUMMY_SECRET_HASH = bytes(32)
 # Client headers that are credentials. They are dropped before the request reaches `execute`,
 # whose adapters copy only an allowlist upstream anyway.
 _CREDENTIAL_HEADERS = frozenset({"authorization", "x-api-key", "cookie"})
-_STREAM_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
 _REQUEST_BODY_DOC: dict[str, Any] = {
     "requestBody": {
@@ -138,17 +135,14 @@ async def _authenticate(request: Request, *, model_call: bool) -> KeyContext:
         raise invalid_key()
     settings: Settings = runtime.settings
     async with runtime.sessions() as db, db.begin():
-        key = await find_key(db, parsed.prefix)
-        stored = key.secret_hash if key is not None else _DUMMY_SECRET_HASH
-        if not key_secret_matches(parsed.secret, stored) or key is None:
-            raise invalid_key()
-        key_context = await load_key_context(db, key)
+        cache = request.app.state.gateway_key_cache
+        key_context = await authenticated_context(db, cache, parsed.prefix, parsed.secret)
         if key_context is None:
             raise invalid_key()
         refusal = await check_limits(
             db,
             runtime.limiter,
-            key=key,
+            key=key_context.key,
             org_id=key_context.org_id,
             settings=settings,
             now=request.app.state.clock(),
@@ -192,13 +186,19 @@ GatewayKey = Annotated[KeyContext, Depends(authenticate_gateway_key)]
 ModelsKey = Annotated[KeyContext, Depends(authenticate_models_key)]
 
 
-async def read_model_call(request: Request) -> dict[str, Any]:
-    """The body as a JSON object with a string `model`, at most `MAX_REQUEST_BYTES`."""
+async def read_model_call(request: Request) -> tuple[dict[str, Any], int]:
+    """The body as a JSON object with a string `model`, at most `MAX_REQUEST_BYTES`, and its
+    size. A compressed body may inflate at most `MAX_COMPRESSION_RATIO`-fold, as on ingest."""
     try:
         async with asyncio.timeout(BODY_READ_TIMEOUT_S):
-            raw = await read_bounded_body(request, MAX_REQUEST_BYTES)
+            raw = await read_bounded_body(
+                request, MAX_REQUEST_BYTES, max_ratio=MAX_COMPRESSION_RATIO
+            )
     except TimeoutError:
         raise invalid_request("Request body was not sent in time.", param=None) from None
+    except CompressionRatioTooHigh:
+        message = f"A compressed request body may inflate at most {MAX_COMPRESSION_RATIO}-fold."
+        raise request_too_large(message) from None
     except BodyTooLarge:
         raise request_too_large() from None
     except (UnsupportedEncoding, UndecodableBody):
@@ -217,34 +217,16 @@ async def read_model_call(request: Request) -> dict[str, Any]:
         # A NUL or a lone surrogate: no provider serves such a model, and Postgres cannot take
         # it as a query parameter (the budget and route checks match on the model name).
         raise invalid_request("'model' must not contain NUL or unpaired surrogate characters.")
-    return body
+    return body, len(raw)
 
 
 def forwardable_headers(headers: Headers) -> dict[str, str]:
     return {name: value for name, value in headers.items() if name not in _CREDENTIAL_HEADERS}
 
 
-class GatewayStreamingResponse(StreamingResponse):
-    """A provider stream, always closed when the response ends, however it ends."""
-
-    def __init__(self, stream: ByteStream, *, status_code: int, headers: Mapping[str, str]):
-        # No cache may keep a stream, and no proxy in front (nginx and the like) may buffer it:
-        # tokens must reach the client as they arrive.
-        super().__init__(stream, status_code=status_code, headers={**headers, **_STREAM_HEADERS})
-        self._stream = stream
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        try:
-            await super().__call__(scope, receive, send)
-        finally:
-            # Covers a client gone before the first chunk and a send that failed: closing writes
-            # the span now instead of whenever the generator is collected. Idempotent.
-            await self._stream.aclose()
-
-
 async def _serve(request: Request, surface: Surface, key: KeyContext) -> Response:
     runtime = get_runtime(request)
-    body = await read_model_call(request)
+    body, body_bytes = await read_model_call(request)
     call = GatewayRequest(
         surface=surface,
         body=body,
@@ -253,13 +235,12 @@ async def _serve(request: Request, surface: Surface, key: KeyContext) -> Respons
         client_headers=forwardable_headers(request.headers),
         request_id=request_id_of(request),
         received=getattr(request.state, "gateway_received", None),
+        body_bytes=body_bytes,
     )
     context = context_for_key(key, runtime, clock=request.app.state.clock)
     result = await execute(call, context)
     if result.stream is not None:
-        return GatewayStreamingResponse(
-            result.stream, status_code=result.status, headers=result.headers
-        )
+        return GatewayStreamingResponse(result)
     return Response(result.body or b"", status_code=result.status, headers=result.headers)
 
 

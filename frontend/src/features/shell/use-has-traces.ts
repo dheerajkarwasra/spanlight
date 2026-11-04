@@ -10,7 +10,7 @@ export function useHasTraces(): boolean | undefined {
   const query = useQuery({
     // The Overview's key: its first-run check and the rail's Connect tile share one answer.
     queryKey: queryKeys.project(projectId).onboarding,
-    queryFn: () => projectsApi.onboarding(projectId),
+    queryFn: ({ signal }) => projectsApi.onboarding(projectId, signal),
   });
   return query.data?.has_traces;
 }

@@ -12,9 +12,11 @@
 | `overview.js` | 20 requests a second to the overview metrics, rotating through 1 hour, 24 hours, 7 days and 30 days. Threshold: p95 below 300 ms. |
 | `traces.js` | 20 requests a second to the trace list: the first page, one model, failed traces only, and the first page sorted by duration, cost, tokens or retry cost; the summary gives each variant's median and p95. Threshold: p95 below 300 ms. |
 | `mixed.js` | Reads during ingestion: `INGEST_RPS` requests a second of 100 spans (default 5; 0 leaves ingestion out) while the overview and the trace list are each read `READ_RPS` times a second (default 10), all in parallel, with the requests of `ingest.js`, `overview.js` and `traces.js`. Each scenario has its own thresholds: ingest p95 below 200 ms, reads p95 below 300 ms. Writes `<NAME>.json` and `<NAME>.md` (default `mixed`). |
-| `gateway.js` | The LLM gateway's overhead. Two scenarios of 50 requests a second for 60 s, one after the other: a chat completion through `/gw/v1/chat/completions`, then the same request straight to the fake provider. Thresholds: p95 through the gateway below 25 ms, p95 direct below 5 ms; the overhead (the difference of the two p95 values) must be below 20 ms. |
+| `gateway.js` | The LLM gateway's overhead. Two scenarios of 50 requests a second for 60 s, one after the other: a chat completion through `/gw/v1/chat/completions`, then the same request straight to the fake provider. Thresholds: p95 through the gateway below 25 ms, p95 direct below 5 ms; the overhead (the difference of the two p95 values) must be below 20 ms. `GATEWAY_SCENARIOS=gateway,budget` measures budget admission instead (see step 4). |
 | `fake_provider.py` | A small ASGI app that answers `POST /v1/chat/completions` and `GET /v1/models` with fixed bodies after `FAKE_PROVIDER_DELAY_MS` (default 0). Run by `compose.load.yaml`. |
-| `seed_gateway.py` | Creates a workspace, an `openai_compatible` credential on the fake provider, a route and a gateway key without limits, and writes the key to a JSON file. Needs no spans. |
+| `seed_gateway.py` | Creates a workspace, an `openai_compatible` credential on the fake provider, a route and a gateway key without limits, and writes the key to a JSON file. Needs no spans. With `--budget-spans N` it also adds a second key, N priced spans of that key this UTC month and a monthly `block` budget of $1,000,000 on it, raises the project's retention to 31 days (a monthly budget needs it), and writes that key as `budget_key`. |
+| `seed_tour.py` | Runs after `seed.py` on its project: password users (owners of its organization), a `scores:write` key, three datasets of 200 items copied from seeded traces, two prompts of three versions, a heuristic evaluator, an annotation queue of 100 traces, an experiment with two finished runs (inserted, not executed) and one trace of 5 000 spans. Writes the passwords, the key and the ids to a second JSON file. |
+| `tour.js` | The product tour: sixteen scenarios in parallel, reads with a session cookie (trace, 5 000-span trace, span and cost explanation, sessions, users, attribution, insights, datasets, experiments and compare, evaluators, prompts, annotation queue), OTLP ingest in JSON and protobuf, `POST /v1/scores` and a slow sign-in scenario. Threshold: p95 below 500 ms for every read endpoint. |
 | `summary.js` | Used by the scripts: turns the k6 results into the Markdown table and the JSON summary. |
 | `compose.load.yaml` | The only change to `deploy/compose.yaml`: publishes Postgres on `127.0.0.1` for the seeder, turns the demo traffic job off and, for the gateway test, adds the fake provider (published on `127.0.0.1:9000`), sets `GATEWAY_ALLOW_INSECURE_BASE_URLS` and gives the api and worker a throwaway `CREDENTIALS_KEYS`. |
 
@@ -53,7 +55,7 @@ You need Docker with the Compose plugin, [uv](https://docs.astral.sh/uv/) and, t
    cd ..
    ```
 
-   `--spans` is how many spans to store (use at least 100 000: with fewer, a window or a filter of the scripts can have nothing to return) and `--seed` repeats a data shape. The seeder prints its rate and the time left with every million spans, and stops early when the seed is projected to take longer than `--max-minutes` (default 240). The workflow passes 15 for `smoke`, 45 for `realistic` and 240 for `full`, which is what is left of the job's limit once the build, the rollups and the scenarios are counted.
+   `--spans` is how many spans to store (use at least 100 000: with fewer, a window or a filter of the scripts can have nothing to return) and `--seed` repeats a data shape. One seeder process runs at about one CPU core; `--processes N` stores the batches in N processes, each taking every N-th batch, which is how a seed of 100 million spans fits in hours. The seeder prints its rate and the time left with every million spans, and stops early when the seed is projected to take longer than `--max-minutes` (default 240). The workflow passes 15 for `smoke`, 45 for `realistic` and 240 for `full`, which is what is left of the job's limit once the build, the rollups and the scenarios are counted.
 
    The keys are in the credentials file (mode 600, in the git-ignored `.local/`) and are never printed. It also holds `data_end`, the instant the seeded data ends at. The overview and trace list scripts ask for windows that end there, not at the wall clock, so a seed that takes hours does not leave the newest windows empty.
 
@@ -92,6 +94,12 @@ You need Docker with the Compose plugin, [uv](https://docs.astral.sh/uv/) and, t
      backend/load/gateway.js
    ```
 
+   To measure budget admission (the history read every call under a `block` budget makes, ADR 0017), seed with `--budget-spans 1000000` and run `-e GATEWAY_SCENARIOS=gateway,budget`: the `budget` scenario sends the same request at the same rate with the budget key, and `gateway.json` holds `budget_overhead` (the p95 of `budget` minus the p95 of `gateway` over successful calls, which should be under 5 ms) with `ok`, which is false when any `budget` call failed. Add `-e GATEWAY_VUS=32` for a concurrency run with a slow provider (`FAKE_PROVIDER_DELAY_MS=1000` on the stack); the stack's gateway admission limits (`GATEWAY_MAX_IN_FLIGHT`, `GATEWAY_MAX_IN_FLIGHT_BYTES` and `GATEWAY_MAX_IN_FLIGHT_PER_KEY`) cap the calls in flight. The results are in [Performance](../../docs/performance.md#budget-admission).
+
+   The sustained run checks that admission does not slow down as the open hour fills: start it within a minute after a UTC hour boundary, `k6 run -e GATEWAY_SCENARIOS=budget -e GATEWAY_DURATION_SECONDS=420 -e GATEWAY_CREDENTIALS_FILE=<creds> backend/load/gateway.js`, so about 21 000 settled calls land in one hour; `budget_overhead_ms` is then the run's `budget` p95 minus the `gateway` p95 of the stack's earlier `gateway,budget` run, and must stay under 5 ms.
+
+   To measure gateway admission, start the stack with `FAKE_PROVIDER_DELAY_MS=1000` and run `-e GATEWAY_SCENARIOS=concurrency`: 200 virtual users (`GATEWAY_VUS` overrides the number) send streaming chat completions in a loop, alternating over the two keys `seed_gateway.py` writes, and the fake provider streams three chunks and `[DONE]` after the delay. Any refused or failed call fails the run; the latency counts successful calls only, and `gateway.json` holds `concurrency` (`success_p95_ms`, `refused`, `ok`). The results are in [Performance](../../docs/performance.md#gateway-admission).
+
    `LOAD_DATABASE_URL` is the one from step 2. The script writes `gateway.json` and `gateway.md`. Unlike the other scripts it does not use `DURATION`: each scenario lasts `GATEWAY_DURATION_SECONDS` (default 60). k6 cannot fail a run on the difference of two thresholds, so the script puts `overhead` with `ok` in `gateway.json`; the workflow checks it with `jq -e '.overhead.ok == true'`, and so can you.
 
 5. To measure reads during ingestion, run `mixed.js` once per stage, with `settle.sh` before each, on the stack and credentials from steps 1 and 2:
@@ -110,7 +118,23 @@ You need Docker with the Compose plugin, [uv](https://docs.astral.sh/uv/) and, t
 
    Each stage writes `mixed-<stage>.json` and `mixed-<stage>.md`: the thresholds per scenario, then the overview p95 per window and the trace list p95 per variant. k6 exits non-zero for any stage that misses a threshold; the workflow ignores that only for `near-knee`.
 
-6. Remove the stack and its volumes when you are done:
+6. To tour the rest of the product, seed it on the project from step 2 and run `tour.js`. `TOUR_RPS` multiplies every rate (default 1, about 50 requests a second in all). The sign-in scenario runs `LOGIN_PER_MINUTE` sign-ins a minute (default 3) and refuses more than one per seeded user a minute, because the api hashes at most 20 passwords per email and address in 15 minutes; `--login-users` seeds more users. `ORIGIN` must be an origin the api allows (default `BASE_URL`).
+
+   ```bash
+   cd backend
+   uv run python load/seed_tour.py --credentials-file ../.local/load/credentials.json \
+     --tour-file ../.local/load/tour-credentials.json
+   cd ..
+   docker run --rm --network host --user "$(id -u):$(id -g)" \
+     -e K6_NO_USAGE_REPORT=true -e DURATION=5m -e TOUR_RPS=1 \
+     -v "$PWD/backend/load:/load:ro" -v "$PWD/.local/load:/creds:ro" \
+     -v /tmp/spanlight-load-results:/results \
+     grafana/k6:2.3.0 run /load/tour.js
+   ```
+
+   It writes `tour.json` and `tour.md`: the thresholds per scenario, then the median, p95, p99 and max of every endpoint.
+
+7. Remove the stack and its volumes when you are done:
 
    ```bash
    docker compose -p spanlight-load -f deploy/compose.yaml -f backend/load/compose.load.yaml \
@@ -131,7 +155,9 @@ You need Docker with the Compose plugin, [uv](https://docs.astral.sh/uv/) and, t
 | `FILTER_MODEL` | `claude-haiku-4-5` | `traces.js` and `mixed.js`: the model of the filtered requests. It is the most common seeded one. |
 | `GATEWAY_CREDENTIALS_FILE` | `/creds/gateway-credentials.json` | `gateway.js` only: the file `seed_gateway.py` wrote. |
 | `FAKE_PROVIDER_URL` | `http://localhost:9000` | `gateway.js` only: where the fake provider is published, for the direct scenario. |
-| `GATEWAY_DURATION_SECONDS` | `60` | `gateway.js` only: how long each of its two scenarios holds the rate. |
+| `GATEWAY_DURATION_SECONDS` | `60` | `gateway.js` only: how long each of its scenarios holds the rate. |
+| `GATEWAY_SCENARIOS` | `gateway,direct` | `gateway.js` only: the scenarios to run, one after the other: `gateway`, `direct` and `budget` (needs `--budget-spans`). |
+| `GATEWAY_VUS` | unset | `gateway.js` only: when set, a positive integer; each scenario runs this many virtual users in a loop instead of 50 requests a second. Any other value stops the run. |
 | `FAKE_PROVIDER_DELAY_MS` | `0` | A setting of the stack, not of k6: how long the fake provider waits before it answers. Set it before `docker compose up`. |
 
 ## Reading a failed run
@@ -142,5 +168,5 @@ You need Docker with the Compose plugin, [uv](https://docs.astral.sh/uv/) and, t
 - **The gateway overhead is over the limit but both thresholds pass.** The p95 of the gateway scenario is below 25 ms while the direct one is a few milliseconds, so the difference is over 20 ms. The table shows both figures.
 - **Dropped iterations.** k6 had no free virtual user, so it did not start requests at the target rate. The server was too slow to keep up, and the latency figures understate it.
 - **The check "the window has traces" fails.** The overview of a window came back empty. The seeded data covers all four windows, so for 7 and 30 days this is what missing rollups look like (the seeder stops when its backfill writes no rows): run `spanlight rollups backfill` for the project, or seed again. For 1 and 24 hours it means the data is older than the windows, or too few spans were seeded.
-- **The check "reported the expected source" fails.** The API said `"approximate"` the wrong way round for a window. It follows the window length alone (raw spans up to 24 hours, rollups above), so the API's rule changed; this check does not look at the rollup rows.
+- **The check "reported the expected source" fails.** The API said `"approximate"` the wrong way round for a window. It is true when the window or the previous period of equal length reads a whole hour from the rollups ([API deviations](../../docs/api-deviations.md), "Metrics source"): never for 1 hour (unless `data_end` falls on the hour, when either answer passes), always from 24 hours up, because the raw part never reaches back more than 24 hours. A `true` for 1 hour also comes back when the rollups are unavailable and the whole window is read from them; otherwise the API's rule changed.
 - **The check "the page has traces" fails.** The data does not match the filter, usually because too few spans were seeded.

@@ -5,6 +5,7 @@ project; the explicit `project_id` filter keeps each query on its project index.
 """
 
 import uuid
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import ColumnElement, Select, exists, func, or_, select, true
@@ -26,14 +27,21 @@ def _any(query: Select[Any]) -> ColumnElement[bool]:
     return func.coalesce(query.limit(1).scalar_subquery(), False)
 
 
-async def activation_steps(db: AsyncSession, project_id: uuid.UUID) -> dict[str, bool]:
+async def activation_steps(
+    db: AsyncSession, project_id: uuid.UUID
+) -> dict[str, bool | str | datetime | None]:
     """`first_trace`, `session`, `budget` and `evaluation`: whether each step is done."""
+    first_trace = (
+        select(Trace.trace_id, Trace.started_at)
+        .where(Trace.project_id == project_id, ~Trace.tags.contains([SETUP_TEST_TAG]))
+        .order_by(Trace.started_at, Trace.trace_id)
+        .limit(1)
+        .cte("first_application_trace")
+    )
     steps = select(
-        _any(
-            select(true())
-            .where(Trace.project_id == project_id, ~Trace.tags.contains([SETUP_TEST_TAG]))
-            .order_by(Trace.started_at.desc())
-        ).label("first_trace"),
+        exists(select(first_trace.c.trace_id)).label("first_trace"),
+        select(first_trace.c.trace_id).scalar_subquery().label("first_trace_id"),
+        select(first_trace.c.started_at).scalar_subquery().label("first_trace_at"),
         _any(
             select(true())
             .where(Trace.project_id == project_id, Trace.session_id.is_not(None))

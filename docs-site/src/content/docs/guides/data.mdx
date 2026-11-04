@@ -15,7 +15,7 @@ How Spanlight treats your data at scale and how to operate it. Settings are list
 <Prerequisites
   items={[
     'Shell access to the Spanlight host, to run backups and restores',
-    'For exports and backups: object storage (S3_BUCKET, S3_ACCESS_KEY and S3_SECRET_KEY)',
+    'For exports: S3_BUCKET, S3_ACCESS_KEY and S3_SECRET_KEY; backups use independent BACKUP_S3_* credentials',
     'For nightly backups: BACKUP_DATABASE_URL naming a role that can bypass row-level security',
     'The worker running',
   ]}
@@ -25,7 +25,7 @@ How Spanlight treats your data at scale and how to operate it. Settings are list
 
 The overview, time series and per-model views aggregate spans. Whole hours that are already rolled up come from hourly rollups: one row per project, hour, environment, provider, model and span kind, with counts, tokens, cost and a bucketed histogram of latencies. The rest of the window, the partial hours at its edges and the most recent hour or so, is read from the spans themselves. This keeps a 24-hour or 30-day chart fast with millions of spans.
 
-Counts, errors, tokens and cost are exact either way, because the two parts never overlap. Latency percentiles are exact only when the window reads no rollup hour, which in practice means the last hour. Otherwise they are estimated from the histograms: each bucket is about 1.5 times wider than the one before, so an estimate can be off by roughly 25 %, and a latency above 300 seconds is reported as 300 seconds. The API marks those responses `"approximate": true` and the dashboard says so. Cost stays unknown, never zero, when no call in the group has a known price; `GET /api/v1/projects/{project_id}/unpriced-models` shows which models in your traffic are missing from the price table.
+Counts, errors, tokens and cost are exact either way, because the two parts never overlap. Latency percentiles are exact only when the window reads no rollup hour, which in practice means the last hour. Otherwise they use continuous percentile ranks and estimates from the histograms. For observations in bounded interior buckets (above 1 ms through the penultimate bucket, about 200 seconds), the worst-case relative error is about 20.1%. The first bucket has no positive lower bound and the final bucket also holds every overflow value, so neither has that relative guarantee. Estimates cannot exceed 300 seconds; longer durations cannot be recovered from the histogram. The API marks those responses `"approximate": true` and the dashboard says so. Cost stays unknown, never zero, when no call in the group has a known price; `GET /api/v1/projects/{project_id}/unpriced-models` shows which models in your traffic are missing from the price table.
 
 The worker rewrites the last three hours of rollups every five minutes and the rest of the last 48 hours about once an hour. A span that arrives more than ten minutes after it started can therefore take up to five minutes to show in a chart, or up to an hour if it arrives more than about two hours after its hour ended; and one that arrives more than 48 hours after it started is not reflected until the range is backfilled by hand with `spanlight rollups backfill --project <project id> --from <date> --to <date>` (at most 90 days at a time). The rollups are derived data and can always be rebuilt from the spans.
 
@@ -76,9 +76,9 @@ Measure before you tune. [Self-hosting](/docs/self-hosting/) lists the four Post
 
 ## Check it worked
 
-- **Long windows.** On **Overview**, choose a time range longer than the last hour, such as the default 24 hours. The header shows the chip **Estimated · hourly rollups**, and its tooltip reads "Percentiles are estimated from hourly latency histograms, accurate to about ±25 %. Counts and cost are exact; a span that arrives late can take up to an hour to appear." The API response has `"approximate": true`.
+- **Long windows.** On **Overview**, choose a time range longer than the last hour, such as the default 24 hours. The header shows the chip **Estimated · hourly rollups**, and its tooltip reads "Latency percentiles are estimates and can be less accurate for very short or long calls. Counts and cost use exact sums; a span that arrives late can take up to an hour to appear." The API response has `"approximate": true`.
 - **Health.** `GET /health/ready` answers `200` with `"status":"ok"`.
-- **Backups.** After the first run at 03:00 UTC, `spanlight backup list` shows a dump from that night. Without the prerequisites above the job ends as `skipped_not_configured` and no dump appears.
+- **Backups.** After the first run at 03:00 UTC, `spanlight backup list` with operator recovery credentials shows a dump from that night. Without the prerequisites above the job ends as `skipped_not_configured` and no dump appears.
 
 ## Troubleshooting
 

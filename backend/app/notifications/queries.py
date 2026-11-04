@@ -15,6 +15,7 @@ from sqlalchemy import Row, Select, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AlertChannel, NotificationOutbox, NotificationStatus
+from app.notifications.outbox import retryable
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,8 @@ class DeliveryRow:
     created_at: datetime
     # The payload's `summary` key, which settled rows keep; None for a row without one.
     summary: dict[str, Any] | None
+    # Whether `retry_failed` would take it (`outbox.retryable`).
+    retryable: bool
 
 
 def _channel_deliveries(org_id: uuid.UUID, channel_id: uuid.UUID) -> tuple[Any, ...]:
@@ -53,6 +56,7 @@ def _delivery_select() -> Select[Any]:
         NotificationOutbox.last_error,
         NotificationOutbox.created_at,
         NotificationOutbox.payload["summary"].label("summary"),
+        retryable().label("retryable"),
     )
 
 
@@ -66,6 +70,7 @@ def _delivery_row(row: Row[Any]) -> DeliveryRow:
         last_error=row.last_error,
         created_at=row.created_at,
         summary=row.summary if isinstance(row.summary, dict) else None,
+        retryable=bool(row.retryable),
     )
 
 

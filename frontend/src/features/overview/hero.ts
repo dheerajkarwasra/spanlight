@@ -58,7 +58,8 @@ export function shortRangeLabel(range: Pick<ResolvedRange, "value">): string {
   return SHORT_RANGE_LABELS[range.value];
 }
 
-export type HeroStatusKind = "first-run" | "empty-window" | "errors" | "findings" | "healthy";
+export type HeroStatusKind =
+  "first-run" | "empty-window" | "errors" | "findings" | "health-unavailable" | "healthy";
 
 /** The status sentence: a plain lead followed by an emphasised (serif) accent. */
 export interface HeroStatus {
@@ -74,6 +75,8 @@ interface HeroStatusInput {
   errors: number;
   /** Open Doctor findings (critical + warning); 0 while unknown. */
   findings?: number;
+  /** The Doctor's health request failed: never fall through to "behaving". */
+  healthUnavailable?: boolean;
   /** False when the project has never received a trace; null while that is unknown. */
   hasEverReceivedTraces: boolean | null;
 }
@@ -84,12 +87,14 @@ interface HeroStatusInput {
  * - nothing in this window (but older traces exist) → "No traces in this window."
  * - failed calls and open Doctor findings → "3 errors and 1 finding need a look."
  * - open findings only → "1 finding needs a look."
+ * - no failed call but the Doctor's health failed → "Doctor health is unavailable."
  * - otherwise → "Your models are behaving."
  */
 export function heroStatus({
   traces,
   errors,
   findings = 0,
+  healthUnavailable = false,
   hasEverReceivedTraces,
 }: HeroStatusInput): HeroStatus {
   if (traces === 0) {
@@ -99,6 +104,9 @@ export function heroStatus({
     return { kind: "empty-window", lead: "No traces in", accent: "this window." };
   }
   const parts = [countOf(errors, "error"), countOf(findings, "finding")].filter(Boolean);
+  if (parts.length === 0 && healthUnavailable) {
+    return { kind: "health-unavailable", lead: "Doctor health is", accent: "unavailable." };
+  }
   if (parts.length === 0) {
     return { kind: "healthy", lead: "Your models are", accent: "behaving." };
   }
@@ -121,8 +129,8 @@ function countOf(count: number, noun: string): string | null {
  * Failed LLM calls in the window. The API reports the rate (errors ÷ calls), so the count is
  * recovered from it; rounding removes floating-point noise. Null when the rate is unknown.
  */
-export function errorCountFrom(errorRate: number | null, llmCalls: number): number | null {
-  if (errorRate === null || !Number.isFinite(errorRate)) {
+export function errorCountFrom(errorRate: number | null, llmCalls: number | null): number | null {
+  if (errorRate === null || llmCalls === null || !Number.isFinite(errorRate)) {
     return null;
   }
   return Math.round(errorRate * llmCalls);

@@ -20,6 +20,7 @@ import httpx
 import pytest
 
 from app.config import Settings
+from app.end_users.erasure_job import erase_end_user
 from app.main import create_app
 from app.reconciliation.arithmetic import NO_PROVIDER_LINE_NOTE
 from app.reconciliation.backfill import BACKFILL_JOB, backfill_payload
@@ -38,6 +39,7 @@ from tests.reconciliation.report_support import (
     bypass_execute,
     bypass_fetch,
     csv_file,
+    csv_line,
     move_clock,
     pin_ingest_clock,
     provider_lines,
@@ -182,15 +184,16 @@ async def test_report_figures_to_1e_8(seeded: World) -> None:
     assert haiku["note"] == NO_PROVIDER_LINE_NOTE
 
     opus = group_of(d1, "claude-opus-4-6")
-    assert usd(explained(opus)["untraced_traffic"]["usd"]) == Decimal("0.25")
-    assert (usd(opus["residual_usd"]), opus["variance_ratio"]) == (0, "0.0000")
+    # No span for the model: named, not explained away; the $0.25 is unexplained spend.
+    assert explained(opus)["untraced_traffic"]["usd"] is None
+    assert (usd(opus["residual_usd"]), opus["variance_ratio"]) == (Decimal("0.25"), "1.0000")
 
     # The day: the groups summed; the credit and the code execution are listed apart.
     assert usd(d1["provider_usd"]) == Decimal("0.72")
     assert usd(d1["spanlight_usd"]) == Decimal("0.3825")
-    assert usd(d1["explained_usd"]) == Decimal("0.1975")
-    assert usd(d1["residual_usd"]) == Decimal("0.14")
-    assert d1["variance_ratio"] == "0.1944"
+    assert usd(d1["explained_usd"]) == Decimal("-0.0525")
+    assert usd(d1["residual_usd"]) == Decimal("0.39")
+    assert d1["variance_ratio"] == "0.5417"
     assert (usd(d1["credits_usd"]), usd(d1["other_usd"])) == (Decimal("-1.00"), Decimal("0.02"))
     assert [(c["description"], usd(c["usd"])) for c in d1["credits"]] == [
         ("Promotional credit", Decimal("-1.00"))
@@ -499,3 +502,129 @@ async def seed_sonnet_spans(world: World, project_id: uuid.UUID, days: list[date
             """,
             params,
         )
+
+
+async def test_erasure_keeps_report_snapshot_and_marks_coverage_unavailable(seeded: World) -> None:
+
+    before = report_of(await read_report(seeded))
+    await bypass_execute(
+        seeded.sessions,
+        "UPDATE traces SET external_user_id = 'erase-report' WHERE project_id = :project",
+        {"project": seeded.chatbot.project_id},
+    )
+    await erase_end_user(
+        seeded.sessions,
+        project_id=uuid.UUID(seeded.chatbot.project_id),
+        external_user_id="erase-report",
+        counts={},
+    )
+    after = report_of(await read_report(seeded))
+    assert after["aggregate_status"] == "unavailable"
+    assert day_of(after, D1)["spanlight_usd"] == day_of(before, D1)["spanlight_usd"]
+    assert day_of(after, D1)["incomplete"] is True
+    assert day_of(after, D1)["note"] == "retained snapshot; source history unavailable"
+
+
+async def test_unavailable_provider_only_group_stays_unknown_beside_retained_group(
+    seeded: World,
+) -> None:
+    before = day_of(report_of(await read_report(seeded)), D1)
+    await bypass_execute(
+        seeded.sessions,
+        "UPDATE traces SET external_user_id = 'erase-report' WHERE project_id = :project",
+        {"project": seeded.chatbot.project_id},
+    )
+    await erase_end_user(
+        seeded.sessions,
+        project_id=uuid.UUID(seeded.chatbot.project_id),
+        external_user_id="erase-report",
+        counts={},
+    )
+    day = day_of(report_of(await read_report(seeded)), D1)
+    missing = group_of(day, "claude-opus-4-6")
+    assert usd(missing["provider_usd"]) == Decimal("0.25")
+    assert missing["spanlight_tokens"] == {
+        "uncached_input": None,
+        "cache_read": None,
+        "cache_write_5m": None,
+        "cache_write_1h": None,
+        "output": None,
+    }
+    assert missing["spanlight_usd"] is None
+    assert missing["explained_usd"] is None
+    assert missing["residual_usd"] is None
+    assert missing["variance_ratio"] is None
+    assert missing["explained"] == []
+    assert day["explained_usd"] is None
+    assert day["residual_usd"] is None
+    assert day["variance_ratio"] is None
+    retained = group_of(day, SONNET)
+    assert retained["spanlight_usd"] == group_of(before, SONNET)["spanlight_usd"]
+    assert retained["spanlight_tokens"] == group_of(before, SONNET)["spanlight_tokens"]
+    assert day["spanlight_usd"] == before["spanlight_usd"]
+
+
+async def test_unavailable_requested_provider_is_not_known_from_other_provider_snapshot(
+    seeded: World,
+) -> None:
+    await bypass_execute(
+        seeded.sessions,
+        "UPDATE cost_rollups_daily SET provider_canonical = 'openai'",
+        {},
+    )
+    await bypass_execute(
+        seeded.sessions,
+        "UPDATE traces SET external_user_id = 'erase-report' WHERE project_id = :project",
+        {"project": seeded.chatbot.project_id},
+    )
+    await erase_end_user(
+        seeded.sessions,
+        project_id=uuid.UUID(seeded.chatbot.project_id),
+        external_user_id="erase-report",
+        counts={},
+    )
+    day = day_of(report_of(await read_report(seeded)), D1)
+    sonnet = group_of(day, SONNET)
+    assert usd(sonnet["provider_usd"]) == Decimal("0.45")
+    assert sonnet["spanlight_tokens"]["output"] is None
+    assert sonnet["spanlight_usd"] is None
+    assert sonnet["explained_usd"] is None
+    assert sonnet["residual_usd"] is None
+    assert sonnet["variance_ratio"] is None
+    assert sonnet["explained"] == []
+    assert day["spanlight_usd"] is None
+    assert day["unattributed_calls"] is None
+    assert day["explained_usd"] is None
+    assert day["residual_usd"] is None
+    assert day["variance_ratio"] is None
+
+
+async def test_csv_only_bill_with_no_traced_call_is_a_suspected_bypass(world: World) -> None:
+    """Spend entirely outside Spanlight (a leaked key, an unmapped project) is unexplained in
+    full: the untraced model's bill is the residual, and the day is flagged (D10, RD17)."""
+    await upload(
+        world,
+        csv_file(
+            [
+                csv_line(
+                    D1,
+                    "tokens",
+                    "2.00",
+                    SONNET,
+                    quantity="1000000",
+                    token_type="uncached_input",
+                    service_tier="standard",
+                )
+            ]
+        ),
+    )
+    move_clock(world.clock, REPORT_NOW)
+
+    day = day_of(report_of(await read_report(world)), D1)
+
+    assert day["spanlight_usd"] is None
+    assert usd(day["explained_usd"]) == Decimal(0)
+    assert usd(day["residual_usd"]) == Decimal("2.00")
+    assert day["bypass_suspected"] is True
+    untraced = explained(group_of(day, SONNET))["untraced_traffic"]
+    assert (untraced["usd"], untraced["note"]) == (None, "no span with this model")

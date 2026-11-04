@@ -6,6 +6,8 @@ import { orgsApi, projectsApi, queryKeys, type Role } from "@/lib/api";
 import { can, type Permission } from "@/lib/permissions";
 import { resolveRange, type ResolvedRange } from "@/lib/time-range";
 
+import { useLiveNow } from "./live-window";
+
 const projectRoute = getRouteApi("/_authed/$orgId/$projectId");
 
 export function useProjectParams(): { orgId: string; projectId: string } {
@@ -49,11 +51,15 @@ export interface ProjectFilters {
   environment: string | undefined;
 }
 
-/** Time window and environment from the URL, shared by every project data page. */
+/**
+ * Time window and environment from the URL, shared by every project data page. A preset window
+ * ("Last hour") moves with the live clock, so open pages pick up new traces without a reload.
+ */
 export function useProjectFilters(): ProjectFilters {
   const search = projectRoute.useSearch();
+  const now = useLiveNow();
   return {
-    range: resolveRange(search),
+    range: resolveRange(search, now),
     environment: search.env,
   };
 }
@@ -62,7 +68,7 @@ export function useFilterOptionsQuery() {
   const { projectId } = useProjectParams();
   return useQuery({
     queryKey: queryKeys.project(projectId).filters,
-    queryFn: () => projectsApi.filters(projectId),
+    queryFn: ({ signal }) => projectsApi.filters(projectId, signal),
     staleTime: 5 * 60_000,
   });
 }

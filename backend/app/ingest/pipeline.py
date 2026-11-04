@@ -61,6 +61,8 @@ class IngestTarget:
 class IngestOutcome:
     accepted: int = 0
     rejected: list[RejectedSpan] = field(default_factory=list)
+    # How many accepted spans were new rows; a replay stores nothing new (`store.write_spans`).
+    inserted: int = 0
 
 
 class InvalidJsonError(ValueError):
@@ -130,20 +132,26 @@ async def ingest_spans(
     raw_spans: Sequence[Any],
     *,
     now: datetime | None = None,
+    project_locked: bool = False,
 ) -> IngestOutcome:
     """Validate and store a batch of spans in one transaction. The caller commits.
 
-    Raises `ProjectGoneError` when the project no longer exists; nothing is written then.
+    Raises `ProjectGoneError` when the project no longer exists; nothing is written then. A
+    caller that has already run `_KEY_SHARE_PROJECT`'s lock and binding (the ingest routes, which
+    read the project's caps in the same statement) passes `project_locked=True`.
     """
     now = now or datetime.now(UTC)
-    project = await session.execute(_KEY_SHARE_PROJECT, {"project_id": target.project_id})
-    if project.scalar_one_or_none() is None:
-        raise ProjectGoneError(str(target.project_id))
+    if not project_locked:
+        project = await session.execute(_KEY_SHARE_PROJECT, {"project_id": target.project_id})
+        if project.scalar_one_or_none() is None:
+            raise ProjectGoneError(str(target.project_id))
     prices = await load_price_book(session, target.org_id)
     # Validation, redaction and truncation are CPU-bound: off the event loop.
     outcome, spans = await run_in_threadpool(_prepare_batch, raw_spans, target, prices, now)
     if spans:
-        await write_spans(session, target.project_id, spans, target.source_key_id)
+        outcome.inserted = await write_spans(
+            session, target.project_id, spans, target.source_key_id
+        )
         if any(span.trace.metadata for span in spans):
             feature_used("metadata_set")
     outcome.accepted = len(spans)

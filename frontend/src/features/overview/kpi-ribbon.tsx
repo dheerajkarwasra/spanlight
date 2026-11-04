@@ -3,16 +3,18 @@ import { CircleDashed } from "lucide-react";
 
 import { LOWER_BOUND_REASON } from "@/components/cost-value";
 import { KpiCard } from "@/components/kpi-card";
-import type { SparklineTone } from "@/components/sparkline";
+import type { SparklineProps } from "@/components/sparkline";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { UNKNOWN_DASH_CLASS } from "@/components/unknown-value";
 import { useProjectParams } from "@/features/shell/project-context";
 import type { Budget, Health, OverviewMetrics } from "@/lib/api";
-import type { ResolvedRange } from "@/lib/time-range";
+import { formatCost, formatDuration, formatInteger } from "@/lib/format";
+import { bucketFor, type ResolvedRange } from "@/lib/time-range";
 import { cn } from "@/lib/utils";
 
 import { BudgetBar } from "./budget-bar";
-import type { ChartPoint } from "./chart-data";
+import { formatBucketRange, type ChartPoint } from "./chart-data";
 import {
   formatDeltaMagnitude,
   previousPeriodLabel,
@@ -22,9 +24,10 @@ import {
 } from "./kpis";
 import { SLOWEST_SORT } from "./use-overview-queries";
 
-const SPARKLINE_TONES: Partial<Record<RibbonKpiId, SparklineTone>> = {
-  calls: "calls",
-  p95: "latency",
+const SPARKLINES: Partial<Record<RibbonKpiId, Pick<SparklineProps, "tone" | "name" | "format">>> = {
+  calls: { tone: "calls", name: "Calls", format: formatInteger },
+  p95: { tone: "latency", name: "p95", format: formatDuration },
+  spend: { tone: "cost", name: "Spend", format: formatCost },
 };
 
 interface KpiRibbonProps {
@@ -80,11 +83,28 @@ export function KpiRibbon({
           ) : (
             <KpiCard
               label={card.label}
-              value={card.value === null ? null : <Value card={card} />}
+              value={
+                card.id === "doctor" && health === null ? (
+                  <UnavailableScore reason={card.unknownReason} />
+                ) : card.value === null ? null : (
+                  <Value card={card} />
+                )
+              }
               unknownReason={card.unknownReason}
-              unit={card.id === "doctor" ? "/100" : undefined}
+              unit={card.id === "doctor" && health !== null ? "/100" : undefined}
               chip={card.approximate ? "approx" : undefined}
-              denominator={card.denominator === null ? undefined : <Denominator card={card} />}
+              denominator={
+                card.id === "doctor" && health === null ? (
+                  // Figma 817:2676 puts "Unavailable" under the dash on phones; 817:2317 puts it
+                  // beside the dash and the reason under it from `sm` up.
+                  <>
+                    <span className="sm:hidden">{card.denominator}</span>
+                    <span className="max-sm:hidden">{card.unknownReason}</span>
+                  </>
+                ) : card.denominator === null ? undefined : (
+                  <Denominator card={card} />
+                )
+              }
               delta={
                 card.delta
                   ? {
@@ -96,7 +116,7 @@ export function KpiRibbon({
                     }
                   : undefined
               }
-              sparkline={sparklineOf(card)}
+              sparkline={sparklineOf(card, points, range, now)}
               href={links[card.id]}
             >
               {card.id === "spend" && budget ? <BudgetBar budget={budget} /> : null}
@@ -108,9 +128,25 @@ export function KpiRibbon({
   );
 }
 
-function sparklineOf(card: RibbonKpi) {
-  const tone = SPARKLINE_TONES[card.id];
-  return card.trend && tone ? { values: card.trend, tone } : undefined;
+function sparklineOf(
+  card: RibbonKpi,
+  points: ChartPoint[] | null,
+  range: ResolvedRange,
+  now: Date,
+): Omit<SparklineProps, "className"> | undefined {
+  const spec = SPARKLINES[card.id];
+  if (!card.trend || !points || !spec) {
+    return undefined;
+  }
+  const bucket = bucketFor(range.durationMs);
+  return {
+    ...spec,
+    data: points.map((point, index) => ({
+      label: formatBucketRange(point.bucketStart, bucket, now, point.partial),
+      value: card.trend?.[index] ?? null,
+      partial: point.partial,
+    })),
+  };
 }
 
 function KpiSkeleton() {
@@ -130,6 +166,24 @@ export function KpiRibbonSkeleton() {
         <KpiSkeleton key={index} />
       ))}
     </div>
+  );
+}
+
+/**
+ * The Doctor's failed score: the unknown dash (its reason is read, since the whole card is a link)
+ * and, from `sm` up, "Unavailable" beside it.
+ */
+function UnavailableScore({ reason }: { reason: string }) {
+  return (
+    <span title={reason}>
+      <span aria-hidden className={UNKNOWN_DASH_CLASS}>
+        —
+      </span>
+      <span className="sr-only">Unknown: {reason}</span>
+      <span className="ml-3 align-middle text-sm font-medium text-muted-foreground max-sm:hidden">
+        Unavailable
+      </span>
+    </span>
   );
 }
 

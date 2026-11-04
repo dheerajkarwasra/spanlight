@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.api.schemas.common import ApiModel, Money, Page
+from app.api.schemas.common import AggregateMetadata, ApiModel, Money, Page
 
 
 class WindowOut(BaseModel):
@@ -64,7 +64,7 @@ class ProviderHealthOut(BaseModel):
     incidents: list[IncidentRefOut]
 
 
-class HealthReportOut(BaseModel):
+class HealthReportOut(AggregateMetadata):
     window: WindowOut
     approximate: bool = Field(
         description="Whole hours were read from the hourly rollups, as of their last run."
@@ -73,9 +73,11 @@ class HealthReportOut(BaseModel):
     retry_cost_note: str
 
 
-class ErrorBucketOut(BaseModel):
+class ErrorBucketOut(AggregateMetadata):
     bucket_start: datetime
-    by_class: dict[str, int] = Field(description="Failed llm calls per class; zero classes absent.")
+    by_class: dict[str, int] | None = Field(
+        description="Failed llm calls per class; zero classes absent."
+    )
     approximate: bool = Field(description="The bucket holds an hour read from the hourly rollup.")
 
 

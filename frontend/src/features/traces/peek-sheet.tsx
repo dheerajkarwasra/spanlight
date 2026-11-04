@@ -13,7 +13,7 @@ import {
 import { Tooltip } from "@/components/ui/tooltip";
 import { useProjectParams } from "@/features/shell/project-context";
 
-import { rememberOpenedTrace } from "./last-traces-search";
+import { rememberOpenedTrace, useTraceHistoryScope } from "./last-traces-search";
 import { stepPeek } from "./peek-nav";
 import { PeekBody, StepButton } from "./peek-parts";
 import { useTraceQuery } from "./trace-queries";
@@ -42,6 +42,7 @@ export function PeekSheet({ peek }: { peek: Peek }) {
 }
 
 function PeekContent({ peek, peekId }: { peek: Peek; peekId: string }) {
+  const historyScope = useTraceHistoryScope();
   const { orgId, projectId } = useProjectParams();
   const router = useRouter();
   const traceQuery = useTraceQuery(peekId);
@@ -59,9 +60,9 @@ function PeekContent({ peek, peekId }: { peek: Peek; peekId: string }) {
   } as const;
 
   useEffect(() => {
-    rememberOpenedTrace(peekId);
+    rememberOpenedTrace(peekId, historyScope);
     traceRowLink(peekId)?.scrollIntoView({ block: "nearest" });
-  }, [peekId]);
+  }, [peekId, historyScope]);
 
   // On the sheet only (WCAG 2.1.4): the keys work while focus is inside it, never page-wide.
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {

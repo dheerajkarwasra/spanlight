@@ -16,6 +16,7 @@ import type {
 } from "@/lib/api";
 import { formatClock } from "@/lib/clock-format";
 import { formatInteger, parseMoney, pluralize } from "@/lib/format";
+import { SOURCE_REMOVED, sourceHistoryGone, sourceHistoryLabel } from "@/lib/freshness";
 import type { ResolvedRange } from "@/lib/time-range";
 
 /**
@@ -251,7 +252,21 @@ interface StripInput {
   billing: Billing;
 }
 
+/** Whether the page carries any stored row: a value, the none bucket or the other bucket. */
+export function attributionHasRows(page: AttributionResponse): boolean {
+  return page.items.length > 0 || page.none !== null || page.other !== null;
+}
+
+/** "Retained snapshot" / "Source history unavailable" when the page's source history is gone. */
+export function attributionHistory(page: AttributionResponse): string | null {
+  return sourceHistoryLabel(page.aggregate_status, attributionHasRows(page));
+}
+
 function freshness(page: AttributionResponse): string {
+  const history = attributionHistory(page);
+  if (history !== null) {
+    return history;
+  }
   if (page.source === "raw") {
     return "Live";
   }
@@ -271,6 +286,21 @@ function spendCards(input: StripInput): [StripCard, StripCard] {
       { ...base, ...failed, id: "unpriced", label: "Unpriced calls", value: null },
     ];
   }
+  if (sourceHistoryGone(page.aggregate_status, attributionHasRows(page))) {
+    // No row and no source history: the totals are unknown, not 0.
+    const unknown = { ...base, value: null, unknownReason: SOURCE_REMOVED };
+    return [
+      {
+        ...unknown,
+        id: "spend",
+        label: "Telemetry spend",
+        lowerBound: false,
+        href: "spend",
+        freshness: freshness(page),
+      },
+      { ...unknown, id: "unpriced", label: "Unpriced calls", href: "pricing" },
+    ];
+  }
   const { cost_usd: cost, unpriced_calls: unpriced, llm_calls: calls } = page.totals;
   return [
     {
@@ -279,7 +309,7 @@ function spendCards(input: StripInput): [StripCard, StripCard] {
       label: "Telemetry spend",
       value: cost === null ? null : formatUsd(cost),
       unknownReason: calls === 0 ? "No LLM calls in this window." : UNKNOWN_TOTAL_REASON,
-      lowerBound: unpriced > 0,
+      lowerBound: unpriced !== null && unpriced > 0,
       href: "spend",
       freshness: freshness(page),
     },
@@ -288,7 +318,10 @@ function spendCards(input: StripInput): [StripCard, StripCard] {
       id: "unpriced",
       label: "Unpriced calls",
       value: formatInteger(unpriced),
-      lines: [unpriced > 0 ? "Spend above is a lower bound" : "Every call has a price"],
+      lines:
+        unpriced === null
+          ? []
+          : [unpriced > 0 ? "Spend above is a lower bound" : "Every call has a price"],
       href: "pricing",
     },
   ];

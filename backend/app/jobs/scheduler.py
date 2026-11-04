@@ -6,7 +6,7 @@ enqueued exactly once.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +31,8 @@ PRUNE_GATEWAY_CACHE = PeriodicJob("prune_gateway_cache", timedelta(hours=1))
 DELIVER_NOTIFICATIONS = PeriodicJob("deliver_notifications", timedelta(seconds=30))
 # Rebuilds the last 48 hours of rollups; a run that fails is simply replaced by the next one.
 ROLLUP_HOURLY = PeriodicJob("rollup_hourly", timedelta(minutes=5))
+# Always observe backlog; the handler only consumes when explicitly enabled.
+REPAIR_AGGREGATES = PeriodicJob("repair_aggregates", timedelta(minutes=5), max_attempts=1)
 # A single attempt: retrying would spend real money on a failed run.
 DEMO_TRAFFIC = PeriodicJob("demo_traffic", timedelta(minutes=30), max_attempts=1)
 # Evaluates every enabled alert rule. A single attempt: the next pass a minute later is the retry.
@@ -67,9 +69,12 @@ REFRESH_USER_STATS_DEEP = PeriodicJob(
     max_attempts=1,
     run_after_offset=timedelta(hours=2),
 )
-# Recomputes yesterday's and today's attribution rollups; the first pass of each UTC day also
-# recomputes the six days before. A single attempt: the next pass is the retry.
+# Recomputes yesterday's and today's attribution rollups; deep work uses a durable dispatcher.
+# A single attempt: the next pass is the retry.
 REFRESH_ATTRIBUTION = PeriodicJob("refresh_attribution", timedelta(minutes=15), max_attempts=1)
+SCHEDULE_ATTRIBUTION_DAILY = PeriodicJob(
+    "schedule_attribution_daily", timedelta(minutes=15), max_attempts=1
+)
 # Reaps abandoned judge runs and, with EVALS_ENABLED, queues runs for recently ended traces.
 # Always scheduled: test and experiment runs reserve budget even with online evaluation off, so
 # their abandoned reservations must still be released. A single attempt: the next cycle's window
@@ -145,6 +150,7 @@ def periodic_jobs(settings: Settings) -> list[PeriodicJob]:
         PRUNE_GATEWAY_CACHE,
         DELIVER_NOTIFICATIONS,
         ROLLUP_HOURLY,
+        REPAIR_AGGREGATES,
         BACKUP_DATABASE,
         SAMPLE_FOR_EVALUATION,
         ROLLUP_COST_DAILY,
@@ -166,7 +172,7 @@ def periodic_jobs(settings: Settings) -> list[PeriodicJob]:
     if settings.billing_sources_enabled:
         jobs.append(FETCH_BILLING_SOURCES)
     if settings.attribution_enabled:
-        jobs.append(REFRESH_ATTRIBUTION)
+        jobs.extend((REFRESH_ATTRIBUTION, SCHEDULE_ATTRIBUTION_DAILY))
     if settings.provider_status_polling_enabled:
         jobs.append(POLL_PROVIDER_STATUS)
     if settings.review_selection_enabled:
@@ -180,12 +186,16 @@ async def schedule_periodic(db: AsyncSession, settings: Settings, now: datetime)
     """Enqueue this period's jobs if not already queued. Returns new job kinds. Commits."""
     created = []
     for job in periodic_jobs(settings):
+        scheduled_at = now.astimezone(UTC) if job == SCHEDULE_ATTRIBUTION_DAILY else now
         run_after = period_start(job, now) + job.run_after_offset if job.run_after_offset else None
         if await enqueue(
             db,
             job.kind,
+            payload={"scheduled_period": scheduled_at.date().isoformat()}
+            if job == SCHEDULE_ATTRIBUTION_DAILY
+            else None,
             run_after=run_after,
-            dedupe_key=period_key(job, now),
+            dedupe_key=period_key(job, scheduled_at),
             max_attempts=job.max_attempts,
         ):
             created.append(job.kind)

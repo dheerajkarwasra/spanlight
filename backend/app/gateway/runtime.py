@@ -25,8 +25,9 @@ from app.gateway import recorder
 from app.gateway.budget import BudgetGuard
 from app.gateway.cache import GatewayCache, PostgresGatewayCache
 from app.gateway.key_limits import GatewayLimiter
+from app.gateway.settle_helpers import join_settling
 
-# How long shutdown waits for queued spans before giving up on them (they are logged as lost).
+# Ordinary work allowance; cancellation cleanup is joined afterward while pools stay open.
 DRAIN_TIMEOUT_S = 10.0
 
 
@@ -35,12 +36,17 @@ class SpanRecorder(Protocol):
 
     async def drain(self, timeout_s: float | None = None) -> None: ...
 
+    async def shutdown(self, *, cancel_at: float, deadline: float) -> recorder.RecorderShutdown: ...
+
 
 class BackgroundRecorder:
     """The recorder of `app.gateway.recorder`: spans written by bounded background tasks."""
 
     async def drain(self, timeout_s: float | None = None) -> None:
         await recorder.drain(timeout_s=timeout_s)
+
+    async def shutdown(self, *, cancel_at: float, deadline: float) -> recorder.RecorderShutdown:
+        return await recorder.shutdown(cancel_at=cancel_at, deadline=deadline)
 
 
 @dataclass(frozen=True)
@@ -84,3 +90,17 @@ async def close_runtime(
     """Write the spans still queued, then close the upstream client. Engines stay open."""
     await runtime.recorder.drain(timeout_s=drain_timeout_s)
     await runtime.http.aclose()
+
+
+async def join_runtime(
+    runtime: GatewayRuntime, *, cancel_at: float, deadline: float
+) -> recorder.RecorderShutdown:
+    """Join internal producers after the server/worker has joined external producers.
+
+    Task15D owns that prerequisite and the absolute deadlines. A failed join forbids final
+    loss flushing and pool disposal. Joined uncertain writes permit known-loss flushing,
+    but accounting_complete remains false. This function does not unwind resources.
+    """
+    if not await join_settling(cancel_at=cancel_at, deadline=deadline):
+        return recorder.RecorderShutdown(joined=False, accounting_complete=False)
+    return await runtime.recorder.shutdown(cancel_at=cancel_at, deadline=deadline)

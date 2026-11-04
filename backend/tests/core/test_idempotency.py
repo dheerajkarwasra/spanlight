@@ -393,34 +393,22 @@ async def test_simultaneous_identical_requests_run_the_handler_once(
     assert row["status"] == 201
 
 
-async def test_an_in_flight_row_older_than_60_seconds_is_taken_over(
+async def test_an_old_in_flight_row_never_starts_another_operation(
     browser_factory: BrowserFactory, probe: Probe, session_factory: SessionFactory
 ) -> None:
     ada = await browser_factory("ada@example.com")
     waiting = {"mode": "wait"}
-    abandoned = asyncio.create_task(post(ada, body=waiting))
+    first = asyncio.create_task(post(ada, body=waiting))
     await probe.wait_until_entered(1)
     await backdate(session_factory, 61)
-    taken_over_before = metric("taken_over")
-
-    successor = asyncio.create_task(post(ada, body=waiting))
-    await probe.wait_until_entered(2)
-
-    assert metric("taken_over") == taken_over_before + 1
-    # The abandoned run finishes first. It no longer owns the row, so it stores nothing, and the
-    # key still reads as in flight on behalf of the run that took over.
-    probe.gate(1).set()
-    assert (await abandoned).json()["run"] == 1
-    still_running = await post(ada, body=waiting)
-    assert still_running.status_code == 409
-    assert (await stored_rows(session_factory))[0]["status"] is None
-
-    probe.gate(2).set()
-    assert (await successor).json()["run"] == 2
-    replayed = await post(ada, body=waiting)
-    assert replayed.headers["idempotent-replayed"] == "true"
-    assert replayed.json()["run"] == 2
-    assert probe.runs == 2
+    try:
+        second = await post(ada, body=waiting)
+        assert second.status_code == 409
+        assert second.json()["code"] == "IDEMPOTENCY_OUTCOME_UNKNOWN"
+        assert probe.runs == 1
+    finally:
+        probe.gate(1).set()
+        await first
 
 
 async def test_an_in_flight_row_younger_than_60_seconds_is_not_taken_over(
@@ -443,7 +431,7 @@ async def test_an_in_flight_row_younger_than_60_seconds_is_not_taken_over(
 # --- failures ----------------------------------------------------------------------------------
 
 
-async def test_a_handled_server_error_leaves_no_row_so_the_retry_runs(
+async def test_a_handled_server_error_preserves_the_operation_identity(
     browser_factory: BrowserFactory, probe: Probe, session_factory: SessionFactory
 ) -> None:
     ada = await browser_factory("ada@example.com")
@@ -452,14 +440,13 @@ async def test_a_handled_server_error_leaves_no_row_so_the_retry_runs(
     failed = await post(ada, body=flaky)
 
     assert failed.status_code == 503
-    assert await stored_rows(session_factory) == []
+    assert [row["status"] for row in await stored_rows(session_factory)] == [None]
     retried = await post(ada, body=flaky)
-    assert retried.status_code == 201
-    assert "idempotent-replayed" not in retried.headers
-    assert probe.runs == 2
+    assert retried.status_code == 409
+    assert probe.runs == 1
 
 
-async def test_an_unhandled_exception_leaves_no_row_so_the_retry_runs(
+async def test_an_unhandled_exception_preserves_the_operation_identity(
     browser_factory: BrowserFactory, probe: Probe, session_factory: SessionFactory
 ) -> None:
     ada = await browser_factory("ada@example.com")
@@ -467,10 +454,9 @@ async def test_an_unhandled_exception_leaves_no_row_so_the_retry_runs(
     with pytest.raises(RuntimeError, match="told to crash"):
         await post(ada, body={"mode": "crash"})
 
-    assert await stored_rows(session_factory) == []
-    with pytest.raises(RuntimeError, match="told to crash"):
-        await post(ada, body={"mode": "crash"})
-    assert probe.runs == 2
+    assert [row["status"] for row in await stored_rows(session_factory)] == [None]
+    assert (await post(ada, body={"mode": "crash"})).status_code == 409
+    assert probe.runs == 1
 
 
 async def test_a_client_error_is_stored_and_replayed(
@@ -507,7 +493,7 @@ async def test_a_request_the_route_rejects_as_invalid_is_stored_like_any_client_
     assert probe.runs == 0
 
 
-async def test_a_response_that_is_not_declared_json_cannot_be_stored_and_leaves_no_row(
+async def test_a_non_json_response_keeps_the_operation_identity(
     browser_factory: BrowserFactory, probe: Probe, session_factory: SessionFactory
 ) -> None:
     ada = await browser_factory("ada@example.com")
@@ -516,10 +502,10 @@ async def test_a_response_that_is_not_declared_json_cannot_be_stored_and_leaves_
     first = await post(ada, body=odd)
     second = await post(ada, body=odd)
 
-    assert (first.text, second.text) == ('{"looks": "like json"}',) * 2
-    assert "idempotent-replayed" not in second.headers
-    assert await stored_rows(session_factory) == []
-    assert probe.runs == 2
+    assert first.text == '{"looks": "like json"}'
+    assert second.status_code == 409
+    assert [row["status"] for row in await stored_rows(session_factory)] == [None]
+    assert probe.runs == 1
 
 
 async def test_a_different_body_is_a_mismatch_even_while_the_first_request_runs(
@@ -603,27 +589,22 @@ async def test_a_failure_to_store_the_answer_does_not_fail_the_request(
     response = await post(ada)
 
     assert response.status_code == 201
-    # The key stays in flight; a retry is refused until the minute is up and then runs again.
+    # The key stays in flight; elapsed time never authorizes another execution.
     assert [row["status"] for row in await stored_rows(session_factory)] == [None]
     assert (await post(ada)).status_code == 409
 
 
-async def test_a_failure_to_release_the_key_does_not_change_the_answer(
-    browser_factory: BrowserFactory, monkeypatch: pytest.MonkeyPatch
+async def test_a_server_error_keeps_its_original_response_and_pending_identity(
+    browser_factory: BrowserFactory, session_factory: SessionFactory
 ) -> None:
-    async def broken(*_: Any, **__: Any) -> bool:
-        raise ConnectionError("the database went away")
-
-    monkeypatch.setattr("app.core.idempotency.release", broken)
     ada = await browser_factory("ada@example.com")
-
     response = await post(ada, body={"mode": "unavailable"})
-
     assert response.status_code == 503
     assert response.json()["code"] == "PROBE_UNAVAILABLE"
+    assert [row["status"] for row in await stored_rows(session_factory)] == [None]
 
 
-async def test_a_bare_json_null_answer_cannot_be_kept_faithfully_and_leaves_no_row(
+async def test_a_bare_json_null_answer_keeps_the_operation_identity(
     browser_factory: BrowserFactory, probe: Probe, session_factory: SessionFactory
 ) -> None:
     ada = await browser_factory("ada@example.com")
@@ -631,9 +612,9 @@ async def test_a_bare_json_null_answer_cannot_be_kept_faithfully_and_leaves_no_r
     first = await post(ada, body={"mode": "null"})
     second = await post(ada, body={"mode": "null"})
 
-    assert (first.json(), second.json()) == (None, None)
-    assert "idempotent-replayed" not in second.headers
-    assert await stored_rows(session_factory) == []
+    assert first.json() is None
+    assert second.status_code == 409
+    assert [row["status"] for row in await stored_rows(session_factory)] == [None]
 
 
 # --- the key itself ----------------------------------------------------------------------------
@@ -889,6 +870,7 @@ async def test_the_store_runs_on_a_pool_of_its_own(
     )
 
 
+@pytest.mark.serial
 async def test_a_busy_idempotency_pool_fails_fast_and_leaves_other_requests_alone(
     tight_app: Any, probe: Probe
 ) -> None:
@@ -977,7 +959,7 @@ async def test_a_response_under_the_cap_is_kept_however_large(
     assert probe.runs == 1
 
 
-async def test_a_response_over_the_cap_is_delivered_whole_and_leaves_no_row(
+async def test_a_response_over_the_cap_is_delivered_and_keeps_its_operation_identity(
     browser_factory: BrowserFactory, probe: Probe, session_factory: SessionFactory
 ) -> None:
     ada = await browser_factory("ada@example.com")
@@ -985,10 +967,10 @@ async def test_a_response_over_the_cap_is_delivered_whole_and_leaves_no_row(
     first = await post(ada, body={"mode": "too_large"})
     second = await post(ada, body={"mode": "too_large"})
 
-    assert len(first.json()["blob"]) == len(second.json()["blob"]) == MAX_KEPT_BODY_BYTES
-    assert "idempotent-replayed" not in second.headers
-    assert await stored_rows(session_factory) == []
-    assert probe.runs == 2
+    assert len(first.json()["blob"]) == MAX_KEPT_BODY_BYTES
+    assert second.status_code == 409
+    assert [row["status"] for row in await stored_rows(session_factory)] == [None]
+    assert probe.runs == 1
 
 
 async def test_a_response_too_deeply_nested_to_parse_is_delivered_and_not_kept(
@@ -1000,7 +982,7 @@ async def test_a_response_too_deeply_nested_to_parse_is_delivered_and_not_kept(
 
     assert response.status_code == 201
     assert len(response.content) == 200_000
-    assert await stored_rows(session_factory) == []
+    assert [row["status"] for row in await stored_rows(session_factory)] == [None]
 
 
 @pytest.mark.parametrize("mode", ["stream_text", "stream_503"])
@@ -1027,7 +1009,7 @@ async def test_a_response_that_cannot_be_kept_is_passed_on_as_it_comes(
     assert first_chunk_was_early == [True]
     bodies = [m["body"] for m in messages if m["type"] == "http.response.body"]
     assert b"".join(bodies) == b"firstsecond"
-    assert await stored_rows(session_factory) == []
+    assert [row["status"] for row in await stored_rows(session_factory)] == [None]
 
 
 async def test_a_message_that_is_not_a_body_ends_the_hold_and_is_delivered(
@@ -1038,33 +1020,25 @@ async def test_a_message_that_is_not_a_body_ends_the_hold_and_is_delivered(
     messages = await call_asgi(app, workspace.api_key, b'{"mode": "pathsend"}')
 
     assert [m["type"] for m in messages] == ["http.response.start", "http.response.pathsend"]
-    assert await stored_rows(session_factory) == []
+    assert [row["status"] for row in await stored_rows(session_factory)] == [None]
 
 
-async def test_simultaneous_requests_after_an_abandoned_one_start_exactly_one_new_run(
+async def test_simultaneous_retries_of_an_unknown_operation_never_start_new_work(
     browser_factory: BrowserFactory, probe: Probe, session_factory: SessionFactory
 ) -> None:
     ada = await browser_factory("ada@example.com")
     waiting = {"mode": "wait"}
-    abandoned = asyncio.create_task(post(ada, body=waiting))
+    first = asyncio.create_task(post(ada, body=waiting))
     await probe.wait_until_entered(1)
     await backdate(session_factory, 61)
-
-    contenders = [asyncio.create_task(post(ada, body=waiting)) for _ in range(4)]
-    await probe.wait_until_entered(2)
-
-    refused: list[int] = []
-    for finished in asyncio.as_completed(contenders):
-        refused.append((await asyncio.wait_for(finished, timeout=5)).status_code)
-        if len(refused) == 3:
-            break
-    assert refused == [409, 409, 409]
-    probe.gate(1).set()
-    probe.gate(2).set()
-    results = await asyncio.gather(abandoned, *contenders)
-
-    assert sorted(response.status_code for response in results[1:]) == [201, 409, 409, 409]
-    assert probe.runs == 2
+    try:
+        results = await asyncio.gather(*(post(ada, body=waiting) for _ in range(4)))
+        assert [response.status_code for response in results] == [409, 409, 409, 409]
+        assert {response.json()["code"] for response in results} == {"IDEMPOTENCY_OUTCOME_UNKNOWN"}
+        assert probe.runs == 1
+    finally:
+        probe.gate(1).set()
+        await first
 
 
 # --- fingerprint -------------------------------------------------------------------------------
@@ -1093,8 +1067,11 @@ def test_the_fingerprint_of_a_body_that_is_not_json_is_its_bytes() -> None:
 # --- wiring ------------------------------------------------------------------------------------
 
 
-async def test_the_dependency_refuses_to_run_without_the_middleware() -> None:
+async def test_the_dependency_refuses_to_run_without_the_middleware(
+    session_factory: SessionFactory,
+) -> None:
     bare = FastAPI()
+    bare.state.session_factory = session_factory
     bare.dependency_overrides[current_principal] = lambda: ApiKeyPrincipal(
         key_id=uuid.uuid4(), project_id=uuid.uuid4(), scopes=frozenset()
     )

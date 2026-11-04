@@ -15,10 +15,12 @@ from datetime import datetime
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models import Membership, MembershipRole, User
 from app.db.models.billing import BillingFetchRun, BillingSource
 from app.db.rls import bypass_rls
 from app.reconciliation.runs import RUN_IN_PROGRESS_WINDOW, STALE_RUN_ERROR
 from app.reconciliation.source_rules import PROVIDER_OF_KIND
+from app.services.demo import DEMO_USER_EMAIL
 
 # Projects with an LLM span started in [since, until).
 _ACTIVE_PROJECTS = text(
@@ -58,6 +60,23 @@ async def enabled_api_sources(db: AsyncSession) -> list[tuple[uuid.UUID, datetim
         .order_by(BillingSource.id)
     )
     return [(source_id, last_success_at) for source_id, last_success_at in rows]
+
+
+async def admin_recipients(db: AsyncSession, org_id: uuid.UUID) -> list[str]:
+    """The addresses of the organization's owners and admins with a verified email, sorted;
+    the shared demo account is never mailed. For the bypass alert (fetch job) only."""
+    rows = await db.scalars(
+        select(User.email)
+        .join(Membership, Membership.user_id == User.id)
+        .where(
+            Membership.org_id == org_id,
+            Membership.role.in_([MembershipRole.OWNER, MembershipRole.ADMIN]),
+            User.email_verified_at.is_not(None),
+            func.lower(User.email) != DEMO_USER_EMAIL,
+        )
+        .order_by(User.email)
+    )
+    return [str(address) for address in rows]
 
 
 async def source_for_job(db: AsyncSession, source_id: uuid.UUID) -> BillingSource | None:

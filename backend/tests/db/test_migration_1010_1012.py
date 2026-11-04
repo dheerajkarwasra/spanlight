@@ -5,7 +5,7 @@
 `datasets.locked_at` and the `dataset.lock` / `dataset.unlock` audit actions. 1012 indexes
 `dataset_items.source_trace_id`. Each can be undone.
 
-Every test here leaves the session's shared database at head.
+Historical round trips use an owned database at the pinned revision.
 """
 
 import json
@@ -15,8 +15,8 @@ from collections.abc import Iterator
 import psycopg
 import pytest
 
-from app.db.migrations import downgrade_to, head_revision, upgrade_to_head
 from tests.db import schema_probe as probe
+from tests.db.migration_support import downgrade_to, expected_revision, upgrade_to_target
 
 BELOW = "1009"
 ORG_ID = uuid.UUID("10000000-0000-4000-8000-000000001010")
@@ -35,14 +35,14 @@ SOURCE_TRACE_INDEX = "dataset_items_source_trace_idx"
 
 
 @pytest.fixture
-def back_to_head(app_database_url: str) -> Iterator[None]:
+def back_to_target(migration_database_url: str) -> Iterator[None]:
     yield
-    upgrade_to_head(app_database_url)
-    assert probe.current_revision(app_database_url) == head_revision()
+    upgrade_to_target(migration_database_url)
+    assert probe.current_revision(migration_database_url) == expected_revision()
 
 
 def _assert_at_head(database_url: str) -> None:
-    assert probe.current_revision(database_url) == head_revision()
+    assert probe.current_revision(database_url) == expected_revision()
     items = probe.columns(database_url, "experiment_items")
     assert {name: items.get(name) for name in COPY_COLUMNS} == COPY_COLUMNS
     assert probe.columns(database_url, "datasets")["locked_at"][:2] == ("timestamptz", "YES")
@@ -62,12 +62,15 @@ def _assert_at_1009(database_url: str) -> None:
     assert SOURCE_TRACE_INDEX not in probe.indexes(database_url, "dataset_items")
 
 
-def test_migrations_1010_to_1012_round_trip(app_database_url: str, back_to_head: None) -> None:
-    _assert_at_head(app_database_url)
-    downgrade_to(app_database_url, BELOW)
-    _assert_at_1009(app_database_url)
-    upgrade_to_head(app_database_url)
-    _assert_at_head(app_database_url)
+@pytest.mark.migration_revision("1012")
+def test_migrations_1010_to_1012_round_trip(
+    migration_database_url: str, back_to_target: None
+) -> None:
+    _assert_at_head(migration_database_url)
+    downgrade_to(migration_database_url, BELOW)
+    _assert_at_1009(migration_database_url)
+    upgrade_to_target(migration_database_url)
+    _assert_at_head(migration_database_url)
 
 
 def _seed_run(connection: psycopg.Connection) -> None:
@@ -124,8 +127,9 @@ def test_copy_check_refuses_a_partial_copy() -> None:
         _insert_item(connection, input={"q": "hi"}, expected_output="hello", item_metadata={})
 
 
+@pytest.mark.migration_revision("1012")
 def test_audit_check_accepts_dataset_lock_actions(
-    app_database_url: str, back_to_head: None
+    migration_database_url: str, back_to_target: None
 ) -> None:
     with probe.admin() as connection:
         probe.seed_project(connection, ORG_ID, PROJECT_ID)
@@ -136,9 +140,9 @@ def test_audit_check_accepts_dataset_lock_actions(
                 (ORG_ID, action),
             )
 
-    downgrade_to(app_database_url, "1010")
+    downgrade_to(migration_database_url, "1010")
     remaining = probe.query(
-        app_database_url,
+        migration_database_url,
         "SELECT count(*) FROM audit_events WHERE action IN ('dataset.lock', 'dataset.unlock')",
     )
     assert remaining == [(0,)]

@@ -24,7 +24,7 @@ export function useUnpricedModelsQuery() {
   });
 }
 
-/** The organization's own prices (readable by every member, changed with `gateway:write`). */
+/** The organization's own prices (readable by every member, changed with `prices:override`). */
 export function usePriceOverridesQuery() {
   const { orgId } = useProjectParams();
   return useQuery({

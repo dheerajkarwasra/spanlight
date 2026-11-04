@@ -2,6 +2,7 @@
 import type { Span } from "@/lib/api";
 
 import type { SpanNode } from "./span-tree";
+import { walkSpanTree } from "./span-traversal";
 
 /** Characters of text searched per payload; big payloads are cut, not scanned whole. */
 const PAYLOAD_SEARCH_CHARS = 20_000;
@@ -47,8 +48,15 @@ export function matchSpans(spans: readonly Span[], query: string): Set<string> {
 
 /** The forest cut down to spans that pass `keep`, plus their ancestors as context. */
 export function filterTree(roots: readonly SpanNode[], keep: (span: Span) => boolean): SpanNode[] {
-  return roots.flatMap((node) => {
-    const children = filterTree(node.children, keep);
-    return keep(node.span) || children.length > 0 ? [{ ...node, children }] : [];
-  });
+  const kept = new Map<SpanNode, SpanNode>();
+  const keptChildren = (nodes: readonly SpanNode[]) =>
+    nodes.flatMap((node) => {
+      const found = kept.get(node);
+      return found ? [found] : [];
+    });
+  for (const { node } of Array.from(walkSpanTree(roots)).reverse()) {
+    const children = keptChildren(node.children);
+    if (keep(node.span) || children.length > 0) kept.set(node, { ...node, children });
+  }
+  return keptChildren(roots);
 }

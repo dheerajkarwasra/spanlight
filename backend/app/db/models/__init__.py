@@ -8,6 +8,8 @@ and never from a domain module. Importing the package registers every table on
 `Base.metadata`, which Alembic autogenerate relies on.
 """
 
+from app.db.models.aggregate_dirty import AggregateDirtyHour, AggregateDirtyShard
+from app.db.models.aggregate_job_progress import AggregateJobProgress
 from app.db.models.alerts import AlertChannel, AlertChannelKind, AlertEvent, AlertRule, AlertState
 from app.db.models.annotations import AnnotationQueue, AnnotationQueueItem
 from app.db.models.attribution import AttributionRollupDaily
@@ -34,7 +36,15 @@ from app.db.models.billing import (
     SourceStatus,
     TokenType,
 )
-from app.db.models.budgets import Budget, BudgetCounter, BudgetReservation
+from app.db.models.budgets import (
+    Budget,
+    BudgetBucketDelta,
+    BudgetBucketSnapshot,
+    BudgetBucketVersion,
+    BudgetCounter,
+    BudgetDeletedSpan,
+    BudgetReservation,
+)
 from app.db.models.datasets import Dataset, DatasetItem
 from app.db.models.end_users import UserStatsDaily
 from app.db.models.evals import (
@@ -95,8 +105,10 @@ from app.db.models.projects import ApiKey, Project
 from app.db.models.prompts import Prompt, PromptKind, PromptLabel, PromptVersion
 from app.db.models.provider_status import ProviderIncident, ProviderStatusSource
 from app.db.models.replays import ReplayFidelity, ReplayRun, ReplayStatus
+from app.db.models.retention_progress import RetentionProgress
 from app.db.models.review import ReviewPolicy, ReviewSelection
 from app.db.models.rollups import (
+    AggregateIncompleteHour,
     CostRollupDaily,
     ErrorRollupHourly,
     SpanRollupHourly,
@@ -104,9 +116,17 @@ from app.db.models.rollups import (
 )
 from app.db.models.scores import Score, ScoreConfig
 from app.db.models.telemetry import Span, SpanKind, SpanStatus, Trace
-from app.db.models.telemetry_losses import SdkExporterCounter, TelemetryLossHourly
+from app.db.models.telemetry_losses import (
+    IngestQuotaDay,
+    SdkExporterCounter,
+    TelemetryLossHourly,
+)
 
 __all__ = [
+    "AggregateDirtyHour",
+    "AggregateDirtyShard",
+    "AggregateIncompleteHour",
+    "AggregateJobProgress",
     "AlertChannel",
     "AlertChannelKind",
     "AlertEvent",
@@ -127,7 +147,11 @@ __all__ = [
     "BillingSourceKind",
     "BillingSourceProject",
     "Budget",
+    "BudgetBucketDelta",
+    "BudgetBucketSnapshot",
+    "BudgetBucketVersion",
     "BudgetCounter",
+    "BudgetDeletedSpan",
     "BudgetReservation",
     "CostRollupDaily",
     "Dataset",
@@ -159,6 +183,7 @@ __all__ = [
     "GatewayRoute",
     "GatewayRouteVersion",
     "IdempotencyKey",
+    "IngestQuotaDay",
     "Insight",
     "InsightExplanation",
     "InsightFeedback",
@@ -191,6 +216,7 @@ __all__ = [
     "ReplayFidelity",
     "ReplayRun",
     "ReplayStatus",
+    "RetentionProgress",
     "ReviewPolicy",
     "ReviewSelection",
     "RunStatus",

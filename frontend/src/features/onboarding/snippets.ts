@@ -12,6 +12,8 @@ import {
 } from "@/features/gateway";
 import type { GatewayMode } from "@/lib/api";
 
+import { testTraceBody } from "./test-trace";
+
 export const API_KEY_PLACEHOLDER = "<YOUR_API_KEY>";
 export const DEFAULT_ENVIRONMENT = "production";
 
@@ -197,10 +199,17 @@ export OTEL_SERVICE_NAME="my-llm-app"`,
 }
 
 function curlSnippet(apiKey: string, host: string, environment: string): Snippet {
+  const body = testTraceBody(
+    { traceId: "$TRACE_ID", spanId: "$SPAN_ID" },
+    environment,
+    new Date(0),
+  );
+  body.spans[0].start_time = "$NOW";
+  body.spans[0].end_time = "$NOW";
   return {
     id: "curl",
     label: "curl",
-    description: "Send one LLM span over plain HTTP to check the connection end to end.",
+    description: "Verify ingestion with a test trace, then instrument your app.",
     blocks: [
       {
         title: "Send a test span",
@@ -214,24 +223,7 @@ curl -sS -X POST "${host}/v1/traces" \\
   -H "Authorization: Bearer ${apiKey}" \\
   -H "Content-Type: application/json" \\
   --data-binary @- <<EOF
-{
-  "spans": [{
-    "trace_id": "$TRACE_ID",
-    "span_id": "$SPAN_ID",
-    "parent_span_id": null,
-    "name": "chat gpt-4o-mini",
-    "kind": "llm",
-    "status": "ok",
-    "start_time": "$NOW",
-    "end_time": "$NOW",
-    "provider": "openai",
-    "model": "gpt-4o-mini",
-    "usage": {"input_tokens": 12, "output_tokens": 40, "cached_tokens": 0},
-    "input": {"messages": [{"role": "user", "content": "Say hello"}]},
-    "output": {"role": "assistant", "content": "Hello"},
-    "trace": {"name": "hello-world", "environment": "${environment}"}
-  }]
-}
+${JSON.stringify(body, null, 2)}
 EOF`,
       },
     ],

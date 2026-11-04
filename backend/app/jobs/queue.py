@@ -84,10 +84,17 @@ def job_may_still_run(dedupe_key: ColumnElement[str]) -> ColumnElement[bool]:
 
 _EXPIRE_EXHAUSTED = text(
     """
+    WITH exhausted AS (
+        SELECT id FROM jobs
+        WHERE status = 'running' AND lease_until < now() AND attempts >= max_attempts
+          AND (:unrestricted OR kind = ANY (CAST(:supported_kinds AS text[])))
+        FOR UPDATE SKIP LOCKED
+    )
     UPDATE jobs
     SET status = 'failed', lease_until = NULL,
         last_error = coalesce(last_error, 'lease expired after the final attempt')
-    WHERE status = 'running' AND lease_until < now() AND attempts >= max_attempts
+    WHERE id IN (SELECT id FROM exhausted)
+      AND status = 'running' AND lease_until < now() AND attempts >= max_attempts
     """
 )
 
@@ -104,6 +111,7 @@ _CLAIM = text(
         WHERE ((status = 'queued' AND run_after <= now())
            OR (status = 'running' AND lease_until < now() AND attempts < max_attempts))
           AND kind <> ALL (CAST(:excluded_kinds AS text[]))
+          AND (:unrestricted OR kind = ANY (CAST(:supported_kinds AS text[])))
         ORDER BY run_after, id
         LIMIT 1
         FOR UPDATE SKIP LOCKED
@@ -118,15 +126,24 @@ async def claim_next(
     *,
     lease: timedelta = DEFAULT_LEASE,
     exclude_kinds: Collection[str] = (),
+    supported_kinds: Collection[str] | None = None,
 ) -> ClaimedJob | None:
     """Claim the next runnable job (or one whose lease expired). Commits.
 
     Jobs of the kinds in `exclude_kinds` are left for later (or for another worker).
+    `supported_kinds` restricts both claiming and exhausted-lease maintenance; an empty
+    collection leaves every job untouched. `None` is unrestricted mode for direct callers.
+    Workers must always supply their registered handler keys.
     """
-    await db.execute(_EXPIRE_EXHAUSTED)
+    supported = {
+        "unrestricted": supported_kinds is None,
+        "supported_kinds": sorted(supported_kinds) if supported_kinds is not None else [],
+    }
+    await db.execute(_EXPIRE_EXHAUSTED, supported)
     row = (
         await db.execute(
-            _CLAIM, {"lease": _interval(lease), "excluded_kinds": sorted(exclude_kinds)}
+            _CLAIM,
+            {**supported, "lease": _interval(lease), "excluded_kinds": sorted(exclude_kinds)},
         )
     ).one_or_none()
     await db.commit()

@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -26,6 +26,8 @@ interface AuthLayoutProps {
   description?: ReactNode;
   /** A status tile above the headline (see `AuthStatusTile`). Phones then get a smaller headline. */
   status?: ReactNode;
+  /** Makes the headline focusable, for a page that moves focus to it when its state changes. */
+  headingRef?: Ref<HTMLHeadingElement>;
   children: ReactNode;
 }
 
@@ -34,7 +36,14 @@ interface AuthLayoutProps {
  * form column on a neutral canvas, and on desktop the ink showcase panel with one drawn trace.
  * Phones get the form only.
  */
-export function AuthLayout({ title, accent, description, status, children }: AuthLayoutProps) {
+export function AuthLayout({
+  title,
+  accent,
+  description,
+  status,
+  headingRef,
+  children,
+}: AuthLayoutProps) {
   return (
     <div className="relative flex min-h-dvh overflow-clip bg-canvas lg:p-3">
       <div className="relative flex min-w-0 flex-1 flex-col px-6 pt-5 pb-10 lg:px-9 lg:pt-6">
@@ -43,8 +52,10 @@ export function AuthLayout({ title, accent, description, status, children }: Aut
           {status}
           <div className="flex flex-col gap-3">
             <h1
+              ref={headingRef}
+              tabIndex={headingRef ? -1 : undefined}
               className={cn(
-                "text-display text-foreground",
+                "text-display text-foreground outline-none",
                 status &&
                   "text-[2rem] leading-[1.04] font-extrabold tracking-[-0.04em] sm:text-display",
               )}

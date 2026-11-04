@@ -5,6 +5,7 @@
 import type { Span, SpanKind } from "@/lib/api";
 
 import { timeOf } from "./span-timeline";
+import { walkSpanTree } from "./span-traversal";
 
 export interface SpanNode {
   span: Span;
@@ -15,12 +16,15 @@ export interface SpanNode {
   attempts?: SpanNode[];
 }
 
-function compareSpans(a: Span, b: Span): number {
-  const byStart = timeOf(a.started_at) - timeOf(b.started_at);
-  if (byStart !== 0) {
-    return byStart;
-  }
-  return a.span_id.localeCompare(b.span_id);
+/**
+ * Spans ordered by start time, then span id. Each timestamp is parsed once: parsing in the
+ * comparator cost a 5,000-span trace about 100,000 date parses.
+ */
+function sortBySpanStart(spans: readonly Span[]): Span[] {
+  return spans
+    .map((span) => ({ span, start: timeOf(span.started_at) }))
+    .sort((a, b) => a.start - b.start || a.span.span_id.localeCompare(b.span.span_id))
+    .map(({ span }) => span);
 }
 
 /**
@@ -52,20 +56,30 @@ export function buildSpanTree(spans: readonly Span[]): SpanNode[] {
   const placed = new Set<string>();
 
   function toNode(span: Span): SpanNode {
-    placed.add(span.span_id);
-    const children = (childrenByParent.get(span.span_id) ?? [])
-      .filter((child) => !placed.has(child.span_id))
-      .sort(compareSpans)
-      .map(toNode);
-    const orphaned = span.parent_span_id !== null && !byId.has(span.parent_span_id);
-    return { span, children, orphaned };
+    const root: SpanNode = { span, children: [], orphaned: false };
+    const stack = [root];
+    while (stack.length > 0) {
+      const node = stack.pop();
+      if (!node) continue;
+      if (placed.has(node.span.span_id)) continue;
+      placed.add(node.span.span_id);
+      node.orphaned = node.span.parent_span_id !== null && !byId.has(node.span.parent_span_id);
+      const children = sortBySpanStart(childrenByParent.get(node.span.span_id) ?? []);
+      for (const child of children) {
+        if (!placed.has(child.span_id)) {
+          node.children.push({ span: child, children: [], orphaned: false });
+        }
+      }
+      for (const child of node.children.toReversed()) stack.push(child);
+    }
+    return root;
   }
 
-  const roots = rootSpans.sort(compareSpans).map(toNode);
+  const roots = sortBySpanStart(rootSpans).map(toNode);
 
   // Spans caught in a parent cycle are unreachable from any root: surface them as roots.
   const unplaced = [...byId.values()].filter((span) => !placed.has(span.span_id));
-  for (const span of unplaced.sort(compareSpans)) {
+  for (const span of sortBySpanStart(unplaced)) {
     if (!placed.has(span.span_id)) {
       // Its parent is in the trace, just unreachable: a root, but not an orphan.
       roots.push(toNode(span));
@@ -88,43 +102,20 @@ export function flattenSpanTree(
   roots: readonly SpanNode[],
   collapsed: ReadonlySet<string>,
 ): SpanRow[] {
-  const rows: SpanRow[] = [];
-
-  function visit(node: SpanNode, depth: number): void {
-    const expanded = !collapsed.has(node.span.span_id);
-    rows.push({
-      span: node.span,
-      depth,
-      hasChildren: node.children.length > 0,
-      expanded,
-      orphaned: node.orphaned,
-    });
-    if (!expanded) {
-      return;
-    }
-    for (const child of node.children) {
-      visit(child, depth + 1);
-    }
-  }
-
-  for (const root of roots) {
-    visit(root, 0);
-  }
-  return rows;
+  return Array.from(walkSpanTree(roots, collapsed), ({ node, depth }) => ({
+    span: node.span,
+    depth,
+    hasChildren: node.children.length > 0,
+    expanded: !collapsed.has(node.span.span_id),
+    orphaned: node.orphaned,
+  }));
 }
 
 /** Every span id that has children — handy for "collapse all". */
 export function parentSpanIds(roots: readonly SpanNode[]): string[] {
-  const ids: string[] = [];
-  const stack = [...roots];
-  while (stack.length > 0) {
-    const node = stack.pop();
-    if (node && node.children.length > 0) {
-      ids.push(node.span.span_id);
-      stack.push(...node.children);
-    }
-  }
-  return ids;
+  return Array.from(walkSpanTree(roots))
+    .filter(({ node }) => node.children.length > 0)
+    .map(({ node }) => node.span.span_id);
 }
 
 /**
@@ -133,18 +124,22 @@ export function parentSpanIds(roots: readonly SpanNode[]): string[] {
  */
 export function ancestorIds(roots: readonly SpanNode[], spanIds: ReadonlySet<string>): Set<string> {
   const ancestors = new Set<string>();
-  function visit(node: SpanNode, path: string[]): void {
-    if (spanIds.has(node.span.span_id)) {
-      path.forEach((id) => ancestors.add(id));
-    }
-    const next = [...path, node.span.span_id];
-    node.children.forEach((child) => {
-      visit(child, next);
-    });
+  if (spanIds.size === 0) {
+    return ancestors;
   }
-  roots.forEach((root) => {
-    visit(root, []);
-  });
+  const parents = new Map<string, string | null>();
+  const path: string[] = [];
+  for (const { node, depth } of walkSpanTree(roots)) {
+    parents.set(node.span.span_id, depth === 0 ? null : (path[depth - 1] ?? null));
+    path[depth] = node.span.span_id;
+  }
+  for (const id of spanIds) {
+    let parent = parents.get(id);
+    while (parent !== null && parent !== undefined && !ancestors.has(parent)) {
+      ancestors.add(parent);
+      parent = parents.get(parent);
+    }
+  }
   return ancestors;
 }
 
@@ -175,17 +170,12 @@ export const AUTO_COLLAPSE_SPANS = 100;
 /** Parents whose subtree (the parent included) has no failed span: the ones safe to fold away. */
 export function healthyParentIds(roots: readonly SpanNode[]): Set<string> {
   const healthy = new Set<string>();
-  function visit(node: SpanNode): boolean {
-    let ok = node.span.status !== "error";
-    for (const child of node.children) {
-      ok = visit(child) && ok;
-    }
-    if (ok && node.children.length > 0) {
-      healthy.add(node.span.span_id);
-    }
-    return ok;
+  const failed = new Set<SpanNode>();
+  for (const { node } of Array.from(walkSpanTree(roots)).reverse()) {
+    const ok = node.span.status !== "error" && !node.children.some((child) => failed.has(child));
+    if (!ok) failed.add(node);
+    else if (node.children.length > 0) healthy.add(node.span.span_id);
   }
-  roots.forEach(visit);
   return healthy;
 }
 
@@ -204,43 +194,26 @@ export interface TreeItemMeta {
  */
 export function treeItemMeta(roots: readonly SpanNode[]): Map<string, TreeItemMeta> {
   const meta = new Map<string, TreeItemMeta>();
-  function visit(siblings: readonly SpanNode[]): number {
-    let total = 0;
-    siblings.forEach((node, index) => {
-      const descendants = visit(node.children);
-      meta.set(node.span.span_id, { posInSet: index + 1, setSize: siblings.length, descendants });
-      total += descendants + 1;
-    });
-    return total;
+  for (const { node, posInSet, setSize } of Array.from(walkSpanTree(roots)).reverse()) {
+    let descendants = 0;
+    for (const child of node.children)
+      descendants += 1 + (meta.get(child.span.span_id)?.descendants ?? 0);
+    meta.set(node.span.span_id, { posInSet, setSize, descendants });
   }
-  visit(roots);
   return meta;
 }
 
 /** The node of `spanId` anywhere in the forest, or null. */
 export function findSpanNode(roots: readonly SpanNode[], spanId: string): SpanNode | null {
-  const stack = [...roots];
-  while (stack.length > 0) {
-    const node = stack.pop();
-    if (node?.span.span_id === spanId) {
-      return node;
-    }
-    if (node) {
-      stack.push(...node.children);
-    }
+  for (const { node } of walkSpanTree(roots)) {
+    if (node.span.span_id === spanId) return node;
   }
   return null;
 }
 
 /** Spans in depth-first order (siblings by start time), as the waterfall lists them. */
 function depthFirstSpans(roots: readonly SpanNode[]): Span[] {
-  const spans: Span[] = [];
-  const visit = (node: SpanNode) => {
-    spans.push(node.span);
-    node.children.forEach(visit);
-  };
-  roots.forEach(visit);
-  return spans;
+  return Array.from(walkSpanTree(roots), ({ node }) => node.span);
 }
 
 /**

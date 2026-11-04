@@ -208,4 +208,18 @@ describe("Spend page", () => {
     const outside = within(screen.getByRole("region", { name: "Outside the list" }));
     expect(outside.queryByRole("button", { name: /^Actions for/ })).toBeNull();
   });
+
+  it("keeps the SDK guidance for an unset key whose none bucket is a retained snapshot", async () => {
+    mockAttribution(() =>
+      Promise.resolve(response({ aggregate_status: "unavailable", items: [], none: bucket() })),
+    );
+    renderApp(`${PAGE}?group_by=metadata&key=customer_id&range=30d`);
+
+    expect(
+      await screen.findByText("No traces carried customer_id in this window"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Set it on each trace from the SDK/)).toBeInTheDocument();
+    expect(screen.getAllByText("Retained snapshot").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Source history unavailable")).not.toBeInTheDocument();
+  });
 });

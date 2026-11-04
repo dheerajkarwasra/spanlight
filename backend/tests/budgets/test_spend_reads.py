@@ -17,8 +17,7 @@ from sqlalchemy import text
 from app.budgets.periods import period_start
 from app.budgets.types import BudgetPeriod
 from app.db.rls import bypass_rls
-from app.rollups.jobs import roll_up_all
-from tests.budgets.clock import next_pass
+from tests.budgets.clock import catch_up, next_pass
 from tests.budgets.support import (
     PRICED_MODEL,
     BudgetRef,
@@ -26,10 +25,13 @@ from tests.budgets.support import (
     create_budget,
     evaluate,
     events_of,
+    hourly_status,
     ingest_spend,
     outbox_events,
+    repair_aggregates,
     state_of,
 )
+from tests.rollups.recent_support import run_recent
 
 UNPRICED_MODEL = "house-model-1"  # not in the price book
 # $0.40 per million input tokens of `PRICED_MODEL`: 1,000 tokens cost $0.0004.
@@ -71,6 +73,7 @@ async def ingest_points(
     """One span at each point (from the day's start), the n-th of 2^(first_power + n) units;
     returns each one's cost, as priced if `model` is."""
     start = day_start(world)
+    catch_up(world.clock, start + PASS_AT - timedelta(seconds=30))  # where the pass runs from
     costs = []
     for power, point in enumerate(points, start=first_power):
         await ingest_spend(world, start=start + point, model=model, tokens=UNIT_TOKENS * 2**power)
@@ -78,14 +81,21 @@ async def ingest_points(
     return costs
 
 
-async def roll_up_and_pass(world: BudgetWorld) -> datetime:
-    """Roll up every hour of the day (the current one too, as the job does), then run the pass
+async def roll_up_and_pass(world: BudgetWorld, budget: BudgetRef) -> datetime:
+    """Refresh ordinary rollups, prove the pending pass is unknown, then repair and evaluate
     at 12:31; returns its time."""
     pass_at = day_start(world) + PASS_AT
     world.clock.advance((pass_at - timedelta(seconds=30) - world.clock.wall()).total_seconds())
     assert next_pass(world.clock) == pass_at
-    projects, _ = await roll_up_all(world.sessions, now=pass_at)
-    assert projects == 1
+    await run_recent(world.sessions, world.settings, pass_at)
+    start = day_start(world)
+    assert await hourly_status(world, start, start + SPLIT_AT) == "pending"
+    await evaluate(world, pass_at - timedelta(minutes=1))
+    pending = await state_of(world, budget)
+    assert pending is not None and pending["last_value"] is None
+    assert await api_spent(world, budget) is None
+    await repair_aggregates(world)
+    assert await hourly_status(world, start, start + SPLIT_AT) == "complete"
     await evaluate(world, pass_at)
     return pass_at
 
@@ -130,7 +140,7 @@ async def test_spend_reads_match_span_costs_across_the_rollup_split(
     outside = await ingest_points(world, OUTSIDE)
     expected = sum(await ingest_points(world, INSIDE, first_power=len(OUTSIDE)), Decimal(0))
 
-    await roll_up_and_pass(world)
+    await roll_up_and_pass(world, budget)
 
     day = day_start(world)
     hours = await rolled_up_hours(world)
@@ -154,7 +164,7 @@ async def test_unpriced_spend_reads_unknown_and_never_fires(budget_world: Budget
     budget = await create_budget(world)  # $0.001: any known spend here would fire it
     await ingest_points(world, INSIDE, model=UNPRICED_MODEL)
 
-    await roll_up_and_pass(world)
+    await roll_up_and_pass(world, budget)
 
     state = await state_of(world, budget)
     assert state is not None
@@ -172,7 +182,7 @@ async def test_mixed_spend_reads_the_priced_part_as_a_lower_bound(
     priced = sum(await ingest_points(world, INSIDE), Decimal(0))
     await ingest_points(world, INSIDE, model=UNPRICED_MODEL)
 
-    await roll_up_and_pass(world)
+    await roll_up_and_pass(world, budget)
 
     state = await state_of(world, budget)
     assert state is not None

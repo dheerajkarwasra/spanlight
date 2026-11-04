@@ -53,7 +53,9 @@ export class Exporter {
   droppedCount = 0;
 
   private readonly exporterId = randomBytes(16).toString("hex");
-  private readonly headers: Record<string, string>;
+  private readonly options: Omit<ExporterOptions, "apiKey">;
+  // An ES private field: invisible to JSON.stringify and util.inspect, so the key cannot leak.
+  readonly #headers: Record<string, string>;
   private readonly sleep: (ms: number, signal: AbortSignal) => Promise<void>;
   private readonly jitter: () => number;
   private readonly abort = new AbortController();
@@ -62,13 +64,14 @@ export class Exporter {
   private sending: Promise<void> | undefined;
   private closed = false;
 
-  constructor(private readonly options: ExporterOptions) {
-    this.headers = {
-      Authorization: `Bearer ${options.apiKey}`,
+  constructor({ apiKey, ...options }: ExporterOptions) {
+    this.options = options;
+    this.#headers = {
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       "User-Agent": `spanlight-js/${VERSION}`,
     };
-    if (options.gzip) this.headers["Content-Encoding"] = "gzip";
+    if (options.gzip) this.#headers["Content-Encoding"] = "gzip";
     this.sleep = options.sleep ?? abortableSleep;
     this.jitter = options.jitter ?? Math.random;
   }
@@ -167,12 +170,16 @@ export class Exporter {
     const body = this.options.gzip ? await gzip(json) : json;
 
     for (let attempt = 0; ; attempt += 1) {
+      if (this.closed) {
+        this.failedCount += batch.length;
+        return;
+      }
       let failure: string;
       let retryAfterMs: number | undefined;
       try {
         const response = await this.options.fetch(this.options.url, {
           method: "POST",
-          headers: this.headers,
+          headers: this.#headers,
           body,
           signal: AbortSignal.any([AbortSignal.timeout(this.options.timeoutMs), this.abort.signal]),
         });
@@ -198,7 +205,10 @@ export class Exporter {
         failure = `HTTP ${status}`;
         retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
       } catch (error) {
-        failure = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+        failure =
+          error instanceof Error && error.message === "ambiguous acknowledgment"
+            ? "ambiguous acknowledgment"
+            : "transport error";
       }
 
       if (attempt >= this.options.maxRetries || this.abort.signal.aborted) {
@@ -217,32 +227,52 @@ export class Exporter {
     try {
       result = await response.json();
     } catch {
-      this.sentCount += batch.length;
-      return;
+      throw new Error("ambiguous acknowledgment");
     }
-    const rejected = (result as { rejected?: unknown } | null)?.rejected;
-    if (!Array.isArray(rejected) || rejected.length === 0) {
-      this.sentCount += batch.length;
-      return;
+    const acknowledgment = result as { accepted?: unknown; rejected?: unknown } | null;
+    const accepted = acknowledgment?.accepted;
+    const rejected = acknowledgment?.rejected;
+    if (
+      typeof accepted !== "number" ||
+      !Number.isSafeInteger(accepted) ||
+      accepted < 0 ||
+      !Array.isArray(rejected) ||
+      accepted + rejected.length !== batch.length
+    ) {
+      throw new Error("ambiguous acknowledgment");
     }
-    this.sentCount += batch.length - rejected.length;
+    const indexes = new Set<number>();
+    for (const item of rejected as ({ index?: unknown } | null)[]) {
+      const index = item?.index;
+      if (
+        typeof index !== "number" ||
+        !Number.isSafeInteger(index) ||
+        index < 0 ||
+        index >= batch.length ||
+        indexes.has(index)
+      ) {
+        throw new Error("ambiguous acknowledgment");
+      }
+      indexes.add(index);
+    }
+    this.sentCount += accepted;
     this.failedCount += rejected.length;
+    if (rejected.length === 0) return;
     log.warn(`Spanlight rejected ${rejected.length} of ${batch.length} spans`);
     for (const item of rejected.slice(0, MAX_LOGGED_REJECTIONS) as Payload[]) {
-      log.warn(
-        `  span ${String(item.span_id)} (index ${String(item.index)}): ${String(item.reason)}`,
-      );
+      const spanId = typeof item.span_id === "string" ? item.span_id : "<unspecified>";
+      const reason = typeof item.reason === "string" ? item.reason : "<unspecified>";
+      log.warn(`  span ${spanId} (index ${String(item.index)}): ${reason}`);
     }
   }
 
   /**
-   * Milliseconds before retry number `attempt + 1`. `Retry-After` wins; otherwise "equal jitter"
+   * Milliseconds before retry number `attempt + 1`. `Retry-After` sets a minimum; otherwise "equal jitter"
    * backoff: half the exponential step is fixed and half random, so a retry is never immediate.
    */
   private retryDelay(attempt: number, retryAfterMs: number | undefined): number {
-    if (retryAfterMs !== undefined) return Math.min(retryAfterMs, MAX_BACKOFF_MS);
     const step = Math.min(MAX_BACKOFF_MS, BASE_BACKOFF_MS * 2 ** attempt);
-    return step / 2 + (this.jitter() * step) / 2;
+    return Math.max(retryAfterMs ?? 0, step / 2 + (this.jitter() * step) / 2);
   }
 }
 
@@ -252,8 +282,12 @@ export function parseRetryAfter(value: string | null): number | undefined {
   const trimmed = value.trim();
   if (trimmed === "") return undefined;
   const seconds = Number(trimmed);
-  if (!Number.isNaN(seconds))
-    return Number.isFinite(seconds) ? Math.max(seconds, 0) * 1000 : undefined;
+  if (!Number.isNaN(seconds)) {
+    const ms = Math.max(seconds, 0) * 1000;
+    // A valid integer minimum beyond exact representation remains pending until shutdown.
+    if (/^[0-9]+$/.test(trimmed) && !Number.isSafeInteger(ms)) return Infinity;
+    return Number.isFinite(seconds) && Number.isFinite(ms) ? ms : undefined;
+  }
   const moment = Date.parse(trimmed);
   return Number.isNaN(moment) ? undefined : Math.max(moment - Date.now(), 0);
 }
@@ -264,9 +298,26 @@ export function parseRetryAfter(value: string | null): number | undefined {
  */
 function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
-    const timer = setTimeout(done, ms);
-    timer.unref();
+    let remaining = ms;
+    let started = performance.now();
+    let timer: NodeJS.Timeout;
     signal.addEventListener("abort", done, { once: true });
+    if (signal.aborted) {
+      done();
+      return;
+    }
+    schedule();
+    function schedule(): void {
+      // Node clamps overflowing timeouts to 1 ms; chunk long server minimums instead.
+      started = performance.now();
+      timer = setTimeout(tick, Math.min(remaining, 2_147_483_647));
+      timer.unref();
+    }
+    function tick(): void {
+      remaining -= performance.now() - started;
+      if (remaining > 0 && !signal.aborted) schedule();
+      else done();
+    }
     function done(): void {
       clearTimeout(timer);
       signal.removeEventListener("abort", done);

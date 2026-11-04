@@ -22,6 +22,8 @@
 		X-Frame-Options "DENY"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		# Sign-in with GitHub or Google is a full-page redirect, not a popup, so no opener is kept.
+		Cross-Origin-Opener-Policy "same-origin"
 		-Server
 	}
 
@@ -58,6 +60,8 @@
 			flush_interval -1
 			# The gateway's per-key and per-organization limits key on this address.
 			header_up X-Forwarded-For {client_ip}
+			# See the api block below: a replica that cannot be reached is skipped, not a 502.
+			lb_try_duration 5s
 		}
 	}
 
@@ -67,6 +71,13 @@
 		reverse_proxy {$API_UPSTREAM:api:8000} {
 			# The API's rate limits and session records key on this address.
 			header_up X-Forwarded-For {client_ip}
+			# With several upstreams (deploy/compose.replicas.yaml), a stopped or restarting replica
+			# would get its share of requests as 502s. A connection that cannot be opened is retried
+			# on another upstream for up to 5 s instead. Caddy retries any method after a failed
+			# connection, since nothing was sent, and only GET once a request reached an upstream.
+			# No fail_duration or health_uri: one hostname that resolves to every replica (Railway,
+			# `api:8000`) would then be marked down as a whole.
+			lb_try_duration 5s
 		}
 	}
 

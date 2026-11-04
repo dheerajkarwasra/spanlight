@@ -8,7 +8,7 @@ a ``SPANLIGHT_*`` environment variable and then to a default.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 DEFAULT_HOST = "http://localhost:8000"
 INGEST_PATH = "/v1/traces"
@@ -39,7 +39,7 @@ class SpanlightConfig:
         prompt_cache_ttl: Seconds a fetched prompt is served before it is revalidated.
     """
 
-    api_key: str | None
+    api_key: str | None = field(repr=False)
     host: str
     environment: str | None
     release: str | None

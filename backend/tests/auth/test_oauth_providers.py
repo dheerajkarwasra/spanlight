@@ -2,9 +2,11 @@
 
 from typing import Any
 
+import httpx
 import pytest
 from pydantic import ValidationError
 
+from app.auth.oauth_client import ProviderError, fetch_profile
 from app.auth.oauth_providers import (
     PROVIDERS,
     OAuthProfile,
@@ -214,3 +216,27 @@ def test_half_a_provider_fails_at_startup_without_printing_values(values: dict[s
     message = str(error.value)
     assert "CLIENT_ID and OAUTH_" in message
     assert "do-not-print-this" not in message
+
+
+# --- the token client ----------------------------------------------------------------------------
+
+
+async def test_the_token_client_ignores_proxy_and_netrc_settings_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # HTTP(S)_PROXY or ~/.netrc on the host must not see the client secret or the code.
+    trust_env: list[bool] = []
+
+    class RecordingClient(httpx.AsyncClient):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            trust_env.append(kwargs.get("trust_env", True))
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", RecordingClient)
+    settings = _settings(oauth_github_client_id="id", oauth_github_client_secret="secret")
+    refuse = httpx.MockTransport(lambda request: httpx.Response(500))
+
+    with pytest.raises(ProviderError):
+        await fetch_profile(settings, "github", code="c", verifier="v", transport=refuse)
+
+    assert trust_env == [False]

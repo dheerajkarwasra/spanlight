@@ -13,7 +13,7 @@ import { usePermission, useProjectQuery } from "@/features/shell";
 import { viewOnlyCopy } from "@/lib/permissions";
 
 import { BudgetDialog } from "./budget-dialog";
-import { softLimitNote } from "./budget-enforcement";
+import { enforcementNote } from "./budget-enforcement";
 import { BudgetList } from "./budget-list";
 import { prefillFromSearch, type BudgetsSearch } from "./budget-prefill";
 import type { BudgetFormValues } from "./budget-schema";
@@ -85,7 +85,7 @@ export function BudgetsPage() {
         />
         <p className="flex items-center gap-2 px-1 pt-2 text-xs font-medium text-muted-foreground">
           <Info aria-hidden className="size-3.5 shrink-0" />
-          {softLimitNote()}
+          {enforcementNote()}
         </p>
       </SectionCard>
     </div>

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import type { Budget, BudgetInput, BudgetScope, BudgetUpdate } from "@/lib/api";
 
-import { softLimitHint } from "./budget-enforcement";
+import { blockHint } from "./budget-enforcement";
 
 /*
  * The budget dialog's form. The bounds mirror the server's (`budgets/schemas.py`,
@@ -30,11 +30,10 @@ export const SCOPES = [
   "trace_name",
 ] as const satisfies readonly BudgetScope[];
 
-/** Spec §8.4 and §11.1 action hints. */
-export const ACTION_HINTS = {
-  block: softLimitHint(),
-  notify: "Sends an alert; nothing is blocked.",
-} as const;
+/** The hint under the action choice; a block budget's depends on its scope. */
+export function actionHint(action: BudgetFormValues["action"], scope: BudgetScope): string {
+  return action === "block" ? blockHint(scope) : "Sends an alert; nothing is blocked.";
+}
 
 export interface BudgetFormValues {
   name: string;

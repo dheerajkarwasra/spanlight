@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectParams } from "@/features/shell/project-context";
 import { SERIES_COLORS } from "@/lib/chart-theme";
 import { formatCost, formatInteger } from "@/lib/format";
+import { SOURCE_HISTORY_UNAVAILABLE } from "@/lib/freshness";
 import { cn } from "@/lib/utils";
 
 import { shortRangeLabel } from "./hero";
@@ -32,7 +33,7 @@ export function SpendByModel({
 }) {
   const titleId = useId();
   const { models, overview, range } = queries;
-  const unpriced = overview.data?.current.unpriced_calls ?? 0;
+  const unpriced = overview.data?.current.unpriced_calls;
   // With no priced call the spend is unknown, not a lower bound.
   const nonePriced = overview.data?.current.cost_usd == null;
 
@@ -60,9 +61,15 @@ export function SpendByModel({
           }}
         />
       ) : (
-        <SpendRows rows={spendByModel(models.data)} dim={models.isPlaceholderData} />
+        <SpendRows
+          rows={spendByModel(models.data.items)}
+          dim={models.isPlaceholderData}
+          unavailable={
+            models.data.aggregate_status === "unavailable" && models.data.items.length === 0
+          }
+        />
       )}
-      {unpriced > 0 ? (
+      {unpriced != null && unpriced > 0 ? (
         <p className="mt-auto flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
           <Info aria-hidden className="size-[13px] shrink-0" />
           <span>
@@ -78,10 +85,22 @@ export function SpendByModel({
   );
 }
 
-function SpendRows({ rows, dim }: { rows: ModelSpend[]; dim: boolean }) {
+function SpendRows({
+  rows,
+  dim,
+  unavailable,
+}: {
+  rows: ModelSpend[];
+  dim: boolean;
+  unavailable: boolean;
+}) {
   const { orgId, projectId } = useProjectParams();
   if (rows.length === 0) {
-    return <p className="py-4 text-sm text-muted-foreground">No LLM calls in this period</p>;
+    return (
+      <p className="py-4 text-sm text-muted-foreground">
+        {unavailable ? SOURCE_HISTORY_UNAVAILABLE : "No LLM calls in this period"}
+      </p>
+    );
   }
   return (
     <ul className={cn("flex flex-col gap-1 transition-opacity", dim && "opacity-60")}>

@@ -3,7 +3,7 @@ import { Clock } from "lucide-react";
 import { useId, type ReactNode } from "react";
 
 import { DeltaPill, type DeltaPillProps } from "@/components/delta-pill";
-import { Sparkline, type SparklineTone } from "@/components/sparkline";
+import { Sparkline, type SparklineProps } from "@/components/sparkline";
 import { Card } from "@/components/ui/card";
 import { UNKNOWN_DASH_CLASS, UnknownValue } from "@/components/unknown-value";
 import { cn } from "@/lib/utils";
@@ -19,7 +19,7 @@ export interface KpiCardProps {
   denominator?: ReactNode;
   /** "approx" puts the "≈" before the value; `freshness` is a short "updated …" line. */
   chip?: "approx" | { freshness: string };
-  sparkline?: { values: (number | null)[]; tone: SparklineTone };
+  sparkline?: Omit<SparklineProps, "className">;
   /** Makes the whole card one link, named by its label and value. */
   href?: LinkProps;
   tone?: "default" | "accent";
@@ -113,7 +113,7 @@ export function KpiCard({
       {children}
       {sparkline ? (
         <div className="mt-auto pt-1">
-          <Sparkline values={sparkline.values} tone={sparkline.tone} className="h-9" />
+          <Sparkline {...sparkline} className="h-9" />
         </div>
       ) : null}
     </Card>

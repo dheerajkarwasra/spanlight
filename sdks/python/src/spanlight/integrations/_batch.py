@@ -70,6 +70,7 @@ def record_batch_item(
     finish_reason: str | None,
     error: str | None,
     error_message: str | None = None,
+    attributes: Mapping[str, Any] | None = None,
 ) -> bool:
     """Record one batch result as a span. Never raises.
 
@@ -93,6 +94,7 @@ def record_batch_item(
             even when ``result_type`` is ``"succeeded"``. ``usage``, when given, is still
             recorded on the error span (the provider bills the usage it reports).
         error_message: Human-readable error; defaults to the error class.
+        attributes: Provider response identity and reported billing modifiers.
     """
     try:
         span = _start_span(client, provider, batch_id, custom_id, model)
@@ -105,6 +107,8 @@ def record_batch_item(
                 "timing.synthetic": True,
             }
         )
+        if attributes is not None:
+            span.set_attributes(attributes)
         if result_type == SUCCEEDED and error is None:
             _record_success(span, usage, output, finish_reason)
         else:

@@ -30,14 +30,14 @@ function originLine(override: PriceOverride): string {
 }
 
 interface OverridesCardProps {
-  /** Opens the blank override dialog; null without `gateway:write`. */
+  /** Opens the blank override dialog; null without `prices:override`. */
   onAdd: (() => void) | null;
   className?: string;
 }
 
 /**
  * Spec ruling 8 "Organization overrides": the org's own prices, which replace the book price for
- * new spans. Every member reads them; `gateway:write` adds and deletes.
+ * new spans. Every member reads them; `prices:override` adds and deletes.
  */
 export function OverridesCard({ onAdd, className }: OverridesCardProps) {
   const query = usePriceOverridesQuery();

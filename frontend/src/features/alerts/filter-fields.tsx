@@ -26,7 +26,7 @@ const FILTER_LABELS: Record<FilterField, { label: string; placeholder: string }>
 function useFilterSuggestions(projectId: string) {
   return useQuery({
     queryKey: queryKeys.project(projectId).filters,
-    queryFn: () => projectsApi.filters(projectId),
+    queryFn: ({ signal }) => projectsApi.filters(projectId, signal),
     staleTime: 5 * 60_000,
   });
 }

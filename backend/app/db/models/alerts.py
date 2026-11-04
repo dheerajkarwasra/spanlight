@@ -114,6 +114,8 @@ class AlertState(Base):
 
     `since` is when the rule entered `state`; for `ok` after a resolve, the resolve time.
     `last_value` is the metric's value at `last_evaluated_at` (NULL when it was unknown).
+    `clear_since` is when a firing rule's value first read clear in its recovery window; NULL
+    otherwise (`app.alerts.evaluate.clear_since`).
     `project_id` repeats the rule's so the policy needs no join; the composite foreign key keeps
     the two equal.
     """
@@ -134,6 +136,7 @@ class AlertState(Base):
     since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_value: Mapped[Decimal | None] = mapped_column(Numeric)
     last_evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    clear_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class AlertEvent(Base):

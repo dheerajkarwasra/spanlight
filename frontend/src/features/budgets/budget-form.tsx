@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { CircleAlert } from "lucide-react";
 import { useEffect, type ComponentProps } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
@@ -16,7 +17,7 @@ import { BudgetChannelsField } from "./budget-channels-field";
 import { BLOCKED_RESPONSE } from "./budget-enforcement";
 import { PERIOD_LABELS } from "./budget-period";
 import {
-  ACTION_HINTS,
+  actionHint,
   BUDGET_NAME_MAX_LENGTH,
   EMPTY_BUDGET_VALUES,
   budgetFormSchema,
@@ -54,6 +55,7 @@ export function BudgetForm({ budget, initial, onPendingChange, onSaved }: Budget
   });
   const action = useWatch({ control: form.control, name: "action" });
   const period = useWatch({ control: form.control, name: "period" });
+  const scope = useWatch({ control: form.control, name: "scope" });
   const submit = useBudgetSubmit(form, budget, projectName, onSaved);
   const errors = form.formState.errors;
 
@@ -117,8 +119,14 @@ export function BudgetForm({ budget, initial, onPendingChange, onSaved }: Budget
           className="grid w-full grid-cols-2 max-sm:[&>*]:min-h-11"
         />
         <p className="text-xs font-medium text-muted-foreground">
-          <ActionHint text={ACTION_HINTS[action]} />
+          <ActionHint text={actionHint(action, scope)} />
         </p>
+        {errors.action?.message ? (
+          <p role="alert" className="flex items-start gap-1.5 text-xs font-medium text-danger-text">
+            <CircleAlert aria-hidden className="mt-px size-3.5 shrink-0" />
+            {errors.action.message}
+          </p>
+        ) : null}
       </div>
       <Controller
         control={form.control}

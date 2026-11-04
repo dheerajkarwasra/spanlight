@@ -27,6 +27,8 @@ from sqlalchemy import String, bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.window import TimeWindow
+from app.rollups.compute import floor_hour
+from app.rollups.coverage_reads import CoverageState, read_covered
 
 _RETRY_TOTALS = text(
     """
@@ -109,7 +111,11 @@ class RetryReport:
 
 
 async def read_retry_totals(
-    db: AsyncSession, project_id: uuid.UUID, window: TimeWindow, environment: str | None
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    window: TimeWindow,
+    environment: str | None,
+    coverage: CoverageState | None = None,
 ) -> RetryReport:
     """Retry totals of the traces that started in ``window``, by attributed provider."""
     params = {
@@ -118,7 +124,18 @@ async def read_retry_totals(
         "end": window.end,
         "environment": environment,
     }
-    rows = (await db.execute(_RETRY_TOTALS, params)).all()
+    coverage = coverage or CoverageState()
+    rows = await read_covered(
+        db,
+        _RETRY_TOTALS,
+        params,
+        project_id,
+        floor_hour(window.start),
+        window.end,
+        coverage,
+        raw=True,
+        relevant_consumers=0,
+    )
     untracked = bool(await db.scalar(_UNTRACKED, params))
     by_provider = {
         row.provider: RetryTotals(
@@ -129,4 +146,4 @@ async def read_retry_totals(
         )
         for row in rows
     }
-    return RetryReport(by_provider=by_provider, untracked=untracked)
+    return RetryReport(by_provider=by_provider, untracked=untracked or coverage.unavailable)

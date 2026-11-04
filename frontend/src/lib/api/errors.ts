@@ -14,8 +14,24 @@ export class ApiError extends Error {
   readonly runError: string | null;
   /** Seconds to wait before retrying, from the `Retry-After` header (429, 503). Null without one. */
   readonly retryAfterSeconds: number | null;
+  /**
+   * The problem's RFC 9457 extension members: every member but `type`, `title`, `status`, `detail`,
+   * `code`, `request_id` and `errors`, e.g. `orgs` of `409 SOLE_OWNER`. Unvalidated server data:
+   * check the shape before use.
+   */
+  readonly extensions: Record<string, unknown>;
 
   constructor(status: number, problem: ProblemDetails, retryAfterSeconds: number | null = null) {
+    const {
+      type: _type,
+      title: _title,
+      status: _status,
+      detail: _detail,
+      code: _code,
+      request_id: _requestId,
+      errors: _errors,
+      ...extensions
+    } = problem;
     const title = problem.title ?? defaultTitle(status);
     super(problem.detail ?? title);
     this.name = "ApiError";
@@ -28,6 +44,7 @@ export class ApiError extends Error {
     this.currentVersion = problem.current_version ?? null;
     this.runError = typeof problem.error === "string" ? problem.error : null;
     this.retryAfterSeconds = retryAfterSeconds;
+    this.extensions = extensions;
   }
 
   get isNotFound(): boolean {

@@ -21,7 +21,7 @@ from app.auth.oauth_state import (
 )
 from app.config import Settings
 
-SECRET = "a-secret-key-for-tests"
+SECRET = "a-secret-key-for-tests-32-characters-long"
 NOW = datetime(2026, 10, 8, 12, 0, tzinfo=UTC)
 
 

@@ -1,7 +1,9 @@
 import { ChartDataTableView } from "@/components/chart-data-table";
 import { Badge } from "@/components/ui/badge";
+import { UnknownValue } from "@/components/unknown-value";
 import type { Bucket } from "@/lib/api";
 import { formatCompact, formatInteger } from "@/lib/format";
+import { SOURCE_HISTORY_UNAVAILABLE, SOURCE_REMOVED } from "@/lib/freshness";
 import type { Band } from "@/lib/incident-bands";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +42,8 @@ interface CallsErrorsChartProps {
   /** Why there are no release markers (a window over 30 days), shown under the legend. */
   releasesNote?: string | null;
   isRefreshing: boolean;
+  /** Source history is unavailable: no data is not "no calls". */
+  unavailable?: boolean;
   className?: string;
 }
 
@@ -63,6 +67,7 @@ export function CallsErrorsChart({
   releases = [],
   releasesNote = null,
   isRefreshing,
+  unavailable = false,
   className,
 }: CallsErrorsChartProps) {
   const { points, bucket, rangeLabel, now } = data;
@@ -71,8 +76,10 @@ export function CallsErrorsChart({
   const feed = incidentFeed(bands, pollingOff);
   const shownBands = feed === "ready" && overlayOn ? (bands ?? []) : [];
   const { calls, errors } = summarizeCalls(points);
-  const callsLabel = `${formatCompact(calls) ?? "0"} ${calls === 1 ? "call" : "calls"}`;
-  const errorsLabel = `${formatInteger(errors) ?? "0"} ${errors === 1 ? "error" : "errors"}`;
+  // No stored bucket and no source history: the totals are unknown, not 0.
+  const noHistory = unavailable && points.length === 0;
+  const callsLabel = `${formatCompact(calls) ?? "—"} ${calls === 1 ? "call" : "calls"}`;
+  const errorsLabel = `${formatInteger(errors) ?? "—"} ${errors === 1 ? "error" : "errors"}`;
   const table = callsTable(points, bucket, feed === "ready" && overlayOn ? shownBands : null);
   const incidents = incidentSummary(shownBands);
   const releaseLines = markerLines(releases, points, bucket);
@@ -94,14 +101,25 @@ export function CallsErrorsChart({
         </>
       }
       totals={
-        <>
-          <Badge variant="accent" className="tabular">
-            {callsLabel}
-          </Badge>
-          <Badge variant="danger" className="tabular">
-            {errorsLabel}
-          </Badge>
-        </>
+        noHistory ? (
+          <>
+            <Badge variant="accent" className="tabular">
+              <UnknownValue reason={SOURCE_REMOVED} /> calls
+            </Badge>
+            <Badge variant="danger" className="tabular">
+              <UnknownValue reason={SOURCE_REMOVED} /> errors
+            </Badge>
+          </>
+        ) : (
+          <>
+            <Badge variant="accent" className="tabular">
+              {callsLabel}
+            </Badge>
+            <Badge variant="danger" className="tabular">
+              {errorsLabel}
+            </Badge>
+          </>
+        )
       }
     >
       <CallsErrorsLegend
@@ -125,7 +143,7 @@ export function CallsErrorsChart({
               "flex items-center justify-center rounded-tile border border-dashed border-border text-sm text-muted-foreground",
             )}
           >
-            No LLM calls in this period
+            {noHistory ? SOURCE_HISTORY_UNAVAILABLE : "No LLM calls in this period"}
           </div>
         ) : view === "table" ? (
           <CallsErrorsTable table={table} bucket={bucket} />

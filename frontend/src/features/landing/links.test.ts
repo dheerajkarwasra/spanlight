@@ -97,9 +97,9 @@ describe("landing links", () => {
 
   it("scroll to the landing sections from the nav, then open the quickstart", () => {
     expect(NAV_LINKS.map((link) => link.href)).toEqual([
-      "#cost",
-      "#how-it-works",
-      "#open-source",
+      "/#cost",
+      "/#how-it-works",
+      "/#open-source",
       DOCS_LINKS.quickstart,
     ]);
   });

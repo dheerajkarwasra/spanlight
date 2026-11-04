@@ -9,7 +9,11 @@ import { Card } from "@/components/ui/card";
 import { useProjectParams } from "@/features/shell/project-context";
 import { isApiError } from "@/lib/api";
 
-import { recallTracesSearch, rememberOpenedTrace } from "./last-traces-search";
+import {
+  recallTracesSearch,
+  rememberOpenedTrace,
+  useTraceHistoryScope,
+} from "./last-traces-search";
 import { useTraceQuery } from "./trace-queries";
 import { TracesBreadcrumbs } from "./trace-header";
 import { TraceView, TraceViewSkeleton } from "./trace-view";
@@ -21,12 +25,13 @@ const PAGE_CLASSES = "flex flex-col gap-1";
 
 /** The trace page: breadcrumbs over the trace view, which holds the summary bar, tree and inspector. */
 export function TraceDetailPage() {
+  const historyScope = useTraceHistoryScope();
   const { traceId } = traceRoute.useParams();
   const traceQuery = useTraceQuery(traceId);
 
   useEffect(() => {
-    rememberOpenedTrace(traceId);
-  }, [traceId]);
+    rememberOpenedTrace(traceId, historyScope);
+  }, [traceId, historyScope]);
 
   if (traceQuery.isPending) {
     return (
@@ -69,6 +74,7 @@ export function TraceDetailPage() {
 }
 
 function TraceNotFound() {
+  const historyScope = useTraceHistoryScope();
   const { orgId, projectId } = useProjectParams();
   return (
     <div className={PAGE_CLASSES}>
@@ -83,7 +89,7 @@ function TraceNotFound() {
               <Link
                 to="/$orgId/$projectId/traces"
                 params={{ orgId, projectId }}
-                search={recallTracesSearch()}
+                search={recallTracesSearch(historyScope)}
               >
                 Back to traces
               </Link>

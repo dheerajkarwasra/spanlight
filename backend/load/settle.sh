@@ -29,10 +29,30 @@ if [ -z "${LOAD_ENV_FILE:-}" ]; then
   exit 0
 fi
 
+# Runs a command, killing it after 10 seconds. A loop rather than `timeout`, which macOS lacks.
+# Like `timeout`, it kills the command's whole process group (`docker compose` runs the compose
+# plugin as a child, which would otherwise keep the output open), so call it in a subshell: it
+# turns on job control there to give the command a group of its own. `<&0` keeps the caller's
+# standard input, which a background command would otherwise not get.
+within_10_seconds() {
+  set -m
+  "$@" <&0 &
+  local pid=$! tenths=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$tenths" -ge 100 ]; then
+      kill -TERM -- "-$pid" 2>/dev/null
+      break
+    fi
+    sleep 0.1
+    tenths=$((tenths + 1))
+  done
+  wait "$pid"
+}
+
 # Queries of the application role that are executing right now, plus running jobs whose lease has
 # not run out (a crashed worker leaves a running row behind until the lease expires).
 busy_count() {
-  timeout 10 docker compose --env-file "$LOAD_ENV_FILE" exec -T postgres \
+  within_10_seconds docker compose --env-file "$LOAD_ENV_FILE" exec -T postgres \
     psql -U postgres -d spanlight -tA -v "role=$app_role" <<'SQL'
 SELECT (SELECT count(*)
           FROM pg_stat_activity

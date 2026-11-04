@@ -30,6 +30,8 @@ What is recorded is deliberately narrow:
 """
 
 import asyncio
+import atexit
+import contextlib
 import threading
 from collections.abc import Sequence
 from urllib.parse import urlsplit
@@ -51,7 +53,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from app.api.deps import SESSION_COOKIE
+from app.api.deps import HOST_PREFIX, SESSION_COOKIE
 from app.config import Settings
 from app.core.request_context import current_request_id
 from app.core.security import PAT_PREFIX, is_bearer
@@ -144,23 +146,39 @@ async def shutdown_tracing(provider: TracerProvider | None) -> None:
     """
     if provider is None:
         return
+    # Import at teardown: gateway tracing imports this module during application construction.
+    from app.process_shutdown import current  # noqa: PLC0415 - avoid that construction cycle
+
+    process = current.get()
     loop = asyncio.get_running_loop()
     finished = asyncio.Event()
+    failed = threading.Event()
+    allowance = _SHUTDOWN_TIMEOUT_SECONDS
+    if process is not None:
+        allowance = min(allowance, max(0, process.deadline - loop.time()))
+    # Keep the SDK fallback until ownership transfers here; never join this daemon twice.
+    atexit.unregister(provider.shutdown)
 
     def flush_and_stop() -> None:
         try:
             provider.shutdown()
         except Exception:  # the exporter's failure must not stop the app shutting down
+            failed.set()
             logger.warning("tracing_shutdown_failed", exc_info=True)
         finally:
-            loop.call_soon_threadsafe(finished.set)
+            # The daemon exporter may finish after its owning event loop has closed.
+            with contextlib.suppress(RuntimeError):
+                loop.call_soon_threadsafe(finished.set)
 
     threading.Thread(target=flush_and_stop, name="tracing-shutdown", daemon=True).start()
     try:
-        async with asyncio.timeout(_SHUTDOWN_TIMEOUT_SECONDS):
+        async with asyncio.timeout(allowance):
             await finished.wait()
     except TimeoutError:
-        logger.warning("tracing_shutdown_timed_out", timeout_seconds=_SHUTDOWN_TIMEOUT_SECONDS)
+        failed.set()
+        logger.warning("tracing_shutdown_timed_out", timeout_seconds=allowance)
+    if failed.is_set() and process is not None:
+        process.incomplete(phase="resources", reason="close_failed")
 
 
 def _create_provider(endpoint_base: str, service_name: str, *, role: str) -> TracerProvider:
@@ -352,7 +370,7 @@ def principal_kind(connection: HTTPConnection) -> str:
     if is_bearer(authorization):
         credentials = (authorization or "").strip().partition(" ")[2].strip()
         return "pat" if credentials.startswith(PAT_PREFIX) else "api_key"
-    if SESSION_COOKIE in connection.cookies:
+    if any(name in connection.cookies for name in (SESSION_COOKIE, HOST_PREFIX + SESSION_COOKIE)):
         return "session"
     return "anonymous"
 

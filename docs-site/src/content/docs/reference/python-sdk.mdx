@@ -54,7 +54,7 @@ An argument left as `None` is read from the environment. An explicit argument al
 | Option | Environment variable | Default | Meaning |
 | --- | --- | --- | --- |
 | `api_key` | `SPANLIGHT_API_KEY` | none | Project API key, `spl_live_...`. Without one, tracing is off. |
-| `host` | `SPANLIGHT_HOST` | `http://localhost:8000` | Base URL of the Spanlight API. |
+| `host` | `SPANLIGHT_HOST` | `http://localhost:8000` | Base URL of the Spanlight API. Use `https://`. Plain `http://` works only for local and private-network hosts (`localhost`, `*.local`, `*.internal`, single-label names such as a Compose service, private IP addresses); otherwise the SDK warns and stays disabled. A service name with an underscore is refused: rename it with a hyphen or use `https://`. |
 | `environment` | `SPANLIGHT_ENVIRONMENT` | none | Deployment environment attached to every trace, for example `production`. |
 | `release` | `SPANLIGHT_RELEASE` | none | Application version attached to every trace, for example a git SHA. |
 | `enabled` | `SPANLIGHT_ENABLED` | `true` | `false`, `0`, `no` or `off` turn tracing and scores into a no-op. `true`, `1`, `yes` and `on` turn them on. Any other text keeps the default. |
@@ -91,7 +91,7 @@ def ingest(request: httpx.Request) -> httpx.Response:
 
 spanlight.init(
     api_key="spl_live_test",
-    host="http://spanlight.test",
+    host="https://spanlight.test",
     transport=httpx.MockTransport(ingest),
 )
 ```

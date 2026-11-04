@@ -25,8 +25,10 @@ from app.db.models.billing import (
     BillingSource,
     BillingSourceProject,
 )
-from app.end_users.days import ONE_DAY
+from app.end_users.days import ONE_DAY, midnight
 from app.reconciliation.types import CostRollupRow, MappedLine
+from app.rollups.coverage_reads import CoverageState, read_covered
+from app.rollups.dirty import COST_DAILY
 
 # The seed patterns of every snapshot, and the organization's own override patterns. Neither
 # table is under row-level security; overrides are filtered by `org_id` here.
@@ -264,12 +266,40 @@ async def settled_runs_by_day(
 
 
 async def rollup_rows_for_project_window(
-    db: AsyncSession, project_id: uuid.UUID, first: date, end: date
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    first: date,
+    end: date,
+    coverage: CoverageState | None = None,
 ) -> list[CostRollupRow]:
     """The project's daily cost rollups of `[first, end)`. The session must be bound to it."""
     params = {"project_id": project_id, "first": first, "end": end}
-    result = await db.execute(_ROLLUP_ROWS, params)
-    return [CostRollupRow(**row) for row in result.mappings()]
+    rows = await read_covered(
+        db,
+        _ROLLUP_ROWS,
+        params,
+        project_id,
+        midnight(first),
+        midnight(end),
+        coverage,
+        relevant_consumers=COST_DAILY,
+    )
+    return [
+        CostRollupRow(
+            **{
+                key: value
+                for key, value in row._mapping.items()
+                if key
+                not in {
+                    "aggregate_progress_present",
+                    "aggregate_complete",
+                    "aggregate_present",
+                    "aggregate_pending_at",
+                }
+            }
+        )
+        for row in rows
+    ]
 
 
 async def days_without_rollups(
@@ -278,4 +308,7 @@ async def days_without_rollups(
     """The days of `[first, end)`, ascending, on which the project has LLM spans and no rollup
     row: the days no rollup pass has built. The session must be bound to the project."""
     params = {"project_id": project_id, "first": first, "last": end - ONE_DAY}
-    return list((await db.execute(_DAYS_WITHOUT_ROLLUPS, params)).scalars())
+    # This discovers refresh candidates, not displayed observations. The writer checks each
+    # day's coverage under its source-loss lock so one unsafe day cannot suppress safe days.
+    result = await db.execute(_DAYS_WITHOUT_ROLLUPS, params)
+    return [row.day for row in result]

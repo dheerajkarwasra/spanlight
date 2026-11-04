@@ -4,15 +4,15 @@ Failure mode: an interrupted `CREATE INDEX CONCURRENTLY` leaves an INVALID index
 `IF NOT EXISTS` would keep forever, so the checklist would never use it. The test marks the index
 INVALID at 1019's shape plus the leftover, upgrades again, and checks it was rebuilt valid.
 
-Every test here leaves the session's shared database at head.
+Historical round trips use an owned database at the pinned revision.
 """
 
 from collections.abc import Iterator
 
 import pytest
 
-from app.db.migrations import downgrade_to, head_revision, upgrade_to_head
 from tests.db import schema_probe as probe
+from tests.db.migration_support import downgrade_to, expected_revision, upgrade_to_target
 
 BELOW = "1019"
 INDEX = "scores_project_source_idx"
@@ -23,10 +23,10 @@ DEFINITION = (
 
 
 @pytest.fixture
-def back_to_head(app_database_url: str) -> Iterator[None]:
+def back_to_target(migration_database_url: str) -> Iterator[None]:
     yield
-    upgrade_to_head(app_database_url)
-    assert probe.current_revision(app_database_url) == head_revision()
+    upgrade_to_target(migration_database_url)
+    assert probe.current_revision(migration_database_url) == expected_revision()
 
 
 def _is_valid(database_url: str) -> object:
@@ -39,26 +39,30 @@ def _is_valid(database_url: str) -> object:
     return rows[0][0] if rows else None
 
 
-def test_migration_1020_round_trip(app_database_url: str, back_to_head: None) -> None:
-    assert probe.indexes(app_database_url, "scores")[INDEX] == DEFINITION
-    downgrade_to(app_database_url, BELOW)
-    assert INDEX not in probe.indexes(app_database_url, "scores")
-    upgrade_to_head(app_database_url)
-    assert probe.indexes(app_database_url, "scores")[INDEX] == DEFINITION
-    assert _is_valid(app_database_url) is True
+@pytest.mark.migration_revision("1020")
+def test_migration_1020_round_trip(migration_database_url: str, back_to_target: None) -> None:
+    assert probe.indexes(migration_database_url, "scores")[INDEX] == DEFINITION
+    downgrade_to(migration_database_url, BELOW)
+    assert INDEX not in probe.indexes(migration_database_url, "scores")
+    upgrade_to_target(migration_database_url)
+    assert probe.indexes(migration_database_url, "scores")[INDEX] == DEFINITION
+    assert _is_valid(migration_database_url) is True
 
 
-def test_upgrade_rebuilds_an_invalid_leftover(app_database_url: str, back_to_head: None) -> None:
-    downgrade_to(app_database_url, BELOW)
+@pytest.mark.migration_revision("1020")
+def test_upgrade_rebuilds_an_invalid_leftover(
+    migration_database_url: str, back_to_target: None
+) -> None:
+    downgrade_to(migration_database_url, BELOW)
     with probe.admin() as connection:
         # What an interrupted concurrent build leaves behind.
         connection.execute(f"CREATE INDEX {INDEX} ON scores (project_id, source)")
         connection.execute(
             "UPDATE pg_index SET indisvalid = false WHERE indexrelid = %s::regclass", (INDEX,)
         )
-    assert _is_valid(app_database_url) is False
+    assert _is_valid(migration_database_url) is False
 
-    upgrade_to_head(app_database_url)
+    upgrade_to_target(migration_database_url)
 
-    assert _is_valid(app_database_url) is True
-    assert probe.indexes(app_database_url, "scores")[INDEX] == DEFINITION
+    assert _is_valid(migration_database_url) is True
+    assert probe.indexes(migration_database_url, "scores")[INDEX] == DEFINITION

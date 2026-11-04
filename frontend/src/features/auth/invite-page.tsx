@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import { MailOpen, MailX, type LucideIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { Notice } from "@/components/notice";
@@ -13,9 +13,40 @@ import { ROLE_LABELS } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 import { AuthCenteredLayout } from "./auth-layout";
+import { clearFragment, readFragmentParam } from "./fragment-token";
 import { refreshMe } from "./queries";
 
-const routeApi = getRouteApi("/invite/$token");
+const routeApi = getRouteApi("/invite");
+
+/**
+ * Where the token waits, in this tab only, while a signed-out invitee signs in or signs up (an OAuth
+ * round trip included), so `next` can be a bare `/invite` instead of carrying the token in a query
+ * string to the login page and the OAuth start URL. Cleared once the invite is accepted or turns
+ * out to be unusable; kept through a transient error so "Try again" still has it.
+ */
+const STASH_KEY = "spl_invite_token";
+
+function stashedToken(): string | null {
+  try {
+    return window.sessionStorage.getItem(STASH_KEY);
+  } catch {
+    return null; // storage blocked: the invitee opens the emailed link again after signing in
+  }
+}
+
+function stashToken(token: string | null): void {
+  try {
+    if (token === null) {
+      window.sessionStorage.removeItem(STASH_KEY);
+    } else {
+      window.sessionStorage.setItem(STASH_KEY, token);
+    }
+  } catch {
+    // Storage blocked: nothing to keep or to clear.
+  }
+}
+
+const INVITE_PATH = "/invite";
 
 const UNUSABLE_INVITE_MESSAGE =
   "This invite link is invalid, has expired, or was already used. Ask an admin for a new one.";
@@ -34,20 +65,35 @@ function inviteErrorMessage(error: unknown): string {
   return errorMessage(error);
 }
 
+/**
+ * Where an invite link lands: `/invite#token=…`. The token is read from the fragment once (or from
+ * the tab's stash after signing in), kept in component state, and taken out of the address bar.
+ */
 export function InvitePage() {
-  const { token } = routeApi.useParams();
+  const [token] = useState(() => readFragmentParam("token") ?? stashedToken());
   const me = routeApi.useRouteContext({ select: (context) => context.me });
 
-  return (
-    <AuthCenteredLayout>
-      {me ? <SignedInInvite token={token} me={me} /> : <SignedOutInvite token={token} />}
-    </AuthCenteredLayout>
-  );
+  useEffect(() => {
+    clearFragment();
+    if (token !== null && !me) {
+      stashToken(token);
+    }
+  }, [token, me]);
+
+  let content: ReactNode;
+  if (token === null) {
+    content = <UnusableInvite />;
+  } else if (me) {
+    content = <SignedInInvite token={token} me={me} />;
+  } else {
+    content = <SignedOutInvite />;
+  }
+  return <AuthCenteredLayout>{content}</AuthCenteredLayout>;
 }
 
 /** Not signed in: the preview needs a session, so offer sign up / sign in first. */
-function SignedOutInvite({ token }: { token: string }) {
-  const nextPath = `/invite/${token}`;
+function SignedOutInvite() {
+  const nextPath = INVITE_PATH;
   return (
     <InviteCard icon={MailOpen}>
       <InviteHeading title="You've been invited">
@@ -74,20 +120,33 @@ function SignedOutInvite({ token }: { token: string }) {
 function SignedInInvite({ token, me }: { token: string; me: Me }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const nextPath = `/invite/${token}`;
+  const nextPath = INVITE_PATH;
 
   const preview = useQuery({
     queryKey: queryKeys.invitePreview(token),
     queryFn: () => authApi.previewInvite(token),
     retry: (failureCount, error) => !isUnusableInvite(error) && failureCount < 2,
   });
+  const previewUnusable = preview.isError && isUnusableInvite(preview.error);
+
+  useEffect(() => {
+    if (previewUnusable) {
+      stashToken(null);
+    }
+  }, [previewUnusable]);
 
   const accept = useMutation({
     mutationFn: () => authApi.acceptInvite(token),
     onSuccess: async ({ org, role }) => {
+      stashToken(null);
       toast.success(`You joined ${org.name} as ${ROLE_LABELS[role].toLowerCase()}.`);
       await refreshMe(queryClient);
       await navigate({ to: "/" });
+    },
+    onError: (error) => {
+      if (isUnusableInvite(error) || (isApiError(error) && error.status === 409)) {
+        stashToken(null);
+      }
     },
   });
 
@@ -95,6 +154,7 @@ function SignedInInvite({ token, me }: { token: string; me: Me }) {
     mutationFn: authApi.logout,
     onSuccess: async () => {
       queryClient.clear();
+      stashToken(token); // for the account signed in next
       await navigate({ to: "/login", search: { next: nextPath } });
     },
     onError: (error) => {
@@ -107,31 +167,21 @@ function SignedInInvite({ token, me }: { token: string; me: Me }) {
   }
 
   if (preview.isError) {
-    const unusable = isUnusableInvite(preview.error);
+    if (previewUnusable) {
+      return <UnusableInvite />;
+    }
     return (
-      <InviteCard icon={MailX} tone="danger">
-        <InviteHeading title={unusable ? "This invite can't be used" : "Couldn't load this invite"}>
-          <p className="text-sm text-muted-foreground">
-            {unusable ? UNUSABLE_INVITE_MESSAGE : errorMessage(preview.error)}
-          </p>
-        </InviteHeading>
-        <div className="flex flex-col gap-2.5">
-          {unusable ? null : (
-            <Button
-              variant="primary"
-              size="lg"
-              onClick={() => {
-                void preview.refetch();
-              }}
-            >
-              Try again
-            </Button>
-          )}
-          <Button asChild size="lg">
-            <Link to="/">Go to your projects</Link>
-          </Button>
-        </div>
-      </InviteCard>
+      <InviteProblem title="Couldn't load this invite" message={errorMessage(preview.error)}>
+        <Button
+          variant="primary"
+          size="lg"
+          onClick={() => {
+            void preview.refetch();
+          }}
+        >
+          Try again
+        </Button>
+      </InviteProblem>
     );
   }
 
@@ -182,6 +232,35 @@ function SignedInInvite({ token, me }: { token: string; me: Me }) {
           }}
         >
           Sign in with a different account
+        </Button>
+      </div>
+    </InviteCard>
+  );
+}
+
+/** A link with no token, or one the server no longer accepts: unknown, used or expired. */
+function UnusableInvite() {
+  return <InviteProblem title="This invite can't be used" message={UNUSABLE_INVITE_MESSAGE} />;
+}
+
+function InviteProblem({
+  title,
+  message,
+  children,
+}: {
+  title: string;
+  message: string;
+  children?: ReactNode;
+}) {
+  return (
+    <InviteCard icon={MailX} tone="danger">
+      <InviteHeading title={title}>
+        <p className="text-sm text-muted-foreground">{message}</p>
+      </InviteHeading>
+      <div className="flex flex-col gap-2.5">
+        {children}
+        <Button asChild size="lg">
+          <Link to="/">Go to your projects</Link>
         </Button>
       </div>
     </InviteCard>

@@ -11,13 +11,14 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.api.window import TimeWindow
+from app.config import Settings
 from app.db.rls import bind_project
 from app.rollups.compute import floor_hour
 from app.rollups.error_queries import ErrorHour, read_error_rollups
 from app.rollups.filtered import RollupFilters
-from app.rollups.jobs import roll_up_all
 from tests.jobs.bypass_support import SessionFactory, execute, fetch, new_projects
 from tests.rollups.error_support import FailedSpan, compute, seed_spans
+from tests.rollups.recent_support import run_recent
 
 _ROLLUP_ROWS = (
     "SELECT bucket_start, environment, provider, model, error_class, rate_limit_kind, errors, "
@@ -139,6 +140,7 @@ async def test_resent_span_moves_group_delete_then_insert(session_factory: Sessi
 
 async def test_backfill_detects_a_project_missing_error_rollups(
     session_factory: SessionFactory,
+    settings: Settings,
 ) -> None:
     now = datetime.now(UTC)
     old = now - timedelta(days=5)
@@ -148,7 +150,7 @@ async def test_backfill_detects_a_project_missing_error_rollups(
         project,
         [FailedSpan(started_at=old), FailedSpan(started_at=now - timedelta(hours=1))],
     )
-    await roll_up_all(session_factory, now=now)
+    await run_recent(session_factory, settings, now)
     # The state of an install upgraded with complete span rollups: no error history at all.
     await execute(
         session_factory, "DELETE FROM error_rollups_hourly WHERE project_id = :p", {"p": project}
@@ -156,9 +158,8 @@ async def test_backfill_detects_a_project_missing_error_rollups(
 
     # The recompute writes the recent hour first, so the table is no longer empty when the
     # backfill looks for gaps: the old failure must still be found.
-    _, backfilled = await roll_up_all(session_factory, now=now)
+    await run_recent(session_factory, settings, now)
 
-    assert backfilled > 0
     rows = await fetch(
         session_factory,
         "SELECT bucket_start, errors FROM error_rollups_hourly WHERE project_id = :p "
@@ -173,6 +174,7 @@ async def test_backfill_detects_a_project_missing_error_rollups(
 
 async def test_backfill_of_error_free_history_is_not_repeated(
     session_factory: SessionFactory,
+    settings: Settings,
 ) -> None:
     now = datetime.now(UTC)
     old = now - timedelta(days=5)
@@ -189,11 +191,18 @@ async def test_backfill_of_error_free_history_is_not_repeated(
             FailedSpan(started_at=old, error_class=None),
         ],
     )
-    _, first = await roll_up_all(session_factory, now=now)
-    _, second = await roll_up_all(session_factory, now=now)
-
-    assert first > 0
-    assert second == 0
+    await run_recent(session_factory, settings, now)
+    before = await fetch(
+        session_factory, "SELECT * FROM span_rollups_hourly WHERE project_id=:p", {"p": project}
+    )
+    assert sum(row["span_count"] for row in before) == 4
+    await run_recent(session_factory, settings, now)
+    assert (
+        await fetch(
+            session_factory, "SELECT * FROM span_rollups_hourly WHERE project_id=:p", {"p": project}
+        )
+        == before
+    )
     assert await fetch(session_factory, _ROLLUP_ROWS, {"p": project}) == []
 
 

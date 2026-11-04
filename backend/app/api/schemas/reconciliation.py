@@ -14,7 +14,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel
 
-from app.api.schemas.common import Money
+from app.api.schemas.common import AggregateMetadata, Money
 from app.db.models.billing import BillingProvider, BillingSourceKind
 from app.reconciliation.explained import ExplainedKind
 
@@ -82,7 +82,7 @@ class ListedChargeOut(BaseModel):
     usd: Money
 
 
-class ReportDayOut(BaseModel):
+class ReportDayOut(AggregateMetadata):
     day: date
     provisional: bool
     fetched_at: datetime | None
@@ -95,7 +95,10 @@ class ReportDayOut(BaseModel):
     variance_ratio: Money | None
     credits_usd: Money | None
     other_usd: Money | None
-    unattributed_calls: int
+    unattributed_calls: int | None
+    # The residual is known and above 10 % of the provider's bill and above $1: spend Spanlight
+    # never saw (D10 of the hard gateway budgets design). False when the residual is unknown.
+    bypass_suspected: bool
     groups: list[ReportGroupOut]
     credits: list[ListedChargeOut]
     other: list[ListedChargeOut]
@@ -112,7 +115,7 @@ class ReportSummaryOut(BaseModel):
     max_abs_variance_ratio: Money | None
 
 
-class ReconciliationOut(BaseModel):
+class ReconciliationOut(AggregateMetadata):
     source: ReportSourceOut
     window: ReportWindowOut
     projects: list[ReportProjectOut]

@@ -33,6 +33,7 @@ from app.core.observability import METRICS_RAW_TAIL
 from app.metrics import queries
 from app.rollups.buckets import BUCKET_COUNT, merge
 from app.rollups.compute import HOUR, floor_hour
+from app.rollups.coverage_reads import CoverageState
 from app.rollups.queries import (
     HourlyRollup,
     ModelRollup,
@@ -53,17 +54,50 @@ async def overview(
     db: AsyncSession, project_id: uuid.UUID, window: TimeWindow, environment: str | None
 ) -> OverviewOut:
     """KPIs for the window and for the window of equal length right before it."""
-    plans = await _plans(db, project_id, [window, window.previous()])
-    estimated = any(plan.rollup is not None for plan in plans)
-    hours = await _rollup_hours(db, project_id, plans, environment)
-    groups = [plan.raw for plan in plans]
-    spans = await queries.read_span_kpis(db, project_id, groups, environment, estimated)
-    traces = await queries.read_trace_counts(db, project_id, groups, environment)
-    current, previous = (
-        _kpis(window.start, plan, hours, row, count, estimated)
-        for plan, row, count in zip(plans, spans, traces, strict=True)
+    [(current, current_estimated), (previous, previous_estimated)] = await _windows_kpis(
+        db, project_id, [window, window.previous()], environment
     )
-    return OverviewOut(current=current, previous=previous, approximate=estimated)
+    return OverviewOut(
+        current=current, previous=previous, approximate=current_estimated or previous_estimated
+    )
+
+
+async def _windows_kpis(
+    db: AsyncSession, project_id: uuid.UUID, windows: Sequence[TimeWindow], environment: str | None
+) -> list[tuple[KpisOut, bool]]:
+    """Each window's KPIs and whether they are estimated, read together (one statement per query
+    family) but judged per window: coverage, its fallback and the latency form are each window's
+    own, so a window's result equals reading it alone."""
+    coverages = [CoverageState() for _ in windows]
+    plans = await _plans(db, project_id, windows)
+    estimated = [plan.rollup is not None for plan in plans]
+    parts = [
+        (TimeWindow(*plan.rollup), coverage)
+        for plan, coverage in zip(plans, coverages, strict=True)
+        if plan.rollup is not None
+    ]
+    hours = await _rollup_hours(db, project_id, plans, environment, parts=parts)
+    raw = [plan.raw for plan in plans]
+    spans = await queries.read_span_kpis(db, project_id, raw, environment, estimated, coverages)
+    traces = await queries.read_trace_counts(db, project_id, raw, environment, coverages)
+    results: list[tuple[KpisOut, bool]] = []
+    for i, window in enumerate(windows):
+        coverage, plan, row, count = coverages[i], plans[i], spans[i], traces[i]
+        rolled = estimated[i]
+        window_hours = hours
+        if coverage.unavailable:
+            window_hours = (await read_rollups(db, project_id, window, environment, coverage)).hours
+            plan = WindowPlan((floor_hour(window.start), window.end), ())
+            row, count, rolled = None, 0, True
+        result = _kpis(window.start, plan, window_hours, row, count, rolled)
+        result.aggregate_status = coverage.status
+        result.oldest_pending_at = coverage.oldest_pending_at
+        if coverage.unavailable and not window_hours:
+            for field in KpisOut.model_fields:
+                if field not in {"aggregate_status", "oldest_pending_at"}:
+                    setattr(result, field, None)
+        results.append((result, rolled))
+    return results
 
 
 async def timeseries(
@@ -72,18 +106,23 @@ async def timeseries(
     window: TimeWindow,
     environment: str | None,
     bucket: Bucket,
+    coverage: CoverageState | None = None,
 ) -> list[TimeseriesPointOut]:
     """Gapless points, one per UTC bucket from the one holding ``window.start`` up to its end.
 
     A point that holds a rollup hour has its p95 estimated and says so; a point of raw spans
     only keeps the exact p95.
     """
+    coverage = coverage or CoverageState()
     [plan] = await _plans(db, project_id, [window])
-    hours = await _rollup_hours(db, project_id, [plan], environment)
-    rolled = group_hours(RollupSeries(hours), lambda hour: _bucket_start(hour, bucket))
+    hours = await _rollup_hours(db, project_id, [plan], environment, coverage)
     raw_rows = await queries.read_timeseries(
-        db, project_id, plan.raw, environment, bucket, plan.rollup is not None
+        db, project_id, plan.raw, environment, bucket, plan.rollup is not None, coverage
     )
+    if coverage.unavailable:
+        hours = (await read_rollups(db, project_id, window, environment, coverage)).hours
+        raw_rows = []
+    rolled = group_hours(RollupSeries(hours), lambda hour: _bucket_start(hour, bucket))
     raw = {row.bucket_start: row for row in raw_rows}
     step = HOUR if bucket == "hour" else timedelta(days=1)
     points: list[TimeseriesPointOut] = []
@@ -99,12 +138,13 @@ async def timeseries(
         points.append(
             TimeseriesPointOut(
                 bucket_start=current,
-                llm_calls=total.llm_calls,
-                errors=total.llm_errors,
+                llm_calls=None if coverage.unavailable and not parts else total.llm_calls,
+                errors=None if coverage.unavailable and not parts else total.llm_errors,
                 p95_ms=p95,
                 cost_usd=total.cost_usd,
-                tokens=total.tokens,
+                tokens=None if coverage.unavailable and not parts else total.tokens,
                 approximate=rolled_part is not None,
+                **coverage.metadata(),
             )
         )
         current += step
@@ -112,7 +152,11 @@ async def timeseries(
 
 
 async def models(
-    db: AsyncSession, project_id: uuid.UUID, window: TimeWindow, environment: str | None
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    window: TimeWindow,
+    environment: str | None,
+    coverage: CoverageState | None = None,
 ) -> list[ModelMetricsOut]:
     """Calls, errors, latency, tokens and cost per provider and model, busiest first, at most 100.
 
@@ -121,11 +165,15 @@ async def models(
     """
     [plan] = await _plans(db, project_id, [window])
     estimated = plan.rollup is not None
-    raw_rows = await queries.read_models(db, project_id, plan.raw, environment, estimated)
+    coverage = coverage or CoverageState()
+    raw_rows = await queries.read_models(db, project_id, plan.raw, environment, estimated, coverage)
     if plan.rollup is None:
         rows: list[Any] = list(raw_rows)
     else:
-        rows = await _merged_models(db, project_id, plan.rollup, raw_rows, environment)
+        rows = await _merged_models(db, project_id, plan.rollup, raw_rows, environment, coverage)
+    if coverage.unavailable:
+        rows = await read_model_rollups(db, project_id, window, environment, coverage)
+        estimated = True
     rows.sort(
         key=lambda row: (
             -row.calls,
@@ -147,6 +195,7 @@ async def models(
             output_tokens=row.output_tokens,
             cost_usd=row.cost_usd,
             approximate=estimated,
+            **coverage.metadata(),
         )
         for row in rows[:MODEL_LIMIT]
     ]
@@ -168,13 +217,17 @@ async def _rollup_hours(
     project_id: uuid.UUID,
     plans: Sequence[WindowPlan],
     environment: str | None,
+    coverage: CoverageState | None = None,
+    *,
+    parts: Sequence[tuple[TimeWindow, CoverageState]] = (),
 ) -> list[HourlyRollup]:
-    """Every rollup hour the plans need, from one read over their hull."""
+    """Every rollup hour the plans need, from one read over their hull (coverage per part when
+    ``parts`` is given, see :func:`read_rollups`)."""
     ranges = [plan.rollup for plan in plans if plan.rollup is not None]
     if not ranges:
         return []
     hull = TimeWindow(min(start for start, _ in ranges), max(end for _, end in ranges))
-    return (await read_rollups(db, project_id, hull, environment)).hours
+    return (await read_rollups(db, project_id, hull, environment, coverage, parts=parts)).hours
 
 
 def _kpis(
@@ -243,11 +296,14 @@ async def _merged_models(
     rollup: tuple[datetime, datetime],
     raw_rows: Sequence[Row[Any]],
     environment: str | None,
+    coverage: CoverageState | None = None,
 ) -> list[Any]:
     """The rollup and raw groups of each (provider, model) added together."""
     merged: dict[tuple[str | None, str | None], ModelRollup] = {
         (row.provider, row.model): row
-        for row in await read_model_rollups(db, project_id, TimeWindow(*rollup), environment)
+        for row in await read_model_rollups(
+            db, project_id, TimeWindow(*rollup), environment, coverage
+        )
     }
     for row in raw_rows:
         key = (row.provider, row.model)

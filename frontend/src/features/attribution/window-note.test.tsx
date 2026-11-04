@@ -39,4 +39,21 @@ describe("WindowNote", () => {
     expect(screen.getByText("Live")).toBeInTheDocument();
     expect(screen.queryByText(/computed|Updated/)).not.toBeInTheDocument();
   });
+
+  it("labels retained rows a snapshot instead of a recompute time", () => {
+    renderNote(
+      response({ aggregate_status: "unavailable", computed_at: AT_1405, pending_traces: 3 }),
+    );
+    expect(screen.getByText("Retained snapshot")).toBeInTheDocument();
+    expect(screen.queryByText(/Updated/)).not.toBeInTheDocument();
+  });
+
+  it("never calls an unavailable raw window Live", () => {
+    renderNote(
+      response({ source: "raw", aggregate_status: "unavailable", items: [], computed_at: null }),
+      "24h",
+    );
+    expect(screen.getByText("Source history unavailable")).toBeInTheDocument();
+    expect(screen.queryByText("Live")).not.toBeInTheDocument();
+  });
 });

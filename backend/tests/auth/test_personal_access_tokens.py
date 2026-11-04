@@ -751,7 +751,7 @@ async def test_last_used_is_written_at_most_once_a_minute(
         ("GET", "/api/v1/auth/sessions"),
         ("DELETE", "/api/v1/auth/sessions"),
         ("POST", "/api/v1/orgs"),
-        ("GET", "/api/v1/invites/preview"),
+        ("POST", "/api/v1/invites/preview"),
         ("POST", "/api/v1/invites/accept"),
         ("GET", "/api/v1/auth/totp"),
         ("GET", "/api/v1/auth/oauth/identities"),
@@ -767,7 +767,6 @@ async def test_a_token_is_refused_on_a_session_only_route(
         method,
         path,
         json={"name": "x", "scope": "read", "token": "x"} if method == "POST" else None,
-        params={"token": "x"} if path.endswith("preview") else None,
         headers=bearer(token["token"]),
     )
 
@@ -798,7 +797,7 @@ async def test_a_token_cannot_accept_an_invite(
     invitee: Browser = await browser_factory("invitee@example.com")
     workspace = await create_workspace(owner)
     invite = await owner.post(f"/api/v1/orgs/{workspace.org_id}/invites", json={"role": "member"})
-    invite_token = invite.json()["url"].rsplit("/", 1)[1]
+    invite_token = invite.json()["url"].split("#token=", 1)[1]
     token = await create_token(invitee, scope="write")
 
     refused = await bare_client.post(

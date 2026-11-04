@@ -8,10 +8,10 @@ export const BUCKET_MS: Record<Bucket, number> = { hour: 3_600_000, day: 86_400_
 export interface ChartPoint {
   /** ISO bucket start; also the category key on the x axis. */
   bucketStart: string;
-  llmCalls: number;
-  errors: number;
+  llmCalls: number | null;
+  errors: number | null;
   /** `llmCalls − errors`: the lower segment of the calls stack. */
-  succeeded: number;
+  succeeded: number | null;
   /**
    * The bucket is not whole: the window clips it (the first) or it is still filling (the last).
    * Its sums are real; charts draw it fainter, label it "partial" and leave it out of the peak.
@@ -19,7 +19,7 @@ export interface ChartPoint {
   partial: boolean;
   p95Ms: number | null;
   costUsd: number | null;
-  tokens: number;
+  tokens: number | null;
 }
 
 /**
@@ -39,7 +39,8 @@ export function toChartPoints(
       bucketStart: point.bucket_start,
       llmCalls: point.llm_calls,
       errors: point.errors,
-      succeeded: point.llm_calls - point.errors,
+      succeeded:
+        point.llm_calls === null || point.errors === null ? null : point.llm_calls - point.errors,
       partial: start < from || start + step > to,
       p95Ms: point.p95_ms,
       costUsd: parseMoney(point.cost_usd),
@@ -166,22 +167,22 @@ export function bucketAdjective(bucket: Bucket): string {
 }
 
 export interface CallsSummary {
-  calls: number;
-  errors: number;
+  calls: number | null;
+  errors: number | null;
 }
 
 export function summarizeCalls(points: readonly ChartPoint[]): CallsSummary {
-  let calls = 0;
-  let errors = 0;
+  let calls: number | null = 0;
+  let errors: number | null = 0;
   for (const point of points) {
-    calls += point.llmCalls;
-    errors += point.errors;
+    calls = calls === null || point.llmCalls === null ? null : calls + point.llmCalls;
+    errors = errors === null || point.errors === null ? null : errors + point.errors;
   }
   return { calls, errors };
 }
 
 export function hasCallData(points: readonly ChartPoint[]): boolean {
-  return points.some((point) => point.llmCalls > 0);
+  return points.some((point) => point.llmCalls === null || point.llmCalls > 0);
 }
 
 export function hasCostData(points: readonly ChartPoint[]): boolean {

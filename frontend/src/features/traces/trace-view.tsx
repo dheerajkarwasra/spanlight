@@ -1,10 +1,12 @@
 import { getRouteApi } from "@tanstack/react-router";
 import { Waypoints } from "lucide-react";
-import { useId, useMemo, useRef, type MouseEvent } from "react";
+import { useDeferredValue, useId, useMemo, useRef, type MouseEvent } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { Card } from "@/components/ui/card";
+import { UnknownValue } from "@/components/unknown-value";
 import type { Span, TraceDetail } from "@/lib/api";
+import { formatTimestamp } from "@/lib/format";
 import { useStoredChoice } from "@/lib/use-stored-choice";
 import { cn } from "@/lib/utils";
 
@@ -50,7 +52,13 @@ export type TraceViewProps = CommonProps &
 
 /** Figma "Trace detail" (spec §6): the summary bar, Trace info, then the tree and the inspector. */
 export function TraceView(props: TraceViewProps) {
-  return props.variant === "page" ? <PageTraceView {...props} /> : <TraceViewBody {...props} />;
+  // Keyed by trace: another trace starts over, so its deferred panes never show the last trace's.
+  const key = props.trace.trace_id;
+  return props.variant === "page" ? (
+    <PageTraceView key={key} {...props} />
+  ) : (
+    <TraceViewBody key={key} {...props} />
+  );
 }
 
 function PageTraceView(props: CommonProps) {
@@ -84,7 +92,7 @@ interface TraceViewBodyProps {
 
 function TraceViewBody({
   trace,
-  spans,
+  spans: latestSpans,
   variant,
   scrollElement = null,
   linkHref,
@@ -95,7 +103,10 @@ function TraceViewBody({
   const onSelectSpan = (span: string) => {
     onSelectionChange({ ...selection, span });
   };
-  const roots = useMemo(() => buildSpanTree(spans), [spans]);
+  // Null until a background render shows the tree and inspector: React yields to the browser in
+  // it, so a 5,000-span trace mounts in short tasks, not one long one. The bar shows at once.
+  const spans = useDeferredValue<Span[] | null>(latestSpans, null);
+  const roots = useMemo(() => buildSpanTree(spans ?? []), [spans]);
   const [info, setInfo] = useStoredChoice("spanlight.trace-info", TRACE_INFO_STATES, "closed");
   const infoId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -105,7 +116,10 @@ function TraceViewBody({
   const insights = useTraceInsights(trace.trace_id);
   const barRef = useRef<HTMLDivElement>(null);
   usePageScrollPadding(barRef, variant === "page" ? document.documentElement : scrollElement);
-  const selectedSpan = spans.find((span) => span.span_id === spanId) ?? roots[0]?.span ?? null;
+  // From the latest spans, so the bar (Replay, Add to dataset) names the URL's span while the
+  // deferred tree is still on its way.
+  const selectedSpan =
+    latestSpans.find((span) => span.span_id === spanId) ?? roots[0]?.span ?? null;
   const offsets = OFFSETS[variant];
 
   /**
@@ -139,8 +153,23 @@ function TraceViewBody({
         linkHref={linkHref}
         ref={barRef}
       />
+      {trace.root_received === false ? (
+        <p className="text-xs font-medium text-muted-foreground">
+          Root span not received. Duration, tokens and cost cover received spans only. Last span
+          ended{" "}
+          <time dateTime={trace.ended_at}>
+            {formatTimestamp(trace.ended_at) ?? <UnknownValue reason="The end time is invalid" />}
+          </time>
+          .
+        </p>
+      ) : null}
       {info === "open" ? <TraceInfoPanel id={infoId} trace={trace} /> : null}
-      {spans.length === 0 ? (
+      {spans === null ? (
+        <div className={PANES} aria-busy>
+          <SpanWaterfallSkeleton />
+          <SpanDetailSkeleton />
+        </div>
+      ) : spans.length === 0 ? (
         <Card>
           <EmptyState
             icon={Waypoints}

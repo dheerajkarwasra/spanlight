@@ -1,3 +1,4 @@
+import type { AggregateMetadata } from "./aggregate";
 import { api, buildUrl } from "./client";
 import { orgPath } from "./paths";
 import type { Page, User } from "./types";
@@ -145,7 +146,7 @@ export interface ListedCharge {
  * residual null; a day whose rollups are being built has the Spanlight figures null and `note`
  * "rollup pending". `incomplete` also marks a day whose spans are past retention.
  */
-export interface ReconciliationDay {
+export interface ReconciliationDay extends AggregateMetadata {
   /** YYYY-MM-DD (UTC). */
   day: string;
   provisional: boolean;
@@ -160,7 +161,12 @@ export interface ReconciliationDay {
   credits_usd: string | null;
   other_usd: string | null;
   /** Calls whose span named no provider, so no source can bill them. */
-  unattributed_calls: number;
+  unattributed_calls: number | null;
+  /**
+   * The server's one rule: the residual is known and above both 10 % of the provider figure and
+   * $1. Never recomputed here. Admins are emailed about such a day after the fetch.
+   */
+  bypass_suspected: boolean;
   groups: ReconciliationGroup[];
   credits: ListedCharge[];
   other: ListedCharge[];
@@ -175,7 +181,7 @@ export interface ReconciliationSummary {
 }
 
 /** Spec §8.3: the provider's bill against Spanlight's figures, per UTC day and model group. */
-export interface ReconciliationReport {
+export interface ReconciliationReport extends AggregateMetadata {
   source: { id: string; provider: BillingProvider; kind: BillingSourceKind };
   /** Whole UTC days: `start` is the first day's midnight, `end` the midnight after the last. */
   window: { start: string; end: string };

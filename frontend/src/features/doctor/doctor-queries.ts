@@ -30,7 +30,7 @@ export function useProjectInsights(query: InsightQuery, options: { retry?: boole
   const { projectId } = useProjectParams();
   return useQuery({
     queryKey: queryKeys.project(projectId).insights(query),
-    queryFn: () => insightsApi.list(projectId, query),
+    queryFn: ({ signal }) => insightsApi.list(projectId, query, signal),
     refetchInterval: REFRESH_MS,
     ...options,
   });
@@ -42,7 +42,8 @@ export function useInsightPages(query: InsightQuery) {
   return useInfiniteQuery({
     // Distinct from `useProjectInsights`' key: the cached data has a different shape.
     queryKey: [...queryKeys.project(projectId).insights(query), "pages"] as const,
-    queryFn: ({ pageParam }) => insightsApi.list(projectId, { ...query, cursor: pageParam }),
+    queryFn: ({ pageParam, signal }) =>
+      insightsApi.list(projectId, { ...query, cursor: pageParam }, signal),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor,
     refetchInterval: REFRESH_MS,
@@ -54,7 +55,7 @@ export function useLastDetectorRun() {
   const { projectId } = useProjectParams();
   return useQuery({
     queryKey: queryKeys.project(projectId).detectorRuns,
-    queryFn: () => insightsApi.detectorRuns(projectId, 1),
+    queryFn: ({ signal }) => insightsApi.detectorRuns(projectId, 1, signal),
     select: (runs) => runs[0] ?? null,
     refetchInterval: REFRESH_MS,
   });
@@ -66,7 +67,7 @@ export function useHasAnyInsight(enabled: boolean) {
   const query = { limit: 1 } as const;
   return useQuery({
     queryKey: queryKeys.project(projectId).insights(query),
-    queryFn: () => insightsApi.list(projectId, query),
+    queryFn: ({ signal }) => insightsApi.list(projectId, query, signal),
     select: (page) => page.items.length > 0,
     enabled,
   });
@@ -193,7 +194,7 @@ export function useIncidentPolling(enabled: boolean) {
   const query = { limit: 1 } as const;
   return useQuery({
     queryKey: queryKeys.project(projectId).providerIncidents(query),
-    queryFn: () => providersApi.incidents(projectId, query),
+    queryFn: ({ signal }) => providersApi.incidents(projectId, query, signal),
     select: (list) => list.polling,
     enabled,
   });

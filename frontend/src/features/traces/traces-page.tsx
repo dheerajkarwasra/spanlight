@@ -6,12 +6,17 @@ import { PageHeader } from "@/components/page-header";
 import { UnknownValue } from "@/components/unknown-value";
 import { useTablePrefs, type SortOrder } from "@/components/data-table";
 import { Card } from "@/components/ui/card";
+import { RefusedSpansNotice } from "@/features/overview/refused-spans-notice";
 import { useProjectFilters, useProjectQuery } from "@/features/shell/project-context";
 import { rangePhrase } from "@/lib/time-range";
 import { useMediaQuery } from "@/lib/use-media-query";
 
 import { BulkSelectionBar } from "./bulk-selection-bar";
-import { recallOpenedTrace, rememberTracesSearch } from "./last-traces-search";
+import {
+  recallOpenedTrace,
+  rememberTracesSearch,
+  useTraceHistoryScope,
+} from "./last-traces-search";
 import { loadedSummary, windowCountLine } from "./list-summary";
 import { PeekSheet } from "./peek-sheet";
 import { TraceHistogram } from "./trace-histogram";
@@ -21,6 +26,7 @@ import { TraceTiles, TraceTilesSkeleton } from "./trace-tiles";
 import { TracesEmptyState } from "./traces-empty-state";
 import { previewsShown } from "./traces-columns";
 import { TracesTable } from "./traces-table";
+import { SavedViews } from "./saved-view-links";
 import { TracesToolbar } from "./traces-toolbar";
 import type { TraceFilters } from "./search";
 import { onlyRetriesFilter, useTraceFilters } from "./use-trace-filters";
@@ -32,6 +38,7 @@ const NO_KEYS: readonly string[] = [];
 const PHONE_QUERY = "(max-width: 767px)";
 
 export function TracesPage() {
+  const historyScope = useTraceHistoryScope();
   const filters = useTraceFilters();
   const phone = useMediaQuery(PHONE_QUERY);
   // The table's column choices (shared with the table): previews only while Input or Output shows.
@@ -42,8 +49,8 @@ export function TracesPage() {
   const { search } = filters;
 
   useEffect(() => {
-    rememberTracesSearch(search);
-  }, [search]);
+    rememberTracesSearch(search, historyScope);
+  }, [search, historyScope]);
 
   const traces = tracesQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const selection = useTraceSelection(traces);
@@ -51,7 +58,8 @@ export function TracesPage() {
   const isRefreshing =
     tracesQuery.isFetching && !tracesQuery.isFetchingNextPage && !tracesQuery.isPending;
   const stale = tracesQuery.isPlaceholderData;
-  const selectedTraceId = (peek.enabled ? peek.peekId : undefined) ?? recallOpenedTrace();
+  const selectedTraceId =
+    (peek.enabled ? peek.peekId : undefined) ?? recallOpenedTrace(historyScope);
 
   const summary = loadedSummary({
     loaded: traces.length,
@@ -160,6 +168,7 @@ export function TracesPage() {
         description={<TraceCountLine countQuery={countQuery} filtered={filters.hasFacetFilters} />}
         actions={<ExportTracesButton />}
       />
+      <SavedViews search={filters.search} />
       <TracesToolbar
         search={filters.search}
         activeFilters={filters.activeFilters}
@@ -168,6 +177,7 @@ export function TracesPage() {
         onFiltersChange={filters.setFilters}
         onClearFilters={filters.clearFilters}
       />
+      <RefusedSpansNotice />
       <TraceHistogram search={search} />
       {renderBody()}
       <BulkSelectionBar selection={selection} />
@@ -187,7 +197,7 @@ function TraceCountLine({
   const { range } = useProjectFilters();
   const phrase = rangePhrase(range);
 
-  if (countQuery.data === undefined) {
+  if (countQuery.data == null) {
     const reason = countQuery.isError ? "Couldn't load the trace count" : "Counting traces…";
     return (
       <>

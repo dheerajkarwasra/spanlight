@@ -120,6 +120,8 @@ async def update_project(
             metadata=audit,
         )
     await db.commit()
+    # This process's gateway calls read the change from the next call, not after the key cache TTL.
+    request.app.state.gateway_key_cache.clear()
     return project
 
 
@@ -177,6 +179,7 @@ async def delete_project(
     await db.commit()
     # The keys went with the project; this process stops accepting them now, not after the TTL.
     request.app.state.key_cache.clear()
+    request.app.state.gateway_key_cache.clear()
 
 
 @router.get("/projects/{project_id}/onboarding", response_model=OnboardingOut)

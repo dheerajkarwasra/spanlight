@@ -87,8 +87,6 @@ def _params(path: str, trace_id: str) -> dict[str, str] | None:
     """The query a route needs before it looks at anything else."""
     if path.endswith("/traces/compare"):
         return {"a": trace_id, "b": trace_id}
-    if path.endswith("/invites/preview"):
-        return {"token": "x"}
     if path.endswith("/releases/compare"):
         return dict(zip(("a", "b"), RELEASES, strict=True))
     if path.endswith(("/attribution", "/attribution/series")):

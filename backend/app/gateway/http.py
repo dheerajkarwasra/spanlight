@@ -7,7 +7,10 @@ egress check never saw, and no `.netrc`, which could add an `Authorization` head
 It keeps no cookies: the client is shared by every organization, so a cookie one provider set
 during one organization's call (Cloudflare sets them on `.openai.com` and `.anthropic.com`)
 would otherwise ride on the next organization's calls. It holds a pool of 100 HTTP/1.1
-connections.
+connections, all of which may stay open idle for 90 s: a call after a short idle gap then reuses
+a connection instead of paying DNS, TCP and TLS again before its first byte. A connection stays
+pinned to the address that was vetted when it was opened, and a provider that closes an idle
+connection earlier is noticed by httpcore before the connection is reused.
 
 Two transports sit under it, both in `app.core.egress_http` (shared with the alert channels'
 client): `VettedTransport`, the real network through a pool that only connects to vetted
@@ -28,8 +31,8 @@ if TYPE_CHECKING:
     from app.config import Settings
 
 POOL_SIZE = 100
-KEEPALIVE_CONNECTIONS = 20
-KEEPALIVE_EXPIRY_SECONDS = 5.0
+KEEPALIVE_CONNECTIONS = POOL_SIZE
+KEEPALIVE_EXPIRY_SECONDS = 90.0
 USER_AGENT = "spanlight-gateway"
 
 

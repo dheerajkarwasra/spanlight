@@ -2,9 +2,10 @@
 
 * Items are matched on `dataset_item_id`. Matched items come first, in id order; items present in
   only one run follow (those of `a`, then those of `b`) with a null other side and null deltas.
-* A pair is `changed` when both rows carry a frozen copy and their `input` or `expected_output`
-  differ as canonical JSON (so `true` and `1` differ); `None` when either is a legacy row without
-  a copy (unknown, compared as before). Item metadata is not compared: evaluators never see it.
+* A pair is `changed` when both rows carry a frozen copy and their `copy_digest`s (of `input` and
+  `expected_output` as stored JSON, so `true` and `1` differ) differ; `None` when either is a
+  legacy row without a copy (unknown, compared as before). Item metadata is not compared:
+  evaluators never see it.
   A changed pair has a `None` delta for every score and is left out of `improved`, `regressed`,
   `unchanged` and the paired test, since scores against different references are not a fair
   pair; `changed_items` counts these pairs.
@@ -29,7 +30,6 @@
 Comparing a run with itself gives zero deltas.
 """
 
-import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
@@ -62,9 +62,11 @@ class ItemRow:
     error: str | None
     evaluator_error: str | None
     # The item as the run saw it; `has_copy` is False on a legacy row stored before runs kept one.
+    # `copy_digest` (equal digests, equal copies) is what tells copies apart.
     input: Any = None
     expected_output: Any = None
     has_copy: bool = False
+    copy_digest: bytes | None = None
     # `experiment_totals.cluster_label` with the experiment's cluster key; None without one.
     cluster: str | UUID | None = None
 
@@ -128,12 +130,7 @@ def _delta(a: Any, b: Any) -> Decimal | None:
 def _changed(a: ItemRow | None, b: ItemRow | None) -> bool | None:
     if a is None or b is None or not (a.has_copy and b.has_copy):
         return None
-    return not (_same(a.input, b.input) and _same(a.expected_output, b.expected_output))
-
-
-def _same(a: Any, b: Any) -> bool:
-    """JSON equality: Python's `==` would call `true` and `1` equal."""
-    return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
+    return a.copy_digest != b.copy_digest
 
 
 def _item_deltas(

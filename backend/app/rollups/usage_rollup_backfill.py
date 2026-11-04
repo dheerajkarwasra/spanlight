@@ -18,18 +18,14 @@ from itertools import groupby
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.rls import bind_project, bypass_rls
+from app.db.rls import bypass_rls
+from app.ingest.aggregate_changes import lock_trace_identities, trace_hours
 from app.ingest.store import _recompute_rollups
+from app.rollups.dirty import mark_dirty_hours
 
 _LIST = text(
     "SELECT project_id, trace_id FROM traces WHERE started_at >= :since "
     "ORDER BY project_id, trace_id"
-)
-# Ingestion holds the trace rows while it recomputes; taking the same locks first, in key order,
-# orders a batch before or after any ingestion of the same traces rather than interleaved with it.
-_LOCK = text(
-    "SELECT trace_id FROM traces WHERE project_id = :project_id AND trace_id = ANY(:trace_ids) "
-    "ORDER BY trace_id FOR UPDATE"
 )
 
 
@@ -58,7 +54,10 @@ async def backfill_usage_rollups(
 async def _recompute_batch(
     session: AsyncSession, project_id: uuid.UUID, trace_ids: Sequence[str]
 ) -> None:
-    await bind_project(session, project_id)
-    await session.execute(_LOCK, {"project_id": project_id, "trace_ids": list(trace_ids)})
+    if not await lock_trace_identities(session, project_id, trace_ids):
+        return
+    old_hours = await trace_hours(session, project_id, trace_ids)
     await _recompute_rollups(session, project_id, trace_ids)
+    new_hours = await trace_hours(session, project_id, trace_ids)
+    await mark_dirty_hours(session, project_id, [*old_hours, *new_hours])
     await session.commit()

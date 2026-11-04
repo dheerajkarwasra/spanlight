@@ -17,13 +17,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
     ANONYMOUS,
-    SESSION_COOKIE,
     Clock,
     ClockDep,
     CurrentSession,
     DbSession,
     SettingsDep,
     client_ip,
+    session_cookie_name,
     utcnow,
 )
 from app.api.schemas import OAuthIdentityOut, OAuthProviderOut
@@ -150,7 +150,7 @@ async def start(
     now = utcnow()
     user_id = None
     if intent == "link":
-        active = await _optional_session(request, db)
+        active = await _optional_session(request, db, settings)
         if active is None:
             raise unauthorized()
         # Refused here so the person is told at once; `link_identity` checks both again at the
@@ -302,7 +302,7 @@ async def _link(
     stored: OAuthState,
     profile: OAuthProfile,
 ) -> RedirectResponse:
-    active = await _optional_session(request, db)
+    active = await _optional_session(request, db, settings)
     # The account that finishes the link must be the one that started it. Otherwise a state
     # started in one session and finished in another would attach the provider account to
     # whoever happens to be signed in at the callback.
@@ -321,9 +321,11 @@ async def _link(
     )
 
 
-async def _optional_session(request: Request, db: AsyncSession) -> ActiveSession | None:
+async def _optional_session(
+    request: Request, db: AsyncSession, settings: Settings
+) -> ActiveSession | None:
     """The signed-in session if there is a live one. These GET routes need no CSRF token."""
-    token = request.cookies.get(SESSION_COOKIE)
+    token = request.cookies.get(session_cookie_name(settings))
     if not token:
         return None
     return await resolve_session(db, token, now=utcnow())

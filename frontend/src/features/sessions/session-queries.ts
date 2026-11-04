@@ -44,7 +44,8 @@ export function useSessionListQuery(list: SessionsListState, preview: boolean) {
 
   return useInfiniteQuery({
     queryKey: queryKeys.project(projectId).sessions(query),
-    queryFn: ({ pageParam }) => projectsApi.sessions(projectId, { ...query, cursor: pageParam }),
+    queryFn: ({ pageParam, signal }) =>
+      projectsApi.sessions(projectId, { ...query, cursor: pageParam }, signal),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor,
     placeholderData: keepPreviousData,
@@ -62,8 +63,8 @@ export function useSessionTurnsQuery(sessionId: string) {
 
   return useInfiniteQuery({
     queryKey: queryKeys.project(projectId).sessionTurns(sessionId, query),
-    queryFn: ({ pageParam }) =>
-      projectsApi.sessionTurns(projectId, sessionId, { ...query, cursor: pageParam }),
+    queryFn: ({ pageParam, signal }) =>
+      projectsApi.sessionTurns(projectId, sessionId, { ...query, cursor: pageParam }, signal),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor,
   });

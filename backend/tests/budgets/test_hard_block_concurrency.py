@@ -11,10 +11,13 @@ one estimate's slack.
 """
 
 import asyncio
+import uuid
+from dataclasses import replace
 from decimal import ROUND_UP, Decimal
 from typing import Any
 
 import httpx
+import pytest
 from prometheus_client import REGISTRY
 from sqlalchemy import text
 
@@ -31,7 +34,7 @@ from tests.budgets.support import (
     chat_completion,
     create_budget,
 )
-from tests.gateway_fixtures import TEST_ORIGIN
+from tests.gateway_fixtures import TEST_ORIGIN, _build_workspace
 from tests.gateway_support import ManualClock, Stall, drain_recorder
 from tests.helpers import bearer
 
@@ -61,15 +64,23 @@ async def test_twenty_concurrent_calls_admit_five_on_a_budget_sized_for_five(
     reserve_count_before = REGISTRY.get_sample_value(f"{RESERVE_METRIC}_count") or 0.0
     reserve_sum_before = REGISTRY.get_sample_value(f"{RESERVE_METRIC}_sum") or 0.0
 
+    # Isolate budget admission from HTTP ingress: ten offered requests per replica.
+    settings = gateway_settings.model_copy(update={"gateway_max_in_flight": 10})
     async with (
-        app_on_clock(gateway_settings, world.fake, app_clock) as replica,
+        app_on_clock(settings, world.fake, app_clock) as first_replica,
+        app_on_clock(settings, world.fake, app_clock) as replica,
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=first_replica),
+            base_url=TEST_ORIGIN,
+            headers=bearer(world.workspace.gateway_key),
+        ) as first,
         httpx.AsyncClient(
             transport=httpx.ASGITransport(app=replica),
             base_url=TEST_ORIGIN,
             headers=bearer(world.workspace.gateway_key),
         ) as second,
     ):
-        clients = (world.workspace.gw, second)
+        clients = (first, second)
         calls = [
             asyncio.create_task(clients[index % 2].post("/gw/v1/chat/completions", json=BODY))
             for index in range(CALLS)
@@ -106,7 +117,9 @@ async def test_twenty_concurrent_calls_admit_five_on_a_budget_sized_for_five(
             )
         ).one()
         held = await db.scalar(
-            text("SELECT count(*) FROM budget_reservations WHERE budget_id = :id"),
+            text(
+                "SELECT count(*) FROM budget_reservations WHERE budget_id = :id AND status = 'held'"
+            ),
             {"id": budget.id},
         )
     assert reserved == 0
@@ -168,7 +181,7 @@ async def test_a_reaped_reservation_is_corrected_by_its_late_settle(
     gate.set()
     assert (await call).status_code == 200
     await drain_recorder()
-    assert await _counter(world, budget.id) == (Decimal("0.00004"), Decimal(0), [])
+    assert await _counter(world, budget.id) == (Decimal("0.00004"), Decimal(0), ["settled"])
 
 
 async def test_a_free_call_reserves_nothing(budget_world: BudgetWorld) -> None:
@@ -194,3 +207,173 @@ async def test_a_free_call_reserves_nothing(budget_world: BudgetWorld) -> None:
     assert response.status_code == 200, response.text
     await drain_recorder()
     assert await _counter(world, budget.id) == (Decimal(0), Decimal(0), [])
+
+
+async def _wait_for_reapers_blocked_by(world: BudgetWorld, locker_pid: int) -> None:
+    """Wait for two real UPDATE transactions to reach the locked reservation row."""
+    async with asyncio.timeout(5):
+        async with world.sessions() as observer:
+            while True:
+                await observer.execute(text("SELECT pg_stat_clear_snapshot()"))
+                blocked = await observer.scalar(
+                    text(
+                        "SELECT count(*) FROM pg_stat_activity "
+                        "WHERE :pid = ANY(pg_blocking_pids(pid)) "
+                        "AND query LIKE '%UPDATE budget_reservations%'"
+                    ),
+                    {"pid": locker_pid},
+                )
+                # PostgreSQL may queue the second worker behind the first worker instead.
+                queued = await observer.scalar(
+                    text(
+                        "SELECT count(*) FROM pg_stat_activity "
+                        "WHERE datname = current_database() AND wait_event_type = 'Lock' "
+                        "AND query LIKE '%UPDATE budget_reservations%'"
+                    )
+                )
+                if blocked and queued == 2:
+                    return
+                await asyncio.sleep(0.01)
+
+
+async def test_overlapping_reapers_charge_one_transition(budget_world: BudgetWorld) -> None:
+    world = budget_world
+    budget = await create_budget(world, amount=Decimal("0.01"))
+    gate = asyncio.Event()
+    world.fake.reply_json(chat_completion(PROMPT_TOKENS), before_headers=Stall(gate))
+    call = asyncio.create_task(world.workspace.gw.post("/gw/v1/chat/completions", json=BODY))
+    reapers: list[asyncio.Task[tuple[int, int]]] = []
+    try:
+        async with asyncio.timeout(5):
+            while not world.fake.requests:
+                await asyncio.wait({call}, timeout=0.01)
+        _, reserved, statuses = await _counter(world, budget.id)
+        assert reserved > 0
+        assert statuses == ["held"]
+        async with world.sessions() as locker:
+            await bypass_rls(locker)
+            locker_pid = await locker.scalar(text("SELECT pg_backend_pid()"))
+            assert isinstance(locker_pid, int)
+            await locker.execute(
+                text("SELECT id FROM budget_reservations WHERE budget_id = :id FOR UPDATE"),
+                {"id": budget.id},
+            )
+            reapers = [
+                asyncio.create_task(
+                    reap_expired(world.sessions, now=world.clock.wall() + RESERVATION_LEASE)
+                )
+                for _ in range(2)
+            ]
+            # Both UPDATE statements see HELD in their snapshots before either can write.
+            await _wait_for_reapers_blocked_by(world, locker_pid)
+            await locker.commit()
+        results = await asyncio.wait_for(asyncio.gather(*reapers), timeout=5)
+        assert sorted(results) == [(0, 0), (1, 0)]
+        assert await _counter(world, budget.id) == (reserved, Decimal(0), ["reaped"])
+    finally:
+        gate.set()
+        for task in reapers:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*reapers, return_exceptions=True)
+        await asyncio.wait_for(call, timeout=5)
+        await drain_recorder()
+    assert await _counter(world, budget.id) == (Decimal("0.00004"), Decimal(0), ["settled"])
+
+
+async def _wait_for_reservation_writers(world: BudgetWorld, count: int) -> None:
+    """Observe actual row-lock waits, rather than guessing transaction timing."""
+    async with asyncio.timeout(5):
+        async with world.sessions() as observer:
+            while True:
+                await observer.execute(text("SELECT pg_stat_clear_snapshot()"))
+                waiting = await observer.scalar(
+                    text(
+                        "SELECT count(*) FROM pg_stat_activity "
+                        "WHERE datname = current_database() AND wait_event_type = 'Lock' "
+                        "AND (query LIKE '%UPDATE budget_reservations%' "
+                        "OR (query LIKE '%FROM budget_reservations%' "
+                        "AND query LIKE '%FOR UPDATE%'))"
+                    )
+                )
+                if waiting == count:
+                    return
+                await asyncio.sleep(0.01)
+
+
+@pytest.mark.parametrize("reaper_first", [False, True])
+async def test_reaper_and_settlement_conserve_charge_in_both_lock_orders(
+    budget_world: BudgetWorld, gateway_app: Any, reaper_first: bool
+) -> None:
+    world = budget_world
+    # A separate organization's settled counter must survive either transaction ordering.
+    other_workspace = await _build_workspace(gateway_app, world.workspace.owner)
+    channel = await world.workspace.owner.post(
+        f"/api/v1/orgs/{other_workspace.org_id}/alert-channels",
+        json={"kind": "pagerduty", "name": "other-on-call", "secret": "c3" * 16},
+    )
+    assert channel.status_code == 201, channel.text
+    other = replace(world, workspace=other_workspace, channel_id=uuid.UUID(channel.json()["id"]))
+    gate = asyncio.Event()
+    call: asyncio.Task[httpx.Response] | None = None
+    reaper: asyncio.Task[tuple[int, int]] | None = None
+    try:
+        other_budget = await create_budget(other, amount=Decimal("0.01"))
+        world.fake.reply_json(chat_completion(200))
+        response = await other.workspace.gw.post("/gw/v1/chat/completions", json=BODY)
+        assert response.status_code == 200, response.text
+        await drain_recorder()
+        assert await _counter(other, other_budget.id) == (
+            Decimal("0.00008"),
+            Decimal(0),
+            ["settled"],
+        )
+        budget = await create_budget(world, amount=Decimal("0.01"))
+        world.fake.reply_json(chat_completion(PROMPT_TOKENS), before_headers=Stall(gate))
+        call = asyncio.create_task(world.workspace.gw.post("/gw/v1/chat/completions", json=BODY))
+        async with asyncio.timeout(5):
+            while len(world.fake.requests) < 2:
+                await asyncio.wait({call}, timeout=0.01)
+        _, reserved, statuses = await _counter(world, budget.id)
+        assert reserved > 0
+        assert statuses == ["held"]
+        async with world.sessions() as locker:
+            await bypass_rls(locker)
+            await locker.execute(
+                text("SELECT id FROM budget_reservations WHERE budget_id = :id FOR UPDATE"),
+                {"id": budget.id},
+            )
+            if reaper_first:
+                reaper = asyncio.create_task(
+                    reap_expired(world.sessions, now=world.clock.wall() + RESERVATION_LEASE)
+                )
+            else:
+                gate.set()
+            await _wait_for_reservation_writers(world, 1)
+            if reaper_first:
+                gate.set()
+            else:
+                reaper = asyncio.create_task(
+                    reap_expired(world.sessions, now=world.clock.wall() + RESERVATION_LEASE)
+                )
+            await _wait_for_reservation_writers(world, 2)
+            await locker.commit()
+        assert reaper is not None
+        assert await asyncio.wait_for(reaper, timeout=5) == ((1, 0) if reaper_first else (0, 0))
+        assert (await asyncio.wait_for(call, timeout=5)).status_code == 200
+        await drain_recorder()
+        assert await _counter(world, budget.id) == (Decimal("0.00004"), Decimal(0), ["settled"])
+        assert await _counter(other, other_budget.id) == (
+            Decimal("0.00008"),
+            Decimal(0),
+            ["settled"],
+        )
+    finally:
+        gate.set()
+        if reaper is not None and not reaper.done():
+            reaper.cancel()
+            await asyncio.gather(reaper, return_exceptions=True)
+        if call is not None:
+            await asyncio.wait_for(call, timeout=5)
+        await drain_recorder()
+        await other_workspace.gw.aclose()

@@ -13,6 +13,7 @@ import { ModelTableSkeleton } from "./model-table";
 import { projectBudget } from "./needs-attention";
 import { NeedsAttention } from "./needs-attention-card";
 import { CallsSection, CompletenessSection, ModelsSection } from "./overview-sections";
+import { RefusedSpansNotice } from "./refused-spans-notice";
 import { SpendByModel } from "./spend-by-model";
 import { TracesTabsCard } from "./traces-tabs-card";
 import type { OverviewQueries } from "./use-overview-queries";
@@ -26,6 +27,7 @@ import type { OverviewQueries } from "./use-overview-queries";
  */
 const GRID = "grid gap-3 sm:gap-4 lg:grid-cols-12";
 const PLACE = {
+  notice: "lg:order-0 lg:col-span-12",
   ribbon: "lg:order-1 lg:col-span-12",
   attention: "lg:order-4 lg:col-span-12 xl:col-span-6",
   traces: "lg:order-5 lg:col-span-12 xl:col-span-6",
@@ -44,12 +46,14 @@ export function OverviewDashboard({ queries, now }: { queries: OverviewQueries; 
   if (!overview.data) {
     return null;
   }
-  const points = timeseries.data ? toChartPoints(timeseries.data, range) : null;
+  const points = timeseries.data ? toChartPoints(timeseries.data.items, range) : null;
   // undefined while the score loads, null when it failed.
   const score = health.isError ? null : health.data;
 
   return (
     <div className={GRID}>
+      {/* Only rendered while the window has refused spans: an empty cell would leave a gap. */}
+      <RefusedSpansNotice className={PLACE.notice} />
       <Cell place="ribbon">
         <KpiRibbon
           className={cn("transition-opacity", overview.isPlaceholderData && "opacity-60")}
@@ -93,6 +97,8 @@ export function OverviewSkeleton() {
   );
   return (
     <div className={GRID}>
+      {/* Only rendered while the window has refused spans: an empty cell would leave a gap. */}
+      <RefusedSpansNotice className={PLACE.notice} />
       <Cell place="ribbon">
         <KpiRibbonSkeleton />
       </Cell>

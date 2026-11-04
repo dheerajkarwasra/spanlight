@@ -15,22 +15,79 @@ from app.core.security import ANY_KEY_PATTERN
 
 REDACTED = "[REDACTED]"
 
-_SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
+# Each pattern with its gates: literals of which every match contains at least one. A gated
+# pattern runs only when one of its gates is in the text, so skipping it cannot change the output.
+# Gates sit on the patterns that start with `\b`, a lookbehind, `(?i)` or a character class:
+# the regex engine tries those at every position, while an `in` test is a fast substring search.
+# A pattern that starts with a literal gets that search from the engine already, so it has no
+# gates and always runs (a gate in front of it measured slower). A case-insensitive pattern's
+# gates are lowercase and looked up in the lowercased text; they avoid `s`, `k` and `i`, which the
+# regex also matches in characters that do not lowercase to them (`\u017f`, `\u212a`, `\u0131`).
+_SECRET_PATTERNS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
     # Spanlight credentials of every kind (API keys, personal access tokens, gateway keys). A
     # payload readable by project viewers and read keys must never hold one: a token there would
     # hand its owner's access to everyone who can read spans. The shape comes from `security`.
-    ANY_KEY_PATTERN,
+    (ANY_KEY_PATTERN, ()),
     # Anthropic keys (must precede the generic sk- pattern).
-    re.compile(r"sk-ant-[A-Za-z0-9_\-]{10,}"),
+    (re.compile(r"sk-ant-[A-Za-z0-9_\-]{10,}"), ()),
     # OpenAI-style keys, including sk-proj-… and sk-svcacct-….
-    re.compile(r"sk-[A-Za-z0-9_\-]{16,}"),
+    (re.compile(r"sk-[A-Za-z0-9_\-]{16,}"), ()),
     # Authorization header values.
-    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=\-]{8,}"),
+    (re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=\-]{8,}"), ("bearer",)),
     # AWS access key ids.
-    re.compile(r"\b(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}\b"),
+    (re.compile(r"\b(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}\b"), ("AKIA", "ASIA", "ABIA", "ACCA")),
     # Labelled AWS secret access keys, e.g. `aws_secret_access_key = …`.
-    re.compile(r"(?i)aws_secret_access_key[\"']?\s*[:=]\s*[\"']?[A-Za-z0-9/+=]{40}"),
+    (
+        re.compile(r"(?i)aws_secret_access_key[\"']?\s*[:=]\s*[\"']?[A-Za-z0-9/+=]{40}"),
+        ("ecret_acce",),
+    ),
+    # PEM private keys of any type, header to footer. The body cannot hold `-----`, so a header
+    # without a footer costs one scan to the next `-----` rather than one to the end of the text.
+    (
+        re.compile(
+            r"-----BEGIN [A-Z ]*PRIVATE KEY-----"
+            r"(?:[^-]|-(?!----))*+"
+            r"-----END [A-Z ]*PRIVATE KEY-----"
+        ),
+        (),
+    ),
+    # Stripe live secret and restricted keys. The new patterns from here on, except `x-api-key`,
+    # start after a character that cannot be part of the token, so a letter or digit glued on
+    # the left (base64, a longer identifier) is not read as one.
+    (re.compile(r"(?<![A-Za-z0-9])[sr]k_live_[A-Za-z0-9]{16,}"), ("sk_live_", "rk_live_")),
+    # GitHub tokens: classic personal, OAuth, user-to-server, server-to-server and refresh.
+    (
+        re.compile(r"(?<![A-Za-z0-9])gh[pousr]_[A-Za-z0-9]{36,}"),
+        ("ghp_", "gho_", "ghu_", "ghs_", "ghr_"),
+    ),
+    # GitHub fine-grained personal access tokens.
+    (re.compile(r"(?<![A-Za-z0-9])github_pat_[A-Za-z0-9_]{22,}"), ("github_pat_",)),
+    # Google API keys.
+    (re.compile(r"(?<![A-Za-z0-9])AIza[A-Za-z0-9_\-]{35}"), ("AIza",)),
+    # Slack bot, user, app, refresh and session tokens.
+    (re.compile(r"xox[bpars]-[A-Za-z0-9\-]{10,}"), ()),
+    # Groq keys.
+    (re.compile(r"gsk_[A-Za-z0-9]{20,}"), ()),
+    # JSON Web Tokens: a JSON header and a JSON payload (both `{"` in base64url), then a signature.
+    # A match starts only where a token can (not inside a run of token characters), and the
+    # possessive parts never give characters back, so a long run of `eyJ` costs one pass instead
+    # of a scan from every `eyJ` in it.
+    (
+        re.compile(r"(?<![A-Za-z0-9_\-])eyJ[A-Za-z0-9_\-]++\.eyJ[A-Za-z0-9_\-]++\.[A-Za-z0-9_\-]+"),
+        ("eyJ",),
+    ),
+    # `x-api-key` header values, as a header line or in JSON text.
+    (re.compile(r"(?i)x-api-key[\"']?\s*[:=]\s*[\"']?[A-Za-z0-9._~+/=\-]{8,}"), ("x-ap",)),
 )
+
+# With whether each pattern is case-insensitive, worked out once: reading the flag per call
+# costs more than a gate.
+_GATED_PATTERNS = tuple(
+    (pattern, gates, bool(pattern.flags & re.IGNORECASE)) for pattern, gates in _SECRET_PATTERNS
+)
+# No secret pattern matches fewer characters (a JWT can be 11), and most JSON keys and enum
+# values are shorter, so they skip the loop.
+_SHORTEST_SECRET = 11
 
 # A card-shaped run: digit groups separated by single spaces or dashes, every group of four or
 # more digits but the last, which has two or more. That covers how cards are printed (4-4-4-4,
@@ -146,10 +203,19 @@ def _redact_phone(match: re.Match[str]) -> str:
 
 def redact_text(value: str, *, contacts: bool = False) -> str:
     """`value` with secrets and card numbers replaced; also emails and phones with `contacts`."""
-    for pattern in _SECRET_PATTERNS:
-        value = pattern.sub(REDACTED, value)
+    if len(value) >= _SHORTEST_SECRET:
+        for pattern, gates, folded in _GATED_PATTERNS:
+            if gates:
+                text = value.lower() if folded else value
+                if not any(gate in text for gate in gates):
+                    continue
+            value = pattern.sub(REDACTED, value)
     if contacts:
-        value = _PHONE.sub(_redact_phone, _EMAIL.sub(REDACTED, value))
+        # Every email holds an `@` and every phone a `+`.
+        if "@" in value:
+            value = _EMAIL.sub(REDACTED, value)
+        if "+" in value:
+            value = _PHONE.sub(_redact_phone, value)
     return _DIGIT_RUN.sub(_redact_cards, value)
 
 

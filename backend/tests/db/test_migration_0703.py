@@ -4,7 +4,7 @@
 reason; `sdk_exporter_counters` keeps the cumulative counters each SDK exporter reports. Both
 are project-scoped and under row-level security.
 
-The round trip downgrades the session's shared database and leaves it at head.
+The round trip uses an explicitly owned database at the pinned historical revision.
 """
 
 import uuid
@@ -12,8 +12,8 @@ import uuid
 import psycopg
 import pytest
 
-from app.db.migrations import downgrade_to, head_revision, upgrade_to_head
 from tests.db import schema_probe as probe
+from tests.db.migration_support import downgrade_to, expected_revision, upgrade_to_target
 
 LOSSES = "telemetry_losses_hourly"
 COUNTERS = "sdk_exporter_counters"
@@ -40,7 +40,7 @@ COUNTER_COLUMNS = {
 
 
 def _assert_at_head(database_url: str) -> None:
-    assert probe.current_revision(database_url) == head_revision()
+    assert probe.current_revision(database_url) == expected_revision()
     assert probe.columns(database_url, LOSSES) == LOSS_COLUMNS
     assert probe.columns(database_url, COUNTERS) == COUNTER_COLUMNS
     probe.assert_project_policies(database_url, LOSSES)
@@ -74,8 +74,9 @@ def _insert_counter(connection: psycopg.Connection, exporter_id: str) -> None:
     )
 
 
-def test_0703_round_trip(app_database_url: str) -> None:
-    _assert_at_head(app_database_url)
+@pytest.mark.migration_revision("0703")
+def test_0703_round_trip(migration_database_url: str) -> None:
+    _assert_at_head(migration_database_url)
     with probe.admin() as connection:
         probe.seed_project(connection, ORG_ID, PROJECT_ID)
         _insert_loss(connection, "sdk", 0)
@@ -89,12 +90,12 @@ def test_0703_round_trip(app_database_url: str) -> None:
         with pytest.raises(psycopg.errors.CheckViolation, match="exporter_id_check"):
             _insert_counter(connection, "A" * 32)
 
-    downgrade_to(app_database_url, "0702")
+    downgrade_to(migration_database_url, "0702")
     try:
-        assert probe.current_revision(app_database_url) == "0702"
-        assert probe.row_security(app_database_url, LOSSES) is None
-        assert probe.row_security(app_database_url, COUNTERS) is None
+        assert probe.current_revision(migration_database_url) == "0702"
+        assert probe.row_security(migration_database_url, LOSSES) is None
+        assert probe.row_security(migration_database_url, COUNTERS) is None
     finally:
-        upgrade_to_head(app_database_url)
+        upgrade_to_target(migration_database_url)
 
-    _assert_at_head(app_database_url)
+    _assert_at_head(migration_database_url)

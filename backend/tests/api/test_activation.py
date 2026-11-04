@@ -25,7 +25,14 @@ from tests.helpers import (
 )
 
 DISMISS = "/api/v1/auth/me/activation-checklist"
-NOTHING_DONE = {"first_trace": False, "session": False, "budget": False, "evaluation": False}
+NOTHING_DONE = {
+    "first_trace": False,
+    "first_trace_id": None,
+    "first_trace_at": None,
+    "session": False,
+    "budget": False,
+    "evaluation": False,
+}
 
 
 def activation_url(workspace: Workspace) -> str:
@@ -94,8 +101,15 @@ async def test_the_setup_test_trace_is_not_a_first_trace(
 async def test_an_untagged_trace_is_a_first_trace(
     client: httpx.AsyncClient, workspace: Workspace
 ) -> None:
-    await send_trace(client, workspace)
-    assert await activation(workspace) == {**NOTHING_DONE, "first_trace": True}
+    trace_id = await send_trace(client, workspace)
+    result = await activation(workspace)
+    assert result["first_trace_at"] is not None
+    assert result == {
+        **NOTHING_DONE,
+        "first_trace": True,
+        "first_trace_id": trace_id,
+        "first_trace_at": result["first_trace_at"],
+    }
 
 
 async def test_a_trace_with_a_session_id_completes_the_session_step(
@@ -303,3 +317,20 @@ async def test_dismissing_from_a_foreign_origin_is_refused(workspace: Workspace)
     assert response.status_code == 403
     assert response.json()["code"] == "ORIGIN_NOT_ALLOWED"
     assert await dismissed(workspace.owner) is False
+
+
+async def test_first_application_identity_excludes_setup_and_is_stable(
+    client: httpx.AsyncClient, workspace: Workspace
+) -> None:
+    await send_trace(client, workspace, tags=["spanlight:setup-test"])
+    setup_only = await activation(workspace)
+    assert setup_only["first_trace_id"] is None
+    assert setup_only["first_trace_at"] is None
+
+    first_id = await send_trace(client, workspace)
+    first = await activation(workspace)
+    assert first["first_trace"] is True
+    assert first["first_trace_id"] == first_id
+    assert first["first_trace_at"] is not None
+    await send_trace(client, workspace)
+    assert (await activation(workspace))["first_trace_id"] == first_id

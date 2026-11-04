@@ -124,6 +124,7 @@ async def _check(
         baseline.id,
         run.id,
         limit=deps.settings.experiment_max_items,
+        details=False,
     )
     regressions = regressed_scores(comparison.aggregate)
     now = deps.clock()

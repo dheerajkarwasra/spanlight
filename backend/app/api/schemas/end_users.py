@@ -9,7 +9,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 from app.api.params import NO_NUL
-from app.api.schemas.common import Money, Page
+from app.api.schemas.common import AggregateMetadata, Money, Page
 from app.api.schemas.traces import SessionSummaryOut
 
 
@@ -38,12 +38,12 @@ class DayStats(BaseModel):
     with calls but none priced has `cost_usd` `None`."""
 
     day: date
-    traces: int
-    llm_calls: int
-    errors: int
-    unpriced_calls: int
+    traces: int | None
+    llm_calls: int | None
+    errors: int | None
+    unpriced_calls: int | None
     cost_usd: Money | None
-    tokens: int
+    tokens: int | None
 
 
 class StatsWindow(BaseModel):
@@ -53,7 +53,7 @@ class StatsWindow(BaseModel):
     end: datetime
 
 
-class UserListOut(Page[UserStats]):
+class UserListOut(Page[UserStats], AggregateMetadata):
     """`computed_at` is when the figures of the window were last recomputed (the latest of the
     days summed), `None` when no day of the window has been computed yet. `pending_traces` is
     how many user traces of the window (and environment) are not counted yet: they started after
@@ -65,7 +65,7 @@ class UserListOut(Page[UserStats]):
     pending_traces: int | None
 
 
-class UserDetailOut(BaseModel):
+class UserDetailOut(AggregateMetadata):
     """`computed_at` is when the user's figures were last recomputed (the latest of the days
     summed)."""
 

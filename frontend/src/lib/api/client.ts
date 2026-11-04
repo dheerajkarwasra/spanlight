@@ -1,3 +1,4 @@
+import type { AggregateList } from "./aggregate";
 import { ApiError, NetworkError, parseRetryAfter } from "./errors";
 import type { ProblemDetails } from "./types";
 
@@ -21,7 +22,8 @@ export interface DownloadedFile {
 
 type HttpMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 
-const CSRF_COOKIE = "spl_csrf";
+// https deployments set `__Host-spl_csrf`; plain http (local development) sets `spl_csrf`.
+const CSRF_COOKIES = ["__Host-spl_csrf", "spl_csrf"];
 const CSRF_HEADER = "X-CSRF-Token";
 const MUTATING_METHODS: ReadonlySet<HttpMethod> = new Set(["POST", "PATCH", "PUT", "DELETE"]);
 
@@ -101,7 +103,7 @@ async function send(
   }
 
   if (MUTATING_METHODS.has(method)) {
-    const csrfToken = readCookie(CSRF_COOKIE);
+    const csrfToken = CSRF_COOKIES.map(readCookie).find(Boolean);
     if (csrfToken) {
       headers.set(CSRF_HEADER, csrfToken);
     }
@@ -218,6 +220,22 @@ function redirectToLogin(): void {
 }
 
 export const api = {
+  async getAggregateList<T>(
+    path: string,
+    query?: QueryParams,
+    signal?: AbortSignal,
+  ): Promise<AggregateList<T>> {
+    const response = await send("GET", path, { query, signal }, "application/json");
+    const items = (await response.json()) as T[];
+    const status = response.headers.get("Aggregate-Status");
+    return {
+      items,
+      ...(status === "complete" || status === "pending" || status === "unavailable"
+        ? { aggregate_status: status }
+        : {}),
+      oldest_pending_at: response.headers.get("Aggregate-Oldest-Pending-At"),
+    };
+  },
   get<T>(path: string, query?: QueryParams, signal?: AbortSignal): Promise<T> {
     return request<T>("GET", path, { query, signal });
   },

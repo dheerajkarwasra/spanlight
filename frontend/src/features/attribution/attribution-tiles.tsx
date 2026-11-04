@@ -1,3 +1,4 @@
+import { UnknownValue } from "@/components/unknown-value";
 import type { ReactNode } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
@@ -48,11 +49,17 @@ function AttributionTile({ label, figures, share, search, actions }: TileProps) 
       </span>
       <ShareCell share={share} track="w-[120px]" plain />
       <span className="grid grid-cols-[repeat(3,minmax(0,72px))] gap-3 text-xs font-medium">
-        <Stat label="LLM calls">{formatInteger(figures.llm_calls)}</Stat>
+        <Stat label="LLM calls">
+          {formatInteger(figures.llm_calls) ?? (
+            <UnknownValue reason="Not reported for this period" />
+          )}
+        </Stat>
         <Stat label="Errors">
           <ErrorCount count={figures.errors} />
         </Stat>
-        <Stat label="Traces">{formatInteger(figures.traces)}</Stat>
+        <Stat label="Traces">
+          {formatInteger(figures.traces) ?? <UnknownValue reason="Not reported for this period" />}
+        </Stat>
       </span>
     </>
   );
@@ -147,11 +154,17 @@ export function AttributionFooterTiles({ view }: { view: AttributionView }) {
           </span>
         </span>
         <span className="grid grid-cols-[repeat(3,minmax(0,72px))] gap-3 text-xs font-medium">
-          <Stat label="LLM calls">{formatInteger(totals.llm_calls)}</Stat>
+          <Stat label="LLM calls">
+            {formatInteger(totals.llm_calls) ?? (
+              <UnknownValue reason="Not reported for this period" />
+            )}
+          </Stat>
           <Stat label="Errors">
             <ErrorCount count={totals.errors} />
           </Stat>
-          <Stat label="Traces">{formatInteger(totals.traces)}</Stat>
+          <Stat label="Traces">
+            {formatInteger(totals.traces) ?? <UnknownValue reason="Not reported for this period" />}
+          </Stat>
         </span>
       </div>
     </section>

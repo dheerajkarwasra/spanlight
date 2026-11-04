@@ -88,7 +88,7 @@ export function traceColumns(ctx: TraceColumnsContext): Column[] {
     {
       id: "started",
       header: "Started",
-      width: "92px",
+      width: "112px",
       hideable: true,
       sortKey: "started_at",
       cell: (trace) => (
@@ -102,12 +102,23 @@ export function traceColumns(ctx: TraceColumnsContext): Column[] {
       align: "end",
       hideable: true,
       sortKey: "duration",
-      cell: (trace) => (
-        <ValueOrUnknown
-          value={formatDuration(trace.duration_ms)}
-          reason="Duration isn't known yet"
-        />
-      ),
+      cell: (trace) => {
+        const duration = (
+          <ValueOrUnknown
+            value={formatDuration(trace.duration_ms)}
+            reason="Duration isn't known yet"
+          />
+        );
+        // Without its root, a known duration covers the spans received so far.
+        return trace.root_received === false && formatDuration(trace.duration_ms) !== null ? (
+          <span className="flex flex-col items-end leading-[15px]">
+            {duration}
+            <span className="text-xs/[15px] font-medium text-muted-foreground">so far</span>
+          </span>
+        ) : (
+          duration
+        );
+      },
     },
     {
       id: "model",

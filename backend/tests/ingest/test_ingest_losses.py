@@ -141,13 +141,13 @@ async def test_a_project_deleted_mid_batch_leaves_no_loss_row(
     session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    original = ingest_api.ingest_spans
+    original = ingest_api.bind_and_lock_project
 
     async def delete_first(*args: Any, **kwargs: Any) -> Any:
         await delete_project(workspace.project_id)  # the key was already checked
-        return await original(*args, **kwargs)  # raises ProjectGoneError
+        return await original(*args, **kwargs)  # finds no project row
 
-    monkeypatch.setattr(ingest_api, "ingest_spans", delete_first)
+    monkeypatch.setattr(ingest_api, "bind_and_lock_project", delete_first)
 
     response = await client.post("/v1/traces", json=_batch_with_losses(), headers=_auth(workspace))
 

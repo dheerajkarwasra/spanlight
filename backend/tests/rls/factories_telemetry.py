@@ -4,6 +4,14 @@ from tests.rls.row_spec import HEX16, HEX32, RowFactory, parent
 
 TELEMETRY = (
     RowFactory(
+        table="aggregate_job_progress",
+        sql=(
+            "INSERT INTO aggregate_job_progress (project_id, kind, first_period, settled_period) "
+            "VALUES (:project_id, 'attribution_daily', current_date, current_date - 1) RETURNING *"
+        ),
+        touch="attempt_order",
+    ),
+    RowFactory(
         table="traces",
         sql=(
             "INSERT INTO traces (project_id, trace_id, started_at, ended_at) "
@@ -97,6 +105,14 @@ TELEMETRY = (
         touch="dropped_total",
     ),
     RowFactory(
+        table="ingest_quota_days",
+        sql=(
+            "INSERT INTO ingest_quota_days (project_id, day, spans, bytes) "
+            "VALUES (:project_id, CURRENT_DATE, 1, 1) RETURNING *"
+        ),
+        touch="spans",
+    ),
+    RowFactory(
         table="exports",
         sql=(
             "INSERT INTO exports (id, project_id, format, filters) "
@@ -153,5 +169,31 @@ TELEMETRY = (
             "VALUES (:project_id, 'error_spike', 'balanced') RETURNING *"
         ),
         touch="level",
+    ),
+    RowFactory(
+        table="aggregate_incomplete_hours",
+        sql=(
+            "INSERT INTO aggregate_incomplete_hours (project_id, bucket_hour, reason) "
+            "VALUES (:project_id, date_trunc('hour', now(), 'UTC'), 'retention') RETURNING *"
+        ),
+        touch="reason",
+    ),
+    RowFactory(
+        table="aggregate_dirty_hours",
+        sql=(
+            "INSERT INTO aggregate_dirty_hours (project_id, bucket_hour, generation) "
+            "VALUES (:project_id, date_trunc('hour', now(), 'UTC'), "
+            "nextval('aggregate_dirty_generation_seq')) RETURNING *"
+        ),
+        touch="generation",
+    ),
+    RowFactory(
+        table="aggregate_dirty_shards",
+        sql=(
+            "INSERT INTO aggregate_dirty_shards (project_id, bucket_hour, shard, generation) "
+            "VALUES (:project_id, date_trunc('hour', now(), 'UTC'), 0, "
+            "nextval('aggregate_dirty_generation_seq')) RETURNING *"
+        ),
+        touch="generation",
     ),
 )

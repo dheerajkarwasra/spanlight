@@ -74,6 +74,8 @@ class ActivationOut(BaseModel):
 
     # A trace other than the one "Send a test trace" sends (tagged `spanlight:setup-test`).
     first_trace: bool
+    first_trace_id: str | None = None
+    first_trace_at: datetime | None = None
     # A trace with a `session_id`.
     session: bool
     # A budget of any scope.

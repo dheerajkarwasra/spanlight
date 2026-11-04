@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { inspect } from "node:util";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -102,6 +103,75 @@ describe("observe and withSpan", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledOnce();
     warn.mockRestore();
+  });
+});
+
+describe("API key hygiene", () => {
+  const key = "spl_live_testprefix_secretvalue";
+
+  it("does not send the key over plain http to a remote host", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const fetchSpy = vi.fn();
+    const client = init({ apiKey: key, host: "http://collector.example.com", fetch: fetchSpy });
+    withSpan("work", () => undefined);
+
+    expect(client.enabled).toBe(false);
+    expect(await flush()).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(String(warn.mock.calls[0])).toContain("https://");
+    warn.mockRestore();
+  });
+
+  it.each([
+    "http://localhost:8000",
+    "http://LOCALHOST.",
+    "http://127.0.0.1",
+    "http://127.0.0.2",
+    "http://[::1]:8000",
+    "http://api:8000",
+    "http://10.0.0.5",
+    "http://172.16.4.2",
+    "http://192.168.1.10",
+    "http://169.254.0.1",
+    "http://[fd00::1]",
+    "http://[fe80::1]",
+    "http://x.internal",
+    "http://printer.local",
+    "http://app.localhost",
+    "https://collector.example.com",
+    "HTTPS://collector.example.com/",
+  ])("accepts %s", async (host) => {
+    const client = init({ apiKey: key, host, fetch: vi.fn() });
+    expect(client.enabled).toBe(true);
+    await client.shutdown(0);
+  });
+
+  it.each([
+    "http://collector.example.com",
+    "http://8.8.8.8",
+    "http://134744072",
+    "http://0x8080808",
+    "http://172.32.0.1",
+    "http://[2001:db8::1]",
+    "http://evil.local.com",
+    "http://localhost@evil.com",
+    "http://under_score",
+    "ftp://localhost",
+    "https://",
+    "http://[::1",
+  ])("refuses %s without throwing", async (host) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const client = init({ apiKey: key, host, fetch: vi.fn() });
+    expect(client.enabled).toBe(false);
+    await client.shutdown(0);
+    warn.mockRestore();
+  });
+
+  it("keeps the key out of JSON.stringify and util.inspect", async () => {
+    const client = init({ apiKey: key, host: "https://collector.example.com", fetch: vi.fn() });
+    expect(JSON.stringify(client)).not.toContain(key);
+    expect(inspect(client, { depth: Infinity, showHidden: true })).not.toContain(key);
+    await client.shutdown(0);
   });
 });
 

@@ -25,10 +25,12 @@ Spanlight is one Docker image with three roles and Postgres. Postgres is the onl
 | Service | Role | Listens |
 | --- | --- | --- |
 | `postgres` | PostgreSQL 17. Traces, spans, users, sessions, rollups and the job queue. | 5432, internal |
-| `migrate` | Applies the database migrations as the database owner, creates the unprivileged `spanlight_app` role, then exits. | none |
+| `migrate` | Applies the database migrations as the database owner, creates the unprivileged `spanlight_app` role, activates aggregate coverage on a fresh install (no project yet), then exits. | none |
 | `api` | The FastAPI application: authentication, ingestion and queries. | 8000, internal |
 | `worker` | Background jobs: retention, cleanup, hourly rollups, the daily attribution rollups, notifications, backups and exports, demo traffic. | 9100 for `/metrics`, internal |
 | `web` | Caddy. Serves the dashboard and this documentation, and proxies `/api`, `/v1` and `/health` to the API. | `WEB_PORT`, 8080 by default |
+
+Licence notices for the third-party packages in each image are at `/app/THIRD_PARTY_NOTICES.txt` in the backend image, and at `/third-party-notices.txt` (dashboard), `/docs/third-party-notices.txt` (documentation) and `/third-party-notices-caddy.txt` (the Caddy binary's Go modules and the Go standard library) on the `web` service.
 
 The worker's attribution refresh rebuilds the daily rollups behind attribution windows longer than 24 hours every 15 minutes. Set `ATTRIBUTION_ENABLED=false` to stop it: those windows then stop updating, and windows of 24 hours or less stay live. See [Configuration](/docs/configuration/#attribution).
 
@@ -58,12 +60,14 @@ Each is switched on by its own variables; see [Configuration](/docs/configuratio
 - **Email** (address verification and password reset): set `EMAIL_PROVIDER` to `resend` or `smtp` and the values it needs.
 - **Sign in with GitHub and Google**: set the client ID and secret of a provider, and register `<APP_BASE_URL>/api/v1/auth/oauth/<provider>/callback` as its callback URL.
 - **Two-factor authentication**: set `CREDENTIALS_KEYS`, and back its value up. Without it, authenticator enrolment answers `409 NOT_CONFIGURED`.
-- **Object storage, backups and exports**: set `S3_BUCKET`, `S3_ACCESS_KEY` and `S3_SECRET_KEY` (and `S3_ENDPOINT` for a store other than AWS). Nightly backups additionally need `BACKUP_DATABASE_URL`. To try this locally without a cloud account, add the MinIO file: `docker compose -f deploy/compose.yaml -f deploy/compose.minio.yaml --env-file deploy/.env up -d`. Export downloads are links straight to the store, so the public S3 endpoint (`S3_PUBLIC_ENDPOINT`, or `S3_ENDPOINT` when that is unset) must use https when the dashboard is served over https; otherwise browsers block the download as mixed content.
+- **Object storage, backups and exports**: set `S3_BUCKET`, `S3_ACCESS_KEY` and `S3_SECRET_KEY` (and `S3_ENDPOINT` for a store other than AWS). Nightly backups require independent worker-only `BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY`, `BACKUP_S3_SECRET_KEY`, optional backup transport settings, and `BACKUP_DATABASE_URL`. Retention is a separately scheduled operator command; without it storage grows. To try this locally without a cloud account, add the MinIO file: `docker compose -f deploy/compose.yaml -f deploy/compose.minio.yaml --env-file deploy/.env up -d`. Export downloads are links straight to the store, so the public S3 endpoint (`S3_PUBLIC_ENDPOINT`, or `S3_ENDPOINT` when that is unset) must use https when the dashboard is served over https; otherwise browsers block the download as mixed content.
 - **More than one API replica**: rate limits and idempotency state live in Postgres, so replicas share them. `deploy/compose.replicas.yaml` is an example that runs two.
 - **Metrics**: set `METRICS_TOKEN` and scrape `api:8000/metrics` and `worker:9100/metrics` on the internal network with `Authorization: Bearer <token>`. `deploy/prometheus.yml` is an example scrape configuration. `/metrics` is not served through the web port.
 - **Error reporting and self-tracing**: `SENTRY_DSN`, and `OTEL_EXPORTER_OTLP_ENDPOINT` for OpenTelemetry spans about Spanlight's own requests and queries.
 
 ## Outbound connections
+
+Spanlight sends no telemetry to its maintainers. Its only built-in outbound calls go to the services you configure (LLM providers, email, sign-in providers, Slack, PagerDuty and webhook alert channels, object storage, error reporting and self-tracing), to the provider status pages below, and to LiteLLM's public price file on GitHub, which `spanlight prices diff` downloads only when you run it.
 
 Spanlight connects out to the providers your gateway credentials, judges and demo traffic use, and to the services you configure (email, sign-in providers, object storage, Sentry). One more connection is on by default: every five minutes the worker polls the public status pages of three providers, so the [Provider health](/docs/guides/provider-health/#status-page-incidents) page and the Doctor can show their incidents. If your network restricts egress, allow these hosts on port 443:
 
@@ -89,6 +93,8 @@ The Compose file runs Postgres 17 with settings sized for a host with 2 vCPUs an
 | `wal_compression` | `on` | `off` | Compresses the full-page images that ingestion writes into the WAL, for a little CPU. | Keep. |
 | `random_page_cost` | `1.1` | `4` | The planner's cost of a random page read, against `1` for a sequential one. The default describes a spinning disk. | Keep on SSD or NVMe; `4` on spinning disks. |
 | `autovacuum_vacuum_cost_limit` | `1000` | `-1` (`vacuum_cost_limit`, 200) | How much work autovacuum does before it pauses. Traces are rewritten as their spans arrive, and the default lets dead rows pile up. | Keep, or raise on fast disks. |
+| `max_parallel_workers_per_gather` | `2` | `2` | Workers one query may use. The trace list's value sorts (cost, duration, tokens, retry cost) read the whole window and run about three times slower without them. | Keep at 2. |
+| `max_parallel_workers` | `8` | `8` | The pool of parallel workers all queries share; a query that finds it used up runs serial. | The number of vCPUs, at least 8; above 8 also raise `max_worker_processes` (a restart). See the [scaling runbook](/docs/runbooks/scale/). |
 | `jit` | `off` | `on` | JIT compilation takes longer than the dashboard and rollup queries it is meant to speed up. | Keep off. |
 
 To change them, override the `command` of the `postgres` service in an override file. An override replaces the whole `command`, so repeat every value, including `jit=off`. For a host with about 8 GB for Postgres:
@@ -117,6 +123,10 @@ services:
       - random_page_cost=1.1
       - -c
       - autovacuum_vacuum_cost_limit=1000
+      - -c
+      - max_parallel_workers_per_gather=2
+      - -c
+      - max_parallel_workers=8
 ```
 
 ```bash
@@ -170,7 +180,8 @@ A healthy instance answers `200` and a body like `{"status":"ok","database":"ok"
 ## Troubleshooting
 
 - **Compose stops with `required variable POSTGRES_PASSWORD is missing a value: set POSTGRES_PASSWORD`**, or the same for `APP_DB_PASSWORD` or `SECRET_KEY`. A required secret is not in `deploy/.env`. Fill in the three secrets and run the command again.
-- **The `api` refuses to start with "SECRET_KEY must be set when APP_BASE_URL uses https".** The base URL is `https://` but `SECRET_KEY` is still the development default. Set a long random `SECRET_KEY`.
+- **The `api` refuses to start with "SECRET_KEY must be set when APP_BASE_URL uses https or is not local".** The base URL is `https://`, or its host is not `localhost`, `127.0.0.1` or `[::1]`, but `SECRET_KEY` is still the development default. Set a long random `SECRET_KEY`.
+- **The `api` refuses to start with "SECRET_KEY must be at least 32 characters unless APP_BASE_URL is local".** Outside `localhost`, `127.0.0.1` and `[::1]` the key needs 32 characters or more. Generate one with `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`.
 - **`/health/ready` answers `503`, or the connection fails.** Read the field that is not `ok`, or check the services with `docker compose -f deploy/compose.yaml --env-file deploy/.env ps`; see [Read the readiness check first](/docs/troubleshooting/#read-the-readiness-check-first).
 - **Sign-in works over `http://localhost` but not behind your proxy.** With an `https` `APP_BASE_URL` cookies are `Secure`. Reach the dashboard over https, and check `APP_BASE_URL` and `TRUSTED_PROXIES`.
 - **An export download is blocked in the browser.** The dashboard is on https and the public S3 endpoint is not. Set `S3_PUBLIC_ENDPOINT` to an https address.

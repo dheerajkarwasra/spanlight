@@ -62,11 +62,17 @@ export default defineRailway(() => {
       restartPolicyType: "ON_FAILURE",
       restartPolicyMaxRetries: 10,
       sleepApplication: false,
-      drainingSeconds: 15,
+      drainingSeconds: 75,
     },
     env: {
+      SHUTDOWN_TIMEOUT_SECONDS: "60",
+      SHUTDOWN_WORK_SECONDS: "50",
+      SHUTDOWN_FLUSH_SECONDS: "3",
+      SHUTDOWN_CLOSE_SECONDS: "2",
       SPANLIGHT_TARGET: "backend", // build arg: which deploy/Dockerfile stage to ship
       PORT: "8000",
+      // Keep equal to frontend/src/features/legal/content/terms.tsx VERSION.
+      TERMS_VERSION: "2026-11-01",
       // With a custom domain, replace this with "https://<your domain>" (docs/deploy/railway.md, "Custom domain").
       APP_BASE_URL: "https://${{web.RAILWAY_PUBLIC_DOMAIN}}",
       DATABASE_URL: "postgresql+psycopg://spanlight_app:${{APP_DB_PASSWORD}}@" + pgEndpoint,
@@ -87,12 +93,17 @@ export default defineRailway(() => {
       // is open to every signed-up user, so one organization may send at most this many gateway
       // requests a minute across all its keys. Raise or remove it on a private deployment.
       GATEWAY_ORG_RPM_CEILING: "60",
+      // Per-process HTTP ingress cap; replicas multiply its memory and concurrency allowance.
+      GATEWAY_MAX_IN_FLIGHT: preserve(),
+      // Token-bucket SQL deadlines, independent of connection checkout.
+      RATE_LIMIT_LOCK_TIMEOUT_MS: preserve(),
+      RATE_LIMIT_STATEMENT_TIMEOUT_MS: preserve(),
       // Sentry DSN, set in step 3 of docs/deploy/railway.md. Blank turns error reporting off.
       SENTRY_DSN: preserve(),
-      // Object storage (exports and backups): one feature, uncommented on the api AND the worker
+      // Object storage (exports): one feature, uncommented on the api AND the worker
       // together, with the same values on both. The api accepts exports and signs their download
-      // links; the worker writes the export files, deletes a deleted project's files and runs the
-      // backups. With this block on the api alone, every export is accepted and then fails.
+      // links; the worker writes export files, deletes a deleted project's files and cleans up
+      // expired exports. With this block on the api alone, every export is accepted and then fails.
       // Set with railway variable set ... first. All of S3_BUCKET, S3_ACCESS_KEY and S3_SECRET_KEY,
       // or none (the app refuses a partial set).
       // S3_ENDPOINT: preserve(),
@@ -124,11 +135,17 @@ export default defineRailway(() => {
       restartPolicyMaxRetries: 10,
       // Polls Postgres every 2 s, so it never sleeps anyway.
       sleepApplication: false,
-      // A job runs for at most 50 s; let the current one finish on redeploy.
-      drainingSeconds: 60,
+      // Requested 75 s external grace for the 60 s application envelope; hosted enforcement unverified.
+      drainingSeconds: 75,
     },
     env: {
+      SHUTDOWN_TIMEOUT_SECONDS: "60",
+      SHUTDOWN_WORK_SECONDS: "50",
+      SHUTDOWN_FLUSH_SECONDS: "3",
+      SHUTDOWN_CLOSE_SECONDS: "2",
       SPANLIGHT_TARGET: "backend",
+      // Keep equal to frontend/src/features/legal/content/terms.tsx VERSION.
+      TERMS_VERSION: "2026-11-01",
       DATABASE_URL: "postgresql+psycopg://spanlight_app:${{api.APP_DB_PASSWORD}}@" + pgEndpoint,
       // Hard monthly cap on live demo traffic to Claude Haiku.
       DEMO_MONTHLY_BUDGET_USD: "1.00",
@@ -137,8 +154,8 @@ export default defineRailway(() => {
       CREDENTIALS_KEYS: preserve(),
       // Same project as the api's, so failed jobs show up next to request errors.
       SENTRY_DSN: preserve(),
-      // Object storage (exports and backups): uncomment together with the api's block of the same
-      // name, with the same values (see there). All of S3_BUCKET, S3_ACCESS_KEY and S3_SECRET_KEY,
+      // Object storage (exports): uncomment together with the api's block of the same
+      // name, with the same export values (see there). All of S3_BUCKET, S3_ACCESS_KEY and S3_SECRET_KEY,
       // or none.
       // S3_ENDPOINT: preserve(),
       // S3_PUBLIC_ENDPOINT: preserve(),
@@ -147,14 +164,26 @@ export default defineRailway(() => {
       // S3_ACCESS_KEY: preserve(),
       // S3_SECRET_KEY: preserve(),
       // S3_FORCE_PATH_STYLE: preserve(),
-      // Nightly backups (needs the object storage above): uncomment and set with railway variable
+      // Nightly backups (needs independent BACKUP_S3_* below): uncomment and set with railway variable
       // set ... to enable. BACKUP_DATABASE_URL must be a role that bypasses row-level security (the
       // Postgres owner); BACKUPS_ENABLED=false turns the job off.
       // BACKUPS_ENABLED: preserve(),
       // BACKUP_DATABASE_URL: preserve(),
+      // Backup upload credentials are independent and worker-only; never add these to api.
+      // BACKUP_S3_BUCKET: preserve(),
+      // BACKUP_S3_ENDPOINT: preserve(),
+      // BACKUP_S3_REGION: preserve(),
+      // BACKUP_S3_ACCESS_KEY: preserve(),
+      // BACKUP_S3_SECRET_KEY: preserve(),
+      // BACKUP_S3_FORCE_PATH_STYLE: preserve(),
+      // Server-side encryption on each upload; unset means AES256 (SSE-S3), blank sends no header.
+      // BACKUP_S3_SSE: preserve(),
       // Self-tracing: uncomment and set with railway variable set ... to enable.
       // OTEL_EXPORTER_OTLP_ENDPOINT: preserve(),
       // OTEL_SERVICE_NAME: preserve(),
+      // Aggregate correction consumption: set explicitly after the repair cutover procedure.
+      // Off preserves capture but leaves affected materialized observations pending.
+      // AGGREGATE_REPAIR_ENABLED: preserve(),
       // Worker /metrics (needs a scraper in the project): uncomment and set with railway variable
       // set ... to enable. The endpoint answers 404 without METRICS_TOKEN; use the api's value.
       // METRICS_TOKEN: preserve(),
@@ -190,6 +219,7 @@ export default defineRailway(() => {
     },
     env: {
       SPANLIGHT_TARGET: "web",
+      LEGAL_PAGES: "1", // build arg: ship the legal pages, which name the spanlight.dev operator
       PORT: "8080",
       API_UPSTREAM: "${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}",
       // /gw/* (the LLM gateway, embedded in api) goes to the same private address. Without it

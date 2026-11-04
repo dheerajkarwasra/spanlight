@@ -21,6 +21,7 @@ import {
 import { InsightChannelsField } from "./insight-channels-field";
 import {
   CapturePayloadsField,
+  ContactRedactionField,
   ProjectIdentifiers,
   WeeklyDigestField,
 } from "./project-settings-parts";
@@ -46,6 +47,7 @@ function valuesFrom(project: Project): ProjectSettingsValues {
     name: project.name,
     retention_days: project.retention_days,
     capture_payloads: project.capture_payloads,
+    redact_contact_info: project.redact_contact_info,
     weekly_digest_enabled: project.weekly_digest_enabled ?? true,
     insight_channel_ids: project.insight_channel_ids,
     promoted_metadata_keys: project.promoted_metadata_keys,
@@ -83,7 +85,10 @@ export function ProjectSettingsForm({ project, canEdit }: ProjectSettingsFormPro
             message: "A selected channel no longer exists. Remove it and save again.",
           });
         } else if (!applyMappedFieldErrors(error, form.setError, SERVER_FIELDS)) {
-          toast.error(errorMessage(error));
+          // The form keeps its values, so Save changes retries the same edits.
+          toast.error("Could not save changes. Your edits are kept. Try Save changes again.", {
+            description: errorMessage(error),
+          });
         }
       },
     });
@@ -142,6 +147,7 @@ export function ProjectSettingsForm({ project, canEdit }: ProjectSettingsFormPro
           </p>
         </div>
         <CapturePayloadsField control={form.control} canEdit={canEdit} />
+        <ContactRedactionField control={form.control} canEdit={canEdit} />
         <WeeklyDigestField control={form.control} canEdit={canEdit} />
       </SectionCard>
 

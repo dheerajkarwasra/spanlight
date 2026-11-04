@@ -2,12 +2,13 @@ import { Link } from "@tanstack/react-router";
 import { Check, Clock, DollarSign, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { CostValue, UNKNOWN_TOTAL_REASON } from "@/components/cost-value";
 import { ErrorState } from "@/components/error-state";
 import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { TraceSummary } from "@/lib/api";
-import { formatCost, formatDuration } from "@/lib/format";
+import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import { ONBOARDING_COPY } from "./copy";
@@ -15,7 +16,7 @@ import { formatArrival } from "./first-trace";
 import { useFirstTrace } from "./use-onboarding-status";
 
 interface WaitingForTraceProps {
-  /** The polling error, shown only while there is no status yet. */
+  /** The latest polling error, including failures after an earlier successful refresh. */
   error: Error | null;
   onRetry: () => void;
   /** On the "No SDK" tab the next step is a gateway key, not the ingest snippet. */
@@ -34,7 +35,13 @@ export function WaitingForTrace({
   if (error) {
     return (
       <Card>
-        <ErrorState compact error={error} title="Couldn't check for traces" onRetry={onRetry} />
+        <ErrorState
+          compact
+          error={error}
+          title="Checking interrupted"
+          description="We couldn't refresh. Your key and snippets are still here."
+          onRetry={onRetry}
+        />
       </Card>
     );
   }
@@ -55,14 +62,16 @@ export function WaitingForTrace({
           {gateway
             ? "Create a gateway key to send your first call"
             : testSent
-              ? "Test trace sent. Waiting for it to arrive…"
+              ? "Test trace received"
               : waitingTitle}
         </p>
-        {testSent && !gateway ? null : (
-          <p className="text-xs font-medium text-muted-foreground">
-            {gateway ? "Calls show up here once a key exists and a snippet runs." : waitingHelper}
-          </p>
-        )}
+        <p className="text-xs font-medium text-muted-foreground">
+          {gateway
+            ? "Calls show up here once a key exists and a snippet runs."
+            : testSent
+              ? "Ingestion works. Instrument your app to connect it."
+              : waitingHelper}
+        </p>
       </div>
     </Card>
   );
@@ -88,12 +97,13 @@ interface FirstTraceCardProps {
   orgId: string;
   projectId: string;
   firstTraceAt: string | null;
+  traceId: string | null;
 }
 
 /** The violet success card (Figma "Success card") with the first trace's details. */
-export function FirstTraceCard({ orgId, projectId, firstTraceAt }: FirstTraceCardProps) {
+export function FirstTraceCard({ orgId, projectId, firstTraceAt, traceId }: FirstTraceCardProps) {
   const arrival = formatArrival(firstTraceAt);
-  const trace = useFirstTrace(projectId, firstTraceAt);
+  const trace = useFirstTrace(projectId, traceId);
 
   return (
     <Card variant="accent" className="flex flex-col gap-5 overflow-hidden p-6 sm:p-8">
@@ -105,15 +115,17 @@ export function FirstTraceCard({ orgId, projectId, firstTraceAt }: FirstTraceCar
           <Check className="size-6" strokeWidth={2.25} />
         </span>
         <div className="flex min-w-0 flex-col gap-1">
-          <h2 className="text-h2">First trace received</h2>
+          <h2 className="text-h2">Your app is connected</h2>
           <p className="text-sm">
-            {arrival ? (
+            {trace.data?.cost_usd === null ? (
+              "Application trace received. Cost is unavailable for this trace."
+            ) : arrival ? (
               <>
-                Arrived <time dateTime={firstTraceAt ?? undefined}>{arrival}</time>. Your app is
-                connected.
+                Application trace received{" "}
+                <time dateTime={firstTraceAt ?? undefined}>{arrival}</time>.
               </>
             ) : (
-              "Your app is connected."
+              "Application trace received."
             )}
           </p>
         </div>
@@ -219,13 +231,21 @@ function traceChips(trace: TraceSummary): TraceChip[] {
       value: <span className="text-sm font-medium tabular">{duration}</span>,
     });
   }
-  const cost = formatCost(trace.cost_usd);
-  if (cost) {
-    chips.push({
-      label: "Cost",
-      icon: DollarSign,
-      value: <span className="text-sm font-medium tabular">{cost}</span>,
-    });
-  }
+  chips.push({
+    label: "Cost",
+    icon: DollarSign,
+    value: (
+      <span className="inline-flex items-center gap-1 text-sm font-medium tabular">
+        {trace.cost_usd !== null && trace.has_unpriced ? "≥ " : null}
+        <CostValue
+          cost={trace.cost_usd}
+          hasUnpriced={trace.has_unpriced}
+          unknownReason={UNKNOWN_TOTAL_REASON}
+          className="text-current"
+        />
+        {trace.cost_usd !== null && trace.has_unpriced ? " · partial" : null}
+      </span>
+    ),
+  });
   return chips;
 }

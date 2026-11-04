@@ -35,13 +35,18 @@ Every command takes `--help`. Two kinds of failure exit with a non-zero status:
 | [`license-status`](#license-status) | Shows the edition and what the enterprise license key grants. |
 | [`migrate`](#migrate) | Applies database migrations. |
 | [`ensure-app-role`](#ensure-app-role) | Creates the database role the API and worker connect as. |
+| [`set-ingest-caps`](#set-ingest-caps) | Sets or clears one project's ingest caps. |
 | [`rollups backfill`](#rollups-backfill) | Recomputes hourly metric rollups for a time range. |
 | [`recompute-usage-rollups`](#recompute-usage-rollups) | Flags usage rollups and retotals the traces of a recent period. |
 | [`alerts evaluate`](#alerts-evaluate) | Runs one alert evaluation pass now. |
 | [`demo seed-evals`](#demo-seed-evals) | Seeds the demo workspace with an experiment. |
 | [`backup now`](#backup-now) | Takes a database backup now. |
 | [`backup list`](#backup-list) | Lists stored backups. |
+| [`backup prune`](#backup-prune) | Previews retention; `--apply` deletes selected backups. |
 | [`restore`](#restore) | Restores a backup into an empty database. |
+| [`restore-reconcile prepare`](#restore-reconcile-prepare) | Verifies a restored database and quarantines its restored work. |
+| [`restore-reconcile apply`](#restore-reconcile-apply) | Applies one complete decision file to the quarantine. |
+| [`restore-reconcile check`](#restore-reconcile-check) | Read-only release check before a controlled reopening. |
 
 ## Users
 
@@ -174,6 +179,27 @@ Recomputes each organization's [audit log hash chain](/docs/audit-log/#tamper-ev
 
 ## Maintenance
 
+### `set-ingest-caps`
+
+```text
+spanlight set-ingest-caps PROJECT_ID [--spans-per-day N|default] [--bytes-per-day N|default] [--spans-per-second N|default]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `PROJECT_ID` | The project's id. |
+| `--spans-per-day` | Spans the project may store per UTC day. |
+| `--bytes-per-day` | Decompressed request bytes the project may send per UTC day. |
+| `--spans-per-second` | The project's sustained span rate. |
+
+Sets one project's [ingest caps](/docs/runbooks/ingestion-spike/#per-project-caps) above or below the instance settings `INGEST_SPANS_PER_DAY`, `INGEST_BYTES_PER_DAY` and `INGEST_SPANS_PER_SECOND`. Each value is a positive integer, or `default` to clear the project's own value and use the instance setting again; an option left out keeps what the project has. A project cannot be made unlimited this way: give it a very large number instead. The next ingest request uses the new caps.
+
+**Output.** The effective caps, one line each, with where they come from: `spans_per_day: 10,000,000 (project)`, `bytes_per_day: 5,368,709,120 (default)`, and `unlimited` for a cap the instance turned off with `0`. An unknown project id is refused.
+
+```bash
+spanlight set-ingest-caps 0193a5b2-7c1d-7e4f-9a2b-3c4d5e6f7a8b --spans-per-day 10000000
+```
+
 ### `rollups backfill`
 
 ```text
@@ -303,9 +329,28 @@ It needs 50 recorded demo answers with stored payloads and an Anthropic credenti
 
 It exits with status `1` and `Error: demo org has no Anthropic credential` when the credential is missing, and with `Error: need 50 traces, found N` when there are too few answers. If the version 2 run still has to wait for version 1, the output says so. See the [demo evaluations runbook](/docs/runbooks/demo-evals/).
 
+### `activate-aggregate-coverage`
+
+```bash
+spanlight activate-aggregate-coverage --writers-drained
+```
+
+After migration 1027 and deployment of the instrumented release, drain and stop every old API,
+worker and administrative writer before confirming `--writers-drained`. Migration alone leaves
+coverage unverified. The command records a conservative legacy boundary at the next UTC day after
+database time plus ten minutes; history before that boundary remains unverified. Newly created
+project IDs after activation use the finite `1970-01-01T00:00:00Z` boundary.
+
+Use `--fresh-install` only for an empty project inventory; the command verifies this across all
+projects, including projects outside a tenant RLS binding. It still requires `--writers-drained`.
+With `--skip-if-projects-exist` as well, a nonempty inventory is not an error: the command changes
+nothing, says so and exits `0`. The Compose `migrate` service runs it that way on every `up`, so a
+new installation is activated before its first project exists.
+The command changes coverage metadata; it does not reconstruct missing history.
+
 ## Backups
 
-Backups need object storage (`S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`) and `BACKUP_DATABASE_URL`. The guide [Back up and restore](/docs/self-hosting/backups/) shows how to set them up and how to rehearse a restore.
+Backups need independent storage (`BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY`, `BACKUP_S3_SECRET_KEY`) and `BACKUP_DATABASE_URL`. The guide [Back up and restore](/docs/self-hosting/backups/) shows how to set them up and how to rehearse a restore.
 
 ### `backup now`
 
@@ -315,13 +360,20 @@ spanlight backup now
 
 Dumps the database to object storage now and prints the key and the size: `Backed up to <key> (<n> bytes).` It takes no options.
 
-`BACKUPS_ENABLED` only controls the nightly job, so it does not stop a backup you ask for. Old backups are not pruned by this command; the nightly job removes them. If `BACKUP_DATABASE_URL` or the object storage settings are missing, the command exits with status `1` and names what is missing.
+`BACKUPS_ENABLED` only controls the nightly job, so it does not stop a backup you ask for. Old backups are not pruned by this command; use the separate `backup prune` operator command. If `BACKUP_DATABASE_URL` or the object storage settings are missing, the command exits with status `1` and names what is missing.
 
 ```bash
 spanlight backup now
 ```
 
+### `backup prune`
+
+`spanlight backup prune` previews keys and counts without mutation. Add `--apply` to obtain a fresh listing and delete those candidates. Any listing or deletion failure exits nonzero. Supply separate operator-only List/Delete credentials through `BACKUP_S3_*`; no database URL is needed. Schedule it daily after backup completion; absent scheduling grows storage. Preserve the exact 14-day/eight-Sunday policy described in the [restore runbook](/docs/runbooks/restore/#credential-isolation-and-retention).
+
 ### `backup list`
+
+Supply a separate recovery List/Get principal through `BACKUP_S3_*`. Upload-only worker credentials cannot list or restore. Restore reads the current accessible object; no version selector is supported.
+
 
 ```text
 spanlight backup list
@@ -332,22 +384,61 @@ Lists the stored backups, oldest first. Each line is the key, the size in bytes 
 ### `restore`
 
 ```text
-spanlight restore --key TEXT --target-url TEXT
+spanlight restore --key TEXT --target-url TEXT [--receipt PATH]
 ```
 
 | Option | Required | Meaning |
 | --- | --- | --- |
 | `--key` | yes | The object key of a backup, from `spanlight backup list`. |
 | `--target-url` | yes | The URL of a new, empty database. It can be given by the `RESTORE_TARGET_URL` environment variable instead. |
+| `--receipt` | no | Where to write the restore receipt: the SHA-256 and size of the exact bytes `pg_restore` consumed, the target and the time bounds. `restore-reconcile prepare` requires it. |
 
-Restores a backup into an empty database. It refuses a database that already has tables. Prefer the environment variable for the target: a URL on the command line is visible in the process list and the shell history.
+Restores a backup into an empty database. It refuses a database that already has any table, view, sequence or foreign table outside the system schemas. Prefer the environment variable for the target: a URL on the command line is visible in the process list and the shell history. Without `CREDENTIALS_KEYS` in the environment it warns: reconciliation needs every key the backup's sealed values were written under.
 
-On success it prints `Restored <key>.` and a reminder to run `spanlight ensure-app-role` against the restored database, so that the API and worker can connect. Follow the [restore runbook](/docs/runbooks/restore/) for the full procedure, including how to switch the restored database in.
+On success it prints `Restored <key>: <bytes> bytes, sha256 <digest>.`, writes the receipt when asked (mode 0600, never overwriting a different file) and reminds you to run `spanlight ensure-app-role` and then `spanlight restore-reconcile prepare` before any service starts. If the restore succeeded but the receipt could not be written, it exits `1`: keep services held and restore again into another new database rather than reading the key again and calling that the evidence. Follow the [restore runbook](/docs/runbooks/restore/) for the full procedure.
 
 ```bash
-RESTORE_TARGET_URL="postgresql://postgres:secret@restore-host:5432/spanlight" \
-  spanlight restore --key backups/2026/10/09/spanlight-20261009T030000Z.dump
+RESTORE_TARGET_URL="postgresql://postgres:secret@restore-host:5432/spanlight_restored" \
+  spanlight restore --key backups/2026/10/09/spanlight-20261009T030000Z.dump --receipt /srv/recovery/receipt.json
 ```
+
+### `restore-reconcile prepare`
+
+```text
+spanlight restore-reconcile prepare --manifest PATH --receipt PATH --context PATH --all-services-held [--app-role TEXT]
+```
+
+| Option | Required | Meaning |
+| --- | --- | --- |
+| `--manifest` | yes | Where to publish the recovery manifest, in a durable operator directory. Passing an existing manifest resumes that recovery. |
+| `--receipt` | yes | The receipt `spanlight restore --receipt` wrote for this target. |
+| `--context` | yes | The operator context file: operator, fresh-target provenance, backup and isolation times, planned release time, services held, external windows (see the runbook). |
+| `--all-services-held` | yes | Your attestation that the API, gateway, every worker, scheduled producer, outbound delivery, deploy hook and the prune schedule are stopped and upstream retries are held. The command cannot discover processes; it refuses without the flag. |
+| `--app-role` | no | The role the API and worker connect as; default `spanlight_app`. |
+
+The target comes from `RESTORE_TARGET_URL` only and must be the database owner; there is no fallback to `DATABASE_URL`. The command takes the target's recovery lock, verifies that every sealed value opens with `CREDENTIALS_KEYS`, that every organization's audit chain is intact, that row-level security is forced on `traces` and `spans`, that the app role is unprivileged and that the unlogged rate-limit table is empty. It then inventories every queued or running job, every queued or running experiment and evaluator run, every pending or failed notification, every experiment schedule, evaluator, alert rule, project digest setting and audit stream, publishes the manifest (preimages, quarantine images, payload hashes; no secrets or bodies), and in one transaction moves each row to its quarantine image and writes the recovery marker as the database `COMMENT`. Validation and verification failures exit `1` before anything is published; a commit lost after the manifest was published is resumed by rerunning with the same manifest. Exit `3` means another recovery command holds the lock.
+
+### `restore-reconcile apply`
+
+```text
+spanlight restore-reconcile apply --manifest PATH --decisions PATH --all-services-held
+```
+
+| Option | Required | Meaning |
+| --- | --- | --- |
+| `--manifest` | yes | The published manifest. |
+| `--decisions` | yes | The complete, immutable decision file: one decision per entity and per external window, each with a disposition, a named operator, a UTC time, a reason and, for `confirmed_completed`, an evidence file and its SHA-256. |
+| `--all-services-held` | yes | The same attestation as for `prepare`. |
+
+Any `unresolved`, missing, duplicate or disallowed decision rejects the whole run before anything is published or changed; the quarantine stays as prepared. With a complete file it publishes the apply plan next to the manifest (`<manifest>.apply.json`), re-checks every quarantine image under row locks and writes the final images and the `applied` marker in one transaction. Running it again with the same files changes nothing; different decisions after an apply are refused.
+
+### `restore-reconcile check`
+
+```text
+spanlight restore-reconcile check --manifest PATH --decisions PATH --all-services-held [--app-role TEXT]
+```
+
+Read-only. Exits `0` only when the database is in the `applied` phase for exactly these files, every final image matches, the audit heads and sealed values still verify, no job or run is queued or running, no notification is pending except the authorized replays, every schedule, evaluator, alert rule, digest setting and audit stream is off, and this process runs with `EXPERIMENT_SCHEDULES_ENABLED`, `EVALS_ENABLED`, `ALERTS_EVALUATION_ENABLED`, `WEEKLY_DIGEST_ENABLED`, `DEMO_ENABLED`, `BILLING_SOURCES_ENABLED` and `PROVIDER_STATUS_POLLING_ENABLED` all `false`. It prints the recovery, manifest, decision and plan digests and the reopening checklist; it starts nothing. Any write to the target afterwards invalidates it.
 
 ## Related pages
 

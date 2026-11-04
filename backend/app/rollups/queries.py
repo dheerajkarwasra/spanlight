@@ -24,9 +24,9 @@ the explicit ``project_id`` filter is a second guard, not the only one.
 
 import uuid
 from collections import defaultdict
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
@@ -36,6 +36,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.window import TimeWindow
 from app.rollups.buckets import BUCKET_COUNT, approx_percentile, merge
 from app.rollups.compute import floor_hour
+from app.rollups.coverage_reads import CoverageState, read_covered, read_covered_groups
+from app.rollups.dirty import HOURLY
+from app.rollups.watermark import RAW_TAIL_MAX as RAW_TAIL_MAX  # noqa: PLC0414 - public export.
+from app.rollups.watermark import ROLLUP_GRACE as ROLLUP_GRACE  # noqa: PLC0414 - public export.
+from app.rollups.watermark import read_split as read_split  # noqa: PLC0414 - public export.
 
 
 def summed_histogram(column: str) -> str:
@@ -102,23 +107,6 @@ _MODELS = text(
     GROUP BY provider, model
     """
 ).bindparams(bindparam("environment", type_=String))
-
-# Every rollup run rewrites a project's recent hours in one transaction, so the newest row carries
-# the start of its last successful run (`computed_at` defaults to `now()`).
-_WATERMARK = text(
-    """
-    SELECT computed_at FROM span_rollups_hourly
-    WHERE project_id = :project_id
-    ORDER BY bucket_start DESC
-    LIMIT 1
-    """
-)
-
-ROLLUP_GRACE = timedelta(minutes=10)
-"""How long after an hour closes its spans may still arrive before the hour counts as complete."""
-
-RAW_TAIL_MAX = timedelta(hours=24)
-"""The longest raw tail a read accepts: rollups more than a day behind are read as they are."""
 
 
 @dataclass(frozen=True)
@@ -191,15 +179,32 @@ def _params(project_id: uuid.UUID, window: TimeWindow, environment: str | None) 
 
 
 async def read_rollups(
-    db: AsyncSession, project_id: uuid.UUID, window: TimeWindow, environment: str | None
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    window: TimeWindow,
+    environment: str | None,
+    coverage: CoverageState | None = None,
+    *,
+    parts: Sequence[tuple[TimeWindow, CoverageState]] = (),
 ) -> RollupSeries:
     """Read one merged row per hour: span metrics from the span rollups, traces from the trace
     rollups. An hour that only has traces (or only spans) still gets a row, with zeros for the
     missing side.
+
+    With ``parts`` (windows inside ``window``), coverage is judged per part and recorded in its
+    state instead of over the whole window in ``coverage``.
     """
     params = _params(project_id, window, environment)
-    span_rows = (await db.execute(_SPAN_HOURS, params)).all()
-    trace_rows = (await db.execute(_TRACE_HOURS, params)).all()
+    bounds: list[tuple[int, datetime, datetime, CoverageState | None]]
+    bounds = [(g, floor_hour(w.start), w.end, state) for g, (w, state) in enumerate(parts)] or [
+        (0, floor_hour(window.start), window.end, coverage)
+    ]
+    span_rows = await read_covered_groups(
+        db, _SPAN_HOURS, params, project_id, bounds, relevant_consumers=HOURLY
+    )
+    trace_rows = await read_covered_groups(
+        db, _TRACE_HOURS, params, project_id, bounds, relevant_consumers=HOURLY
+    )
 
     hours: dict[datetime, HourlyRollup] = {
         row.bucket_start: HourlyRollup(
@@ -275,28 +280,24 @@ def group_hours(
     return {start: combine(start, rows) for start, rows in grouped.items()}
 
 
-async def read_split(db: AsyncSession, project_id: uuid.UUID, now: datetime) -> datetime | None:
-    """The first hour a metrics read takes from raw spans; every whole hour before it is read
-    from the rollups.
-
-    It follows the rollup job, not the clock: the hour that holds ``W - ROLLUP_GRACE``, where
-    ``W`` is the newest rollup row's ``computed_at``, so every earlier hour closed at least the
-    grace before the run that last rewrote it (the invariant in ``app.rollups.jobs``). A job that
-    falls behind moves the split back and the read gets slower, never wrong, up to
-    ``RAW_TAIL_MAX``. ``None`` when the project has no rollup row at all (new, or not rolled up
-    yet): the whole window is read raw.
-    """
-    watermark = (await db.execute(_WATERMARK, {"project_id": project_id})).scalar_one_or_none()
-    if watermark is None:
-        return None
-    return max(floor_hour(watermark - ROLLUP_GRACE), floor_hour(now - RAW_TAIL_MAX))
-
-
 async def read_model_rollups(
-    db: AsyncSession, project_id: uuid.UUID, window: TimeWindow, environment: str | None
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    window: TimeWindow,
+    environment: str | None,
+    coverage: CoverageState | None = None,
 ) -> list[ModelRollup]:
     """The llm calls per (provider, model), every pair: the caller merges, sorts and cuts."""
-    rows = (await db.execute(_MODELS, _params(project_id, window, environment))).all()
+    rows = await read_covered(
+        db,
+        _MODELS,
+        _params(project_id, window, environment),
+        project_id,
+        floor_hour(window.start),
+        window.end,
+        coverage,
+        relevant_consumers=HOURLY,
+    )
     return [
         ModelRollup(
             provider=row.provider,

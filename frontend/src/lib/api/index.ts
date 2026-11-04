@@ -1,3 +1,4 @@
+export type * from "./aggregate";
 export { authApi } from "./auth";
 export type { Credentials, PasswordResetInput, SignupInput } from "./auth";
 export { alertsApi } from "./alerts";
@@ -19,6 +20,7 @@ export {
   isTwoFactorRequired,
 } from "./errors";
 export { completenessApi } from "./completeness";
+export { ingestQuotaApi } from "./ingest-quota";
 export { costExplanationApi } from "./cost-explanation";
 export type * from "./cost-explanation";
 export { credentialsApi, priceOverridesApi } from "./credentials";

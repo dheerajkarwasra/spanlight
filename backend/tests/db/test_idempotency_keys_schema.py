@@ -8,8 +8,8 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.migrations import downgrade_to, upgrade_to_head
 from app.db.models import IdempotencyKey
+from tests.db.migration_support import downgrade_to, upgrade_to_target
 
 SessionFactory = async_sessionmaker[AsyncSession]
 
@@ -153,10 +153,11 @@ async def test_expired_rows_are_found_through_an_index(session_factory: SessionF
     assert any("(expires_at)" in definition for definition in indexes)
 
 
+@pytest.mark.migration_revision("0010")
 def test_downgrading_past_0010_drops_the_table_and_upgrading_brings_it_back(
-    app_database_url: str,
+    migration_database_url: str,
 ) -> None:
-    engine = create_engine(app_database_url)
+    engine = create_engine(migration_database_url)
 
     def table_exists() -> bool:
         with engine.connect() as connection:
@@ -166,11 +167,11 @@ def test_downgrading_past_0010_drops_the_table_and_upgrading_brings_it_back(
 
     try:
         assert table_exists()
-        downgrade_to(app_database_url, "0009")
+        downgrade_to(migration_database_url, "0009")
         try:
             assert not table_exists()
         finally:
-            upgrade_to_head(app_database_url)
+            upgrade_to_target(migration_database_url)
         assert table_exists()
     finally:
         engine.dispose()

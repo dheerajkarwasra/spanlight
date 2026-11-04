@@ -73,6 +73,19 @@ function several(label: string): boolean {
   return label.includes("–") || label.includes(",");
 }
 
+/**
+ * Figma "Callout · Bypass suspected" (G-007): the days whose bill Spanlight cannot explain and the
+ * likely causes, in the words of the admins' email.
+ */
+export function bypassCopy(days: string): { title: string; body: string } {
+  const which = several(days) ? "On these days" : "On this day";
+  return {
+    // "Oct 3, Oct 9" reads "Oct 3 and Oct 9" in a sentence.
+    title: `Unexplained provider spend on ${days.replace(/, (?=[^,]*$)/, " and ")}`,
+    body: `${which} more than 10 % and more than $1 of the provider’s bill is not explained by Spanlight’s traces or the known causes. Likely causes: calls made outside the gateway and the SDK, a project this source is not mapped to, or a leaked provider key. Check the provider’s usage by key, map every project that uses this account, and rotate the key if you cannot account for the spend.`,
+  };
+}
+
 /** Figma "Callout · Fetch failing": what failed, what to do, and which days it leaves open. */
 export function failingCopy(
   source: BillingSource,

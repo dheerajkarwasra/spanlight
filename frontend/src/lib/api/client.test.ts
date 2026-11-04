@@ -25,6 +25,7 @@ describe("api client", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
     fetchMock.mockReset();
     onUnauthorized.mockReset();
     document.cookie = "spl_csrf=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
@@ -57,6 +58,19 @@ describe("api client", () => {
     expect(headers.get("X-CSRF-Token")).toBe("csrf-token-123");
     expect(headers.get("Content-Type")).toBe("application/json");
     expect(init?.body).toBe(JSON.stringify({ name: "ci" }));
+  });
+
+  it("prefers the __Host- CSRF cookie that https deployments set", async () => {
+    // jsdom serves http, where a browser refuses __Host- cookies, so the jar is stubbed.
+    vi.spyOn(document, "cookie", "get").mockReturnValue(
+      "spl_csrf=planted-by-a-subdomain; __Host-spl_csrf=host-token",
+    );
+    fetchMock.mockResolvedValue(jsonResponse({ id: "k1" }, { status: 201 }));
+
+    await api.post("/api/v1/projects/p1/keys", { name: "ci" });
+
+    const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("X-CSRF-Token")).toBe("host-token");
   });
 
   it("returns undefined for 204 responses", async () => {

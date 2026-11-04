@@ -13,6 +13,10 @@ from app.core.crypto import parse_keyring
 from app.ee.license import parse_license
 
 DEV_SECRET_KEY = "dev-only-insecure-secret-key-change-me"  # noqa: S105 - documented dev default
+# Base size of the api's request pool (`app.main._request_engine`); it may overflow by as much
+# again. `gateway_record_concurrency` is bounded by it, so the writes that share the pool can
+# never take every connection requests need.
+REQUEST_POOL_SIZE = 10
 
 OAuthProviderName = Literal["github", "google"]
 # The order providers are listed in.
@@ -40,6 +44,9 @@ class Settings(BaseSettings):
     # An enterprise license key (`spl_lic_...`, see app/ee/license.py). Blank runs the community
     # edition; a key that does not verify stops startup, an expired one turns ee features off.
     ee_license_key: SecretStr | None = None
+    # The version of the hosted terms (`frontend/src/features/legal/content/terms.tsx` `VERSION`);
+    # leave unset on self-hosted instances. Unset, no terms are asked for anywhere.
+    terms_version: str | None = None
 
     anthropic_api_key: SecretStr | None = None
     demo_monthly_budget_usd: Decimal = Decimal("1.00")
@@ -64,7 +71,7 @@ class Settings(BaseSettings):
     oauth_google_client_id: str | None = None
     oauth_google_client_secret: SecretStr | None = None
 
-    # S3-compatible object storage (AWS S3, MinIO, R2, ...) for backups and exports. It is on
+    # S3-compatible object storage (AWS S3, MinIO, R2, ...) for exports. It is on
     # exactly when the bucket and both keys are set (see `is_object_storage_configured`).
     # S3_ENDPOINT is only needed for non-AWS services; S3_FORCE_PATH_STYLE addresses buckets as
     # `<endpoint>/<bucket>` instead of `<bucket>.<endpoint>`, which MinIO and most self-hosted
@@ -80,8 +87,19 @@ class Settings(BaseSettings):
     s3_secret_key: SecretStr | None = None
     s3_force_path_style: bool = False
 
+    # Backup storage never falls back to export or ambient credentials.
+    backup_s3_endpoint: str | None = None
+    backup_s3_bucket: str | None = None
+    backup_s3_region: str | None = None
+    backup_s3_access_key: SecretStr | None = None
+    backup_s3_secret_key: SecretStr | None = None
+    backup_s3_force_path_style: bool = False
+    # Server-side encryption asked for on every backup upload (`AES256` is SSE-S3). Blank sends no
+    # header: MinIO without a KMS rejects SSE-S3, so a bucket there must be encrypted another way.
+    backup_s3_sse: str | None = "AES256"
+
     # Nightly `pg_dump` to object storage. The job runs only when BACKUPS_ENABLED is true, an
-    # object store is configured and BACKUP_DATABASE_URL is set; otherwise it ends `done` with
+    # backup store is configured and BACKUP_DATABASE_URL is set; otherwise it ends `done` with
     # outcome `skipped_not_configured`. The tenant tables have row-level security forced on and
     # `pg_dump` turns it off for the dump, which fails unless the role can bypass it. So the URL
     # must use a superuser or a role with BYPASSRLS, never the app role (which cannot, by design).
@@ -98,6 +116,12 @@ class Settings(BaseSettings):
     # the listener off: the worker's job, outbox, notification and rollup metrics are only on it.
     worker_metrics_port: int | None = Field(default=None, ge=1, le=65535)
 
+    # One monotonic deadline from the first stop signal; later signals never extend it.
+    shutdown_timeout_seconds: float = Field(default=60, gt=0, allow_inf_nan=False)
+    shutdown_work_seconds: float = Field(default=50, gt=0, allow_inf_nan=False)
+    shutdown_flush_seconds: float = Field(default=3, gt=0, allow_inf_nan=False)
+    shutdown_close_seconds: float = Field(default=2, gt=0, allow_inf_nan=False)
+
     # How long an API request may wait for a connection from the main pool, and how long any one
     # of its statements may run. Past either limit the request fails fast with 503 and a
     # `Retry-After`, instead of queueing behind slow work until every other request is stuck too.
@@ -108,10 +132,24 @@ class Settings(BaseSettings):
     # 503 with `Retry-After: 1` at once instead of queueing (`app.core.admission`). About three
     # times the main pool (10 + 10 overflow).
     api_max_in_flight: int = Field(default=64, ge=1)
-    # How long one api process reuses a project API key's row before reading it again
-    # (`app.api.key_cache`). A key revoked through another process keeps working here for up to
-    # this long; 0 reads the row on every request.
+    # How long one api process reuses a project API key's row, and a gateway key's context
+    # (project, route, credential, lab profile, capture setting), before reading it again
+    # (`app.api.key_cache`). A change made through another process takes effect here within this
+    # long; 0 reads them on every request.
     api_key_cache_ttl_seconds: float = Field(default=10, ge=0)
+
+    # Per-process share of ingest requests, held after key checks and before reading the body.
+    # Refusals answer 429 with `Retry-After: 1`; their span count is unknown.
+    ingest_max_in_flight_per_project: int = Field(default=8, ge=1)
+
+    # Per-project ingest caps on `POST /v1/traces` and `POST /v1/otlp/traces`, each `0` for no
+    # cap: sustained spans a second (bursts of at least a full 1,000-span batch), spans admitted
+    # per UTC day and decompressed request body bytes per UTC day. Over a cap the request is
+    # `429` with `Retry-After`; refused spans are counted and shown to the project. A project's
+    # own values are set with `spanlight set-ingest-caps`. The gateway's own spans are exempt.
+    ingest_spans_per_second: int = Field(default=1000, ge=0)
+    ingest_spans_per_day: int = Field(default=1_000_000, ge=0)
+    ingest_bytes_per_day: int = Field(default=5 * 1024**3, ge=0)
 
     # The pool that idempotency keys use, apart from the main one. Reserving, completing and
     # releasing a key each take a connection for a few milliseconds while the request itself
@@ -127,11 +165,29 @@ class Settings(BaseSettings):
     # kept short: a saturated pool adds at most this much to a request.
     rate_limit_pool_size: int = Field(default=5, ge=1)
     rate_limit_pool_timeout_seconds: float = Field(default=0.25, gt=0)
+    # Connection defaults bound token-bucket SQL only, independently of pool checkout.
+    rate_limit_lock_timeout_ms: int = Field(default=100, gt=0)
+    rate_limit_statement_timeout_ms: int = Field(default=250, gt=0)
 
     # Where the LLM gateway (`/gw/v1/*`) runs. `embedded` serves it from the api process;
     # `standalone` leaves it to a separate `python -m app.gateway` process (same image) and
     # `disabled` turns it off. In both of those the api answers `/gw/*` with 404.
     gateway_mode: Literal["embedded", "standalone", "disabled"] = "embedded"
+    # HTTP ingress only, held through stream cleanup; replicas multiply each allowance. Local
+    # calibration: 32 concurrent 256-byte streams peaked at 195 MB RSS (184 MB base, about
+    # 0.35 MB a slot), 8 concurrent ~10 MiB bodies at 446 MB (about 32 MB a slot). Memory follows
+    # body bytes, so the byte budget (declared Content-Length, or the full request cap when a body
+    # is chunked or undeclared; GET/HEAD/OPTIONS reserve nothing; 80 MiB is the old 8 x 10 MiB
+    # worst case) bounds it, the count cap stays as a backstop, and one key may hold at most a
+    # share of the slots. A slot outlives the client's last byte by the call's finalization
+    # (p50 28 ms, max 141 ms measured), so in-flight calls exceed the clients: 200 looping
+    # streaming clients on two keys reached 256 in flight and 128 on one key, and 512 / 256 is
+    # what refused none of them, at a 207 MiB RSS peak.
+    gateway_max_in_flight: int = Field(default=512, ge=1)
+    # The floor is app.api.gw.MAX_REQUEST_BYTES (importing it here would be circular): the
+    # budget must fit one full-size body.
+    gateway_max_in_flight_bytes: int = Field(default=83_886_080, ge=10_485_760)
+    gateway_max_in_flight_per_key: int = Field(default=256, ge=1)
     # Whether provider credentials may point at `http://` base URLs and at private, loopback or
     # link-local addresses. Off, a base URL must be `https://` and resolve only to public
     # addresses, so a credential cannot turn the gateway into a way into the private network.
@@ -143,12 +199,15 @@ class Settings(BaseSettings):
     gateway_org_rpm_ceiling: int | None = Field(default=None, ge=1, le=100_000)
     # Gateway spans are written after the answer, in the background, a failed write retried a
     # few times (`app.gateway.recorder.RECORD_RETRY_DELAYS_S`). At most this many writes run at
-    # once (each holds a database connection), and at most `gateway_record_backlog` wait or run;
-    # past that a span is dropped and counted, so a burst cannot drain the pool. A waiting span
+    # once, and at most `gateway_record_backlog` wait or run; past that a span is dropped and
+    # counted. Each write holds a connection of the request pool (10, plus 10 on overflow), and
+    # the writes of one project serialize on its dirty-hour row until each commits, so the bound
+    # stays below the pool's base size: with more writers a slow commit convoys the rest, they
+    # take the connections gateway calls need, and every call stalls. A waiting span
     # holds its input and output already cut to 1 MiB each, and the waiting spans' payloads
     # together stay within `gateway_record_backlog_mb` of stored JSON (the process holds more
     # than that per span, so size both by measuring).
-    gateway_record_concurrency: int = Field(default=16, ge=1, le=256)
+    gateway_record_concurrency: int = Field(default=8, ge=1, le=REQUEST_POOL_SIZE)
     gateway_record_backlog: int = Field(default=5000, ge=1, le=100_000)
     gateway_record_backlog_mb: int = Field(default=128, ge=1, le=65_536)
 
@@ -179,6 +238,8 @@ class Settings(BaseSettings):
     explain_model: str = Field(default="claude-sonnet-5-5", min_length=1)
     explain_monthly_budget_usd: Decimal = Field(default=Decimal("1.00"), ge=0)
     user_stats_enabled: bool = True
+    # Capture remains active when consumption is disabled.
+    aggregate_repair_enabled: bool = False
 
     # Evaluations. `evals_enabled` schedules online evaluation (sampling recent spans for the
     # enabled evaluators every minute); off, evaluators only run from experiments and test runs.
@@ -242,6 +303,12 @@ class Settings(BaseSettings):
         "oauth_github_client_secret",
         "oauth_google_client_id",
         "oauth_google_client_secret",
+        "backup_s3_endpoint",
+        "backup_s3_bucket",
+        "backup_s3_region",
+        "backup_s3_access_key",
+        "backup_s3_secret_key",
+        "backup_s3_sse",
         "s3_endpoint",
         "s3_public_endpoint",
         "s3_bucket",
@@ -249,6 +316,7 @@ class Settings(BaseSettings):
         "s3_access_key",
         "s3_secret_key",
         "backup_database_url",
+        "terms_version",
         mode="before",
     )
     @classmethod
@@ -258,20 +326,34 @@ class Settings(BaseSettings):
 
     @field_validator(
         "email_provider",
+        "backup_s3_force_path_style",
         "smtp_port",
         "smtp_starttls",
+        "shutdown_timeout_seconds",
+        "shutdown_work_seconds",
+        "shutdown_flush_seconds",
+        "shutdown_close_seconds",
         "api_pool_timeout_seconds",
         "api_statement_timeout_seconds",
         "api_max_in_flight",
         "api_key_cache_ttl_seconds",
+        "ingest_max_in_flight_per_project",
+        "ingest_spans_per_second",
+        "ingest_spans_per_day",
+        "ingest_bytes_per_day",
         "idempotency_pool_size",
         "idempotency_pool_timeout_seconds",
         "rate_limit_pool_size",
         "rate_limit_pool_timeout_seconds",
+        "rate_limit_lock_timeout_ms",
+        "rate_limit_statement_timeout_ms",
         "s3_force_path_style",
         "backups_enabled",
         "worker_required",
         "gateway_mode",
+        "gateway_max_in_flight",
+        "gateway_max_in_flight_bytes",
+        "gateway_max_in_flight_per_key",
         "gateway_allow_insecure_base_urls",
         "gateway_record_concurrency",
         "gateway_record_backlog",
@@ -286,6 +368,7 @@ class Settings(BaseSettings):
         "explain_model",
         "explain_monthly_budget_usd",
         "user_stats_enabled",
+        "aggregate_repair_enabled",
         "evals_enabled",
         "eval_sampler_max_runs_per_cycle",
         "experiment_max_items",
@@ -373,9 +456,35 @@ class Settings(BaseSettings):
         return value.strip()
 
     @model_validator(mode="after")
-    def _require_real_secret_over_https(self) -> Self:
-        if self.secure_cookies and self.secret_key.get_secret_value() == DEV_SECRET_KEY:
-            raise ValueError("SECRET_KEY must be set when APP_BASE_URL uses https")
+    def _shutdown_deadline_order(self) -> Self:
+        if (
+            self.shutdown_work_seconds + self.shutdown_flush_seconds + self.shutdown_close_seconds
+            >= self.shutdown_timeout_seconds
+        ):
+            raise ValueError("Shutdown must reserve time for producer and transaction joins")
+        return self
+
+    @model_validator(mode="after")
+    def _rate_limit_deadline_order(self) -> Self:
+        if self.rate_limit_lock_timeout_ms >= self.rate_limit_statement_timeout_ms:
+            raise ValueError(
+                "RATE_LIMIT_LOCK_TIMEOUT_MS must be less than RATE_LIMIT_STATEMENT_TIMEOUT_MS"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _require_a_real_secret_key(self) -> Self:
+        # The development key is public and a short key can be brute-forced offline from one CSRF
+        # token. Local development may keep either: nothing it signs leaves the machine.
+        local = urlsplit(self.app_base_url).hostname in {"localhost", "127.0.0.1", "::1"}
+        if (
+            self.secure_cookies or not local
+        ) and self.secret_key.get_secret_value() == DEV_SECRET_KEY:
+            raise ValueError("SECRET_KEY must be set when APP_BASE_URL uses https or is not local")
+        if not local and len(self.secret_key.get_secret_value()) < 32:
+            raise ValueError(
+                "SECRET_KEY must be at least 32 characters unless APP_BASE_URL is local"
+            )
         return self
 
     @model_validator(mode="after")
@@ -418,6 +527,27 @@ class Settings(BaseSettings):
             raise ValueError(f"Object storage requires {', '.join(missing)} to be set as well")
         return self
 
+    @model_validator(mode="after")
+    def _backup_storage_is_complete(self) -> Self:
+        required = {
+            "BACKUP_S3_BUCKET": self.backup_s3_bucket,
+            "BACKUP_S3_ACCESS_KEY": self.backup_s3_access_key,
+            "BACKUP_S3_SECRET_KEY": self.backup_s3_secret_key,
+        }
+        missing = [name for name, value in required.items() if value is None]
+        if missing and len(missing) < len(required):
+            raise ValueError(f"Backup storage requires {', '.join(missing)} to be set as well")
+        return self
+
+    @property
+    def is_backup_storage_configured(self) -> bool:
+        """Whether explicit backup bucket and credentials are configured."""
+        return (
+            self.backup_s3_bucket is not None
+            and self.backup_s3_access_key is not None
+            and self.backup_s3_secret_key is not None
+        )
+
     @property
     def is_demo_enabled(self) -> bool:
         """Demo traffic defaults to on exactly when an Anthropic key is configured."""
@@ -454,7 +584,7 @@ class Settings(BaseSettings):
 
     @property
     def is_object_storage_configured(self) -> bool:
-        """Whether backups and exports have somewhere to go: a bucket and both keys are set."""
+        """Whether exports have somewhere to go: a bucket and both keys are set."""
         return (
             self.s3_bucket is not None
             and self.s3_access_key is not None

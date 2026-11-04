@@ -82,6 +82,7 @@ class LoopResult:
     response: UpstreamResponse | None = None  # a stream's provider response, to close it
     error: GatewayError | None = None
     upstream_s: float = 0.0
+    stream_deadline: float | None = None
     first_byte_at: float | None = None  # `context.monotonic()` when a stream's first byte came
 
     @property
@@ -254,6 +255,7 @@ def _count(
     result.target_index = index
     result.status, result.headers = step.status, step.headers
     result.body, result.stream, result.response = step.body, step.stream, step.response
+    result.stream_deadline = step.stream_deadline
     result.error = step.error
     if error_kind == "connection_error":
         result.error = upstream_unreachable(len(result.attempts))

@@ -19,6 +19,7 @@ from ._context import (
     set_current_span,
 )
 from ._exporter import BatchExporter
+from ._hosts import is_safe_host
 from ._prompt_client import PromptClient
 from ._scores import ScoreValue, build_score
 from ._span import Span, SpanKind, normalize_kind
@@ -104,9 +105,11 @@ class Spanlight:
             prompt_cache_ttl=prompt_cache_ttl,
         )
         self._exporter: BatchExporter | None = None
+        # The key is a bearer credential: never send it in clear text to another machine.
+        safe_host = is_safe_host(self.config.host)
         self.prompts: PromptClient = PromptClient(
             base_url=self.config.prompts_url,
-            api_key=self.config.api_key,
+            api_key=self.config.api_key if safe_host else None,
             timeout=self.config.timeout,
             cache_ttl=self.config.prompt_cache_ttl,
             transport=transport,
@@ -117,6 +120,12 @@ class Spanlight:
             logger.warning(
                 "Spanlight: no API key configured (set SPANLIGHT_API_KEY or pass "
                 "api_key=...); tracing is disabled."
+            )
+        elif self.config.enabled and not safe_host:
+            logger.warning(
+                "Spanlight: the host must be an https:// URL (plain http:// is allowed only for "
+                "local and private-network hosts); the API key is not sent, so tracing and "
+                "prompt fetching are disabled."
             )
         elif self.config.enabled and self.config.api_key:
             self._exporter = BatchExporter(

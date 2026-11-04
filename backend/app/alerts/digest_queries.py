@@ -20,6 +20,8 @@ from app.alerts.types import Metric, MetricFilters
 from app.api.window import TimeWindow
 from app.db.models import AlertEvent, Membership, NotificationOutbox, User
 from app.db.rls import bypass_rls
+from app.rollups.coverage_reads import CoverageState, read_covered
+from app.rollups.dirty import HOURLY
 from app.services.demo import DEMO_USER_EMAIL
 
 # Projects with the digest on that had at least one span in the week. The hourly rollups answer
@@ -80,22 +82,24 @@ async def eligible_projects(db: AsyncSession, week: TimeWindow) -> list[DigestTa
     ]
 
 
-async def digest_recipients(db: AsyncSession, org_id: uuid.UUID) -> list[str]:
-    """Addresses of the organization's members with a verified email, in a stable order.
+async def digest_recipients(db: AsyncSession, org_id: uuid.UUID) -> list[tuple[uuid.UUID, str]]:
+    """Id and address of the organization's members with a verified email who did not turn the
+    digest off, in a stable order.
 
     The shared demo account is never mailed, whether or not its address is verified.
     """
-    rows = await db.scalars(
-        select(User.email)
+    rows = await db.execute(
+        select(User.id, User.email)
         .join(Membership, Membership.user_id == User.id)
         .where(
             Membership.org_id == org_id,
             User.email_verified_at.is_not(None),
+            User.weekly_digest_opt_out.is_(False),
             func.lower(User.email) != DEMO_USER_EMAIL,
         )
         .order_by(User.email)
     )
-    return [str(address) for address in rows]
+    return [(user_id, str(address)) for user_id, address in rows]
 
 
 # Spelled exactly as the expression of `notification_outbox_digest_key_idx` (migration 0307), with
@@ -214,10 +218,20 @@ async def top_models(
     left out, so the list never shows a 0 that stands for "unknown". The week is whole UTC days,
     so the rollups cover it exactly.
     """
-    rows = await db.execute(
+    coverage = CoverageState()
+    rows = await read_covered(
+        db,
         _TOP_MODELS,
         {"project_id": project_id, "start": week.start, "end": week.end, "n": MAX_MODELS},
+        project_id,
+        week.start,
+        week.end,
+        coverage,
+        raw=True,
+        relevant_consumers=HOURLY,
     )
+    if coverage.status != "complete":
+        return []
     return [(row.model, Decimal(row.cost)) for row in rows]
 
 

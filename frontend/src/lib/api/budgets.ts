@@ -16,7 +16,8 @@ function budgetPath(projectId: string, budgetId: string): string {
  * UNKNOWN_CHANNEL`.
  */
 export const budgetsApi = {
-  list: (projectId: string): Promise<Budget[]> => api.get<Budget[]>(budgetsPath(projectId)),
+  list: (projectId: string, signal?: AbortSignal): Promise<Budget[]> =>
+    api.get<Budget[]>(budgetsPath(projectId), undefined, signal),
   get: (projectId: string, budgetId: string): Promise<Budget> =>
     api.get<Budget>(budgetPath(projectId, budgetId)),
   /** Cumulative spend per day of the current period (session only, not API keys). */

@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, EmailStr, Field, StringConstraints
+from pydantic import BaseModel, EmailStr, Field, StrictBool, StringConstraints
 
 from app.api.schemas.common import ApiModel, Name, UserOut
 from app.api.schemas.orgs import OrgOut
@@ -51,6 +51,12 @@ class MeOut(BaseModel):
     email_verification_required: bool
     # Whether the caller hid the setup checklist. Per user, across projects; self-only.
     activation_checklist_dismissed: bool
+    # The terms version the caller accepted, and the server's `TERMS_VERSION` (null: no terms).
+    # The dashboard asks for acceptance when the current one is set and differs. Self-only.
+    terms_accepted_version: str | None
+    terms_current_version: str | None
+    # Whether the caller gets the weekly digest (unless a project turned it off). Self-only.
+    weekly_digest: bool
     capabilities: CapabilitiesOut
 
 
@@ -80,6 +86,9 @@ class SignupIn(BaseModel):
     email: EmailStr
     password: NewPassword
     name: Name
+    # Required to be true when the server has `TERMS_VERSION`; the version stored is the server's.
+    # Strict: only JSON `true` is consent, never "yes" or 1.
+    accept_terms: StrictBool = False
 
 
 class LoginIn(BaseModel):
@@ -130,6 +139,8 @@ class TotpStatusOut(BaseModel):
     enabled: bool
     enabled_at: datetime | None
     recovery_codes_remaining: int
+    # True when two-factor authentication is on and an unused code is in the 10-character format.
+    legacy_recovery_codes: bool
 
 
 class TotpSetupOut(BaseModel):

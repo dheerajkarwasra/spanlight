@@ -1,4 +1,4 @@
-import type { ComponentType, SVGProps } from "react";
+import type { ComponentType, ReactNode, SVGProps } from "react";
 
 import { Button } from "@/components/ui/button";
 import { oauthStartUrl, type OAuthProvider } from "@/lib/api";
@@ -21,6 +21,8 @@ interface OAuthButtonsProps {
   next: string | undefined;
   /** What the divider under the buttons says, e.g. "or sign in with email". */
   dividerLabel: string;
+  /** A line under the buttons, above the divider (signup's terms line). */
+  note?: ReactNode;
 }
 
 /**
@@ -28,7 +30,7 @@ interface OAuthButtonsProps {
  * leads into the email form. Until the list arrives, when it is empty, and when it fails to load,
  * it renders nothing at all: the password form is the primary way in and never waits on this.
  */
-export function OAuthButtons({ next, dividerLabel }: OAuthButtonsProps) {
+export function OAuthButtons({ next, dividerLabel, note }: OAuthButtonsProps) {
   const providers = useOAuthProviders();
   // Ignore a provider this build has no button for rather than break the whole sign-in screen.
   const available = (providers.data ?? []).filter(({ provider }) => provider in PROVIDERS);
@@ -38,24 +40,27 @@ export function OAuthButtons({ next, dividerLabel }: OAuthButtonsProps) {
 
   return (
     <>
-      <div className="flex flex-col gap-2.5">
-        {available.map(({ provider }) => {
-          const { label, Icon } = PROVIDERS[provider];
-          return (
-            <Button key={provider} asChild size="lg" className="w-full">
-              {/* A full-page navigation: the server answers with a redirect to the provider. */}
-              <a
-                href={oauthStartUrl(provider, { next: safeNextPath(next) ?? undefined })}
-                onClick={() => {
-                  rememberOAuthProvider(provider);
-                }}
-              >
-                <Icon className="size-[18px]" />
-                Continue with {label}
-              </a>
-            </Button>
-          );
-        })}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2.5">
+          {available.map(({ provider }) => {
+            const { label, Icon } = PROVIDERS[provider];
+            return (
+              <Button key={provider} asChild size="lg" className="w-full">
+                {/* A full-page navigation: the server answers with a redirect to the provider. */}
+                <a
+                  href={oauthStartUrl(provider, { next: safeNextPath(next) ?? undefined })}
+                  onClick={() => {
+                    rememberOAuthProvider(provider);
+                  }}
+                >
+                  <Icon className="size-[18px]" />
+                  Continue with {label}
+                </a>
+              </Button>
+            );
+          })}
+        </div>
+        {note}
       </div>
       <div
         className="flex items-center gap-3 text-xs font-medium text-muted-foreground"

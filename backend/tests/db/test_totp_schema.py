@@ -7,8 +7,8 @@ from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.migrations import downgrade_to, upgrade_to_head
 from app.db.models import Organization, RecoveryCode, User
+from tests.db.migration_support import downgrade_to, upgrade_to_target
 
 SessionFactory = async_sessionmaker[AsyncSession]
 
@@ -130,15 +130,16 @@ async def test_require_2fa_cannot_be_null(session_factory: SessionFactory) -> No
             )
 
 
+@pytest.mark.migration_revision("0006")
 def test_downgrade_removes_two_factor_and_its_audit_events_and_upgrade_restores_the_schema(
-    app_database_url: str,
+    migration_database_url: str,
 ) -> None:
     """Going back drops the data the older schema cannot hold; going forward starts clean."""
     insert_event = text(
         "INSERT INTO audit_events (id, org_id, action, target_type, target_id) "
         "VALUES (gen_random_uuid(), :org, :action, 'user', 'x')"
     )
-    engine = create_engine(app_database_url)
+    engine = create_engine(migration_database_url)
     try:
         with engine.begin() as connection:
             org = connection.execute(
@@ -161,7 +162,7 @@ def test_downgrade_removes_two_factor_and_its_audit_events_and_upgrade_restores_
             for action in ("user.totp_enable", "user.totp_disable", "org.update", "member.add"):
                 connection.execute(insert_event, {"org": org, "action": action})
 
-        downgrade_to(app_database_url, "0005")
+        downgrade_to(migration_database_url, "0005")
         try:
             with engine.connect() as connection:
                 kept = connection.execute(text("SELECT action FROM audit_events")).scalars().all()
@@ -186,7 +187,7 @@ def test_downgrade_removes_two_factor_and_its_audit_events_and_upgrade_restores_
             ):
                 connection.execute(insert_event, {"org": org, "action": "org.update"})
         finally:
-            upgrade_to_head(app_database_url)
+            upgrade_to_target(migration_database_url)
 
         with engine.connect() as connection:
             row = connection.execute(

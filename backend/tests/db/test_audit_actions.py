@@ -5,8 +5,8 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.migrations import downgrade_to, upgrade_to_head
 from app.db.models import AuditAction, AuditEvent, Organization, User
+from tests.db.migration_support import downgrade_to, upgrade_to_target
 
 SessionFactory = async_sessionmaker[AsyncSession]
 
@@ -46,15 +46,16 @@ async def test_the_database_rejects_an_unknown_audit_action(
             await db.flush()
 
 
+@pytest.mark.migration_revision("0009")
 def test_downgrading_past_project_delete_removes_its_audit_events_and_upgrading_restores_it(
-    app_database_url: str,
+    migration_database_url: str,
 ) -> None:
     """Migration 0009 adds `project.delete`; going back drops the events the old CHECK rejects."""
     insert_event = text(
         "INSERT INTO audit_events (id, org_id, action, target_type, target_id) "
         "VALUES (gen_random_uuid(), :org, :action, 'project', 'x')"
     )
-    engine = create_engine(app_database_url)
+    engine = create_engine(migration_database_url)
     try:
         with engine.begin() as connection:
             org = connection.execute(
@@ -66,7 +67,7 @@ def test_downgrading_past_project_delete_removes_its_audit_events_and_upgrading_
             for action in ("project.delete", "project.update", "org.update"):
                 connection.execute(insert_event, {"org": org, "action": action})
 
-        downgrade_to(app_database_url, "0008")
+        downgrade_to(migration_database_url, "0008")
         try:
             with engine.connect() as connection:
                 kept = (
@@ -81,7 +82,7 @@ def test_downgrading_past_project_delete_removes_its_audit_events_and_upgrading_
             ):
                 connection.execute(insert_event, {"org": org, "action": "project.delete"})
         finally:
-            upgrade_to_head(app_database_url)
+            upgrade_to_target(migration_database_url)
 
         with engine.begin() as connection:
             connection.execute(insert_event, {"org": org, "action": "project.delete"})

@@ -4,7 +4,7 @@ One row per project, hour, environment, provider, model, error class and rate-li
 dimensions may be NULL, and the unique key is `NULLS NOT DISTINCT`, so two rows for the same
 unknown dimensions collide instead of both being stored.
 
-The round trip downgrades the session's shared database and leaves it at head.
+The round trip uses an explicitly owned database at the pinned historical revision.
 """
 
 import uuid
@@ -12,8 +12,8 @@ import uuid
 import psycopg
 import pytest
 
-from app.db.migrations import downgrade_to, head_revision, upgrade_to_head
 from tests.db import schema_probe as probe
+from tests.db.migration_support import downgrade_to, expected_revision, upgrade_to_target
 
 TABLE = "error_rollups_hourly"
 KEY = "error_rollups_hourly_dimensions_key"
@@ -37,7 +37,7 @@ EXPECTED_COLUMNS = {
 
 
 def _assert_at_head(database_url: str) -> None:
-    assert probe.current_revision(database_url) == head_revision()
+    assert probe.current_revision(database_url) == expected_revision()
     assert probe.columns(database_url, TABLE) == EXPECTED_COLUMNS
     probe.assert_project_policies(database_url, TABLE)
     assert probe.constraints(database_url, TABLE)[KEY] == (
@@ -58,8 +58,9 @@ def _insert(connection: psycopg.Connection) -> None:
     )
 
 
-def test_0701_round_trip(app_database_url: str) -> None:
-    _assert_at_head(app_database_url)
+@pytest.mark.migration_revision("0701")
+def test_0701_round_trip(migration_database_url: str) -> None:
+    _assert_at_head(migration_database_url)
     with probe.admin() as connection:
         probe.seed_project(connection, ORG_ID, PROJECT_ID)
         _insert(connection)
@@ -67,12 +68,12 @@ def test_0701_round_trip(app_database_url: str) -> None:
         with pytest.raises(psycopg.errors.UniqueViolation, match=KEY):
             _insert(connection)
 
-    downgrade_to(app_database_url, "0700")
+    downgrade_to(migration_database_url, "0700")
     try:
-        assert probe.current_revision(app_database_url) == "0700"
-        assert probe.row_security(app_database_url, TABLE) is None
-        assert probe.policies(app_database_url, TABLE) == {}
+        assert probe.current_revision(migration_database_url) == "0700"
+        assert probe.row_security(migration_database_url, TABLE) is None
+        assert probe.policies(migration_database_url, TABLE) == {}
     finally:
-        upgrade_to_head(app_database_url)
+        upgrade_to_target(migration_database_url)
 
-    _assert_at_head(app_database_url)
+    _assert_at_head(migration_database_url)

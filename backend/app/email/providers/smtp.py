@@ -12,6 +12,7 @@ from email.utils import getaddresses
 
 from pydantic import SecretStr
 
+from app.core.thread_ownership import owned_thread
 from app.email.message import EmailDeliveryError, EmailMessage
 
 TIMEOUT_SECONDS = 10.0
@@ -40,7 +41,7 @@ class SmtpEmailSender:
     async def send(self, message: EmailMessage) -> None:
         mime, recipient = self._build(message)
         try:
-            await asyncio.to_thread(self._submit, mime, recipient)
+            await owned_thread(asyncio.to_thread(self._submit, mime, recipient))
         except (smtplib.SMTPException, OSError) as exc:
             raise EmailDeliveryError(self._describe(exc)) from exc
 
@@ -48,7 +49,8 @@ class SmtpEmailSender:
         """The MIME message and its one validated recipient address."""
         # A line break in a header value would let a subject or address smuggle in headers such
         # as Bcc. `email.message` refuses them too; checking first gives the outbox a clear error.
-        for name, value in (("to", message.to), ("subject", message.subject)):
+        extra = dict(message.headers or {})
+        for name, value in (("to", message.to), ("subject", message.subject), *extra.items()):
             if "\r" in value or "\n" in value:
                 raise EmailDeliveryError(f"email '{name}' must not contain a line break")
         # Exactly one mailbox: "a@x.com, b@y.com" would otherwise address both recipients.
@@ -59,6 +61,8 @@ class SmtpEmailSender:
         mime["From"] = self._from_address
         mime["To"] = message.to
         mime["Subject"] = message.subject
+        for name, value in extra.items():
+            mime[name] = value
         mime.set_content(message.text)
         if message.html is not None:
             mime.add_alternative(message.html, subtype="html")

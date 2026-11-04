@@ -10,6 +10,7 @@ export {
   promptVersionsPickerQuery,
   usePromptVersionByIdQuery,
 } from "./prompt-query-options";
+export { TemplateBlocks } from "./template-card";
 export {
   promptDetailSearchSchema,
   promptsSearchSchema,

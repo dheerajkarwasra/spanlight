@@ -195,14 +195,32 @@ def test_a_totp_code_is_exactly_six_ascii_digits() -> None:
     assert not is_totp_code("\u00b2" * 6)  # superscript two
 
 
-def test_a_recovery_code_is_ten_characters_of_lowercase_base32() -> None:
-    assert is_recovery_code("abcdefghij")
-    assert is_recovery_code("a2b3c4d5e6")
-    assert not is_recovery_code("abcdefghi")
-    assert not is_recovery_code("abcdefghijk")
+@pytest.mark.parametrize("code", ["abcdefghij", "a2b3c4d5e6", "abcdefghijklmnopqrstuvwxyz23"])
+def test_a_recovery_code_is_ten_or_twenty_eight_characters_of_lowercase_base32(code: str) -> None:
+    assert is_recovery_code(code)
+
+
+@pytest.mark.parametrize("length", [9, 11, 27, 29])
+def test_other_recovery_code_lengths_are_refused(length: int) -> None:
+    assert not is_recovery_code("a" * length)
+
+
+@pytest.mark.parametrize("character", ["0", "1", "8", "9"])
+def test_a_current_recovery_code_rejects_characters_outside_the_alphabet(character: str) -> None:
+    assert not is_recovery_code("abcdefghijklmnopqrstuvwxyz2" + character)
+
+
+def test_a_recovery_code_requires_normalized_lowercase_base32() -> None:
     assert not is_recovery_code("abcdefghi1")  # 1 is not in the alphabet
     assert not is_recovery_code("abcdefghi0")
     assert not is_recovery_code("ABCDEFGHIJ")  # normalise first
+
+
+def test_a_formatted_current_recovery_code_normalizes_to_twenty_eight_characters() -> None:
+    normalized = normalize_code("  ABCDEFG-hijklmn-opqrstu-vwxyz23\t\n")
+
+    assert normalized == "abcdefghijklmnopqrstuvwxyz23"
+    assert len(normalized) == 28
 
 
 # --- recovery codes ----------------------------------------------------------------------------

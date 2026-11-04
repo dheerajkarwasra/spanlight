@@ -1,4 +1,5 @@
-"""Single-use tokens for links sent by email (verify an address, reset a password).
+"""Single-use tokens for links sent by email (verify an address, reset a password, change the
+address).
 
 The raw token is 32 random bytes in URL-safe base64. It travels in the emailed link, and only
 its SHA-256 is stored in `email_tokens`, so reading that table cannot be turned into working
@@ -19,9 +20,15 @@ from app.db.models import EmailToken, EmailTokenKind, User
 
 
 async def issue_token(
-    db: AsyncSession, user_id: uuid.UUID, kind: EmailTokenKind, ttl: timedelta
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    kind: EmailTokenKind,
+    ttl: timedelta,
+    *,
+    new_email: str | None = None,
 ) -> str:
-    """Create a token of `kind` for the user and return its raw value.
+    """Create a token of `kind` for the user and return its raw value. An `email_change` token
+    carries the address it moves the user to in `new_email`.
 
     The row joins the caller's transaction (flushed, not committed), so the token and whatever
     sends it commit or roll back together.
@@ -35,6 +42,7 @@ async def issue_token(
             token_hash=token_digest(raw),
             created_at=now,
             expires_at=now + ttl,
+            new_email=new_email,
         )
     )
     await db.flush()

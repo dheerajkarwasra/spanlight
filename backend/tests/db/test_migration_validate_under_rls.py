@@ -12,7 +12,7 @@ filter, so the CHECK cases below pass with or without the bypass; they pin that 
 checked on the idempotent re-run path of 0400 and 0401 (columns already present from an
 interrupted run).
 
-Every test downgrades the session's shared database and must leave it at head.
+Historical round trips use an owned database at their explicit upper revision.
 """
 
 import uuid
@@ -22,9 +22,12 @@ import psycopg
 import pytest
 from sqlalchemy import create_engine, exc, text
 
-from alembic import command
-from app.db.migrations import alembic_config, downgrade_to, head_revision, upgrade_to_head
-from tests.conftest import admin_database_url
+from tests.db.migration_support import (
+    admin_database_url,
+    downgrade_to,
+    expected_revision,
+    upgrade_to_target,
+)
 
 ORG_ID = uuid.UUID("10000000-0000-4000-8000-00000000c002")
 PROJECT_ID = uuid.UUID("20000000-0000-4000-8000-00000000c002")
@@ -77,10 +80,6 @@ def _seed_span(extra_columns: str = "", extra_values: tuple[object, ...] = ()) -
     )
 
 
-def _upgrade_to(database_url: str, revision: str) -> None:
-    command.upgrade(alembic_config(database_url), revision)
-
-
 def _current_revision(database_url: str) -> str | None:
     engine = create_engine(database_url)
     try:
@@ -91,8 +90,8 @@ def _current_revision(database_url: str) -> str | None:
 
 
 @pytest.fixture
-def back_to_head(app_database_url: str) -> Iterator[None]:
-    """Remove this module's rows and bring the shared database back to head afterwards."""
+def back_to_target(migration_database_url: str) -> Iterator[None]:
+    """Remove invalid fixture rows before restoring the owned database's pinned revision."""
     yield
     _admin(
         [
@@ -100,14 +99,15 @@ def back_to_head(app_database_url: str) -> Iterator[None]:
             ("DELETE FROM organizations WHERE id = %s", (ORG_ID,)),
         ]
     )
-    upgrade_to_head(app_database_url)
-    assert _current_revision(app_database_url) == head_revision()
+    upgrade_to_target(migration_database_url)
+    assert _current_revision(migration_database_url) == expected_revision()
 
 
+@pytest.mark.migration_revision("0505")
 def test_0505_refuses_a_score_pointing_at_a_missing_evaluator_run(
-    app_database_url: str, back_to_head: None
+    migration_database_url: str, back_to_target: None
 ) -> None:
-    downgrade_to(app_database_url, "0504")
+    downgrade_to(migration_database_url, "0504")
     _seed_project()
     _admin(
         [
@@ -120,38 +120,40 @@ def test_0505_refuses_a_score_pointing_at_a_missing_evaluator_run(
     )
 
     with pytest.raises(exc.IntegrityError) as raised:
-        _upgrade_to(app_database_url, "0505")
+        upgrade_to_target(migration_database_url)
     assert isinstance(raised.value.orig, psycopg.errors.ForeignKeyViolation)
-    assert _current_revision(app_database_url) == "0504"
+    assert _current_revision(migration_database_url) == "0504"
 
     # Without the dangling id the same upgrade goes through.
     _admin([("UPDATE scores SET evaluator_run_id = NULL WHERE id = %s", (SCORE_ID,))])
-    _upgrade_to(app_database_url, "0505")
-    assert _current_revision(app_database_url) == "0505"
+    upgrade_to_target(migration_database_url)
+    assert _current_revision(migration_database_url) == "0505"
 
 
+@pytest.mark.migration_revision("0400")
 def test_0400_rerun_refuses_an_error_class_on_a_span_that_did_not_fail(
-    app_database_url: str, back_to_head: None
+    migration_database_url: str, back_to_target: None
 ) -> None:
-    downgrade_to(app_database_url, "0307")
+    downgrade_to(migration_database_url, "0307")
     _seed_project()
     # An interrupted earlier run left the column behind, and a row was written into it.
     _admin([("ALTER TABLE spans ADD COLUMN error_class text", ())])
     _seed_span(", error_class", ("timeout",))
 
     with pytest.raises(exc.IntegrityError) as raised:
-        _upgrade_to(app_database_url, "0400")
+        upgrade_to_target(migration_database_url)
     assert isinstance(raised.value.orig, psycopg.errors.CheckViolation)
 
     _admin([("UPDATE spans SET error_class = NULL WHERE span_id = %s", (SPAN_ID,))])
-    _upgrade_to(app_database_url, "0400")
-    assert _current_revision(app_database_url) == "0400"
+    upgrade_to_target(migration_database_url)
+    assert _current_revision(migration_database_url) == "0400"
 
 
+@pytest.mark.migration_revision("0401")
 def test_0401_rerun_refuses_a_malformed_request_hash(
-    app_database_url: str, back_to_head: None
+    migration_database_url: str, back_to_target: None
 ) -> None:
-    downgrade_to(app_database_url, "0400")
+    downgrade_to(migration_database_url, "0400")
     _seed_project()
     _admin(
         [
@@ -164,9 +166,9 @@ def test_0401_rerun_refuses_a_malformed_request_hash(
     _seed_span(", request_hash", ("NOT-A-HASH",))
 
     with pytest.raises(exc.IntegrityError) as raised:
-        _upgrade_to(app_database_url, "0401")
+        upgrade_to_target(migration_database_url)
     assert isinstance(raised.value.orig, psycopg.errors.CheckViolation)
 
     _admin([("UPDATE spans SET request_hash = NULL WHERE span_id = %s", (SPAN_ID,))])
-    _upgrade_to(app_database_url, "0401")
-    assert _current_revision(app_database_url) == "0401"
+    upgrade_to_target(migration_database_url)
+    assert _current_revision(migration_database_url) == "0401"

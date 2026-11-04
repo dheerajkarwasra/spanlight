@@ -8,6 +8,9 @@ const BURN: BudgetBurn = {
   period_start: "2026-10-01T00:00:00Z",
   resets_at: "2026-11-01T00:00:00Z",
   amount_usd: "500.0000",
+  forecast_usd: null,
+  forecast_basis_days: 0,
+  forecast_crosses_on: null,
   points: [
     { day: "2026-10-01", spend_usd: null, cumulative_usd: null },
     { day: "2026-10-02", spend_usd: "12.5000", cumulative_usd: "12.5000" },

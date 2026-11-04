@@ -66,7 +66,7 @@ export function projectMonthlySpend(
   if (costUsd === null || monthToDateUsd === null || points === null) {
     return null;
   }
-  const first = points.find((point) => point.llmCalls > 0);
+  const first = points.find((point) => point.llmCalls !== null && point.llmCalls > 0);
   if (first === undefined || windowMs > PROJECTION_MAX_WINDOW_MS) {
     return null;
   }

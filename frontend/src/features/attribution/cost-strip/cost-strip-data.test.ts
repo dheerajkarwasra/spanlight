@@ -32,6 +32,7 @@ function day(date: string, overrides: Partial<ReconciliationDay> = {}): Reconcil
     credits_usd: null,
     other_usd: null,
     unattributed_calls: 0,
+    bypass_suspected: false,
     groups: [],
     credits: [],
     other: [],
@@ -321,5 +322,38 @@ describe("costStripCards", () => {
     const [priced, , , none] = cards({ state: "not_connected" }, 0);
     expect(priced?.lowerBound).toBe(false);
     expect(none).toMatchObject({ value: "0", lines: ["Every call has a price"] });
+  });
+
+  it("labels unavailable source history in the spend card's freshness line, never Live", () => {
+    const billing: Billing = { state: "not_connected" };
+    const retained = response({ aggregate_status: "unavailable" });
+    const [spend] = costStripCards({ attribution: retained, attributionFailed: false, billing });
+    expect(spend?.freshness).toBe("Retained snapshot");
+
+    const raw = response({ source: "raw", aggregate_status: "unavailable", items: [] });
+    const [rawSpend] = costStripCards({ attribution: raw, attributionFailed: false, billing });
+    expect(rawSpend?.freshness).toBe("Source history unavailable");
+
+    const complete = response({ source: "raw", aggregate_status: "complete" });
+    const [live] = costStripCards({ attribution: complete, attributionFailed: false, billing });
+    expect(live?.freshness).toBe("Live");
+  });
+
+  it("leaves the totals unknown, not 0, when no row and no source history remain", () => {
+    const billing: Billing = { state: "not_connected" };
+    const gone = response({
+      aggregate_status: "unavailable",
+      items: [],
+      totals: { ...response().totals, cost_usd: "0", unpriced_calls: 0, llm_calls: 0 },
+    });
+    const [spend, , , unpriced] = costStripCards({
+      attribution: gone,
+      attributionFailed: false,
+      billing,
+    });
+    const reason =
+      "Source rows were removed. Stored values are snapshots; missing values are unknown.";
+    expect(spend).toMatchObject({ value: null, unknownReason: reason, lowerBound: false });
+    expect(unpriced).toMatchObject({ value: null, unknownReason: reason, lines: [] });
   });
 });

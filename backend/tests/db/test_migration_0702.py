@@ -4,11 +4,13 @@
 `provider_status_sources` one row per status feed with its polling state, seeded for the three
 adapters. Neither table holds tenant data, so neither carries row-level security.
 
-The round trip downgrades the session's shared database and leaves it at head.
+The round trip uses an explicitly owned database at the pinned historical revision.
 """
 
-from app.db.migrations import downgrade_to, head_revision, upgrade_to_head
+import pytest
+
 from tests.db import schema_probe as probe
+from tests.db.migration_support import downgrade_to, expected_revision, upgrade_to_target
 
 INCIDENTS = "provider_incidents"
 SOURCES = "provider_status_sources"
@@ -67,7 +69,7 @@ def _sources(database_url: str) -> list[tuple[object, ...]]:
 
 
 def _assert_at_head(database_url: str) -> None:
-    assert probe.current_revision(database_url) == head_revision()
+    assert probe.current_revision(database_url) == expected_revision()
     assert probe.columns(database_url, INCIDENTS) == INCIDENT_COLUMNS
     assert probe.columns(database_url, SOURCES) == SOURCE_COLUMNS
     constraints = probe.constraints(database_url, INCIDENTS)
@@ -82,15 +84,16 @@ def _assert_at_head(database_url: str) -> None:
         assert probe.policies(database_url, table) == {}
 
 
-def test_0702_round_trip(app_database_url: str) -> None:
-    _assert_at_head(app_database_url)
+@pytest.mark.migration_revision("0702")
+def test_0702_round_trip(migration_database_url: str) -> None:
+    _assert_at_head(migration_database_url)
 
-    downgrade_to(app_database_url, "0701")
+    downgrade_to(migration_database_url, "0701")
     try:
-        assert probe.current_revision(app_database_url) == "0701"
-        assert probe.row_security(app_database_url, INCIDENTS) is None
-        assert probe.row_security(app_database_url, SOURCES) is None
+        assert probe.current_revision(migration_database_url) == "0701"
+        assert probe.row_security(migration_database_url, INCIDENTS) is None
+        assert probe.row_security(migration_database_url, SOURCES) is None
     finally:
-        upgrade_to_head(app_database_url)
+        upgrade_to_target(migration_database_url)
 
-    _assert_at_head(app_database_url)
+    _assert_at_head(migration_database_url)

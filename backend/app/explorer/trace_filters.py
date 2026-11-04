@@ -6,6 +6,7 @@ Every filter is optional; a trace passes when it matches all the given ones.
 """
 
 import uuid
+from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -40,8 +41,13 @@ def apply_filters[*Ts](
     score_value: str | None = None,
     has_scores: bool | None = None,
     has_retries: bool | None = None,
+    started_from: datetime | None = None,
 ) -> Select[*Ts]:
-    """`query` (over `Trace`) narrowed to the traces that match every given filter."""
+    """`query` (over `Trace`) narrowed to the traces that match every given filter.
+
+    `started_from` is the lower bound `query` already puts on `Trace.started_at`, if any; the
+    span filters use it to read only spans from then on (`has_span`).
+    """
     equal = (
         (Trace.name, name),
         (Trace.environment, environment),
@@ -55,7 +61,8 @@ def apply_filters[*Ts](
     conditions += metadata_conditions(metadata_key, metadata_value)
     conditions += _status_conditions(status, has_retries)
     conditions += [
-        has_span(condition) for condition in _span_conditions(model, error_class, prompt_version_id)
+        has_span(condition, started_from)
+        for condition in _span_conditions(model, error_class, prompt_version_id)
     ]
     conditions += score_conditions(score_name, score_min, score_max, score_value, has_scores)
     return query.where(*conditions)

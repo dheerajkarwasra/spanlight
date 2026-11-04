@@ -12,6 +12,8 @@ interface CopyButtonProps extends Omit<ButtonProps, "onClick" | "children"> {
   label?: string;
   /** Show the label next to the icon instead of only in the tooltip. */
   showLabel?: boolean;
+  /** Text-only labelled buttons (`showLabel`) set this false; the label then reads "Copied". */
+  showIcon?: boolean;
   /**
    * `default` for light surfaces. `ink` for dark code blocks and hero cards: a translucent
    * white pill with white text and a lime check.
@@ -28,6 +30,7 @@ export function CopyButton({
   value,
   label = "Copy",
   showLabel = false,
+  showIcon = true,
   tone = "default",
   variant = "ghost",
   size,
@@ -67,7 +70,7 @@ export function CopyButton({
       className={cn(tone === "ink" && INK_CLASSES, className)}
       {...props}
     >
-      {icon}
+      {showIcon ? icon : null}
       {showLabel ? (copied ? "Copied" : label) : null}
       <span className="sr-only" aria-live="polite">
         {copied ? "Copied to clipboard" : ""}

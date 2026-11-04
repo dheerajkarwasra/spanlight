@@ -2,13 +2,15 @@
 
 import asyncio
 import logging
+import uuid
 from typing import Any
 
 import httpx
 import pytest
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.services.deletion import delete_organization, lock_organization
 from tests.conftest import BrowserFactory
 from tests.helpers import (
     Browser,
@@ -556,3 +558,37 @@ async def test_deleting_an_org_while_one_of_its_projects_is_deleted_does_not_dea
             "spans": 0,
             "api_keys": 0,
         }
+
+
+async def test_deleting_an_org_locks_its_projects_in_id_order_first(
+    browser_factory: BrowserFactory, session_factory: SessionFactory
+) -> None:
+    # The budget reaper takes `KEY SHARE` on projects in id order; the deletion locks them in the
+    # same order before its DELETE, which would otherwise lock them in scan order.
+    owner = await browser_factory("owner@example.com")
+    workspace = await create_workspace(owner)
+    await create_project(owner, workspace.org_id, "Second")
+    statements: list[str] = []
+
+    def record(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
+        statements.append(statement)
+
+    async with session_factory() as db:
+        assert await lock_organization(db, uuid.UUID(workspace.org_id)) is not None
+        connection = (await db.connection()).sync_connection
+        assert connection is not None
+        event.listen(connection, "before_cursor_execute", record)
+        try:
+            deleted = await delete_organization(db, uuid.UUID(workspace.org_id))
+        finally:
+            event.remove(connection, "before_cursor_execute", record)
+        await db.commit()
+
+    assert len(deleted) == 2
+    locks = [
+        i
+        for i, s in enumerate(statements)
+        if "FROM projects" in s and "ORDER BY projects.id" in s and "FOR UPDATE" in s
+    ]
+    delete = next(i for i, s in enumerate(statements) if s.startswith("DELETE FROM projects"))
+    assert locks and locks[0] < delete, "\n".join(statements)

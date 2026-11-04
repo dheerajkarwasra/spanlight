@@ -51,6 +51,21 @@ from app.gateway.upstream_io import (
 from app.gateway.usage_chunk import UsageChunkFilter, injects_usage
 
 logger = structlog.get_logger(__name__)
+_pending_finalizations: set[asyncio.Task[None]] = set()
+
+
+def pending_finalizations() -> tuple[asyncio.Task[None], ...]:
+    """Snapshot of retained cleanup tasks for the server's shutdown join.
+
+    Join with a shielded wait; cancelling a waiter must not cancel these owned tasks.
+    """
+    return tuple(_pending_finalizations)
+
+
+def _finalized(task: asyncio.Task[None]) -> None:
+    _pending_finalizations.discard(task)
+    if not task.cancelled() and task.exception() is not None:
+        logger.error("gateway.stream_finalization_failed")
 
 
 def observer_for(surface: Surface) -> StreamObserver:
@@ -83,8 +98,10 @@ class GatewayStream:
         self._request, self._context, self._result = request, context, result
         self._response = response
         self._started, self._started_at = started, started_at
+        self._observer = observer_for(request.surface)
+        self.completion_task: asyncio.Task[None] | None = None
         self._forwarding = _forward(
-            request, context, result, upstream, started=started, started_at=started_at
+            request, context, result, upstream, self._observer, started=started
         )
         self._state = "new"  # new, open (iteration began) or closed
 
@@ -95,22 +112,36 @@ class GatewayStream:
         if self._state == "closed":
             raise StopAsyncIteration
         self._state = "open"
-        return await self._forwarding.__anext__()
+        try:
+            return await self._forwarding.__anext__()
+        except BaseException:
+            await self.aclose()
+            raise
 
     async def aclose(self) -> None:
-        if self._state == "closed":
-            return
-        began, self._state = self._state == "open", "closed"
-        if began:
-            await self._forwarding.aclose()  # its `finally` writes the span
-            return
+        if self.completion_task is None:
+            began, self._state = self._state == "open", "closed"
+            self.completion_task = asyncio.create_task(self._finalize(began))
+            _pending_finalizations.add(self.completion_task)
+            self.completion_task.add_done_callback(_finalized)
+        await asyncio.shield(self.completion_task)
+
+    async def _finalize(self, began: bool) -> None:
         result = self._result
-        result.client_disconnected = True
-        result.disconnected_after_ms = (self._context.monotonic() - self._started) * 1000
-        if result.model is not None:  # the provider answered; its usage was never read
-            result.usage_unreported_reason = _unreported_reason(result)
-        _record(self._request, self._context, result, self._started_at)
-        await close_quietly(self._response)
+        try:
+            if began:
+                await self._forwarding.aclose()
+                _take_summary(result, self._observer)
+            elif result.stream_error is None:
+                result.client_disconnected = True
+                result.disconnected_after_ms = (self._context.monotonic() - self._started) * 1000
+            if result.model is not None and not began:
+                result.usage_unreported_reason = _unreported_reason(result)
+        finally:
+            try:
+                await close_quietly(self._response)
+            finally:
+                _record(self._request, self._context, result, self._started_at)
 
 
 async def _forward(
@@ -118,16 +149,15 @@ async def _forward(
     context: GatewayContext,
     result: GatewayResult,
     upstream: AsyncIterator[bytes],
+    observer: StreamObserver,
     *,
     started: float,
-    started_at: datetime,
 ) -> AsyncGenerator[bytes, None]:
     """The upstream bytes through the observer; the span is written when this ends."""
-    observer = observer_for(request.surface)
     # The usage chunk the gateway asked for itself is read by the observer, not forwarded.
     hidden = UsageChunkFilter() if injects_usage(request.surface, True, request.body) else None
     try:
-        # `observe_stream` is an async generator; closing it closes the upstream response.
+        # Close the observer iterator here; the retained finalizer owns provider closure.
         observing = cast(AsyncGenerator[bytes, None], observe_stream(upstream, observer, _ignore))
         async with contextlib.aclosing(observing) as observed:
             try:
@@ -140,21 +170,27 @@ async def _forward(
         if hidden is not None and (rest := hidden.flush()):
             yield rest
     except StreamTooLong:
+        logger.warning("gateway.stream_total_timeout")
         result.stream_error = f"the stream ran past {STREAM_TOTAL_TIMEOUT_S:g} s"
     except TimeoutError:
+        logger.warning("gateway.stream_upstream_idle_timeout")
         result.stream_error = f"the provider sent nothing for {STREAM_IDLE_TIMEOUT_S:g} s"
     except httpx.TransportError as error:
         result.stream_error = f"the provider connection failed ({type(error).__name__})"
     except (GeneratorExit, asyncio.CancelledError):
-        result.client_disconnected = True
+        if (
+            result.stream_deadline is not None
+            and asyncio.get_running_loop().time() >= result.stream_deadline
+            and result.stream_error is None
+        ):
+            logger.warning("gateway.stream_total_timeout")
+            result.stream_error = f"the stream ran past {STREAM_TOTAL_TIMEOUT_S:g} s"
+        result.client_disconnected = result.stream_error is None
         result.disconnected_after_ms = (context.monotonic() - started) * 1000
         raise
     except Exception:
         logger.exception("gateway.stream_failed", request_id=request.request_id)
         result.stream_error = "the gateway failed while forwarding the stream"
-    finally:
-        _take_summary(result, observer)
-        _record(request, context, result, started_at)
 
 
 def _take_summary(result: GatewayResult, observer: StreamObserver) -> None:
@@ -192,7 +228,7 @@ def _record(
     """Queue the span; a failure to build it is counted and logged, never raised into the stream."""
     try:
         span = build_span(request, result, context, started_at, context.clock())
-        record_soon(context, span, credentials_used(result))
+        record_soon(context, span, credentials_used(result), body_bytes=request.body_bytes)
     except Exception as failure:  # noqa: BLE001 - counted and logged, the client has the stream
         span_not_built(request.request_id, context.project_id, failure)
 

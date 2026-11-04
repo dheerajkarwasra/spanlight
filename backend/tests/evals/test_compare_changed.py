@@ -3,6 +3,7 @@
 Pure: builds `ItemRow`s directly, no database.
 """
 
+import json
 import uuid
 from dataclasses import MISSING, fields, replace
 from decimal import Decimal
@@ -34,6 +35,9 @@ def _row(
         input={"question": "Capital of France?"} if has_copy else None,
         expected_output=expected if has_copy else None,
         has_copy=has_copy,
+        copy_digest=json.dumps([{"question": "Capital of France?"}, expected]).encode()
+        if has_copy
+        else None,
     )
 
 

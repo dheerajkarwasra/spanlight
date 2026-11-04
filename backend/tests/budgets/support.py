@@ -28,6 +28,9 @@ from app.budgets.guard import StateBudgetGuard
 from app.config import Settings
 from app.db.rls import bind_project, bypass_rls
 from app.gateway.budget import BudgetDecision
+from app.jobs.context import TaskContext
+from app.jobs.queue import claim_next, complete, enqueue
+from app.jobs.tasks import TASKS
 from tests.budgets.clock import next_pass
 from tests.gateway_fixtures import GatewayWorkspace
 from tests.gateway_support import FakeProvider, ManualClock, drain_recorder, read_gateway_spans
@@ -81,6 +84,7 @@ async def create_budget(
     scope: str = "project",
     scope_id: str | None = None,
     name: str = BUDGET_NAME,
+    action: str = "block",
 ) -> BudgetRef:
     """A `block` budget (project-wide by default) that notifies the world's channel."""
     body = {
@@ -89,7 +93,7 @@ async def create_budget(
         "scope_id": scope_id,
         "period": period,
         "amount_usd": str(amount),
-        "action": "block",
+        "action": action,
         "channel_ids": [str(world.channel_id)],
     }
     response = await world.workspace.owner.post(f"{world.project_url}/budgets", json=body)
@@ -134,6 +138,29 @@ async def evaluate(world: BudgetWorld, now: datetime) -> EvaluationRun:
     run = await evaluate_all(world.sessions, world.settings, now=now)
     assert (run.errors, run.projects_failed) == (0, 0)
     return run
+
+
+async def hourly_status(world: BudgetWorld, start: datetime, end: datetime) -> str:
+    """Read public hourly freshness over the budget's materialized range."""
+    response = await world.workspace.owner.get(
+        f"{world.project_url}/providers/errors/timeseries",
+        params={"from": start.isoformat(), "to": end.isoformat()},
+    )
+    assert response.status_code == 200, response.text
+    return response.headers["Aggregate-Status"]
+
+
+async def repair_aggregates(world: BudgetWorld) -> None:
+    """Run the registered consumer with enablement confined to this disposable test job."""
+    async with world.sessions() as db:
+        assert await enqueue(db, "repair_aggregates", max_attempts=1)
+        await db.commit()
+        job = await claim_next(db, exclude_kinds=set(TASKS) - {"repair_aggregates"})
+    assert job is not None and job.kind == "repair_aggregates"
+    configured = world.settings.model_copy(update={"aggregate_repair_enabled": True})
+    await TASKS["repair_aggregates"](TaskContext(job, configured, world.sessions), {})
+    async with world.sessions() as db:
+        await complete(db, job)
 
 
 async def firing_budget(world: BudgetWorld) -> tuple[BudgetRef, datetime]:

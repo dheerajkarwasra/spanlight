@@ -6,9 +6,9 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -26,6 +26,7 @@ import { OverviewHero } from "./overview-hero";
 import { TracesTabsCard } from "./traces-tabs-card";
 import type { OverviewQueries } from "./use-overview-queries";
 
+vi.mock("./refused-spans-notice", () => ({ RefusedSpansNotice: () => null }));
 vi.mock("@/features/shell/project-context", () => ({
   useProjectParams: () => ({ orgId: "o", projectId: "p" }),
   useProjectFilters: () => ({
@@ -93,8 +94,8 @@ function queries(overrides: Partial<Record<keyof OverviewQueries, unknown>> = {}
     isLive: true,
     overview: ok({ current: KPIS, previous: KPIS, approximate: false }),
     monthToDate: ok({ current: KPIS, previous: KPIS, approximate: false }),
-    timeseries: ok([]),
-    models: ok([]),
+    timeseries: ok({ items: [] }),
+    models: ok({ items: [] }),
     health: ok(HEALTH),
     detectorRuns: ok([]),
     openInsights: ok({ items: [], next_cursor: null }),
@@ -266,6 +267,237 @@ describe("OverviewDashboard", () => {
 
     const card = await screen.findByRole("region", { name: "Needs attention" });
     expect(within(card).getByText("Nothing needs attention.")).toBeInTheDocument();
+  });
+
+  it("shows Doctor health unavailable and retries only health", async () => {
+    stubTraces();
+    const user = userEvent.setup();
+    const health = {
+      data: undefined,
+      isPending: false,
+      isError: true,
+      isFetching: false,
+      refetch: vi.fn(),
+    };
+    const others = { openInsights: ok({ items: [], next_cursor: null }), budgets: ok([]) };
+    renderInRouter(<OverviewDashboard queries={queries({ health, ...others })} now={NOW} />);
+
+    const ribbon = await screen.findByRole("list", { name: "Key metrics" });
+    const doctor = within(ribbon).getAllByRole("link")[3];
+    expect(doctor).toHaveAccessibleName(/Doctor: Unknown: The Doctor's score didn't load/);
+    // Beside the dash from `sm` up (817:2317), under it on phones (817:2676).
+    expect(within(ribbon).getAllByText("Unavailable")).toHaveLength(2);
+    expect(within(doctor as HTMLElement).queryByText("/100")).not.toBeInTheDocument();
+    expect(within(ribbon).getAllByRole("link")[0]).toHaveAccessibleName(/432/);
+
+    const card = screen.getByRole("region", { name: "Needs attention" });
+    const alert = within(card).getByRole("alert");
+    expect(alert).toHaveTextContent("Couldn't load Doctor health");
+    expect(alert).toHaveTextContent("The Doctor's score didn't load");
+    expect(within(card).queryByText("Nothing needs attention.")).not.toBeInTheDocument();
+    await user.click(within(alert).getByRole("button", { name: "Try again" }));
+    expect(health.refetch).toHaveBeenCalledTimes(1);
+    expect(others.budgets.refetch).not.toHaveBeenCalled();
+  });
+
+  it("keeps focus on the card when the health retry succeeds", async () => {
+    stubTraces();
+    const user = userEvent.setup();
+    function RetryThenLoad() {
+      const [health, setHealth] = useState<unknown>({
+        data: undefined,
+        isPending: false,
+        isError: true,
+        isFetching: false,
+        refetch: () => {
+          setHealth(ok(HEALTH));
+        },
+      });
+      return <OverviewDashboard queries={queries({ health })} now={NOW} />;
+    }
+    renderInRouter(<RetryThenLoad />);
+
+    const card = await screen.findByRole("region", { name: "Needs attention" });
+    await user.click(within(card).getByRole("button", { name: "Try again" }));
+
+    expect(within(card).queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    expect(within(card).getByRole("heading", { name: "Needs attention" })).toHaveFocus();
+  });
+
+  it("leaves focus the user moved while the health retry was in flight", async () => {
+    stubTraces();
+    const user = userEvent.setup();
+    const failedHealth = {
+      data: undefined,
+      isPending: false,
+      isError: true,
+      isFetching: false,
+    };
+    let land: () => void = () => undefined;
+    function RetryInFlight() {
+      const [health, setHealth] = useState<unknown>({
+        ...failedHealth,
+        refetch: () => {
+          setHealth({ ...failedHealth, isFetching: true, refetch: vi.fn() });
+          land = () => {
+            setHealth(ok(HEALTH));
+          };
+        },
+      });
+      return <OverviewDashboard queries={queries({ health })} now={NOW} />;
+    }
+    renderInRouter(<RetryInFlight />);
+
+    const card = await screen.findByRole("region", { name: "Needs attention" });
+    await user.click(within(card).getByRole("button", { name: "Try again" }));
+    const elsewhere = within(screen.getByRole("list", { name: "Key metrics" })).getAllByRole(
+      "link",
+    )[0] as HTMLElement;
+    elsewhere.focus();
+    act(() => {
+      land();
+    });
+
+    expect(within(card).queryByRole("button", { name: /Try again/ })).not.toBeInTheDocument();
+    expect(elsewhere).toHaveFocus();
+  });
+
+  it("keeps focus on the card when the findings, alerts or budgets retry succeeds", async () => {
+    stubTraces();
+    const user = userEvent.setup();
+    function RetryThenLoad() {
+      const [budgets, setBudgets] = useState<unknown>({
+        data: undefined,
+        isPending: false,
+        isError: true,
+        isFetching: false,
+        refetch: () => {
+          setBudgets(ok([]));
+        },
+      });
+      return <OverviewDashboard queries={queries({ budgets })} now={NOW} />;
+    }
+    renderInRouter(<RetryThenLoad />);
+
+    const card = await screen.findByRole("region", { name: "Needs attention" });
+    await user.click(within(card).getByRole("button", { name: "Try again" }));
+
+    expect(within(card).queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    expect(within(card).getByRole("heading", { name: "Needs attention" })).toHaveFocus();
+  });
+
+  it("returns lost focus to Try again when the retry fails again", async () => {
+    stubTraces();
+    const user = userEvent.setup();
+    const failedBudgets = { data: undefined, isPending: false, isError: true };
+    let land: () => void = () => undefined;
+    function RetryFails() {
+      const [budgets, setBudgets] = useState<unknown>({
+        ...failedBudgets,
+        isFetching: false,
+        refetch: () => {
+          setBudgets({ ...failedBudgets, isFetching: true, refetch: vi.fn() });
+          land = () => {
+            setBudgets({ ...failedBudgets, isFetching: false, refetch: vi.fn() });
+          };
+        },
+      });
+      return <OverviewDashboard queries={queries({ budgets })} now={NOW} />;
+    }
+    renderInRouter(<RetryFails />);
+
+    const card = await screen.findByRole("region", { name: "Needs attention" });
+    const retry = within(card).getByRole("button", { name: "Try again" });
+    await user.click(retry);
+    // A browser can drop focus to the page while the request is in flight.
+    retry.blur();
+    act(() => {
+      land();
+    });
+
+    expect(within(card).getByRole("button", { name: "Try again" })).toHaveFocus();
+  });
+
+  it("disables the health retry while it is in flight", async () => {
+    stubTraces();
+    const health = {
+      data: undefined,
+      isPending: false,
+      isError: true,
+      isFetching: true,
+      refetch: vi.fn(),
+    };
+    renderInRouter(<OverviewDashboard queries={queries({ health })} now={NOW} />);
+
+    const card = await screen.findByRole("region", { name: "Needs attention" });
+    expect(within(card).getByRole("button", { name: /Try again/ })).toBeDisabled();
+  });
+
+  it("hides a cached Doctor score after its refresh failed", async () => {
+    stubTraces();
+    const health = {
+      data: HEALTH,
+      isPending: false,
+      isError: true,
+      isFetching: false,
+      refetch: vi.fn(),
+    };
+    renderInRouter(<OverviewDashboard queries={queries({ health })} now={NOW} />);
+
+    const card = await screen.findByRole("region", { name: "Needs attention" });
+    expect(within(card).queryByText("Findings")).not.toBeInTheDocument();
+    expect(within(card).getByRole("alert")).toHaveTextContent("Couldn't load Doctor health");
+    const ribbon = screen.getByRole("list", { name: "Key metrics" });
+    expect(within(ribbon).queryByText("72")).not.toBeInTheDocument();
+  });
+
+  it("keeps a successful no-score response without the failed-request retry", async () => {
+    stubTraces();
+    const health = ok({ ...HEALTH, value: null });
+    renderInRouter(<OverviewDashboard queries={queries({ health })} now={NOW} />);
+
+    const card = await screen.findByRole("region", { name: "Needs attention" });
+    expect(within(card).queryByText("Couldn't load Doctor health")).not.toBeInTheDocument();
+    expect(screen.queryByText("Unavailable")).not.toBeInTheDocument();
+  });
+
+  it("says source history is unavailable instead of no calls on unavailable empty lists", async () => {
+    stubTraces();
+    const unavailable = ok({ items: [], aggregate_status: "unavailable" });
+    renderInRouter(
+      <OverviewDashboard
+        queries={queries({ models: unavailable, timeseries: unavailable })}
+        now={NOW}
+      />,
+    );
+
+    const models = await screen.findByRole("heading", { name: "Source history unavailable" });
+    expect(models).toBeInTheDocument();
+    expect(screen.queryByText("No model calls in this period")).not.toBeInTheDocument();
+    expect(screen.queryByText("No LLM calls in this period")).not.toBeInTheDocument();
+    // The Calls & errors totals: unknown, not 0.
+    expect(screen.queryByText(/^0 (calls|errors)$/)).not.toBeInTheDocument();
+    expect(
+      screen.getAllByLabelText(
+        "Unknown: Source rows were removed. Stored values are snapshots; missing values are unknown.",
+      ),
+    ).toHaveLength(2);
+    expect(
+      screen.getAllByText(
+        "Source rows were removed. Stored values are snapshots; missing values are unknown.",
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("keeps the no-calls copy for complete empty lists", async () => {
+    stubTraces();
+    const complete = ok({ items: [], aggregate_status: "complete" });
+    renderInRouter(
+      <OverviewDashboard queries={queries({ models: complete, timeseries: complete })} now={NOW} />,
+    );
+
+    expect(await screen.findByText("No model calls in this period")).toBeInTheDocument();
+    expect(screen.queryByText("Source history unavailable")).not.toBeInTheDocument();
   });
 
   it("folds telemetry completeness to one line when nothing was lost", async () => {

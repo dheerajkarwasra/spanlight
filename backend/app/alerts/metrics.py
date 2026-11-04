@@ -37,19 +37,20 @@ Values are ``Decimal``; percentiles arrive as ``float`` and are converted throug
 
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.alerts.metrics_queries import LatencyColumn, RawAggregate, read_window_aggregates
+from app.alerts.metrics_reads import read_metric_hours
 from app.alerts.types import Metric, MetricFilters
 from app.api.window import TimeWindow
 from app.rollups.buckets import BUCKET_COUNT, approx_percentile, merge
 from app.rollups.compute import HOUR, ceil_hour, floor_hour
-from app.rollups.error_queries import errors_by_hour, read_error_rollups
-from app.rollups.filtered import FilteredHour, RollupFilters, read_filtered_rollups
+from app.rollups.coverage_reads import CoverageState
+from app.rollups.filtered import FilteredHour
 
 _P95 = 0.95
 
@@ -137,7 +138,7 @@ async def metric_series(
     *,
     now: datetime | None = None,
 ) -> list[MetricValue]:
-    """The metric over each window, in order, from one rollup read and one raw read.
+    """The metric over each window, using its materialized range and a batched raw read.
 
     Each value equals what :func:`metric_value` returns for that window alone.
     """
@@ -147,7 +148,10 @@ async def metric_series(
         return []
     split = None if filters.forces_raw else rollup_split(now or datetime.now(UTC))
     plans = [plan_window(window, split) for window in windows]
-    hours = await _read_hours(db, project_id, plans, filters)
+    coverage = CoverageState()
+    reads = await read_metric_hours(
+        db, project_id, [plan.rollup for plan in plans], filters, coverage
+    )
     latency = _LATENCY.get(metric)
     any_rollup = any(plan.rollup is not None for plan in plans)
     raws = await read_window_aggregates(
@@ -157,25 +161,16 @@ async def metric_series(
         filters,
         latency,
         with_histogram=any_rollup,
+        coverage=coverage,
     )
-    return [_value(metric, plan, hours, raw) for plan, raw in zip(plans, raws, strict=True)]
-
-
-async def _read_hours(
-    db: AsyncSession, project_id: uuid.UUID, plans: Sequence[WindowPlan], filters: MetricFilters
-) -> list[FilteredHour]:
-    """Every rollup hour any plan needs, in one read over their hull."""
-    ranges = [plan.rollup for plan in plans if plan.rollup is not None]
-    if not ranges:
-        return []
-    rollup_filters = RollupFilters(filters.environment, filters.provider, filters.model)
-    hull = TimeWindow(min(start for start, _ in ranges), max(end for _, end in ranges))
-    hours = await read_filtered_rollups(db, project_id, hull, rollup_filters)
-    if not filters.narrows_errors:
-        return hours
-    rows = await read_error_rollups(db, project_id, hull, rollup_filters, provider_breakdown=False)
-    counts = errors_by_hour(rows, filters.error_class, filters.rate_limit_kind)
-    return [replace(hour, class_errors=counts.get(hour.bucket_start, 0)) for hour in hours]
+    if coverage.unavailable:
+        return [MetricValue(None, approximate=False) for _ in windows]
+    return [
+        _value(metric, plan, hours, raw)
+        if state.status == "complete"
+        else MetricValue(None, approximate=False)
+        for plan, raw, (hours, state) in zip(plans, raws, reads, strict=True)
+    ]
 
 
 def _value(

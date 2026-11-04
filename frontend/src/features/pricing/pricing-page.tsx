@@ -19,7 +19,7 @@ const pricingRoute = getRouteApi("/_authed/$orgId/$projectId/pricing");
  * override dialog prefilled; closing it clears those params.
  */
 export function PricingPage() {
-  const canWrite = usePermission("gateway:write");
+  const canWrite = usePermission("prices:override");
   const search = pricingRoute.useSearch();
   const navigate = pricingRoute.useNavigate();
   const fromUrl: OverridePrefill | null =

@@ -1,3 +1,4 @@
+import { UnknownValue } from "@/components/unknown-value";
 import {
   Table,
   TableBody,
@@ -56,11 +57,15 @@ export function ErrorClassTable({ points, classes, bucket }: ErrorClassTableProp
               </TableRowHeader>
               {classes.map((name) => (
                 <TableCell key={name} className="h-10 text-right tabular">
-                  {formatInteger(point.counts[name] ?? 0)}
+                  {formatInteger(point.counts[name]) ?? (
+                    <UnknownValue reason="Not reported for this period" />
+                  )}
                 </TableCell>
               ))}
               <TableCell className="h-10 text-right font-semibold tabular">
-                {formatInteger(point.total)}
+                {formatInteger(point.total) ?? (
+                  <UnknownValue reason="Not reported for this period" />
+                )}
               </TableCell>
             </TableRow>
           ))}

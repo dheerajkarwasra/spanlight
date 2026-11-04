@@ -38,14 +38,17 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
-from sqlalchemy import delete, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.budgets.buckets import bump_hours_of_traces
 from app.config import Settings
-from app.db.models import AuditAction, Job, JobStatus
+from app.db.models import AuditAction, Job, JobStatus, Project
 from app.db.rls import bind_project
+from app.ingest.aggregate_changes import lock_identities
 from app.jobs.context import TaskContext
 from app.jobs.queue import ClaimedJob, LeaseLostError, enqueue
+from app.rollups.coverage import lock_aggregate_sources, mark_trace_source_loss
 from app.services.audit import Outcome, record_audit
 from app.services.deletion import lock_org_for_write
 
@@ -271,6 +274,8 @@ async def _erase_batch(
     db: AsyncSession, project_id: uuid.UUID, user_id: str, counts: dict[str, int]
 ) -> bool:
     """Delete one batch of the user's traces with their copies; False when none is left."""
+    if not await lock_aggregate_sources(db, project_id):
+        return False
     scope = {"project_id": project_id, "user_id": user_id}
     rows = await db.execute(
         _USER_TRACES, {**scope, "trace_batch": TRACE_BATCH, "span_batch": SPAN_BATCH}
@@ -283,9 +288,15 @@ async def _erase_batch(
     if item_ids:
         params["item_ids"] = item_ids
         params["trace_ids"] += list((await db.execute(_EXPERIMENT_TRACES, params)).scalars())
+    params["trace_ids"] += list((await db.execute(_REPLAY_TRACES, params)).scalars())
+    # Identities, then trace rows, then version rows: ingest's order (`write_spans`), so a batch
+    # still sending this user's spans cannot cycle with the bump or the deletes below.
+    await lock_identities(db, project_id, params["trace_ids"])
+    await mark_trace_source_loss(db, project_id, params["trace_ids"], "erasure")
+    await bump_hours_of_traces(db, project_id, params["trace_ids"])
+    if item_ids:
         for table, statement in _ITEM_STATEMENTS:
             _add(counts, table, await db.execute(text(statement), params))
-    params["trace_ids"] += list((await db.execute(_REPLAY_TRACES, params)).scalars())
     counts["spans"] = counts.get("spans", 0) + int(await db.scalar(_SPANS, params) or 0)
     for table, statement in _BATCH_STATEMENTS:
         _add(counts, table, await db.execute(text(statement), params))
@@ -318,6 +329,13 @@ async def erase_end_user(
             await heartbeat()
         async with session_factory() as db:
             await bind_project(db, project_id)
+            # The deletion trigger updates coverage on the parent; lock it before any trace
+            # (including copied traces), following ingestion and project deletion's order.
+            await db.execute(
+                select(Project.id)
+                .where(Project.id == project_id)
+                .with_for_update(read=True, key_share=True)
+            )
             more = await _erase_batch(db, project_id, external_user_id, counts)
             await _save_counts(db, job, counts)
             await db.commit()
@@ -325,6 +343,8 @@ async def erase_end_user(
             break
     async with session_factory() as db:
         await bind_project(db, project_id)
+        if not await lock_aggregate_sources(db, project_id):
+            return
         scope = {"project_id": project_id, "user_id": external_user_id}
         for table, statement in _USER_STATEMENTS:
             counts[table] = int(getattr(await db.execute(text(statement), scope), "rowcount", 0))

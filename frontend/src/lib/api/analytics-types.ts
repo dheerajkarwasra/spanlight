@@ -1,3 +1,4 @@
+import type { AggregateMetadata } from "./aggregate";
 /**
  * Release comparison and end-user analytics types, mirroring the backend (snake_case; money and
  * deltas as decimal strings; every unknown value `null`). Re-exported through `types.ts`.
@@ -125,12 +126,12 @@ export interface UserStats {
 export interface UserDayStats {
   /** `YYYY-MM-DD` (UTC). */
   day: string;
-  traces: number;
-  llm_calls: number;
-  errors: number;
-  unpriced_calls: number;
+  traces: number | null;
+  llm_calls: number | null;
+  errors: number | null;
+  unpriced_calls: number | null;
   cost_usd: string | null;
-  tokens: number;
+  tokens: number | null;
 }
 
 /** The requested window widened to whole UTC days. */
@@ -139,7 +140,7 @@ export interface UserStatsWindow {
   end: string;
 }
 
-export interface UserList extends Page<UserStats> {
+export interface UserList extends Page<UserStats>, AggregateMetadata {
   window: UserStatsWindow;
   /** When the window's figures were last recomputed; null when no day has been computed yet. */
   computed_at: string | null;
@@ -150,7 +151,7 @@ export interface UserList extends Page<UserStats> {
   pending_traces: number | null;
 }
 
-export interface UserDetail {
+export interface UserDetail extends AggregateMetadata {
   user: UserStats;
   daily: UserDayStats[];
   recent_sessions: SessionSummary[];

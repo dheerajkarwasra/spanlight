@@ -1,8 +1,11 @@
 import { CircleCheck } from "lucide-react";
 
+import { SourceHistoryChip, SourceHistoryEmpty } from "@/components/freshness-chip";
 import { PageHeader } from "@/components/page-header";
+import { Card } from "@/components/ui/card";
 import { useProjectFilters } from "@/features/shell/project-context";
 import type { HealthReport } from "@/lib/api";
+import { sourceHistoryLabel } from "@/lib/freshness";
 import { useNow } from "@/lib/use-now";
 import { bucketFor, type ResolvedRange } from "@/lib/time-range";
 
@@ -25,12 +28,23 @@ export function ProvidersPage() {
   const health = useProviderHealth();
   const { range } = useProjectFilters();
   const now = useNow(60_000);
+  const history = health.data
+    ? sourceHistoryLabel(health.data.aggregate_status, hasCalls(health.data))
+    : null;
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Provider health"
-        description="Errors by provider and class, why providers refused calls, what retries cost, next to the providers’ own status pages."
+        description={
+          <span className="flex flex-col items-start gap-2">
+            <span>
+              Errors by provider and class, why providers refused calls, what retries cost, next to
+              the providers’ own status pages.
+            </span>
+            {history ? <SourceHistoryChip label={history} /> : null}
+          </span>
+        }
       />
       {health.isPending ? (
         <ProvidersSkeleton />
@@ -44,7 +58,13 @@ export function ProvidersPage() {
         <ProvidersBody report={health.data} range={range} now={now} />
       ) : (
         <>
-          <ProvidersEmpty range={range} />
+          {history ? (
+            <Card>
+              <SourceHistoryEmpty />
+            </Card>
+          ) : (
+            <ProvidersEmpty range={range} />
+          )}
           <IncidentList now={now} />
         </>
       )}

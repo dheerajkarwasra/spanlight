@@ -13,11 +13,13 @@ from decimal import Decimal
 import psycopg
 import pytest
 from sqlalchemy import create_engine, text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.migrations import downgrade_to, head_revision, upgrade_to_head
-from app.pricing.cost import sync_seed_prices
-from tests.conftest import admin_database_url
+from tests.db.migration_support import (
+    admin_database_url,
+    downgrade_to,
+    expected_revision,
+    upgrade_to_target,
+)
 
 ORG_ID = uuid.UUID("10000000-0000-4000-8000-000000000508")
 PROJECT_ID = uuid.UUID("20000000-0000-4000-8000-000000000508")
@@ -151,7 +153,7 @@ def _current_revision(database_url: str) -> str | None:
 
 
 def test_0508_columns_and_keys_at_head(app_database_url: str) -> None:
-    assert _current_revision(app_database_url) == head_revision()
+    assert _current_revision(app_database_url) == expected_revision()
     columns = _columns(app_database_url)
     for key, expected in EXPECTED_COLUMNS.items():
         assert columns.get(key) == expected, key
@@ -199,15 +201,14 @@ def test_0508_unique_keys_allow_one_row_per_tier() -> None:
             connection.execute("DELETE FROM model_prices WHERE provider = 'tier-test'")
 
 
-async def test_0508_round_trip(
-    app_database_url: str, session_factory: async_sessionmaker[AsyncSession]
-) -> None:
-    downgrade_to(app_database_url, "0507")
+@pytest.mark.migration_revision("0508")
+async def test_0508_round_trip(migration_database_url: str) -> None:
+    downgrade_to(migration_database_url, "0507")
     try:
-        assert _current_revision(app_database_url) == "0507"
-        columns = _columns(app_database_url)
+        assert _current_revision(migration_database_url) == "0507"
+        columns = _columns(migration_database_url)
         assert not EXPECTED_COLUMNS.keys() & columns.keys()
-        assert _unique_keys(app_database_url) == {
+        assert _unique_keys(migration_database_url) == {
             ("model_prices", "model_prices_provider_model_pattern_effective_from_key"): (
                 "UNIQUE (provider, model_pattern, effective_from)"
             ),
@@ -216,14 +217,11 @@ async def test_0508_round_trip(
             ),
         }
     finally:
-        # The rest of the session shares this database, so it must end at head.
-        upgrade_to_head(app_database_url)
-        async with session_factory() as db:
-            await sync_seed_prices(db)
-            await db.commit()
+        # Complete the round-trip contract at its pinned upper revision.
+        upgrade_to_target(migration_database_url)
 
-    assert _current_revision(app_database_url) == head_revision()
-    columns = _columns(app_database_url)
+    assert _current_revision(migration_database_url) == expected_revision()
+    columns = _columns(migration_database_url)
     for key, expected in EXPECTED_COLUMNS.items():
         assert columns.get(key) == expected, key
-    assert _unique_keys(app_database_url) == EXPECTED_UNIQUE_KEYS
+    assert _unique_keys(migration_database_url) == EXPECTED_UNIQUE_KEYS

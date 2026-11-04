@@ -27,9 +27,16 @@ Before a span is stored, Spanlight replaces secrets in its input, output, attrib
 - Anthropic keys and OpenAI-style keys, including `sk-proj-` and `sk-svcacct-` keys.
 - `Bearer` tokens.
 - AWS access key ids, and AWS secret access keys that are labelled as such.
+- Stripe live secret and restricted keys (`sk_live_`, `rk_live_`).
+- GitHub tokens (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`).
+- Google API keys (`AIza…`).
+- Slack tokens (`xoxb-`, `xoxp-`, `xoxa-`, `xoxr-`, `xoxs-`) and Groq keys (`gsk_`).
+- JSON Web Tokens, `x-api-key` header values and PEM private key blocks.
 - Card numbers: runs of 13 to 19 digits that pass the Luhn check, when written in groups of four or more digits or unbroken.
 
 Redaction runs before the 1 MB truncation, so a secret cut in half by the limit cannot survive in part.
+
+Dataset items get the same redaction when they are written: adding them as JSON, uploading a JSONL or CSV file, copying them from traces and editing them store `input`, `expected_output` and `metadata` with secrets replaced, and with email addresses and phone numbers replaced too when the project redacts contact details. Items stored before this release are unchanged.
 
 Redaction is a safety net, not a guarantee. A secret in a shape none of these patterns match is stored as sent, and a card typed in groups of one to three digits is not detected. Identifiers (`user_id`, `session_id`, tags, environment and release) are stored as you send them, so do not put an email address or a secret there. If a payload must never be stored, turn off payload capture instead. [How ingestion works](/docs/concepts/ingestion/#what-is-redacted) has the full pipeline.
 

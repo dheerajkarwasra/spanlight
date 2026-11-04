@@ -17,7 +17,7 @@ import { useCreateBudget, useUpdateBudget } from "./budgets-queries";
 /**
  * Saves the budget form and maps every refusal to where the frames show it:
  * `BUDGET_NAME_TAKEN` on Name, `UNKNOWN_SCOPE` on the scope's field (the gateway key, the metadata
- * key or the trace name), `UNKNOWN_CHANNEL` on Channels,
+ * key or the trace name), `UNKNOWN_CHANNEL` on Channels, `BUDGET_HISTORY_RETENTION` under Action,
  * `LIMIT_EXCEEDED` above the form, other 422 field errors on their fields.
  */
 export function useBudgetSubmit(
@@ -51,6 +51,8 @@ export function useBudgetSubmit(
         type: "server",
         message: "A channel was deleted meanwhile. Remove it and save again.",
       });
+    } else if (code === "BUDGET_HISTORY_RETENTION") {
+      form.setError("action", { type: "server", message: errorMessage(error) });
     } else if (code === "LIMIT_EXCEEDED") {
       setProblem(errorMessage(error));
     } else if (

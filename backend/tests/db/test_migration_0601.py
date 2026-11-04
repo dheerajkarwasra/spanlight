@@ -6,7 +6,7 @@ row keyed by the hash of its identity. The two composite foreign keys of the map
 a source mapped to another organization's project unrepresentable, and every CHECK has its own
 name, so an insert that breaks one names it.
 
-Every test here downgrades the session's shared database or writes rows under the truncated
+Historical round trips use owned databases; other tests write under the truncated
 `organizations`, and leaves the schema as it found it.
 """
 
@@ -19,9 +19,13 @@ import psycopg
 import pytest
 from sqlalchemy import create_engine, text
 
-from app.db.migrations import downgrade_to, head_revision, upgrade_to_head
 from app.db.models import AuditAction
-from tests.conftest import admin_database_url
+from tests.db.migration_support import (
+    admin_database_url,
+    downgrade_to,
+    expected_revision,
+    upgrade_to_target,
+)
 
 ORG_A = uuid.UUID("10000000-0000-4000-8000-000000000601")
 ORG_B = uuid.UUID("10000000-0000-4000-8000-000000000602")
@@ -321,7 +325,7 @@ def _insert_line(
 
 
 def _assert_at_head(database_url: str) -> None:
-    assert _current_revision(database_url) == head_revision()
+    assert _current_revision(database_url) == expected_revision()
     columns = _columns(database_url)
     assert columns == EXPECTED_COLUMNS
     for table, expected in EXPECTED_CONSTRAINTS.items():
@@ -330,7 +334,6 @@ def _assert_at_head(database_url: str) -> None:
             assert actual.get(name) == definition, (table, name)
     assert _indexes(database_url) >= EXPECTED_INDEXES
     actions = _audit_actions(database_url)
-    assert set(actions) == {action.value for action in AuditAction}
     # Later migrations append their own actions after these, so the six are a run, not the tail.
     start = actions.index(NEW_AUDIT_ACTIONS[0])
     assert tuple(actions[start : start + len(NEW_AUDIT_ACTIONS)]) == NEW_AUDIT_ACTIONS
@@ -338,28 +341,31 @@ def _assert_at_head(database_url: str) -> None:
 
 def test_0601_tables_and_constraints_at_head(app_database_url: str) -> None:
     _assert_at_head(app_database_url)
+    assert set(_audit_actions(app_database_url)) == {action.value for action in AuditAction}
 
 
-def test_0601_round_trip(app_database_url: str) -> None:
-    actions_at_head = _audit_actions(app_database_url)
+@pytest.mark.migration_revision("0601")
+def test_0601_round_trip(migration_database_url: str) -> None:
+    actions_at_head = _audit_actions(migration_database_url)
     actions_before = actions_at_head[: actions_at_head.index(NEW_AUDIT_ACTIONS[0])]
-    downgrade_to(app_database_url, "0600")
+    downgrade_to(migration_database_url, "0600")
     try:
-        assert _current_revision(app_database_url) == "0600"
-        assert _columns(app_database_url) == {}
+        assert _current_revision(migration_database_url) == "0600"
+        assert _columns(migration_database_url) == {}
         for table in TABLES:
-            assert _constraints(app_database_url, table) == {}
-        assert "projects_id_org_id_key" not in _constraints(app_database_url, "projects")
-        assert not EXPECTED_INDEXES & _indexes(app_database_url)
+            assert _constraints(migration_database_url, table) == {}
+        assert "projects_id_org_id_key" not in _constraints(migration_database_url, "projects")
+        assert not EXPECTED_INDEXES & _indexes(migration_database_url)
         # The previous CHECK is back. The list is append-only and downgrading to 0600 also undoes
         # every later migration, so 0600's list is everything before the six new values.
-        assert _audit_actions(app_database_url) == actions_before
+        assert _audit_actions(migration_database_url) == actions_before
     finally:
-        # The rest of the session shares this database, so it must end at head. Nothing between
+        # Complete the round-trip contract at its pinned upper revision. Nothing between
         # 0600 and 0601 touches `model_prices`, so the seed rows need no rebuilding here.
-        upgrade_to_head(app_database_url)
+        upgrade_to_target(migration_database_url)
 
-    _assert_at_head(app_database_url)
+    _assert_at_head(migration_database_url)
+    assert _audit_actions(migration_database_url) == actions_at_head
 
 
 def test_cross_org_mapping_is_unrepresentable() -> None:

@@ -10,8 +10,8 @@ One image, three roles.
 
 | Role | Stateless? | How to add capacity | Notes |
 |---|---|---|---|
-| `api` | Yes. Sessions, idempotency keys, rate-limit buckets and login throttles all live in Postgres. | More CPU first, then more replicas behind a load balancer | Each replica uses up to 30 database connections (see below) |
-| `worker` | Yes. The queue lives in Postgres (`FOR UPDATE SKIP LOCKED`, leases and fencing tokens). | Add replicas | Each worker runs one short job at a time, plus at most one long job (a backup or an export) beside it |
+| `api` | Yes. Sessions, idempotency keys, rate-limit buckets and login throttles all live in Postgres. | More replicas behind a load balancer, about one per vCPU you give the api; one replica uses one core at most | Each replica uses up to 30 database connections (see below) |
+| `worker` | Yes. The queue lives in Postgres (`FOR UPDATE SKIP LOCKED`, leases and fencing tokens). | Add replicas | Each worker runs one short job at a time, plus at most one experiment or export and at most one backup or end-user erasure beside it |
 | `web` | Yes (static files and a proxy) | Rarely needed | Caddy handles far more than the api behind it |
 | `postgres` | No. The only datastore. | A bigger instance, more disk, tuned settings | Everything else waits on it |
 
@@ -76,21 +76,40 @@ A rising `spanlight_outbox_pending`, `failed` or `retry` outcomes, or a rollup p
 
 ## 2. The connection budget
 
-Every api process holds three pools, set in `backend/app/main.py`:
+Every connection comes from a pool set in code. The maximum each process can open:
 
-| Pool | Size | Setting |
-|---|---|---|
-| Main (requests) | 10, may overflow by another 10; waits up to `API_POOL_TIMEOUT_SECONDS` (1 s) | size fixed in code, wait in the environment |
-| Idempotency (reserving and completing an `Idempotency-Key`) | `IDEMPOTENCY_POOL_SIZE`, default 5, no overflow; waits up to `IDEMPOTENCY_POOL_TIMEOUT_SECONDS` (5 s) | environment |
-| Rate limiting | `RATE_LIMIT_POOL_SIZE`, default 5, no overflow; waits up to `RATE_LIMIT_POOL_TIMEOUT_SECONDS` (0.25 s) | environment |
+| Process | Pools | Max connections | Where |
+|---|---|---|---|
+| `api` (`python -m app.server`) | Requests: 10, may overflow by another 10; waits up to `API_POOL_TIMEOUT_SECONDS` (1 s). Idempotency keys: `IDEMPOTENCY_POOL_SIZE`, default 5, no overflow; waits up to `IDEMPOTENCY_POOL_TIMEOUT_SECONDS` (5 s). Rate limiting: `RATE_LIMIT_POOL_SIZE`, default 5, no overflow; waits up to `RATE_LIMIT_POOL_TIMEOUT_SECONDS` (0.25 s) | **30** | `create_app` in `backend/app/main.py`; the request pool size is `REQUEST_POOL_SIZE` in `backend/app/config.py`, not an environment setting |
+| Standalone `gateway` (`python -m app.gateway`, optional) | Requests 10 + 10 and rate limiting 5, as on the api; no idempotency pool | **25** | `create_gateway_app` in `backend/app/main.py` |
+| `worker` | One pool of 2 that may overflow to 4, plus one `pg_dump` connection (as `BACKUP_DATABASE_URL`) while the nightly backup runs | **5** | `_resources` in `backend/app/jobs/worker_lifecycle.py`; `backend/app/backups/service.py` |
+| `migrate` on Compose (the `migrate` service) | `spanlight migrate` (Alembic, no pool), then `ensure-app-role`, then `activate-aggregate-coverage`, one connection each, one after the other | **1** | `deploy/compose.yaml`; `backend/alembic/env.py`, `backend/app/db/roles.py`, `backend/app/rollups/activation.py` |
+| `migrate` on Railway (the api's pre-deploy command) | `spanlight migrate`, then `ensure-app-role`, one after the other | **1** | `preDeploy` in `deploy/railway/railway.ts`; `backend/alembic/env.py`, `backend/app/db/roles.py` |
+| Admin commands (`spanlight create-user`, `backup`, `alerts`, ...) and your own `psql` | One or two per command | headroom | `backend/app/cli.py` |
 
-So one api replica can open up to **20 + 5 + 5 = 30** connections. A worker holds a pool of 2 that can overflow to 4. The `migrate` service, a backup (`pg_dump` opens one connection) and your own `psql` sessions come on top.
+The api keeps three pools apart so that a burst on one cannot starve the others: an idempotency reservation takes a second connection while the request still holds its first, and rate-limit checks run outside the request's transaction. The api's pools are the same whether `/gw/*` is served by the api or by a standalone gateway.
+
+The app connects as a role without superuser rights, so it can use at most `max_connections` minus `superuser_reserved_connections` (3 by default). Budget the backup and migration connections inside that too, whatever role they use.
+
+### Compose and self-host
 
 ```
-30 x (api replicas) + 4 x (worker replicas) + 10 (headroom)  <=  max_connections - 3
+30 x api + 25 x gateway + 5 x worker + 1 (migrate) + 10 (admin, psql)  <=  max_connections - 3
 ```
 
-`3` is Postgres's default `superuser_reserved_connections`. The Compose file ships `max_connections = 200` (with the other settings in [Tuning Postgres](../../docs-site/src/content/docs/self-hosting.mdx#tuning-postgres), sized for a 2 vCPU / 4 GB host): that allows six api replicas and one worker (30 × 6 + 4 + 10 = 194 ≤ 197), or five api replicas and several workers. With Postgres's own default of 100, which a managed Postgres may keep, it allows two api replicas and one or two workers; for a third, raise `max_connections` first.
+`docker compose up -d` stops each old container before it starts its replacement, so a deploy does not hold old and new replicas at once; the `migrate` service runs while the old api and worker are still up, which the `1` covers. The Compose file ships `max_connections = 200` (with the other settings in [Tuning Postgres](../../docs-site/src/content/docs/self-hosting.mdx#tuning-postgres), sized for a 2 vCPU / 4 GB host): that allows six api replicas and one worker (30 × 6 + 5 + 1 + 10 = 196 ≤ 197), or five api replicas and up to seven workers, or five api replicas, a standalone gateway and one worker (150 + 25 + 5 + 11 = 191). With Postgres's own default of 100, which a managed Postgres may keep, it allows two api replicas and up to five workers; for a third api replica, raise `max_connections` first.
+
+### Railway
+
+`deploy/railway/railway.ts` declares `api`, `worker` and `web`, sets no replica count (so one each), and gives `api` and `worker` `drainingSeconds: 75`. The live project was set up in the Railway dashboard and differs from `railway.ts`, so read the real values there before you plan: each service's replica count (**Settings → Deploy**), whether a standalone gateway service exists, any pool variables (`IDEMPOTENCY_POOL_SIZE`, `RATE_LIMIT_POOL_SIZE`) and `SHOW max_connections` on the Railway Postgres. Do not assume them.
+
+On a deploy, Railway starts the new deployment, waits for its healthcheck, and keeps the old one running while it drains, up to `drainingSeconds`. For that window a service holds old and new replicas together, so the budget doubles for every service being deployed. Assume all replicas of a service are replaced together unless you have checked otherwise:
+
+```
+2 x (30 x api + 25 x gateway + 5 x worker) + 1 (pre-deploy migrate) + 10  <=  max_connections - 3
+```
+
+At `max_connections = 100` that is one api replica and one worker (2 × 35 + 11 = 81 ≤ 97). Two api replicas and one worker need `max_connections` of at least 2 × 65 + 11 + 3 = 144, so raise it first. Smaller idempotency and rate-limit pools do not make them fit at 100: even at 1 each, an api replica can open 22 connections and the deploy overlap needs 2 × (44 + 5) + 11 = 109 > 97.
 
 What running out looks like:
 
@@ -124,6 +143,10 @@ services:
       - random_page_cost=1.1
       - -c
       - autovacuum_vacuum_cost_limit=1000
+      - -c
+      - max_parallel_workers_per_gather=2
+      - -c
+      - max_parallel_workers=8
 ```
 
 ```bash
@@ -137,7 +160,7 @@ Expected: `300`. From now on every compose command in these runbooks must carry 
 
 Safe at any time. Workers claim jobs with `FOR UPDATE SKIP LOCKED` under a 60-second lease with a fencing token, and the scheduler enqueues each periodic job once per period with a dedupe key, so any number of workers can run together without doubling a job. The demo traffic job, which spends money, is scheduled once per 30 minutes and runs with a single attempt however many workers there are.
 
-More workers also helps with long jobs. A worker runs one long job (the nightly backup, which can take up to three hours, or an export) at a time in a slot of its own and keeps claiming short jobs (rollups, notifications, cleanup) beside it, so a backup does not stop those. While its slot is taken, a worker claims no second long job, so a second worker lets an export run during the backup.
+More workers also helps with long jobs. A worker has two long-job slots beside its short loop, so a long job does not stop rollups, notifications or cleanup: one for an experiment run or an export, and one reserved for maintenance, the nightly backup (up to three hours) or an end-user erasure. A due backup or erasure therefore starts within one poll (2 s) even while an experiment runs for hours; measured locally, handler entry came 2.0 s after the due time. While a slot is taken, the worker claims no second job of that slot's kinds: a second experiment waits for the first, and an erasure that becomes due during the backup waits for the backup to finish, which can exceed the 300 s target the maintenance slot is sized for (watch `spanlight_jobs_queued_oldest_age_seconds{kind="erase_end_user"}`). A second worker is the remedy for both: it brings a second pair of slots. During maintenance beside an experiment a worker holds one more database connection than before (its pool allows 4, and the backup's `pg_dump` takes a fifth).
 
 ```bash
 spl up -d --scale worker=2
@@ -156,9 +179,16 @@ On Railway, raise the worker service's replica count in its settings.
 
 ## 4. Scale the api
 
-Prefer a bigger instance (CPU) over more replicas until you need availability or have saturated one process. The scale-out unit is the container: each api replica runs one uvicorn process (the image does not use `--workers`), and its `/metrics` and `/health/ready` describe that process alone.
+Add replicas, not a bigger instance, once one api process is busy. The scale-out unit is the container: each api replica runs one uvicorn process, and its `/metrics` and `/health/ready` describe that process alone. A process handles requests on one event loop, so request handling uses one core (only password hashing runs on two extra threads); a replica gains little from more than about one vCPU, so give the api N vCPUs as N replicas. The image does not use `uvicorn --workers`: the api starts through `app.server`, which owns graceful shutdown (it finishes in-flight requests and gateway stream recordings before the pools close), and Uvicorn's multi-process supervisor would start plain servers without it.
 
-**What one process holds.** One api process served about 20 modelled companies before requests started failing, where a company is 1.2 ingest requests a second of 20 spans each plus 6 dashboard reads a second with an API key (overview over 24 hours and 7 days, trace list over 1 hour). That was measured on one Mac (Apple M4, Docker with 10 CPUs and 8 GB) with k6 on the same host and 3.7 to 4.1 million spans in the database; the api process, at 100 % of one core, was the limit, not Postgres. Past it, the api answers `503` with `Retry-After` instead of queueing. **How that scales with replicas is not measured**: on that Mac a second replica did not add capacity, because k6, Postgres and the replicas shared one machine. Measure on your own hardware, with the load generator on another host, before you count on N replicas holding N times as much.
+**What one process holds.** Measured on a dedicated 16 vCPU Linux host with 10 million spans stored, k6 and the fake provider pinned to their own cores ([Final load campaign at 10 million spans](../performance.md#final-load-campaign-at-10-million-spans-2026-11-02)):
+
+| | 1 api replica | 3 api replicas |
+|---|---|---|
+| Ingest, 100-span requests: highest rate held (p95 under 500 ms, under 1 % failures, no load the generator could not send) | 1,500 spans/s | 4,000 spans/s |
+| Gateway calls, instant fake provider: highest rate held | 100 calls/s | 200 calls/s |
+
+Past the limit, requests wait up to `API_POOL_TIMEOUT_SECONDS` (1 s) for a database connection and then get `503` with `Retry-After` (at 2,000 spans/s on one replica: 15.6 % `503`, p95 2.5 s). Ingest scales close to linearly with replicas; the gateway does not, because every gateway call also writes its project's row for the current hour in `aggregate_dirty_hours`, and more replicas mean more writers waiting on that one row (51 ms per write with one replica, 149 ms with three). Postgres had CPU to spare in every run. Earlier, on one Mac with the load generator on the same machine, one process held about 20 modelled companies (1.2 ingest requests a second of 20 spans plus 6 dashboard reads a second each) and a second replica added nothing, because everything shared the same cores: measure with the load generator on another host.
 
 When you do add replicas:
 
@@ -173,6 +203,7 @@ When you do add replicas:
    Expected: two `api` containers, `spanlight-api-1` and `spanlight-api-2`. The file sets `api` to two replicas and gives `web` `API_UPSTREAM: spanlight-api-1:8000 spanlight-api-2:8000`, so Caddy balances between the named containers. Its limits, from the file itself:
 
    - **Two replicas as shipped.** The container names are written into `API_UPSTREAM` and `GATEWAY_UPSTREAM`. For N replicas, add `--scale api=N` to the `up` command and list all N names in both upstreams in a copy of the file; its header comment has a three-replica example. A replica that is not listed gets no traffic.
+   - **A stopped replica is skipped.** When Caddy cannot open a connection to one upstream (the replica is restarting, stopped or gone), it retries the request on another for up to 5 s (`lb_try_duration` in `deploy/Caddyfile`), whatever the method, since nothing was sent. A request that already reached a replica is not retried, except a `GET`.
    - **The project must be named `spanlight`** (`name:` in `deploy/compose.yaml`); container names are `<project>-<service>-<index>`. Starting the stack with `-p other` breaks the names.
    - **It was written to check that replicas share their rate limits** (both draw from the same Postgres buckets), not as a high-availability setup: there is still one `web`, one Postgres and one host.
    - Add the same extra `-f` to your `spl` function, or later commands will not see the override and will recreate `web` and `api` with one replica.
@@ -187,7 +218,13 @@ Behind a load balancer or proxy, set `TRUSTED_PROXIES` to its address ranges, so
 ## 5. Scale Postgres
 
 - **Resources first.** More CPU and memory, and fast disk. This is the lever for slow dashboard queries and slow ingest.
-- **Settings follow the resources.** The Compose file sizes Postgres for a 2 vCPU / 4 GB node (`shared_buffers=1GB`, `effective_cache_size=3GB`, `work_mem=16MB`, `maintenance_work_mem=256MB`, `max_connections=200`, `wal_compression=on`, `random_page_cost=1.1`, `autovacuum_vacuum_cost_limit=1000`, `jit=off`). On a bigger node raise `shared_buffers` to about a quarter of the memory and `effective_cache_size` to about three quarters, as in [Tuning Postgres](../../docs-site/src/content/docs/self-hosting.mdx#tuning-postgres). Postgres needs about 1.5 GB free for the shipped values; on a smaller host it does not start until you lower them.
+- **Settings follow the resources.** The Compose file sizes Postgres for a 2 vCPU / 4 GB node (`shared_buffers=1GB`, `effective_cache_size=3GB`, `work_mem=16MB`, `maintenance_work_mem=256MB`, `max_connections=200`, `wal_compression=on`, `random_page_cost=1.1`, `autovacuum_vacuum_cost_limit=1000`, `jit=off`, and Postgres' own parallel-worker values pinned: `max_parallel_workers_per_gather=2`, `max_parallel_workers=8`). On a bigger node raise `shared_buffers` to about a quarter of the memory and `effective_cache_size` to about three quarters, as in [Tuning Postgres](../../docs-site/src/content/docs/self-hosting.mdx#tuning-postgres). Postgres needs about 1.5 GB free for the shipped values; on a smaller host it does not start until you lower them.
+- **Parallel workers.** The trace list's value sorts (`duration`, `cost`, `tokens`, `retry_cost_usd`) have no index and sort every trace of the window, which Postgres splits across parallel workers. Over 30 days at 10 000 traces a day a sorted page took about 40 ms with two workers and 100 to 140 ms without them ([Trace list sorts](../performance.md#sorts)). A query that finds the server's pool of parallel workers used up runs serial, so keep the pool large enough for the value sorts that run at once:
+  - `max_parallel_workers_per_gather=2`: keep it at 2 on every size. A third or fourth worker shortens one sort less than it takes from the sorts beside it.
+  - `max_parallel_workers`: the pool all queries share. On the 2 vCPU / 4 GB node keep the shipped 8 (four parallel sorts at once; past that the two cores are the limit, not the pool). On a bigger node set it to the number of vCPUs Postgres has, at least 8: 16 on the 16 vCPU host of the load campaign.
+  - `max_worker_processes` (default 8) caps the pool, so raise it with `max_parallel_workers` beyond 8 (`max_worker_processes=16` beside `max_parallel_workers=16`). Unlike the other two, it takes effect only after a Postgres restart.
+
+  Check how often parallel plans got fewer workers than planned (PostgreSQL 18 counts it in `pg_stat_database.parallel_workers_launched` against `parallel_workers_to_launch`; on 17, `EXPLAIN ANALYZE` of a slow value sort shows `Workers Planned` against `Workers Launched`).
 - **Retention.** Each project keeps spans for `retention_days` (30 by default; the longest allowed is 90). The worker's hourly retention job deletes older spans. A shorter retention is the cheapest way to shrink the largest tables, `spans` and `traces`.
 - **Windows.** At any window length, dashboard queries read whole closed hours from the hourly rollups and only the partial first and last hours, plus the hours the rollup job has not finished yet, from raw spans. The raw part stays small while the rollup job keeps up. If the job falls behind, up to 24 hours are read from raw spans and dashboards slow down, so check the worker first.
 - **Disk.** Watch the size of the volume (`pgdata` in Compose):

@@ -147,7 +147,8 @@ async def find_presented_token(db: AsyncSession, parsed: ParsedKey) -> Presented
 async def revoke_all_tokens(db: AsyncSession, user_id: uuid.UUID, *, now: datetime) -> int:
     """Revoke every token of the user's that still works; how many that was.
 
-    A password reset calls this: a token minted from a stolen session must not outlive it.
+    A password reset and an email change call this: a token minted from a stolen session must not
+    outlive either.
     """
     revoked = await db.execute(
         update(PersonalAccessToken)

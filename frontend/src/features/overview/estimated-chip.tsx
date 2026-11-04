@@ -3,9 +3,9 @@ import { Info } from "lucide-react";
 import { TooltipContent, TooltipRoot, TooltipTrigger } from "@/components/ui/tooltip";
 import { useTapTooltip } from "@/lib/use-tap-tooltip";
 
-/** The tooltip copy, verbatim from the hybrid metrics reads spec (§7). */
+/** The tooltip copy, approved in the percentile accuracy correction design (2026-11-03). */
 export const APPROXIMATE_COPY =
-  "Percentiles are estimated from hourly latency histograms, accurate to about ±25 %. Counts and cost are exact; a span that arrives late can take up to an hour to appear.";
+  "Latency percentiles are estimates and can be less accurate for very short or long calls. Counts and cost use exact sums; a span that arrives late can take up to an hour to appear.";
 
 /**
  * "Estimated · hourly rollups" (Figma "Overview/Estimated chip"): the one explanation of the

@@ -17,6 +17,10 @@ REQUEST_ID_HEADER = "x-request-id"
 _REQUEST_ID_HEADER_BYTES = REQUEST_ID_HEADER.encode()
 _VALID_REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+# RFC 8058 one-click unsubscribe: mail clients POST it from their servers, with no Origin. The
+# route reads no cookie and acts only on the token in the request, so a forged request can do
+# nothing its sender could not do with the token anyway.
+_ORIGIN_EXEMPT_PATHS = frozenset({"/api/v1/email/unsubscribe"})
 
 logger = structlog.get_logger("app.access")
 
@@ -158,6 +162,9 @@ class OriginCheckMiddleware:
     anonymous service. A page on another site cannot add the header either: it is not one a
     cross-origin request may carry without a CORS preflight, and this API sends no CORS
     headers, so the browser stops the request before it is sent.
+
+    The one-click unsubscribe route (`_ORIGIN_EXEMPT_PATHS`) is exempt too: it is anonymous and
+    its token is its only credential.
     """
 
     def __init__(self, app: ASGIApp, allowed_origins: Collection[str]) -> None:
@@ -170,6 +177,7 @@ class OriginCheckMiddleware:
             and scope["method"] in _UNSAFE_METHODS
             and scope["path"].startswith("/api/")
             and not _carries_bearer(scope)
+            and scope["path"] not in _ORIGIN_EXEMPT_PATHS
         ):
             origin = _header(scope, "origin")
             if origin is None or origin.rstrip("/") not in self.allowed_origins:

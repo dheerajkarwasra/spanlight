@@ -27,13 +27,15 @@ WINDOW_STEPS = 1
 
 SECRET_BYTES = 20  # 160 bits, the size RFC 4226 recommends; base32 of it is 32 characters
 RECOVERY_CODE_COUNT = 10
-RECOVERY_CODE_LENGTH = 10
+LEGACY_RECOVERY_CODE_LENGTH = 10
+CURRENT_RECOVERY_CODE_LENGTH = 28
+RECOVERY_CODE_LENGTH = LEGACY_RECOVERY_CODE_LENGTH
 # Lowercase base32 without padding: easy to read out and type, nothing that looks like another.
 _RECOVERY_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567"
 _RECOVERY_GROUP = RECOVERY_CODE_LENGTH // 2
 
 _TOTP_CODE = re.compile(r"[0-9]{6}")
-_RECOVERY_CODE = re.compile(r"[a-z2-7]{10}")
+_RECOVERY_CODE = re.compile(r"[a-z2-7]{10}|[a-z2-7]{28}")
 _IGNORED_IN_INPUT = str.maketrans("", "", " -\t\r\n")
 
 
@@ -109,12 +111,11 @@ def new_recovery_codes() -> list[str]:
 
 
 def hash_recovery_code(code: str) -> bytes:
-    """SHA-256 of the code's ten characters, however it was typed.
+    """SHA-256 of the normalized code, for both the 10- and 28-character formats.
 
-    The same code must always hash the same way, because the hash is what the code is looked up
-    by, which rules out a salt. A code is 50 random bits, so there is no dictionary to try, and
-    online guesses are rate limited. A leaked table could still be searched offline at the cost
-    of 2**50 hashes, which is why a code is single use and why disabling two-factor authentication
-    deletes the whole set.
+    Lookup is per user, by user_id and code_hash; it does not rule out a salt. Current codes
+    have 140 random bits, making offline search infeasible, so a slow or salted hash adds
+    verification cost without meaningful protection. Legacy codes have only 50 random bits;
+    their weakness is retired by replacement, not rehashing, since the plaintext is not stored.
     """
     return hashlib.sha256(normalize_code(code).encode()).digest()

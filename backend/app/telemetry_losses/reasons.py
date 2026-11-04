@@ -24,6 +24,11 @@ INGEST_REASONS = (
     "duplicate_in_batch",
     "unprocessable",
     "other",
+    # Whole requests the ingest routes refused for the project's caps (`app.ingest.quota`): the
+    # per-project span rate, the daily span quota and the daily byte quota.
+    "quota_rate",
+    "quota_spans",
+    "quota_bytes",
 )
 GATEWAY_REASONS = ("overflow", "error", "rejected")
 SDK_REASONS = ("dropped", "failed")

@@ -3,21 +3,23 @@
 `create_judge` adds a `relevance` judge on the workspace's OpenAI credential through the API
 (`gpt-4.1-mini`: $0.40 per million input tokens, $1.60 per million output tokens) and builds its
 scorer the way the runner does; `Judge.call` is its prepared call for `EVAL_INPUT`, so
-`Judge.estimate` is what each of its runs reserves. `queue_run` adds a queued `test` run at the
-clock's time; `run_once` runs one through `run_judge`. `answer` scripts the fake provider with one
-chat completion, by default a verdict whose usage costs exactly the estimate. `ParkingSessions`
+`Judge.estimate` is what each of its runs reserves (`credential="anthropic"` makes it a Claude
+judge instead). `queue_run` adds a queued `test` run at the clock's time; `run_once` runs one
+through `run_judge`. `answer` scripts the fake provider with one chat completion, by default a
+`record_verdict` tool call; `content` makes it a text answer with no tool call. `ParkingSessions`
 holds a settle at its session so a test can cancel it there.
 """
 
 import asyncio
 import dataclasses
+import json
 import secrets
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -30,6 +32,7 @@ from app.evals.run_settle import RunOutcome, RunRef
 from app.evals.runner_build import RunnerDeps, build_evaluator
 from app.evals.runner_judge import run_judge
 from app.evals.schemas import EvalInput
+from app.evals.verdict import VERDICT_TOOL_NAME
 from app.gateway.context import GatewayServices
 from app.pricing.tokens import estimate_text_tokens
 from tests.gateway_fixtures import GatewayWorkspace
@@ -77,16 +80,28 @@ class Judge:
         return self.call.estimate
 
 
-async def create_judge(world: JudgeWorld, *, budget: str, max_tokens: int = 256) -> Judge:
+async def create_judge(
+    world: JudgeWorld,
+    *,
+    budget: str,
+    max_tokens: int = 256,
+    credential: Literal["openai", "anthropic"] = "openai",
+    model: str = JUDGE_MODEL,
+) -> Judge:
     """A relevance judge with this monthly budget and output allowance."""
     workspace = world.workspace
+    credential_id = (
+        workspace.openai_credential_id
+        if credential == "openai"
+        else workspace.anthropic_credential_id
+    )
     body = {
         "name": "relevance",
         "config": {
             "kind": KIND,
             "judge_template": "relevance",
-            "credential_id": str(workspace.openai_credential_id),
-            "model": JUDGE_MODEL,
+            "credential_id": str(credential_id),
+            "model": model,
             "max_tokens": max_tokens,
         },
         "monthly_budget_usd": budget,
@@ -160,9 +175,10 @@ class ParkingSessions:
 
 
 def estimate_usage(judge: Judge) -> tuple[int, int]:
-    """Prompt and completion tokens whose cost is exactly the judge's estimate."""
-    messages = judge.call.request.body["messages"]
-    prompt = "".join(message["content"] for message in messages)
+    """Prompt and completion tokens whose cost is exactly the judge's (OpenAI) estimate."""
+    body = judge.call.request.body
+    prompt = "".join(message["content"] for message in body["messages"])
+    prompt += json.dumps(body["tools"])
     return estimate_text_tokens(prompt), judge.scorer.config.max_tokens
 
 
@@ -170,10 +186,16 @@ def answer(
     fake: FakeProvider,
     usage: tuple[int, int] | None,
     *,
-    content: str = VERDICT,
+    arguments: str = VERDICT,
+    content: str | None = None,
     status: int = 200,
 ) -> None:
-    """Script one OpenAI chat completion with this content and (prompt, completion) usage."""
+    """Script one OpenAI chat completion with this (prompt, completion) usage: a
+    `record_verdict` call with these arguments, or, given `content`, that text and no tool call."""
+    message: dict[str, Any] = {"role": "assistant", "content": content}
+    if content is None:
+        function = {"name": VERDICT_TOOL_NAME, "arguments": arguments}
+        message["tool_calls"] = [{"id": "call_1", "type": "function", "function": function}]
     body: dict[str, Any] = {
         "id": f"chatcmpl-{secrets.token_hex(8)}",
         "object": "chat.completion",
@@ -182,7 +204,7 @@ def answer(
         "choices": [
             {
                 "index": 0,
-                "message": {"role": "assistant", "content": content},
+                "message": message,
                 "finish_reason": "stop",
             }
         ],

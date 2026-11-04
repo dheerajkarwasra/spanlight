@@ -40,8 +40,12 @@ function insightPath(projectId: string, insightId: string): string {
  */
 export const insightsApi = {
   /** Most recently seen first. Keyset-paginated; `status` repeats on the wire. */
-  list: (projectId: string, query: InsightListQuery = {}): Promise<Page<Insight>> =>
-    api.get<Page<Insight>>(insightsPath(projectId), { ...query }),
+  list: (
+    projectId: string,
+    query: InsightListQuery = {},
+    signal?: AbortSignal,
+  ): Promise<Page<Insight>> =>
+    api.get<Page<Insight>>(insightsPath(projectId), { ...query }, signal),
   /** Open and acknowledged insights by severity; drives the navigation badge. */
   summary: (projectId: string): Promise<InsightSummary> =>
     api.get<InsightSummary>(`${insightsPath(projectId)}/summary`),
@@ -63,8 +67,8 @@ export const insightsApi = {
   explain: (projectId: string, insightId: string): Promise<Explanation> =>
     api.post<Explanation>(`${insightPath(projectId, insightId)}/explain`),
   /** Newest first, at most 100. */
-  detectorRuns: (projectId: string, limit?: number): Promise<DetectorRun[]> =>
-    api.get<DetectorRun[]>(`${projectPath(projectId)}/detector-runs`, { limit }),
+  detectorRuns: (projectId: string, limit?: number, signal?: AbortSignal): Promise<DetectorRun[]> =>
+    api.get<DetectorRun[]>(`${projectPath(projectId)}/detector-runs`, { limit }, signal),
   /** Records or replaces the caller's vote; needs `insights:feedback` (member and above). */
   putFeedback: (projectId: string, insightId: string, input: FeedbackInput): Promise<Feedback> =>
     api.put<Feedback>(`${insightPath(projectId, insightId)}/feedback`, input),
@@ -75,8 +79,8 @@ export const insightsApi = {
   precision: (projectId: string, query: PrecisionQuery = {}): Promise<PrecisionOut> =>
     api.get<PrecisionOut>(`${insightsPath(projectId)}/precision`, { ...query }),
   /** The health score over the window; `value` is `null` without LLM calls. */
-  health: (projectId: string, query: HealthQuery = {}): Promise<Health> =>
-    api.get<Health>(`${projectPath(projectId)}/health`, { ...query }),
+  health: (projectId: string, query: HealthQuery = {}, signal?: AbortSignal): Promise<Health> =>
+    api.get<Health>(`${projectPath(projectId)}/health`, { ...query }, signal),
   /** Every check in catalogue order. */
   sensitivity: (projectId: string): Promise<{ items: Sensitivity[] }> =>
     api.get<{ items: Sensitivity[] }>(`${projectPath(projectId)}/detector-sensitivity`),

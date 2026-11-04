@@ -4,6 +4,8 @@ spanlight create-user --email ada@example.com --name "Ada" [--org acme --role ow
 spanlight reset-password --email ada@example.com
 spanlight reset-2fa --email ada@example.com
 spanlight sync-prices
+spanlight set-ingest-caps <project-id> [--spans-per-day N|default] [--bytes-per-day N|default]
+                                       [--spans-per-second N|default]
 spanlight prices diff [--source <url or path>]   # review aid against LiteLLM's price file
 spanlight reseal-credentials
 spanlight migrate
@@ -20,12 +22,16 @@ spanlight restore --key backups/2026/10/09/spanlight-20261009T030000Z.dump   # R
 """
 
 import asyncio
+import getpass
 import os
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from types import EllipsisType
 from typing import Annotated
 
+import psycopg
 import typer
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import select
@@ -34,8 +40,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import totp_service
 from app.auth.tokens import revoke_all_tokens
-from app.backups.retention import BACKUP_PREFIX
+from app.backups import recovery
+from app.backups.retention import BACKUP_PREFIX, prune_backups
 from app.backups.service import BackupError, RestoreError, restore_backup, run_backup
+from app.backups.storage import get_backup_object_store
 from app.cli_alerts import alerts_app
 from app.cli_attribution import attribution_app
 from app.cli_demo import demo_app
@@ -58,14 +66,17 @@ from app.db.roles import ensure_app_role
 from app.db.session import create_engine, create_session_factory
 from app.ee.license import LicenseError, parse_license
 from app.gateway.reseal import ResealResult, reseal_credentials
+from app.ingest.quota_report import project_caps
 from app.pricing.cost import sync_seed_prices
 from app.pricing.prices import PRICING_VERSION
+from app.rollups.activation import NonemptyInventoryError, activate_aggregate_coverage
 from app.rollups.compute import backfill_rollups
-from app.rollups.jobs import MAX_BACKFILL_DAYS
+from app.rollups.recovery import RecentRecoveryError, recover_recent
+from app.rollups.refresh import MAX_BACKFILL_DAYS
 from app.rollups.usage_rollup_cli import BatchSizeOption, SinceOption, recompute_usage_rollups
 from app.services.audit import ChainCheck, check_audit_chain, record_audit
 from app.services.credentials import replace_password
-from app.storage.object_store import ObjectStore, get_object_store
+from app.storage.object_store import ObjectStore
 
 app = typer.Typer(help="Spanlight administration.", no_args_is_help=True)
 rollups_app = typer.Typer(help="Hourly metric rollups.", no_args_is_help=True)
@@ -77,6 +88,11 @@ app.add_typer(doctor_app, name="doctor")
 app.add_typer(attribution_app, name="attribution")
 backup_app = typer.Typer(help="Database backups in object storage.", no_args_is_help=True)
 app.add_typer(backup_app, name="backup")
+reconcile_app = typer.Typer(
+    help="Reconcile a restored database before reopening it (see the restore runbook).",
+    no_args_is_help=True,
+)
+app.add_typer(reconcile_app, name="restore-reconcile")
 
 EmailOption = Annotated[str, typer.Option(help="The user's email address.")]
 
@@ -239,6 +255,60 @@ def sync_prices() -> None:
     )
 
 
+def _cap_value(value: str | None) -> int | EllipsisType | None:
+    """`None` leaves the override as it is, `default` clears it, a positive integer sets it."""
+    if value is None:
+        return ...
+    if value == "default":
+        return None
+    if not value.isdigit() or int(value) < 1:
+        raise typer.BadParameter("must be a positive integer or 'default'")
+    return int(value)
+
+
+CapOption = Annotated[
+    str | None, typer.Option(help="A positive integer, or 'default' to use the instance setting.")
+]
+
+
+@app.command("set-ingest-caps")
+def set_ingest_caps(
+    project_id: Annotated[uuid.UUID, typer.Argument(help="The project's id.")],
+    spans_per_day: CapOption = None,
+    bytes_per_day: CapOption = None,
+    spans_per_second: CapOption = None,
+) -> None:
+    """Set, or clear with 'default', one project's ingest caps, then print the effective caps.
+
+    The instance settings INGEST_SPANS_PER_SECOND, INGEST_SPANS_PER_DAY and INGEST_BYTES_PER_DAY
+    apply where no override is set; `0` there means unlimited, which a project override cannot be.
+    """
+    changes = {
+        "ingest_spans_per_day": _cap_value(spans_per_day),
+        "ingest_bytes_per_day": _cap_value(bytes_per_day),
+        "ingest_spans_per_second": _cap_value(spans_per_second),
+    }
+    settings = get_settings()
+
+    async def operation(db: AsyncSession) -> Project:
+        project = await db.get(Project, project_id)
+        if project is None:
+            raise typer.BadParameter(f"no project with id {project_id}", param_hint="PROJECT_ID")
+        for column, value in changes.items():
+            if value is not ...:
+                setattr(project, column, value)
+        await db.commit()
+        await db.refresh(project)
+        return project
+
+    project = _run(operation)
+    caps = project_caps(settings, project)
+    for name in ("spans_per_second", "spans_per_day", "bytes_per_day"):
+        value: int | None = getattr(caps, name)
+        shown = "unlimited" if value is None else f"{value:,}"
+        typer.echo(f"{name}: {shown} ({caps.source(name)})")
+
+
 @app.command("reseal-credentials")
 def reseal_credentials_command() -> None:
     """Re-seal every provider credential and billing source admin key under the first key of
@@ -310,6 +380,47 @@ def audit_verify(
             typer.echo(f"{slug}: BROKEN at seq {check.first_broken_seq}", err=True)
     if broken:
         raise typer.Exit(code=1)
+
+
+@app.command("activate-aggregate-coverage")
+def activate_coverage(
+    writers_drained: Annotated[
+        bool,
+        typer.Option(
+            help="Confirm every pre-1027 API, worker and administrative writer is stopped."
+        ),
+    ] = False,
+    fresh_install: Annotated[
+        bool, typer.Option(help="Require an empty project inventory before activating coverage.")
+    ] = False,
+    skip_if_projects_exist: Annotated[
+        bool,
+        typer.Option(
+            help="With --fresh-install: when projects exist, change nothing and exit 0 "
+            "(the Compose first-run step)."
+        ),
+    ] = False,
+) -> None:
+    """Activate source preservation after deploying migration 1027 and draining old writers."""
+    if not writers_drained:
+        raise typer.BadParameter("Drain old writers, then pass --writers-drained")
+    if skip_if_projects_exist and not fresh_install:
+        raise typer.BadParameter("--skip-if-projects-exist needs --fresh-install")
+    try:
+        boundary = activate_aggregate_coverage(
+            get_settings().database_url, fresh_install=fresh_install
+        )
+    except NonemptyInventoryError:
+        if not skip_if_projects_exist:
+            raise
+        typer.echo(
+            "Projects already exist: fresh coverage activation skipped, nothing changed. "
+            "An upgrade activates coverage with --writers-drained after draining old writers."
+        )
+        return
+    typer.echo(
+        f"Coverage activated; legacy history before {boundary.isoformat()} stays unverified."
+    )
 
 
 @app.command("migrate")
@@ -392,6 +503,9 @@ def backfill_rollups_command(
     project: Annotated[uuid.UUID, typer.Option(help="Project id.")],
     from_: Annotated[str, typer.Option("--from", help="Start (inclusive), ISO 8601; UTC if bare.")],
     to: Annotated[str, typer.Option(help="End (exclusive), ISO 8601; UTC if bare.")],
+    resume_recent_: Annotated[
+        bool, typer.Option("--resume-recent", help="Settle the exact durable recent cursor prefix.")
+    ] = False,
 ) -> None:
     """Recompute the hourly rollups of one project over [--from, --to), at most 90 days.
 
@@ -406,6 +520,29 @@ def backfill_rollups_command(
         raise typer.BadParameter(
             f"the range may not be longer than {MAX_BACKFILL_DAYS} days", param_hint="--to"
         )
+
+    if resume_recent_:
+
+        async def recover() -> str:
+            try:
+                result = await recover_recent(get_settings().database_url, project, start, end)
+            except ValueError as exc:
+                raise typer.BadParameter(str(exc)) from exc
+            except TimeoutError:
+                raise _fail(
+                    "Recent recovery stopped at its time limit; finished chunks are kept. "
+                    "Run the same command again: it reports the cursor to resume at."
+                ) from None
+            except RecentRecoveryError as exc:
+                raise _fail(str(exc)) from None
+            return (
+                f"Recent recovery {result.status}; resume at {result.cursor.isoformat()}; "
+                f"requested end {result.end.isoformat()}; "
+                f"chunks {result.chunks}; rows {result.rows}."
+            )
+
+        typer.echo(asyncio.run(recover()))
+        return
 
     async def operation(db: AsyncSession) -> int:
         if await db.get(Project, project) is None:
@@ -427,10 +564,11 @@ def _fail(message: str) -> typer.Exit:
 
 
 def _require_object_store() -> ObjectStore:
-    store = get_object_store(get_settings())
+    store = get_backup_object_store(get_settings())
     if store is None:
         raise _fail(
-            "object storage is not configured (set S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY)"
+            "backup storage is not configured (set BACKUP_S3_BUCKET, "
+            "BACKUP_S3_ACCESS_KEY, BACKUP_S3_SECRET_KEY)"
         )
     return store
 
@@ -440,8 +578,7 @@ def backup_now() -> None:
     """Dump the database to object storage now and print the key and size.
 
     Needs BACKUP_DATABASE_URL and object storage. BACKUPS_ENABLED only governs the nightly
-    job, so it does not stop a backup you ask for. Old backups are not pruned; the nightly job
-    does that.
+    job, so it does not stop a backup you ask for. Retention runs separately with backup prune.
     """
     settings = get_settings()
     if settings.backup_database_url is None:
@@ -466,6 +603,63 @@ def backup_list() -> None:
         typer.echo(f"{info.key}  {info.size}  {info.last_modified.isoformat()}")
 
 
+@backup_app.command("prune")
+def backup_prune(
+    apply: Annotated[bool, typer.Option("--apply", help="Delete the selected backups.")] = False,
+) -> None:
+    """Preview retention candidates; --apply lists freshly and deletes only those keys.
+
+    Supply a separate List/Delete retention principal through BACKUP_S3_* settings.
+    """
+    store = _require_object_store()
+
+    async def operation() -> tuple[list[str], int]:
+        selected = prune_backups(await store.list(BACKUP_PREFIX), datetime.now(UTC))
+        deleted = 0
+        for key in selected:
+            typer.echo(key)
+            if apply:
+                try:
+                    await store.delete(key)
+                except Exception:  # noqa: BLE001 - attempt remaining keys and report partial failure
+                    typer.echo(f"Failed to delete {key}", err=True)
+                else:
+                    deleted += 1
+        return selected, deleted
+
+    try:
+        selected, deleted = asyncio.run(operation())
+    except Exception:  # noqa: BLE001 - never expose provider errors containing secrets
+        raise _fail("backup listing failed") from None
+    failed = len(selected) - deleted if apply else 0
+    typer.echo(f"Selected {len(selected)}; deleted {deleted}; failed {failed}.")
+    if failed:
+        raise typer.Exit(code=1)
+
+
+TargetUrlOption = Annotated[
+    str,
+    typer.Option(
+        envvar="RESTORE_TARGET_URL",
+        help="URL of the restored database, as its owner. Prefer the environment variable: a URL "
+        "on the command line is visible in the process list and the shell history.",
+    ),
+]
+HeldOption = Annotated[
+    bool,
+    typer.Option(
+        "--all-services-held",
+        help="Attest that the API, gateway, every worker, scheduled producer, outbound delivery, "
+        "deploy hook and the prune schedule are stopped and upstream retries are held.",
+    ),
+]
+ManifestOption = Annotated[
+    Path, typer.Option(help="The recovery manifest (durable operator directory).")
+]
+DecisionsOption = Annotated[Path, typer.Option(help="The complete, immutable decision file.")]
+AppRoleOption = Annotated[str, typer.Option(help="Role the API and worker connect as.")]
+
+
 @app.command("restore")
 def restore(
     key: Annotated[str, typer.Option(help="Object key from `spanlight backup list`.")],
@@ -477,19 +671,124 @@ def restore(
             "command line is visible in the process list and the shell history.",
         ),
     ],
+    receipt: Annotated[
+        Path | None,
+        typer.Option(help="Write the restore receipt here; `restore-reconcile prepare` needs it."),
+    ] = None,
 ) -> None:
     """Restore a backup into an empty database.
 
-    Refuses a database that already has tables. Afterwards run `spanlight ensure-app-role`
-    against the restored database so the API and worker can connect.
+    Refuses a database that already has relations. Afterwards run `spanlight ensure-app-role`
+    against the restored database so the API and worker can connect, then reconcile it with
+    `spanlight restore-reconcile` before any service starts.
     """
+    settings = get_settings()
     store = _require_object_store()
+    if settings.credentials_keys is None:
+        typer.echo(
+            "Warning: CREDENTIALS_KEYS is not set; reconciliation needs every key the backup used.",
+            err=True,
+        )
     try:
-        asyncio.run(restore_backup(store, key, target_url))
+        result = asyncio.run(restore_backup(store, key, target_url))
     except RestoreError as error:
         raise _fail(str(error)) from None
-    typer.echo(f"Restored {key}.")
-    typer.echo("Next: run `spanlight ensure-app-role` against the restored database.")
+    typer.echo(f"Restored {key}: {result.bytes} bytes, sha256 {result.sha256}.")
+    if receipt is not None:
+        document = {
+            "format": recovery.RECEIPT_FORMAT,
+            "key": result.key,
+            "destination": {
+                "bucket": settings.backup_s3_bucket,
+                "endpoint": settings.backup_s3_endpoint,
+            },
+            "sha256": result.sha256,
+            "bytes": result.bytes,
+            "target": result.target,
+            "started_at": result.started_at,
+            "finished_at": result.finished_at,
+            "operator": getpass.getuser(),
+        }
+        try:
+            recovery.write_immutable(receipt, recovery.canonical_json(document))
+        except recovery.RecoveryError as error:
+            raise _fail(
+                f"{error}. The restore itself succeeded but has no receipt: keep every service "
+                "held and restore again into another new database, or retain independent "
+                "evidence of exactly these bytes."
+            ) from None
+        typer.echo(f"Receipt written to {receipt}.")
+    typer.echo("Next: run `spanlight ensure-app-role`, then `spanlight restore-reconcile prepare`.")
+
+
+def _reconcile(operation: Callable[[], str | list[str]], all_services_held: bool) -> None:
+    if not all_services_held:
+        raise typer.BadParameter("Stop every service, then pass --all-services-held")
+    try:
+        result = operation()
+    except recovery.RecoveryBusyError as error:
+        typer.echo(f"Busy: {error}", err=True)
+        raise typer.Exit(code=3) from None
+    except recovery.RecoveryError as error:
+        raise _fail(str(error)) from None
+    except psycopg.Error as error:
+        # The connection context already rolled back. The primary message names the relation or
+        # constraint; an invalid-input message (22P02) also echoes the rejected value, which
+        # is restored data or operator input here, never a secret.
+        raise _fail(
+            f"database error: {error.diag.message_primary or type(error).__name__}"
+        ) from None
+    for line in [result] if isinstance(result, str) else result:
+        typer.echo(line)
+
+
+@reconcile_app.command("prepare")
+def reconcile_prepare(
+    manifest: ManifestOption,
+    receipt: Annotated[Path, typer.Option(help="The receipt `spanlight restore --receipt` wrote.")],
+    context: Annotated[Path, typer.Option(help="The operator context file (see the runbook).")],
+    target_url: TargetUrlOption,
+    all_services_held: HeldOption = False,
+    app_role: AppRoleOption = "spanlight_app",
+) -> None:
+    """Verify the restored database and quarantine every job, run, notification and producer.
+
+    Publishes the manifest, then marks the database. Rerunning with the same manifest is safe.
+    """
+    _reconcile(
+        lambda: recovery.prepare(
+            target_url, manifest, receipt, context, get_settings(), app_role, datetime.now(UTC)
+        ),
+        all_services_held,
+    )
+
+
+@reconcile_app.command("apply")
+def reconcile_apply(
+    manifest: ManifestOption,
+    decisions: DecisionsOption,
+    target_url: TargetUrlOption,
+    all_services_held: HeldOption = False,
+) -> None:
+    """Apply one complete decision file. Any unresolved or missing decision rejects the whole run
+    before anything is published or changed; an identical rerun changes nothing."""
+    _reconcile(lambda: recovery.apply(target_url, manifest, decisions), all_services_held)
+
+
+@reconcile_app.command("check")
+def reconcile_check(
+    manifest: ManifestOption,
+    decisions: DecisionsOption,
+    target_url: TargetUrlOption,
+    all_services_held: HeldOption = False,
+    app_role: AppRoleOption = "spanlight_app",
+) -> None:
+    """Read-only release check: exits 0 only when the applied state, the files and this
+    process's release settings all agree. Run it right before a controlled reopening."""
+    _reconcile(
+        lambda: recovery.check(target_url, manifest, decisions, get_settings(), app_role),
+        all_services_held,
+    )
 
 
 if __name__ == "__main__":

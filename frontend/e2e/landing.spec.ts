@@ -12,14 +12,14 @@ test.describe("landing page", () => {
     ).toBeVisible();
 
     const nav = page.getByRole("navigation", { name: "Main" });
-    await expect(nav.getByRole("link", { name: "Product" })).toHaveAttribute("href", "#cost");
+    await expect(nav.getByRole("link", { name: "Product" })).toHaveAttribute("href", "/#cost");
     await expect(nav.getByRole("link", { name: "How it works" })).toHaveAttribute(
       "href",
-      "#how-it-works",
+      "/#how-it-works",
     );
     await expect(nav.getByRole("link", { name: "Self-hosting" })).toHaveAttribute(
       "href",
-      "#open-source",
+      "/#open-source",
     );
 
     await expect(page.getByRole("link", { name: "Self-host Spanlight" }).first()).toHaveAttribute(

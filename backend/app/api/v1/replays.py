@@ -6,6 +6,7 @@ calls are real spend in the project and appear as traces in the `playground` env
 `replay`. The budget itself is `GET /playground/replays/budget` (`api/v1/playground.py`).
 """
 
+import json
 import uuid
 from typing import Annotated
 
@@ -15,8 +16,9 @@ from app.api.deps import Access, ClockDep, DbSession, SettingsDep, client_ip, re
 from app.api.replay_problems import replay_problem
 from app.api.schemas.common import Page
 from app.api.schemas.replays import ReplayIn, ReplayOut, ReplaySourceOut, ReplaySummaryOut
-from app.core.errors import not_found
+from app.core.errors import not_found, problem_response
 from app.core.idempotency import idempotent
+from app.core.idempotency_store import StoredResponse
 from app.core.observability import feature_used
 from app.core.pagination import DEFAULT_PAGE_SIZE, PageLimit, decode_uuid_cursor, encode_cursor
 from app.core.permissions import Permission
@@ -25,6 +27,7 @@ from app.gateway.context import GatewayServices
 from app.playground import replay_service
 from app.playground.replay_errors import ReplayRefusedError
 from app.playground.replay_queries import list_replays
+from app.playground.replay_schemas import ReplayOutcome
 from app.playground.replay_service import ReplayBudgetExceededError
 from app.playground.service import PLAYGROUND_LIMITER
 
@@ -34,6 +37,20 @@ ReplayRunner = Annotated[Access, Depends(idempotent(require(Permission.EXPERIMEN
 ReplayReader = Annotated[Access, Depends(require(Permission.PROJECT_READ))]
 
 SourceId = Annotated[str | None, Query(max_length=64)]
+
+
+def _operation_receipt(outcome: ReplayOutcome | ReplayBudgetExceededError) -> StoredResponse:
+    if isinstance(outcome, ReplayBudgetExceededError):
+        error = replay_problem(outcome)
+        response = problem_response(
+            error.status, error.code, error.detail, extensions=error.extensions
+        )
+        return StoredResponse(
+            error.status, json.loads(bytes(response.body)), "application/problem+json"
+        )
+    return StoredResponse(
+        200, ReplayOut.of(outcome).model_dump(mode="json", by_alias=True), "application/json"
+    )
 
 
 @router.get(
@@ -91,6 +108,7 @@ async def run_replay(
             settings=settings,
             clock=clock,
             ip=client_ip(request),
+            receipt=_operation_receipt,
         )
     except (ReplayRefusedError, ReplayBudgetExceededError) as error:
         raise replay_problem(error) from None

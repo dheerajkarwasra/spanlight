@@ -15,6 +15,7 @@ import pytest
 
 from app.budgets.periods import period_start
 from app.budgets.types import BudgetPeriod
+from tests.budgets.clock import catch_up
 from tests.budgets.support import (
     STEP_COST,
     BudgetRef,
@@ -79,6 +80,7 @@ async def test_period_rollover_unblocks_without_evaluation_and_resolves_on_the_n
     fired_at = rollover - timedelta(minutes=10)  # 23:50 the day (or month) before
     after = rollover + timedelta(minutes=1)  # 00:01
     budget = await create_budget(world, period=period.value)
+    catch_up(world.clock, fired_at)
     await ingest_spend(world, start=rollover - timedelta(minutes=20))
     await evaluate(world, fired_at)
     await assert_state(world, budget, "firing", fired_at)
@@ -147,6 +149,7 @@ async def test_an_older_pass_does_not_move_state_back(budget_world: BudgetWorld)
     t = earlier_minute()
     budget = await create_budget(world)
     # Spent between T and T+60: the pass at T+60 sees it, a pass at T would read nothing.
+    catch_up(world.clock, t + timedelta(seconds=60))
     await ingest_spend(world, start=t + timedelta(seconds=20))
     await evaluate(world, t + timedelta(seconds=60))
     before = await state_of(world, budget)
@@ -168,6 +171,7 @@ async def test_a_stored_time_far_ahead_is_evaluated_anyway(
     world = budget_world
     t = earlier_minute()
     budget = await create_budget(world)
+    catch_up(world.clock, t + timedelta(seconds=60))
     await ingest_spend(world, start=t + timedelta(seconds=20))
     await evaluate(world, t + timedelta(minutes=10))  # the fast clock's pass: firing
 

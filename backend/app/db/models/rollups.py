@@ -123,3 +123,18 @@ class ErrorRollupHourly(Base):
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class AggregateIncompleteHour(Base):
+    """Permanent coverage evidence, retained until the project is deleted."""
+
+    __tablename__ = "aggregate_incomplete_hours"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
+    )
+    bucket_hour: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    reason: Mapped[str] = mapped_column(Text)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

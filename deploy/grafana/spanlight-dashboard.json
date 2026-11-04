@@ -907,7 +907,7 @@
       "id": 19,
       "type": "timeseries",
       "title": "Gateway spans not recorded",
-      "description": "Gateway spans that were not written, per second, by reason: error (the write failed), rejected (the span failed validation) and overflow (the write backlog was full). The call was answered either way; only its trace is missing. Raise GATEWAY_RECORD_CONCURRENCY or GATEWAY_RECORD_BACKLOG on overflow.",
+      "description": "Gateway spans that were not written, per second, by reason: error (the write failed), rejected (the span failed validation) and overflow (the write backlog was full). The call was answered either way; only its trace is missing. On overflow raise GATEWAY_RECORD_BACKLOG, or GATEWAY_RECORD_CONCURRENCY up to the request pool's base size of 10 (the writes share that pool; more writers stall gateway calls).",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -1530,8 +1530,8 @@
     {
       "id": 31,
       "type": "timeseries",
-      "title": "Projects skipped by the run budget",
-      "description": "Projects a run_detectors pass did not start because it reached its 40 s run budget. They lead the next pass; a count that keeps rising means passes cannot keep up with the active projects. Scraped from the worker (spanlight-worker job).",
+      "title": "Project jobs waiting",
+      "description": "Age of the oldest due run_detectors_project job (the per-project Doctor run). The jobs of a pass are spread 5 s apart; an age that keeps rising means the worker's short lane cannot keep up with the active projects. Each worker samples the whole queue, so take max. Scraped from the worker (spanlight-worker job).",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -1544,7 +1544,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "s",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1576,8 +1576,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(increase(spanlight_detector_projects_skipped_total[$__rate_interval]))",
-          "legendFormat": "skipped",
+          "expr": "max(spanlight_jobs_queued_oldest_age_seconds{kind=\"run_detectors_project\"})",
+          "legendFormat": "oldest due",
           "refId": "A"
         }
       ]

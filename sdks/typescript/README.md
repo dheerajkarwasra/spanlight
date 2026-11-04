@@ -201,6 +201,13 @@ client from the environment variables.
 | `shutdownTimeoutMs` |                         | `5000`                  | Time budget for the flush before the process exits               |
 | `fetch`             |                         | global `fetch`          | The `fetch` used to reach Spanlight                              |
 
+`host` must use `https://`. Plain `http://` works only for local and private-network hosts:
+`localhost` and names ending in `.localhost`, `.local` or `.internal`, single-label names such
+as a Compose service (`http://api:8000`), and loopback, private and link-local IP addresses.
+With any other plain-http host the SDK warns and stays disabled rather than send the key in
+clear text. A service name with an underscore (`my_api`) is not a valid host name and is
+refused too: rename it with a hyphen or use `https://`.
+
 ### `observe(fn, { name, kind, captureInput, captureOutput }?)`
 
 Returns a function that traces each call of `fn`. The arguments become the span input (as an
@@ -274,6 +281,16 @@ spans to another trace of the same project. Your spans still land in the project
 key.
 
 ## Delivery guarantees
+
+Delivery is confirmed only by a JSON acknowledgment whose nonnegative integer `accepted`
+count plus its `rejected` entries equals the batch size. Rejection indexes must be unique
+integers within the batch. Empty, malformed or inconsistent success responses are ambiguous:
+the SDK retries the same IDs within its configured retry budget, then counts unconfirmed
+entries as failed. A write may already have committed; server idempotence prevents duplicate
+stored records when those IDs are retried. A valid `Retry-After` is a minimum delay, even above
+the client exponential backoff cap. Integer delays beyond exact numeric representation remain
+pending until shutdown rather than retrying early. Shutdown interrupts pending retry waits.
+
 
 A batch goes out when it reaches `batchSize` spans or after `flushIntervalMs`. Failed requests are
 retried with jittered exponential backoff on network errors, `429` and `5xx`, and `Retry-After` is

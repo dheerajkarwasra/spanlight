@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.api.schemas.common import Money
+from app.api.schemas.common import AggregateMetadata, Money
 from app.attribution.aggregate_sql import GroupKind
 
 AttributionSource = Literal["raw", "rollup"]
@@ -25,12 +25,12 @@ class AttributionTotalsOut(BaseModel):
     is a lower bound while `unpriced_calls` is above 0 and `None` when nothing was priced.
     """
 
-    traces: int
-    llm_calls: int
-    errors: int
-    unpriced_calls: int
-    input_tokens: int
-    output_tokens: int
+    traces: int | None
+    llm_calls: int | None
+    errors: int | None
+    unpriced_calls: int | None
+    input_tokens: int | None
+    output_tokens: int | None
     cost_usd: Money | None
     retries: int | None
     retry_cost_usd: Money | None
@@ -62,7 +62,7 @@ class AttributionWindowOut(BaseModel):
     to: datetime
 
 
-class AttributionOut(BaseModel):
+class AttributionOut(AggregateMetadata):
     """A page of groups, with the `none` and `other` buckets and the totals on every page.
 
     `source` is `raw` (a window of 24 hours or less, read live from the traces: exact, any
@@ -81,7 +81,7 @@ class AttributionOut(BaseModel):
     key: str | None
     window: AttributionWindowOut
     source: AttributionSource
-    updated_within_minutes: int
+    updated_within_minutes: int | None
     computed_at: datetime | None
     pending_traces: int | None
     items: list[AttributionRowOut]
@@ -97,10 +97,10 @@ class SeriesPointOut(BaseModel):
 
     bucket_start: datetime
     cost_usd: Money | None
-    unpriced_calls: int
+    unpriced_calls: int | None
 
 
-class AttributionSeriesOut(BaseModel):
+class AttributionSeriesOut(AggregateMetadata):
     """The spend of the window per bucket, from the same source as the list: hourly on `raw` (a
     window of 24 hours or less), per UTC day on `rollup` (`window` widened to whole days). Every
     bucket of the window is present; the points add up to the list's `totals`, or to the group's

@@ -31,3 +31,16 @@ def test_a_non_finite_retry_after_still_waits_a_finite_backoff() -> None:
 def test_a_numeric_retry_after_is_still_honoured() -> None:
     assert parse_retry_after(" 7 ") == 7.0
     assert parse_retry_after("-3") == 0.0
+
+
+def test_server_minimum_and_exponential_cap_remain_independent() -> None:
+    exporter = BatchExporter(url="http://spanlight.test/v1/traces", api_key="k")
+    try:
+        assert exporter._delivery.retry_delay(2000, 120) == 120
+        assert 0 < exporter._delivery.retry_delay(2000, None) <= 30
+    finally:
+        exporter.shutdown()
+
+
+def test_huge_digit_only_server_minimum_remains_indefinite_and_cancellable():
+    assert parse_retry_after("9" * 400) == math.inf

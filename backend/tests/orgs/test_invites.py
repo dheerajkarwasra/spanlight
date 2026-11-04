@@ -51,7 +51,7 @@ async def test_an_invite_with_an_email_queues_one_email_carrying_the_url(
 
     assert response.status_code == 201, response.text
     created = response.json()
-    assert created["url"].startswith("http://testserver/invite/")
+    assert created["url"].startswith("http://testserver/invite#token=")
     assert created["email"] == "ada@example.com"
     (row,) = await _mailed_to(session_factory, "ada@example.com")
     assert created["url"] in row.payload["text"]
@@ -102,7 +102,7 @@ async def test_an_invite_without_an_email_queues_nothing(
 
     assert response.status_code == 201, response.text
     assert response.json()["email"] is None
-    assert response.json()["url"].startswith("http://testserver/invite/")
+    assert response.json()["url"].startswith("http://testserver/invite#token=")
     assert await _outbox_size(session_factory) == before
 
 
@@ -118,7 +118,7 @@ async def test_an_invite_with_an_email_but_no_email_configured_queues_nothing(
 
     # The invite still works as a link; only the mailing is skipped.
     assert response.status_code == 201, response.text
-    assert response.json()["url"].startswith("http://testserver/invite/")
+    assert response.json()["url"].startswith("http://testserver/invite#token=")
     assert await _outbox_size(session_factory) == 0
     assert await _count(session_factory, Invite) == 1
 
@@ -214,13 +214,48 @@ async def test_mailing_does_not_change_who_can_accept(
             _invites_url(workspace.org_id), json={"role": "member", "email": "ada@example.com"}
         )
     ).json()
-    token = created["url"].rsplit("/", 1)[1]
+    token = created["url"].split("#token=", 1)[1]
 
     # Any signed-in holder of the link may accept, whatever address it was mailed to.
     accepted = await someone_else.post("/api/v1/invites/accept", json={"token": token})
 
     assert accepted.status_code == 200, accepted.text
     assert accepted.json()["role"] == "member"
+
+
+# --- the token stays out of the URL path and query ------------------------------------------
+
+
+async def test_the_invite_link_carries_the_token_in_the_fragment(
+    browser_factory: BrowserFactory,
+) -> None:
+    """A fragment reaches no server: not the access logs, not a `Referer` (Ruling P5)."""
+    owner: Browser = await browser_factory("owner@example.com")
+    workspace = await create_workspace(owner)
+
+    created = (await owner.post(_invites_url(workspace.org_id), json={"role": "member"})).json()
+
+    base, separator, token = created["url"].partition("#token=")
+    assert (base, separator) == ("http://testserver/invite", "#token=")
+    assert token and "/" not in token and "?" not in token
+
+
+async def test_the_preview_takes_the_token_in_a_post_body_not_the_query(
+    browser_factory: BrowserFactory,
+) -> None:
+    owner: Browser = await browser_factory("owner@example.com")
+    guest: Browser = await browser_factory("guest@example.com")
+    workspace = await create_workspace(owner, org_name="Acme AI")
+    created = (await owner.post(_invites_url(workspace.org_id), json={"role": "admin"})).json()
+    token = created["url"].split("#token=", 1)[1]
+
+    preview = await guest.post("/api/v1/invites/preview", json={"token": token})
+    by_query = await guest.get("/api/v1/invites/preview", params={"token": token})
+
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["org"]["name"] == "Acme AI"
+    assert preview.json()["role"] == "admin"
+    assert by_query.status_code == 405
 
 
 # --- the per-org limit -----------------------------------------------------------------------

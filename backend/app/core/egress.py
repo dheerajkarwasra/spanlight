@@ -8,7 +8,10 @@ checking only the first answer would let a DNS name with one public and one priv
 through on the round-robin turn that picks the private one.
 
 `is_blocked_address` and the range list are pure. `resolve_checked` adds DNS; its resolver is a
-parameter, so tests fake DNS instead of depending on it.
+parameter, so tests fake DNS instead of depending on it. The default resolver is the operating
+system's behind `DnsCache`, which keeps an answer for `DNS_CACHE_TTL_SECONDS` so a burst of new
+connections to one provider does not pay a lookup each; the check runs on the cached answers
+exactly as on fresh ones, and a lookup that fails is not cached.
 
 `VettedNetworkBackend` applies the check where it cannot be raced: when a connection is opened.
 It resolves the host itself, vets every answer and connects to a vetted IP literal, so the
@@ -19,10 +22,13 @@ client resolve it again would let a DNS answer change in between (DNS rebinding)
 import asyncio
 import ipaddress
 import socket
+import time
 import typing
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 
 import httpcore
+
+from app.core.thread_ownership import owned_thread
 
 IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
 IPNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
@@ -105,6 +111,25 @@ BLOCKED_NETWORKS: tuple[IPNetwork, ...] = (
     ),
 )
 
+# Refused even when `allow_private` opens the private ranges: link-local, where the cloud
+# metadata services live (`169.254.169.254` on AWS, GCP and Azure, `fd00:ec2::254` on AWS over
+# IPv6, `100.100.100.200` on Alibaba Cloud). On a cloud host they answer with the instance's
+# credentials. A self-hoster who opens their own network for webhooks does not mean to open those.
+_ALWAYS_BLOCKED_IPV4 = (
+    ipaddress.IPv4Network("169.254.0.0/16"),
+    ipaddress.IPv4Network("100.100.100.200/32"),
+)
+ALWAYS_BLOCKED_NETWORKS: tuple[IPNetwork, ...] = (
+    *_ALWAYS_BLOCKED_IPV4,
+    ipaddress.IPv6Network("fe80::/10"),
+    ipaddress.IPv6Network("fd00:ec2::254/128"),
+    *(
+        _embedded(prefix, shift, network)
+        for prefix, shift in _IPV4_EMBEDDINGS
+        for network in _ALWAYS_BLOCKED_IPV4
+    ),
+)
+
 
 class EgressError(Exception):
     """A host the gateway must not, or cannot, connect to. Messages name the host, never a key."""
@@ -148,27 +173,86 @@ def default_port(scheme: str) -> int:
     return 443 if scheme.lower() == "https" else 80
 
 
-def is_blocked_address(address: str | IPAddress) -> bool:
-    """Whether a connection to `address` must be refused. A string that is not an IP is blocked.
+def _parse(address: str | IPAddress) -> IPAddress | None:
+    """`address` as an IP, or None for a string that is not one.
 
     An IPv6 zone (`fe80::1%eth0`) is ignored: the zone picks an interface, not the address.
     """
-    if isinstance(address, str):
-        try:
-            address = ipaddress.ip_address(address.split("%", 1)[0])
-        except ValueError:
-            return True
-    return any(address in network for network in BLOCKED_NETWORKS)
+    if not isinstance(address, str):
+        return address
+    try:
+        return ipaddress.ip_address(address.split("%", 1)[0])
+    except ValueError:
+        return None
+
+
+def is_blocked_address(address: str | IPAddress) -> bool:
+    """Whether a connection to `address` must be refused. A string that is not an IP is blocked."""
+    parsed = _parse(address)
+    return parsed is None or any(parsed in network for network in BLOCKED_NETWORKS)
+
+
+def is_always_blocked(address: str | IPAddress) -> bool:
+    """Whether `address` is refused even with `allow_private`: link-local or a cloud metadata
+    service, written as IPv4, IPv6 or an IPv4 address embedded in IPv6. A string that is not an
+    IP is blocked.
+    """
+    parsed = _parse(address)
+    return parsed is None or any(parsed in network for network in ALWAYS_BLOCKED_NETWORKS)
 
 
 async def system_resolver(host: str, port: int) -> Sequence[str]:
     """Every A and AAAA answer for `host`, through the operating system's resolver."""
     loop = asyncio.get_running_loop()
     try:
-        answers = await loop.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        answers = await owned_thread(loop.getaddrinfo(host, port, type=socket.SOCK_STREAM))
     except (socket.gaierror, UnicodeError) as error:
         raise UnresolvableHost(f"{host} could not be resolved") from error
     return [str(sockaddr[0]) for _family, _type, _proto, _name, sockaddr in answers]
+
+
+# Shorter than the TTL most provider records carry (60 s and up), so a DNS change is followed
+# within half a minute; `getaddrinfo` does not expose the record's own TTL.
+DNS_CACHE_TTL_SECONDS = 30.0
+DNS_CACHE_MAX_ENTRIES = 1024
+
+
+class DnsCache:
+    """A resolver that keeps each host's answers for `ttl_s`, holding at most `max_entries`.
+
+    Only a successful lookup is cached; an error is raised as it is and asked again next time.
+    Hosts are chosen by organizations (base URLs, webhooks), so the size bound keeps the cache
+    from growing with them. The egress check still runs on every answer this returns.
+    """
+
+    def __init__(
+        self,
+        lookup: Resolver,
+        *,
+        ttl_s: float = DNS_CACHE_TTL_SECONDS,
+        max_entries: int = DNS_CACHE_MAX_ENTRIES,
+    ) -> None:
+        self._lookup = lookup
+        self._ttl_s = ttl_s
+        self._max_entries = max_entries
+        self._entries: dict[str, tuple[float, Sequence[str]]] = {}
+
+    async def __call__(self, host: str, port: int) -> Sequence[str]:
+        now = time.monotonic()
+        cached = self._entries.get(host)
+        if cached is not None and cached[0] > now:
+            return cached[1]
+        answers = await self._lookup(host, port)
+        self._entries.pop(host, None)  # re-insert at the end, so eviction order is by refresh
+        if len(self._entries) >= self._max_entries:
+            self._entries = {k: v for k, v in self._entries.items() if v[0] > now}
+            if len(self._entries) >= self._max_entries:
+                del self._entries[next(iter(self._entries))]  # the oldest insertion
+        self._entries[host] = (now + self._ttl_s, answers)
+        return answers
+
+
+cached_system_resolver = DnsCache(system_resolver)
 
 
 async def resolve_checked(
@@ -182,8 +266,9 @@ async def resolve_checked(
     """The addresses `host` resolves to, in the resolver's order and without repeats.
 
     Raises `UnresolvableHost` when there are none, or when DNS takes longer than
-    `dns_timeout_s`, and, unless `allow_private`, `BlockedAddress` when any of them is in a blocked
-    range. An IP literal is checked as it is, without DNS.
+    `dns_timeout_s`, and `BlockedAddress` when any of them is in a blocked range. `allow_private`
+    lifts that for every range except `ALWAYS_BLOCKED_NETWORKS`. An IP literal is checked as it
+    is, without DNS.
     """
     literal = _ip_literal(host)
     if literal is not None:
@@ -191,12 +276,14 @@ async def resolve_checked(
     else:
         try:
             async with asyncio.timeout(dns_timeout_s):
-                answers = await (resolver or system_resolver)(host, port)
+                answers = await (resolver or cached_system_resolver)(host, port)
         except TimeoutError:
             raise UnresolvableHost(f"{host} did not resolve within {dns_timeout_s} s") from None
     addresses = list(dict.fromkeys(answers))
     if not addresses:
         raise UnresolvableHost(f"{host} could not be resolved")
+    if any(is_always_blocked(address) for address in addresses):
+        raise BlockedAddress(f"{host} resolves to a link-local or cloud metadata address")
     if not allow_private and any(is_blocked_address(address) for address in addresses):
         raise BlockedAddress(f"{host} resolves to a private, local or reserved address")
     return addresses

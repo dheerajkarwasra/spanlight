@@ -9,11 +9,12 @@ import { Callout } from "@/components/callout";
 import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { authApi, errorMessage } from "@/lib/api";
+import { authApi, errorMessage, isApiError, queryKeys } from "@/lib/api";
 import { applyServerFieldErrors } from "@/lib/form-errors";
 
-import { refreshMe } from "./queries";
+import { refreshMe, useShowsTermsLine } from "./queries";
 import { safeNextPath } from "./search";
+import { TermsLine } from "./terms-line";
 
 const MIN_PASSWORD_LENGTH = 10;
 
@@ -39,6 +40,7 @@ export function SignupForm({ next }: SignupFormProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [formError, setFormError] = useState<string | null>(null);
+  const showsTerms = useShowsTermsLine();
 
   const form = useForm<SignupValues>({
     resolver: zodResolver(signupSchema),
@@ -59,6 +61,11 @@ export function SignupForm({ next }: SignupFormProps) {
       }
     },
     onError: (error) => {
+      // Submitted before the terms lookup answered: load it, so the line shows and the next
+      // submit carries the agreement.
+      if (isApiError(error) && error.code === "TERMS_NOT_ACCEPTED") {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.authTerms });
+      }
       if (!applyServerFieldErrors(error, form.setError, SIGNUP_FIELDS)) {
         setFormError(errorMessage(error));
       }
@@ -67,7 +74,8 @@ export function SignupForm({ next }: SignupFormProps) {
 
   const onSubmit = form.handleSubmit((values) => {
     setFormError(null);
-    signup.mutate(values);
+    // Creating the account under the terms line is the agreement; no line, nothing agreed.
+    signup.mutate(showsTerms ? { ...values, accept_terms: true } : values);
   });
 
   return (
@@ -94,9 +102,12 @@ export function SignupForm({ next }: SignupFormProps) {
         </Callout>
       ) : null}
 
-      <Button type="submit" variant="primary" size="lg" loading={signup.isPending}>
-        Create account
-      </Button>
+      <div className="flex flex-col gap-3">
+        <Button type="submit" variant="primary" size="lg" loading={signup.isPending}>
+          Create account
+        </Button>
+        <TermsLine />
+      </div>
     </form>
   );
 }

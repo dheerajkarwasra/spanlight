@@ -5,6 +5,7 @@ import time
 from typing import Any
 
 import httpx
+import pytest
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -97,3 +98,12 @@ async def telemetry_rows(
         spans = (await db.execute(_SPAN_ROWS, {"project_id": project_id})).scalars().all()
         traces = (await db.execute(_TRACE_ROWS, {"project_id": project_id})).scalars().all()
     return list(spans), list(traces)
+
+
+def lift_project_concurrency(app: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Lets a test that races many batches of one project past the per-project ingest slots."""
+    monkeypatch.setattr(
+        app.state,
+        "settings",
+        app.state.settings.model_copy(update={"ingest_max_in_flight_per_project": 1_000}),
+    )

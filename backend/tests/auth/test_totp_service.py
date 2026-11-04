@@ -145,7 +145,7 @@ async def test_enable_turns_it_on_and_returns_ten_recovery_codes_once(
             totp.hash_recovery_code(code) for code in codes
         )
         assert all(row.used_at is None for row in rows)
-        assert await totp_service.recovery_codes_remaining(db, stored.id) == 10
+        assert (await totp_service.recovery_code_status(db, stored.id)).remaining == 10
 
 
 async def test_enable_with_a_wrong_code_changes_nothing(
@@ -355,7 +355,7 @@ async def test_a_recovery_code_signs_in_once(
     async with session_factory() as db:
         user = await load(db, user_id)
         assert not await totp_service.verify(db, keyed, user, codes[0], now=NOW)
-        assert await totp_service.recovery_codes_remaining(db, user.id) == 9
+        assert (await totp_service.recovery_code_status(db, user.id)).remaining == 9
         used = (
             await db.scalars(
                 select(RecoveryCode).where(
@@ -388,7 +388,7 @@ async def test_a_code_that_was_never_issued_is_refused(
     async with session_factory() as db:
         user = await load(db, user_id)
         assert not await totp_service.verify(db, keyed, user, "abcde-fghij", now=NOW)
-        assert await totp_service.recovery_codes_remaining(db, user.id) == 10
+        assert (await totp_service.recovery_code_status(db, user.id)).remaining == 10
 
 
 async def test_one_users_recovery_code_does_not_work_for_another(
@@ -501,5 +501,5 @@ async def test_enrolling_again_after_disabling_starts_clean(
     assert not set(second_codes) & set(first_codes)
     async with session_factory() as db:
         user = await load(db, user_id)
-        assert await totp_service.recovery_codes_remaining(db, user.id) == 10
+        assert (await totp_service.recovery_code_status(db, user.id)).remaining == 10
         assert not await totp_service.verify(db, keyed, user, first_codes[1], now=NOW)

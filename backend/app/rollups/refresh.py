@@ -1,25 +1,19 @@
-"""Pick the six-hour slices of the 48 hour refresh range that ``rollup_hourly`` rewrites next.
-
-The job rewrites a project's last three hours on every run, and the rest of the last 48 hours
-in slices of at most six hours (``app.rollups.jobs``). A slice is due when its oldest rollup row
-was computed more than ``REFRESH_AGE`` ago, or when it has spans but no rollup row at all (a late
-span arrived in hours that were empty when they were last rewritten). Due slices are returned
-oldest first, missing ones before all others, so a run that runs out of budget leaves the
-freshest slices for the next one.
-
-Slices sit on a fixed six-hour UTC grid clipped to the range, so the same hours form the same
-slice from one run to the next. The question spans projects, so it is read with RLS bypassed;
-each slice is then rewritten in a transaction bound to its own project.
-"""
+"""One project-scoped six-hour maintenance slice, oldest computation first."""
 
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
-from sqlalchemy import DateTime, bindparam, text
+from sqlalchemy import DateTime, Row, bindparam, text
 from sqlalchemy.dialects.postgresql import ARRAY
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.rls import bypass_rls
+from app.ingest.error_class import ErrorClass
+from app.rollups.compute import floor_hour
+from app.rollups.error_compute import FAILED_LLM_SPAN
+
+MAX_BACKFILL_DAYS = 90
 
 SLICE = timedelta(hours=6)
 REFRESH_AGE = timedelta(hours=1)
@@ -45,7 +39,7 @@ _SLICE_STATE = text(
     CROSS JOIN unnest(
         CAST(:starts AS timestamptz[]), CAST(:ends AS timestamptz[])
     ) AS w(start_at, end_at)
-    WHERE EXISTS (
+    WHERE p.id = :project_id AND EXISTS (
         SELECT 1 FROM spans AS s
         WHERE s.project_id = p.id AND s.started_at >= :start AND s.started_at < :end
     )
@@ -70,43 +64,130 @@ def slice_bounds(start: datetime, end: datetime) -> list[tuple[datetime, datetim
 
 
 async def due_slices(
-    session_factory: async_sessionmaker[AsyncSession],
+    db: AsyncSession,
+    project_id: uuid.UUID,
     *,
     now: datetime,
     start: datetime,
     end: datetime,
 ) -> list[Slice]:
-    """The slices of ``[start, end)`` to rewrite, across every project with spans in it."""
+    """At most one due slice; the caller owns the bound session and total deadline."""
     bounds = slice_bounds(start, end)
     if not bounds:
         return []
-    async with session_factory() as db:
-        await bypass_rls(db)
-        rows = (
-            await db.execute(
-                _SLICE_STATE,
-                {
-                    "starts": [s for s, _ in bounds],
-                    "ends": [e for _, e in bounds],
-                    "start": start,
-                    "end": end,
-                },
-            )
-        ).all()
-    stale_before = now - REFRESH_AGE
-    due = [
-        row
-        for row in rows
-        if (row.oldest_computed is None and row.has_spans)
-        or (row.oldest_computed is not None and row.oldest_computed < stale_before)
-    ]
-    # Missing slices first, then the longest unrefreshed; the project and start break ties.
-    due.sort(
-        key=lambda row: (
-            row.oldest_computed is not None,
-            row.oldest_computed or now,
-            row.project_id,
-            row.start_at,
-        )
+    statement = text(f"""
+        SELECT * FROM ({_SLICE_STATE.text}) slices
+        WHERE (oldest_computed IS NULL AND has_spans) OR oldest_computed < :stale_before
+        ORDER BY oldest_computed NULLS FIRST, start_at LIMIT 1
+    """).bindparams(
+        bindparam("starts", type_=ARRAY(DateTime(timezone=True))),
+        bindparam("ends", type_=ARRAY(DateTime(timezone=True))),
     )
-    return [(row.project_id, row.start_at, row.end_at) for row in due]
+    rows = (
+        await db.execute(
+            statement,
+            {
+                "project_id": project_id,
+                "starts": [s for s, _ in bounds],
+                "ends": [e for _, e in bounds],
+                "start": start,
+                "end": end,
+                "stale_before": now - REFRESH_AGE,
+            },
+        )
+    ).all()
+    return [(row.project_id, row.start_at, row.end_at) for row in rows]
+
+
+# For each project with a span inside its retention (capped) and older than the recompute window:
+# that oldest span and the oldest span rollup hour, then the oldest such span that makes an error
+# rollup row and the oldest error rollup hour. All are index lookups; the oldest failure is one
+# probe per error class on `spans_project_error_class_started_idx`, so a project with many
+# failures is not scanned.
+_BACKFILL_CANDIDATES = text(
+    f"""
+    SELECT p.id AS project_id,
+           oldest.started_at AS oldest_span,
+           (SELECT min(r.bucket_start) FROM span_rollups_hourly AS r
+            WHERE r.project_id = p.id) AS oldest_rollup,
+           failure.started_at AS oldest_failure,
+           (SELECT min(e.bucket_start) FROM error_rollups_hourly AS e
+            WHERE e.project_id = p.id) AS oldest_error_rollup
+    FROM projects AS p
+    CROSS JOIN LATERAL (
+        SELECT :now - make_interval(days => least(p.retention_days, :max_days)) AS since
+    ) AS kept
+    CROSS JOIN LATERAL (
+        SELECT min(s.started_at) AS started_at
+        FROM spans AS s
+        WHERE s.project_id = p.id
+          AND s.started_at >= kept.since
+          AND s.started_at < :window_start
+    ) AS oldest
+    CROSS JOIN LATERAL (
+        SELECT min(first.started_at) AS started_at
+        FROM unnest(CAST(:error_classes AS text[])) AS c(error_class)
+        CROSS JOIN LATERAL (
+            SELECT s.started_at
+            FROM spans AS s
+            WHERE s.project_id = p.id
+              AND s.error_class = c.error_class
+              AND s.started_at >= kept.since
+              AND s.started_at < :window_start
+              AND {FAILED_LLM_SPAN}
+            ORDER BY s.started_at
+            LIMIT 1
+        ) AS first
+    ) AS failure
+    WHERE p.id = :project_id AND oldest.started_at IS NOT NULL
+    """
+)
+_ERROR_CLASSES = [error_class.value for error_class in ErrorClass]
+
+Gap = tuple[timedelta, uuid.UUID, datetime, datetime]
+
+
+async def _find_gaps(
+    db: AsyncSession, project_id: uuid.UUID, now: datetime, window_start: datetime
+) -> list[Gap]:
+    candidates = (
+        await db.execute(
+            _BACKFILL_CANDIDATES,
+            {
+                "project_id": project_id,
+                "now": now,
+                "max_days": MAX_BACKFILL_DAYS,
+                "window_start": window_start,
+                "error_classes": _ERROR_CLASSES,
+            },
+        )
+    ).all()
+    return _gaps(candidates, window_start)
+
+
+def _gaps(candidates: Sequence[Row[Any]], window_start: datetime) -> list[Gap]:
+    """Each project's backfill range, smallest first (the project id breaks ties).
+
+    A project's range covers both of its gaps: the span gap and the error gap (module docstring).
+    Recent rollups were just written, so the oldest rollup is normally at or after
+    `window_start`; each gap ends where its rollups begin, and never after `window_start`.
+    """
+    gaps: list[Gap] = []
+    for row in candidates:
+        ranges = [_gap(row.oldest_span, row.oldest_rollup, window_start)]
+        if row.oldest_failure is not None:
+            ranges.append(_gap(row.oldest_failure, row.oldest_error_rollup, window_start))
+        open_ranges = [(start, end) for start, end in ranges if start < end]
+        if open_ranges:
+            gap_start = min(start for start, _ in open_ranges)
+            gap_end = max(end for _, end in open_ranges)
+            gaps.append((gap_end - gap_start, row.project_id, gap_start, gap_end))
+    gaps.sort(key=lambda gap: (gap[0], gap[1]))
+    return gaps
+
+
+def _gap(
+    oldest: datetime, oldest_rollup: datetime | None, window_start: datetime
+) -> tuple[datetime, datetime]:
+    end = window_start if oldest_rollup is None else min(oldest_rollup, window_start)
+    return floor_hour(oldest), end

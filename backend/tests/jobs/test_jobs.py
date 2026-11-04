@@ -16,9 +16,12 @@ from app.config import Settings
 from app.db.models import (
     EmailToken,
     EmailTokenKind,
+    Invite,
     Job,
     JobStatus,
     LoginAttempt,
+    MembershipRole,
+    Organization,
     Session,
     Span,
     ThrottleEvent,
@@ -41,13 +44,13 @@ from app.jobs.scheduler import (
 )
 from app.jobs.tasks import TASKS
 from app.jobs.tasks.cleanup import cleanup
-from app.jobs.tasks.retention import apply_retention
 from app.jobs.worker import Worker
 from app.provider_status.jobs import run_poll_provider_status
 from tests.gateway_fixtures import CREDENTIALS_KEYS
 from tests.gateway_support import logged
 from tests.helpers import Browser, bearer, create_workspace, new_trace_id, span
 from tests.jobs.bypass_support import execute, fetch, new_projects, seed_row
+from tests.jobs.retention_support import apply_retention
 
 SessionFactory = async_sessionmaker[AsyncSession]
 
@@ -184,7 +187,7 @@ async def test_worker_runs_handlers_and_records_failures(
         await db.commit()
 
     worker = Worker(session_factory, settings, handlers={"good": succeed, "bad": explode})
-    assert [await worker.run_once() for _ in range(4)] == [True, True, True, False]
+    assert [await worker.run_once() for _ in range(4)] == [True, True, False, False]
     assert seen == [{"n": 1}]
 
     async with session_factory() as db:
@@ -192,7 +195,11 @@ async def test_worker_runs_handlers_and_records_failures(
     assert jobs["good"].status is JobStatus.DONE
     assert jobs["bad"].status is JobStatus.QUEUED
     assert jobs["bad"].last_error == "RuntimeError: kaboom"
-    assert "no handler" in (jobs["unknown"].last_error or "")
+    assert jobs["unknown"].status is JobStatus.QUEUED
+    assert (jobs["unknown"].attempts, jobs["unknown"].fence) == (0, 0)
+    assert jobs["unknown"].last_error is None
+    assert jobs["unknown"].lease_until is None
+    assert jobs["unknown"].payload == {}
 
 
 async def test_a_task_asking_to_retry_after_a_delay_is_requeued_then_failed(
@@ -298,12 +305,14 @@ async def test_scheduler_dedupes_per_period(
         "refresh_attribution",
         "refresh_user_stats",
         "refresh_user_stats_deep",
+        "repair_aggregates",
         "retention",
         "rollup_cost_daily",
         "rollup_cost_daily_deep",
         "rollup_hourly",
         "run_detectors",
         "sample_for_evaluation",
+        "schedule_attribution_daily",
         "select_for_review",
         "weekly_digest",
     ]
@@ -318,10 +327,12 @@ async def test_scheduler_dedupes_per_period(
         "reap_budget_reservations",
         "refresh_attribution",
         "refresh_user_stats",
+        "repair_aggregates",
         "rollup_cost_daily",
         "rollup_hourly",
         "run_detectors",
         "sample_for_evaluation",
+        "schedule_attribution_daily",
     ]
     # At 13:35 a new 30-minute period for demo traffic too.
     assert sorted(later) == [
@@ -333,10 +344,12 @@ async def test_scheduler_dedupes_per_period(
         "reap_budget_reservations",
         "refresh_attribution",
         "refresh_user_stats",
+        "repair_aggregates",
         "rollup_cost_daily",
         "rollup_hourly",
         "run_detectors",
         "sample_for_evaluation",
+        "schedule_attribution_daily",
     ]
 
     async with session_factory() as db:
@@ -509,9 +522,34 @@ async def test_cleanup_removes_expired_sessions_and_old_rows(
         "email_tokens_deleted": 0,
         "idempotency_keys_deleted": 0,
         "rate_limit_buckets_deleted": 0,
+        "invites_deleted": 0,
         "exporter_counters_deleted": 0,
+        "quota_days_deleted": 0,
     }
     assert (await live.get("/api/v1/auth/me")).status_code == 200
+
+
+async def test_cleanup_prunes_ingest_quota_days_older_than_35_days(
+    session_factory: SessionFactory,
+) -> None:
+    now = datetime.now(UTC)
+    a, b = await new_projects(session_factory, 2)
+    for project, age in ((a, 36), (a, 34), (b, 40), (b, 0)):
+        await execute(
+            session_factory,
+            "INSERT INTO ingest_quota_days (project_id, day, spans, bytes) "
+            "VALUES (:p, CAST(:now AS date) - :age, 1, 1)",
+            {"p": project, "now": now, "age": age},
+        )
+
+    counts = await cleanup(session_factory, now=now)
+
+    assert counts["quota_days_deleted"] == 2
+    rows = await fetch(session_factory, "SELECT project_id, day FROM ingest_quota_days")
+    assert {(row["project_id"], str(row["day"])) for row in rows} == {
+        (a, str((now - timedelta(days=34)).date())),
+        (b, str(now.date())),
+    }
 
 
 async def test_cleanup_prunes_old_throttle_events_and_spent_email_tokens(
@@ -562,6 +600,43 @@ async def test_cleanup_prunes_old_throttle_events_and_spent_email_tokens(
     assert kept == {b"used-recent", b"expired-recent", b"live-old"}
 
 
+async def test_cleanup_purges_invites_30_days_after_they_expire_or_are_accepted(
+    session_factory: SessionFactory,
+) -> None:
+    now = datetime.now(UTC)
+    day = timedelta(days=1)
+    # label: (expires_at, accepted_at). An invite lives 7 days and is accepted before it expires.
+    invites = {
+        "expired-31d": (now - 31 * day, None),
+        "accepted-31d": (now - 26 * day, now - 31 * day),
+        "pending": (now + 6 * day, None),
+        "expired-29d": (now - 29 * day, None),
+        "accepted-29d": (now - 23 * day, now - 29 * day),
+    }
+    async with session_factory() as db:
+        org = Organization(name="Acme", slug="acme-invites")
+        db.add(org)
+        await db.flush()
+        db.add_all(
+            Invite(
+                org_id=org.id,
+                role=MembershipRole.MEMBER,
+                token_hash=label.encode().ljust(32, b"-"),
+                expires_at=expires_at,
+                accepted_at=accepted_at,
+            )
+            for label, (expires_at, accepted_at) in invites.items()
+        )
+        await db.commit()
+
+    counts = await cleanup(session_factory, now=now)
+
+    assert counts["invites_deleted"] == 2
+    async with session_factory() as db:
+        kept = {row.rstrip(b"-") for row in (await db.scalars(select(Invite.token_hash))).all()}
+    assert kept == {b"pending", b"expired-29d", b"accepted-29d"}
+
+
 async def test_cleanup_prunes_expired_idempotency_keys_only(
     session_factory: SessionFactory,
 ) -> None:
@@ -587,7 +662,7 @@ async def test_cleanup_prunes_expired_idempotency_keys_only(
 
     counts = await cleanup(session_factory, now=now)
 
-    assert counts["idempotency_keys_deleted"] == 2
+    assert counts["idempotency_keys_deleted"] == 1
     async with session_factory() as db:
         kept = (await db.execute(text("SELECT key FROM idempotency_keys"))).scalars().all()
-    assert kept == ["live"]
+    assert set(kept) == {"abandoned", "live"}

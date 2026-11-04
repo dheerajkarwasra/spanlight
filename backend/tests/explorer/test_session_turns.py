@@ -193,10 +193,12 @@ async def test_session_turns_omits_payloads_over_budget(
         ],
     )
 
-    items = (await workspace.owner.get(_turns_url(workspace, "big"))).json()["items"]
+    url = _turns_url(workspace, "big")
+    items = (await workspace.owner.get(url, params={"span_content": "bounded"})).json()["items"]
 
     spans = [item["spans"][0] for item in items]
     assert [s["payload_omitted"] for s in spans] == [False, False, True]
+    assert [s["attributes_omitted"] for s in spans] == [False, False, True]
     assert [s["input"] for s in spans] == [contexts[2], contexts[1], None]
 
 

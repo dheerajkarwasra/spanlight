@@ -69,7 +69,7 @@ Anthropic:
 | `MODEL_NOT_ALLOWED` | 404 | `invalid_request_error` / `model_not_found` (`param: "model"`) | `not_found_error` | The model is not in the key's `allowed_models` |
 | `NO_COMPATIBLE_TARGET` | 400 | `invalid_request_error` | `invalid_request_error` | None of the route's targets can serve the surface, for example a messages call on a route with only OpenAI credentials |
 | `INVALID_REQUEST` | 400 | `invalid_request_error` | `invalid_request_error` | The body is not a JSON object with a string `model`, or uses an unsupported `Content-Encoding`, or does not decompress |
-| `PAYLOAD_TOO_LARGE` | 413 | `invalid_request_error` | `request_too_large` | The body is over 10 MB, counted after decompression |
+| `PAYLOAD_TOO_LARGE` | 413 | `invalid_request_error` | `request_too_large` | The body is over 10 MB, counted after decompression, or is a gzip or deflate body that inflates more than 100-fold past 1 MiB |
 | `UPSTREAM_UNREACHABLE` | 502 | `server_error` | `api_error` | Every attempt failed to connect, or the provider answered with a redirect, which the gateway does not follow |
 | `UPSTREAM_BLOCKED` | 502 | `server_error` | `api_error` | The credential's host resolves to a private or local address. Never retried |
 | `UPSTREAM_TIMEOUT` | 504 | `server_error` | `timeout_error` | The route's `timeout_ms` budget ran out |

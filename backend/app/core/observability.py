@@ -32,6 +32,55 @@ JOBS_FINISHED = Counter(
     "Background jobs finished, by kind and outcome.",
     ["kind", "outcome"],
 )
+# Per-process control-loop evidence; labels never identify workers, jobs or tenants.
+WORKER_PHASE = Gauge(
+    "spanlight_worker_short_loop_phase", "Active short-loop phase (one hot).", ["phase"]
+)
+WORKER_PHASE_AGE = Gauge(
+    "spanlight_worker_phase_age_seconds", "Monotonic age of the current short-loop phase."
+)
+WORKER_CLAIM_POLL_AGE = Gauge(
+    "spanlight_worker_claim_poll_age_seconds", "Age of the last successful committed claim poll."
+)
+WORKER_STALLED = Gauge(
+    "spanlight_worker_short_loop_stalled",
+    "Whether short-loop phase or successful polling is stale.",
+)
+WORKER_STALLS = Counter(
+    "spanlight_worker_short_loop_stalls_total", "Short-loop stall transitions, by phase.", ["phase"]
+)
+WORKER_OPERATION_FAILURES = Counter(
+    "spanlight_worker_operation_failures_total", "Failed short database operations.", ["operation"]
+)
+# Queue state sampled by each worker on its heartbeat tick (`app/jobs/queue_gauges.py`). `kind`
+# is the worker's registry frozen at start-up plus `other`; never a job, project or tenant. The
+# series are removed when a sample fails, so an absent series means unknown, not empty. Each
+# worker samples the whole queue: take `max` across workers, never `sum`.
+JOBS_QUEUED_DUE = Gauge(
+    "spanlight_jobs_queued_due",
+    "Queued jobs whose run_after has passed, by kind.",
+    ["kind"],
+)
+JOBS_QUEUED_OLDEST_AGE = Gauge(
+    "spanlight_jobs_queued_oldest_age_seconds",
+    "Database-clock age of the oldest due queued job, by kind; 0 when none waits.",
+    ["kind"],
+)
+JOBS_RECLAIMABLE = Gauge(
+    "spanlight_jobs_reclaimable",
+    "Running jobs whose lease expired with attempts left, by kind.",
+    ["kind"],
+)
+JOBS_RECLAIMABLE_OLDEST_AGE = Gauge(
+    "spanlight_jobs_reclaimable_oldest_age_seconds",
+    "Database-clock time since the oldest expired reclaimable lease, by kind; 0 when none.",
+    ["kind"],
+)
+JOBS_QUEUE_SAMPLES = Counter(
+    "spanlight_jobs_queue_samples_total",
+    "Queue gauge samples, by outcome (ok, failed).",
+    ["outcome"],
+)
 OUTBOX_PENDING = Gauge(
     "spanlight_outbox_pending",
     "Notifications waiting in the outbox, set at the end of each delivery run.",
@@ -60,7 +109,7 @@ METRICS_RAW_TAIL = Histogram(
 RATE_LIMIT_UNAVAILABLE = Counter(
     "spanlight_rate_limit_unavailable_total",
     "Rate-limit checks skipped because the limiter could not run, by scope "
-    "(ingest, demo, api, gateway).",
+    "(ingest, ingest_project, demo, api, gateway).",
     ["scope"],
 )
 ADMISSION_REJECTIONS = Counter(
@@ -69,8 +118,51 @@ ADMISSION_REJECTIONS = Counter(
 )
 RATE_LIMIT_REJECTIONS = Counter(
     "spanlight_rate_limit_rejections_total",
-    "Requests refused with 429 by a rate limit, by scope (ingest, demo, api, gateway).",
+    "Requests refused with 429 by a rate limit, by scope (ingest, ingest_project, "
+    "ingest_project_concurrency, demo, api, "
+    "gateway).",
     ["scope"],
+)
+INGEST_QUOTA_REJECTIONS = Counter(
+    "spanlight_ingest_quota_rejections_total",
+    "Ingest requests refused with 429 INGEST_QUOTA_EXCEEDED, by quota (spans_per_day, "
+    "bytes_per_day).",
+    ["quota"],
+)
+INGEST_QUOTA_REJECTED_SPANS = Counter(
+    "spanlight_ingest_quota_rejected_spans_total",
+    "Spans in the ingest requests a daily quota refused, by quota; the same count as the "
+    "project's quota_spans / quota_bytes loss rows.",
+    ["quota"],
+)
+INGEST_QUOTA_REPLAYS_ADMITTED = Counter(
+    "spanlight_ingest_quota_replays_admitted_total",
+    "Ingest requests at a used-up daily quota admitted because every span was already stored.",
+)
+INGEST_QUOTA_UTILISATION = Histogram(
+    "spanlight_ingest_quota_utilisation",
+    "used / limit of the daily quota closest to its cap, observed on every ingest request of a "
+    "project with a daily cap, admitted or refused.",
+    buckets=(0.1, 0.25, 0.5, 0.75, 0.9, 1.0, 1.5, 2.0),
+)
+# Per-process HTTP ingress only; no tenant, key, path or replica labels.
+GATEWAY_IN_FLIGHT = Gauge(
+    "spanlight_gateway_in_flight",
+    "Admitted HTTP gateway requests, held through stream finalization.",
+)
+GATEWAY_ADMISSION_REJECTIONS = Counter(
+    "spanlight_gateway_admission_rejections_total",
+    "HTTP gateway requests refused before body/authentication because ingress is full, by the "
+    "limit that refused them (count, bytes, key).",
+    ["reason"],
+)
+for _reason in ("count", "bytes", "key"):
+    GATEWAY_ADMISSION_REJECTIONS.labels(reason=_reason)  # each series exists from zero
+del _reason
+GATEWAY_ADMISSION_DURATION = Histogram(
+    "spanlight_gateway_admission_duration_seconds",
+    "Admitted HTTP gateway call duration through finalization, including failed calls.",
+    buckets=(0.01, 0.1, 1, 5, 15, 30, 60, 300),
 )
 GATEWAY_REQUESTS = Counter(
     "spanlight_gateway_requests_total",
@@ -80,9 +172,11 @@ GATEWAY_REQUESTS = Counter(
 )
 GATEWAY_OVERHEAD = Histogram(
     "spanlight_gateway_overhead_seconds",
-    "Time a gateway call spent in the gateway itself, without upstream time and waits, by surface.",
-    ["surface"],
-    buckets=(0.001, 0.0025, 0.005, 0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1.0),
+    "Time a gateway call spent in the gateway itself, without upstream time and waits, by surface "
+    "and budget (with: the call reserved against a blocking budget or was refused by one; "
+    "without: otherwise).",
+    ["surface", "budget"],
+    buckets=(0.001, 0.002, 0.003, 0.005, 0.0075, 0.01, 0.015, 0.02, 0.05, 0.1, 0.25),
 )
 GATEWAY_UPSTREAM_DURATION = Histogram(
     "spanlight_gateway_upstream_duration_seconds",
@@ -129,6 +223,11 @@ BUDGET_RESERVE_DURATION = Histogram(
     "(the price lookup, the counter row locks and the writes), admitted or refused.",
     buckets=(0.001, 0.0025, 0.005, 0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1.0),
 )
+BUDGET_RESERVE_PATH = Counter(
+    "spanlight_budget_reserve_path_total",
+    "Budget reserve calls handled by the fast function or the slow history repair path.",
+    ["path"],
+)
 BUDGET_RESERVATIONS_REAPED = Counter(
     "spanlight_budget_reservations_reaped_total",
     "Budget reservations whose lease expired before their call settled, counted at the "
@@ -137,6 +236,20 @@ BUDGET_RESERVATIONS_REAPED = Counter(
 BUDGET_RESERVATIONS_HELD = Gauge(
     "spanlight_budget_reservations_held",
     "Budget reservations in flight across every project, set after each reaper pass.",
+)
+BUDGET_BUSY = Counter(
+    "spanlight_budget_busy_total",
+    "Budget edits and deletes whose try timed out waiting for a lock, by outcome: retried, or "
+    "refused (the last try, answered 503 BUDGET_BUSY).",
+    ["outcome"],
+)
+for _outcome in ("retried", "refused"):
+    BUDGET_BUSY.labels(outcome=_outcome)  # each series exists from zero
+del _outcome
+BUDGET_DELTAS_COMPACTED = Counter(
+    "spanlight_budget_deltas_compacted_total",
+    "Budget spend deltas the reaper's job folded into their hour rows (admission folds its "
+    "own budgets' deltas; this counts the budgets nobody admits against).",
 )
 DETECTOR_RUNS = Counter(
     "spanlight_detector_runs_total",
@@ -151,12 +264,13 @@ DETECTOR_DURATION = Histogram(
 )
 INSIGHTS_OPEN = Gauge(
     "spanlight_insights_open",
-    "Open insights across every project, by severity, set at the end of each run_detectors pass.",
+    "Open insights across every project, by severity, refreshed after each project's detector run.",
     ["severity"],
 )
-DETECTOR_PROJECTS_SKIPPED = Counter(
-    "spanlight_detector_projects_skipped_total",
-    "Projects a run_detectors pass did not start because its run budget ran out.",
+DETECTOR_PROJECTS_STALE = Counter(
+    "spanlight_detector_projects_stale_total",
+    "Project detector jobs skipped because their pass was older than one period: the worker's "
+    "short lane is behind the active projects.",
 )
 SCORES_WRITTEN = Counter(
     "spanlight_scores_written_total",
@@ -209,6 +323,11 @@ BILLING_FETCH_DURATION = Histogram(
     "Time one fetch of a provider's cost report took, every page included, by provider.",
     ["provider"],
     buckets=(0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0),
+)
+BILLING_BYPASS_CHECKS = Counter(
+    "spanlight_billing_bypass_checks_total",
+    "Bypass checks after a stored billing fetch, by outcome (ok, skipped, timeout, failed).",
+    ["outcome"],
 )
 BILLING_LINES_UPSERTED = Counter(
     "spanlight_billing_lines_upserted_total",
@@ -287,4 +406,37 @@ REPLAY_COST = Counter(
     "spanlight_replay_cost_usd_total",
     "US dollars replays were charged when they settled or were reaped. Each project's monthly "
     "replay budget is in the dashboard, not in a metric.",
+)
+
+# No tenant IDs or bucket values: this records incomplete aggregate reads with bounded cardinality.
+AGGREGATE_UNAVAILABLE_READS = Counter(
+    "spanlight_aggregate_unavailable_reads_total",
+    "Aggregate SQL reads whose source history cannot be proven complete.",
+)
+
+AGGREGATE_PENDING_DEPTH = Gauge(
+    "spanlight_aggregate_pending_markers",
+    "Pending correction markers, including disabled obligations.",
+)
+AGGREGATE_PENDING_AGE = Gauge(
+    "spanlight_aggregate_oldest_pending_seconds",
+    "Age of the oldest correction marker, including disabled obligations.",
+)
+AGGREGATE_RUNNABLE_DEPTH = Gauge(
+    "spanlight_aggregate_runnable_markers",
+    "Markers eligible with current product flags, regardless of the consumption switch.",
+)
+AGGREGATE_REPAIR_OUTCOMES = Counter(
+    "spanlight_aggregate_repair_outcomes_total",
+    "Committed marker classifications or failed attempts; "
+    "a marker can have multiple classifications.",
+    ["outcome"],
+)
+
+# Fixed labels: the 14 cleanup classes and a handful of outcomes; scope ids go to the worker log.
+RETENTION_BATCHES = Counter(
+    "spanlight_retention_batches_total",
+    "Retention opportunities served, by cleanup class and outcome (deleted, empty, no_scope, "
+    "lock_timeout, statement_timeout, timeout, error).",
+    ["cleanup_class", "outcome"],
 )
