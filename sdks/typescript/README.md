@@ -291,7 +291,6 @@ stored records when those IDs are retried. A valid `Retry-After` is a minimum de
 the client exponential backoff cap. Integer delays beyond exact numeric representation remain
 pending until shutdown rather than retrying early. Shutdown interrupts pending retry waits.
 
-
 A batch goes out when it reaches `batchSize` spans or after `flushIntervalMs`. Failed requests are
 retried with jittered exponential backoff on network errors, `429` and `5xx`, and `Retry-After` is
 honored. A `413` splits the batch in two. Other `4xx` responses are not retried. Failures and spans
