@@ -89,7 +89,7 @@ The three settings and their defaults: `INGEST_SPANS_PER_SECOND=1000` (sustained
 Two codes, both `429` with `Retry-After` and a problem+json body, and both refuse the whole request (nothing of it is stored, so a client retries the whole batch):
 
 - `RATE_LIMITED` with the detail `Ingestion rate limit exceeded for this project.`: the span rate, `Retry-After` in seconds. Clients resend these within seconds.
-- `INGEST_QUOTA_EXCEEDED`: a daily quota is used up, `Retry-After` is the seconds to the next UTC midnight, and the body carries `quota` (`spans_per_day` or `bytes_per_day`), `limit`, `used` and `resets_at`. A batch whose every span is already stored (a retry of an acknowledged batch) is admitted anyway.
+- `INGEST_QUOTA_EXCEEDED`: a daily quota is used up, `Retry-After` is the seconds to the next UTC midnight, and the body carries `quota` (`spans_per_day` or `bytes_per_day`), `limit`, `used` and `resets_at`. A batch whose every span is already stored is admitted only if it changes no stored span; a rewrite at the cap is refused whole and rolled back, with its rate tokens still spent.
 
 Refused spans are counted per project and hour in `telemetry_losses_hourly` (`source = 'ingest'`, reasons `quota_rate`, `quota_spans`, `quota_bytes`), shown in the completeness card and as a notice on Overview and Traces, and reported by `GET /api/v1/projects/{id}/ingest-quota` (`rejected_days`, with today's usage and the effective limits). They are "spans refused", not "spans lost": a client that retried is counted once per refusal and may have stored them after all.
 
@@ -155,7 +155,7 @@ spl exec postgres psql -U postgres -d spanlight -c \
     GROUP BY project_id"
 ```
 
-Run it as the database owner (as here): the app role sees only the project bound to its session, because of row-level security. Each row gives you a project id and the time range to rebuild. Widen the range by a day on each side if you are unsure. (A span that a sender re-sends has its `ingested_at` refreshed, so a replay of old data shows up here too.)
+Run it as the database owner (as here): the app role sees only the project bound to its session, because of row-level security. Each row gives you a project id and the time range to rebuild. Widen the range by a day on each side if you are unsure. (A re-sent span has its `ingested_at` refreshed only when its stored content changes, so an identical replay does not show up here.)
 
 ### Rebuild
 

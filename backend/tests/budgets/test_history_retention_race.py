@@ -107,7 +107,7 @@ async def _history_deletion_race(
             deletion = asyncio.create_task(
                 world.workspace.owner.delete(
                     world.project_url,
-                    json={"confirm": slug},
+                    json={"confirm": slug, "password": "correct horse battery"},
                 )
             )
             tasks.append(deletion)

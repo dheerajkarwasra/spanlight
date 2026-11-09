@@ -42,8 +42,8 @@ class ModelMetricsOut(AggregateMetadata):
     errors: int
     p50_ms: float | None
     p95_ms: float | None
-    input_tokens: int
-    output_tokens: int
+    input_tokens: int | None
+    output_tokens: int | None
     cost_usd: Money | None
     approximate: bool
 

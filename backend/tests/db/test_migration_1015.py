@@ -140,4 +140,7 @@ async def test_current_refresh_matches_1015_backfill_figures(
         await bypass_rls(db)
         await refresh_user_stats(db, PROJECT_ID, [DAY])
         await db.commit()
-    assert _rows(DAY) == PER_ENVIRONMENT
+    # Since 1043 the refresh stores unknown tokens for a day no call reported usage on (here, no
+    # LLM call at all), where the 1015 backfill stored 0; the user detail still reads that day as 0.
+    *reported, (environment, traces, calls, errors, unpriced, cost, _) = PER_ENVIRONMENT
+    assert _rows(DAY) == [*reported, (environment, traces, calls, errors, unpriced, cost, None)]

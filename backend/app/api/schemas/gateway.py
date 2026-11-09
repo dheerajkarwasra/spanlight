@@ -117,6 +117,7 @@ class RouteVersionOut(BaseModel):
 
 
 class GatewayKeyOut(BaseModel):
+    creator_is_member: bool
     id: uuid.UUID
     name: str
     prefix: str

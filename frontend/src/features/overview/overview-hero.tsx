@@ -12,7 +12,7 @@ interface OverviewHeroProps {
   /**
    * The date line: `full` on wider screens ("Thursday, 8 October · production · Last 24 hours"),
    * `compact` on phones, where the filters sit right above the page ("… · Last 24h").
-   * `trailing` follows it on the same line, e.g. the "Estimated · hourly rollups" chip.
+   * `trailing` follows it on the same line, e.g. the Live indicator.
    */
   eyebrow: { full: string; compact: string; trailing?: ReactNode };
   /** "Good afternoon, Dheeraj." */
@@ -41,13 +41,6 @@ export function OverviewHero({
   return (
     <div className="flex flex-col gap-2">
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-overline text-muted-foreground uppercase">
-        {firstRun ? null : (
-          <StatusDot
-            state="live"
-            pulse={false}
-            className="ring-[1.5px] ring-foreground ring-inset max-sm:hidden"
-          />
-        )}
         <span className="sm:hidden">{eyebrow.compact}</span>
         <span className="max-sm:hidden">{eyebrow.full}</span>
         {eyebrow.trailing}

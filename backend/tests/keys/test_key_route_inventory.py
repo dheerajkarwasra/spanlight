@@ -76,6 +76,14 @@ def _fill(template: str, world: World, *, project_id: str, trace_id: str) -> str
     return path.format(**{name: values.get(name, str(uuid.uuid4())) for name in names})
 
 
+LIVE_ROUTE = ("GET", "/api/v1/projects/{project_id}/live")
+
+
+def _code(response: httpx.Response) -> tuple[int, object]:
+    body = response.json() if response.content else None
+    return response.status_code, body.get("code") if isinstance(body, dict) else None
+
+
 def _is_key_scope(response: httpx.Response) -> bool:
     body = response.json() if response.content else None
     return (
@@ -126,7 +134,17 @@ async def test_an_api_key_is_refused_everywhere_except_the_key_readable_routes(
             bare_client, method, own, world.trace_id, **bearer(world.workspace.api_key)
         )
 
-        if (method, template) in KEY_READABLE:
+        if (method, template) == LIVE_ROUTE:
+            # The dashboard's stream refuses every bearer with its own code.
+            checks = {
+                name: _code(response) == (403, "LIVE_SESSION_ONLY")
+                for name, response in (
+                    ("read key on its own project", read_own),
+                    ("read key on another project", read_other),
+                    ("ingest-only key on its own project", ingest_own),
+                )
+            }
+        elif (method, template) in KEY_READABLE:
             # Its own project with `traces:read`; a 404 for any other project, whatever the scope.
             checks = {
                 "read key on its own project": read_own.status_code == 200,

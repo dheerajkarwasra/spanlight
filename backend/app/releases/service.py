@@ -29,6 +29,7 @@ from app.releases import failure_category_queries, queries
 from app.releases.compare import compare
 from app.releases.failure_categories import ReleaseRates, category_rates
 from app.releases.schemas import ErrorClassCount, ModelCount
+from app.rollups.queries import known_int
 from app.scores.failure_category import FAILURE_CATEGORY_SCORE, failure_category_config
 from app.scores.types import ScoreDataType
 
@@ -48,8 +49,8 @@ def _stats(row: Row[Any]) -> ReleaseStats:
         p50_ms=row.p50_ms,
         p95_ms=row.p95_ms,
         cost_usd=None if row.cost_usd is None else Decimal(row.cost_usd),
-        input_tokens=int(row.input_tokens),
-        output_tokens=int(row.output_tokens),
+        input_tokens=known_int(row.input_tokens),
+        output_tokens=known_int(row.output_tokens),
     )
 
 

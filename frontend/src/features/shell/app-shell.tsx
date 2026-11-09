@@ -16,6 +16,7 @@ import {
 import { useMe, VerifyEmailBanner } from "@/features/auth";
 import { isApiError, isTwoFactorRequired } from "@/lib/api";
 import { writeLastProject } from "@/lib/last-project";
+import { LiveProvider } from "@/lib/live/live-provider";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
 
@@ -61,10 +62,12 @@ export function AppShell() {
     from: "/_authed/$orgId/$projectId/annotate/$queueId",
     shouldThrow: false,
   });
-  if (workMode !== undefined) {
-    return <FocusShell key={scope} />;
-  }
-  return <ChromeShell key={scope} />;
+  // One live-updates stream per tab, opened only while a page of this project watches it.
+  return (
+    <LiveProvider key={scope}>
+      {workMode !== undefined ? <FocusShell /> : <ChromeShell />}
+    </LiveProvider>
+  );
 }
 
 function ChromeShell() {
@@ -208,7 +211,7 @@ function ChromeShell() {
           {onSecurityPage ? null : <VerifyEmailBanner />}
           {twoFactorBlocked ? (
             <TwoFactorRequired />
-          ) : projectQuery.isError &&
+          ) : projectQuery.isLoadingError &&
             !isTwoFactorRequired(projectQuery.error) &&
             !onAccountSettings ? (
             <ErrorState

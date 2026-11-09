@@ -5,10 +5,12 @@ import { DisabledReason } from "@/components/disabled-reason";
 import { RelativeTime } from "@/components/relative-time";
 import { RowAction } from "@/components/tile-list";
 import { Badge } from "@/components/ui/badge";
-import { GithubMark, GoogleMark, rememberOAuthProvider } from "@/features/auth";
-import { oauthStartUrl, type OAuthIdentity, type OAuthProvider } from "@/lib/api";
+import { DialogTrigger } from "@/components/ui/dialog";
+import { GithubMark, GoogleMark } from "@/features/auth";
+import type { OAuthIdentity, OAuthProvider } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 
+import { ConnectProviderDialog } from "./connect-provider-dialog";
 import { SignInMethodTile } from "./sign-in-method-tile";
 import { PROVIDER_LABELS, type ProviderMethod } from "./sign-in-methods";
 
@@ -87,11 +89,11 @@ export function ProviderRow({
   const label = PROVIDER_LABELS[provider];
   const hintId = useId();
   const icon = <ProviderIcon provider={provider} />;
-  const connectRef = useRef<HTMLAnchorElement>(null);
+  const connectRef = useRef<HTMLButtonElement>(null);
   const disconnectRequested = useRef(false);
 
   // Disconnect is replaced by Connect once the provider is gone, taking keyboard focus with it:
-  // move focus to the new Connect link rather than let it fall to the page (WCAG 2.4.3).
+  // move focus to the new Connect button rather than let it fall to the page (WCAG 2.4.3).
   useEffect(() => {
     if (disconnecting || !disconnectRequested.current) {
       return;
@@ -101,7 +103,7 @@ export function ProviderRow({
   }, [disconnecting, identity]);
 
   // The shared demo account can't link or unlink anything, so there is no button to press: the
-  // server would answer a Connect navigation with a bare 403 page.
+  // server refuses changes to its sign-in methods.
   if (restriction === "demo") {
     return (
       <SignInMethodTile
@@ -132,19 +134,13 @@ export function ProviderRow({
               </RowAction>
             </DisabledReason>
           ) : (
-            <RowAction asChild>
-              {/* A full-page navigation: the server answers with a redirect to the provider. */}
-              <a
-                ref={connectRef}
-                href={oauthStartUrl(provider, { intent: "link", next: returnTo })}
-                aria-label={`Connect ${label}`}
-                onClick={() => {
-                  rememberOAuthProvider(provider);
-                }}
-              >
-                Connect
-              </a>
-            </RowAction>
+            <ConnectProviderDialog provider={provider} next={returnTo}>
+              <DialogTrigger asChild>
+                <RowAction ref={connectRef} aria-label={`Connect ${label}`}>
+                  Connect
+                </RowAction>
+              </DialogTrigger>
+            </ConnectProviderDialog>
           )
         }
       >

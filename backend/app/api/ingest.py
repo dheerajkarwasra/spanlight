@@ -27,6 +27,7 @@ from app.core.body import (
 )
 from app.core.errors import ProblemError, too_many_requests, unauthorized
 from app.core.observability import (
+    INGEST_QUOTA_REPLAYS_ADMITTED,
     INGESTED_SPANS,
     OTLP_CONVENTION_SPANS,
     RATE_LIMIT_REJECTIONS,
@@ -44,7 +45,13 @@ from app.ingest.pipeline import (
     ingest_spans,
     parse_json_body,
 )
-from app.ingest.quota import IngestRefusedError, add_usage, bind_and_lock_project, check_caps
+from app.ingest.quota import (
+    IngestRefusedError,
+    add_usage,
+    bind_and_lock_project,
+    check_caps,
+    refuse_daily,
+)
 from app.ingest.schemas import (
     MAX_BODY_BYTES,
     MAX_COMPRESSION_RATIO,
@@ -187,31 +194,38 @@ async def _store(
     project = await bind_and_lock_project(db, key.project_id, state.settings)
     if project is None:  # the project was deleted after the key was checked
         raise unauthorized("Missing, invalid or revoked API key.")
-    if raw_spans:  # an empty batch stores nothing and is not load the caps protect against
-        try:
-            await check_caps(db, state.rate_limit_session_factory, project, raw_spans, now)
-        except IngestRefusedError as exc:
-            raise ProblemError(
-                429,
-                exc.code,
-                exc.detail,
-                headers={"Retry-After": str(exc.retry_after)},
-                extensions=exc.extensions,
-            ) from None
     target = IngestTarget(
         project_id=project.id,
         capture_payloads=project.capture_payloads,
         org_id=project.org_id,
         redact_contact_info=project.redact_contact_info,
     )
-    outcome = await ingest_spans(db, target, raw_spans, now=now, project_locked=True)
-    await _record_losses(db, project.id, outcome, counters, now)
-    if outcome.inserted:
+    replay_hit = None
+    try:
+        if raw_spans:  # an empty batch stores nothing and is not load the caps protect against
+            replay_hit = await check_caps(
+                db, state.rate_limit_session_factory, project, raw_spans, now
+            )
+        outcome = await ingest_spans(db, target, raw_spans, now=now, project_locked=True)
+        await _record_losses(db, project.id, outcome, counters, now)
+        if replay_hit is not None and outcome.inserted + outcome.changed > 0:
+            raise refuse_daily(project.id, *replay_hit, len(raw_spans), now)
+    except IngestRefusedError as exc:
+        raise ProblemError(
+            429,
+            exc.code,
+            exc.detail,
+            headers={"Retry-After": str(exc.retry_after)},
+            extensions=exc.extensions,
+        ) from None
+    if outcome.inserted + outcome.changed > 0:
         # Last before commit: the day row is the project's hottest row, so it is held across the
-        # commit only. A pure replay inserted nothing and neither counts nor takes the lock.
+        # commit only. An unchanged replay neither counts nor takes the lock.
         await add_usage(db, project.id, now, spans=outcome.inserted, bytes_=body_bytes)
     await db.commit()
 
+    if replay_hit is not None:
+        INGEST_QUOTA_REPLAYS_ADMITTED.inc()
     INGESTED_SPANS.labels(source).inc(outcome.accepted)
     REJECTED_SPANS.labels(source).inc(len(outcome.rejected))
     # An ignored `client` object is named by its failing fields only, never its values.

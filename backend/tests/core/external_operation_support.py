@@ -98,6 +98,7 @@ async def provider_workspace(browser_factory, http_model_provider, session_facto
             "name": "local",
             "provider": "openai_compatible",
             "base_url": http_model_provider.url,
+            "password": "correct horse battery",
             "api_key": "local-test-only",
         },
     )

@@ -10,10 +10,12 @@ import dataclasses
 import uuid
 from datetime import timedelta
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.throttle import check_and_record
-from app.email.templates import render_invite
+from app.db.models import Invite, Membership, MembershipRole, Organization, User
+from app.email.templates import render_invite, render_member_joined_notice
 from app.notifications import NotificationKind, enqueue
 
 INVITE_EMAIL_SCOPE = "invite_email"
@@ -64,3 +66,30 @@ async def enqueue_invite_email(
         target={"to": message.to},
         payload={"subject": message.subject, "text": message.text, "html": message.html},
     )
+
+
+async def enqueue_member_joined_notices(
+    db: AsyncSession, *, org: Organization, invite: Invite, member: User, role: MembershipRole
+) -> None:
+    owners = await db.scalars(
+        select(User)
+        .join(Membership, Membership.user_id == User.id)
+        .where(
+            Membership.org_id == org.id,
+            Membership.role == MembershipRole.OWNER,
+            User.email_verified_at.is_not(None),
+            User.id != member.id,
+        )
+    )
+    inviter = await db.get(User, invite.created_by) if invite.created_by is not None else None
+    invited_by = f"{inviter.name} ({inviter.email})" if inviter else "a former member"
+    message = render_member_joined_notice(
+        org.name, f"{member.name} ({member.email})", role.value, invited_by
+    )
+    for owner in owners:
+        await enqueue(
+            db,
+            NotificationKind.EMAIL,
+            target={"to": owner.email},
+            payload={"subject": message.subject, "text": message.text, "html": message.html},
+        )

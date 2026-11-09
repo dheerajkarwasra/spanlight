@@ -4,6 +4,7 @@
  * traces are not counted yet.
  */
 import { formatDayTime } from "./clock-format";
+import { docsLink } from "./docs-links";
 import { formatInteger, pluralNoun } from "./format";
 
 /** The server stops counting pending traces here, so the count is then a lower bound. */
@@ -45,6 +46,14 @@ export function freshnessLabel(
 /** Figma "Aggregate history" (806:302, 806:324): the tooltip and empty-state explanation. */
 export const SOURCE_REMOVED =
   "Source rows were removed. Stored values are snapshots; missing values are unknown.";
+
+/** Coverage never activated also reads as unavailable history: say who can fix it. */
+export const SOURCE_HISTORY_HELP = `${SOURCE_REMOVED} Ask your administrator to activate aggregate coverage.`;
+
+/** The deploy runbook's one-time coverage activation step. */
+export const COVERAGE_DOCS = docsLink(
+  "runbooks/deploy/#activate-aggregate-source-preservation-1027",
+);
 
 /** Figma "Aggregate history" (806:324): the label and title when nothing was retained. */
 export const SOURCE_HISTORY_UNAVAILABLE = "Source history unavailable";

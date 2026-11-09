@@ -21,8 +21,9 @@ export interface ReleaseStats {
   p95_ms: number | null;
   /** Sum of the priced spans: a lower bound while `unpriced_calls` is above 0. */
   cost_usd: string | null;
-  input_tokens: number;
-  output_tokens: number;
+  /** `null`: no call of the release reported usage. */
+  input_tokens: number | null;
+  output_tokens: number | null;
 }
 
 /** `b - a`, and that as a fraction of `a` (`null` when `a` is 0). */
@@ -117,7 +118,8 @@ export interface UserStats {
   unpriced_calls: number;
   /** A lower bound while `unpriced_calls` is above 0; `null` when no call was priced. */
   cost_usd: string | null;
-  tokens: number;
+  /** `null`: calls were made and none reported usage. */
+  tokens: number | null;
   /** `YYYY-MM-DD`, the first and last UTC day with activity in the window. */
   first_seen_day: string;
   last_seen_day: string;
@@ -146,9 +148,12 @@ export interface UserList extends Page<UserStats>, AggregateMetadata {
   computed_at: string | null;
   /**
    * The window's user traces the figures don't include yet (started after their day's last
-   * recompute), capped at 10,000. Null only when the window has neither figures nor traces.
+   * recompute and over 24 hours ago), capped at 10,000. Null only when the window has neither
+   * figures nor traces, or aggregate coverage is unavailable.
    */
   pending_traces: number | null;
+  /** The figures include every trace so far: the raw tail was merged and nothing is pending. */
+  live: boolean;
 }
 
 export interface UserDetail extends AggregateMetadata {
@@ -158,6 +163,8 @@ export interface UserDetail extends AggregateMetadata {
   window: UserStatsWindow;
   /** When the user's figures were last recomputed; null when no day has been computed yet. */
   computed_at: string | null;
+  /** The raw tail was merged and the window has nothing pending, as on the list. */
+  live: boolean;
 }
 
 export interface UserListQuery {

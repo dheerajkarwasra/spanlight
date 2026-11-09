@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useProjectParams } from "@/features/shell";
+import type { AuditStreamProof } from "@/lib/api/orgs";
 import { orgsApi, queryKeys, type AuditStreamSaved } from "@/lib/api";
 
 /** The org's audit hash chain, recomputed by the server from the stored events. */
@@ -43,15 +44,19 @@ export function useAuditStreamMutations() {
 
   return {
     save: useMutation({
-      mutationFn: (body: { url: string; enabled: boolean }) => orgsApi.saveAuditStream(orgId, body),
+      gcTime: 0,
+      mutationFn: (body: { url: string; enabled: boolean } & AuditStreamProof) =>
+        orgsApi.saveAuditStream(orgId, body),
       onSuccess: saved,
     }),
     rotate: useMutation({
-      mutationFn: () => orgsApi.rotateAuditStreamSecret(orgId),
+      gcTime: 0,
+      mutationFn: (body: AuditStreamProof) => orgsApi.rotateAuditStreamSecret(orgId, body),
       onSuccess: saved,
     }),
     remove: useMutation({
-      mutationFn: () => orgsApi.deleteAuditStream(orgId),
+      gcTime: 0,
+      mutationFn: (body: AuditStreamProof) => orgsApi.deleteAuditStream(orgId, body),
       onSuccess: () => {
         queryClient.setQueryData(keys.auditStream, null);
         void refresh();

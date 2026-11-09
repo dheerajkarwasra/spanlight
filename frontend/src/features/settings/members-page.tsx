@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Users } from "lucide-react";
 
 import { EmptyState } from "@/components/empty-state";
@@ -13,18 +14,26 @@ import { viewOnlyCopy } from "@/lib/permissions";
 import { InviteSection } from "./invite-section";
 import { MemberList } from "./member-list";
 import { useMembersQuery } from "./member-queries";
+import { MemberRemoveDialog, type MemberRemoval } from "./member-remove-dialog";
+import { MemberRoleDialog, type MemberRoleChange } from "./member-role-dialog";
 import { sortMembers } from "./member-utils";
 import { PendingInvitesSection } from "./pending-invites-section";
 
 export function MembersPage() {
   const canManage = usePermission("member:manage");
+  const [removal, setRemoval] = useState<MemberRemoval | null>(null);
+  const [roleChange, setRoleChange] = useState<MemberRoleChange | null>(null);
 
   return (
     <div className="flex flex-col gap-5">
       {canManage ? null : (
         <ReadOnlyNote>{viewOnlyCopy("members and invitations", "member:manage")}</ReadOnlyNote>
       )}
-      <MembersSection canManage={canManage} />
+      <MembersSection canManage={canManage} onRoleChange={setRoleChange} onRemove={setRemoval} />
+      {removal ? <MemberRemoveDialog removal={removal} onClose={() => setRemoval(null)} /> : null}
+      {roleChange ? (
+        <MemberRoleDialog change={roleChange} onClose={() => setRoleChange(null)} />
+      ) : null}
       {canManage ? (
         <>
           <InviteSection />
@@ -35,7 +44,15 @@ export function MembersPage() {
   );
 }
 
-function MembersSection({ canManage }: { canManage: boolean }) {
+function MembersSection({
+  canManage,
+  onRoleChange,
+  onRemove,
+}: {
+  canManage: boolean;
+  onRoleChange: (change: MemberRoleChange) => void;
+  onRemove: (removal: MemberRemoval) => void;
+}) {
   const me = useMe();
   const org = useCurrentOrg();
   const membersQuery = useMembersQuery();
@@ -80,7 +97,8 @@ function MembersSection({ canManage }: { canManage: boolean }) {
           members={sortMembers(membersQuery.data)}
           currentUserId={me.user.id}
           canManage={canManage}
-          orgName={orgName}
+          onRemove={onRemove}
+          onRoleChange={onRoleChange}
         />
       ) : null}
     </SectionCard>

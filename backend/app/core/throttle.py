@@ -27,6 +27,16 @@ async def check_and_record(
     a request that fails after passing the check and rolls back does not use up an attempt.
     All times come from the database clock, so replicas with skewed clocks agree.
     """
+    retry_after = await check(db, scope, key, limit, window)
+    if retry_after is None:
+        await record(db, scope, key)
+    return retry_after
+
+
+async def check(
+    db: AsyncSession, scope: str, key: str, limit: int, window: timedelta
+) -> float | None:
+    """Check the budget, holding the per-key advisory lock until the transaction ends."""
     # Without serialization, concurrent requests all count the same rows, all see room, and all
     # insert: the limit is overshot by the number of requests that raced. The transaction-level
     # advisory lock queues them per (scope, key) until the previous one commits; the next
@@ -48,6 +58,11 @@ async def check_and_record(
         # `oldest` is inside the window, so this is positive.
         return float((oldest + window - now).total_seconds())
 
+    return None
+
+
+async def record(db: AsyncSession, scope: str, key: str) -> None:
+    """Record an event in the caller's transaction after taking the lock with `check`."""
+    now = (await db.execute(select(func.clock_timestamp()))).scalar_one()
     db.add(ThrottleEvent(scope=scope, key=key, created_at=now))
     await db.flush()
-    return None

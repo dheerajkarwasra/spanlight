@@ -48,6 +48,7 @@ test("credential → route → key revealed once → Lab fault profile", async (
   await page.getByRole("button", { name: "Create key" }).first().click();
   const keyDialog = page.getByRole("dialog", { name: "Create gateway key" });
   await keyDialog.getByLabel("Name").fill("support-bot");
+  await keyDialog.getByLabel("Password").fill("correct-horse-battery");
   await keyDialog.getByRole("combobox", { name: "Environment" }).click();
   await page.getByRole("option", { name: "staging" }).click();
   await expectNoAxeViolations(page);

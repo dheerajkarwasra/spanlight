@@ -10,6 +10,8 @@ deploy/prometheus/metrics_token
 .superpowers/
 .taste-skill/
 skills-lock.json
+./agents
+
 
 # Internal planning and progress docs. The public repository keeps only what visitors
 # use: README, contributing and security policies, ADRs, the API reference, deploy guide.

@@ -36,7 +36,12 @@ CASES = (
     Case("GET", "/api/v1/orgs/{org}/members", _everyone(200)),
     Case("GET", "/api/v1/orgs/{org}/audit", _at_least("admin", 200)),
     Case("GET", "/api/v1/orgs/{org}/invites", _at_least("admin", 200)),
-    Case("POST", "/api/v1/orgs/{org}/invites", _at_least("admin", 201), {"role": "viewer"}),
+    Case(
+        "POST",
+        "/api/v1/orgs/{org}/invites",
+        _at_least("admin", 201),
+        {"role": "viewer", "password": "correct horse battery"},
+    ),
     Case("GET", "/api/v1/orgs/{org}/projects", _everyone(200)),
     Case("POST", "/api/v1/orgs/{org}/projects", _at_least("admin", 201), {"name": "Another"}),
     Case("GET", "/api/v1/projects/{project}", _everyone(200)),

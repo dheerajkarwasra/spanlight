@@ -34,7 +34,12 @@ def _find_key(listed: list[dict[str, Any]], secret: str | None) -> dict[str, Any
 
 
 def ensure_key(
-    api: Api, project_id: str, route_id: str, scenario: Scenario, entry: dict[str, Any]
+    api: Api,
+    project_id: str,
+    route_id: str,
+    scenario: Scenario,
+    entry: dict[str, Any],
+    password: str,
 ) -> None:
     """The scenario's gateway key, with its environment, route and rate limit as wanted."""
     base = f"/projects/{project_id}/gateway/keys"
@@ -42,6 +47,7 @@ def ensure_key(
     if key is None:
         body = {
             "name": KEY_NAME,
+            "password": password,
             "route_id": route_id,
             "environment": scenario.environment,
             "rpm_limit": scenario.key_rpm_limit,
@@ -57,6 +63,7 @@ def ensure_key(
     if key.get("rpm_limit") != scenario.key_rpm_limit:
         changes["rpm_limit"] = scenario.key_rpm_limit
     if changes:
+        changes["password"] = password
         api.expect(api.request("PATCH", f"{base}/{key['id']}", json=changes), 200)
     entry["key_fault_profile_id"] = key.get("fault_profile_id")
 
@@ -92,13 +99,15 @@ def ensure_profile(api: Api, project_id: str, name: str, fault: Fault) -> str:
 
 
 def attach_profile(
-    api: Api, project_id: str, entry: dict[str, Any], profile_id: str | None
+    api: Api, project_id: str, entry: dict[str, Any], profile_id: str | None, password: str
 ) -> None:
     current = entry.get("key_fault_profile_id")
     if (str(current) if current else None) == profile_id:
         return
     path = f"/projects/{project_id}/gateway/keys/{entry['gateway_key_id']}"
-    api.expect(api.request("PATCH", path, json={"fault_profile_id": profile_id}), 200)
+    api.expect(
+        api.request("PATCH", path, json={"fault_profile_id": profile_id, "password": password}), 200
+    )
     entry["key_fault_profile_id"] = profile_id
 
 
@@ -123,15 +132,17 @@ def scoped(state: State, org: str) -> OrgScopedState:
     return OrgScopedState(state, "org_id", "projects")
 
 
-def _ensure_gateway(api: Api, state: State, scenario: Scenario, entry: dict[str, Any]) -> None:
+def _ensure_gateway(
+    api: Api, state: State, scenario: Scenario, entry: dict[str, Any], password: str
+) -> None:
     project_id = entry["project_id"]
     entry["route_id"] = ensure_route(api, project_id, state["credential_id"])
-    ensure_key(api, project_id, entry["route_id"], scenario, entry)
+    ensure_key(api, project_id, entry["route_id"], scenario, entry, password)
     profile_id = None
     if scenario.fault is not None:
         profile_id = ensure_profile(api, project_id, f"doctor-{scenario.case}", scenario.fault)
     entry["fault_profile_id"] = profile_id
-    attach_profile(api, project_id, entry, profile_id)
+    attach_profile(api, project_id, entry, profile_id, password)
 
 
 def setup(scenarios: list[Scenario]) -> None:
@@ -151,7 +162,7 @@ def setup(scenarios: list[Scenario]) -> None:
             entry = ensure_project(api, view, name)
             entry["environment"] = scenario.environment
             if scenario.gateway:
-                _ensure_gateway(api, state, scenario, entry)
+                _ensure_gateway(api, state, scenario, entry, main["password"])
             projects = view.get("projects", {})
             projects[name] = entry
             view.set("projects", projects)

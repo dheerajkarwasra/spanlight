@@ -1,6 +1,5 @@
-import { toast } from "sonner";
+import { useRef } from "react";
 
-import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DisabledReason } from "@/components/disabled-reason";
 import { ColumnLabels, RowAction, TileList } from "@/components/tile-list";
 import { Badge } from "@/components/ui/badge";
@@ -17,21 +16,29 @@ import { ROLE_LABELS, ROLES } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 import { InitialAvatar } from "./initial-avatar";
-import { useRemoveMember, useUpdateMemberRole } from "./member-queries";
+import type { MemberRemoval } from "./member-remove-dialog";
+import type { MemberRoleChange } from "./member-role-dialog";
 import { displayName, isRole } from "./member-utils";
 
 interface MemberListProps {
   members: Member[];
   currentUserId: string;
   canManage: boolean;
-  orgName: string;
+  onRoleChange: (change: MemberRoleChange) => void;
+  onRemove: (removal: MemberRemoval) => void;
 }
 
 /**
  * Figma "Settings/Member row" tiles. On narrow cards (container query) the role, join date and
  * Remove wrap onto a second line under the person.
  */
-export function MemberList({ members, currentUserId, canManage, orgName }: MemberListProps) {
+export function MemberList({
+  members,
+  currentUserId,
+  canManage,
+  onRemove,
+  onRoleChange,
+}: MemberListProps) {
   return (
     <div className="@container flex flex-col gap-3">
       <ColumnLabels className="px-3 @[36rem]:flex">
@@ -47,7 +54,8 @@ export function MemberList({ members, currentUserId, canManage, orgName }: Membe
             member={member}
             isSelf={member.user.id === currentUserId}
             canManage={canManage}
-            orgName={orgName}
+            onRemove={onRemove}
+            onRoleChange={onRoleChange}
           />
         ))}
       </TileList>
@@ -59,10 +67,11 @@ interface MemberRowProps {
   member: Member;
   isSelf: boolean;
   canManage: boolean;
-  orgName: string;
+  onRoleChange: (change: MemberRoleChange) => void;
+  onRemove: (removal: MemberRemoval) => void;
 }
 
-function MemberRow({ member, isSelf, canManage, orgName }: MemberRowProps) {
+function MemberRow({ member, isSelf, canManage, onRemove, onRoleChange }: MemberRowProps) {
   const name = displayName(member);
 
   return (
@@ -88,7 +97,7 @@ function MemberRow({ member, isSelf, canManage, orgName }: MemberRowProps) {
 
       <div className="w-[120px] shrink-0">
         {canManage ? (
-          <MemberRoleSelect member={member} isSelf={isSelf} />
+          <MemberRoleSelect member={member} isSelf={isSelf} onRoleChange={onRoleChange} />
         ) : (
           <span className="text-sm text-muted-foreground">
             <span className="sr-only">Role: </span>
@@ -102,7 +111,7 @@ function MemberRow({ member, isSelf, canManage, orgName }: MemberRowProps) {
       </span>
       {canManage ? (
         <div className="ml-auto flex shrink-0 justify-end @[36rem]:ml-0 @[36rem]:w-20">
-          <RemoveMemberAction member={member} isSelf={isSelf} orgName={orgName} />
+          <RemoveMemberAction member={member} isSelf={isSelf} onRemove={onRemove} />
         </div>
       ) : null}
     </li>
@@ -110,31 +119,31 @@ function MemberRow({ member, isSelf, canManage, orgName }: MemberRowProps) {
 }
 
 /** Figma "Settings/Select pill". */
-function MemberRoleSelect({ member, isSelf }: { member: Member; isSelf: boolean }) {
-  const updateRole = useUpdateMemberRole();
+function MemberRoleSelect({
+  member,
+  isSelf,
+  onRoleChange,
+}: {
+  member: Member;
+  isSelf: boolean;
+  onRoleChange: (change: MemberRoleChange) => void;
+}) {
   const name = displayName(member);
-  // Show the requested role while the change is in flight.
-  const value = updateRole.isPending ? updateRole.variables.role : member.role;
+  const trigger = useRef<HTMLButtonElement>(null);
 
   const select = (
     <Select
-      value={value}
-      disabled={isSelf || updateRole.isPending}
+      value={member.role}
+      disabled={isSelf}
       onValueChange={(next) => {
         if (!isRole(next) || next === member.role) {
           return;
         }
-        updateRole.mutate(
-          { userId: member.user.id, role: next },
-          {
-            onSuccess: () => {
-              toast.success(`${name} is now ${ROLE_LABELS[next].toLowerCase()}.`);
-            },
-          },
-        );
+        onRoleChange({ member, role: next, select: trigger.current });
       }}
     >
       <SelectTrigger
+        ref={trigger}
         aria-label={`Role for ${name}`}
         className={cn(
           "h-[34px] w-[120px] rounded-full border-border-strong pr-2.5 pl-3.5 font-medium",
@@ -166,11 +175,10 @@ function MemberRoleSelect({ member, isSelf }: { member: Member; isSelf: boolean 
 interface RemoveMemberActionProps {
   member: Member;
   isSelf: boolean;
-  orgName: string;
+  onRemove: (removal: MemberRemoval) => void;
 }
 
-function RemoveMemberAction({ member, isSelf, orgName }: RemoveMemberActionProps) {
-  const removeMember = useRemoveMember();
+function RemoveMemberAction({ member, isSelf, onRemove }: RemoveMemberActionProps) {
   const name = displayName(member);
 
   if (isSelf) {
@@ -182,15 +190,11 @@ function RemoveMemberAction({ member, isSelf, orgName }: RemoveMemberActionProps
   }
 
   return (
-    <ConfirmDialog
-      trigger={<RowAction aria-label={`Remove ${name}`}>Remove</RowAction>}
-      title={`Remove ${name} from ${orgName}?`}
-      description="They lose access to every project in this organization immediately. API keys they created keep working until you revoke them."
-      confirmLabel="Remove member"
-      onConfirm={async () => {
-        await removeMember.mutateAsync(member.user.id);
-        toast.success(`Removed ${name} from ${orgName}.`);
-      }}
-    />
+    <RowAction
+      aria-label={`Remove ${name}`}
+      onClick={(event) => onRemove({ member, button: event.currentTarget })}
+    >
+      Remove
+    </RowAction>
   );
 }

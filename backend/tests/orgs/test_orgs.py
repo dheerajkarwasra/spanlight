@@ -43,7 +43,8 @@ async def test_last_owner_cannot_be_demoted_or_removed(browser_factory: Any) -> 
     owner_id = owner.user["id"]
 
     demote = await owner.patch(
-        f"/api/v1/orgs/{workspace.org_id}/members/{owner_id}", json={"role": "admin"}
+        f"/api/v1/orgs/{workspace.org_id}/members/{owner_id}",
+        json={"password": "correct horse battery", "role": "admin"},
     )
     assert demote.status_code == 409
     assert demote.json()["code"] == "LAST_OWNER"
@@ -58,13 +59,15 @@ async def test_owner_can_step_down_once_another_owner_exists(browser_factory: An
     await join_with_role(owner, second, workspace.org_id, "owner")
 
     demote = await owner.patch(
-        f"/api/v1/orgs/{workspace.org_id}/members/{owner.user['id']}", json={"role": "admin"}
+        f"/api/v1/orgs/{workspace.org_id}/members/{owner.user['id']}",
+        json={"password": "correct horse battery", "role": "admin"},
     )
     assert demote.status_code == 200
     assert demote.json()["role"] == "admin"
     # Now `second` is the last owner.
     blocked = await second.patch(
-        f"/api/v1/orgs/{workspace.org_id}/members/{second.user['id']}", json={"role": "member"}
+        f"/api/v1/orgs/{workspace.org_id}/members/{second.user['id']}",
+        json={"password": "correct horse battery", "role": "member"},
     )
     assert blocked.json()["code"] == "LAST_OWNER"
 
@@ -79,18 +82,24 @@ async def test_admin_cannot_grant_or_alter_owner(browser_factory: Any) -> None:
     org = workspace.org_id
 
     promote = await admin.patch(
-        f"/api/v1/orgs/{org}/members/{member.user['id']}", json={"role": "owner"}
+        f"/api/v1/orgs/{org}/members/{member.user['id']}",
+        json={"password": "correct horse battery", "role": "owner"},
     )
     assert promote.status_code == 403
     demote_owner = await admin.patch(
-        f"/api/v1/orgs/{org}/members/{owner.user['id']}", json={"role": "viewer"}
+        f"/api/v1/orgs/{org}/members/{owner.user['id']}",
+        json={"password": "correct horse battery", "role": "viewer"},
     )
     assert demote_owner.status_code == 403
     assert (
-        await admin.post(f"/api/v1/orgs/{org}/invites", json={"role": "owner"})
+        await admin.post(
+            f"/api/v1/orgs/{org}/invites",
+            json={"password": "correct horse battery", "role": "owner"},
+        )
     ).status_code == 403
     ok = await admin.patch(
-        f"/api/v1/orgs/{org}/members/{member.user['id']}", json={"role": "viewer"}
+        f"/api/v1/orgs/{org}/members/{member.user['id']}",
+        json={"password": "correct horse battery", "role": "viewer"},
     )
     assert ok.status_code == 200
 
@@ -113,7 +122,10 @@ async def test_invite_flow(browser_factory: Any) -> None:
     guest: Browser = await browser_factory("guest@example.com")
     workspace = await create_workspace(owner)
 
-    created = await owner.post(f"/api/v1/orgs/{workspace.org_id}/invites", json={"role": "member"})
+    created = await owner.post(
+        f"/api/v1/orgs/{workspace.org_id}/invites",
+        json={"password": "correct horse battery", "role": "member"},
+    )
     assert created.status_code == 201
     invite = created.json()
     assert invite["url"].startswith("http://testserver/invite#token=")
@@ -140,7 +152,10 @@ async def test_invite_preview_shows_org_and_role_without_accepting(
     guest: Browser = await browser_factory("guest@example.com")
     workspace = await create_workspace(owner, org_name="Acme AI")
     created = (
-        await owner.post(f"/api/v1/orgs/{workspace.org_id}/invites", json={"role": "admin"})
+        await owner.post(
+            f"/api/v1/orgs/{workspace.org_id}/invites",
+            json={"password": "correct horse battery", "role": "admin"},
+        )
     ).json()
     token = created["url"].split("#token=", 1)[1]
 
@@ -174,7 +189,10 @@ async def test_invite_preview_hides_unknown_used_and_expired_tokens(
     workspace = await create_workspace(owner)
 
     used = (
-        await owner.post(f"/api/v1/orgs/{workspace.org_id}/invites", json={"role": "viewer"})
+        await owner.post(
+            f"/api/v1/orgs/{workspace.org_id}/invites",
+            json={"password": "correct horse battery", "role": "viewer"},
+        )
     ).json()
     used_token = used["url"].split("#token=", 1)[1]
     assert (
@@ -182,7 +200,10 @@ async def test_invite_preview_hides_unknown_used_and_expired_tokens(
     ).status_code == 200
 
     expired = (
-        await owner.post(f"/api/v1/orgs/{workspace.org_id}/invites", json={"role": "viewer"})
+        await owner.post(
+            f"/api/v1/orgs/{workspace.org_id}/invites",
+            json={"password": "correct horse battery", "role": "viewer"},
+        )
     ).json()
     async with session_factory() as db:
         await db.execute(
@@ -212,7 +233,10 @@ async def test_expired_and_revoked_invites_cannot_be_used(
     workspace = await create_workspace(owner)
 
     expired = (
-        await owner.post(f"/api/v1/orgs/{workspace.org_id}/invites", json={"role": "viewer"})
+        await owner.post(
+            f"/api/v1/orgs/{workspace.org_id}/invites",
+            json={"password": "correct horse battery", "role": "viewer"},
+        )
     ).json()
     async with session_factory() as db:
         await db.execute(
@@ -225,7 +249,10 @@ async def test_expired_and_revoked_invites_cannot_be_used(
     ).status_code == 404
 
     revoked = (
-        await owner.post(f"/api/v1/orgs/{workspace.org_id}/invites", json={"role": "viewer"})
+        await owner.post(
+            f"/api/v1/orgs/{workspace.org_id}/invites",
+            json={"password": "correct horse battery", "role": "viewer"},
+        )
     ).json()
     revoke = await owner.delete(f"/api/v1/orgs/{workspace.org_id}/invites/{revoked['id']}")
     assert revoke.status_code == 204
@@ -239,7 +266,10 @@ async def test_audit_log_records_actions_and_paginates(browser_factory: Any) -> 
     owner: Browser = await browser_factory("owner@example.com")
     workspace = await create_workspace(owner)  # org.create, project.create, key.create
     for index in range(3):
-        await owner.post(f"/api/v1/orgs/{workspace.org_id}/invites", json={"role": "viewer"})
+        await owner.post(
+            f"/api/v1/orgs/{workspace.org_id}/invites",
+            json={"password": "correct horse battery", "role": "viewer"},
+        )
         await owner.patch(f"/api/v1/projects/{workspace.project_id}", json={"name": f"Bot {index}"})
 
     seen: list[dict[str, Any]] = []

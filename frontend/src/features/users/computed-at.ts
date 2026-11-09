@@ -10,3 +10,7 @@ export const COMPUTED_AT_EXPLANATION =
 /** Shown when no day of the window has been computed yet. */
 export const NOT_COMPUTED_EXPLANATION =
   "Not computed yet. Per-user figures are recomputed every 15 minutes; the first pass for this window has not run.";
+
+/** Shown when the list merged the traces since the last recompute: nothing is left out. */
+export const LIVE_EXPLANATION =
+  "Includes every trace so far: traces since the last recompute are counted from the raw data.";

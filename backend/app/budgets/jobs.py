@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.budgets.compaction import compact_budget_deltas
 from app.budgets.reserve import HELD, REAPED, RESERVATION_LEASE
+from app.core.db_errors import is_transient, sqlstate
 from app.core.observability import (
     BUDGET_DELTAS_COMPACTED,
     BUDGET_RESERVATIONS_HELD,
@@ -100,6 +101,19 @@ async def compact_pending_deltas(session_factory: async_sessionmaker[AsyncSessio
             except IntegrityError:  # the budget (or project) was deleted since the listing
                 await db.rollback()
                 continue
+            except Exception as exc:
+                if not is_transient(exc):  # a bug, not a reason to leave the other budgets
+                    raise
+                # A lock timeout or deadlock on this budget's rows: the next minute folds it.
+                await db.rollback()
+                logger.warning(
+                    "budget_deltas_fold_deferred",
+                    project_id=str(row.project_id),
+                    budget_id=str(row.budget_id),
+                    error_type=type(exc).__name__,
+                    sqlstate=sqlstate(exc),
+                )
+                continue
         folded += count
         if count >= DELTA_BACKLOG_WARNING:
             logger.warning(
@@ -153,14 +167,24 @@ async def _reap_batch(db: AsyncSession, now: datetime) -> int:
         ),
         {"ids": sorted({row.project_id for row in expired})},
     )
-    rows = (
+    # The rows in the order `settle` locks a call's rows (budget, then id), so a settle at the
+    # lease's end and this batch wait for each other instead of deadlocking. Rechecked after a
+    # competing reaper's row-lock wait before charging the row.
+    locked = (
         await db.execute(
-            update(BudgetReservation)
-            # Recheck after a competing reaper's row-lock wait before charging the row.
+            select(BudgetReservation.id)
             .where(
                 BudgetReservation.id.in_([row.id for row in expired]),
                 BudgetReservation.status == HELD,
             )
+            .order_by(BudgetReservation.budget_id, BudgetReservation.id)
+            .with_for_update()
+        )
+    ).scalars()
+    rows = (
+        await db.execute(
+            update(BudgetReservation)
+            .where(BudgetReservation.id.in_(list(locked)))
             .values(status=REAPED)
             .returning(
                 BudgetReservation.budget_id,

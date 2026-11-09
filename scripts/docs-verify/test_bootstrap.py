@@ -73,6 +73,11 @@ class FakeApi:
             if path.endswith(suffix):
                 if method == "GET":
                     return httpx.Response(200, json=self._listed(kind))
+                if (
+                    kind in ("credential", "gateway_key")
+                    and body.pop("password", None) != self.password
+                ):
+                    return httpx.Response(422, json={"code": "INVALID_PASSWORD"})
                 item = self._create(kind, body, prefix=f"{kind}_{len(self._listed(kind))}")
                 if kind in ("key", "gateway_key"):
                     item["secret"] = f"{item['prefix']}_secret"

@@ -29,8 +29,8 @@ function usersPath(projectId: string): string {
  */
 export const endUsersApi = {
   /** Sorted by `sort` (default `cost`), keyset-paginated. */
-  list: (projectId: string, query: UserListQuery = {}): Promise<UserList> =>
-    api.get<UserList>(usersPath(projectId), { ...query }),
+  list: (projectId: string, query: UserListQuery = {}, signal?: AbortSignal): Promise<UserList> =>
+    api.get<UserList>(usersPath(projectId), { ...query }, signal),
   /** The user's totals, one row per UTC day and the recent sessions. */
   get: (projectId: string, userId: string, query: UserDetailQuery = {}): Promise<UserDetail> =>
     api.get<UserDetail>(`${usersPath(projectId)}/${encodeURIComponent(toPathId(userId))}`, {

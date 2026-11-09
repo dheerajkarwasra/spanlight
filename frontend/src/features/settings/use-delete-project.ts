@@ -2,6 +2,7 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 
 import { orgsApi, projectsApi, queryKeys, type Project } from "@/lib/api";
+import type { ProjectDeleteProof } from "@/lib/api/projects";
 import { clearLastProject } from "@/lib/last-project";
 
 /** The organization's projects as the server has them now, or null when they can't be read. */
@@ -24,14 +25,16 @@ async function remainingProjects(
  * Deletes the project with the typed slug, then leaves it: to another project of the same
  * organization, or to onboarding (with this organization chosen) when it was the last one. If the
  * list can't be read, "/" decides. The remembered last project is forgotten when it was this one.
- * A rejected delete (a wrong slug, no permission) throws before anything is changed here.
+ * A rejected delete (a wrong slug, refused proof or no permission) throws before anything is changed here.
  */
-export function useDeleteProject(project: Project): (confirm: string) => Promise<void> {
+export function useDeleteProject(
+  project: Project,
+): (confirm: string, proof?: ProjectDeleteProof) => Promise<void> {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  return async (confirm) => {
-    await projectsApi.delete(project.id, confirm);
+  return async (confirm, proof) => {
+    await projectsApi.delete(project.id, confirm, proof);
     clearLastProject({ projectId: project.id });
     // At once, so "/" and the project switcher never offer it again, even if the re-read below fails.
     queryClient.setQueryData<Project[]>(queryKeys.org(project.org_id).projects, (list) =>

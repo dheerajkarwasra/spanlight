@@ -1,11 +1,13 @@
 """The caller's own account: terms acceptance, the profile, the email address and deletion."""
 
-from typing import Annotated
+from pydantic import BaseModel, EmailStr
 
-from pydantic import BaseModel, EmailStr, StringConstraints
-
-from app.api.schemas.auth import LinkToken, TotpCode
+from app.api.schemas.auth import LinkToken
 from app.api.schemas.common import Confirmation, Name
+from app.api.schemas.common import Password as Password  # noqa: PLC0414 - public re-export
+from app.api.schemas.common import (
+    TotpCode as TotpCode,  # noqa: PLC0414 - strict mypy needs a re-export
+)
 
 
 class TermsOut(BaseModel):
@@ -26,9 +28,6 @@ class ProfileIn(BaseModel):
     name: Name | None = None
     # False turns the weekly digest off for the caller in every project; true turns it back on.
     weekly_digest: bool | None = None
-
-
-Password = Annotated[str, StringConstraints(min_length=1, max_length=256)]
 
 
 class EmailChangeIn(BaseModel):

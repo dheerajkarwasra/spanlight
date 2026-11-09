@@ -6,14 +6,16 @@ import { ErrorState } from "@/components/error-state";
 import { FieldSelect } from "@/components/field-select";
 import { SourceHistoryEmpty } from "@/components/freshness-chip";
 import { ListFooter } from "@/components/list-footer";
+import { LiveIndicator } from "@/components/live-indicator";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { UnknownValue } from "@/components/unknown-value";
-import { useProjectFilters } from "@/features/shell/project-context";
+import { useProjectFilters, useProjectParams } from "@/features/shell/project-context";
 import { useHasTraces } from "@/features/shell/use-has-traces";
 import type { UserSort, UserStats } from "@/lib/api";
 import { formatInteger } from "@/lib/format";
+import { useLiveProject } from "@/lib/live/use-live-project";
 import { SOURCE_REMOVED, sourceHistoryGone, sourceHistoryLabel } from "@/lib/freshness";
 import { rangePhrase } from "@/lib/time-range";
 
@@ -36,6 +38,8 @@ export function UsersPage() {
   const { sort = "cost", order = "desc", q } = search;
   const navigate = usersRoute.useNavigate();
   const { range } = useProjectFilters();
+  const { projectId } = useProjectParams();
+  const { status: liveStatus } = useLiveProject(projectId, range.value !== "custom");
   const hasTraces = useHasTraces();
   const userHref = useUserHref();
   const usersQuery = useUserListQuery({ sort, order, q });
@@ -85,6 +89,7 @@ export function UsersPage() {
     const first = usersQuery.data?.pages[0];
     const computedAt = first?.computed_at ?? null;
     const pendingTraces = first?.pending_traces ?? null;
+    const live = first?.live ?? false;
     return (
       <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
         {sourceHistoryGone(status, users.length > 0) ? (
@@ -95,9 +100,17 @@ export function UsersPage() {
         ) : (
           <span>{`${usersQuery.hasNextPage ? "Top " : ""}${count} end ${noun} ${rangePhrase(range)}`}</span>
         )}
-        {/* Nothing computed and nothing pending: the window is empty, not behind. */}
-        {computedAt === null && pendingTraces === null && history === null ? null : (
-          <ComputedAtChip value={computedAt} pendingTraces={pendingTraces} history={history} />
+        {/* The figures include every trace so far: they update live. */}
+        {live && history === null ? (
+          <LiveIndicator status={liveStatus} />
+        ) : /* Nothing computed and nothing pending: the window is empty, not behind. */
+        !live && computedAt === null && pendingTraces === null && history === null ? null : (
+          <ComputedAtChip
+            value={computedAt}
+            pendingTraces={pendingTraces}
+            history={history}
+            live={live}
+          />
         )}
       </span>
     );

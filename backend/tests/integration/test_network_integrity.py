@@ -96,6 +96,7 @@ async def test_budget_history_over_provider_socket(
                 "provider": "openai_compatible",
                 "api_key": secrets.token_hex(24),
                 "base_url": upstream + "/v1",
+                "password": "correct horse battery",
             },
         )
         await created(
@@ -123,7 +124,9 @@ async def test_budget_history_over_provider_socket(
             },
         )
         key = await created(
-            owner, prefix + "/gateway/keys", {"name": "network", "environment": "test"}
+            owner,
+            prefix + "/gateway/keys",
+            {"name": "network", "environment": "test", "password": "correct horse battery"},
         )
         clients = [
             await stack.enter_async_context(

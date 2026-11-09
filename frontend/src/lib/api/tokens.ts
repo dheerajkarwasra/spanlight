@@ -7,6 +7,8 @@ export interface CreateTokenInput {
   scope: TokenScope;
   /** An ISO time in the future, or null for a token that never expires. */
   expires_at: string | null;
+  password?: string;
+  code?: string;
 }
 
 const TOKENS_PATH = `${API_PREFIX}/auth/tokens`;

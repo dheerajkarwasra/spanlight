@@ -20,8 +20,9 @@ from sqlalchemy import event, text
 from sqlalchemy.exc import OperationalError
 
 from app.api.v1 import budgets as budgets_router
+from app.budgets import jobs as budget_jobs
 from app.budgets.buckets import bump_hours_of_traces
-from app.budgets.jobs import compact_pending_deltas, reap_expired
+from app.budgets.jobs import _reap_batch, compact_pending_deltas, reap_expired
 from app.budgets.periods import period_start
 from app.budgets.reserve import BlockBudget, Refusal, reserve, settle_unstored
 from app.budgets.types import BudgetPeriod, BudgetScope
@@ -382,6 +383,113 @@ async def test_worker_compaction_commits_each_budget_on_its_own(budget_world: Bu
         )
     assert pending == 0
     assert Decimal(total) == Decimal("0.004")
+
+
+async def test_worker_compaction_defers_a_budget_the_database_refuses_for_now(
+    budget_world: BudgetWorld, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A lock timeout or deadlock on one budget's fold leaves that budget to the next minute;
+    the other budgets are still folded and committed in the same pass."""
+    world = budget_world
+    first = await create_budget(world, amount=BIG, name="first")
+    await create_budget(world, amount=BIG, name="second")
+    hour = closed_hour(world, 0)
+    await ingest(world, priced_span(new_trace_id(), new_span_id(), hour + timedelta(minutes=1)))
+    await ingest(world, priced_span(new_trace_id(), new_span_id(), hour + timedelta(minutes=2)))
+    fold = budget_jobs.compact_budget_deltas
+
+    async def refused(db: Any, project_id: Any, budget_id: Any, *args: Any, **kwargs: Any) -> Any:
+        if budget_id == first.id:
+            raise OperationalError(
+                "UPDATE budget_bucket_snapshots", {}, psycopg.errors.LockNotAvailable()
+            )
+        return await fold(db, project_id, budget_id, *args, **kwargs)
+
+    monkeypatch.setattr(budget_jobs, "compact_budget_deltas", refused)
+
+    async with asyncio.timeout(10):
+        folded = await compact_pending_deltas(world.sessions)
+
+    assert folded == 2  # the second budget's two deltas
+    async with world.sessions() as db:
+        await bypass_rls(db)
+        pending = (
+            await db.execute(
+                text(
+                    "SELECT budget_id, count(*) AS deltas FROM budget_bucket_deltas "
+                    "WHERE project_id = :id GROUP BY budget_id"
+                ),
+                {"id": world.workspace.project_id},
+            )
+        ).all()
+    assert {row.budget_id: row.deltas for row in pending} == {first.id: 2}
+    [event] = logged(caplog, "budget_deltas_fold_deferred")
+    assert event["budget_id"] == str(first.id)
+
+
+async def test_reaper_locks_a_calls_reservations_in_settle_order(budget_world: BudgetWorld) -> None:
+    """Settle locks a call's reservation rows in budget order. The guard holds budgets by
+    amount, so a call's row ids need not follow its budget ids: a reaper locking the rows in
+    id order deadlocks with a settle that runs at the lease's end."""
+    world = budget_world
+    project_id = world.workspace.project_id
+    a = await create_budget(world, amount=BIG, name="a")
+    b = await create_budget(world, amount=BIG, name="b")
+    assert a.id < b.id
+    admitted = closed_hour(world, 1) + timedelta(minutes=5)  # the lease ran out an hour ago
+    trace_id, span_id = new_trace_id(), new_span_id()
+    async with world.sessions() as db, db.begin():
+        await bind_project(db, project_id)
+        blocks = [  # b's row first: its id is the lower one
+            BlockBudget(budget.id, name, BudgetPeriod.DAILY, BIG, BudgetScope.PROJECT, None)
+            for name, budget in (("b", b), ("a", a))
+        ]
+        refusal = await reserve(
+            db,
+            project_id,
+            blocks,
+            Decimal("0.0001"),
+            trace_id=trace_id,
+            span_id=span_id,
+            now=admitted,
+        )
+        assert refusal is None
+    async with world.sessions() as db:
+        await bypass_rls(db)
+        rows = (
+            await db.execute(
+                text(
+                    "SELECT id, budget_id FROM budget_reservations WHERE trace_id = :t ORDER BY id"
+                ),
+                {"t": trace_id},
+            )
+        ).all()
+    assert [row.budget_id for row in rows] == [b.id, a.id]  # id order is not budget order
+    reaper_pid: asyncio.Future[int] = asyncio.get_running_loop().create_future()
+
+    async def reap() -> int:
+        async with world.sessions() as db:
+            await bypass_rls(db)
+            reaper_pid.set_result(await db.scalar(text("SELECT pg_backend_pid()")))
+            reaped = await _reap_batch(db, world.clock.wall())
+            await db.commit()
+            return reaped
+
+    async with world.sessions() as settler:  # a settle holding its first row, in budget order
+        await bind_project(settler, project_id)
+        settler_pid = await settler.scalar(text("SELECT pg_backend_pid()"))
+        await settler.execute(
+            text("SELECT id FROM budget_reservations WHERE id = :id FOR UPDATE"), {"id": rows[1].id}
+        )
+        reaping = asyncio.create_task(reap())
+        await _wait_blocked_by(world, await asyncio.wait_for(reaper_pid, 10), settler_pid)
+        async with asyncio.timeout(10):  # its second row: free, unless the reaper holds it
+            await settler.execute(
+                text("SELECT id FROM budget_reservations WHERE id = :id FOR UPDATE"),
+                {"id": rows[0].id},
+            )
+            await settler.commit()
+            assert await reaping == 2
 
 
 @pytest.mark.serial

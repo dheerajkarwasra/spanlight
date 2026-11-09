@@ -7,7 +7,7 @@ from typing import Annotated
 from pydantic import AfterValidator, BaseModel, Field
 
 from app.alerts.rule_spec import ChannelIds
-from app.api.schemas.common import ApiModel, Confirmation, Name
+from app.api.schemas.common import ApiModel, Confirmation, Name, Password, TotpCode
 from app.ingest.metadata import MetadataKey
 
 MAX_PROMOTED_KEYS = 5
@@ -62,6 +62,8 @@ class ProjectUpdateIn(BaseModel):
 class ProjectDeleteIn(BaseModel):
     # The project's slug, typed out as it is shown. The route compares it; see `Confirmation`.
     confirm: Confirmation
+    password: Password | None = None
+    code: TotpCode | None = None
 
 
 class OnboardingOut(BaseModel):

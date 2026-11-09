@@ -28,9 +28,11 @@ from app.db.models import (
     AuditEvent,
     EmailTokenKind,
     LoginAttempt,
+    NotificationOutbox,
     OAuthIdentity,
     User,
 )
+from app.notifications import NotificationKind
 from tests.auth.conftest import GITHUB_FIELDS, running_app
 from tests.auth.oauth_fakes import (
     GITHUB_EMAILS_URL,
@@ -48,6 +50,7 @@ SessionFactory = async_sessionmaker[AsyncSession]
 PREFIX = "/api/v1/auth/oauth"
 ME = "/api/v1/auth/me"
 LOGIN = "/api/v1/auth/login"
+PASSWORD = "correct horse battery"
 
 
 # --- helpers ----------------------------------------------------------------------------------
@@ -65,22 +68,43 @@ async def _callback(client: httpx.AsyncClient, provider: str = "github", **param
     return await client.get(f"{PREFIX}/{provider}/callback", params=params)
 
 
+async def _start_link(
+    browser: Browser,
+    provider: str = "github",
+    *,
+    password: str | None = PASSWORD,
+    next: str | None = None,
+) -> httpx.Response:
+    return await browser.post(
+        f"{PREFIX}/{provider}/link", json={"password": password, "next": next}
+    )
+
+
 async def _sign_in(
-    client: httpx.AsyncClient,
+    client: httpx.AsyncClient | Browser,
     provider: str = "github",
     *,
     next: str | None = None,
     intent: str = "sign_in",
     code: str = "the-code",
+    password: str | None = PASSWORD,
 ) -> httpx.Response:
     """The whole round trip: start, "the user approves at the provider", callback."""
-    params = {"intent": intent}
-    if next is not None:
-        params["next"] = next
-    started = await _start(client, provider, **params)
-    assert started.status_code == 302, started.text
-    state = _query(started.headers["location"])["state"]
-    return await _callback(client, provider, code=code, state=state)
+    http = client.http if isinstance(client, Browser) else client
+    if intent == "link":
+        assert isinstance(client, Browser)
+        started = await _start_link(client, provider, password=password, next=next)
+        assert started.status_code == 200, started.text
+        url = started.json()["url"]
+    else:
+        params = {"intent": intent}
+        if next is not None:
+            params["next"] = next
+        started = await _start(http, provider, **params)
+        assert started.status_code == 302, started.text
+        url = started.headers["location"]
+    state = _query(url)["state"]
+    return await _callback(http, provider, code=code, state=state)
 
 
 def _went_to(response: httpx.Response, path: str) -> None:
@@ -234,8 +258,8 @@ async def test_rejects_an_unknown_intent(oauth_client: httpx.AsyncClient) -> Non
 async def test_link_needs_a_session(oauth_client: httpx.AsyncClient) -> None:
     response = await _start(oauth_client, intent="link")
 
-    assert response.status_code == 401
-    assert response.json()["code"] == "UNAUTHORIZED"
+    assert response.status_code == 410
+    assert response.json()["code"] == "OAUTH_LINK_NEEDS_CONFIRMATION"
 
 
 # --- providers ---------------------------------------------------------------------------------
@@ -491,7 +515,7 @@ async def test_link_attaches_the_identity_to_the_signed_in_user(
     assert org.status_code == 201, org.text
 
     # The GitHub address differs from the account's: linking is the signed-in user's own choice.
-    response = await _sign_in(browser.http, intent="link")
+    response = await _sign_in(browser, intent="link")
 
     _went_to(response, "/settings/security")
     (user,) = await _users(session_factory)
@@ -503,10 +527,64 @@ async def test_link_attaches_the_identity_to_the_signed_in_user(
     assert [row["provider"] for row in listed.json()] == ["github"]
 
 
+async def test_a_session_alone_cannot_start_a_link(
+    verified_browser_factory: BrowserFactory, session_factory: SessionFactory
+) -> None:
+    browser = await verified_browser_factory("ada@example.com")
+
+    response = await _start(browser.http, intent="link")
+
+    assert response.status_code == 410, response.text
+    assert "spl_oauth" not in response.headers.get("set-cookie", "")
+    assert await _identities(session_factory) == []
+
+
+async def test_link_with_a_wrong_password_is_refused(
+    verified_browser_factory: BrowserFactory, session_factory: SessionFactory
+) -> None:
+    browser = await verified_browser_factory("ada@example.com")
+
+    response = await browser.post(f"{PREFIX}/github/link", json={"password": "wrong password"})
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "INVALID_PASSWORD"
+    assert "spl_oauth" not in response.headers.get("set-cookie", "")
+    assert browser.http.cookies.get("spl_oauth") is None
+    assert await _identities(session_factory) == []
+
+
+async def test_a_completed_link_mails_the_account_owner(
+    verified_browser_factory: BrowserFactory,
+    session_factory: SessionFactory,
+    providers: FakeProviders,
+) -> None:
+    browser = await verified_browser_factory("owner@example.com", "Ada")
+    providers.set_github_email("provider@example.com")
+    async with session_factory() as db:
+        before = set(await db.scalars(select(NotificationOutbox.id)))
+
+    _went_to(await _sign_in(browser, intent="link"), "/settings/security")
+
+    async with session_factory() as db:
+        notice = (
+            await db.scalars(select(NotificationOutbox).where(NotificationOutbox.id.not_in(before)))
+        ).one()
+    assert notice.kind == NotificationKind.EMAIL
+    assert notice.target == {"to": "owner@example.com"}
+    assert "Hi Ada," in notice.payload["text"]
+    assert "GitHub" in notice.payload["subject"]
+    assert "connected" in notice.payload["text"]
+    assert "Settings" in notice.payload["text"]
+    assert "Security" in notice.payload["text"]
+    assert "reset your password" in notice.payload["text"]
+    assert "http" not in notice.payload["text"]
+    assert "<a " not in notice.payload["html"]
+
+
 async def test_link_goes_back_to_next(verified_browser_factory: BrowserFactory) -> None:
     browser = await verified_browser_factory("ada@example.com")
 
-    response = await _sign_in(browser.http, intent="link", next="/settings/profile")
+    response = await _sign_in(browser, intent="link", next="/settings/profile")
 
     _went_to(response, "/settings/profile")
 
@@ -517,7 +595,7 @@ async def test_linking_does_not_create_a_second_session(
     browser = await verified_browser_factory("ada@example.com")
     before = browser.http.cookies.get("spl_session")
 
-    await _sign_in(browser.http, intent="link")
+    await _sign_in(browser, intent="link")
 
     assert browser.http.cookies.get("spl_session") == before
 
@@ -531,7 +609,7 @@ async def test_an_identity_linked_to_another_user_is_refused(
     await _oauth_only_browser(oauth_client, providers, "ada@example.com")
     other = await verified_browser_factory("grace@example.com")
 
-    response = await _sign_in(other.http, intent="link")
+    response = await _sign_in(other, intent="link")
 
     _went_to(response, "/settings/security?error=OAUTH_ALREADY_LINKED")
     (identity,) = await _identities(session_factory)
@@ -542,10 +620,10 @@ async def test_a_second_account_of_the_same_provider_is_refused(
     verified_browser_factory: BrowserFactory, providers: FakeProviders
 ) -> None:
     browser = await verified_browser_factory("ada@example.com")
-    assert (await _sign_in(browser.http, intent="link")).status_code == 302
+    assert (await _sign_in(browser, intent="link")).status_code == 302
     providers.github_user = {**providers.github_user, "id": 1002}
 
-    response = await _sign_in(browser.http, intent="link")
+    response = await _sign_in(browser, intent="link")
 
     _went_to(response, "/settings/security?error=OAUTH_ALREADY_LINKED")
 
@@ -554,12 +632,20 @@ async def test_linking_the_same_account_again_is_fine(
     verified_browser_factory: BrowserFactory, session_factory: SessionFactory
 ) -> None:
     browser = await verified_browser_factory("ada@example.com")
-    await _sign_in(browser.http, intent="link")
+    await _sign_in(browser, intent="link")
 
-    response = await _sign_in(browser.http, intent="link")
+    async with session_factory() as db:
+        notices_before = await db.scalar(select(func.count()).select_from(NotificationOutbox))
+
+    response = await _sign_in(browser, intent="link")
 
     _went_to(response, "/settings/security")
     assert len(await _identities(session_factory)) == 1
+
+    async with session_factory() as db:
+        assert (
+            await db.scalar(select(func.count()).select_from(NotificationOutbox)) == notices_before
+        )
 
 
 async def test_link_errors_return_to_next_with_the_error_appended(
@@ -568,7 +654,7 @@ async def test_link_errors_return_to_next_with_the_error_appended(
     browser = await verified_browser_factory("ada@example.com")
     providers.overrides[GITHUB_TOKEN_URL] = lambda: httpx.Response(500)
 
-    response = await _sign_in(browser.http, intent="link", next="/settings/security?tab=sso#x")
+    response = await _sign_in(browser, intent="link", next="/settings/security?tab=sso#x")
 
     _went_to(response, "/settings/security?tab=sso&error=OAUTH_PROVIDER_ERROR#x")
 
@@ -578,8 +664,8 @@ async def test_link_by_another_session_user_is_refused(
 ) -> None:
     ada = await verified_browser_factory("ada@example.com")
     grace = await verified_browser_factory("grace@example.com")
-    started = await _start(ada.http, intent="link")
-    state = _query(started.headers["location"])["state"]
+    started = await _start_link(ada)
+    state = _query(started.json()["url"])["state"]
     # Grace's browser ends up carrying the state Ada started (the cookie is all the state there
     # is), so the callback arrives in a session that is not the one that began the link.
     grace.http.cookies.set(
@@ -596,8 +682,8 @@ async def test_link_without_a_session_at_the_callback_is_refused(
     verified_browser_factory: BrowserFactory, session_factory: SessionFactory
 ) -> None:
     browser = await verified_browser_factory("ada@example.com")
-    started = await _start(browser.http, intent="link")
-    state = _query(started.headers["location"])["state"]
+    started = await _start_link(browser)
+    state = _query(started.json()["url"])["state"]
     browser.http.cookies.delete("spl_session")
     browser.http.cookies.delete("spl_csrf")
 
@@ -611,7 +697,7 @@ async def test_identities_lists_the_linked_providers(
     oauth_client: httpx.AsyncClient, providers: FakeProviders
 ) -> None:
     browser = await _oauth_only_browser(oauth_client, providers, "ada@example.com")
-    assert (await _sign_in(oauth_client, "google", intent="link")).status_code == 302
+    assert (await _sign_in(browser, "google", intent="link", password=None)).status_code == 302
 
     response = await browser.get(f"{PREFIX}/identities")
 
@@ -643,7 +729,7 @@ async def test_unlink_removes_the_identity_and_audits_it(
 ) -> None:
     browser = await verified_browser_factory("ada@example.com")
     assert (await browser.post("/api/v1/orgs", json={"name": "Acme"})).status_code == 201
-    await _sign_in(browser.http, intent="link")
+    await _sign_in(browser, intent="link")
 
     response = await browser.delete(f"{PREFIX}/github")
 
@@ -668,7 +754,7 @@ async def test_unlink_is_allowed_when_another_identity_remains(
     oauth_client: httpx.AsyncClient, providers: FakeProviders, session_factory: SessionFactory
 ) -> None:
     browser = await _oauth_only_browser(oauth_client, providers, "ada@example.com")
-    assert (await _sign_in(oauth_client, "google", intent="link")).status_code == 302
+    assert (await _sign_in(browser, "google", intent="link", password=None)).status_code == 302
 
     response = await browser.delete(f"{PREFIX}/github")
 
@@ -681,7 +767,7 @@ async def test_two_concurrent_unlinks_cannot_remove_every_sign_in_method(
     oauth_client: httpx.AsyncClient, providers: FakeProviders, session_factory: SessionFactory
 ) -> None:
     browser = await _oauth_only_browser(oauth_client, providers, "ada@example.com")
-    assert (await _sign_in(oauth_client, "google", intent="link")).status_code == 302
+    assert (await _sign_in(browser, "google", intent="link", password=None)).status_code == 302
 
     first, second = await asyncio.gather(
         browser.delete(f"{PREFIX}/github"), browser.delete(f"{PREFIX}/google")
@@ -711,7 +797,7 @@ async def test_unlink_needs_a_session_and_csrf(
 ) -> None:
     assert (await oauth_client.delete(f"{PREFIX}/github")).status_code == 401
     browser = await verified_browser_factory("ada@example.com")
-    await _sign_in(browser.http, intent="link")
+    await _sign_in(browser, intent="link")
 
     without_csrf = await browser.http.delete(f"{PREFIX}/github")
 
@@ -726,7 +812,7 @@ async def test_unlink_works_after_the_provider_was_removed_from_the_settings(
     session_factory: SessionFactory,
 ) -> None:
     browser = await verified_browser_factory("ada@example.com")
-    await _sign_in(browser.http, intent="link")
+    await _sign_in(browser, intent="link")
     # An app with no OAuth settings at all, sharing the browser's session.
     async with running_app(settings, providers) as bare, _make_client(bare) as other:
         other.cookies.update(browser.http.cookies)
@@ -910,7 +996,7 @@ async def test_a_link_callback_with_the_wrong_state_returns_to_next(
     verified_browser_factory: BrowserFactory,
 ) -> None:
     browser = await verified_browser_factory("ada@example.com")
-    await _start(browser.http, intent="link", next="/settings/security")
+    await _start_link(browser, next="/settings/security")
 
     response = await _callback(browser.http, code="c", state="forged")
 
@@ -1153,7 +1239,7 @@ async def test_an_unverified_account_cannot_start_a_link_when_email_is_configure
 ) -> None:
     browser = await oauth_browser_factory("victim@example.com")  # signed up, never verified
 
-    response = await _start(browser.http, intent="link")
+    response = await _start_link(browser)
 
     assert response.status_code == 409
     assert response.json()["code"] == "EMAIL_UNVERIFIED"
@@ -1168,7 +1254,7 @@ async def test_a_link_callback_for_an_unverified_account_is_refused(
     providers: FakeProviders,
     session_factory: SessionFactory,
 ) -> None:
-    # Skip `start` (its 409) with a state that is correctly signed, as if the link was begun
+    # Skip `link` (its 409) with a state that is correctly signed, as if the link was begun
     # before the operator turned email on: the callback decides again.
     browser = await oauth_browser_factory("victim@example.com")
     cookie = _forged_cookie(
@@ -1191,7 +1277,7 @@ async def test_a_verified_account_can_still_link(
 ) -> None:
     browser = await verified_browser_factory("ada@example.com")
 
-    _went_to(await _sign_in(browser.http, intent="link"), "/settings/security")
+    _went_to(await _sign_in(browser, intent="link"), "/settings/security")
 
     assert len(await _identities(session_factory)) == 1
 
@@ -1204,7 +1290,7 @@ async def test_an_unverified_account_can_link_when_email_is_not_configured(
     # feature out of installations that have no email.
     browser = await no_email_browser_factory("ada@example.com")
 
-    response = await _sign_in(browser.http, intent="link")
+    response = await _sign_in(browser, intent="link")
 
     _went_to(response, "/settings/security")
     assert len(await _identities(session_factory)) == 1
@@ -1213,7 +1299,8 @@ async def test_an_unverified_account_can_link_when_email_is_not_configured(
 async def _demo_link_start(client: httpx.AsyncClient, session_factory: SessionFactory) -> None:
     assert (await client.post("/api/v1/demo/session")).status_code == 200
 
-    response = await _start(client, intent="link")
+    me = (await client.get(ME)).json()
+    response = await _start_link(Browser(http=client, user=me["user"]))
 
     assert response.status_code == 403
     assert response.json()["code"] == "FORBIDDEN"
@@ -1272,7 +1359,7 @@ async def test_the_pre_hijack_chain_is_closed(
     victim_account = attacker.user["id"]
 
     # 1. The attacker cannot attach their GitHub to the unverified account...
-    assert (await _start(attacker.http, intent="link")).status_code == 409
+    assert (await _start_link(attacker)).status_code == 409
     assert await _identities(session_factory) == []
 
     # 2. ...even if some other path had attached it, the recovery removes it (defence in depth).

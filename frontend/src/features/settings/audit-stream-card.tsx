@@ -1,20 +1,23 @@
-import { useState, type SyntheticEvent } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { ConfirmDialog } from "@/components/confirm-dialog";
-import { FormField } from "@/components/form-field";
 import { RelativeTime } from "@/components/relative-time";
 import { SecretBox } from "@/components/secret-box";
 import { SectionCard } from "@/components/section-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useCurrentRole } from "@/features/shell";
-import { ApiError, errorMessage, type AuditStream } from "@/lib/api";
+import { errorMessage, type AuditStream } from "@/lib/api";
 import { can, rolesWith } from "@/lib/permissions";
 
+import { StreamForm } from "./audit-stream-form";
+import {
+  AuditStreamProofDialog,
+  type AuditStreamAction,
+  type AuditStreamChange,
+} from "./audit-stream-proof-dialog";
 import { useAuditStreamMutations, useAuditStreamQuery } from "./audit-stream-queries";
 
 const DESCRIPTION =
@@ -28,6 +31,8 @@ export function AuditStreamCard() {
   const mutations = useAuditStreamMutations();
   // The signing secret, kept in this component only, from the save or rotation that made it.
   const [secret, setSecret] = useState<string | null>(null);
+  const [change, setChange] = useState<AuditStreamChange | null>(null);
+  const switchRef = useRef<HTMLButtonElement>(null);
 
   let body;
   if (query.isPending) {
@@ -38,8 +43,8 @@ export function AuditStreamCard() {
     body = canEdit ? (
       <StreamForm
         pending={mutations.save.isPending}
-        onSubmit={async (url) => {
-          const saved = await mutations.save.mutateAsync({ url, enabled: true });
+        onSubmit={async (url, proof) => {
+          const saved = await mutations.save.mutateAsync({ url, enabled: true, ...proof });
           setSecret(saved.secret);
           toast.success("Streaming started.");
         }}
@@ -56,86 +61,61 @@ export function AuditStreamCard() {
         canEdit={canEdit}
         secret={secret}
         mutations={mutations}
-        onSecret={setSecret}
+        onAction={(action, opener) => setChange({ action, opener })}
       />
     );
   }
 
   const stream = query.data ?? null;
   return (
-    <SectionCard
-      title="Streaming"
-      description={DESCRIPTION}
-      actions={
-        stream ? (
-          <Switch
-            aria-label="Stream audit events"
-            checked={stream.enabled}
-            disabled={!canEdit || mutations.save.isPending}
-            onCheckedChange={(enabled) => {
-              mutations.save.mutate(
-                { url: stream.url, enabled },
-                { onError: (error) => toast.error(errorMessage(error)) },
-              );
-            }}
-          />
-        ) : null
-      }
-      className="gap-3.5"
-    >
-      {body}
-    </SectionCard>
-  );
-}
-
-interface StreamFormProps {
-  pending: boolean;
-  onSubmit: (url: string) => Promise<void>;
-}
-
-function StreamForm({ pending, onSubmit }: StreamFormProps) {
-  const [url, setUrl] = useState("");
-  const [error, setError] = useState<string | undefined>(undefined);
-
-  async function handleSubmit(event: SyntheticEvent) {
-    event.preventDefault();
-    setError(undefined);
-    try {
-      await onSubmit(url.trim());
-    } catch (failure) {
-      const field =
-        failure instanceof ApiError
-          ? failure.fieldErrors.find((e) => e.field === "url")
-          : undefined;
-      setError(field?.message ?? errorMessage(failure));
-    }
-  }
-
-  return (
-    <form onSubmit={(event) => void handleSubmit(event)} className="flex flex-col gap-2">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-        <FormField label="Endpoint URL" error={error} className="min-w-0 flex-1">
-          <Input
-            type="url"
-            inputMode="url"
-            autoComplete="off"
-            placeholder="https://"
-            required
-            value={url}
-            onChange={(event) => {
-              setUrl(event.target.value);
-            }}
-          />
-        </FormField>
-        <Button type="submit" variant="primary" loading={pending} disabled={url.trim() === ""}>
-          Start streaming
-        </Button>
-      </div>
-      <p className="text-xs font-medium text-muted-foreground">
-        It starts with the events written after you save, and signs each request like alert webhooks
-        do.
-      </p>
-    </form>
+    <>
+      <SectionCard
+        title="Streaming"
+        description={DESCRIPTION}
+        actions={
+          stream ? (
+            <Switch
+              ref={switchRef}
+              aria-label="Stream audit events"
+              checked={stream.enabled}
+              disabled={!canEdit || mutations.save.isPending}
+              onCheckedChange={(enabled) => {
+                if (switchRef.current) {
+                  setChange({ action: enabled ? "resume" : "pause", opener: switchRef.current });
+                }
+              }}
+            />
+          ) : null
+        }
+        className="gap-3.5"
+      >
+        {body}
+      </SectionCard>
+      {change ? (
+        <AuditStreamProofDialog
+          change={change}
+          pending={
+            mutations.save.isPending || mutations.rotate.isPending || mutations.remove.isPending
+          }
+          onClose={() => setChange(null)}
+          onSubmit={async (proof) => {
+            if (change.action === "remove") {
+              await mutations.remove.mutateAsync(proof);
+              setSecret(null);
+            } else if (change.action === "rotate") {
+              const result = await mutations.rotate.mutateAsync(proof);
+              setSecret(result.secret);
+            } else if (stream) {
+              await mutations.save.mutateAsync({
+                url: stream.url,
+                enabled: change.action === "resume",
+                ...proof,
+              });
+            }
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -144,10 +124,10 @@ interface StreamDetailsProps {
   canEdit: boolean;
   secret: string | null;
   mutations: ReturnType<typeof useAuditStreamMutations>;
-  onSecret: (secret: string | null) => void;
+  onAction: (action: AuditStreamAction, opener: HTMLElement) => void;
 }
 
-function StreamDetails({ stream, canEdit, secret, mutations, onSecret }: StreamDetailsProps) {
+function StreamDetails({ stream, canEdit, secret, mutations, onAction }: StreamDetailsProps) {
   const pending = Math.max(0, stream.head_seq - stream.delivered_seq);
   const failing = stream.consecutive_failures > 0;
 
@@ -204,36 +184,17 @@ function StreamDetails({ stream, canEdit, secret, mutations, onSecret }: StreamD
           <Button
             variant="ghost"
             loading={mutations.rotate.isPending}
-            onClick={() => {
-              mutations.rotate.mutate(undefined, {
-                onSuccess: (result) => {
-                  onSecret(result.secret);
-                },
-                onError: (error) => toast.error(errorMessage(error)),
-              });
-            }}
+            onClick={(event) => onAction("rotate", event.currentTarget)}
           >
             Rotate secret
           </Button>
-          <ConfirmDialog
-            trigger={
-              <Button variant="danger" className="ml-auto">
-                Remove
-              </Button>
-            }
-            title="Stop streaming?"
-            description="The endpoint and its signing secret are deleted. Events stay in the audit log."
-            confirmLabel="Remove"
-            onConfirm={async () => {
-              try {
-                await mutations.remove.mutateAsync();
-                onSecret(null);
-              } catch (error) {
-                toast.error(errorMessage(error));
-                throw error;
-              }
-            }}
-          />
+          <Button
+            variant="danger"
+            className="ml-auto"
+            onClick={(event) => onAction("remove", event.currentTarget)}
+          >
+            Remove
+          </Button>
         </div>
       ) : null}
     </div>

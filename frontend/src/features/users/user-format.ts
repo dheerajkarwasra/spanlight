@@ -91,3 +91,4 @@ export function hasDailyCalls(points: readonly DailyPoint[]): boolean {
 }
 
 export const NO_USER_PRICE = "No price for the models this user called.";
+export const NO_USER_USAGE = "No call of this user reported token usage.";

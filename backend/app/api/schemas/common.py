@@ -11,6 +11,10 @@ from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, PlainSerializer, StringConstraints
 
+from app.auth.proof_types import Password, TotpCode
+
+__all__ = ["Password", "TotpCode"]
+
 
 def _format_money(value: Decimal) -> str:
     # format(..., "f") avoids scientific notation such as "0E-8".

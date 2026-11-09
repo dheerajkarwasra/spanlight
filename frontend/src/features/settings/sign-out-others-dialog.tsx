@@ -61,6 +61,9 @@ export function SignOutOthersDialog({ trigger, sessions }: SignOutOthersDialogPr
             ))}
           </ul>
         </div>
+        <p className="text-xs font-medium text-muted-foreground">
+          Personal access tokens keep working. To stop them, revoke them in Settings › Tokens.
+        </p>
         <DialogFooter className="gap-2.5">
           <Button
             onClick={() => {

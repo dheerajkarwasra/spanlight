@@ -63,6 +63,7 @@ class IngestOutcome:
     rejected: list[RejectedSpan] = field(default_factory=list)
     # How many accepted spans were new rows; a replay stores nothing new (`store.write_spans`).
     inserted: int = 0
+    changed: int = 0
 
 
 class InvalidJsonError(ValueError):
@@ -149,7 +150,7 @@ async def ingest_spans(
     # Validation, redaction and truncation are CPU-bound: off the event loop.
     outcome, spans = await run_in_threadpool(_prepare_batch, raw_spans, target, prices, now)
     if spans:
-        outcome.inserted = await write_spans(
+        outcome.inserted, outcome.changed = await write_spans(
             session, target.project_id, spans, target.source_key_id
         )
         if any(span.trace.metadata for span in spans):

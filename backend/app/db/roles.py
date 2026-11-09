@@ -21,6 +21,7 @@ APP_FUNCTIONS = (
     "public.explain_month_to_date_cost(uuid, timestamptz)",
     "public.admit_aggregate_job_progress()",
     "public.aggregate_job_progress_immutable()",
+    "public.live_markers(uuid[])",
     "public.budget_reserve_fast(uuid, uuid[], timestamptz[], timestamptz[], numeric[], "
     "boolean[], numeric, text, text, uuid[], timestamptz, timestamptz)",
 )

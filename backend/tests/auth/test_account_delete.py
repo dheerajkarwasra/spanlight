@@ -28,7 +28,14 @@ from app.services.audit import check_audit_chain
 from tests.auth.conftest import FakeClock
 from tests.auth.test_totp_routes import enroll
 from tests.conftest import BrowserFactory
-from tests.helpers import Browser, bearer, create_token, create_workspace, join_with_role
+from tests.helpers import (
+    Browser,
+    bearer,
+    create_api_key,
+    create_token,
+    create_workspace,
+    join_with_role,
+)
 
 SessionFactory = async_sessionmaker[AsyncSession]
 
@@ -387,3 +394,65 @@ async def test_delete_refuses_bearer_token(
     assert response.status_code == 403, response.text
     assert response.json()["code"] == "SESSION_REQUIRED"
     assert await _user_exists(session_factory, ada.user["id"])
+
+
+async def test_account_deletion_strips_read_keys_and_audits_each_change(
+    browser_factory: BrowserFactory,
+    client: httpx.AsyncClient,
+    session_factory: SessionFactory,
+) -> None:
+    owner = await browser_factory("owner@example.com")
+    member = await browser_factory("member@example.com")
+    first = await create_workspace(owner)
+    second = await create_workspace(owner, org_name="Second")
+    await join_with_role(owner, member, first.org_id, "member")
+    await join_with_role(owner, member, second.org_id, "member")
+    reader = await create_api_key(member, first.project_id, scopes=["prompts:read", "traces:read"])
+    mixed = await create_api_key(member, second.project_id, scopes=["traces:read", "ingest:write"])
+    ingest = await create_api_key(member, first.project_id)
+    first_traces = f"/api/v1/projects/{first.project_id}/traces"
+    second_traces = f"/api/v1/projects/{second.project_id}/traces"
+    assert (await client.get(first_traces, headers=bearer(reader["secret"]))).status_code == 200
+    assert (await client.get(second_traces, headers=bearer(mixed["secret"]))).status_code == 200
+
+    deleted = await _delete(member)
+
+    assert deleted.status_code == 204, deleted.text
+    assert not await _user_exists(session_factory, member.user["id"])
+    assert (await client.get(first_traces, headers=bearer(reader["secret"]))).status_code == 401
+    assert (await client.get(second_traces, headers=bearer(mixed["secret"]))).status_code == 403
+    assert (
+        await client.post("/v1/traces", json={"spans": []}, headers=bearer(mixed["secret"]))
+    ).status_code == 200
+    assert (
+        await client.post("/v1/traces", json={"spans": []}, headers=bearer(ingest["secret"]))
+    ).status_code == 200
+    revoked = await _audit(session_factory, AuditAction.KEY_REVOKE)
+    narrowed = await _audit(session_factory, AuditAction.KEY_SCOPES_CHANGE)
+    assert len(revoked) == len(narrowed) == 1
+    assert revoked[0].target_id == reader["id"]
+    assert revoked[0].metadata_ == {
+        "name": reader["name"],
+        "prefix": reader["prefix"],
+        "project_id": first.project_id,
+        "reason": "account_delete",
+        "member_user_id": member.user["id"],
+    }
+    assert narrowed[0].target_id == mixed["id"]
+    assert narrowed[0].metadata_ == {
+        "name": mixed["name"],
+        "prefix": mixed["prefix"],
+        "project_id": second.project_id,
+        "from": ["traces:read", "ingest:write"],
+        "to": ["ingest:write"],
+        "reason": "account_delete",
+        "member_user_id": member.user["id"],
+    }
+    assert str(revoked[0].actor_user_id) == str(narrowed[0].actor_user_id) == member.user["id"]
+    assert str(revoked[0].org_id) == first.org_id
+    assert str(narrowed[0].org_id) == second.org_id
+    async with session_factory() as db:
+        first_chain = await check_audit_chain(db, uuid.UUID(first.org_id))
+        second_chain = await check_audit_chain(db, uuid.UUID(second.org_id))
+    assert first_chain.first_broken_seq is None
+    assert second_chain.first_broken_seq is None

@@ -128,10 +128,17 @@ export interface SessionTurnsQuery {
 
 export interface CreateApiKeyInput {
   name: string;
+  password?: string;
+  code?: string;
   /** At least one. The server's default is `ingest:write` only. */
   scopes?: KeyScope[];
   /** An ISO time in the future, or null for a key that never expires. */
   expires_at?: string | null;
+}
+
+export interface ProjectDeleteProof {
+  password?: string;
+  code?: string;
 }
 
 export const projectsApi = {
@@ -139,11 +146,11 @@ export const projectsApi = {
   update: (projectId: string, update: ProjectUpdate): Promise<Project> =>
     api.patch<Project>(projectPath(projectId), update),
   /**
-   * Admin or owner. `confirm` is the project's slug exactly as typed; a wrong one is `422
+   * Admin or owner session with account-owner proof. `confirm` is the project's slug; a wrong one is `422
    * CONFIRMATION_MISMATCH`. Deletes its traces, spans, API keys and export files.
    */
-  delete: (projectId: string, confirm: string): Promise<void> =>
-    api.delete(projectPath(projectId), { confirm }),
+  delete: (projectId: string, confirm: string, proof?: ProjectDeleteProof): Promise<void> =>
+    api.delete(projectPath(projectId), { confirm, ...proof }),
 
   keys: (projectId: string): Promise<ApiKey[]> =>
     api.get<ApiKey[]>(`${projectPath(projectId)}/keys`),

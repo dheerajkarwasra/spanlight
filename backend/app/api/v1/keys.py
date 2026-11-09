@@ -6,13 +6,24 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy import select
 
-from app.api.deps import Access, DbSession, client_ip, require, utcnow
+from app.api.deps import (
+    Access,
+    ClockDep,
+    DbSession,
+    SettingsDep,
+    client_ip,
+    raise_session_required,
+    require,
+    utcnow,
+)
+from app.api.principals import SessionPrincipal
 from app.api.schemas import ApiKeyCreatedOut, ApiKeyCreateIn, ApiKeyOut, UserOut
+from app.auth.reauth import confirm_account_owner
 from app.core.errors import forbidden, not_found
 from app.core.permissions import Permission
-from app.core.scopes import KeyScope
+from app.core.scopes import READ_KEY_SCOPES, KeyScope
 from app.core.security import API_KEY_PREFIX, generate_key, mark_uncacheable
-from app.db.models import ApiKey, AuditAction, User
+from app.db.models import ApiKey, AuditAction, Membership, User
 from app.services.audit import record_audit
 from app.services.deletion import lock_project_for_write
 
@@ -63,10 +74,32 @@ async def create_key(
     response: Response,
     access: KeyCreator,
     db: DbSession,
+    settings: SettingsDep,
+    clock: ClockDep,
 ) -> ApiKeyCreatedOut:
     project = access.require_project()
+    if READ_KEY_SCOPES.intersection(body.scopes):
+        if not isinstance(access.auth, SessionPrincipal):
+            raise_session_required()
+        await confirm_account_owner(
+            db,
+            access.auth,
+            body.password,
+            body.code,
+            scope="read_key_reauth",
+            settings=settings,
+            now=clock(),
+        )
     # The organization is locked before the project row is referenced, the order deletions use.
     if not await lock_project_for_write(db, access.org.id, project.id):
+        raise not_found()
+    # A removal may have committed while this waited for the lock, past `require`'s check.
+    member = await db.scalar(
+        select(Membership.user_id).where(
+            Membership.org_id == access.org.id, Membership.user_id == access.user_id
+        )
+    )
+    if member is None:
         raise not_found()
     generated = generate_key(API_KEY_PREFIX)
     key = ApiKey(

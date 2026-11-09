@@ -3,11 +3,16 @@
 import httpx
 import pytest
 from pydantic import ValidationError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker
 
+from app.api import health
 from app.api.health import WORKER_HEARTBEAT_MAX_AGE_SECONDS
 from app.config import Settings
+from app.db.session import create_session_factory
 from app.jobs.worker_heartbeat import beat
+from app.main import create_app
+from tests.rollups.test_coverage_status import unactivated_database
 
 
 async def test_live_and_ready(
@@ -33,6 +38,42 @@ async def test_live_and_ready(
     assert body["status"] == "ok"
     age = body["worker_heartbeat_age_s"]
     assert isinstance(age, float) and 0 <= age < WORKER_HEARTBEAT_MAX_AGE_SECONDS
+    # The test database is activated the way a fresh install is.
+    assert body["aggregate_coverage"] == "active"
+
+
+async def test_a_failing_coverage_check_reads_unknown_and_keeps_readiness(
+    client: httpx.AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def failing(connection: AsyncConnection) -> bool:
+        await connection.execute(text("SELECT 1 / 0"))  # aborts the statement, as a timeout would
+        return True
+
+    monkeypatch.setattr(health, "coverage_active", failing)
+    await beat(session_factory, "test-worker", "test")
+    ready = await client.get("/health/ready")
+    assert ready.status_code == 200, ready.text
+    body = ready.json()
+    assert (body["status"], body["database"], body["migrations"]) == ("ok", "ok", "ok")
+    assert body["aggregate_coverage"] == "unknown"
+
+
+async def test_ready_reports_coverage_inactive(settings: Settings) -> None:
+    with unactivated_database() as url:
+        application = create_app(settings.model_copy(update={"database_url": url}))
+        async with application.router.lifespan_context(application):
+            transport = httpx.ASGITransport(app=application)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
+                no_worker = await http.get("/health/ready")
+                assert no_worker.status_code == 503
+                assert no_worker.json()["aggregate_coverage"] == "inactive"
+                # Informational only: coverage off never fails readiness.
+                await beat(create_session_factory(application.state.engine), "w", "test")
+                ready = await http.get("/health/ready")
+                assert ready.status_code == 200
+                assert ready.json()["aggregate_coverage"] == "inactive"
 
 
 async def test_metrics_requires_bearer_token(client: httpx.AsyncClient) -> None:

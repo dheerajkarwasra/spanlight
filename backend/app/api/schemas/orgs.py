@@ -14,7 +14,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.api.schemas.common import ApiModel, Confirmation, Name, UserOut
+from app.api.schemas.common import ApiModel, Confirmation, Name, Password, TotpCode, UserOut
 from app.db.models import MembershipRole
 
 
@@ -65,20 +65,27 @@ class OrgUpdateIn(BaseModel):
 class OrgDeleteIn(BaseModel):
     # The org's slug, typed out as it is shown. The route compares it; see `Confirmation`.
     confirm: Confirmation
+    password: Password | None = None
+    code: TotpCode | None = None
 
 
 class MemberOut(BaseModel):
     user: UserOut
     role: MembershipRole
     created_at: datetime
+    read_keys: int
 
 
 class MemberUpdateIn(BaseModel):
     role: MembershipRole
+    password: Password | None = None
+    code: TotpCode | None = None
 
 
 class InviteCreateIn(BaseModel):
     role: MembershipRole
+    password: Password | None = None
+    code: TotpCode | None = None
     # Where to mail the link. Without it, the caller shares the returned `url` by hand.
     email: EmailStr | None = None
 
@@ -88,6 +95,7 @@ class InviteCreatedOut(BaseModel):
     role: MembershipRole
     email: str | None
     url: str
+    emailed: bool
     expires_at: datetime
 
 
@@ -155,7 +163,14 @@ class AuditIntegrityOut(BaseModel):
     first_broken_seq: int | None
 
 
-class AuditStreamIn(BaseModel):
+class AuditStreamProofIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    password: Password | None = None
+    code: TotpCode | None = None
+
+
+class AuditStreamIn(AuditStreamProofIn):
     url: Annotated[str, Field(min_length=1, max_length=2048)]
     enabled: bool = True
 

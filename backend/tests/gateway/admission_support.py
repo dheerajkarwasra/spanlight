@@ -124,6 +124,7 @@ async def world(
             "provider": "openai_compatible",
             "api_key": "local-synthetic",
             "base_url": upstream + "/v1",
+            "password": "correct horse battery",
         },
     )
     prefix = f"/api/v1/projects/{workspace.project_id}"
@@ -139,7 +140,11 @@ async def world(
             },
         },
     )
-    key = await created(owner, prefix + "/gateway/keys", {"name": "local", "environment": "test"})
+    key = await created(
+        owner,
+        prefix + "/gateway/keys",
+        {"name": "local", "environment": "test", "password": "correct horse battery"},
+    )
     application = control
     if standalone:
         application = create_gateway_app(configured)

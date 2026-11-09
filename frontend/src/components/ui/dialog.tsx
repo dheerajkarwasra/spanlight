@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
-import type { ComponentProps } from "react";
+import { useRef, type ComponentProps } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -19,9 +19,23 @@ function DialogOverlay({ className, ...props }: ComponentProps<typeof DialogPrim
 
 interface DialogContentProps extends ComponentProps<typeof DialogPrimitive.Content> {
   hideClose?: boolean;
+  /**
+   * For a dialog opened from state, with no `DialogTrigger` for Radix to focus on close: back to
+   * what opened it, or to the page when a refresh removed that.
+   */
+  returnFocus?: boolean;
 }
 
-function DialogContent({ className, children, hideClose = false, ...props }: DialogContentProps) {
+function DialogContent({
+  className,
+  children,
+  hideClose = false,
+  returnFocus = false,
+  ...props
+}: DialogContentProps) {
+  // Read while rendering: Radix moves focus into the dialog once it mounts.
+  const opener = useRef(document.activeElement);
+
   return (
     <DialogPrimitive.Portal>
       <DialogOverlay />
@@ -31,6 +45,19 @@ function DialogContent({ className, children, hideClose = false, ...props }: Dia
           "animate-scale-in rounded-dialog border border-border bg-surface p-6 text-foreground shadow-lg",
           className,
         )}
+        {...(returnFocus
+          ? {
+              onCloseAutoFocus: (event: Event) => {
+                event.preventDefault();
+                const target = opener.current?.isConnected
+                  ? opener.current
+                  : document.getElementById("main");
+                if (target instanceof HTMLElement) {
+                  target.focus();
+                }
+              },
+            }
+          : {})}
         {...props}
       >
         {children}

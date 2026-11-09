@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Table, exists, func, literal_column, text
+from sqlalchemy import Table, exists, func, literal_column, or_, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.dml import ReturningInsert
@@ -72,14 +72,14 @@ async def write_spans(
     project_id: uuid.UUID,
     spans: Sequence[NormalizedSpan],
     source_key_id: uuid.UUID | None,
-) -> int:
+) -> tuple[int, int]:
     """Upsert the traces, then the spans, then recompute the traces' totals from stored spans.
 
     `source_key_id` is the gateway key the spans came through; None for native and OTLP spans.
-    Returns how many of the spans were new rows (a replay inserts none).
+    Returns inserted spans and the sum of updated spans and existing traces.
     """
     if not spans:
-        return 0
+        return 0, 0
     traces = _merge_traces(spans)
     trace_ids = [trace.trace_id for trace in traces]
     await lock_identities(session, project_id, trace_ids)
@@ -93,11 +93,11 @@ async def write_spans(
         new_hours,
         writing=[(span.trace_id, span.span_id) for span in spans],
     )
-    await _upsert_traces(session, project_id, traces)
-    inserted = await _upsert_spans(session, project_id, spans, source_key_id)
+    changed_traces = await _upsert_traces(session, project_id, traces)
+    inserted, changed = await _upsert_spans(session, project_id, spans, source_key_id)
     await _recompute_rollups(session, project_id, trace_ids)
     await mark_dirty_hours(session, project_id, [*old_hours, *new_hours])
-    return inserted
+    return inserted, changed + changed_traces
 
 
 def batch_hours(traces: Sequence[_TraceRow], spans: Sequence[NormalizedSpan]) -> list[datetime]:
@@ -115,7 +115,7 @@ def batch_hours(traces: Sequence[_TraceRow], spans: Sequence[NormalizedSpan]) ->
 
 async def _upsert_traces(
     session: AsyncSession, project_id: uuid.UUID, traces: Sequence[_TraceRow]
-) -> None:
+) -> int:
     statement = insert(Trace).values(
         [
             {
@@ -140,7 +140,8 @@ async def _upsert_traces(
         ]
     )
     excluded = statement.excluded
-    statement = statement.on_conflict_do_update(
+    # Postgres still locks conflicts when WHERE is false, preserving the trace lock order.
+    upsert: ReturningInsert[tuple[bool]] = statement.on_conflict_do_update(
         index_elements=[Trace.project_id, Trace.trace_id],
         set_={
             "name": func.coalesce(excluded.name, Trace.name),
@@ -159,8 +160,26 @@ async def _upsert_traces(
             "ended_at": func.greatest(Trace.ended_at, excluded.ended_at),
             "has_scores": Trace.has_scores | excluded.has_scores,
         },
-    )
-    await session.execute(statement)
+        where=or_(
+            func.coalesce(excluded.name, Trace.name).is_distinct_from(Trace.name),
+            func.coalesce(excluded.environment, Trace.environment).is_distinct_from(
+                Trace.environment
+            ),
+            func.coalesce(excluded.release, Trace.release).is_distinct_from(Trace.release),
+            func.coalesce(excluded.external_user_id, Trace.external_user_id).is_distinct_from(
+                Trace.external_user_id
+            ),
+            func.coalesce(excluded.session_id, Trace.session_id).is_distinct_from(Trace.session_id),
+            text(
+                "merge_trace_metadata(traces.metadata, excluded.metadata) "
+                "IS DISTINCT FROM traces.metadata"
+            ),
+            ~excluded.tags.contained_by(Trace.tags),
+            excluded.has_scores & ~Trace.has_scores,
+        ),
+    ).returning(literal_column("(xmax = 0)").label("inserted"))
+    result = await session.execute(upsert)
+    return sum(1 for row in result if not row.inserted)
 
 
 _SPAN_COLUMNS = (
@@ -204,8 +223,8 @@ async def _upsert_spans(
     project_id: uuid.UUID,
     spans: Sequence[NormalizedSpan],
     source_key_id: uuid.UUID | None,
-) -> int:
-    """Upsert the spans; returns how many were inserted rather than updated or left alone."""
+) -> tuple[int, int]:
+    """Upsert the spans and return the counts of inserted and changed rows."""
     ordered = sorted(spans, key=lambda span: (span.trace_id, span.span_id))
     rows = [
         {
@@ -220,7 +239,9 @@ async def _upsert_spans(
     statement = _SPAN_UPSERT_GUARDED if source_key_id is None else _SPAN_UPSERT
     result = await session.execute(statement, rows)
     # Summed over every RETURNING page of the insertmanyvalues path.
-    return sum(1 for row in result if row.inserted)
+    returned = result.all()
+    inserted = sum(1 for row in returned if row.inserted)
+    return inserted, len(returned) - inserted
 
 
 def _span_upsert(*, guarded: bool) -> ReturningInsert[tuple[str, bool]]:
@@ -232,7 +253,7 @@ def _span_upsert(*, guarded: bool) -> ReturningInsert[tuple[str, bool]]:
 
     `inserted` is `(xmax = 0)`: the usual upsert idiom for "this row was inserted, not updated",
     not documented behaviour (an updated row carries the updating transaction's id in `xmax`).
-    A guarded conflict the `WHERE` skips (a gateway-owned span) returns no row at all.
+    A guarded conflict the `WHERE` skips (a gateway-owned or unchanged span) returns no row.
     """
     spans: Table = Span.__table__  # type: ignore[assignment]  # mapped classes type it loosely
     statement = insert(spans)
@@ -248,7 +269,14 @@ def _span_upsert(*, guarded: bool) -> ReturningInsert[tuple[str, bool]]:
     return statement.on_conflict_do_update(
         index_elements=[spans.c.project_id, spans.c.trace_id, spans.c.span_id],
         set_=update_columns,
-        where=spans.c.source_key_id.is_(None) if guarded else None,
+        where=(
+            spans.c.source_key_id.is_(None)
+            & func.ROW(*(spans.c[column] for column in _SPAN_COLUMNS)).is_distinct_from(
+                func.ROW(*(statement.excluded[column] for column in _SPAN_COLUMNS))
+            )
+            if guarded
+            else None
+        ),
     ).returning(spans.c.span_id, literal_column("(xmax = 0)").label("inserted"))
 
 

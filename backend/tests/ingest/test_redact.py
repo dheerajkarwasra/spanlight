@@ -12,9 +12,11 @@ import pytest
 from app.core import redact
 from app.core.redact import REDACTED, luhn_valid, redact_json, redact_text
 from app.core.security import KEY_PREFIXES, generate_key
-from app.ingest.schemas import MAX_BODY_BYTES
+from app.ingest.schemas import MAX_BODY_BYTES, SpanIn
+from app.ingest.trace_fields import trace_fields
 from tests.core import test_redact_cards
 from tests.core.test_redact_cards import skip_when_traced
+from tests.helpers import new_trace_id, span
 
 # Real credentials of every kind, made the way the app makes them.
 CREDENTIALS = [generate_key(prefix).plaintext for prefix in KEY_PREFIXES]
@@ -336,3 +338,37 @@ def test_a_body_of_unterminated_private_key_headers_stays_cheap() -> None:
     assert redact_text(text) == text
 
     assert time.process_time() - started < 5.0
+
+
+def test_a_credential_named_by_its_json_key_is_redacted() -> None:
+    """A header recorded as a JSON pair (OTel `http.request.header.*` attributes, SDK
+    `{"headers": {...}}` metadata) splits the label from the value, so the label-and-value text
+    patterns never saw it: the key names the credential, and its value is replaced."""
+    secret = "wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY"
+    body = {
+        "x-api-key": "abcdefgh12345678zz",
+        "aws_secret_access_key": secret,
+        "headers": {"Authorization": "Basic dXNlcjpwYXNzd29yZA=="},
+        "http.request.header.x-api-key": ["abcdefgh12345678zz"],
+        "authorization_mode": "basic",
+    }
+    assert redact_json(body) == {
+        "x-api-key": REDACTED,
+        "aws_secret_access_key": REDACTED,
+        "headers": {"Authorization": REDACTED},
+        "http.request.header.x-api-key": [REDACTED],
+        "authorization_mode": "basic",
+    }
+    assert "dXNl" not in redact_text('{"Authorization": "Basic dXNlcjpwYXNzd29yZA=="}')
+    assert "dTpw" not in redact_text("Authorization: Basic dTpw")  # `u:p`
+    assert redact_text("a basic introduction") == "a basic introduction"
+    # The whole value, whatever its shape.
+    assert redact_json(
+        {"authorization": {"value": "dXNlcjpwYXNzd29yZA=="}, "x-api-key": [12345678, ["k3y"]]}
+    ) == {"authorization": {"value": REDACTED}, "x-api-key": [REDACTED, [REDACTED]]}
+    # Trace metadata is a flat string map redacted value by value.
+    metadata = {"authorization": "Basic dXNlcjpwYXNzd29yZA==", "x-api-key": "opaque", "plan": "pro"}
+    fields = trace_fields(
+        SpanIn.model_validate(span(trace_id=new_trace_id(), trace={"metadata": metadata}))
+    )
+    assert fields.metadata == {"authorization": REDACTED, "x-api-key": REDACTED, "plan": "pro"}

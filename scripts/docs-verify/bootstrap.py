@@ -218,14 +218,14 @@ def ensure_api_key(api: Api, project_id: str, current: str | None) -> str:
     return api.expect(created, 201)["secret"]
 
 
-def ensure_pat(api: Api, current: str | None) -> str:
+def ensure_pat(api: Api, current: str | None, password: str) -> str:
     if current and api.bearer_status("/auth/me", current) == 200:
         return current
-    body = {"name": TOKEN_NAME, "scope": "write"}
+    body = {"name": TOKEN_NAME, "scope": "write", "password": password}
     return api.expect(api.request("POST", "/auth/tokens", json=body), 201)["token"]
 
 
-def ensure_credential(api: Api, org_id: str) -> str:
+def ensure_credential(api: Api, org_id: str, password: str) -> str:
     for credential in api.expect(api.request("GET", f"/orgs/{org_id}/credentials"), 200):
         if credential["name"] == CREDENTIAL_NAME and credential["base_url"] == MOCK_BASE_URL:
             return credential["id"]
@@ -234,6 +234,7 @@ def ensure_credential(api: Api, org_id: str) -> str:
         "provider": "openai_compatible",
         "api_key": MOCK_KEY,
         "base_url": MOCK_BASE_URL,
+        "password": password,
     }
     return api.expect(api.request("POST", f"/orgs/{org_id}/credentials", json=body), 201)["id"]
 
@@ -252,12 +253,19 @@ def ensure_route(api: Api, project_id: str, credential_id: str) -> str:
     ]
 
 
-def ensure_gateway_key(api: Api, project_id: str, route_id: str, current: str | None) -> str:
+def ensure_gateway_key(
+    api: Api, project_id: str, route_id: str, current: str | None, password: str
+) -> str:
     base = f"/projects/{project_id}/gateway/keys"
     listed = api.expect(api.request("GET", base), 200)
     if current and key_is_listed(listed, GATEWAY_KEY_NAME, current):
         return current
-    body = {"name": GATEWAY_KEY_NAME, "route_id": route_id, "environment": "development"}
+    body = {
+        "name": GATEWAY_KEY_NAME,
+        "route_id": route_id,
+        "environment": "development",
+        "password": password,
+    }
     return api.expect(api.request("POST", base, json=body), 201)["secret"]
 
 
@@ -272,13 +280,13 @@ def bootstrap(host: str, store: EnvStore, transport: httpx.BaseTransport | None 
     store.set("SPANLIGHT_HOST", host)
     org_id = store.set("SPANLIGHT_ORG_ID", ensure_org(api))
     project_id = store.set("SPANLIGHT_PROJECT_ID", ensure_project(api, org_id))
-    credential_id = store.set("SPANLIGHT_CREDENTIAL_ID", ensure_credential(api, org_id))
+    credential_id = store.set("SPANLIGHT_CREDENTIAL_ID", ensure_credential(api, org_id, password))
     route_id = ensure_route(api, project_id, credential_id)
     store.set("SPANLIGHT_API_KEY", ensure_api_key(api, project_id, store.get("SPANLIGHT_API_KEY")))
-    store.set("SPANLIGHT_PAT", ensure_pat(api, store.get("SPANLIGHT_PAT")))
+    store.set("SPANLIGHT_PAT", ensure_pat(api, store.get("SPANLIGHT_PAT"), password))
     store.set(
         "SPANLIGHT_GATEWAY_KEY",
-        ensure_gateway_key(api, project_id, route_id, store.get("SPANLIGHT_GATEWAY_KEY")),
+        ensure_gateway_key(api, project_id, route_id, store.get("SPANLIGHT_GATEWAY_KEY"), password),
     )
 
 

@@ -281,7 +281,9 @@ async def build_org(
 
 
 async def delete_org(who: Browser, org_id: str, confirm: object) -> httpx.Response:
-    return await who.delete(org_url(org_id), json={"confirm": confirm})
+    return await who.delete(
+        org_url(org_id), json={"confirm": confirm, "password": "correct horse battery"}
+    )
 
 
 async def test_the_owner_deletes_the_org_and_everything_in_it(
@@ -290,7 +292,10 @@ async def test_the_owner_deletes_the_org_and_everything_in_it(
     owner, admin, member, workspace, second = await build_org(browser_factory, client)
     other = await create_workspace(owner, org_name="Elsewhere")
     await ingest(client, other.api_key)
-    await owner.post(f"/api/v1/orgs/{workspace.org_id}/invites", json={"role": "viewer"})
+    await owner.post(
+        f"/api/v1/orgs/{workspace.org_id}/invites",
+        json={"password": "correct horse battery", "role": "viewer"},
+    )
     slug = (await owner.get(org_url(workspace.org_id))).json()["slug"]
     assert await count(session_factory, "audit_events", workspace.org_id) > 0
     assert (await count_project_rows(session_factory, workspace.project_id))["traces"] == 1
@@ -447,7 +452,7 @@ async def test_the_demo_org_cannot_be_deleted(
     assert (await org_row(session_factory, workspace.org_id)) is not None
 
 
-async def test_an_access_token_deletes_only_with_the_write_scope(
+async def test_no_access_token_can_delete_an_organization(
     browser_factory: BrowserFactory,
     bare_client: httpx.AsyncClient,
     session_factory: SessionFactory,
@@ -461,14 +466,15 @@ async def test_an_access_token_deletes_only_with_the_write_scope(
 
     refused = await bare_client.request("DELETE", url, json={"confirm": slug}, headers=bearer(read))
     assert refused.status_code == 403
-    assert refused.json()["code"] == "TOKEN_SCOPE"
+    assert refused.json()["code"] == "SESSION_REQUIRED"
     assert (await org_row(session_factory, workspace.org_id)) is not None
 
     deleted = await bare_client.request(
         "DELETE", url, json={"confirm": slug}, headers=bearer(write)
     )
-    assert deleted.status_code == 204
-    assert (await org_row(session_factory, workspace.org_id)) is None
+    assert deleted.status_code == 403
+    assert deleted.json()["code"] == "SESSION_REQUIRED"
+    assert (await org_row(session_factory, workspace.org_id)) is not None
 
 
 def logged(caplog: pytest.LogCaptureFixture, event: str) -> list[dict[str, Any]]:
@@ -544,7 +550,8 @@ async def test_deleting_an_org_while_one_of_its_projects_is_deleted_does_not_dea
         org_result, project_result = await asyncio.gather(
             delete_org(owner, workspace.org_id, org_slug),
             admin.delete(
-                f"/api/v1/projects/{workspace.project_id}", json={"confirm": project_slug}
+                f"/api/v1/projects/{workspace.project_id}",
+                json={"confirm": project_slug, "password": "correct horse battery"},
             ),
         )
 

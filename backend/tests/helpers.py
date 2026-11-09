@@ -135,7 +135,9 @@ async def verify_email(factory: async_sessionmaker[AsyncSession], email: str) ->
 
 
 async def join_with_role(owner: Browser, member: Browser, org_id: str, role: str) -> None:
-    invite = await owner.post(f"/api/v1/orgs/{org_id}/invites", json={"role": role})
+    invite = await owner.post(
+        f"/api/v1/orgs/{org_id}/invites", json={"password": "correct horse battery", "role": role}
+    )
     assert invite.status_code == 201, invite.text
     token = invite.json()["url"].split("#token=", 1)[1]
     accepted = await member.post("/api/v1/invites/accept", json={"token": token})
@@ -151,6 +153,8 @@ async def create_project(owner: Browser, org_id: str, name: str) -> str:
 
 async def create_api_key(owner: Browser, project_id: str, **body: Any) -> dict[str, Any]:
     """Create a key through the API and return the 201 body (it includes the one-time `secret`)."""
+    if {"traces:read", "prompts:read"}.intersection(body.get("scopes", [])):
+        body.setdefault("password", "correct horse battery")
     response = await owner.post(f"/api/v1/projects/{project_id}/keys", json={"name": "k", **body})
     assert response.status_code == 201, response.text
     created: dict[str, Any] = response.json()
@@ -170,7 +174,8 @@ async def expire_api_key(session_factory: async_sessionmaker[AsyncSession], key_
 async def create_token(owner: Browser, **body: Any) -> dict[str, Any]:
     """Create a token through the API and return the 201 body (it includes the one-time `token`)."""
     response = await owner.post(
-        "/api/v1/auth/tokens", json={"name": "cli", "scope": "write", **body}
+        "/api/v1/auth/tokens",
+        json={"name": "cli", "scope": "write", "password": "correct horse battery", **body},
     )
     assert response.status_code == 201, response.text
     created: dict[str, Any] = response.json()

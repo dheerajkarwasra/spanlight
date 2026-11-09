@@ -48,10 +48,12 @@ export default defineRailway(() => {
     },
     // Uses the image CMD: uvicorn on $PORT with proxy headers from Caddy. The CMD unsets
     // MIGRATION_DATABASE_URL first, so the owner credentials never reach the app process.
-    // Before each deploy, as the Postgres owner: migrate, then create or refresh
-    // the spanlight_app role (password from APP_DB_PASSWORD). A failure stops the deploy.
+    // Before each deploy, as the Postgres owner: migrate, create or refresh the
+    // spanlight_app role (password from APP_DB_PASSWORD), then activate aggregate coverage on a
+    // fresh install (the Compose `migrate` step; with any project present it changes nothing).
+    // A failure stops the deploy.
     preDeploy:
-      "sh -c 'export DATABASE_URL=\"$MIGRATION_DATABASE_URL\" && spanlight migrate && spanlight ensure-app-role --role spanlight_app'",
+      "sh -c 'export DATABASE_URL=\"$MIGRATION_DATABASE_URL\" && spanlight migrate && spanlight ensure-app-role --role spanlight_app && spanlight activate-aggregate-coverage --writers-drained --fresh-install --skip-if-projects-exist'",
     // Liveness only. /health/ready also needs a worker heartbeat, and the worker is deployed
     // after the api, so a readiness gate here would never go green on a fresh install. Point an
     // external uptime monitor at /health/ready instead.

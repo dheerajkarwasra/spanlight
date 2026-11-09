@@ -12,8 +12,9 @@
 
 :{$PORT:8080} {
 	# Not on /gw/*: the gateway hands provider answers through as they came, and a compressing
-	# layer would buffer a stream and change its bytes.
-	@compressible not path /gw/*
+	# layer would buffer a stream and change its bytes. Not on the live dashboard stream either,
+	# whose small events would wait in the compressor.
+	@compressible not path /gw/* /api/v1/projects/*/live
 	encode @compressible zstd gzip
 
 	header {
@@ -61,6 +62,17 @@
 			# The gateway's per-key and per-organization limits key on this address.
 			header_up X-Forwarded-For {client_ip}
 			# See the api block below: a replica that cannot be reached is skipped, not a 502.
+			lb_try_duration 5s
+		}
+	}
+
+	# The live dashboard stream (server-sent events, open as long as the tab). flush_interval -1
+	# sends each event and heartbeat on at once instead of buffering it.
+	@live path /api/v1/projects/*/live
+	handle @live {
+		reverse_proxy {$API_UPSTREAM:api:8000} {
+			flush_interval -1
+			header_up X-Forwarded-For {client_ip}
 			lb_try_duration 5s
 		}
 	}

@@ -60,7 +60,7 @@ Because the totals are recomputed from stored spans and never added to, a replay
 
 A span that the [gateway](/docs/concepts/ingest-paths/) recorded belongs to the gateway. If a native or OTLP span arrives with the same ids, the pipeline counts it as accepted but leaves the stored span alone, so a replay cannot rewrite the cost a gateway key is accountable for.
 
-When a batch is replayed, the one thing that can change is the price. Spans are priced again with the prices in force at that moment, so a price change between two sends changes the cost and `pricing_version` of the replayed spans.
+An unchanged replay preserves every span column, including `ingested_at`; a batch that inserts spans or changes span or trace content counts its whole body toward daily bytes, and a replay that inserts spans or changes span or trace content at the daily cap is refused whole with `429 INGEST_QUOTA_EXCEEDED`. Spans are priced again with the prices in force at that moment, so a price change between two sends changes the cost and `pricing_version` of the replayed spans.
 
 ### What is redacted
 
@@ -72,6 +72,7 @@ Redaction looks at the span and trace names and every string in the input, outpu
 - AWS access key ids, and AWS secret keys that are labelled as such.
 - Stripe live keys, GitHub tokens, Google API keys, Slack tokens and Groq keys.
 - JSON Web Tokens, `x-api-key` header values and PEM private key blocks.
+- `Authorization: Basic` credentials, and the whole value of any JSON key named `authorization`, `x-api-key` or `aws_secret_access_key`, alone or at the end of a longer name such as the OpenTelemetry attribute `http.request.header.x-api-key`.
 - Card numbers: groups of 13 to 19 digits that pass the Luhn check.
 
 A project can also turn on `redact_contact_info`, which redacts email addresses and phone numbers written with a leading `+` in the span name, input, output, attributes and status message. It is off by default. [Redact email addresses and phone numbers](/docs/guides/privacy/#redact-email-addresses-and-phone-numbers) lists the patterns and what they miss.

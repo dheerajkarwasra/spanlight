@@ -188,7 +188,8 @@ async def test_project_delete_cascade_writes_no_ledger_row(budget_world: BudgetW
     await ingest_spend(world, tokens=250_000)
     project = await world.workspace.owner.get(world.project_url)
     response = await world.workspace.owner.delete(
-        world.project_url, json={"confirm": project.json()["slug"]}
+        world.project_url,
+        json={"confirm": project.json()["slug"], "password": "correct horse battery"},
     )
     assert response.status_code == 204, response.text
     assert await ledger_rows(world) == 0

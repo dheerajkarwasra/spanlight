@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-import { COMPUTED_AT_EXPLANATION, NOT_COMPUTED_EXPLANATION } from "./computed-at";
+import { COMPUTED_AT_EXPLANATION, LIVE_EXPLANATION, NOT_COMPUTED_EXPLANATION } from "./computed-at";
 import { ComputedAtChip } from "./computed-at-chip";
 
 const AT_1405 = new Date(new Date().setHours(14, 5, 0, 0)).toISOString();
@@ -66,6 +66,18 @@ describe("ComputedAtChip", () => {
     renderChip(null, null);
     tap(screen.getByRole("button", { name: "Not computed yet" }));
     expect(screen.getByRole("tooltip")).toHaveTextContent(NOT_COMPUTED_EXPLANATION);
+  });
+
+  it("says 'Live' when the figures include every trace so far", () => {
+    render(
+      <TooltipProvider>
+        <ComputedAtChip value={AT_1405} pendingTraces={0} live />
+      </TooltipProvider>,
+    );
+    const button = screen.getByRole("button", { name: "Live" });
+    expect(screen.queryByText(/Updated/)).not.toBeInTheDocument();
+    tap(button);
+    expect(screen.getByRole("tooltip")).toHaveTextContent(LIVE_EXPLANATION);
   });
 
   it("does not toggle on a mouse click", () => {

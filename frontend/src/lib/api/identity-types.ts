@@ -155,12 +155,13 @@ export interface Member {
   user: User;
   role: Role;
   created_at: string;
+  read_keys: number;
 }
 
 export interface Invite {
   id: string;
   role: Role;
-  /** The address the link was mailed to; null when the link is shared by hand. */
+  /** The optional invitee address; `emailed` on creation says whether mail was queued. */
   email: string | null;
   expires_at: string;
 }
@@ -171,6 +172,7 @@ export interface PendingInvite extends Invite {
 
 export interface CreatedInvite extends Invite {
   url: string;
+  emailed: boolean;
 }
 
 export interface InviteAcceptance {

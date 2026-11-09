@@ -30,7 +30,7 @@ A key looks like `spl_live_` followed by 12 characters, an underscore and 32 mor
 3. Create a replacement key on the same page. The secret is shown once, at creation.
 4. Put the new key into every sender that used the old one, as `SPANLIGHT_API_KEY` for the Python SDK or as the bearer token of your OTLP exporter. The SDK never raises into your application, so a sender with a revoked key does not crash; its batches are rejected with 401 and, unless the application has logging enabled, nobody notices. Watch the dashboard for a project that goes quiet to find senders you forgot.
 
-Only a signed-in session creates keys. A key cannot create or revoke keys, not even itself.
+Only a signed-in session creates keys that can read; a write token can still create ingest and score keys. A key cannot create or revoke keys, not even itself.
 
 ### Steps (SQL, when the dashboard is unavailable)
 
@@ -147,7 +147,28 @@ Expected: `DELETE <n>`.
 
 To sign out everyone in an emergency, `DELETE FROM sessions` with no condition does it. Every user then has to sign in again, and rotating `SECRET_KEY` is not needed for this: see [rotate-secrets.md](rotate-secrets.md#secret_key) for what it does and does not do.
 
-To remove a person's access altogether, remove them from the organization (the dashboard's member list, or `DELETE /api/v1/orgs/{org_id}/members/{user_id}`), revoke their tokens as above, and end their sessions.
+To remove a person's access altogether, remove them from the organization (the dashboard's member list, or `DELETE /api/v1/orgs/{org_id}/members/{user_id}`), revoke their tokens as above, and end their sessions. Removal, including leaving voluntarily, strips `traces:read` and `prompts:read` from the project API keys they created in that organization: read-only keys are revoked, and mixed keys keep their other scopes in the same order. Account deletion does the same in every organization the user belongs to before clearing the creator link. Expired but unrevoked keys follow the same rule. Each changed key is audited, and the serving process evicts its cached copy after commit; other processes see the change within `API_KEY_CACHE_TTL_SECONDS`.
+
+Keys without read scopes keep working. Gateway keys are unaffected. Rotate ingest and gateway keys separately when the departing person knew their secrets, replacing production senders first so telemetry is not lost.
+
+The upgrade does not change existing leftover keys. Review active read-scoped keys whose creator is missing or no longer belongs to the project's organization:
+
+```sql
+SELECT k.id, k.name, k.prefix, k.project_id, p.org_id,
+       k.scopes, k.created_by, k.last_used_at, k.expires_at
+FROM api_keys AS k
+JOIN projects AS p ON p.id = k.project_id
+WHERE k.revoked_at IS NULL
+  AND (k.expires_at IS NULL OR k.expires_at > now())
+  AND k.scopes && ARRAY['traces:read', 'prompts:read']::text[]
+  AND (k.created_by IS NULL OR NOT EXISTS (
+      SELECT 1 FROM memberships AS m
+      WHERE m.org_id = p.org_id AND m.user_id = k.created_by
+  ))
+ORDER BY p.org_id, k.project_id, k.id;
+```
+
+Review each result with the project owner. Replace any production sender before revoking a mixed key, then use the dashboard or the prefix-based revoke SQL above. SQL revocation skips the audit event and takes effect after the cache TTL; record the decision in your incident notes.
 
 ## Recover a lost authenticator (two-factor reset)
 

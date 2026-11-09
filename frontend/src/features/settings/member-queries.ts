@@ -2,9 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { useProjectParams } from "@/features/shell";
-import { errorMessage, orgsApi, queryKeys, type Role } from "@/lib/api";
+import { errorMessage, orgsApi, queryKeys } from "@/lib/api";
 
-import { memberErrorMessage } from "./member-utils";
+import type { InviteInput, MemberRemoveInput, MemberRoleInput } from "@/lib/api/orgs";
 
 export function useMembersQuery() {
   const { orgId } = useProjectParams();
@@ -28,13 +28,12 @@ export function useUpdateMemberRole() {
   const { orgId } = useProjectParams();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ userId, role }: { userId: string; role: Role }) =>
-      orgsApi.updateMemberRole(orgId, userId, role),
+    // The variables carry the password: keep nothing once the dialog is gone.
+    gcTime: 0,
+    mutationFn: ({ userId, ...input }: MemberRoleInput & { userId: string }) =>
+      orgsApi.updateMemberRole(orgId, userId, input),
     onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.org(orgId).members });
-    },
-    onError: (error) => {
-      toast.error(memberErrorMessage(error));
     },
   });
 }
@@ -43,12 +42,12 @@ export function useRemoveMember() {
   const { orgId } = useProjectParams();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (userId: string) => orgsApi.removeMember(orgId, userId),
-    onSuccess: async () => {
+    // The variables carry the password: keep nothing once the dialog is gone.
+    gcTime: 0,
+    mutationFn: ({ userId, ...proof }: MemberRemoveInput & { userId: string }) =>
+      orgsApi.removeMember(orgId, userId, proof),
+    onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.org(orgId).members });
-    },
-    onError: (error) => {
-      toast.error(memberErrorMessage(error));
     },
   });
 }
@@ -58,13 +57,10 @@ export function useCreateInvite() {
   const { orgId } = useProjectParams();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (role: Role) => orgsApi.createInvite(orgId, role),
+    mutationFn: (input: InviteInput) => orgsApi.createInvite(orgId, input),
     gcTime: 0,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.org(orgId).invites });
-    },
-    onError: (error) => {
-      toast.error(errorMessage(error));
     },
   });
 }

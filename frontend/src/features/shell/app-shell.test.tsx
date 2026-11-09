@@ -2,7 +2,8 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { projectsApi } from "@/lib/api";
+import { ApiError, projectsApi, queryKeys } from "@/lib/api";
+import { createQueryClient } from "@/app/query-client";
 import { readLastProject } from "@/lib/last-project";
 import { makeProject, mockSignedIn, ORG_ID, renderApp } from "@/test/render-app";
 
@@ -80,6 +81,21 @@ describe("AppShell", () => {
 
     expect(await screen.findByText("Page not found")).toBeInTheDocument();
     expect(readLastProject()).toBeNull();
+  });
+
+  it("keeps the page when a background refresh of the project fails", async () => {
+    // The page may hold a one-time secret on screen: swapping it for an error state loses it.
+    mockSignedIn([makeProject("proj_1", "Checkout")]);
+    const client = createQueryClient();
+    renderApp(`/${ORG_ID}/proj_1/settings/billing-sources/source_1`, client);
+    expect(await screen.findByText("Reconciliation page")).toBeInTheDocument();
+
+    vi.spyOn(projectsApi, "get").mockRejectedValue(new ApiError(400, {}));
+    const key = queryKeys.project("proj_1").detail;
+    await act(() => client.refetchQueries({ queryKey: key, exact: true }));
+
+    expect(client.getQueryState(key)?.status).toBe("error");
+    expect(screen.getByText("Reconciliation page")).toBeInTheDocument();
   });
 
   it("mounts the work-mode page once when entering it from a chromed page", async () => {

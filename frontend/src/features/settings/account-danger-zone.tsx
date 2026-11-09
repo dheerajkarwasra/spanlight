@@ -51,6 +51,7 @@ const DELETED = [
   "Sessions, personal access tokens and GitHub or Google sign-ins",
   "Two-factor settings and recovery codes",
   "Your memberships. Organizations and their projects stay with their other members.",
+  "Read access on API keys you created. Read-only keys are revoked; ingest keys keep sending traces.",
 ];
 
 /** Settings › Account › Danger zone (Figma "Settings — Account"): delete the account. */

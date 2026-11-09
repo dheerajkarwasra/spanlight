@@ -15,5 +15,8 @@ class KeyScope(enum.StrEnum):
     PROMPTS_READ = "prompts:read"  # GET /v1/prompts/{name}
 
 
+READ_KEY_SCOPES: frozenset[KeyScope] = frozenset({KeyScope.TRACES_READ, KeyScope.PROMPTS_READ})
+
+
 # What a key gets when its creator names no scopes: the only thing keys could do before scopes.
 DEFAULT_KEY_SCOPES: tuple[KeyScope, ...] = (KeyScope.INGEST_WRITE,)

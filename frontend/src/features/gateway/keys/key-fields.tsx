@@ -48,6 +48,8 @@ export function KeyFields({
       >
         <Input
           autoComplete="off"
+          data-1p-ignore
+          data-lpignore="true"
           maxLength={KEY_NAME_MAX_LENGTH}
           placeholder="support-bot-prod"
           {...form.register("name")}

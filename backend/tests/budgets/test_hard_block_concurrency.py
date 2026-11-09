@@ -210,7 +210,12 @@ async def test_a_free_call_reserves_nothing(budget_world: BudgetWorld) -> None:
 
 
 async def _wait_for_reapers_blocked_by(world: BudgetWorld, locker_pid: int) -> None:
-    """Wait for two real UPDATE transactions to reach the locked reservation row."""
+    """Wait for two real reaper transactions to reach the locked reservation row (the reaper
+    locks the rows with `SELECT ... FOR UPDATE` before its UPDATE)."""
+    reaping = (
+        "(query LIKE '%UPDATE budget_reservations%' "
+        "OR (query LIKE '%FROM budget_reservations%' AND query LIKE '%FOR UPDATE%'))"
+    )
     async with asyncio.timeout(5):
         async with world.sessions() as observer:
             while True:
@@ -218,8 +223,7 @@ async def _wait_for_reapers_blocked_by(world: BudgetWorld, locker_pid: int) -> N
                 blocked = await observer.scalar(
                     text(
                         "SELECT count(*) FROM pg_stat_activity "
-                        "WHERE :pid = ANY(pg_blocking_pids(pid)) "
-                        "AND query LIKE '%UPDATE budget_reservations%'"
+                        f"WHERE :pid = ANY(pg_blocking_pids(pid)) AND {reaping}"
                     ),
                     {"pid": locker_pid},
                 )
@@ -228,7 +232,7 @@ async def _wait_for_reapers_blocked_by(world: BudgetWorld, locker_pid: int) -> N
                     text(
                         "SELECT count(*) FROM pg_stat_activity "
                         "WHERE datname = current_database() AND wait_event_type = 'Lock' "
-                        "AND query LIKE '%UPDATE budget_reservations%'"
+                        f"AND {reaping}"
                     )
                 )
                 if blocked and queued == 2:

@@ -256,7 +256,8 @@ async def test_deletion_coverage_respects_rls_and_project_cascade(
     await ingest_spend(world, tokens=250_000)
     project = await world.workspace.owner.get(world.project_url)
     response = await world.workspace.owner.delete(
-        world.project_url, json={"confirm": project.json()["slug"]}
+        world.project_url,
+        json={"confirm": project.json()["slug"], "password": "correct horse battery"},
     )
     assert response.status_code == 204, response.text
     async with world.sessions() as db:

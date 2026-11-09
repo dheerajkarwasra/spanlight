@@ -1,22 +1,22 @@
-import { useState, type ReactElement } from "react";
+import { useState } from "react";
 
-import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import type { CreatedPersonalAccessToken } from "@/lib/api";
 
 import { CreateTokenForm } from "./create-token-form";
 import { SecretRevealView } from "./secret-reveal-view";
 
 interface CreateTokenDialogProps {
-  /** The element that opens the dialog, usually a "Create token" button. */
-  trigger: ReactElement;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
 /**
  * Two steps in one dialog: name the token, then show it once. The token lives only in the body's
  * state, and the body is mounted only while the dialog is open, so closing it drops the secret.
+ * Render it above anything a list refresh can remove: losing the mount loses the secret for good.
  */
-export function CreateTokenDialog({ trigger }: CreateTokenDialogProps) {
-  const [open, setOpen] = useState(false);
+export function CreateTokenDialog({ open, onOpenChange }: CreateTokenDialogProps) {
   const [pending, setPending] = useState(false);
 
   return (
@@ -26,11 +26,10 @@ export function CreateTokenDialog({ trigger }: CreateTokenDialogProps) {
         // Escape, Cancel, the close mark and an outside click all end up here: while the token is
         // being made, none of them may close the dialog and lose it.
         if (next || !pending) {
-          setOpen(next);
+          onOpenChange(next);
         }
       }}
     >
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
       {open ? <CreateTokenDialogBody onPendingChange={setPending} /> : null}
     </Dialog>
   );
@@ -54,6 +53,7 @@ function CreateTokenDialogBody({
   return (
     <DialogContent
       hideClose
+      returnFocus
       className={SHEET_CLASSES}
       onInteractOutside={(event) => {
         // A stray click outside would lose the token for good.

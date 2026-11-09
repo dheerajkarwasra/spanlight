@@ -78,8 +78,8 @@ _PER_TRACE = """
                count(*) FILTER (
                    WHERE s.kind = 'llm' AND s.cost_usd IS NULL AND s.usage_rollup = false
                ) AS unpriced_calls,
-               coalesce(sum(s.input_tokens) {summed}, 0) AS input_tokens,
-               coalesce(sum(s.output_tokens) {summed}, 0) AS output_tokens,
+               sum(s.input_tokens) {summed} AS input_tokens,
+               sum(s.output_tokens) {summed} AS output_tokens,
                CASE WHEN sum(s.cost_usd) {summed} < 1000000
                     THEN sum(s.cost_usd) {summed} END AS cost_usd
         FROM traces AS t

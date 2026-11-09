@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { GatewayKey } from "@/lib/api";
+import type { GatewayKey, GatewayKeyUpdate } from "@/lib/api";
 
 import {
+  widens,
   CACHE_OPTIONS,
   EMPTY_KEY_FORM,
   cacheLabel,
@@ -47,6 +48,7 @@ function key(overrides: Partial<GatewayKey>): GatewayKey {
     allowed_models: [],
     default_tags: [],
     fault_profile_id: null,
+    creator_is_member: false,
     created_by: null,
     created_at: "2026-10-01T00:00:00Z",
     last_used_at: null,
@@ -153,5 +155,40 @@ describe("fault profiles on production keys", () => {
     expect(faultProductionConflict(form({ environment: "staging", faultProfileId: "fp1" }))).toBe(
       false,
     );
+  });
+});
+
+describe("widening authority", () => {
+  const limited = key({
+    route_id: "r1",
+    rpm_limit: 10,
+    tpm_limit: 100,
+    allowed_models: ["a", "b"],
+  });
+  it.each<[GatewayKeyUpdate, boolean]>([
+    [{ rpm_limit: null }, true],
+    [{ rpm_limit: 11 }, true],
+    [{ rpm_limit: 9 }, false],
+    [{ tpm_limit: null }, true],
+    [{ tpm_limit: 101 }, true],
+    [{ tpm_limit: 90 }, false],
+    [{ allowed_models: [] }, true],
+    [{ allowed_models: ["a", "c"] }, true],
+    [{ allowed_models: ["a"] }, false],
+    [{ allowed_models: ["b", "a"] }, false],
+    [{ route_id: "r2" }, true],
+    [{ route_id: "r1" }, false],
+    [{ environment: "production" }, true],
+    [{ environment: "staging" }, false],
+    [{ fault_profile_id: "p1" }, false],
+    [{ fault_profile_id: null }, false],
+    [{ fault_profile_id: "p1", rpm_limit: null }, true],
+    [{ name: "new", default_tags: ["tag"], cache_ttl_seconds: null }, false],
+  ])("checks %j", (changes, expected) => {
+    expect(widens(limited, changes)).toBe(expected);
+  });
+  it("allows tightening an unlimited key", () => {
+    expect(widens(key({}), { rpm_limit: 10, tpm_limit: 100, allowed_models: ["a"] })).toBe(false);
+    expect(widens(key({}), { rpm_limit: null, allowed_models: [] })).toBe(false);
   });
 });

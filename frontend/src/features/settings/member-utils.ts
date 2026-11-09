@@ -32,6 +32,17 @@ export function displayName(member: Member): string {
   return member.user.name || member.user.email;
 }
 
+export function memberRemovalKeyLines(readKeys: number): [string, string] {
+  const keys =
+    readKeys === 1 ? "1 API key they created loses" : `${readKeys} API keys they created lose`;
+  return [
+    readKeys === 0
+      ? "No API key they created has read access."
+      : `${keys} read access: read-only keys are revoked, ingest keys keep sending traces.`,
+    "Gateway keys they created keep working and spending. Revoke any that should stop under Gateway.",
+  ];
+}
+
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 
@@ -65,4 +76,20 @@ export function roleWithArticle(role: Role): string {
 export function roleHint(role: Role): string {
   const description = ROLE_DESCRIPTIONS[role];
   return `${ROLE_LABELS[role]}: ${description.charAt(0).toLowerCase()}${description.slice(1)}`;
+}
+
+const ROLE_CHANGE_DESCRIPTIONS: Record<Role, string> = {
+  owner: "Owners get full access, including deleting the organization.",
+  admin: "Admins manage projects, members, all API keys and the audit log.",
+  member:
+    "Members create their own API keys and manage prompts, datasets, scores and experiments. No member or project management.",
+  viewer: "Viewers only read traces and metrics.",
+};
+
+export function memberRoleDescription(current: Role, next: Role): string {
+  const direction =
+    ROLES.indexOf(next) < ROLES.indexOf(current)
+      ? "Takes effect at once. Confirm it's you first."
+      : "They lose their current access at once. Confirm it's you first.";
+  return `${ROLE_CHANGE_DESCRIPTIONS[next]} ${direction}`;
 }

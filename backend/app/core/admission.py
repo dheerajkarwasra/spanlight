@@ -15,6 +15,7 @@ Not uvicorn's `--limit-concurrency`: it answers a bare text 503 with no `Retry-A
 the problem+json contract, and counts health checks and gateway streams too.
 """
 
+import re
 import time
 
 import structlog
@@ -26,6 +27,9 @@ from app.core.observability import ADMISSION_REJECTIONS
 logger = structlog.get_logger(__name__)
 
 ADMITTED_PREFIXES = ("/api/", "/v1/")
+# A live dashboard stream stays open for hours: counted, a few tabs would fill the cap. Its own
+# limit is `LIVE_MAX_STREAMS` (`app.api.v1.live`).
+_LIVE_STREAM = re.compile(r"/api/v1/projects/[^/]+/live")
 # Overload lasts as long as the burst, so the warning is logged at most once a minute;
 # `spanlight_admission_rejections_total` counts every rejection.
 _REJECTED_LOG_INTERVAL_SECONDS = 60.0
@@ -44,7 +48,12 @@ class AdmissionMiddleware:
         self._last_log: float | None = None
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or not scope["path"].startswith(ADMITTED_PREFIXES):
+        path = scope.get("path", "")
+        if (
+            scope["type"] != "http"
+            or not path.startswith(ADMITTED_PREFIXES)
+            or _LIVE_STREAM.fullmatch(path)
+        ):
             await self.app(scope, receive, send)
             return
         if self.in_flight >= self.limit:

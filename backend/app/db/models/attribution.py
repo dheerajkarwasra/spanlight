@@ -35,8 +35,9 @@ class AttributionRollupDaily(Base):
     llm_calls: Mapped[int] = mapped_column(BigInteger)
     errors: Mapped[int] = mapped_column(BigInteger)
     unpriced_calls: Mapped[int] = mapped_column(BigInteger)
-    input_tokens: Mapped[int] = mapped_column(BigInteger)
-    output_tokens: Mapped[int] = mapped_column(BigInteger)
+    # NULL when no span of the group reported it (migration 1043).
+    input_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    output_tokens: Mapped[int | None] = mapped_column(BigInteger)
     cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 8))
     retries: Mapped[int | None] = mapped_column(BigInteger)
     retry_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 8))

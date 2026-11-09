@@ -2,11 +2,12 @@ import type { LinkProps } from "@tanstack/react-router";
 import { UserRound } from "lucide-react";
 
 import type { DataColumn } from "@/components/data-table";
+import { UnknownValue } from "@/components/unknown-value";
 import { useProjectParams } from "@/features/shell/project-context";
 import { toPathId, type UserStats } from "@/lib/api";
 import { formatInteger } from "@/lib/format";
 
-import { lastSeenLabel } from "./user-format";
+import { lastSeenLabel, NO_USER_USAGE } from "./user-format";
 import { ErrorCount, UserCost, UserLink } from "./user-row";
 import { keepWindow } from "./user-sort";
 
@@ -69,7 +70,11 @@ export const USER_COLUMNS: DataColumn<UserStats>[] = [
     align: "end",
     hideable: true,
     minContainer: 860,
-    cell: (user) => <span className="text-muted-foreground">{formatInteger(user.tokens)}</span>,
+    cell: (user) => (
+      <span className="text-muted-foreground">
+        {formatInteger(user.tokens) ?? <UnknownValue reason={NO_USER_USAGE} />}
+      </span>
+    ),
   },
   {
     id: "last_seen",

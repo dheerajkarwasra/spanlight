@@ -105,12 +105,12 @@ async def link_identity(
     *,
     require_verified_email: bool,
     ip: str | None = None,
-) -> None:
-    """Attach the provider account to `user`, who is signed in and started the link.
+) -> bool:
+    """Attach the provider account to `user` after the caller confirmed account ownership.
 
-    The provider's email is not checked: the user already proved who they are with their
-    session, and sign-in never goes by this email. Linking the account that is already linked
-    to this user is a no-op.
+    The provider's email is not checked: the caller already confirmed account ownership, and
+    sign-in never goes by this email. Return whether an identity was attached; linking the
+    account that is already linked to this user is a no-op.
 
     Raises `OAuthRefused`:
 
@@ -133,7 +133,7 @@ async def link_identity(
                 if existing.user_id != user.id:
                     raise OAuthRefused(OAuthCode.ALREADY_LINKED)
                 existing.last_used_at = now
-                return
+                return False
             await _attach(db, user, profile, now=now, ip=ip, via="link")
     except IntegrityError as error:
         # Lost a race to link the same provider account (or this user's slot for the provider);
@@ -141,6 +141,8 @@ async def link_identity(
         if violated_constraint(error) not in _LINK_RACE_CONSTRAINTS:
             raise
         raise OAuthRefused(OAuthCode.ALREADY_LINKED) from error
+
+    return True
 
 
 async def unlink_identity(

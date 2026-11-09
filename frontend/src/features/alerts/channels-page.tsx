@@ -1,5 +1,5 @@
 import { BellRing, Info, Plus } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
@@ -25,35 +25,40 @@ export function AlertChannelsPage() {
   const orgName = useCurrentOrg()?.name ?? "your organization";
   const canWrite = usePermission("alerts:write");
   const query = useAlertChannelsQuery();
+  const [adding, setAdding] = useState(false);
 
   const addButton = canWrite ? (
-    <ChannelDialog
-      channel={null}
-      trigger={
-        <Button variant="primary">
-          <Plus aria-hidden />
-          Add channel
-        </Button>
-      }
-    />
+    <Button
+      variant="primary"
+      onClick={() => {
+        setAdding(true);
+      }}
+    >
+      <Plus aria-hidden />
+      Add channel
+    </Button>
   ) : null;
 
   return (
-    <SectionCard
-      title="Notification channels"
-      description={`Shared by every project in ${orgName}. Test a channel to check it works.`}
-      className="gap-4"
-      actions={addButton}
-    >
-      {canWrite ? null : (
-        <ReadOnlyNote>{viewOnlyCopy("alert channels", "alerts:write")}</ReadOnlyNote>
-      )}
-      <ChannelsContent query={query} canWrite={canWrite} addButton={addButton} />
-      <p className="flex items-center gap-2 px-1 pt-2 text-xs font-medium text-muted-foreground">
-        <Info aria-hidden className="size-3.5 shrink-0" />
-        {CHANNEL_COPY.footnote}
-      </p>
-    </SectionCard>
+    <>
+      <SectionCard
+        title="Notification channels"
+        description={`Shared by every project in ${orgName}. Test a channel to check it works.`}
+        className="gap-4"
+        actions={addButton}
+      >
+        {canWrite ? null : (
+          <ReadOnlyNote>{viewOnlyCopy("alert channels", "alerts:write")}</ReadOnlyNote>
+        )}
+        <ChannelsContent query={query} canWrite={canWrite} addButton={addButton} />
+        <p className="flex items-center gap-2 px-1 pt-2 text-xs font-medium text-muted-foreground">
+          <Info aria-hidden className="size-3.5 shrink-0" />
+          {CHANNEL_COPY.footnote}
+        </p>
+      </SectionCard>
+      {/* Here, not beside a button: the refresh after creating removes the empty state. */}
+      <ChannelDialog channel={null} open={adding} onOpenChange={setAdding} />
+    </>
   );
 }
 

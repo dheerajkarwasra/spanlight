@@ -433,7 +433,7 @@ If `railway config` isn't an option, set the same things in each service's **Set
 |---|---|---|---|
 | Builder, Dockerfile path | Dockerfile, `deploy/Dockerfile` | same | same |
 | Start command | (image default) | `python -m app.jobs.worker` | (image default) |
-| Pre-deploy command | `sh -c 'export DATABASE_URL="$MIGRATION_DATABASE_URL" && spanlight migrate && spanlight ensure-app-role --role spanlight_app'` | none | none |
+| Pre-deploy command | `sh -c 'export DATABASE_URL="$MIGRATION_DATABASE_URL" && spanlight migrate && spanlight ensure-app-role --role spanlight_app && spanlight activate-aggregate-coverage --writers-drained --fresh-install --skip-if-projects-exist'` | none | none |
 | Healthcheck path, timeout | `/health/live`, 120 s | none | `/`, 60 s |
 | Restart policy | On failure, 10 retries | same | same |
 | Draining time | 15 s | 60 s | 10 s |

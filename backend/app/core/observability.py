@@ -440,3 +440,24 @@ RETENTION_BATCHES = Counter(
     "lock_timeout, statement_timeout, timeout, error).",
     ["cleanup_class", "outcome"],
 )
+LIVE_STREAMS = Gauge(
+    "spanlight_live_streams",
+    "Live dashboard subscriptions open in this api process.",
+)
+LIVE_POLL_DURATION = Histogram(
+    "spanlight_live_poll_seconds",
+    "Time one change-marker read for every watched project took, failed reads included.",
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0),
+)
+LIVE_POLL_FAILURES = Counter(
+    "spanlight_live_poll_failures_total",
+    "Change-marker reads that failed or ran past their 1 s budget; subscriptions stay open.",
+)
+LIVE_EVENTS = Counter(
+    "spanlight_live_events_total",
+    "Project changes the live hub announced to its subscribers (one per project per poll).",
+)
+LIVE_CACHE_HITS = Counter(
+    "spanlight_live_cache_hits_total",
+    "Dashboard answers served from the 2 s live answer cache or a shared in-flight read.",
+)

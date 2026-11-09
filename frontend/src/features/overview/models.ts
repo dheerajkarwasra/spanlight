@@ -76,3 +76,6 @@ export function spendByModel(models: readonly ModelMetrics[], limit = 5): ModelS
       share: costUsd === null ? null : costUsd / (total || 1),
     }));
 }
+
+/** Why a model's token count is unknown: none of its calls reported usage. */
+export const NO_MODEL_USAGE_REASON = "No call of this model reported token usage";

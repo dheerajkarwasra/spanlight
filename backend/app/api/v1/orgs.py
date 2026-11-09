@@ -8,7 +8,7 @@ from typing import Annotated, Any
 import structlog
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import and_, or_, select
+from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import aliased
 
@@ -32,6 +32,8 @@ from app.api.schemas import (
     Page,
     UserOut,
 )
+from app.api.schemas.orgs import AuditStreamProofIn
+from app.auth.reauth import confirm_account_owner
 from app.auth.totp_service import lock_user
 from app.config import Settings
 from app.core.errors import (
@@ -44,14 +46,17 @@ from app.core.errors import (
 )
 from app.core.pagination import DEFAULT_PAGE_SIZE, PageLimit, decode_uuid_cursor, encode_cursor
 from app.core.permissions import Permission, can_assign_role
+from app.core.scopes import READ_KEY_SCOPES
 from app.core.security import mark_uncacheable, new_token, token_digest
 from app.db.models import (
+    ApiKey,
     AuditAction,
     AuditEvent,
     Invite,
     Membership,
     MembershipRole,
     Organization,
+    Project,
     User,
 )
 from app.exports.audit import (
@@ -67,7 +72,13 @@ from app.exports.audit import (
 from app.services.audit import record_audit
 from app.services.deletion import delete_organization, lock_org_for_write, lock_organization
 from app.services.demo import is_demo_user
-from app.services.invites import check_invite_email_limit, enqueue_invite_email
+from app.services.invites import (
+    check_invite_email_limit,
+    enqueue_invite_email,
+    enqueue_member_joined_notices,
+)
+from app.services.key_revocation import strip_read_keys
+from app.services.member_notices import enqueue_member_removed_notices, enqueue_org_deleted_notices
 from app.services.slugs import RESERVED_ORG_SLUGS, slugify, with_random_suffix
 
 router = APIRouter(tags=["orgs"])
@@ -159,7 +170,10 @@ async def update_org(
         raise forbidden("The demo organization cannot be changed.")
 
     # Locked: two people changing the organization at once cannot write two audit events that
-    # disagree about what it was before.
+    # disagree about what it was before. Turning the requirement on also locks the owner's row:
+    # first, the order of the proof routes, or the same owner in two tabs can deadlock.
+    if body.require_2fa:
+        await lock_user(db, access.user_id)
     org = await lock_organization(db, access.org.id)
     if org is None:
         raise not_found()
@@ -216,22 +230,45 @@ async def _check_owner_can_require_two_factor(
 
 @router.delete("/orgs/{org_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_org(
-    org_id: uuid.UUID, body: OrgDeleteIn, request: Request, access: OrgDeleter, db: DbSession
+    org_id: uuid.UUID,
+    body: OrgDeleteIn,
+    request: Request,
+    auth: CurrentSession,
+    access: OrgDeleter,
+    db: DbSession,
+    settings: SettingsDep,
 ) -> None:
     """Delete the organization with its projects, traces, keys, members, invites and audit log.
 
-    Only an owner may, and only by typing the organization's slug as `confirm`. Everything goes
+    Session-only: tokens get `403 SESSION_REQUIRED`. An owner must type the organization's slug
+    as `confirm` and prove account ownership (password, or a recent passwordless sign-in, plus
+    a code when 2FA is enabled), throttled under `org_delete_reauth`. Demo, missing organization
+    and slug refusals precede proof. With email configured, verified owners except the actor
+    are notified before their memberships are deleted. Everything goes
     in one transaction: it is all deleted or none of it is. This is synchronous, which is fine for
     the size of organization this runs; a very large one needs a background job.
     """
     if access.org.is_demo:
         raise forbidden("The demo organization cannot be deleted.")
+    if await lock_user(db, auth.user.id) is None:
+        raise not_found()
     org = await lock_organization(db, access.org.id)
     if org is None:
         raise not_found()
     if body.confirm != org.slug:
         raise confirmation_mismatch("`confirm` must be the organization's slug.")
 
+    await confirm_account_owner(
+        db,
+        auth,
+        body.password,
+        body.code,
+        scope="org_delete_reauth",
+        settings=settings,
+        now=utcnow(),
+    )
+    if settings.is_email_configured:
+        await enqueue_org_deleted_notices(db, org=org, actor=auth.user)
     project_ids = await delete_organization(db, org.id)
     await db.commit()
     # The keys went with their projects; this process stops accepting them now, not after the TTL.
@@ -248,22 +285,38 @@ async def delete_org(
 
 @router.get("/orgs/{org_id}/members", response_model=list[MemberOut])
 async def list_members(org_id: uuid.UUID, access: OrgReader, db: DbSession) -> list[MemberOut]:
-    rows = (
-        await db.execute(
-            select(User, Membership)
-            .join(Membership, Membership.user_id == User.id)
-            .where(Membership.org_id == access.org.id)
-            .order_by(Membership.created_at, User.id)
-        )
-    ).all()
+    rows = (await db.execute(_member_query(access.org.id))).all()
     return [
         MemberOut(
             user=UserOut.model_validate(user),
             role=membership.role,
             created_at=membership.created_at,
+            read_keys=read_keys,
         )
-        for user, membership in rows
+        for user, membership, read_keys in rows
     ]
+
+
+def _member_query(org_id: uuid.UUID) -> Select[User, Membership, int]:
+    read_keys = (
+        select(func.count())
+        .select_from(ApiKey)
+        .join(Project, Project.id == ApiKey.project_id)
+        .where(
+            Project.org_id == org_id,
+            ApiKey.created_by == User.id,
+            ApiKey.revoked_at.is_(None),
+            ApiKey.scopes.overlap(sorted(READ_KEY_SCOPES)),
+        )
+        .correlate(User)
+        .scalar_subquery()
+    )
+    return (
+        select(User, Membership, read_keys)
+        .join(Membership, Membership.user_id == User.id)
+        .where(Membership.org_id == org_id)
+        .order_by(Membership.created_at, User.id)
+    )
 
 
 async def _locked_membership(
@@ -314,9 +367,14 @@ async def update_member(
     user_id: uuid.UUID,
     body: MemberUpdateIn,
     request: Request,
+    auth: CurrentSession,
     access: MemberManager,
     db: DbSession,
+    settings: SettingsDep,
 ) -> MemberOut:
+    # Code verification locks this user; account deletion locks users before memberships too.
+    if await lock_user(db, auth.user.id) is None:
+        raise not_found()
     membership, owners = await _locked_membership(db, access.org.id, user_id)
     if not can_assign_role(access.role, membership.role) or not can_assign_role(
         access.role, body.role
@@ -327,6 +385,15 @@ async def update_member(
     if previous_role is not body.role:
         if body.role is not MembershipRole.OWNER:
             _ensure_not_last_owner(membership, owners)
+        await confirm_account_owner(
+            db,
+            auth,
+            body.password,
+            body.code,
+            scope="member_role_reauth",
+            settings=settings,
+            now=utcnow(),
+        )
         membership.role = body.role
         await record_audit(
             db,
@@ -338,11 +405,15 @@ async def update_member(
             ip=client_ip(request),
             metadata={"from": previous_role.value, "to": body.role.value},
         )
+    user, membership, read_keys = (
+        await db.execute(_member_query(access.org.id).where(User.id == user_id))
+    ).one()
     await db.commit()
-
-    user = await db.get_one(User, user_id)
     return MemberOut(
-        user=UserOut.model_validate(user), role=membership.role, created_at=membership.created_at
+        user=UserOut.model_validate(user),
+        role=membership.role,
+        created_at=membership.created_at,
+        read_keys=read_keys,
     )
 
 
@@ -351,18 +422,52 @@ async def remove_member(
     org_id: uuid.UUID,
     user_id: uuid.UUID,
     request: Request,
+    auth: CurrentSession,
     access: OrgReader,
     db: DbSession,
+    settings: SettingsDep,
+    body: AuditStreamProofIn | None = None,
 ) -> None:
+    """Remove a member using a session; tokens get `403 SESSION_REQUIRED`, including self-leave.
+
+    Removing anyone else needs account-owner proof under `member_remove_reauth`; an absent body
+    supplies no proof (`422 INVALID_PASSWORD` for an account with a password). Self-leave needs
+    no body or proof. Demo, permission, missing-member and last-owner refusals precede proof.
+    Read access on the member's API keys is stripped. With email configured, the removed person
+    is notified only if their email is verified, including self-leave. Verified owners except
+    actor and removed person are also notified in the same transaction.
+    """
+    if access.org.is_demo:
+        raise forbidden("The demo organization cannot be changed.")
     leaving_self = user_id == access.user_id
     if not leaving_self and not access.can(Permission.MEMBER_MANAGE):
         raise forbidden()
 
+    if not leaving_self and await lock_user(db, auth.user.id) is None:
+        raise not_found()
     membership, owners = await _locked_membership(db, access.org.id, user_id)
     if not leaving_self and not can_assign_role(access.role, membership.role):
         raise forbidden("Only owners can remove an owner.")
     _ensure_not_last_owner(membership, owners)
 
+    if not leaving_self:
+        await confirm_account_owner(
+            db,
+            auth,
+            body.password if body else None,
+            body.code if body else None,
+            scope="member_remove_reauth",
+            settings=settings,
+            now=utcnow(),
+        )
+    stripped = await strip_read_keys(
+        db,
+        org_id=access.org.id,
+        user_id=user_id,
+        actor_user_id=access.user_id,
+        ip=client_ip(request),
+        reason="member_remove",
+    )
     await db.delete(membership)
     await record_audit(
         db,
@@ -372,9 +477,18 @@ async def remove_member(
         target_type="user",
         target_id=user_id,
         ip=client_ip(request),
-        metadata={"role": membership.role.value},
+        metadata={
+            "role": membership.role.value,
+            "revoked_keys": stripped.revoked,
+            "narrowed_keys": stripped.narrowed,
+        },
     )
+    if settings.is_email_configured:
+        removed = (await db.scalars(select(User).where(User.id == user_id))).one()
+        await enqueue_member_removed_notices(db, org=access.org, actor=auth.user, removed=removed)
     await db.commit()
+    for prefix in stripped.prefixes:
+        request.app.state.key_cache.evict(prefix)
 
 
 # --- invites --------------------------------------------------------------------
@@ -388,6 +502,7 @@ async def create_invite(
     body: InviteCreateIn,
     request: Request,
     response: Response,
+    auth: CurrentSession,
     access: MemberManager,
     db: DbSession,
     settings: SettingsDep,
@@ -401,11 +516,24 @@ async def create_invite(
     if not can_assign_role(access.role, body.role):
         raise forbidden("Only owners can invite owners.")
 
+    await confirm_account_owner(
+        db,
+        auth,
+        body.password,
+        body.code,
+        scope="invite_create_reauth",
+        settings=settings,
+        now=utcnow(),
+    )
     mail_to = body.email if settings.is_email_configured else None
     if mail_to is not None:
-        # Checked before anything is written, so a refused request leaves no invite behind.
-        retry_after = await check_invite_email_limit(db, access.org.id, access.user_id)
+        # Roll back email counters on refusal while retaining the spent authentication code.
+        async with db.begin_nested() as email_budget:
+            retry_after = await check_invite_email_limit(db, access.org.id, access.user_id)
+            if retry_after is not None:
+                await email_budget.rollback()
         if retry_after is not None:
+            await db.commit()
             raise too_many_requests(
                 math.ceil(retry_after),
                 "Too many invitation emails sent. Try again later.",
@@ -449,6 +577,7 @@ async def create_invite(
         id=invite.id,
         role=invite.role,
         email=invite.email,
+        emailed=mail_to is not None,
         url=url,
         expires_at=invite.expires_at,
     )
@@ -516,7 +645,11 @@ async def preview_invite(
 
 @router.post("/invites/accept", response_model=MembershipOut)
 async def accept_invite(
-    body: InviteAcceptIn, request: Request, auth: CurrentSession, db: DbSession
+    body: InviteAcceptIn,
+    request: Request,
+    auth: CurrentSession,
+    db: DbSession,
+    settings: SettingsDep,
 ) -> MembershipOut:
     if is_demo_user(auth.user):
         # Joining would open the org to every demo visitor, not to the person invited.
@@ -556,6 +689,8 @@ async def accept_invite(
         ip=client_ip(request),
         metadata={"role": role.value, "already_member": existing is not None},
     )
+    if existing is None and settings.is_email_configured:
+        await enqueue_member_joined_notices(db, org=org, invite=invite, member=auth.user, role=role)
     await db.commit()
     return MembershipOut(org=OrgOut.model_validate(org), role=role)
 

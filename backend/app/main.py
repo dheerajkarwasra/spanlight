@@ -36,9 +36,12 @@ from app.gateway.http import build_http_client
 from app.gateway.key_context import KeyContext
 from app.gateway.runtime import GatewayRuntime, build_runtime, close_runtime
 from app.gateway.settle_helpers import drain_settling
+from app.live.cache import AnswerCache
+from app.live.hub import LiveHub
 from app.notifications.defaults import register_default_deliverers
 from app.pricing.cost import sync_seed_prices
 from app.process_shutdown import LossFlushOwner, disposal_gate, shutdown_scope
+from app.rollups.coverage_status import warn_if_coverage_inactive
 from app.telemetry_losses import flush as loss_flush
 
 logger = structlog.get_logger(__name__)
@@ -82,6 +85,11 @@ def create_app(  # noqa: PLR0915 - keep application composition and ordered reso
     )
     rate_limit_engine = _rate_limit_engine(settings)
     rate_limit_session_factory = create_session_factory(rate_limit_engine)
+    live_hub = (
+        LiveHub(session_factory, max_streams=settings.live_max_streams)
+        if settings.live_updates_enabled
+        else None
+    )
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -96,6 +104,10 @@ def create_app(  # noqa: PLR0915 - keep application composition and ordered reso
             cleanup.push_async_callback(alert_http.aclose)
             async with disposal_gate(flush_owned=True):
                 await _sync_prices(session_factory)
+                await warn_if_coverage_inactive(session_factory)
+                if live_hub is not None:
+                    await live_hub.start()
+                    cleanup.push_async_callback(live_hub.stop)
                 # Built whatever GATEWAY_MODE says: credential checks use the client, and in-process
                 # callers the runtime, even when `/gw/*` is served by a standalone gateway.
                 runtime = await _start_gateway(
@@ -138,6 +150,11 @@ def create_app(  # noqa: PLR0915 - keep application composition and ordered reso
     app.state.rate_limit_session_factory = rate_limit_session_factory
     app.state.key_cache = KeyCache[CachedKey](settings.api_key_cache_ttl_seconds)
     app.state.gateway_key_cache = KeyCache[KeyContext](settings.api_key_cache_ttl_seconds)
+    # None when LIVE_UPDATES_ENABLED is off: no marker is read.
+    app.state.live_hub = live_hub
+    app.state.live_cache = AnswerCache(settings.live_cache_entries)
+    # Each session's open live streams, oldest first (`app.api.v1.live`).
+    app.state.live_sessions = {}
 
     install_error_handlers(app)
     embedded_gateway = settings.gateway_mode == "embedded"
@@ -224,6 +241,7 @@ def create_gateway_app(
             cleanup.push_async_callback(rate_limit_engine.dispose)
             cleanup.push_async_callback(engine.dispose)
             async with disposal_gate(flush_owned=True):
+                await warn_if_coverage_inactive(session_factory)
                 runtime = await _start_gateway(
                     application,
                     settings,

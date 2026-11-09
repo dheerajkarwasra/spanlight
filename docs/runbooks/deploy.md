@@ -183,7 +183,7 @@ docker image prune
 
 ## Railway
 
-For a backward-compatible migration, deploy the api first: its pre-deploy command runs `spanlight migrate && spanlight ensure-app-role --role spanlight_app` as the Postgres owner, and a failure there stops the deploy and leaves the running version untouched.
+For a backward-compatible migration, deploy the api first: its pre-deploy command runs `spanlight migrate && spanlight ensure-app-role --role spanlight_app && spanlight activate-aggregate-coverage --writers-drained --fresh-install --skip-if-projects-exist` as the Postgres owner (the last step activates aggregate coverage on a fresh install and changes nothing once a project exists), and a failure there stops the deploy and leaves the running version untouched.
 
 For an incompatible or destructive migration, pause automatic deploys, enable maintenance, drain and stop every writer, verify a restorable backup, and run a reviewed one-off migration before starting compatible application images. Use the isolation and recovery sequence in [rollback.md](rollback.md#steps-railway). A failed pre-deploy can leave old replicas running; it is not protection from incompatible DDL.
 
@@ -255,6 +255,18 @@ step changes nothing and exits 0, and the drained activation above stays the upg
 New project IDs created after activation use the finite UTC Unix epoch as their boundary:
 they have no earlier source history, and accepted telemetry is bounded to the past 90 days.
 The finite value round-trips through ordinary project ORM/API reads.
+
+**One-time step for an install that had projects before 1027 (spanlight.dev included).** After
+the deploy that removed the pre-1027 writers, run once as the database owner:
+
+```bash
+# Railway: railway ssh --service api, then
+DATABASE_URL="$MIGRATION_DATABASE_URL" spanlight activate-aggregate-coverage --writers-drained
+```
+
+Check it worked: `curl -fsS https://$DOMAIN/health/ready` shows `"aggregate_coverage":"active"`.
+While it says `"inactive"`, the api and worker log `aggregate_coverage_inactive` at start and the
+dashboards read rollup figures as unknown. The field is informational and never fails readiness.
 
 Source deletion and aggregate replacement serialize per project. Deletion records every affected
 trace-start and span-start hour in the same transaction; existing aggregate snapshots survive.

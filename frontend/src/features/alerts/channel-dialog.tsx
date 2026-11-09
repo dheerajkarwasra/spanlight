@@ -58,6 +58,7 @@ export function ChannelDialog({
       {isOpen ? (
         <DialogContent
           hideClose
+          returnFocus={!trigger}
           className="max-h-[calc(100dvh-2rem)] max-w-[520px] gap-0 overflow-y-auto rounded-card p-6 sm:p-7"
           onInteractOutside={(event) => {
             // An outside click must not throw away a secret that is shown only once.

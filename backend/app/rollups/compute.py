@@ -168,9 +168,9 @@ _INSERT_SPAN_ROLLUPS = text(
            kind,
            count(*)                                                    AS span_count,
            count(*) FILTER (WHERE status = 'error')                    AS errors,
-           coalesce(sum(input_tokens) FILTER (WHERE NOT usage_rollup), 0)  AS input_tokens,
-           coalesce(sum(output_tokens) FILTER (WHERE NOT usage_rollup), 0) AS output_tokens,
-           coalesce(sum(cached_tokens) FILTER (WHERE NOT usage_rollup), 0) AS cached_tokens,
+           sum(input_tokens) FILTER (WHERE NOT usage_rollup)               AS input_tokens,
+           sum(output_tokens) FILTER (WHERE NOT usage_rollup)              AS output_tokens,
+           sum(cached_tokens) FILTER (WHERE NOT usage_rollup)              AS cached_tokens,
            sum(cost_usd) FILTER (WHERE NOT usage_rollup)                   AS cost_usd,
            count(*) FILTER (WHERE kind = 'llm' AND cost_usd IS NULL AND NOT usage_rollup)
                                                                        AS unpriced_calls,

@@ -49,6 +49,8 @@ A person who is not a member of an organization gets `404 NOT_FOUND` for it, not
 
 Owners and admins hold `member:manage`, so both can invite people and change roles. One rule limits admins: only an owner can grant the owner role, change an owner's role or remove an owner. An admin who tries gets `403 FORBIDDEN`.
 
+Inviting, changing a role, removing another member and deleting an organization or project require a signed-in session and account-owner proof: the current password (or a passwordless sign-in within 10 minutes), plus an authenticator or recovery code when two-factor authentication is enabled. Self-leave requires a session but no proof. With email configured, removal tells the removed person only if their email address is verified (including self-leave), and the other verified owners; organization and project deletion tell verified owners except the actor. The actor is excluded from owner notices. Demo membership cannot be removed.
+
 An organization must keep at least one owner. A request that would remove the last one gets `409 LAST_OWNER`.
 
 Any member can leave an organization. Leaving is still subject to the last-owner rule.
@@ -70,10 +72,10 @@ A key used outside its scopes gets `403 KEY_SCOPE`. A key past its expiry gets `
 
 A personal access token has no permissions of its own. It acts as its person, so the person's current role applies on every request. The token adds one limit through its scope:
 
-- A **write** token can do whatever the person's role allows.
+- A **write** token can use non-session-only routes allowed by the person's role.
 - A **read** token can use only the permissions that read: `org:read`, `project:read` and `audit:read`. Any change gets `403 TOKEN_SCOPE`.
 
-A token cannot use routes that need a signed-in browser session. Those routes answer `403 SESSION_REQUIRED`.
+A token cannot use routes that need a signed-in browser session. Those routes answer `403 SESSION_REQUIRED`, including member removal, self-leave, organization deletion and project deletion.
 
 ## Related pages
 

@@ -43,6 +43,7 @@ export const METRICS: readonly MetricSpec[] = [
 export const NO_COST_REASON =
   "No span in this release was priced (unknown model or no usage reported).";
 export const NO_CALLS_REASON = "This release made no LLM calls in the window.";
+export const NO_USAGE_REASON = "No call in this release reported token usage.";
 const NO_DELTA_REASON = "Unknown for one of the two releases, so there is nothing to compare.";
 
 export interface KpiRow {
@@ -129,7 +130,10 @@ function unknownReasonFor(kind: MetricKind, a: string | null, b: string | null):
   if (kind === "cost") {
     return NO_COST_REASON;
   }
-  return a === null || b === null ? NO_CALLS_REASON : NO_DELTA_REASON;
+  if (a === null || b === null) {
+    return kind === "tokens" ? NO_USAGE_REASON : NO_CALLS_REASON;
+  }
+  return NO_DELTA_REASON;
 }
 
 /** The key-metrics table's rows, formatted, from one comparison. */

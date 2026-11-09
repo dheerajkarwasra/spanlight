@@ -220,6 +220,14 @@ GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         ("attribution_enabled",),
     ),
     (
+        "Live dashboards",
+        "Open dashboard tabs hold a server-sent event stream and refetch when their project gets "
+        "new data. Each api process checks the change markers of watched projects once a second, "
+        "in one query, and runs no query while no tab is open. Tabs fall back to polling when "
+        "the stream is off or refused.",
+        ("live_updates_enabled", "live_max_streams", "live_cache_entries"),
+    ),
+    (
         "API request limits",
         "A request that would otherwise wait on a busy database fails fast with `503` and "
         "`Retry-After` instead of queueing behind slow work. The worker, exports and deleting an "
@@ -568,6 +576,19 @@ DESCRIPTIONS: dict[str, str] = {
         "Schedule the attribution refresh, which rebuilds the daily rollups behind windows "
         "longer than 24 hours every 15 minutes. Off, those windows stop updating; windows of 24 "
         "hours or less stay live."
+    ),
+    "live_updates_enabled": (
+        "Run the live dashboard stream and its once-a-second change check in each api process. "
+        "Off, the stream answers `404` and no change marker is read; tabs poll instead."
+    ),
+    "live_max_streams": (
+        "Most live streams one api process holds open. Past it a new stream answers "
+        "`503 LIVE_BUSY` with `Retry-After: 30`. A session holds at most 3; a fourth closes its "
+        "oldest."
+    ),
+    "live_cache_entries": (
+        "Most dashboard answers each api process keeps in its short shared cache, so identical "
+        "requests from several tabs share one database read."
     ),
     "api_pool_timeout_seconds": (
         "Seconds an API request waits for a connection from the main pool. Past it the request "

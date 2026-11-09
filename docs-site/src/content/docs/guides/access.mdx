@@ -41,7 +41,11 @@ When you create a key you choose its scopes and, optionally, an expiry.
 | `scores:write` | Sending [scores](/docs/scores/) to `POST /v1/scores`, for example with `spanlight.score()`. |
 | `prompts:read` | Reading [prompts](/docs/prompts/) from `GET /v1/prompts/{name}`, for example with `spanlight.prompts.get()`. |
 
-Give an application the narrowest scopes it needs: an SDK that only sends traces needs only `ingest:write`, a reporting job needs only `traces:read`, and an application that fetches prompts or records scores adds `prompts:read` or `scores:write`. **A key keeps the scopes it was created with**, so a key made before scores and prompts existed cannot use them: create a new key that has the scope, and revoke the old one when nothing uses it. Tick them in the key dialog under **Settings, Project, API keys**, where all four are offered, or send them in the `scopes` list of `POST /api/v1/projects/{project_id}/keys` (see the [API conventions](/docs/api/conventions/)). A key used outside its scopes gets `403 KEY_SCOPE`. A key past its expiry gets `401 KEY_EXPIRED`, on ingestion and on reads. Keys created before scopes existed keep `ingest:write` and never expire.
+Creating a key with `traces:read` or `prompts:read` requires a signed-in session and your current password (or a sign-in within 10 minutes for passwordless accounts), plus an authentication or recovery code when two-factor authentication is enabled; write tokens can still create ingest-only and score-write keys without this proof.
+
+Give an application the narrowest scopes it needs: an SDK that only sends traces needs only `ingest:write`, a reporting job needs only `traces:read`, and an application that fetches prompts or records scores adds `prompts:read` or `scores:write`. **A key cannot gain scopes after creation**, so a key made before scores and prompts existed cannot use them: create a new key that has the scope, and revoke the old one when nothing uses it. Tick them in the key dialog under **Settings, Project, API keys**, where all four are offered, or send them in the `scopes` list of `POST /api/v1/projects/{project_id}/keys` (see the [API conventions](/docs/api/conventions/)). A key used outside its scopes gets `403 KEY_SCOPE`. A key past its expiry gets `401 KEY_EXPIRED`, on ingestion and on reads. Keys created before scopes existed keep `ingest:write` and never expire.
+
+Removing a member, leaving an organization or deleting an account removes read access from the project API keys that person created: read-only keys are revoked, mixed keys keep their other scopes, and ingest-only and gateway keys keep working.
 
 A key can read only its own project. Any other project answers `404`, exactly like a project that does not exist.
 
@@ -52,11 +56,11 @@ Revoke a key at any time from the key list. See [Revoke a leaked key](/docs/runb
 A token acts as you. It has no permissions of its own: on every request Spanlight looks up your current role in the organization or project in the path, so removing you from an organization, or lowering your role, takes effect on the next call.
 
 - A **read** token can only read. Any change is refused with `403 TOKEN_SCOPE`.
-- A **write** token can do whatever your role allows.
+- A **write** token can use non-session-only routes allowed by your role. It cannot create invites, change member roles, remove members, leave an organization, delete an organization or project, create API keys with read scopes, create or widen gateway keys, or add a provider credential with its own base URL.
 - A token can have an expiry. After it, calls get `401 TOKEN_EXPIRED`.
 - Organizations that require two-factor authentication apply the rule to your tokens as well.
 
-Tokens work on routes that name an organization or project, on `GET /api/v1/auth/me` and on `GET /api/v1/prices`. They cannot manage sessions, two-factor authentication, linked accounts or other tokens: those need a signed-in browser. A token is not an API key, so it cannot send traces.
+Tokens work on organization and project routes except invitation creation, member role changes, member removal (including self-leave), organization or project deletion, creating API keys with read scopes, creating or widening gateway keys and adding a credential with its own base URL, on `GET /api/v1/auth/me` and on `GET /api/v1/prices`. They cannot manage sessions, two-factor authentication, linked accounts or other tokens: those need a signed-in browser. A token is not an API key, so it cannot send traces.
 
 Creating and revoking tokens is recorded in the structured logs, never with the secret.
 
@@ -82,6 +86,10 @@ Owners and admins manage the organization from **Settings, Organization** and pr
 | Rename a project | Admin, owner | |
 | Delete a project | Admin, owner | Deletes its traces, spans, keys and export files. The audit log keeps a `project.delete` event. |
 
+Organization and project deletion also require a signed-in session and your current password (or a passwordless sign-in within 10 minutes), plus an authenticator or recovery code when two-factor authentication is enabled. Tokens get `403 SESSION_REQUIRED`. With email configured, verified owners except the actor are told. Project deletion uses the
+`project_delete_reauth` limit of five failed proofs per user in 15 minutes; a wrong slug is
+refused before proof. Removing someone else requires the same proof and tells that person only if their email address is verified, as well as the other verified owners. Leaving requires a session but no proof, and also sends those notices. Demo membership cannot be removed or left.
+
 Deleting needs a typed confirmation: you type the **slug** of the organization or project, exactly, before the button works. Deleting cannot be undone, so export what you need first (see [Data, limits and operations](/docs/guides/data/)). The shared demo organization cannot be changed or deleted.
 
 Organization admins can read the **audit log** in the same section, filter it by action, person and date, and download it as CSV. Renames, the two-factor requirement and project deletion are recorded there; deleting an organization removes its audit log with it, and the deletion is noted only in the server log.
@@ -104,7 +112,7 @@ The answer is `200` with your `user` (id, email, name), your `memberships` and t
 
 - **`403 KEY_SCOPE`.** The key lacks the scope the route needs, or you used a key where only a signed-in session or token works. A key keeps the scopes it was created with. Create a new key with the scope; see [API key scopes and expiry](#api-key-scopes-and-expiry).
 - **`401 KEY_EXPIRED` ("This API key has expired. Create a new one.").** The key is past its expiry. Create a new key and revoke the old one.
-- **`403 TOKEN_SCOPE`.** A read token tried to change something. Create a write token. A token also cannot manage sessions, two-factor authentication or other tokens: those answer `403 SESSION_REQUIRED` and need a signed-in browser.
+- **`403 TOKEN_SCOPE`.** A read token tried to change something. Create a write token. A token also cannot create invites, change member roles, remove members, leave an organization, delete an organization or project, or manage sessions, two-factor authentication or other tokens: those answer `403 SESSION_REQUIRED` and need a signed-in browser.
 - **`401 TOKEN_EXPIRED` ("This access token has expired. Create a new one.").** Create a new token; expired tokens leave the list.
 - **`404` on a project you can see in the dashboard.** A key reads only its own project, and any other project answers `404`. Use the key of that project, or a token.
 - **`429 RATE_LIMITED`.** The credential is over its limit. Wait for `Retry-After` seconds; see [Rate limits for credentials](#rate-limits-for-credentials).

@@ -26,6 +26,8 @@ export interface Credential {
 }
 
 export interface CredentialCreate {
+  password?: string;
+  code?: string;
   name: string;
   provider: ProviderKind;
   api_key: string;
@@ -146,6 +148,7 @@ export interface RouteVersion {
 
 /** A key an app calls the gateway with. The secret is only in `CreatedGatewayKey`. */
 export interface GatewayKey {
+  creator_is_member: boolean;
   id: string;
   name: string;
   prefix: string;
@@ -172,6 +175,8 @@ export interface CreatedGatewayKey extends GatewayKey {
 }
 
 export interface GatewayKeyCreate {
+  password?: string;
+  code?: string;
   name: string;
   environment: string;
   route_id?: string | null;
@@ -187,6 +192,8 @@ export interface GatewayKeyCreate {
  * `fault_profile_id` are cleared by sending `null`.
  */
 export interface GatewayKeyUpdate {
+  password?: string;
+  code?: string;
   name?: string | null;
   environment?: string | null;
   route_id?: string | null;

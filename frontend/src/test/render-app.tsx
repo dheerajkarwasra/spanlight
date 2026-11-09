@@ -64,9 +64,8 @@ export function mockSignedIn(projects: Project[]) {
 }
 
 /** The whole app (providers, route tree and guards) in the browser history, starting at `path`. */
-export function renderApp(path: string) {
+export function renderApp(path: string, queryClient = createQueryClient()) {
   window.history.replaceState(null, "", path);
-  const queryClient = createQueryClient();
   const router = createAppRouter(queryClient);
   render(
     <Providers queryClient={queryClient}>

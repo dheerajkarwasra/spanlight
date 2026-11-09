@@ -8,8 +8,10 @@ import pytest
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.observability import JOBS_FINISHED
 from app.db.models import Job, JobStatus
 from app.jobs import queue
+from tests.gateway_support import logged, metric_delta
 
 SessionFactory = async_sessionmaker[AsyncSession]
 
@@ -44,6 +46,44 @@ async def _row(factory: SessionFactory, job_id: int) -> Job:
 async def _claim(factory: SessionFactory) -> queue.ClaimedJob | None:
     async with factory() as db:
         return await queue.claim_next(db)
+
+
+async def test_expired_final_attempt_is_counted_and_logged(
+    session_factory: SessionFactory, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A job whose lease ran out on its final attempt (its worker died) has no worker left to
+    record it: the claim that fails it counts and names it, as the worker does for a failure."""
+    job_id = await _seed(session_factory, "noop", attempts=2)
+    finished = metric_delta(JOBS_FINISHED, kind="noop", outcome="lease_expired")
+
+    await _claim(session_factory)
+
+    assert (await _row(session_factory, job_id)).status is JobStatus.FAILED
+    assert finished.value == 1
+    [event] = logged(caplog, "job_lease_expired")
+    assert (event["job_id"], event["kind"]) == (job_id, "noop")
+    assert "payload" not in event
+
+
+async def test_expired_final_attempt_is_not_counted_when_the_claim_rolls_back(
+    session_factory: SessionFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The expiry commits with the claim; counted before a failed commit, the next poll would
+    count and log the same job again."""
+    job_id = await _seed(session_factory, "noop", attempts=2)
+    finished = metric_delta(JOBS_FINISHED, kind="noop", outcome="lease_expired")
+
+    async with session_factory() as db:
+
+        async def lost_commit() -> None:
+            raise ConnectionError("commit lost")
+
+        monkeypatch.setattr(db, "commit", lost_commit)
+        with pytest.raises(ConnectionError):
+            await queue.claim_next(db)
+
+    assert (await _row(session_factory, job_id)).status is JobStatus.RUNNING
+    assert finished.value == 0
 
 
 @pytest.mark.parametrize("ordering", list(permutations(("locked", "exhausted", "reclaimable"))))

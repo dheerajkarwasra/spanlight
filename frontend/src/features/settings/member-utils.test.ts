@@ -7,6 +7,8 @@ import {
   isRole,
   LAST_OWNER_MESSAGE,
   memberErrorMessage,
+  memberRoleDescription,
+  memberRemovalKeyLines,
   roleHint,
   roleWithArticle,
   sortMembers,
@@ -22,6 +24,7 @@ function member(name: string, role: Role): Member {
       email_verified: true,
     },
     role,
+    read_keys: 0,
     created_at: "2026-10-01T00:00:00Z",
   };
 }
@@ -36,6 +39,21 @@ describe("memberErrorMessage", () => {
     const error = new ApiError(403, { detail: "Not allowed to do that." });
     expect(memberErrorMessage(error)).toBe("Not allowed to do that.");
   });
+});
+
+it("explains removal for zero, one and multiple read keys", () => {
+  expect(memberRemovalKeyLines(0)).toEqual([
+    "No API key they created has read access.",
+    "Gateway keys they created keep working and spending. Revoke any that should stop under Gateway.",
+  ]);
+  expect(memberRemovalKeyLines(1)).toEqual([
+    "1 API key they created loses read access: read-only keys are revoked, ingest keys keep sending traces.",
+    "Gateway keys they created keep working and spending. Revoke any that should stop under Gateway.",
+  ]);
+  expect(memberRemovalKeyLines(2)).toEqual([
+    "2 API keys they created lose read access: read-only keys are revoked, ingest keys keep sending traces.",
+    "Gateway keys they created keep working and spending. Revoke any that should stop under Gateway.",
+  ]);
 });
 
 describe("sortMembers", () => {
@@ -88,4 +106,19 @@ describe("roleHint", () => {
     );
     expect(roleHint("viewer")).toBe("Viewer: read-only access to traces and metrics.");
   });
+});
+
+it("describes the new role and the direction of the access change", () => {
+  expect(memberRoleDescription("viewer", "admin")).toBe(
+    "Admins manage projects, members, all API keys and the audit log. Takes effect at once. Confirm it's you first.",
+  );
+  expect(memberRoleDescription("owner", "member")).toBe(
+    "Members create their own API keys and manage prompts, datasets, scores and experiments. No member or project management. They lose their current access at once. Confirm it's you first.",
+  );
+  expect(memberRoleDescription("member", "owner")).toBe(
+    "Owners get full access, including deleting the organization. Takes effect at once. Confirm it's you first.",
+  );
+  expect(memberRoleDescription("admin", "viewer")).toBe(
+    "Viewers only read traces and metrics. They lose their current access at once. Confirm it's you first.",
+  );
 });

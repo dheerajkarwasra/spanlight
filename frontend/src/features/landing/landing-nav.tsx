@@ -21,7 +21,7 @@ interface LandingNavProps {
 }
 
 /**
- * Floating pill navigation (Figma "Nav bar"): logo, section links, GitHub and the sign-in / demo
+ * Floating pill navigation (Figma "Nav bar"): logo, section links, GitHub and the sign-in / sign-up
  * actions on desktop; logo and a menu button that opens a sheet on smaller screens.
  */
 export function LandingNav({ onTryDemo, demoPending }: LandingNavProps) {
@@ -58,8 +58,8 @@ export function LandingNav({ onTryDemo, demoPending }: LandingNavProps) {
           <Button asChild variant="ghost">
             <Link to="/login">Sign in</Link>
           </Button>
-          <Button variant="highlight" loading={demoPending} onClick={onTryDemo}>
-            Try the live demo
+          <Button asChild variant="highlight">
+            <Link to="/signup">Start free</Link>
           </Button>
         </div>
 
@@ -101,7 +101,7 @@ function MobileMenu({ onTryDemo, demoPending }: LandingNavProps) {
           <Logo />
           <SheetTitle className="sr-only">Menu</SheetTitle>
           <SheetDescription className="sr-only">
-            Jump to a section, sign in or try the live demo.
+            Jump to a section, start free, try the live demo or sign in.
           </SheetDescription>
         </div>
 
@@ -134,10 +134,13 @@ function MobileMenu({ onTryDemo, demoPending }: LandingNavProps) {
         </nav>
 
         <div className="mt-auto flex flex-col gap-2.5">
-          <Button variant="primary" size="lg" loading={demoPending} onClick={onTryDemo}>
+          <Button asChild variant="primary" size="lg">
+            <Link to="/signup">Start free</Link>
+          </Button>
+          <Button size="lg" className="shadow-none" loading={demoPending} onClick={onTryDemo}>
             Try the live demo
           </Button>
-          <Button asChild size="lg" className="shadow-none">
+          <Button asChild variant="ghost" size="lg">
             <a href={DOCS_LINKS.selfHosting}>Self-host Spanlight</a>
           </Button>
           <Button asChild variant="ghost" size="lg">

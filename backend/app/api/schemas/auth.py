@@ -10,9 +10,9 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, EmailStr, Field, StrictBool, StringConstraints
 
-from app.api.schemas.common import ApiModel, Name, UserOut
+from app.api.schemas.common import Name, UserOut
+from app.api.schemas.common import TotpCode as TotpCode  # noqa: PLC0414 - public re-export
 from app.api.schemas.orgs import OrgOut
-from app.config import OAuthProviderName
 from app.db.models import MembershipRole
 
 
@@ -116,9 +116,6 @@ class LoginTotpRequiredOut(BaseModel):
 
 LoginOut = Annotated[LoginSignedInOut | LoginTotpRequiredOut, Field(discriminator="status")]
 
-# A TOTP code or a recovery code as typed: six digits or ten letters, with spaces or hyphens.
-TotpCode = Annotated[str, StringConstraints(min_length=1, max_length=64)]
-
 
 class TotpCodeIn(BaseModel):
     code: TotpCode
@@ -173,16 +170,3 @@ class PasswordForgotIn(BaseModel):
 class PasswordResetIn(BaseModel):
     token: LinkToken
     password: NewPassword
-
-
-class OAuthProviderOut(BaseModel):
-    provider: OAuthProviderName
-
-
-class OAuthIdentityOut(ApiModel):
-    """A sign-in provider account linked to the caller."""
-
-    provider: OAuthProviderName
-    email: str | None
-    created_at: datetime
-    last_used_at: datetime

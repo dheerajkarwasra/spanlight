@@ -7,13 +7,14 @@ from, is in ``app.metrics.service``.
 import uuid
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 
 from app.api.deps import DbSession, ReadAccess, require
 from app.api.schemas import ModelMetricsOut, OverviewOut, TimeseriesPointOut, TokenMixOut
 from app.api.schemas.common import AGGREGATE_RESPONSE_HEADERS
 from app.api.window import Window
 from app.core.permissions import Permission
+from app.live.cache import cached_answer
 from app.metrics import service
 from app.metrics.token_mix import token_mix
 from app.rollups.coverage_reads import CoverageState
@@ -28,13 +29,16 @@ EnvironmentFilter = Annotated[str | None, Query(max_length=64)]
 @router.get("/overview", response_model=OverviewOut)
 async def overview(
     project_id: uuid.UUID,
+    request: Request,
     access: ProjectReader,
     db: DbSession,
     window: Window,
     environment: EnvironmentFilter = None,
 ) -> OverviewOut:
     project = access.require_project()
-    return await service.overview(db, project.id, window, environment)
+    return await cached_answer(
+        request, access, lambda _: service.overview(db, project.id, window, environment)
+    )
 
 
 @router.get(
@@ -42,6 +46,7 @@ async def overview(
 )
 async def timeseries(
     project_id: uuid.UUID,
+    request: Request,
     response: Response,
     access: ProjectReader,
     db: DbSession,
@@ -50,17 +55,20 @@ async def timeseries(
     bucket: Literal["hour", "day"] = "hour",
 ) -> list[TimeseriesPointOut]:
     project = access.require_project()
-    coverage = CoverageState()
-    result = await service.timeseries(db, project.id, window, environment, bucket, coverage)
-    response.headers["Aggregate-Status"] = coverage.status
-    if coverage.oldest_pending_at is not None:
-        response.headers["Aggregate-Oldest-Pending-At"] = coverage.oldest_pending_at.isoformat()
-    return result
+
+    async def compute(headers: dict[str, str]) -> list[TimeseriesPointOut]:
+        coverage = CoverageState()
+        result = await service.timeseries(db, project.id, window, environment, bucket, coverage)
+        _set_aggregate_headers(headers, coverage)
+        return result
+
+    return await cached_answer(request, access, compute, response)
 
 
 @router.get("/models", response_model=list[ModelMetricsOut], responses=AGGREGATE_RESPONSE_HEADERS)
 async def models(
     project_id: uuid.UUID,
+    request: Request,
     response: Response,
     access: ProjectReader,
     db: DbSession,
@@ -68,12 +76,20 @@ async def models(
     environment: EnvironmentFilter = None,
 ) -> list[ModelMetricsOut]:
     project = access.require_project()
-    coverage = CoverageState()
-    result = await service.models(db, project.id, window, environment, coverage)
-    response.headers["Aggregate-Status"] = coverage.status
+
+    async def compute(headers: dict[str, str]) -> list[ModelMetricsOut]:
+        coverage = CoverageState()
+        result = await service.models(db, project.id, window, environment, coverage)
+        _set_aggregate_headers(headers, coverage)
+        return result
+
+    return await cached_answer(request, access, compute, response)
+
+
+def _set_aggregate_headers(headers: dict[str, str], coverage: CoverageState) -> None:
+    headers["Aggregate-Status"] = coverage.status
     if coverage.oldest_pending_at is not None:
-        response.headers["Aggregate-Oldest-Pending-At"] = coverage.oldest_pending_at.isoformat()
-    return result
+        headers["Aggregate-Oldest-Pending-At"] = coverage.oldest_pending_at.isoformat()
 
 
 @router.get("/token-mix", response_model=TokenMixOut)

@@ -38,8 +38,10 @@ from app.rollups.queries import (
     HourlyRollup,
     ModelRollup,
     RollupSeries,
+    add_known,
     combine,
     group_hours,
+    known_int,
     read_model_rollups,
     read_rollups,
     read_split,
@@ -279,8 +281,8 @@ def _raw_hour(bucket_start: datetime, row: Row[Any] | None, traces: int = 0) -> 
         llm_errors=int(row.llm_errors),
         unpriced_calls=int(row.unpriced_calls),
         cost_usd=row.cost_usd,
-        input_tokens=int(row.input_tokens),
-        output_tokens=int(row.output_tokens),
+        input_tokens=known_int(row.input_tokens),
+        output_tokens=known_int(row.output_tokens),
         latency_buckets=_buckets(row),
     )
 
@@ -312,8 +314,8 @@ async def _merged_models(
             model=row.model,
             calls=int(row.calls),
             errors=int(row.errors),
-            input_tokens=int(row.input_tokens),
-            output_tokens=int(row.output_tokens),
+            input_tokens=known_int(row.input_tokens),
+            output_tokens=known_int(row.output_tokens),
             cost_usd=row.cost_usd,
             latency_buckets=_buckets(row),
         )
@@ -331,8 +333,8 @@ def _add_models(a: ModelRollup, b: ModelRollup) -> ModelRollup:
         model=a.model,
         calls=a.calls + b.calls,
         errors=a.errors + b.errors,
-        input_tokens=a.input_tokens + b.input_tokens,
-        output_tokens=a.output_tokens + b.output_tokens,
+        input_tokens=add_known(a.input_tokens, b.input_tokens),
+        output_tokens=add_known(a.output_tokens, b.output_tokens),
         cost_usd=cost,
         latency_buckets=merge(a.latency_buckets, b.latency_buckets),
     )

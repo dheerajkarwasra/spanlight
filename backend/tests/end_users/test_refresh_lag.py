@@ -32,9 +32,10 @@ _TRACE_TOTALS = """
 
 
 def _anchor() -> tuple[date, datetime]:
-    """The refresh's "today" and "now": noon of yesterday (UTC), so every span lies in the past
-    whatever the wall clock reads (ingestion rejects a span that ends in the future)."""
-    today = (datetime.now(UTC) - timedelta(days=1)).date()
+    """The refresh's "today" and "now": noon two days ago (UTC), so every span lies in the past
+    (ingestion rejects a span that ends in the future) and before the 24-hour raw tail, whatever
+    the wall clock reads."""
+    today = (datetime.now(UTC) - timedelta(days=2)).date()
     return today, midnight(today) + timedelta(hours=12)
 
 

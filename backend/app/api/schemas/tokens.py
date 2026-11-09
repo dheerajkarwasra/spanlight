@@ -5,6 +5,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from app.api.schemas.account import Password, TotpCode
 from app.api.schemas.common import ApiModel, FutureTime, Name
 from app.db.models import TokenScope
 
@@ -30,3 +31,5 @@ class PersonalAccessTokenCreateIn(BaseModel):
     scope: TokenScope
     # None: the token never expires.
     expires_at: FutureTime | None = None
+    password: Password | None = None
+    code: TotpCode | None = None

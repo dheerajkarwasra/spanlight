@@ -143,10 +143,11 @@ async def test_email_change_oauth_only_stale_session(
         "UPDATE sessions SET created_at = now() - interval '11 minutes' WHERE user_id = :id",
         id=ada.user["id"],
     )
-    stale = await ada.post(CHANGE, json={"new_email": NEW_EMAIL})
-
-    assert stale.status_code == 403, stale.text
-    assert stale.json()["code"] == "REAUTH_REQUIRED"
+    # Six times: a stale sign-in tests no secret, so it must not use up the attempts.
+    for _ in range(6):
+        stale = await ada.post(CHANGE, json={"new_email": NEW_EMAIL})
+        assert stale.status_code == 403, stale.text
+        assert stale.json()["code"] == "REAUTH_REQUIRED"
 
 
 async def test_email_change_taken_address(email_browser_factory: BrowserFactory) -> None:

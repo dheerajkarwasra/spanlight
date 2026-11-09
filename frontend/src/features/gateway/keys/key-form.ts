@@ -261,3 +261,20 @@ export function toUpdateInput(values: KeyFormValues, key: GatewayKey): GatewayKe
   }
   return update;
 }
+
+export function widens(key: GatewayKey, changes: GatewayKeyUpdate): boolean {
+  if (changes.route_id !== undefined && changes.route_id !== key.route_id) return true;
+  if (changes.environment !== undefined && changes.environment !== key.environment) return true;
+  for (const field of ["rpm_limit", "tpm_limit"] as const) {
+    const previous = key[field];
+    const proposed = changes[field];
+    if (proposed !== undefined && previous !== null && (proposed === null || proposed > previous))
+      return true;
+  }
+  const models = changes.allowed_models;
+  return (
+    models != null &&
+    key.allowed_models.length > 0 &&
+    (models.length === 0 || models.some((model) => !key.allowed_models.includes(model)))
+  );
+}

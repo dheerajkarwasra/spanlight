@@ -15,8 +15,8 @@ spans in the process's loss counter under `quota_rate`, `quota_spans` or `quota_
 loss flush writes to `telemetry_losses_hourly`. The crossing batch is admitted: a request is never
 refused because `used + n` would pass the limit, so a full batch is always admissible.
 
-Usage is counted from what the write inserted, as the last statement before commit, for every
-project, capped or not (`add_usage`). The day is the UTC date of receipt on the application clock.
+Usage is counted from what the write inserted or changed, as the last statement before commit,
+for every project, capped or not (`add_usage`). The day is the UTC date of receipt on the app clock.
 """
 
 import math
@@ -34,7 +34,6 @@ from app.config import Settings
 from app.core.observability import (
     INGEST_QUOTA_REJECTED_SPANS,
     INGEST_QUOTA_REJECTIONS,
-    INGEST_QUOTA_REPLAYS_ADMITTED,
     INGEST_QUOTA_UTILISATION,
     RATE_LIMIT_REJECTIONS,
 )
@@ -298,7 +297,7 @@ def _log_once_a_minute(key: str) -> bool:
     return True
 
 
-def _refuse_daily(
+def refuse_daily(
     project_id: uuid.UUID, quota: DailyQuota, limit: int, used: int, spans: int, now: datetime
 ) -> IngestRefusedError:
     reason = "quota_spans" if quota == "spans_per_day" else "quota_bytes"
@@ -336,33 +335,32 @@ async def check_caps(
     project: BoundProject,
     raw_spans: list[Any],
     now: datetime,
-) -> None:
-    """Refuse the batch (`IngestRefusedError`) when the project is over a cap; otherwise return.
+) -> tuple[DailyQuota, int, int] | None:
+    """Refuse the batch or return the daily quota hit provisionally bypassed by a replay.
 
     `db` is the request's transaction, already bound to the project. The daily quotas are checked
-    first, so a daily refusal spends no rate tokens; a pure replay at the cap is admitted and
-    still debited, since a replay is load.
+    first, so an immediate daily refusal spends no rate tokens. A replay at the cap is debited
+    and must be checked for changed spans after the pipeline; a later refusal keeps that debit.
     """
     caps = project.caps
     spans = len(raw_spans)
+    hit = None
     if caps.spans_per_day is not None or caps.bytes_per_day is not None:
         usage = await read_usage(db, project.id, now)
         ratio = utilisation(caps, usage)
         if ratio is not None:
             INGEST_QUOTA_UTILISATION.observe(ratio)
         hit = exceeded(caps, usage)
-        if hit is not None:
-            if not await _all_stored(db, project.id, raw_spans):
-                raise _refuse_daily(project.id, *hit, spans, now)
-            INGEST_QUOTA_REPLAYS_ADMITTED.inc()
+        if hit is not None and not await _all_stored(db, project.id, raw_spans):
+            raise refuse_daily(project.id, *hit, spans, now)
     limiter = span_limiter(caps)
     if limiter is None:
-        return
+        return hit
     retry_after = await take_token(
         rate_sessions, limiter, f"ingest:project:{project.id}", scope=RATE_SCOPE, cost=spans
     )
     if retry_after is None:
-        return
+        return hit
     RATE_LIMIT_REJECTIONS.labels(RATE_SCOPE).inc()
     loss_counter().add(project.id, "ingest", "quota_rate", floor_hour(now), spans)
     if _log_once_a_minute(f"{project.id}:rate"):

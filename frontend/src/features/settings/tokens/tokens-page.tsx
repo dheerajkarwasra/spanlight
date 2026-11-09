@@ -1,5 +1,5 @@
 import { KeyRound } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
@@ -17,21 +17,39 @@ import { useTokensQuery } from "./token-queries";
 export function TokensPage() {
   const query = useTokensQuery();
   const empty = query.isSuccess && query.data.length === 0;
+  const [creating, setCreating] = useState(false);
+  const startCreating = () => {
+    setCreating(true);
+  };
 
   return (
-    <SectionCard
-      title="Personal access tokens"
-      description="Tokens let scripts and tools call the Spanlight API as you. A token is shown once, when it's created."
-      // The empty state carries the one call to action, so the header button steps aside.
-      actions={empty ? undefined : <CreateTokenButton disabled={query.isPending} />}
-      className="gap-3"
-    >
-      <TokensContent query={query} />
-    </SectionCard>
+    <>
+      <SectionCard
+        title="Personal access tokens"
+        description="Tokens let scripts and tools call the Spanlight API as you. A token is shown once, when it's created."
+        // The empty state carries the one call to action, so the header button steps aside.
+        actions={
+          empty ? undefined : (
+            <CreateTokenButton disabled={query.isPending} onClick={startCreating} />
+          )
+        }
+        className="gap-3"
+      >
+        <TokensContent query={query} onCreate={startCreating} />
+      </SectionCard>
+      {/* Here, not beside a button: the refresh after creating removes the empty state. */}
+      <CreateTokenDialog open={creating} onOpenChange={setCreating} />
+    </>
   );
 }
 
-function TokensContent({ query }: { query: ReturnType<typeof useTokensQuery> }) {
+function TokensContent({
+  query,
+  onCreate,
+}: {
+  query: ReturnType<typeof useTokensQuery>;
+  onCreate: () => void;
+}) {
   if (query.isPending) {
     return <TokenListSkeleton />;
   }
@@ -58,7 +76,7 @@ function TokensContent({ query }: { query: ReturnType<typeof useTokensQuery> }) 
           icon={KeyRound}
           title="No tokens yet"
           description="Create a token to call the Spanlight API from scripts, CI jobs or notebooks."
-          action={<CreateTokenButton />}
+          action={<CreateTokenButton onClick={onCreate} />}
         />
       </Tile>
     );
@@ -83,14 +101,16 @@ function Tile({ children }: { children: ReactNode }) {
   return <div className="rounded-tile bg-surface-muted">{children}</div>;
 }
 
-function CreateTokenButton({ disabled = false }: { disabled?: boolean }) {
+function CreateTokenButton({
+  disabled = false,
+  onClick,
+}: {
+  disabled?: boolean;
+  onClick: () => void;
+}) {
   return (
-    <CreateTokenDialog
-      trigger={
-        <Button variant="primary" disabled={disabled}>
-          Create token
-        </Button>
-      }
-    />
+    <Button variant="primary" disabled={disabled} onClick={onClick}>
+      Create token
+    </Button>
   );
 }

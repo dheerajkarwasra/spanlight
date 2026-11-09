@@ -26,11 +26,12 @@ def inject_after(monkeypatch: pytest.MonkeyPatch, step: str, fault: Fault) -> No
     original = getattr(store, step)
     fired: list[bool] = []
 
-    async def faulty(session: AsyncSession, *args: Any, **kwargs: Any) -> None:
-        await original(session, *args, **kwargs)
+    async def faulty(session: AsyncSession, *args: Any, **kwargs: Any) -> Any:
+        result = await original(session, *args, **kwargs)
         if not fired:
             fired.append(True)
             await fault(session)
+        return result
 
     monkeypatch.setattr(store, step, faulty)
 

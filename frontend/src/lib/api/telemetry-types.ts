@@ -384,8 +384,9 @@ export interface ModelMetrics extends AggregateMetadata {
   errors: number;
   p50_ms: number | null;
   p95_ms: number | null;
-  input_tokens: number;
-  output_tokens: number;
+  /** `null`: no call of the model reported usage. */
+  input_tokens: number | null;
+  output_tokens: number | null;
   cost_usd: string | null;
   approximate: boolean;
 }

@@ -17,6 +17,7 @@ import {
   type ReleaseListQuery,
   type TraceListQuery,
 } from "@/lib/api";
+import { useLiveProject } from "@/lib/live/use-live-project";
 import { bucketFor, resolveRange } from "@/lib/time-range";
 
 import { RELEASE_WINDOW_MAX_MS } from "./release-markers";
@@ -33,9 +34,6 @@ export const OPEN_INSIGHTS_LIMIT = 20;
 
 /** The most incidents the calls/errors overlay asks for (the API's maximum). */
 export const INCIDENT_OVERLAY_LIMIT = 100;
-
-/** How often the "Live" latest-traces list refreshes. */
-export const LIVE_REFRESH_MS = 15_000;
 
 /** The newest detector runs the Doctor card reads its last pass from (one pass is ~15 runs). */
 export const DETECTOR_RUNS_LIMIT = 20;
@@ -55,11 +53,17 @@ export function useOverviewQueries() {
   const keys = queryKeys.project(projectId);
   const metricsWindow: MetricsQuery = { from: range.from, to: range.to, environment };
   const bucket = bucketFor(range.durationMs);
+  // Stream `changed` events refresh the live queries; while it is unavailable they poll.
+  const { status: liveStatus, refetchInterval } = useLiveProject(
+    projectId,
+    range.value !== "custom",
+  );
 
   const overview = useQuery({
     queryKey: keys.overview(metricsWindow),
     queryFn: ({ signal }) => projectsApi.overview(projectId, metricsWindow, signal),
     placeholderData: keepPreviousData,
+    refetchInterval,
   });
 
   const timeseries = useQuery({
@@ -67,6 +71,7 @@ export function useOverviewQueries() {
     queryFn: ({ signal }) =>
       projectsApi.timeseries(projectId, { ...metricsWindow, bucket }, signal),
     placeholderData: keepPreviousData,
+    refetchInterval,
   });
 
   // The UTC month's spend so far, for the Spend card's projection. Preset windows end now;
@@ -86,6 +91,7 @@ export function useOverviewQueries() {
     queryKey: keys.models(metricsWindow),
     queryFn: ({ signal }) => projectsApi.models(projectId, metricsWindow, signal),
     placeholderData: keepPreviousData,
+    refetchInterval,
   });
 
   // The Doctor's score for the same window and environment as the rest of the page.
@@ -93,6 +99,7 @@ export function useOverviewQueries() {
     queryKey: keys.health(metricsWindow),
     queryFn: ({ signal }) => insightsApi.health(projectId, metricsWindow, signal),
     placeholderData: keepPreviousData,
+    refetchInterval,
   });
 
   // The last detector pass. Its own key under the Doctor prefix: the Doctor page caches one run.
@@ -171,6 +178,7 @@ export function useOverviewQueries() {
     range,
     environment,
     bucket,
+    liveStatus,
     overview,
     monthToDate,
     timeseries,
@@ -202,10 +210,11 @@ export function useTracesTabQuery(tab: TracesTab) {
   const { projectId } = useProjectParams();
   const { range, environment } = useProjectFilters();
   const keys = queryKeys.project(projectId);
-  // Preset windows end "now", so the latest traces poll and re-resolve the window on every
-  // fetch: a trace sent a minute after the page loaded still shows up. Custom windows are
-  // fixed in the past and fetched once.
+  // Preset windows end "now", so the latest traces refresh with the live stream (or its polling
+  // fallback) and re-resolve the window on every fetch: a trace sent a minute after the page
+  // loaded still shows up. Custom windows are fixed in the past and fetched once.
   const isLive = tab === "latest" && range.value !== "custom";
+  const { refetchInterval } = useLiveProject(projectId, range.value !== "custom");
   const query: Omit<TraceListQuery, "cursor"> = {
     from: range.from,
     to: range.to,
@@ -222,7 +231,7 @@ export function useTracesTabQuery(tab: TracesTab) {
       const window = isLive ? resolveRange({ range: range.value }) : range;
       return projectsApi.traces(projectId, { ...query, from: window.from, to: window.to }, signal);
     },
-    refetchInterval: isLive ? LIVE_REFRESH_MS : false,
+    refetchInterval: isLive ? refetchInterval : false,
     placeholderData: keepPreviousData,
   });
   return { ...result, isLive };

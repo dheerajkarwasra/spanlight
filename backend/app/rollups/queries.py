@@ -70,8 +70,8 @@ _SPAN_HOURS = text(
            coalesce(sum(errors) FILTER (WHERE kind = 'llm'), 0)          AS llm_errors,
            coalesce(sum(unpriced_calls) FILTER (WHERE kind = 'llm'), 0)  AS unpriced_calls,
            sum(cost_usd)                                                 AS cost_usd,
-           coalesce(sum(input_tokens), 0)                                AS input_tokens,
-           coalesce(sum(output_tokens), 0)                               AS output_tokens,
+           sum(input_tokens)                                             AS input_tokens,
+           sum(output_tokens)                                            AS output_tokens,
            {summed_histogram("latency_buckets")}                        AS latency_buckets
     FROM span_rollups_hourly
     {_ROLLUP_FILTER}
@@ -97,8 +97,8 @@ _MODELS = text(
            model,
            sum(span_count)                          AS calls,
            sum(errors)                              AS errors,
-           coalesce(sum(input_tokens), 0)           AS input_tokens,
-           coalesce(sum(output_tokens), 0)          AS output_tokens,
+           sum(input_tokens)                        AS input_tokens,
+           sum(output_tokens)                       AS output_tokens,
            sum(cost_usd)                            AS cost_usd,
            {summed_histogram("latency_buckets")}   AS latency_buckets
     FROM span_rollups_hourly
@@ -107,6 +107,18 @@ _MODELS = text(
     GROUP BY provider, model
     """
 ).bindparams(bindparam("environment", type_=String))
+
+
+def known_int(value: Any) -> int | None:
+    """A token sum as read: ``None`` (no row reported it) stays ``None``."""
+    return None if value is None else int(value)
+
+
+def add_known(a: int | None, b: int | None) -> int | None:
+    """The sum of the known token totals; ``None`` only when neither is known."""
+    if a is None:
+        return b
+    return a if b is None else a + b
 
 
 @dataclass(frozen=True)
@@ -119,13 +131,13 @@ class HourlyRollup:
     llm_errors: int
     unpriced_calls: int
     cost_usd: Decimal | None
-    input_tokens: int
-    output_tokens: int
+    input_tokens: int | None
+    output_tokens: int | None
     latency_buckets: list[int]
 
     @property
-    def tokens(self) -> int:
-        return self.input_tokens + self.output_tokens
+    def tokens(self) -> int | None:
+        return add_known(self.input_tokens, self.output_tokens)
 
     @property
     def error_rate(self) -> float | None:
@@ -155,8 +167,8 @@ class ModelRollup:
     model: str | None
     calls: int
     errors: int
-    input_tokens: int
-    output_tokens: int
+    input_tokens: int | None
+    output_tokens: int | None
     cost_usd: Decimal | None
     latency_buckets: list[int]
 
@@ -214,8 +226,8 @@ async def read_rollups(
             llm_errors=int(row.llm_errors),
             unpriced_calls=int(row.unpriced_calls),
             cost_usd=row.cost_usd,
-            input_tokens=int(row.input_tokens),
-            output_tokens=int(row.output_tokens),
+            input_tokens=known_int(row.input_tokens),
+            output_tokens=known_int(row.output_tokens),
             latency_buckets=[int(count) for count in row.latency_buckets],
         )
         for row in span_rows
@@ -231,8 +243,8 @@ async def read_rollups(
                 llm_errors=0,
                 unpriced_calls=0,
                 cost_usd=None,
-                input_tokens=0,
-                output_tokens=0,
+                input_tokens=None,
+                output_tokens=None,
                 latency_buckets=[0] * BUCKET_COUNT,
             )
         else:
@@ -241,10 +253,12 @@ async def read_rollups(
 
 
 def combine(bucket_start: datetime, rows: Iterable[HourlyRollup]) -> HourlyRollup:
-    """Merge hourly rows into one: counts and tokens add, histograms add element-wise, and the
-    cost is ``None`` unless at least one row has a priced cost.
+    """Merge hourly rows into one: counts add, histograms add element-wise, and the cost and
+    each token total are ``None`` unless at least one row knows them.
     """
-    traces = llm_calls = llm_errors = unpriced_calls = input_tokens = output_tokens = 0
+    traces = llm_calls = llm_errors = unpriced_calls = 0
+    input_tokens: int | None = None
+    output_tokens: int | None = None
     cost_usd: Decimal | None = None
     latency_buckets = [0] * BUCKET_COUNT
     for row in rows:
@@ -252,8 +266,8 @@ def combine(bucket_start: datetime, rows: Iterable[HourlyRollup]) -> HourlyRollu
         llm_calls += row.llm_calls
         llm_errors += row.llm_errors
         unpriced_calls += row.unpriced_calls
-        input_tokens += row.input_tokens
-        output_tokens += row.output_tokens
+        input_tokens = add_known(input_tokens, row.input_tokens)
+        output_tokens = add_known(output_tokens, row.output_tokens)
         if row.cost_usd is not None:
             cost_usd = row.cost_usd if cost_usd is None else cost_usd + row.cost_usd
         latency_buckets = merge(latency_buckets, row.latency_buckets)
@@ -304,8 +318,8 @@ async def read_model_rollups(
             model=row.model,
             calls=int(row.calls),
             errors=int(row.errors),
-            input_tokens=int(row.input_tokens),
-            output_tokens=int(row.output_tokens),
+            input_tokens=known_int(row.input_tokens),
+            output_tokens=known_int(row.output_tokens),
             cost_usd=row.cost_usd,
             latency_buckets=[int(count) for count in row.latency_buckets],
         )

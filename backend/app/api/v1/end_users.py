@@ -21,6 +21,7 @@ from app.end_users import service
 from app.end_users.erasure_job import request_erasure
 from app.end_users.queries import UserSort
 from app.explorer.trace_sort import SortOrder
+from app.live.cache import cached_answer
 from app.services.deletion import lock_project_for_write
 
 router = APIRouter(prefix="/projects/{project_id}/users", tags=["users"])
@@ -39,6 +40,7 @@ UserId = Annotated[str, Path(min_length=1, max_length=257, pattern=NO_NUL)]
 @router.get("", response_model=UserListOut)
 async def list_users(
     project_id: uuid.UUID,
+    request: Request,
     access: ProjectReader,
     db: DbSession,
     window: Window,
@@ -53,8 +55,12 @@ async def list_users(
     order: SortOrder = "desc",
 ) -> UserListOut:
     project = access.require_project()
-    return await service.list_users(
-        db, project.id, window, sort, limit, cursor, environment, q, order
+    return await cached_answer(
+        request,
+        access,
+        lambda _: service.list_users(
+            db, project.id, window, sort, limit, cursor, environment, q, order
+        ),
     )
 
 

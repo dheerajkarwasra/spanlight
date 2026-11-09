@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { freshnessLabel } from "./freshness";
+import { COVERAGE_DOCS, freshnessLabel, SOURCE_HISTORY_HELP, SOURCE_REMOVED } from "./freshness";
 
 // Local times: the label reads the viewer's clock.
 const NOW = new Date(2026, 9, 21, 14, 30);
@@ -45,5 +45,16 @@ describe("freshnessLabel", () => {
     );
     expect(freshnessLabel(null, null, NOW)).toBe("Not computed yet");
     expect(freshnessLabel("not-a-date", null, NOW)).toBe("Not computed yet");
+  });
+});
+
+describe("source history help", () => {
+  it("asks for coverage activation and links the deploy runbook", () => {
+    expect(SOURCE_HISTORY_HELP).toBe(
+      `${SOURCE_REMOVED} Ask your administrator to activate aggregate coverage.`,
+    );
+    expect(COVERAGE_DOCS).toBe(
+      "/docs/runbooks/deploy/#activate-aggregate-source-preservation-1027",
+    );
   });
 });

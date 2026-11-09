@@ -102,7 +102,11 @@ async def test_member_edit_and_org_delete_both_complete(
     await join_with_role(owner, member, workspace.org_id, "member")
     org_id = uuid.UUID(workspace.org_id)
     url = f"/api/v1/orgs/{org_id}/members/{member.user['id']}"
-    request = owner.patch(url, json={"role": "admin"}) if edit == "role" else owner.delete(url)
+    request = (
+        owner.patch(url, json={"role": "admin", "password": "correct horse battery"})
+        if edit == "role"
+        else owner.delete(url, json={"password": PASSWORD})
+    )
     async with session_factory() as deleting:
         await _hold_organization(deleting, org_id)
         async with _waiting(session_factory, request) as editing, asyncio.timeout(10):
@@ -152,7 +156,10 @@ async def test_accept_invite_and_org_delete_both_complete(
     invitee: Browser = await browser_factory("invitee@example.com")
     workspace = await create_workspace(owner)
     org_id = uuid.UUID(workspace.org_id)
-    invite = await owner.post(f"/api/v1/orgs/{org_id}/invites", json={"role": "member"})
+    invite = await owner.post(
+        f"/api/v1/orgs/{org_id}/invites",
+        json={"password": "correct horse battery", "role": "member"},
+    )
     assert invite.status_code == 201, invite.text
     token = invite.json()["url"].split("#token=", 1)[1]
     request = invitee.post("/api/v1/invites/accept", json={"token": token})
@@ -234,7 +241,7 @@ async def test_budget_reaper_and_org_delete_both_complete(
     held = reservation_ids[-1] if first == "reaper" else reservation_ids[0]
     reap: Coroutine[Any, Any, object] = reap_expired(session_factory, now=now)
     delete: Coroutine[Any, Any, object] = owner.delete(
-        f"/api/v1/orgs/{org['id']}", json={"confirm": org["slug"]}
+        f"/api/v1/orgs/{org['id']}", json={"confirm": org["slug"], "password": PASSWORD}
     )
     one, two = (reap, delete) if first == "reaper" else (delete, reap)
     async with session_factory() as holding:
@@ -286,3 +293,27 @@ async def test_org_delete_takes_its_projects_sorted_before_the_delete(
     locked = first("FROM projects", "ORDER BY projects.id", "FOR UPDATE")
     deleted = first("DELETE FROM projects")
     assert locked < deleted < len(statements), "\n".join(statements)
+
+
+@pytest.mark.serial
+async def test_a_proof_route_waiting_on_the_org_lets_foreign_keys_to_its_user_through(
+    browser_factory: BrowserFactory, session_factory: Sessions
+) -> None:
+    """The same person, two tabs: one deletes a project and holds their user row while it waits
+    for the organization; the other holds the organization and inserts a row whose foreign key
+    needs `KEY SHARE` on that user. Neither may wait on the other."""
+    owner: Browser = await browser_factory("owner@example.com")
+    workspace = await create_workspace(owner)
+    org_id = uuid.UUID(workspace.org_id)
+    url = f"/api/v1/projects/{workspace.project_id}"
+    slug = (await owner.get(url)).json()["slug"]
+    request = owner.delete(url, json={"confirm": slug, "password": PASSWORD})
+    async with session_factory() as other_tab:
+        await _hold_organization(other_tab, org_id)
+        async with _waiting(session_factory, request) as deleting, asyncio.timeout(10):
+            await other_tab.execute(
+                text("SELECT 1 FROM users WHERE id = :id FOR KEY SHARE"), {"id": owner.user["id"]}
+            )
+            await other_tab.commit()
+            response = await deleting
+    assert response.status_code == 204, response.text

@@ -45,6 +45,7 @@ class AuditAction(enum.StrEnum):
     PROJECT_DELETE = "project.delete"
     KEY_CREATE = "key.create"
     KEY_REVOKE = "key.revoke"
+    KEY_SCOPES_CHANGE = "key.scopes_change"
     USER_PASSWORD_RESET = "user.password_reset"  # noqa: S105 - an action name
     USER_OAUTH_LINK = "user.oauth_link"
     USER_OAUTH_UNLINK = "user.oauth_unlink"

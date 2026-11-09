@@ -31,7 +31,7 @@ export function DoctorPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Doctor"
-        description="Fifteen checks read your traffic every 15 minutes and open a finding when something looks wrong."
+        description="Sixteen checks read your traffic every 15 minutes and open a finding when something looks wrong."
         actions={<LastCheckedPill />}
       />
       <StatusTabs

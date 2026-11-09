@@ -1,7 +1,7 @@
 """Personal access tokens: list, create (secret shown once) and revoke.
 
 For scripts and tools that call the dashboard API as their owner. Only a signed-in session
-manages tokens: a token that could mint tokens would turn one leak into a permanent foothold.
+manages tokens; creation re-proves ownership so a stolen cookie cannot become a durable token.
 """
 
 import uuid
@@ -9,12 +9,13 @@ import uuid
 import structlog
 from fastapi import APIRouter, Response, status
 
-from app.api.deps import CurrentSession, DbSession, utcnow
+from app.api.deps import ClockDep, CurrentSession, DbSession, SettingsDep, utcnow
 from app.api.schemas import (
     PersonalAccessTokenCreatedOut,
     PersonalAccessTokenCreateIn,
     PersonalAccessTokenOut,
 )
+from app.auth.reauth import confirm_account_owner
 from app.auth.tokens import RevokeOutcome, issue_token, list_active_tokens, revoke_token
 from app.core.errors import forbidden, not_found
 from app.core.security import mark_uncacheable
@@ -36,7 +37,12 @@ async def list_tokens(auth: CurrentSession, db: DbSession) -> list[PersonalAcces
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=PersonalAccessTokenCreatedOut)
 async def create_token(
-    body: PersonalAccessTokenCreateIn, response: Response, auth: CurrentSession, db: DbSession
+    body: PersonalAccessTokenCreateIn,
+    response: Response,
+    auth: CurrentSession,
+    db: DbSession,
+    settings: SettingsDep,
+    clock: ClockDep,
 ) -> PersonalAccessTokenCreatedOut:
     """Create a token. The 201 is the only time its secret is shown."""
     if is_demo_user(auth.user):
@@ -44,6 +50,15 @@ async def create_token(
         # whoever saw it.
         raise forbidden("The demo account cannot create access tokens.")
 
+    await confirm_account_owner(
+        db,
+        auth,
+        body.password,
+        body.code,
+        scope="token_create_reauth",
+        settings=settings,
+        now=clock(),
+    )
     issued = await issue_token(
         db, auth.user.id, name=body.name, scope=body.scope, expires_at=body.expires_at
     )

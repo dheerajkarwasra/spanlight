@@ -15,38 +15,82 @@ from sqlalchemy import Row, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.end_users.days import midnight
+from app.end_users.refresh import user_aggregate_sql
 from app.explorer.trace_queries import escape_like
 from app.explorer.trace_sort import SortOrder
 from app.rollups.coverage_reads import CoverageState, read_covered
 from app.rollups.dirty import USER_DAILY
+from app.rollups.watermark import RAW_TAIL_MAX
 
 UserSort = Literal["cost", "errors", "traces"]
 
 # A user without a call has no cost to report; with calls and no priced one it is unknown.
 _COST = "(CASE WHEN sum(llm_calls) = 0 THEN 0 ELSE sum(cost_usd) END)"
+# Tokens follow the same rule: a day without calls stores NULL tokens.
+_TOKENS = "(CASE WHEN sum(llm_calls) = 0 THEN 0 ELSE sum(tokens) END)"
 _SORT_EXPRESSIONS: dict[UserSort, str] = {
     "cost": _COST,
     "errors": "sum(errors)",
     "traces": "sum(traces)",
 }
 
+# The stored days of the window and the raw tail, merged per user in one statement so the sort,
+# the keyset and the page see the sum. The tail is the traces after their own day's latest
+# recompute and after `now() - :tail_max`, aggregated as the refresh does (`user_aggregate_sql`);
+# older uncomputed traces stay in `pending_traces`. `aggregate_coverage` is the CTE `read_covered`
+# wraps every statement in: without complete coverage the raw tail is left out, as before it
+# existed. `refreshed` is materialized so the per-trace probe reads it, not the table. The
+# per-day bound is correlated, so it only filters; the uncorrelated one before it (the earliest
+# tail trace, found by one index probe per tail day) starts the index range there.
 _USERS = """
+    WITH refreshed AS MATERIALIZED ({refreshed}),
+    tail AS ({tail})
     SELECT external_user_id,
            sum(traces)       AS traces,
            sum(llm_calls)    AS llm_calls,
            sum(errors)       AS errors,
            sum(unpriced_calls) AS unpriced_calls,
            {cost}            AS cost_usd,
-           sum(tokens)       AS tokens,
+           {tokens}          AS tokens,
            min(day)          AS first_seen_day,
            max(day)          AS last_seen_day
-    FROM user_stats_daily
-    WHERE project_id = :project_id AND day >= :first_day AND day < :end_day{environment}{search}
+    FROM (
+        SELECT day, environment, external_user_id, traces, llm_calls, errors, unpriced_calls,
+               cost_usd, tokens
+        FROM user_stats_daily
+        WHERE project_id = :project_id AND day >= :first_day AND day < :end_day
+        UNION ALL
+        SELECT * FROM tail
+    ) AS merged
+    WHERE true{environment}{search}
     GROUP BY external_user_id
     {having}
     ORDER BY {sort} {direction} NULLS LAST, external_user_id
     LIMIT :limit
 """
+
+_TAIL_FILTER = """
+          AND t.started_at >= :start
+          AND t.started_at > now() - CAST(:tail_max AS interval)
+          AND t.started_at < :end
+          AND t.started_at >= (
+              SELECT coalesce(min(f.first_at), 'infinity')
+              FROM generate_series(
+                  CAST(greatest(CAST(:first_day AS date),
+                                ((now() - CAST(:tail_max AS interval)) AT TIME ZONE 'UTC')::date)
+                       AS timestamp),
+                  CAST(CAST(:end_day AS date) - 1 AS timestamp), interval '1 day') AS d(day)
+              LEFT JOIN refreshed AS r ON r.day = CAST(d.day AS date)
+              CROSS JOIN LATERAL (
+                  SELECT min(n.started_at) AS first_at FROM traces AS n
+                  WHERE n.project_id = :project_id
+                    AND n.started_at > greatest(r.computed_at, now() - CAST(:tail_max AS interval))
+                    AND n.started_at >= d.day AT TIME ZONE 'UTC'
+                    AND n.started_at < (d.day + interval '1 day') AT TIME ZONE 'UTC') AS f)
+          AND t.started_at > coalesce(
+              (SELECT r.computed_at FROM refreshed AS r
+               WHERE r.day = (t.started_at AT TIME ZONE 'UTC')::date), '-infinity')
+          AND (SELECT bool_and(complete) FROM aggregate_coverage)"""
 
 # Rows after the cursor in (sort value in `order`, nulls last, user id ascending) order;
 # `{beyond}` is `<` for descending, `>` for ascending.
@@ -56,14 +100,23 @@ _AFTER_NUMBER = (
 )
 _AFTER_NULL = "HAVING {sort} IS NULL AND external_user_id > :cursor_user"
 
-# One row per day, the day's environments summed.
+# One row per day, the day's environments summed, stored days and raw tail merged as in `_USERS`.
 _DAILY = """
+    WITH refreshed AS MATERIALIZED ({refreshed}),
+    tail AS ({tail})
     SELECT day, sum(traces) AS traces, sum(llm_calls) AS llm_calls, sum(errors) AS errors,
            sum(unpriced_calls) AS unpriced_calls, sum(cost_usd) AS cost_usd,
            sum(tokens) AS tokens, max(max(computed_at)) OVER () AS computed_at
-    FROM user_stats_daily
-    WHERE project_id = :project_id AND external_user_id = :external_user_id
-      AND day >= :first_day AND day < :end_day{environment}
+    FROM (
+        SELECT day, environment, external_user_id, traces, llm_calls, errors, unpriced_calls,
+               cost_usd, tokens, computed_at
+        FROM user_stats_daily
+        WHERE project_id = :project_id AND external_user_id = :external_user_id
+          AND day >= :first_day AND day < :end_day
+        UNION ALL
+        SELECT *, CAST(NULL AS timestamptz) FROM tail
+    ) AS merged
+    WHERE true{environment}
     GROUP BY day
     ORDER BY day
 """
@@ -169,12 +222,16 @@ async def read_users(
 ) -> list[Row[Any]]:
     """Up to `limit` users summed over `[first_day, end_day)` after the cursor `after = (sort
     value, user id)`, if any: `sort` in `order` with unknowns last, ties by user id ascending;
-    `q` keeps the ids that contain it (see `_search_filter`)."""
+    `q` keeps the ids that contain it (see `_search_filter`). The stored days and the raw tail
+    are summed together (see `_USERS`)."""
     expression = _SORT_EXPRESSIONS[sort]
     params: dict[str, Any] = {
         "project_id": project_id,
         "first_day": first_day,
         "end_day": end_day,
+        "start": midnight(first_day),
+        "end": midnight(end_day),
+        "tail_max": RAW_TAIL_MAX,
         "limit": limit,
     }
     having = ""
@@ -187,7 +244,10 @@ async def read_users(
         if value is not None:
             params["cursor_value"] = value
     sql = _USERS.format(
+        refreshed=_REFRESHED,
+        tail=user_aggregate_sql(_TAIL_FILTER),
         cost=_COST,
+        tokens=_TOKENS,
         having=having,
         sort=expression,
         direction={"asc": "ASC", "desc": "DESC"}[order],
@@ -214,16 +274,21 @@ async def read_freshness(
     environment: str | None,
 ) -> Row[Any]:
     """The window's `computed_at` and `pending_traces` (at most `PENDING_CAP`) of the user
-    traces; see `pending_sql`."""
+    traces; see `pending_sql`. The traces of the raw tail (see `_USERS`) are counted by
+    `read_users`, so only the older ones are pending."""
     params: dict[str, Any] = {
         "project_id": project_id,
         "first_day": first_day,
         "end_day": end_day,
         "start": midnight(first_day),
         "cap": PENDING_CAP,
+        "tail_max": RAW_TAIL_MAX,
     }
     environment_filter = _environment_filter(environment, params)
-    trace_filter = "\n      AND external_user_id IS NOT NULL" + environment_filter
+    trace_filter = (
+        "\n      AND external_user_id IS NOT NULL"
+        "\n      AND t.started_at <= now() - CAST(:tail_max AS interval)" + environment_filter
+    )
     return (await db.execute(text(pending_sql(_REFRESHED, trace_filter)), params)).one()
 
 
@@ -236,15 +301,25 @@ async def read_daily(
     environment: str | None,
     coverage: CoverageState | None = None,
 ) -> list[Row[Any]]:
-    """One user's stored days in `[first_day, end_day)`, oldest first. Every row's
-    `computed_at` is the latest recompute of those days."""
+    """One user's days in `[first_day, end_day)`, oldest first, the raw tail included (see
+    `_USERS`). Every row's `computed_at` is the latest recompute of the stored days, NULL when
+    every day comes from the tail."""
     params: dict[str, Any] = {
         "project_id": project_id,
         "external_user_id": external_user_id,
         "first_day": first_day,
         "end_day": end_day,
+        "start": midnight(first_day),
+        "end": midnight(end_day),
+        "tail_max": RAW_TAIL_MAX,
     }
-    sql = _DAILY.format(environment=_environment_filter(environment, params))
+    sql = _DAILY.format(
+        refreshed=_REFRESHED,
+        tail=user_aggregate_sql(
+            "\n          AND t.external_user_id = :external_user_id" + _TAIL_FILTER
+        ),
+        environment=_environment_filter(environment, params),
+    )
     return await read_covered(
         db,
         text(sql),

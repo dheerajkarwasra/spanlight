@@ -484,9 +484,12 @@ describe("OverviewDashboard", () => {
     ).toHaveLength(2);
     expect(
       screen.getAllByText(
-        "Source rows were removed. Stored values are snapshots; missing values are unknown.",
+        /^Source rows were removed\. Stored values are snapshots; missing values are unknown\. Ask your administrator to activate aggregate coverage\./,
       ).length,
     ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByRole("link", { name: /^How to activate it.*opens in a new tab/ })[0],
+    ).toHaveAttribute("href", "/docs/runbooks/deploy/#activate-aggregate-source-preservation-1027");
   });
 
   it("keeps the no-calls copy for complete empty lists", async () => {

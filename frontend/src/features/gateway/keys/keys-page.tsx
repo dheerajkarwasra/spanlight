@@ -34,13 +34,17 @@ export function GatewayKeysPage() {
   const routesQuery = useGatewayRoutesQuery();
   const profilesQuery = useFaultProfilesQuery();
   const canWrite = usePermission("gateway:write");
+  const [creating, setCreating] = useState(false);
+  const startCreating = () => {
+    setCreating(true);
+  };
 
   return (
     <GatewayLayout>
       <SectionCard
         title="Gateway keys"
         description="Each key routes calls for one app or environment. The secret is shown once."
-        actions={<HeaderActions canWrite={canWrite} />}
+        actions={<HeaderActions canWrite={canWrite} onCreate={startCreating} />}
         className="gap-3"
       >
         {canWrite ? null : (
@@ -51,8 +55,11 @@ export function GatewayKeysPage() {
           canWrite={canWrite}
           routes={routesQuery.data}
           profiles={profilesQuery.data}
+          onCreate={startCreating}
         />
       </SectionCard>
+      {/* Here, not beside a button: the refresh after creating removes the empty state. */}
+      <CreateKeyDialog open={creating} onOpenChange={setCreating} />
     </GatewayLayout>
   );
 }
@@ -62,9 +69,10 @@ interface KeysContentProps {
   canWrite: boolean;
   routes: Parameters<typeof KeyList>[0]["routes"];
   profiles: Parameters<typeof KeyList>[0]["profiles"];
+  onCreate: () => void;
 }
 
-function KeysContent({ query, canWrite, routes, profiles }: KeysContentProps) {
+function KeysContent({ query, canWrite, routes, profiles, onCreate }: KeysContentProps) {
   if (query.isPending) {
     return <KeyListSkeleton />;
   }
@@ -88,7 +96,7 @@ function KeysContent({ query, canWrite, routes, profiles }: KeysContentProps) {
         icon={KeyRound}
         title="No gateway keys"
         description={KEYS_EMPTY_BODY}
-        action={canWrite ? <CreateKeyButton /> : undefined}
+        action={canWrite ? <CreateKeyButton onClick={onCreate} /> : undefined}
       />
     );
   }
@@ -105,17 +113,27 @@ function KeysContent({ query, canWrite, routes, profiles }: KeysContentProps) {
   );
 }
 
-function HeaderActions({ canWrite }: { canWrite: boolean }): ReactNode {
+function HeaderActions({
+  canWrite,
+  onCreate,
+}: {
+  canWrite: boolean;
+  onCreate: () => void;
+}): ReactNode {
   return canWrite ? (
     <>
-      <CreateKeyButton />
+      <CreateKeyButton onClick={onCreate} />
       <KeysMenu />
     </>
   ) : null;
 }
 
-function CreateKeyButton() {
-  return <CreateKeyDialog trigger={<Button variant="primary">Create key</Button>} />;
+function CreateKeyButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Button variant="primary" onClick={onClick}>
+      Create key
+    </Button>
+  );
 }
 
 /** The header's overflow menu (Figma "Keys overflow"): Purge cache, for those who can write. */

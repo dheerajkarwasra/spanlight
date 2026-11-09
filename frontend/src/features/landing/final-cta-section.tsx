@@ -1,3 +1,6 @@
+import { Link } from "@tanstack/react-router";
+import { ArrowRight } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 
 import { DOCS_LINKS } from "./links";
@@ -26,12 +29,22 @@ export function FinalCtaSection({ onTryDemo, demoPending }: FinalCtaSectionProps
       <p className="relative max-w-[320px] text-base leading-[1.55] text-muted-foreground md:max-w-[560px] lg:text-[19px]">
         Explore a sample workspace, or follow the guide to run Spanlight on your own infrastructure.
       </p>
-      <div className="relative flex w-full flex-col gap-2.5 pt-2 md:w-auto md:flex-row md:gap-3 lg:pt-3">
-        <Button variant="primary" size="lg" loading={demoPending} onClick={onTryDemo}>
+      <div className="relative flex w-full flex-col gap-2.5 pt-2 md:w-auto md:flex-row md:items-center md:gap-3 lg:pt-3">
+        <Button asChild variant="primary" size="lg">
+          <Link to="/signup">Start free</Link>
+        </Button>
+        <Button size="lg" className="shadow-none" loading={demoPending} onClick={onTryDemo}>
           Try the live demo
         </Button>
-        <Button asChild size="lg" className="shadow-none">
-          <a href={DOCS_LINKS.selfHosting}>Self-host Spanlight</a>
+        <Button
+          asChild
+          variant="link"
+          className="h-12 self-center px-2 text-[15px] underline md:pl-3 [&_svg]:size-3.5"
+        >
+          <a href={DOCS_LINKS.selfHosting}>
+            Self-host Spanlight
+            <ArrowRight aria-hidden />
+          </a>
         </Button>
       </div>
     </section>

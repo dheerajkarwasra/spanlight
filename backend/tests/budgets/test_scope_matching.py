@@ -52,7 +52,7 @@ async def key_b(budget_world: BudgetWorld, gateway_app: Any) -> AsyncIterator[ht
     workspace = budget_world.workspace
     response = await workspace.owner.post(
         f"/api/v1/projects/{workspace.project_id}/gateway/keys",
-        json={"name": "second", "environment": "test"},
+        json={"name": "second", "environment": "test", "password": "correct horse battery"},
     )
     assert response.status_code == 201, response.text
     transport = httpx.ASGITransport(app=gateway_app)

@@ -1,8 +1,12 @@
-import type { ApiKey } from "@/lib/api";
+import type { ApiKey, KeyScope } from "@/lib/api";
 
 import { expiryState } from "./tokens/expiry";
 
 const KEY_PREFIX = "spl_live_";
+
+export function hasReadKeyScope(scopes: readonly KeyScope[]): boolean {
+  return scopes.includes("traces:read") || scopes.includes("prompts:read");
+}
 
 /**
  * The visible part of a key, e.g. "spl_live_ABCD…". The API returns the lookup

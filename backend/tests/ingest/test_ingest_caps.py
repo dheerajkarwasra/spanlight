@@ -19,7 +19,11 @@ from sqlalchemy import Engine, event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api import ingest as ingest_api
-from app.core.observability import INGEST_QUOTA_REPLAYS_ADMITTED
+from app.core.observability import (
+    INGEST_QUOTA_REJECTED_SPANS,
+    INGEST_QUOTA_REJECTIONS,
+    INGEST_QUOTA_REPLAYS_ADMITTED,
+)
 from app.db.rls import bind_project, bypass_rls
 from app.gateway.span_losses import loss_counter
 from app.ingest.pipeline import IngestTarget, ingest_spans
@@ -35,6 +39,7 @@ from tests.ingest.support import (
     lift_project_concurrency,
     otlp_json_document,
     otlp_json_span,
+    telemetry_rows,
 )
 
 Sessions = async_sessionmaker[AsyncSession]
@@ -228,6 +233,85 @@ async def test_replays_count_nothing_and_a_partial_replay_counts_its_whole_body(
     [(_, spans, byte_count)] = await _usage(session_factory, workspace.project_id)
     assert spans == 4
     assert byte_count == first[0][2] + _body_bytes(extended)
+
+
+async def test_rewriting_stored_spans_counts_bytes_and_is_refused_at_the_cap(
+    app: Any, client: httpx.AsyncClient, workspace: Workspace, session_factory: Sessions
+) -> None:
+    now = _now()
+    _pin(app, now)
+    batch = _batch(3)
+    assert (await ingest_native(client, workspace, batch)).status_code == 200
+    first = await _usage(session_factory, workspace.project_id)
+
+    rewritten = [{**s, "output": {"content": "a" * 10_000}} for s in batch]
+    response = await ingest_native(client, workspace, rewritten)
+    assert response.status_code == 200 and response.json()["accepted"] == 3
+    used = first[0][2] + _body_bytes(rewritten)
+    assert await _usage(session_factory, workspace.project_id) == [(str(now.date()), 3, used)]
+    stored = await telemetry_rows(session_factory, workspace.project_id)
+    assert [s["output"] for s in stored[0]] == [{"content": "a" * 10_000}] * 3
+    await _set_caps(session_factory, workspace.project_id, bytes_per_day=used)
+    replays = metric_delta(INGEST_QUOTA_REPLAYS_ADMITTED)
+    rejections = metric_delta(INGEST_QUOTA_REJECTIONS, quota="bytes_per_day")
+    rejected_spans = metric_delta(INGEST_QUOTA_REJECTED_SPANS, quota="bytes_per_day")
+
+    changed = [{**s, "output": {"content": "b" * 10_000}} for s in batch]
+    refused = await ingest_native(client, workspace, changed)
+
+    assert refused.status_code == 429, refused.text
+    assert refused.headers["content-type"] == "application/problem+json"
+    assert refused.headers["retry-after"] == str(seconds_until(next_midnight(now), now))
+    body = refused.json()
+    assert body["code"] == "INGEST_QUOTA_EXCEEDED"
+    assert (body["quota"], body["limit"], body["used"]) == ("bytes_per_day", used, used)
+    assert body["resets_at"] == next_midnight(now).isoformat().replace("+00:00", "Z")
+    assert await telemetry_rows(session_factory, workspace.project_id) == stored
+    assert await _usage(session_factory, workspace.project_id) == [(str(now.date()), 3, used)]
+    assert await _losses(session_factory, workspace.project_id) == {("ingest", "quota_bytes"): 3}
+    assert replays.value == 0
+    assert rejections.value == 1
+    assert rejected_spans.value == 3
+
+    replayed = await ingest_native(client, workspace, rewritten)
+    assert replayed.status_code == 200 and replayed.json()["accepted"] == 3
+    assert await _usage(session_factory, workspace.project_id) == [(str(now.date()), 3, used)]
+    assert await telemetry_rows(session_factory, workspace.project_id) == stored
+    assert await _losses(session_factory, workspace.project_id) == {("ingest", "quota_bytes"): 3}
+    assert replays.value == 1
+    assert rejections.value == 1
+    assert rejected_spans.value == 3
+
+
+async def test_rewriting_trace_fields_counts_bytes_and_is_refused_at_the_cap(
+    app: Any, client: httpx.AsyncClient, workspace: Workspace, session_factory: Sessions
+) -> None:
+    now = _now()
+    _pin(app, now)
+    # Mixed case: Python and the database collation sort these tags differently.
+    fields = {"name": "first", "tags": ["beta", "Alpha", "Zeta"], "metadata": {"a": "1"}}
+    batch = [{**s, "trace": fields} for s in _batch(3)]
+    assert (await ingest_native(client, workspace, batch)).status_code == 200
+    first = await _usage(session_factory, workspace.project_id)
+
+    renamed = [{**s, "trace": {**fields, "name": "second"}} for s in batch]
+    assert (await ingest_native(client, workspace, renamed)).status_code == 200
+    used = first[0][2] + _body_bytes(renamed)
+    assert await _usage(session_factory, workspace.project_id) == [(str(now.date()), 3, used)]
+    await _set_caps(session_factory, workspace.project_id, bytes_per_day=used)
+    stored = await telemetry_rows(session_factory, workspace.project_id)
+
+    more_tags = [{**s, "trace": {**fields, "tags": ["new"]}} for s in batch]
+    refused = await ingest_native(client, workspace, more_tags)
+
+    assert refused.status_code == 429, refused.text
+    assert refused.json()["code"] == "INGEST_QUOTA_EXCEEDED"
+    assert await telemetry_rows(session_factory, workspace.project_id) == stored
+    assert await _losses(session_factory, workspace.project_id) == {("ingest", "quota_bytes"): 3}
+
+    replayed = await ingest_native(client, workspace, renamed)
+    assert replayed.status_code == 200, replayed.text
+    assert await _usage(session_factory, workspace.project_id) == [(str(now.date()), 3, used)]
 
 
 async def test_replay_at_the_cap_is_admitted_new_data_is_refused(

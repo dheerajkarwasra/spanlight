@@ -32,6 +32,7 @@ Before a span is stored, Spanlight replaces secrets in its input, output, attrib
 - Google API keys (`AIza…`).
 - Slack tokens (`xoxb-`, `xoxp-`, `xoxa-`, `xoxr-`, `xoxs-`) and Groq keys (`gsk_`).
 - JSON Web Tokens, `x-api-key` header values and PEM private key blocks.
+- `Authorization: Basic` credentials, and the whole value of any JSON key named `authorization`, `x-api-key` or `aws_secret_access_key`, alone or at the end of a longer name such as the OpenTelemetry attribute `http.request.header.x-api-key`.
 - Card numbers: runs of 13 to 19 digits that pass the Luhn check, when written in groups of four or more digits or unbroken.
 
 Redaction runs before the 1 MB truncation, so a secret cut in half by the limit cannot survive in part.

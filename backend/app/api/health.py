@@ -17,6 +17,7 @@ from app.core.errors import not_found, unauthorized
 from app.db.migrations import head_revision
 from app.gateway import recorder
 from app.jobs.scheduler import EVALUATE_ALERTS
+from app.rollups.coverage_status import coverage_active
 
 router = APIRouter(tags=["health"])
 logger = structlog.get_logger(__name__)
@@ -44,7 +45,7 @@ async def live() -> dict[str, str]:
 
 @router.get("/health/ready")
 async def ready(request: Request, settings: SettingsDep) -> JSONResponse:
-    database, migrations, background = await _probe(request)
+    database, migrations, background, coverage = await _probe(request)
     healthy = database == "ok" and migrations == "ok"
     heartbeat_age: float | None = None
     evaluation_lag: float | None = None
@@ -64,6 +65,8 @@ async def ready(request: Request, settings: SettingsDep) -> JSONResponse:
     # `alert_evaluation_lag_s` is informational: it never makes the probe fail. So is
     # `gateway_spans_lost`, the gateway spans this process answered for but could not store since
     # it started (each is also in `spanlight_gateway_record_failures_total`).
+    # `aggregate_coverage` is informational too: "inactive" means rollup reads stay unknown until
+    # `spanlight activate-aggregate-coverage` runs; "unknown" when the database is unreachable.
     return JSONResponse(
         {
             "status": "ok" if healthy else "unavailable",
@@ -74,6 +77,7 @@ async def ready(request: Request, settings: SettingsDep) -> JSONResponse:
             "alert_evaluation_lag_s": evaluation_lag,
             "gateway_mode": settings.gateway_mode,
             "gateway_spans_lost": recorder.spans_lost(),
+            "aggregate_coverage": coverage,
         },
         status_code=200 if healthy else 503,
     )
@@ -89,25 +93,39 @@ class _Background:
     evaluation_lag: float | None
 
 
-async def _probe(request: Request) -> tuple[str, str, _Background | None]:
+async def _probe(request: Request) -> tuple[str, str, _Background | None, str]:
     """Check the database and migrations and, once those are fine, the worker and the outbox.
 
-    Everything runs on one pooled connection. The last item is None unless the database answers
-    and migrations are at head (the other tables may not exist before that).
+    Everything runs on one pooled connection. The third item is None unless the database answers
+    and migrations are at head (the other tables may not exist before that); the last is the
+    aggregate coverage state.
     """
     try:
         async with request.app.state.engine.connect() as connection:
             await connection.execute(text("SELECT 1"))
+            coverage = await _coverage(connection)
             try:
                 current = await connection.scalar(text("SELECT version_num FROM alembic_version"))
             except SQLAlchemyError:
-                return "ok", "pending", None  # the alembic_version table does not exist yet
+                # the alembic_version table does not exist yet
+                return "ok", "pending", None, coverage
             if current != head_revision():
-                return "ok", "pending", None
-            return "ok", "ok", await _background_work(connection)
+                return "ok", "pending", None, coverage
+            return "ok", "ok", await _background_work(connection), coverage
     except (SQLAlchemyError, OSError) as exc:
         logger.warning("readiness_database_unavailable", error_type=type(exc).__name__)
-        return "unavailable", "unknown", None
+        return "unavailable", "unknown", None, "unknown"
+
+
+async def _coverage(connection: AsyncConnection) -> str:
+    """`active` or `inactive`; `unknown` when the check itself fails (a catalog permission
+    error, a timeout). The savepoint keeps that failure out of the rest of the probe."""
+    try:
+        async with connection.begin_nested():
+            return "active" if await coverage_active(connection) else "inactive"
+    except SQLAlchemyError as exc:
+        logger.warning("readiness_coverage_check_failed", error_type=type(exc).__name__)
+        return "unknown"
 
 
 _BACKGROUND_WORK = text(

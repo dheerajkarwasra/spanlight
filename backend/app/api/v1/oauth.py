@@ -1,8 +1,9 @@
 """Sign in with GitHub and Google: start, callback, and the signed-in user's linked providers.
 
 `start` and `callback` are browser navigations, so a failed callback is not a problem+json body
-but a redirect that carries an error code in the query string. The other routes are ordinary
-JSON. The rules for what a profile may do are in `app.auth.oauth_service`.
+but a redirect that carries an error code in the query string. `start` refuses `intent=link` with
+problem+json: linking goes through `POST /{provider}/link`. The other routes are ordinary JSON.
+The rules for what a profile may do are in `app.auth.oauth_service`.
 """
 
 from typing import Annotated
@@ -10,7 +11,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 import structlog
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,7 +27,7 @@ from app.api.deps import (
     session_cookie_name,
     utcnow,
 )
-from app.api.schemas import OAuthIdentityOut, OAuthProviderOut
+from app.api.schemas import OAuthIdentityOut, OAuthLinkIn, OAuthLinkOut, OAuthProviderOut
 from app.api.v1.auth import set_auth_cookies
 from app.auth.login_challenge import issue_challenge
 from app.auth.oauth_client import ProviderError, authorization_url, fetch_profile
@@ -51,9 +52,12 @@ from app.auth.oauth_state import (
     set_state_cookie,
     state_matches,
 )
+from app.auth.reauth import confirm_account_owner
 from app.config import Settings
-from app.core.errors import conflict, forbidden, not_found, unauthorized
+from app.core.errors import ProblemError, conflict, forbidden, not_found
 from app.db.models import AuditAction, OAuthIdentity, User
+from app.email.templates import render_oauth_link_notice
+from app.notifications import NotificationKind, enqueue
 from app.services.audit import record_user_audit_in_each_org
 from app.services.credentials import lock_user_for_sign_in
 from app.services.demo import is_demo_user
@@ -128,6 +132,54 @@ async def unlink(provider: str, auth: CurrentSession, db: DbSession, request: Re
     await db.commit()
 
 
+@router.post("/{provider}/link", response_model=OAuthLinkOut)
+async def link(
+    auth: CurrentSession,
+    provider: ConfiguredProvider,
+    body: OAuthLinkIn,
+    db: DbSession,
+    settings: SettingsDep,
+    clock: ClockDep,
+    response: Response,
+) -> OAuthLinkOut:
+    """Confirm account ownership, then return the provider authorization URL and set `spl_oauth`.
+
+    Requires the current password, or a sign-in within 10 minutes for a passwordless account,
+    and a two-factor code when enabled. A completed new link mails the owner when email is
+    configured; relinking the same identity sends no notice.
+    """
+    # Refused here so the person is told at once; `link_identity` checks both again at the
+    # callback, which a state signed before the rules changed could still reach.
+    if is_demo_user(auth.user):
+        raise forbidden("The demo account cannot link a sign-in provider.")
+    if settings.is_email_configured and not auth.user.email_verified:
+        raise conflict(
+            "EMAIL_UNVERIFIED", "Verify your email address before linking a sign-in provider."
+        )
+    await confirm_account_owner(
+        db,
+        auth,
+        body.password,
+        body.code,
+        scope="oauth_link_reauth",
+        settings=settings,
+        now=clock(),
+    )
+    state = new_state(
+        provider=provider,
+        intent="link",
+        next=safe_next(body.next) if body.next else DEFAULT_LINK_NEXT,
+        user_id=auth.user.id,
+        now=utcnow(),
+    )
+    await db.commit()
+    set_state_cookie(response, settings, state)
+    response.headers["Cache-Control"] = "no-store"
+    return OAuthLinkOut(
+        url=authorization_url(settings, provider, state=state.state, verifier=state.verifier)
+    )
+
+
 # --- the browser flow --------------------------------------------------------------------------
 
 
@@ -136,39 +188,37 @@ async def unlink(provider: str, auth: CurrentSession, db: DbSession, request: Re
     dependencies=ANONYMOUS,
     response_class=RedirectResponse,
     status_code=status.HTTP_302_FOUND,
-    responses={302: {"description": "Redirect to the provider's sign-in page; sets `spl_oauth`."}},
+    responses={
+        302: {"description": "Redirect to the provider's sign-in page; sets `spl_oauth`."},
+        410: {
+            "description": "OAUTH_LINK_NEEDS_CONFIRMATION: use POST /{provider}/link.",
+            "content": {"application/problem+json": {"schema": {"type": "object"}}},
+        },
+    },
 )
 async def start(
     provider: ConfiguredProvider,
-    request: Request,
-    db: DbSession,
     settings: SettingsDep,
     intent: Intent = "sign_in",
     next_path: Annotated[str | None, Query(alias="next")] = None,
 ) -> RedirectResponse:
-    """Send the browser to the provider. `intent=link` links it to the signed-in user instead."""
-    now = utcnow()
-    user_id = None
+    """Start provider sign-in. `intent=link` returns `410 OAUTH_LINK_NEEDS_CONFIRMATION`.
+
+    Linking requires confirmation through `POST /{provider}/link`.
+    """
     if intent == "link":
-        active = await _optional_session(request, db, settings)
-        if active is None:
-            raise unauthorized()
-        # Refused here so the person is told at once; `link_identity` checks both again at the
-        # callback, which a state signed before the rules changed could still reach.
-        if is_demo_user(active.user):
-            raise forbidden("The demo account cannot link a sign-in provider.")
-        if settings.is_email_configured and not active.user.email_verified:
-            raise conflict(
-                "EMAIL_UNVERIFIED", "Verify your email address before linking a sign-in provider."
-            )
-        user_id = active.user.id
-    default = DEFAULT_LINK_NEXT if intent == "link" else DEFAULT_SIGN_IN_NEXT
+        raise ProblemError(
+            410,
+            "OAUTH_LINK_NEEDS_CONFIRMATION",
+            "Confirm your account before connecting a sign-in provider.",
+            headers={"Cache-Control": "no-store"},
+        )
     state = new_state(
         provider=provider,
-        intent=intent,
-        next=safe_next(next_path) if next_path else default,
-        user_id=user_id,
-        now=now,
+        intent="sign_in",
+        next=safe_next(next_path) if next_path else DEFAULT_SIGN_IN_NEXT,
+        user_id=None,
+        now=utcnow(),
     )
     response = RedirectResponse(
         authorization_url(settings, provider, state=state.state, verifier=state.verifier),
@@ -308,13 +358,22 @@ async def _link(
     # whoever happens to be signed in at the callback.
     if active is None or active.user.id != stored.user_id:
         raise OAuthRefused(OAuthCode.STATE)
-    await link_identity(
+    attached = await link_identity(
         db,
         active.user,
         profile,
         require_verified_email=settings.is_email_configured,
         ip=client_ip(request),
     )
+    if attached and settings.is_email_configured:
+        label = "GitHub" if profile.provider == "github" else "Google"
+        message = render_oauth_link_notice(active.user.name, label)
+        await enqueue(
+            db,
+            NotificationKind.EMAIL,
+            target={"to": active.user.email},
+            payload={"subject": message.subject, "text": message.text, "html": message.html},
+        )
     await db.commit()
     return RedirectResponse(
         f"{settings.app_base_url}{stored.next}", status_code=status.HTTP_302_FOUND

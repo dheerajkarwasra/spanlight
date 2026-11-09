@@ -12,6 +12,7 @@ function list(overrides: Partial<UserList> = {}): UserList {
     window: { start: "2026-09-22T00:00:00Z", end: "2026-10-22T00:00:00Z" },
     computed_at: null,
     pending_traces: null,
+    live: false,
     ...overrides,
   };
 }
@@ -97,11 +98,23 @@ describe("UsersPage search and sort", () => {
     const box = await screen.findByRole("searchbox", { name: "Search by user ID" });
     await userEvent.type(box, "ad");
     // Not on every keystroke: nothing is sent until typing pauses.
-    expect(listSpy).not.toHaveBeenCalledWith("proj_1", expect.objectContaining({ q: "ad" }));
+    expect(listSpy).not.toHaveBeenCalledWith(
+      "proj_1",
+      expect.objectContaining({ q: "ad" }),
+      expect.any(AbortSignal),
+    );
     await waitFor(() => {
-      expect(listSpy).toHaveBeenCalledWith("proj_1", expect.objectContaining({ q: "ad" }));
+      expect(listSpy).toHaveBeenCalledWith(
+        "proj_1",
+        expect.objectContaining({ q: "ad" }),
+        expect.any(AbortSignal),
+      );
     });
-    expect(listSpy).not.toHaveBeenCalledWith("proj_1", expect.objectContaining({ q: "a" }));
+    expect(listSpy).not.toHaveBeenCalledWith(
+      "proj_1",
+      expect.objectContaining({ q: "a" }),
+      expect.any(AbortSignal),
+    );
   });
 
   it("replaces the history entry for a search, sends Enter at once and clears on Escape", async () => {
@@ -111,7 +124,11 @@ describe("UsersPage search and sort", () => {
     const box = await screen.findByRole("searchbox", { name: "Search by user ID" });
     const entries = window.history.length;
     await userEvent.type(box, "ad{Enter}");
-    expect(listSpy).toHaveBeenLastCalledWith("proj_1", expect.objectContaining({ q: "ad" }));
+    expect(listSpy).toHaveBeenLastCalledWith(
+      "proj_1",
+      expect.objectContaining({ q: "ad" }),
+      expect.any(AbortSignal),
+    );
     expect(window.history.length).toBe(entries);
 
     await userEvent.type(box, "{Escape}");
@@ -158,6 +175,7 @@ describe("UsersPage search and sort", () => {
     expect(listSpy).toHaveBeenCalledWith(
       "proj_1",
       expect.objectContaining({ sort: "cost", order: "asc" }),
+      expect.any(AbortSignal),
     );
 
     const traces = within(table).getByRole("columnheader", { name: "Traces" });
@@ -197,6 +215,7 @@ describe("UsersPage search and sort", () => {
       recent_sessions: [],
       window: { start: "2026-09-22T00:00:00Z", end: "2026-10-22T00:00:00Z" },
       computed_at: null,
+      live: false,
     });
     renderApp(`/${ORG_ID}/proj_1/users?sort=errors&order=asc&q=ad&range=7d`);
 

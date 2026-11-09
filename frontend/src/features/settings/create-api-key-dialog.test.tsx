@@ -1,11 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { projectsApi, type CreatedApiKey } from "@/lib/api";
+import { ApiError, projectsApi, queryKeys, type CreatedApiKey } from "@/lib/api";
+
+import { ME } from "@/test/render-app";
 
 import { CreateApiKeyDialog } from "./create-api-key-dialog";
 
@@ -28,12 +31,29 @@ const createdKey: CreatedApiKey = {
   secret: SECRET,
 };
 
+function Harness() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button
+        onClick={() => {
+          setOpen(true);
+        }}
+      >
+        Create key
+      </Button>
+      <CreateApiKeyDialog open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
+
 function renderDialog() {
   const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+  queryClient.setQueryData(queryKeys.me, ME);
   render(
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <CreateApiKeyDialog trigger={<Button>Create key</Button>} />
+        <Harness />
       </TooltipProvider>
     </QueryClientProvider>,
   );
@@ -79,4 +99,54 @@ describe("CreateApiKeyDialog", () => {
     expect(await screen.findByText("Enter a name for this key.")).toBeInTheDocument();
     expect(createKey).not.toHaveBeenCalled();
   });
+});
+
+it("requires proof for read access and drops it when only ingest remains", async () => {
+  const user = userEvent.setup();
+  const createKey = vi
+    .spyOn(projectsApi, "createKey")
+    .mockRejectedValueOnce(
+      new ApiError(422, { code: "INVALID_PASSWORD", detail: "That password is not correct." }),
+    )
+    .mockResolvedValue(createdKey);
+  renderDialog();
+
+  await user.click(screen.getByRole("button", { name: "Create key" }));
+  await user.type(screen.getByLabelText("Name"), "production-api");
+  expect(screen.queryByLabelText("Password")).not.toBeInTheDocument();
+  const read = screen.getByRole("checkbox", { name: /traces:read/ });
+  await user.click(read);
+  expect(read).toHaveFocus();
+  expect(screen.getByText("Confirm it's you.").closest("p")).toHaveAttribute("aria-live", "polite");
+  const password = screen.getByLabelText("Password");
+  await user.type(password, "wrong password");
+  await user.click(screen.getByRole("radio", { name: "Never" }));
+  await user.click(screen.getByRole("button", { name: "Create key" }));
+
+  await waitFor(() => {
+    expect(password).toBeInvalid();
+    expect(password).toHaveAccessibleDescription("That password is not correct.");
+    expect(password).toHaveFocus();
+  });
+  expect(createKey).toHaveBeenCalledExactlyOnceWith("proj_1", {
+    name: "production-api",
+    scopes: ["ingest:write", "traces:read"],
+    expires_at: null,
+    password: "wrong password",
+  });
+  expect(screen.queryByText(SECRET)).not.toBeInTheDocument();
+  expect(screen.getByRole("dialog", { name: "Create API key" })).toBeVisible();
+
+  await user.click(read);
+  expect(screen.queryByLabelText("Password")).not.toBeInTheDocument();
+  await user.click(read);
+  expect(screen.getByLabelText("Password")).toHaveValue("");
+  await user.click(read);
+  await user.click(screen.getByRole("button", { name: "Create key" }));
+  expect(createKey).toHaveBeenLastCalledWith("proj_1", {
+    name: "production-api",
+    scopes: ["ingest:write"],
+    expires_at: null,
+  });
+  expect(await screen.findByText(SECRET)).toBeVisible();
 });

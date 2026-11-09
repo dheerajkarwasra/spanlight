@@ -17,7 +17,8 @@ class UserStats(BaseModel):
     """One end user over the days of the window that have any activity.
 
     `cost_usd` is the sum of the priced calls: `None` when calls were made and none was priced,
-    and a lower bound while `unpriced_calls` (the calls without a price) is above 0.
+    and a lower bound while `unpriced_calls` (the calls without a price) is above 0. `tokens`
+    adds what the calls reported: `None` when calls were made and none reported usage.
     `first_seen_day` and `last_seen_day` are the first and last of those days. `errors` counts
     failed LLM calls; the `error_count` of a session counts failed spans of every kind.
     """
@@ -28,7 +29,7 @@ class UserStats(BaseModel):
     errors: int
     unpriced_calls: int
     cost_usd: Money | None
-    tokens: int
+    tokens: int | None
     first_seen_day: date
     last_seen_day: date
 
@@ -57,23 +58,29 @@ class UserListOut(Page[UserStats], AggregateMetadata):
     """`computed_at` is when the figures of the window were last recomputed (the latest of the
     days summed), `None` when no day of the window has been computed yet. `pending_traces` is
     how many user traces of the window (and environment) are not counted yet: they started after
-    the latest recompute of their own UTC day, or their day has none yet. At most 10,000; 0 when
-    none is pending, `None` only when the window has neither computed figures nor traces."""
+    the latest recompute of their own UTC day, or their day has none yet, and more than 24 hours
+    ago; the newer ones are read from the raw traces and counted. At most 10,000; 0 when none is
+    pending, `None` only when the window has neither computed figures nor traces, or aggregate
+    coverage is unavailable. `live` is true when the figures include every trace so far: the raw
+    tail was merged and nothing is pending."""
 
     window: StatsWindow
     computed_at: datetime | None
     pending_traces: int | None
+    live: bool
 
 
 class UserDetailOut(AggregateMetadata):
     """`computed_at` is when the user's figures were last recomputed (the latest of the days
-    summed)."""
+    summed), null when they all come from the raw tail. `live` says the tail was merged and the
+    window has nothing pending, as on the list."""
 
     user: UserStats
     daily: list[DayStats]
     recent_sessions: list[SessionSummaryOut]
     window: StatsWindow
     computed_at: datetime | None
+    live: bool
 
 
 class EndUserErasureIn(BaseModel):

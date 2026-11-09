@@ -14,12 +14,16 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
+import structlog
 from sqlalchemy import ColumnElement, exists, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.observability import JOBS_FINISHED
 from app.db.models import Job, JobStatus
 from app.jobs.outcome import JobOutcome
+
+logger = structlog.get_logger(__name__)
 
 DEFAULT_LEASE = timedelta(seconds=60)
 MAX_BACKOFF = timedelta(hours=1)
@@ -95,6 +99,7 @@ _EXPIRE_EXHAUSTED = text(
         last_error = coalesce(last_error, 'lease expired after the final attempt')
     WHERE id IN (SELECT id FROM exhausted)
       AND status = 'running' AND lease_until < now() AND attempts >= max_attempts
+    RETURNING id, kind
     """
 )
 
@@ -139,7 +144,8 @@ async def claim_next(
         "unrestricted": supported_kinds is None,
         "supported_kinds": sorted(supported_kinds) if supported_kinds is not None else [],
     }
-    await db.execute(_EXPIRE_EXHAUSTED, supported)
+    # The worker that held a final attempt died with it: nobody else records the outcome.
+    expired = (await db.execute(_EXPIRE_EXHAUSTED, supported)).all()
     row = (
         await db.execute(
             _CLAIM,
@@ -147,6 +153,10 @@ async def claim_next(
         )
     ).one_or_none()
     await db.commit()
+    # After the commit: a rolled-back expiry is expired again, and counted, by the next poll.
+    for job in expired:
+        JOBS_FINISHED.labels(job.kind, "lease_expired").inc()
+        logger.warning("job_lease_expired", job_id=job.id, kind=job.kind)
     if row is None:
         return None
     return ClaimedJob(

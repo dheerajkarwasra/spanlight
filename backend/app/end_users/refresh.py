@@ -4,12 +4,12 @@ A trace counts for the UTC day it started, under its environment (NULL when it h
 an end user is the trace's `external_user_id`.
 The figures of a trace are those of its LLM spans, whatever day they started: `llm_calls` and
 `errors` count them (an error is a span with status `error`), `unpriced_calls` counts those
-without a cost, `tokens` adds input and output
-tokens (input already includes the cached ones) and `cost_usd` sums the priced ones, `NULL` when
-the user's day has no priced call. `unpriced_calls`, `tokens` and `cost_usd` leave usage rollups
-(`spans.usage_rollup`, a span repeating a descendant's usage) out; `llm_calls` and `errors` keep
-them. `computed_at` is the time of the recompute that last wrote the
-row (`now()`, the transaction's start), whether or not its figures changed.
+without a cost, `tokens` adds the input and output tokens the calls reported (input already
+includes the cached ones), `NULL` when none reported either, and `cost_usd` sums the priced ones,
+`NULL` when the user's day has no priced call. `unpriced_calls`, `tokens` and `cost_usd` leave
+usage rollups (`spans.usage_rollup`, a span repeating a descendant's usage) out; `llm_calls` and
+`errors` keep them. `computed_at` is the time of the recompute that last wrote the row (`now()`,
+the transaction's start), whether or not its figures changed.
 
 The recompute is idempotent. Rows of the range are upserted on their natural key, and rows of
 the range no trace backs any more (a trace retention removed, say) are deleted, so the table
@@ -27,13 +27,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.end_users.days import ONE_DAY, midnight
 from app.rollups.coverage import complete_day_ranges, lock_aggregate_sources
 
-# One statement, so the aggregate is computed once for both writes. `fresh` is the traces of the
-# range, each with its LLM spans (the span side is bounded below by the range start: a trace
-# starts when its first span does, so none of its spans starts earlier). The upsert and the
-# delete touch disjoint rows: the delete only takes rows `fresh` does not have.
-_REFRESH = text(
+
+def user_aggregate_sql(trace_filter: str) -> str:
+    """The per-user figures of each (day, environment, user) of the project's traces, with the
+    columns of a `user_stats_daily` row but `computed_at`: `day, environment, external_user_id,
+    traces, llm_calls, errors, unpriced_calls, cost_usd, tokens`.
+
+    `trace_filter` narrows `traces AS t` past the project and the user. Binds `:project_id` and
+    `:start`, a lower bound of the traces' start: a trace starts when its first span does, so none
+    of its spans starts earlier, and the span side is bounded by it too.
     """
-    WITH fresh AS (
+    return f"""
         SELECT (t.started_at AT TIME ZONE 'UTC')::date                      AS day,
                t.environment,
                t.external_user_id,
@@ -43,8 +47,10 @@ _REFRESH = text(
                count(s.span_id) FILTER (WHERE s.cost_usd IS NULL AND NOT s.usage_rollup)
                                                                              AS unpriced_calls,
                sum(s.cost_usd) FILTER (WHERE NOT s.usage_rollup)             AS cost_usd,
-               coalesce(sum(coalesce(s.input_tokens, 0) + coalesce(s.output_tokens, 0))
-                            FILTER (WHERE NOT s.usage_rollup), 0)            AS tokens
+               sum(coalesce(s.input_tokens, 0) + coalesce(s.output_tokens, 0))
+                   FILTER (WHERE NOT s.usage_rollup
+                             AND (s.input_tokens IS NOT NULL OR s.output_tokens IS NOT NULL))
+                                                                             AS tokens
         FROM traces AS t
         LEFT JOIN spans AS s
                ON s.project_id = t.project_id
@@ -52,10 +58,21 @@ _REFRESH = text(
               AND s.kind = 'llm'
               AND s.started_at >= :start
         WHERE t.project_id = :project_id
-          AND t.external_user_id IS NOT NULL
-          AND t.started_at >= :start
-          AND t.started_at < :end
-        GROUP BY 1, 2, 3
+          AND t.external_user_id IS NOT NULL{trace_filter}
+        GROUP BY 1, 2, 3"""
+
+
+# One statement, so the aggregate is computed once for both writes. `fresh` is the traces of the
+# range, each with its LLM spans. The upsert and the delete touch disjoint rows: the delete only
+# takes rows `fresh` does not have. A trace starting after `now()` (ingest allows clock skew) is
+# left to the raw tail, which takes every trace after `computed_at = now()`: stored too, it would
+# count twice.
+_FRESH = user_aggregate_sql(
+    "\n          AND t.started_at >= :start AND t.started_at < :end AND t.started_at <= now()"
+)
+_REFRESH = text(
+    f"""
+    WITH fresh AS ({_FRESH}
     ),
     upserted AS (
         INSERT INTO user_stats_daily

@@ -42,6 +42,7 @@ NOT_IN_MATRIX: dict[Route, str] = {
     ("POST", "/api/v1/auth/totp/verify"): _ACCOUNT,
     ("GET", "/api/v1/auth/tokens"): _ACCOUNT,
     ("POST", "/api/v1/auth/tokens"): _ACCOUNT,
+    ("POST", "/api/v1/auth/oauth/{provider}/link"): _ACCOUNT,
     ("DELETE", "/api/v1/auth/tokens/{token_id}"): _ACCOUNT,
     ("GET", "/api/v1/auth/oauth/providers"): _SIGN_IN,
     ("GET", "/api/v1/auth/oauth/identities"): _ACCOUNT,
@@ -53,4 +54,7 @@ NOT_IN_MATRIX: dict[Route, str] = {
     ("POST", "/api/v1/invites/accept"): _INVITE_TOKEN,
     ("GET", "/api/v1/prices"): "the global price table: any signed-in user may read it",
     ("POST", "/api/v1/demo/session"): _PUBLIC,
+    # Guarded by `require(project:read)`, which every role holds; a stream never ends, so the
+    # matrix cannot call it. `tests/api/test_live.py` covers members, non-members and removal.
+    ("GET", "/api/v1/projects/{project_id}/live"): "an open-ended event stream; see test_live.py",
 }

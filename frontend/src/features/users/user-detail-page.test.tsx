@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { endUsersApi, type UserDetail } from "@/lib/api";
 import { makeProject, mockSignedIn, ORG_ID, renderApp } from "@/test/render-app";
 
+import { NO_USER_USAGE } from "./user-format";
+
 const DETAIL: UserDetail = {
   user: {
     external_user_id: "user_8f2c91",
@@ -20,6 +22,7 @@ const DETAIL: UserDetail = {
   recent_sessions: [],
   window: { start: "2026-09-22T00:00:00Z", end: "2026-10-22T00:00:00Z" },
   computed_at: null,
+  live: false,
 };
 
 describe("UserDetailPage", () => {
@@ -37,5 +40,15 @@ describe("UserDetailPage", () => {
     expect(href.searchParams.get("user")).toBe("user_8f2c91");
     expect(href.searchParams.get("range")).toBe("7d");
     expect(href.searchParams.get("env")).toBe("production");
+  });
+
+  it("shows tokens as unknown when the user's calls reported no usage, never as 0", async () => {
+    vi.spyOn(endUsersApi, "get").mockResolvedValue({
+      ...DETAIL,
+      user: { ...DETAIL.user, tokens: null },
+    });
+    renderApp(`/${ORG_ID}/proj_1/users/user_8f2c91`);
+
+    expect(await screen.findByLabelText(`Unknown: ${NO_USER_USAGE}`)).toBeInTheDocument();
   });
 });

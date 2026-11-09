@@ -4,7 +4,7 @@ from typing import Any
 
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import AuditEvent
@@ -12,6 +12,7 @@ from tests.auth.conftest import FakeClock
 from tests.auth.test_totp_routes import enroll
 from tests.conftest import BrowserFactory
 from tests.helpers import Browser, bearer, create_workspace, join_with_role, new_trace_id, span
+from tests.orgs.test_org_delete_races import _waiting
 
 SessionFactory = async_sessionmaker[AsyncSession]
 
@@ -27,6 +28,34 @@ async def require_two_factor(owner: Browser, org_id: str, value: bool = True) ->
 
 
 # --- turning it on and off ---------------------------------------------------------------------
+
+
+@pytest.mark.serial
+async def test_requiring_two_factor_takes_the_user_lock_before_the_org(
+    totp_browser_factory: BrowserFactory, clock: FakeClock, session_factory: SessionFactory
+) -> None:
+    """The proof routes lock the user, then the organization. Taking them the other way round
+    deadlocked the same owner deleting a project in another tab, and one of the two got a 500."""
+    owner = await totp_browser_factory("owner@example.com")
+    workspace = await create_workspace(owner)
+    await enroll(owner, clock)
+    org = {"id": workspace.org_id}
+
+    async with session_factory() as other_tab:
+        await other_tab.execute(
+            text("SELECT 1 FROM users WHERE id = :id FOR NO KEY UPDATE"),
+            {"id": owner.user["id"]},
+        )
+        request = require_two_factor(owner, workspace.org_id)
+        async with _waiting(session_factory, request) as requiring:
+            async with session_factory() as probe:
+                free = await probe.scalar(
+                    text("SELECT id FROM organizations WHERE id = :id FOR UPDATE SKIP LOCKED"), org
+                )
+                assert free is not None, "the request holds the organization while it waits"
+            await other_tab.commit()
+            response = await requiring
+    assert response.status_code == 200, response.text
 
 
 async def test_an_owner_with_two_factor_can_require_it(

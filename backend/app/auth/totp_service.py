@@ -3,10 +3,10 @@
 The arithmetic is in `app.auth.totp`; this module decides what may happen to the database rows.
 Callers commit. Two rules matter more than the rest:
 
-* **A code is spent once.** `verify` reads the user `FOR UPDATE`, so two sign-ins presenting one
-  code are serialised: the first moves `totp_last_step` forward, the second finds the code's step
-  no longer ahead of it and is refused. Without the lock both would read the old step and both
-  would be let in.
+* **A code is spent once.** `verify` reads the user `FOR NO KEY UPDATE`, so two sign-ins presenting
+  one code are serialised: the first moves `totp_last_step` forward, the second finds the code's
+  step no longer ahead of it and is refused. Without the lock both would read the old step and
+  both would be let in.
 * **A secret that cannot be read fails closed.** If the seed cannot be opened (the keyring lost
   its key, `CREDENTIALS_KEYS` was removed), `verify` raises instead of returning False or True.
   Treating it as "no second factor" would let anyone with the password past it; the caller turns
@@ -71,7 +71,10 @@ class SetupInfo:
 
 
 async def lock_user(db: AsyncSession, user_id: uuid.UUID) -> User | None:
-    """The user, read `FOR UPDATE` and refreshed, so the TOTP columns are never stale.
+    """The user, read `FOR NO KEY UPDATE` and refreshed, so the TOTP columns are never stale.
+
+    This serialises code spends and 2FA changes among themselves and against account deletion
+    without blocking foreign keys to the user while a proof route waits for an organization lock.
 
     The ORM object may already be in the session (the request's authentication loaded it);
     `populate_existing` makes this read overwrite its attributes with the locked row's.
@@ -79,7 +82,7 @@ async def lock_user(db: AsyncSession, user_id: uuid.UUID) -> User | None:
     return await db.scalar(
         select(User)
         .where(User.id == user_id)
-        .with_for_update()
+        .with_for_update(key_share=True)
         .execution_options(populate_existing=True)
     )
 

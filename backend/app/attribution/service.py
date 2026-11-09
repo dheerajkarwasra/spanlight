@@ -35,6 +35,7 @@ from app.core.pagination import decode_value_cursor, encode_value_cursor
 from app.end_users.days import ONE_DAY, day_bounds, midnight
 from app.rollups.compute import HOUR, floor_hour
 from app.rollups.coverage_reads import CoverageState
+from app.rollups.queries import known_int
 
 RAW_WINDOW = timedelta(hours=24)
 ROLLUP_LAG_MINUTES = 15
@@ -90,8 +91,8 @@ def _totals(row: Row[Any]) -> AttributionTotalsOut:
         llm_calls=_count(row.llm_calls),
         errors=_count(row.errors),
         unpriced_calls=_count(row.unpriced_calls),
-        input_tokens=_count(row.input_tokens),
-        output_tokens=_count(row.output_tokens),
+        input_tokens=known_int(row.input_tokens),
+        output_tokens=known_int(row.output_tokens),
         cost_usd=_money(row.cost_usd),
         retries=None if row.retries is None else int(row.retries),
         retry_cost_usd=_money(row.retry_cost_usd),

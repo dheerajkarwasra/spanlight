@@ -31,9 +31,10 @@ class SpanRollupHourly(Base):
     kind: Mapped[SpanKind] = mapped_column(_pg_enum(SpanKind, "span_kind"))
     span_count: Mapped[int] = mapped_column(BigInteger)
     errors: Mapped[int] = mapped_column(BigInteger)
-    input_tokens: Mapped[int] = mapped_column(BigInteger)
-    output_tokens: Mapped[int] = mapped_column(BigInteger)
-    cached_tokens: Mapped[int] = mapped_column(BigInteger)
+    # NULL when no span of the row reported it (migration 1043).
+    input_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    output_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    cached_tokens: Mapped[int | None] = mapped_column(BigInteger)
     cost_usd: Mapped[Decimal | None] = mapped_column(Numeric)
     unpriced_calls: Mapped[int] = mapped_column(BigInteger)
     latency_buckets: Mapped[list[int]] = mapped_column(ARRAY(Integer))

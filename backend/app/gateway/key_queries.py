@@ -9,42 +9,70 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import Exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import FaultProfile, GatewayKey, GatewayKeyMinute, GatewayRoute, User
+from app.db.models import (
+    FaultProfile,
+    GatewayKey,
+    GatewayKeyMinute,
+    GatewayRoute,
+    Membership,
+    Project,
+    User,
+)
+
+
+def _creator_is_member() -> Exists:
+    return (
+        select(Membership.user_id)
+        .join(Project, Project.org_id == Membership.org_id)
+        .where(Project.id == GatewayKey.project_id, Membership.user_id == GatewayKey.created_by)
+        .correlate(GatewayKey)
+        .exists()
+    )
+
+
+async def precheck_route(
+    db: AsyncSession, project_id: uuid.UUID, route_id: uuid.UUID | None
+) -> bool:
+    query = select(GatewayRoute.id).where(GatewayRoute.project_id == project_id)
+    query = query.where(
+        GatewayRoute.is_default if route_id is None else GatewayRoute.id == route_id
+    )
+    return await db.scalar(query) is not None
 
 
 async def list_keys(
     db: AsyncSession, project_id: uuid.UUID
-) -> Sequence[tuple[GatewayKey, User | None]]:
+) -> Sequence[tuple[GatewayKey, User | None, bool]]:
     """The project's keys, revoked ones included, with who created each, newest first.
 
     Unpaginated: a project keeps a key per application and environment, not thousands.
     """
     rows = await db.execute(
-        select(GatewayKey, User)
+        select(GatewayKey, User, _creator_is_member())
         .outerjoin(User, User.id == GatewayKey.created_by)
         .where(GatewayKey.project_id == project_id)
         .order_by(GatewayKey.created_at.desc(), GatewayKey.id.desc())
     )
-    return [(key, creator) for key, creator in rows]
+    return [(key, creator, is_member) for key, creator, is_member in rows]
 
 
 async def get_key_with_creator(
     db: AsyncSession, project_id: uuid.UUID, key_id: uuid.UUID
-) -> tuple[GatewayKey, User | None] | None:
+) -> tuple[GatewayKey, User | None, bool] | None:
     row = (
         await db.execute(
-            select(GatewayKey, User)
+            select(GatewayKey, User, _creator_is_member())
             .outerjoin(User, User.id == GatewayKey.created_by)
             .where(GatewayKey.project_id == project_id, GatewayKey.id == key_id)
         )
     ).one_or_none()
     if row is None:
         return None
-    key, creator = row
-    return key, creator
+    key, creator, is_member = row
+    return key, creator, is_member
 
 
 async def lock_key(db: AsyncSession, project_id: uuid.UUID, key_id: uuid.UUID) -> GatewayKey | None:

@@ -8,7 +8,7 @@ test.describe("landing page", () => {
 
     await expect(page).toHaveURL(/\/$/);
     await expect(
-      page.getByRole("heading", { level: 1, name: "See every LLM call clearly." }),
+      page.getByRole("heading", { level: 1, name: "Understand the cost. Find the cause." }),
     ).toBeVisible();
 
     const nav = page.getByRole("navigation", { name: "Main" });
@@ -22,15 +22,50 @@ test.describe("landing page", () => {
       "/#open-source",
     );
 
-    await expect(page.getByRole("link", { name: "Self-host Spanlight" }).first()).toHaveAttribute(
+    const banner = page.getByRole("banner");
+    await expect(banner.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
+    await expect(banner.getByRole("link", { name: "Start free" })).toHaveAttribute(
+      "href",
+      "/signup",
+    );
+
+    const hero = page.locator("section[aria-labelledby='hero-title']");
+    await expect(hero.getByRole("link", { name: "Start free" })).toHaveAttribute("href", "/signup");
+    await expect(hero.getByRole("button", { name: "Try the live demo" })).toBeVisible();
+    await expect(hero.getByRole("link", { name: "Self-host Spanlight" })).toHaveAttribute(
       "href",
       "/docs/self-hosting/",
     );
-    await expect(page.getByRole("banner").getByRole("link", { name: "Sign in" })).toHaveAttribute(
-      "href",
-      "/login",
-    );
-    await expect(page.getByRole("button", { name: "Try the live demo" }).first()).toBeVisible();
+  });
+
+  test("the hero product clip plays muted and can be paused", async ({ page }) => {
+    // The config emulates reduced motion for every test; autoplay needs it off.
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.goto("/");
+
+    const clip = page.getByRole("figure", { name: /Real traces from a demo support bot/ });
+    const video = clip.locator("video");
+    await expect(video).toHaveAttribute("aria-label", /two Doctor findings/);
+    await expect(video).toHaveAttribute("poster", "/landing/hero-poster.jpg");
+    await expect(video.locator("source")).toHaveCount(2);
+    await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.muted)).toBe(true);
+
+    await clip.getByRole("button", { name: "Pause product clip" }).click();
+    await expect(clip.getByRole("button", { name: "Play product clip" })).toBeVisible();
+    await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.paused)).toBe(true);
+  });
+
+  test("with reduced motion the clip waits on its poster for a play click", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/");
+
+    const clip = page.getByRole("figure", { name: /Real traces from a demo support bot/ });
+    const video = clip.locator("video");
+    await expect(clip.getByRole("button", { name: "Play product clip" })).toBeVisible();
+    expect(await video.evaluate((el: HTMLVideoElement) => el.paused)).toBe(true);
+
+    await clip.getByRole("button", { name: "Play product clip" }).click();
+    await expect(clip.getByRole("button", { name: "Pause product clip" })).toBeVisible();
   });
 
   test("nav links scroll to their section", async ({ page }) => {
@@ -51,6 +86,11 @@ test.describe("landing page", () => {
 
     await page.getByRole("button", { name: "Open menu" }).click();
     const menu = page.getByRole("dialog", { name: "Menu" });
+    await expect(
+      menu
+        .locator("a, button")
+        .filter({ hasText: /^(Start free|Try the live demo|Self-host Spanlight|Sign in)$/ }),
+    ).toHaveText(["Start free", "Try the live demo", "Self-host Spanlight", "Sign in"]);
     await expect(menu.getByRole("link", { name: "How it works" })).toBeVisible();
     await menu.getByRole("link", { name: "How it works" }).click();
 

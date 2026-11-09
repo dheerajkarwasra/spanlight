@@ -49,6 +49,7 @@ export function useUpdateGatewayKey() {
   const { projectId } = useProjectParams();
   const invalidate = useInvalidateGateway();
   return useMutation({
+    gcTime: 0,
     mutationFn: ({ keyId, update }: UpdateKeyVariables) =>
       gatewayApi.updateKey(projectId, keyId, update),
     onSuccess: invalidate,

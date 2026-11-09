@@ -125,7 +125,8 @@ PROJECT_DATA_ROWS = (
 
 # Milestone-1 management routes that `test_authz.py` does not list. Removing a member needs only
 # `org:read` to reach the route: the handler lets anyone remove themselves and asks for
-# `member:manage` for anybody else, and the matrix always names somebody else.
+# `member:manage` for anybody else. It is session-only; the matrix names a stranger, so its
+# 404 precedes account-owner proof. Self-leave needs no proof.
 ORG_ADMIN_ROWS = (
     Row("DELETE", ORG, P.ORG_DELETE),
     Row("PATCH", f"{ORG}/members/{{user_id}}", P.MEMBER_MANAGE),
@@ -135,6 +136,8 @@ ORG_ADMIN_ROWS = (
     Row("GET", f"{ORG}/audit/export.jsonl", P.AUDIT_READ),
     Row("GET", f"{ORG}/audit/integrity", P.AUDIT_READ),
     Row("GET", f"{ORG}/audit/stream", P.AUDIT_READ),
+    # Session-only writes: the harness sends {}, so PUT fails body validation;
+    # DELETE and rotate accept {} and report the absent stream before owner proof.
     Row("PUT", f"{ORG}/audit/stream", P.ORG_SECURITY),
     # 409 `AUDIT_STREAM_NOT_SET_UP`: the matrix org has no stream to delete, rotate or test.
     Row("DELETE", f"{ORG}/audit/stream", P.ORG_SECURITY, also=frozenset({409})),

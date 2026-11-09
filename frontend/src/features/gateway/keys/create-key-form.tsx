@@ -3,10 +3,14 @@ import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
+import { Callout } from "@/components/callout";
+import { DisabledReason } from "@/components/disabled-reason";
+import { MemberReauthFields } from "@/features/settings/member-reauth";
+import { useMemberReauth } from "@/features/settings/use-member-reauth";
 import { DialogHeading } from "@/components/dialog-heading";
 import { Button } from "@/components/ui/button";
 import { DialogClose, DialogFooter } from "@/components/ui/dialog";
-import { errorMessage, type CreatedGatewayKey } from "@/lib/api";
+import { type CreatedGatewayKey } from "@/lib/api";
 
 import { useGatewayRoutesQuery } from "../gateway-queries";
 import { KeyFields } from "./key-fields";
@@ -25,6 +29,8 @@ interface CreateKeyFormProps {
 /** Figma "Create key dialog": name, environment, route, limits, allowed models, tags and cache. */
 export function CreateKeyForm({ onCreated, onPendingChange }: CreateKeyFormProps) {
   const createKey = useCreateGatewayKey();
+  const confirmation = useMemberReauth();
+  const { reauth, formError } = confirmation;
   const routesQuery = useGatewayRoutesQuery();
   const routes = routesQuery.data;
   const pending = createKey.pending;
@@ -55,15 +61,29 @@ export function CreateKeyForm({ onCreated, onPendingChange }: CreateKeyFormProps
     if (drafts.blockSave(form.setError)) {
       return;
     }
-    const result = await createKey.run(toCreateInput(values));
+    if (pending) return;
+    const proof = confirmation.proof(confirmation.form.getValues());
+    if (!proof) return;
+    const result = await createKey.run({ ...toCreateInput(values), ...proof });
     if (result.ok) {
       const routeName = routes?.find((route) => route.id === result.value.route_id)?.name ?? null;
       onCreated(result.value, routeName);
       toast.success(`Created gateway key "${result.value.name}".`);
     } else if (!applyKeyProblem(result.error, form.setError)) {
-      toast.error(errorMessage(result.error));
+      confirmation.onError(result.error);
     }
   });
+
+  const createButton = (
+    <Button
+      type="submit"
+      variant="primary"
+      loading={pending}
+      disabled={routes?.length === 0 || reauth}
+    >
+      Create key
+    </Button>
+  );
 
   return (
     <form onSubmit={onSubmit} noValidate className="grid gap-[22px]">
@@ -83,13 +103,33 @@ export function CreateKeyForm({ onCreated, onPendingChange }: CreateKeyFormProps
         layout="dialog"
         currentCacheTtl={null}
       />
+      <p aria-live="polite" className="empty:sr-only">
+        <span className="text-sm font-semibold text-foreground">Confirm it's you.</span>
+        <span className="text-xs text-muted-foreground">
+          {
+            " A gateway key spends your organization's provider credentials for as long as it lives."
+          }
+        </span>
+      </p>
+      <MemberReauthFields
+        confirmation={confirmation}
+        pending={pending}
+        action="Creating a gateway key"
+      />
+      {formError ? (
+        <Callout tone="danger" role="alert">
+          {formError}
+        </Callout>
+      ) : null}
       <DialogFooter className="flex-row justify-end gap-2.5 max-sm:[&>*]:flex-1">
         <DialogClose asChild>
           <Button disabled={pending}>Cancel</Button>
         </DialogClose>
-        <Button type="submit" variant="primary" loading={pending} disabled={routes?.length === 0}>
-          Create key
-        </Button>
+        {reauth ? (
+          <DisabledReason reason="Sign in again first.">{createButton}</DisabledReason>
+        ) : (
+          createButton
+        )}
       </DialogFooter>
     </form>
   );

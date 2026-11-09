@@ -1,6 +1,7 @@
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useSyncExternalStore } from "react";
 
+import { isStreamLive } from "@/lib/live/use-live-project";
 import { RANGE_PRESETS, resolveRange } from "@/lib/time-range";
 
 /** How often an open, visible page re-reads its preset window ("Last hour" and so on). */
@@ -61,7 +62,8 @@ function tick(client: QueryClient, refresh: boolean): void {
   const next = new Date();
   const end = windowEnd(clockNow);
   if (windowEnd(next) === end) {
-    if (refresh) {
+    // While the stream is live, it refreshes the page that is watching it.
+    if (refresh && !isStreamLive()) {
       void client.invalidateQueries({ predicate: (query) => endsAt(query.queryKey, end) });
     }
     return;

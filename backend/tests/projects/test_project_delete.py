@@ -61,7 +61,9 @@ async def slug_of(browser: Browser, project_id: str) -> str:
 
 
 async def delete_project(who: Browser, project_id: str, confirm: object) -> httpx.Response:
-    return await who.delete(project_url(project_id), json={"confirm": confirm})
+    return await who.delete(
+        project_url(project_id), json={"confirm": confirm, "password": "correct horse battery"}
+    )
 
 
 async def world(
@@ -274,7 +276,7 @@ async def test_a_projects_of_the_demo_org_cannot_be_deleted(
     assert await audit_events(session_factory, "project.delete") == []
 
 
-async def test_an_access_token_deletes_only_with_the_write_scope(
+async def test_no_access_token_can_delete_a_project(
     browser_factory: BrowserFactory,
     bare_client: httpx.AsyncClient,
     session_factory: SessionFactory,
@@ -288,14 +290,15 @@ async def test_an_access_token_deletes_only_with_the_write_scope(
 
     refused = await bare_client.request("DELETE", url, json={"confirm": slug}, headers=bearer(read))
     assert refused.status_code == 403
-    assert refused.json()["code"] == "TOKEN_SCOPE"
+    assert refused.json()["code"] == "SESSION_REQUIRED"
     assert await project_exists(session_factory, workspace.project_id)
 
     deleted = await bare_client.request(
         "DELETE", url, json={"confirm": slug}, headers=bearer(write)
     )
-    assert deleted.status_code == 204
-    assert not await project_exists(session_factory, workspace.project_id)
+    assert deleted.status_code == 403
+    assert deleted.json()["code"] == "SESSION_REQUIRED"
+    assert await project_exists(session_factory, workspace.project_id)
 
 
 async def test_an_api_key_cannot_delete_a_project(

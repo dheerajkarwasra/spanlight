@@ -191,6 +191,16 @@ The attribution view groups spend and usage by trace metadata, trace name, end u
 | --- | --- | --- | --- |
 | `ATTRIBUTION_ENABLED` | boolean | `true` | Schedule the attribution refresh, which rebuilds the daily rollups behind windows longer than 24 hours every 15 minutes. Off, those windows stop updating; windows of 24 hours or less stay live. |
 
+### Live dashboards
+
+Open dashboard tabs hold a server-sent event stream and refetch when their project gets new data. Each api process checks the change markers of watched projects once a second, in one query, and runs no query while no tab is open. Tabs fall back to polling when the stream is off or refused.
+
+| Variable | Type | Default | Description |
+| --- | --- | --- | --- |
+| `LIVE_UPDATES_ENABLED` | boolean | `true` | Run the live dashboard stream and its once-a-second change check in each api process. Off, the stream answers `404` and no change marker is read; tabs poll instead. |
+| `LIVE_MAX_STREAMS` | integer (min 1, max 10000) | `2000` | Most live streams one api process holds open. Past it a new stream answers `503 LIVE_BUSY` with `Retry-After: 30`. A session holds at most 3; a fourth closes its oldest. |
+| `LIVE_CACHE_ENTRIES` | integer (min 1) | `5000` | Most dashboard answers each api process keeps in its short shared cache, so identical requests from several tabs share one database read. |
+
 ### API request limits
 
 A request that would otherwise wait on a busy database fails fast with `503` and `Retry-After` instead of queueing behind slow work. The worker, exports and deleting an organization or project are not subject to the statement limit.

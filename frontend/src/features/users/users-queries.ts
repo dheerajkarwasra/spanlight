@@ -2,6 +2,7 @@ import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-qu
 
 import { useProjectFilters, useProjectParams } from "@/features/shell/project-context";
 import { endUsersApi, queryKeys } from "@/lib/api";
+import { useLiveProject } from "@/lib/live/use-live-project";
 
 import { toUserListQuery, type UsersListState } from "./user-sort";
 
@@ -13,13 +14,16 @@ export function useUserListQuery(list: UsersListState) {
   const { projectId } = useProjectParams();
   const { range, environment } = useProjectFilters();
   const query = toUserListQuery(list, range, environment);
+  const { refetchInterval } = useLiveProject(projectId, range.value !== "custom");
 
   return useInfiniteQuery({
     queryKey: queryKeys.project(projectId).users(query),
-    queryFn: ({ pageParam }) => endUsersApi.list(projectId, { ...query, cursor: pageParam }),
+    queryFn: ({ pageParam, signal }) =>
+      endUsersApi.list(projectId, { ...query, cursor: pageParam }, signal),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor,
     placeholderData: keepPreviousData,
+    refetchInterval,
   });
 }
 

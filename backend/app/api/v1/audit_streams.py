@@ -7,11 +7,12 @@ needs `org:security` (owners): the stream sends every event, sign-ins included, 
 import uuid
 from typing import Annotated
 
+import httpx
 from fastapi import APIRouter, Depends, Request, Response, status
 
 from app.alerts.channel_test import CHANNEL_TEST_LIMITER
-from app.alerts.channels.urls import UnsafeUrlError
-from app.api.deps import Access, ClockDep, DbSession, SettingsDep, require
+from app.alerts.channels.urls import UnsafeUrlError, check_webhook_url
+from app.api.deps import Access, ClockDep, CurrentSession, DbSession, SettingsDep, require
 from app.api.schemas import (
     AuditIntegrityOut,
     AuditStreamIn,
@@ -19,6 +20,8 @@ from app.api.schemas import (
     AuditStreamSavedOut,
     AuditStreamTestOut,
 )
+from app.api.schemas.orgs import AuditStreamProofIn
+from app.auth.reauth import confirm_account_owner
 from app.core.crypto import CryptoNotConfigured
 from app.core.egress import Resolver
 from app.core.errors import FieldError, ProblemError, conflict, not_configured
@@ -28,11 +31,21 @@ from app.core.security import mark_uncacheable
 from app.db.models import AuditStream
 from app.services import audit_stream
 from app.services.audit import check_audit_chain
+from app.services.audit_stream_notices import enqueue_audit_stream_notices, saved_stream_change
 
 router = APIRouter(tags=["orgs"])
 
 AuditReader = Annotated[Access, Depends(require(Permission.AUDIT_READ))]
 StreamOwner = Annotated[Access, Depends(require(Permission.ORG_SECURITY))]
+
+
+def _unsafe_url(error: UnsafeUrlError) -> ProblemError:
+    return ProblemError(
+        422,
+        "UNSAFE_URL",
+        "The stream URL is not allowed.",
+        errors=[FieldError(field="url", message=str(error))],
+    )
 
 
 def _not_set_up() -> ProblemError:
@@ -98,6 +111,7 @@ async def put_audit_stream(
     body: AuditStreamIn,
     request: Request,
     response: Response,
+    auth: CurrentSession,
     access: StreamOwner,
     db: DbSession,
     settings: SettingsDep,
@@ -105,64 +119,164 @@ async def put_audit_stream(
 ) -> AuditStreamSavedOut:
     """Create the stream (its `secret` is returned this once) or change its URL or switch.
 
-    A new stream sends the events written after it is created. `422 VALIDATION_ERROR` for a URL
-    the webhook rules refuse (`422 UNSAFE_URL`), `409 NOT_CONFIGURED` without CREDENTIALS_KEYS.
+    Every PUT requires a session and account-owner proof (`password`, plus `code` with 2FA;
+    passwordless accounts need a sign-in within 10 minutes). Tokens get `403 SESSION_REQUIRED`.
+    A new stream sends events written after creation. Crypto configuration (`409 NOT_CONFIGURED`)
+    and webhook URL checks (`422 UNSAFE_URL`) run before proof so a typo spends no code.
     """
+    if not settings.is_crypto_configured:
+        raise not_configured(NEEDS_KEYS)
     try:
-        stream, secret = await audit_stream.save_stream(
-            db,
-            access.org,
-            access.user_id,
-            url=body.url,
-            enabled=body.enabled,
-            settings=settings,
-            now=clock(),
+        await check_webhook_url(
+            body.url,
+            allow_private=settings.webhook_allow_private_targets,
             resolver=_resolver(request),
         )
     except UnsafeUrlError as error:
-        raise ProblemError(
-            422,
-            "UNSAFE_URL",
-            "The stream URL is not allowed.",
-            errors=[FieldError(field="url", message=str(error))],
-        ) from None
-    except CryptoNotConfigured:
-        raise not_configured(NEEDS_KEYS) from None
+        raise _unsafe_url(error) from None
+    await confirm_account_owner(
+        db,
+        auth,
+        body.password,
+        body.code,
+        scope="audit_stream_reauth",
+        settings=settings,
+        now=clock(),
+    )
+    try:
+        async with db.begin_nested():
+            stream, secret, previous = await audit_stream.save_stream(
+                db,
+                access.org,
+                access.user_id,
+                url=body.url,
+                enabled=body.enabled,
+                settings=settings,
+                now=clock(),
+                resolver=_resolver(request),
+            )
+            change = saved_stream_change(stream.url, stream.enabled, previous)
+            if change is not None and settings.is_email_configured:
+                await enqueue_audit_stream_notices(
+                    db,
+                    org=access.org,
+                    actor=auth.user,
+                    host=httpx.URL(stream.url).host,
+                    change=change,
+                )
+            result = AuditStreamSavedOut(stream=await _out(db, stream), secret=secret)
+    except Exception as error:
+        # Keep a spent second-factor code spent, even if the write is rolled back.
+        await db.commit()
+        if isinstance(error, UnsafeUrlError):
+            raise _unsafe_url(error) from None
+        if isinstance(error, CryptoNotConfigured):
+            raise not_configured(NEEDS_KEYS) from None
+        raise
     await db.commit()
     mark_uncacheable(response)
-    return AuditStreamSavedOut(stream=await _out(db, stream), secret=secret)
+    return result
 
 
 @router.post("/orgs/{org_id}/audit/stream/rotate-secret", response_model=AuditStreamSavedOut)
 async def rotate_audit_stream_secret(
     org_id: uuid.UUID,
+    body: AuditStreamProofIn,
     response: Response,
+    auth: CurrentSession,
     access: StreamOwner,
     db: DbSession,
     settings: SettingsDep,
     clock: ClockDep,
 ) -> AuditStreamSavedOut:
-    """Replace the signing secret; the new one is returned this once. The old one stops at once."""
+    """Replace the signing secret; the new one is returned this once. The old one stops at once.
+
+    Requires an owner session and a JSON proof body (`password`, plus `code` with 2FA;
+    passwordless accounts need a sign-in within 10 minutes). Tokens get `403 SESSION_REQUIRED`.
+    An absent stream returns `409 AUDIT_STREAM_NOT_SET_UP` before proof.
+    """
+    if await audit_stream.get_stream(db, access.org.id) is None:
+        raise _not_set_up()
+    if not settings.is_crypto_configured:
+        raise not_configured(NEEDS_KEYS)
+    await confirm_account_owner(
+        db,
+        auth,
+        body.password,
+        body.code,
+        scope="audit_stream_reauth",
+        settings=settings,
+        now=clock(),
+    )
     try:
-        stream, secret = await audit_stream.rotate_secret(
-            db, access.org.id, access.user_id, settings=settings, now=clock()
-        )
-    except audit_stream.StreamNotFoundError:
-        raise _not_set_up() from None
-    except CryptoNotConfigured:
-        raise not_configured(NEEDS_KEYS) from None
+        async with db.begin_nested():
+            stream, secret = await audit_stream.rotate_secret(
+                db, access.org.id, access.user_id, settings=settings, now=clock()
+            )
+            if settings.is_email_configured:
+                await enqueue_audit_stream_notices(
+                    db,
+                    org=access.org,
+                    actor=auth.user,
+                    host=httpx.URL(stream.url).host,
+                    change="secret rotated",
+                )
+            result = AuditStreamSavedOut(stream=await _out(db, stream), secret=secret)
+    except Exception as error:
+        await db.commit()
+        if isinstance(error, audit_stream.StreamNotFoundError):
+            raise _not_set_up() from None
+        if isinstance(error, CryptoNotConfigured):
+            raise not_configured(NEEDS_KEYS) from None
+        raise
     await db.commit()
     mark_uncacheable(response)
-    return AuditStreamSavedOut(stream=await _out(db, stream), secret=secret)
+    return result
 
 
 @router.delete("/orgs/{org_id}/audit/stream", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_audit_stream(org_id: uuid.UUID, access: StreamOwner, db: DbSession) -> Response:
-    """Stop streaming and forget the endpoint and its secret."""
+async def delete_audit_stream(
+    org_id: uuid.UUID,
+    body: AuditStreamProofIn,
+    auth: CurrentSession,
+    access: StreamOwner,
+    db: DbSession,
+    settings: SettingsDep,
+    clock: ClockDep,
+) -> Response:
+    """Stop streaming and forget the endpoint and its secret after account-owner proof.
+
+    Requires an owner session and a JSON proof body (`password`, plus `code` with 2FA;
+    passwordless accounts need a sign-in within 10 minutes). Tokens get `403 SESSION_REQUIRED`.
+    An absent stream returns `409 AUDIT_STREAM_NOT_SET_UP` before proof.
+    """
+    if await audit_stream.get_stream(db, access.org.id) is None:
+        raise _not_set_up()
+    await confirm_account_owner(
+        db,
+        auth,
+        body.password,
+        body.code,
+        scope="audit_stream_reauth",
+        settings=settings,
+        now=clock(),
+    )
     try:
-        await audit_stream.delete_stream(db, access.org.id, access.user_id)
-    except audit_stream.StreamNotFoundError:
-        raise _not_set_up() from None
+        async with db.begin_nested():
+            host = await audit_stream.delete_stream(db, access.org.id, access.user_id)
+            if settings.is_email_configured:
+                await enqueue_audit_stream_notices(
+                    db,
+                    org=access.org,
+                    actor=auth.user,
+                    host=host,
+                    change="removed",
+                )
+    except Exception as error:
+        await db.commit()
+        if isinstance(error, audit_stream.StreamNotFoundError):
+            raise _not_set_up() from None
+        raise
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

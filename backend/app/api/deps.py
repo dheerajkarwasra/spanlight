@@ -4,7 +4,7 @@ import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Literal, overload
+from typing import Annotated, Literal, NoReturn, overload
 
 from fastapi import Depends, Request
 from fastapi.params import Depends as DependsMarker
@@ -349,6 +349,10 @@ async def current_user(principal: CurrentPrincipal) -> UserPrincipal:
 CurrentUser = Annotated[UserPrincipal, Depends(current_user)]
 
 
+def raise_session_required() -> NoReturn:
+    raise session_required("This route needs a signed-in session; access tokens cannot use it.")
+
+
 async def current_session(principal: CurrentPrincipal) -> SessionPrincipal:
     """The signed-in session. Tokens and API keys never reach a route that only a session may use.
 
@@ -356,7 +360,7 @@ async def current_session(principal: CurrentPrincipal) -> SessionPrincipal:
     holder what to use instead.
     """
     if isinstance(principal, TokenPrincipal):
-        raise session_required("This route needs a signed-in session; access tokens cannot use it.")
+        raise_session_required()
     if not isinstance(principal, SessionPrincipal):
         raise key_scope("This route needs a signed-in session; API keys cannot use it.")
     return principal

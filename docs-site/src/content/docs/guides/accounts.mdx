@@ -102,32 +102,11 @@ Created user <user id> <ada@example.com>
 
 ## Joining an organization
 
-An owner or admin invites someone from **Settings, Organization, Members**. Under **Invite people**, choose a role and select **Create invite link**. The dashboard shows the link with a **Copy** button and the note that anyone with the link can join in that role and that it works once. It expires after seven days. Whoever opens the link while signed in can accept it, so treat it like a password until it is used.
+An owner or admin invites someone from **Settings, Organization, Members**. Under **Invite people**, select **Create invite link**. In the dialog, choose a role, optionally enter an email address, and confirm it is you with your password and, when enabled, an authentication or recovery code. Accounts without a password need a sign-in within the last 10 minutes.
 
-The dashboard creates a link and does not mail it. To have Spanlight mail the invitation, create it through the API with an email address, as shown below. Mailed invitations are limited to 20 per organization per hour.
+The dashboard shows the single-use link with a **Copy** button. It expires after seven days. Anyone who opens it while signed in can accept it, so treat it like a password until it is used. When email is configured and you entered an address, Spanlight also queues the link for delivery and says so below the link. Mailed invitations are limited to 20 per organization per hour and 50 per inviting user per hour.
 
-### Invite through the API
-
-Admins and owners can create an invitation without the dashboard, with a [personal access token](/docs/guides/access/) that has the write scope. Only an owner can invite someone as an owner.
-
-```bash
-curl -sS -X POST "$SPANLIGHT_HOST/api/v1/orgs/$ORG/invites" \
-  -H "Authorization: Bearer $SPANLIGHT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"role": "member", "email": "ada@example.com"}'
-```
-
-The answer is `201`. `email` is optional: when it is set and email is configured, Spanlight mails the link, and without it you share the `url` yourself. The link is valid for seven days, and the response is marked `Cache-Control: no-store` because the link carries the invitation token.
-
-```json
-{
-  "id": "<invite id>",
-  "role": "member",
-  "email": "ada@example.com",
-  "url": "https://spanlight.example.com/invite#token=<token>",
-  "expires_at": "2026-10-20T09:30:00Z"
-}
-```
+Personal access tokens cannot create invitations or change roles. When someone joins, every verified owner except the joiner receives a notice if email is configured, including the inviter when they are an owner.
 
 ## Managing members
 
@@ -135,7 +114,7 @@ Members are managed on **Settings, Organization, Members**. Every role can open 
 
 ### Change a member's role
 
-In the person's row, open the role menu and choose **Owner**, **Admin**, **Member** or **Viewer**. The change applies at once, with no confirmation, and a message names the person and the new role, for example "Ada Lovelace is now admin."
+In the person's row, open the role menu and choose **Owner**, **Admin**, **Member** or **Viewer**. A dialog explains the new access and asks you to confirm it is you. Enter your password and, when enabled, an authentication or recovery code, then select **Change role**. Accounts without a password need a sign-in within the last 10 minutes. The role stays unchanged until confirmation succeeds; Cancel leaves it as it was.
 
 - You cannot change your own role. The menu is disabled and says to ask another admin or owner.
 - Only an owner can grant the owner role or change an owner's role. The menu lists all four roles for an admin as well, but the server refuses the change with `403 FORBIDDEN`.

@@ -15,7 +15,8 @@ class ReleaseStats(BaseModel):
     """One release over a window. Unknown values are `None`, never 0.
 
     `cost_usd` is the sum of the priced spans: `None` only when nothing was priced, and a lower
-    bound while `unpriced_calls` is above 0.
+    bound while `unpriced_calls` is above 0. `input_tokens` and `output_tokens` are `None` when no
+    span reported them.
     """
 
     release: str
@@ -28,8 +29,8 @@ class ReleaseStats(BaseModel):
     p50_ms: float | None
     p95_ms: float | None
     cost_usd: Money | None
-    input_tokens: int
-    output_tokens: int
+    input_tokens: int | None
+    output_tokens: int | None
 
 
 class Delta(BaseModel):

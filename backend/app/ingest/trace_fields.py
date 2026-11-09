@@ -11,7 +11,7 @@ value as received; a value redaction replaces stays under its key as `[REDACTED]
 
 from dataclasses import dataclass, field
 
-from app.core.redact import redact_text
+from app.core.redact import REDACTED, is_credential_key, redact_text
 from app.ingest.metadata import clean_metadata
 from app.ingest.schemas import SpanIn
 
@@ -40,5 +40,8 @@ def trace_fields(span: SpanIn) -> TraceFields:
         external_user_id=trace.user_id,
         session_id=trace.session_id,
         tags=tuple(trace.tags or ()),
-        metadata={key: redact_text(value) for key, value in metadata.items()},
+        metadata={
+            key: REDACTED if value and is_credential_key(key) else redact_text(value)
+            for key, value in metadata.items()
+        },
     )

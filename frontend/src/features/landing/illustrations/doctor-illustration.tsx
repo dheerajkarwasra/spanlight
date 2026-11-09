@@ -12,7 +12,7 @@ const FINDINGS = [
 export function DoctorIllustration() {
   return (
     <div className="flex flex-col gap-2">
-      <IlloHeader label="15 detectors · 5 layers" onInk>
+      <IlloHeader label="16 detectors · 6 layers" onInk>
         <Pill tone="rail">Was this right?</Pill>
       </IlloHeader>
       {FINDINGS.map((finding) => (

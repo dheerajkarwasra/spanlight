@@ -67,9 +67,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --frozen --all-extras --python ${{ matrix.python }}
-      # The lock is the same for every Python in the matrix, so one audit is enough.
-      - if: matrix.python == '3.13'
-        shell: bash
+      - shell: bash
         run: uv export --frozen --no-dev --no-emit-project --all-extras | uvx pip-audit@2.10.1 -r /dev/stdin --disable-pip --require-hashes --strict
       - run: uv run ruff check
       - run: uv run ruff format --check

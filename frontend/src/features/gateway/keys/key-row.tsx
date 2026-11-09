@@ -33,6 +33,8 @@ interface KeyRowProps {
 
 export function KeyRow({ gatewayKey, canWrite, routeNames, profileNames }: KeyRowProps) {
   const revoked = gatewayKey.revoked_at !== null;
+  // No creator means a demo key or a deleted account: nobody known has left.
+  const creatorLeft = !revoked && gatewayKey.created_by !== null && !gatewayKey.creator_is_member;
   const profileId = gatewayKey.fault_profile_id;
   const profileName = profileId === null ? null : (profileNames?.get(profileId) ?? "Fault profile");
 
@@ -58,9 +60,14 @@ export function KeyRow({ gatewayKey, canWrite, routeNames, profileNames }: KeyRo
         <span title={`${gatewayKey.prefix}…`} className="block truncate font-mono text-label">
           {gatewayKey.prefix}…
         </span>
-        {profileName ? (
-          <span className="mt-1 flex">
-            <FaultTag name={profileName} />
+        {profileName || creatorLeft ? (
+          <span className="mt-1 flex flex-wrap gap-1">
+            {profileName ? <FaultTag name={profileName} /> : null}
+            {creatorLeft ? (
+              <Badge variant="warning" size="sm">
+                Creator left<span className="sr-only">: created by someone no longer a member</span>
+              </Badge>
+            ) : null}
           </span>
         ) : null}
       </div>

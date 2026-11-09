@@ -3,7 +3,14 @@ import { describe, expect, it } from "vitest";
 import type { ApiKey, User } from "@/lib/api";
 import { envLine } from "@/lib/reveal-copy";
 
-import { formatKeyPrefix, revokeDecision, sortApiKeys } from "./api-key-utils";
+import { formatKeyPrefix, hasReadKeyScope, revokeDecision, sortApiKeys } from "./api-key-utils";
+
+it("requires owner proof only for scopes that read project data", () => {
+  expect(hasReadKeyScope([])).toBe(false);
+  expect(hasReadKeyScope(["ingest:write", "scores:write"])).toBe(false);
+  expect(hasReadKeyScope(["traces:read"])).toBe(true);
+  expect(hasReadKeyScope(["prompts:read", "scores:write"])).toBe(true);
+});
 
 const alice: User = {
   id: "u1",

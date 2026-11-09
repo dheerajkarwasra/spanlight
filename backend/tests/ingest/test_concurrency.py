@@ -160,10 +160,12 @@ async def test_opposite_order_batches_do_not_deadlock_when_each_trace_lock_takes
 
     async def one_trace_at_a_time(
         session: AsyncSession, project_id: uuid.UUID, traces: Sequence[Any]
-    ) -> None:
+    ) -> int:
+        changed = 0
         for trace in traces:
-            await original(session, project_id, [trace])
+            changed += await original(session, project_id, [trace])
             await asyncio.sleep(PAUSE_BETWEEN_TRACES)
+        return changed
 
     monkeypatch.setattr(store, "_upsert_traces", one_trace_at_a_time)
     start = datetime.now(UTC) - timedelta(minutes=5)

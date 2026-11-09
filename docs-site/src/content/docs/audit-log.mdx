@@ -12,12 +12,21 @@ import Prerequisites from '../../components/Prerequisites.astro';
 
 Every organization keeps one audit log: who changed what, who signed in, and which changes were refused. Admins and owners read it under **Settings → Audit log**. Only owners can set up streaming.
 
+Setting up, changing, pausing, resuming, rotating the signing secret or removing an audit stream asks you to confirm it's you: your current password (or a sign-in within 10 minutes for passwordless accounts), plus an authenticator or recovery code when two-factor authentication is on. Access tokens can no longer change streaming. Other verified owners receive an email notice when email is configured; reading the stream and sending a test need no extra proof.
+
 ## What is recorded
 
 - **Changes:** members, invites and roles, projects, API keys and access tokens, provider credentials, gateway routes and keys, alerts, budgets, prompts, datasets, evaluators, experiments, billing sources, the review policy, replays and the audit stream itself.
 - **Sign-ins:** a successful sign-in (password, two-factor code or OAuth), a wrong password for an existing account, a wrong two-factor code, a sign-out and an ended session. A sign-in attempt for an address with no account belongs to no organization and is not in any audit log.
 - **Refused changes:** a member whose role lacks the permission, a member of an organization that requires two-factor authentication without it, and a read-only access token used for a write. Refused reads are not recorded.
 - **Exports:** a trace export request and every audit log download.
+
+When a member is removed, leaves or deletes their account, each read-only API key revoked records
+`key.revoke`, and each mixed key narrowed records `key.scopes_change` (**Changed API key scopes**).
+Both include `name`, `prefix`, `project_id`, `reason` (`member_remove` or `account_delete`) and
+`member_user_id`; scope changes also include the ordered `from` and `to` scope arrays.
+The `member.remove` event includes `revoked_keys` and `narrowed_keys` counts. Keys without read
+scopes and gateway keys are unchanged and generate no key-change event.
 
 Each event carries:
 

@@ -15,7 +15,16 @@ import httpx
 import structlog
 from fastapi import APIRouter, Depends, Request, Response, status
 
-from app.api.deps import Access, ClockDep, DbSession, SettingsDep, client_ip, require
+from app.api.deps import (
+    Access,
+    ClockDep,
+    DbSession,
+    SettingsDep,
+    client_ip,
+    raise_session_required,
+    require,
+)
+from app.api.principals import SessionPrincipal
 from app.api.schemas import (
     CredentialCheckOut,
     CredentialCreate,
@@ -23,6 +32,7 @@ from app.api.schemas import (
     CredentialRotateIn,
     UserOut,
 )
+from app.auth.reauth import confirm_account_owner
 from app.core.crypto import CryptoNotConfigured
 from app.core.egress import BlockedAddress, EgressError
 from app.core.errors import FieldError, ProblemError, conflict, not_configured, not_found
@@ -30,7 +40,7 @@ from app.core.permissions import Permission
 from app.core.security import mark_uncacheable
 from app.db.models import ProviderCredential, User
 from app.gateway import queries, service
-from app.gateway.credentials import InvalidBaseUrl
+from app.gateway.credentials import InvalidBaseUrl, base_url_for, check_base_url_host
 
 logger = structlog.get_logger(__name__)
 
@@ -145,17 +155,46 @@ async def create_credential(
     access: CredentialManager,
     db: DbSession,
     settings: SettingsDep,
+    clock: ClockDep,
 ) -> CredentialOut:
     """Seal and store the key. `base_url` is required for `openai_compatible`, refused otherwise.
 
     `409 NOT_CONFIGURED` without CREDENTIALS_KEYS; `422` on `base_url` for a URL that is not
     `https://`, has userinfo, a query or a fragment, or resolves to a private address.
+    Adding a credential with `base_url` also requires a session and account-owner proof:
+    `password` (or a sign-in within 10 minutes for passwordless accounts), plus `code` when
+    two-factor authentication is enabled. Tokens get `403 SESSION_REQUIRED` for this action.
+    URL validation precedes proof; credentials without `base_url` and existing credentials
+    are unchanged.
     """
+    if body.base_url is not None:
+        if not isinstance(access.auth, SessionPrincipal):
+            raise_session_required()
+        try:
+            if not settings.is_crypto_configured:
+                raise CryptoNotConfigured("CREDENTIALS_KEYS is not set")
+            allow_insecure = settings.gateway_allow_insecure_base_urls
+            base_url = base_url_for(body.provider, body.base_url, allow_insecure=allow_insecure)
+            if base_url is not None:
+                await check_base_url_host(base_url, allow_insecure=allow_insecure)
+        except CREDENTIAL_ERRORS as error:
+            raise _credential_problem(error) from None
+        await confirm_account_owner(
+            db,
+            access.auth,
+            body.password,
+            body.code,
+            scope="credential_reauth",
+            settings=settings,
+            now=clock(),
+        )
     try:
         credential = await service.create_credential(
             db, access.org.id, access.user_id, body, settings=settings, ip=client_ip(request)
         )
     except CREDENTIAL_ERRORS as error:
+        if body.base_url is not None:
+            await db.commit()
         raise _credential_problem(error) from None
     await db.commit()
     await db.refresh(credential)

@@ -130,11 +130,94 @@ original design; everything else is a clarification.
 
 ## Orgs, members, invites
 
-- `PATCH /api/v1/orgs/{org_id}/members/{user_id}` → 200 `{user: User, role, created_at}` (same shape as a
-  member list item).
+- `PATCH /api/v1/orgs/{org_id}/members/{user_id}` → 200 `{user: User, role, created_at, read_keys}` (same shape as a
+  member list item). `read_keys` counts unrevoked project API keys created by that person in
+  this organization with any read scope, including expired keys, in one scalar subquery. A signed-in session and owner confirmation are required for a role change;
+  an unchanged role remains a no-op without proof.
+- **Owner confirmation (2026-11-08, API break):** `POST /api/v1/orgs/{org_id}/invites` and
+  `PATCH /api/v1/orgs/{org_id}/members/{user_id}` require a session before the member permission
+  check: personal access tokens get `403 SESSION_REQUIRED`, including write tokens. Both bodies
+  accept `password` and `code`. Password accounts must prove their current password; passwordless
+  accounts must have signed in within 10 minutes (`403 REAUTH_REQUIRED` otherwise). Two-factor
+  accounts also need an authenticator or unused recovery code. Invalid proof is `422 INVALID_PASSWORD`,
+  `TOTP_CODE_REQUIRED` or `INVALID_TOTP_CODE`. Each action allows five failed proofs per user in
+  15 minutes (`invite_create_reauth`, `member_role_reauth`); the sixth is `429 RATE_LIMITED`.
+  Successful proofs do not count. Role-assignment and last-owner refusals happen before proof.
+  An email-budget refusal after proof still spends the authentication code.
+  Audit-stream `PUT`, `POST …/audit/stream/rotate-secret` and `DELETE …/audit/stream` also
+  require a session and the same owner proof, under `audit_stream_reauth`. Every PUT is gated,
+  including re-enabling. Tokens get `403 SESSION_REQUIRED` before the organization permission
+  check. GET and test retain their existing authorization and do not ask for proof.
+- **Member removal, organization and project deletion (2026-11-08, API break):**
+  `DELETE /orgs/{org_id}/members/{user_id}`, `DELETE /orgs/{org_id}` and
+  `DELETE /projects/{project_id}` require a session
+  before permission checks; all tokens get `403 SESSION_REQUIRED`, including self-leave.
+  Removing another member of any role and deleting an organization or project require the current password
+  (or a passwordless sign-in within 10 minutes), plus an authenticator or unused recovery code
+  when two-factor authentication is enabled. Proof uses `member_remove_reauth`,
+  `org_delete_reauth` and `project_delete_reauth`, respectively (five failed proofs per user
+  in 15 minutes). Project deletion remains available to admins and owners.
+  Removal accepts an optional JSON body with `password` and `code`; unknown fields are refused.
+  An absent body supplies no proof and gives `422 INVALID_PASSWORD` for a password account.
+  Self-leave needs no body or proof, but cannot remove the last owner. Organization or project deletion
+  accepts `confirm`, `password` and `code`. Demo, permission, missing-resource, role and
+  last-owner refusals precede removal proof; demo, missing-resource and slug
+  (`CONFIRMATION_MISMATCH`) refusals precede deletion proof. Demo removal, including leaving,
+  is refused. Read access on the removed person's project API keys is still stripped.
+  With email configured, removal notifies verified owners except the actor and removed person,
+  and the removed person only if their email address is verified, including self-leave.
+  Deletion notifies verified owners except the actor. Notices contain no links or secrets and
+  commit with the change. Organization deletion queues notices before the membership cascade;
+  project deletion queues them before deleting project rows and keeps its `project.delete` audit event.
+- **Read-key owner confirmation (2026-11-08, API break):** Creating a project API key with
+  `traces:read` or `prompts:read` requires a session and the same owner proof described above,
+  after the key-creation permission check and before locking or creating the key. A write token
+  gets `403 SESSION_REQUIRED`; API keys remain refused with `403 KEY_SCOPE`. Failed proofs use
+  the separate `read_key_reauth` counter (five per user in 15 minutes). Keys with only
+  `ingest:write` or `scores:write` still accept sessions and write tokens without owner proof.
+  Existing keys keep working on upgrade. A project key outlives its creator's session, token
+  revocation and password reset; removal and account deletion strip its read scopes as below.
+- **Gateway-key owner confirmation (2026-11-08, API break):** Every gateway key creation and
+  every widening edit requires a signed-in session and the same owner proof described above.
+  Write tokens cannot create or widen gateway keys (`403 SESSION_REQUIRED`); they can still
+  tighten, rename, tag, change cache TTL, attach/detach fault profiles, revoke keys and purge the
+  cache. Both request bodies accept `password` and `code`, excluded from stored changes, audit
+  metadata and logged fields.
+  Failed proofs share `gateway_key_reauth` (five per user in 15 minutes). Create checks the
+  project's route without a row lock before proof, so a missing default or invalid route does
+  not spend a code. Successful proof stays in the transaction holding the project RLS binding;
+  proof refusals end the request. A key-service refusal after valid proof commits the spent code.
+  Existing gateway keys keep working, including after sign-out, password reset, token revocation
+  and the creator's removal. Revoke the key under Gateway when its spending must stop.
+- **Credential owner confirmation (2026-11-08, API break):** Creating a credential with a
+  `base_url` requires a session and the same owner proof described above; write tokens get
+  `403 SESSION_REQUIRED`. The body accepts `password` and `code`, stripped before the service
+  call and never included in audit metadata or logs. Failed proofs use `credential_reauth`
+  (five per user in 15 minutes). Crypto configuration, URL syntax and the host policy are
+  checked before proof, so an invalid or blocked URL does not spend a code. A credential-service
+  refusal after proof commits the spent code. No owner email is sent. Credentials without a
+  `base_url`, routes, keys, rotate, check and delete keep their existing behavior. Existing
+  credentials keep working; review Credentials for hosts you do not recognise.
+- When a new member accepts an invite and email is configured, the accept transaction queues a
+  notice to every verified owner except the joiner, including the inviter if they are an owner.
+  It names the joiner, role and inviter, carries no link, and is delivered asynchronously. Creating
+  an invite and changing a role send no owner notice. Member removal sends the notices described above.
 - Only owners may grant the owner role, change an owner's role, remove an owner, or invite as owner;
   admins get 403 for those.
-- `DELETE …/members/{own user id}` lets any member **leave** the org (still subject to `LAST_OWNER`).
+- `DELETE …/members/{user_id}` removes the membership and strips `READ_KEY_SCOPES`
+  (`traces:read`, `prompts:read`) from the unrevoked API keys that person created in the org's
+  projects, in the same transaction after the last-owner check. Read-only keys are revoked;
+  mixed keys keep their remaining scopes in their original order. Keys without read scopes
+  and all gateway keys are untouched. Expired but unrevoked keys follow the same rule.
+  `member.remove` metadata adds `revoked_keys` and `narrowed_keys`. Each changed key records
+  `key.revoke` or `key.scopes_change`, with `name`, `prefix`, `project_id`, `reason`
+  (`member_remove`) and `member_user_id`; scope changes also include `from` and `to` arrays.
+  `DELETE …/members/{own user id}` lets any member **leave** with a session and no proof, still subject
+  to `LAST_OWNER`. Demotion does not change keys. Account deletion applies the same rule in
+  every current org only after all sole-owner checks pass, before deleting the user row, with
+  reason `account_delete`. Changed prefixes are evicted after commit on the serving process;
+  other processes refresh within `API_KEY_CACHE_TTL_SECONDS`. Existing orphaned keys are not
+  changed on upgrade; review them with the [runbook query](runbooks/revoke-key.md).
 - Accepting an invite as an existing member keeps the existing role (never downgrades).
 - Invalid, used, expired or revoked invite tokens → 404.
 - **Addition:** `POST /api/v1/invites/preview` with body `{"token": "<token>"}` → 200
@@ -151,8 +234,7 @@ original design; everything else is a clarification.
     delivery. The invite, its `invite.create` audit event and the queued email are one transaction.
     The email names the inviter (the caller's name), the organization and the role, and carries the
     same `url`. Without an `email`, or when email is not configured, nothing is queued and the invite is
-    created as before; the address, if given, is still stored and listed. The response does not say
-    whether the email was queued, so a client that needs to know checks whether email is configured.
+    created as before; the address, if given, is still stored and listed. The create response includes `emailed: boolean`, true only when the invitation email was queued.
   - **Limit.** At most **20 mailed invites per organization per hour**, counted only for invites that
     are mailed (link-only invites and invites created while email is not configured do not count).
     The 21st gets 429 `RATE_LIMITED` with `Retry-After` (whole seconds, rounded up) and **no invite is
@@ -172,7 +254,7 @@ original design; everything else is a clarification.
   `Org` (in `memberships[].org`, `POST /orgs`, this response and `GET /orgs/{id}`) gains a `require_2fa`
   boolean, false by default.
 - Audit actions: `org.create, org.update, member.add, member.role_change, member.remove, invite.create,
-  invite.revoke, invite.accept, project.create, project.update, project.delete, key.create, key.revoke,
+  invite.revoke, invite.accept, project.create, project.update, project.delete, key.create, key.revoke, key.scopes_change,
   user.password_reset, user.oauth_link, user.oauth_unlink, user.totp_enable, user.totp_disable`.
   `actor` is null for CLI actions.
 - Internal: a permission `org:read` (held by every role) guards org-level reads; it does not change
@@ -211,7 +293,7 @@ original design; everything else is a clarification.
   - `cost_usd` has no $1,000,000 cap (2026-11-02): the hourly rollups store the exact sum (their column is plain
     `numeric`), so the overview, cost alerts and budget spend count a large hour in full. Trace totals and
     attribution are `null` from $1,000,000 up because their columns are `numeric(14, 8)`.
-  - Timeseries buckets are gapless (empty buckets have zero counts and `null` cost/p95), in UTC.
+  - Timeseries buckets are gapless (empty buckets have zero counts and `null` cost/p95/tokens), in UTC.
 - Metrics source and `approximate` (any window length): whole UTC hours that closed at least
   10 minutes before the project's last rollup run are read from the hourly rollups; everything else
   (the partial first hour, the partial last hour, and every hour from the last fully rolled-up one
@@ -313,7 +395,7 @@ original design; everything else is a clarification.
 - Trace fields: last non-null wins (within a batch and across batches); `null` never overwrites.
   `tags` are unioned. Rollups are always recomputed from stored spans, so re-sending is idempotent.
 - **Replaying a batch.** Sending the same spans again leaves every column of their rows and of their traces
-  as it was, except `ingested_at`, which moves to the time of the latest send, as long as prices have not
+  as it was, including `ingested_at`, as long as prices have not
   changed. The spans are priced again with the prices in force at that moment (the price table and the
   organization's overrides), so a price change between two sends changes a span's `cost_usd` and
   `pricing_version` and the trace's totals with it.
@@ -365,6 +447,11 @@ original design; everything else is a clarification.
   its payloads could not be prepared; ingestion refused it; or the write backlog was full). It is
   per process (the standalone gateway reports its own), resets on restart, and never makes the probe `503`; the
   same spans are in `spanlight_gateway_record_failures_total`.
+- `/health/ready` reports `aggregate_coverage` (2026-11-04): `"active"` once
+  `spanlight activate-aggregate-coverage` has run (the `projects.aggregate_history_unverified_before`
+  column default is the epoch boundary), `"inactive"` before that (rollup reads stay unknown), and
+  `"unknown"` when the database is unreachable or the check itself fails. It is informational: it never
+  changes `status` or the status code.
 - `alert_evaluation_lag_s` is the age of the newest finished evaluation job. It is `null` before the first one, with
   `ALERTS_EVALUATION_ENABLED` off, and also once the cleanup job has deleted every finished evaluation job (finished
   jobs are kept 7 days). A worker that has been stopped for more than a week therefore reads `null`, not a large
@@ -553,17 +640,19 @@ message names the two variables, not their values. The callback URL to register 
 |---|---|---|
 | `GET /api/v1/auth/oauth/providers` | none | `[{"provider": "github"}, {"provider": "google"}]`, configured providers only, in that order |
 | `GET /api/v1/auth/oauth/identities` | session | `[{"provider", "email", "created_at", "last_used_at"}]`, the caller's linked accounts, oldest first |
-| `GET /api/v1/auth/oauth/{provider}/start?next=&intent=sign_in\|link` | none (`link` needs a session) | `302` to the provider; `404 NOT_FOUND` for an unknown or unconfigured provider; `401 UNAUTHORIZED` for `intent=link` without a session; for `intent=link` also `403 FORBIDDEN` for the demo account and `409 EMAIL_UNVERIFIED` for an unverified account (see Linking); `422` for another `intent` |
+| `GET /api/v1/auth/oauth/{provider}/start?next=&intent=sign_in` | none | `302` to the provider; `404 NOT_FOUND` for an unknown or unconfigured provider; `410 OAUTH_LINK_NEEDS_CONFIRMATION` for `intent=link`, before any session check and without setting a state cookie; `422` for another `intent` |
+| `POST /api/v1/auth/oauth/{provider}/link` | session + CSRF | Body `{password?, code?, next?}`; `200 {"url": "…"}` and `spl_oauth` after confirmation; `404 NOT_FOUND` for an unknown or unconfigured provider; `403 FORBIDDEN` for demo, `409 EMAIL_UNVERIFIED` for unverified accounts when email is configured; reauthentication errors below |
 | `GET /api/v1/auth/oauth/{provider}/callback?code&state` | the `spl_oauth` cookie | `302`, always (see below); `404` for an unconfigured provider |
 | `DELETE /api/v1/auth/oauth/{provider}` | session + CSRF | `204`; `404 NOT_FOUND` if that provider is not linked; `409 LAST_SIGN_IN_METHOD` if the user has no password and no other linked provider |
 
-- **`start` and `callback` are browser navigations, so they never answer with problem+json** once the
-  provider is known. A failed callback is a `302` to `{APP_BASE_URL}/login?error=<CODE>`, with `<CODE>` one of
+- **`start` signs in through a browser redirect; `intent=link` instead answers with a 410 problem+json.**
+  Linking starts with the JSON POST above. A failed callback is a `302` to
+  `{APP_BASE_URL}/login?error=<CODE>`, with `<CODE>` one of
   `OAUTH_STATE`, `OAUTH_PROVIDER_ERROR`, `EMAIL_UNVERIFIED_AT_PROVIDER`, `ACCOUNT_EMAIL_UNVERIFIED` or
   `OAUTH_ALREADY_LINKED`. Every query parameter of the callback is optional, so a malformed callback gets
   this redirect rather than a `422`. All of these responses carry `Cache-Control: no-store`.
-- **The state cookie `spl_oauth`** is set by `start` and cleared by every callback, whatever its outcome. It
-  is httpOnly, `SameSite=Lax`, `Secure` when `APP_BASE_URL` is https, scoped to `Path=/api/v1/auth/oauth`
+- **The state cookie `spl_oauth`** is set by sign-in `start` or the confirmed link POST and cleared by
+  every callback, whatever its outcome. It is httpOnly, `SameSite=Lax`, `Secure` when `APP_BASE_URL` is https, scoped to `Path=/api/v1/auth/oauth`
   and lives 10 minutes. Its value is signed with `SECRET_KEY` (HMAC-SHA256) and holds the `state` sent to
   the provider, the PKCE verifier, the provider, the intent, `next` and, for a link, the user who started
   it. The callback needs the cookie to be present, correctly signed, unexpired and for the same provider,
@@ -607,21 +696,33 @@ not carried over. What the callback wrote before that point stays: a new user, o
 because both emails are verified. That identity is the user's own provider account, and every sign-in
 through it still needs the second factor.
 
-**Linking** (`intent=link`): the identity attaches to the signed-in user, who must be the user who started
-the flow, else `OAUTH_STATE`. The provider's email is not checked, since the person already proved who they
-are with their session and sign-in never goes by that email. An account already linked to someone else, or a
-different account of the same provider than the one the user already linked, is `OAUTH_ALREADY_LINKED`.
-Linking the account that is already linked is a no-op.
+**Linking** starts with `POST /api/v1/auth/oauth/{provider}/link`: the current password is required
+when the account has one (`422 INVALID_PASSWORD`); an account without one needs a sign-in within the
+last 10 minutes (`403 REAUTH_REQUIRED`). Two-factor accounts also need an authenticator or unused
+recovery code (`422 TOTP_CODE_REQUIRED` or `INVALID_TOTP_CODE`). Failed password and second-factor proofs
+are throttled per user under
+`oauth_link_reauth` (5 in 15 minutes, then `429 RATE_LIMITED`); successful confirmation records no
+attempt and commits any accepted code as spent before returning the authorization URL with `Cache-Control: no-store`.
+The demo and email-verification checks run before confirmation. The old GET never falls through to sign-in.
+
+The identity attaches to the signed-in user, who must be the user who started the flow, else `OAUTH_STATE`.
+The provider's email is not checked: account ownership was confirmed before starting, and sign-in never
+goes by that email. An account already linked to someone else, or a different account of the same provider
+than the one the user already linked, is `OAUTH_ALREADY_LINKED`. Linking the same account is a no-op.
+When email is configured, a newly attached identity queues a notice to the account's own address, not the
+provider's address; no notice is queued for a no-op relink. Delivery runs asynchronously and never blocks
+the link. The notice has no link and tells the owner to sign in, disconnect the provider under Settings,
+Security, and reset the password if the connection was not theirs.
 
 - **Only verified accounts can link, when email is configured.** Anyone can register an address that is not
   theirs, and a provider attached to that unproven account would keep a way in after the address's real
   owner recovered the account. So with email configured (`EMAIL_PROVIDER` set up, see `NOT_CONFIGURED`),
-  `start?intent=link` answers **409 `EMAIL_UNVERIFIED`** for a user whose email is not verified, and the
+  `POST /auth/oauth/{provider}/link` answers **409 `EMAIL_UNVERIFIED`** for an unverified user, and the
   callback checks again and redirects with `ACCOUNT_EMAIL_UNVERIFIED`, linking nothing. Without email nobody
   can verify an address, and the email recovery that makes this dangerous cannot run, so linking stays
   allowed for unverified accounts.
-- **The demo account cannot link**: `start?intent=link` answers **403 `FORBIDDEN`** for it, whether or not
-  email is configured, and the callback refuses with `ACCOUNT_EMAIL_UNVERIFIED`. It is shared and
+- **The demo account cannot link**: `POST /auth/oauth/{provider}/link` answers **403 `FORBIDDEN`**,
+  whether or not email is configured, and the callback refuses with `ACCOUNT_EMAIL_UNVERIFIED`. It is shared and
   anonymous, so a visitor's provider account would otherwise stay bound to it, show up in its identity
   list for later visitors and put the visitor's IP in the demo org's audit log.
 - **Ruling: a link returns to `next`.** The login page sends signed-in users away, which would lose an error
@@ -704,7 +805,7 @@ needs `CREDENTIALS_KEYS`, which seals the secret in the database (AES-256-GCM, s
   (`verify`, `disable`), case-insensitively and without the hyphen, and works once. `GET /auth/totp`
   reports how many are left. `disable` deletes all of them, and `enable` makes a fresh set.
 - **Two checks on one account never both succeed with one code.** `verify`, `enable` and `disable` read the
-  user row `FOR UPDATE`, so two requests presenting the same code run one after the other and the second is
+  user row `FOR NO KEY UPDATE`, so two requests presenting the same code run one after the other and the second is
   refused.
 - **Throttling.** Wrong codes at `verify` are recorded as failed sign-ins for the account's email and the
   client IP, so they share the password's limit: 5 failures per email (20 per IP) in 15 minutes, and the next
@@ -769,7 +870,8 @@ key can read its own project through the dashboard API.
 | `scores:write` | `POST /v1/scores` (added 2026-10-11) |
 | `prompts:read` | `GET /v1/prompts/{name}` (added 2026-10-11) |
 
-- **Creating a key.** `POST /api/v1/projects/{project_id}/keys` takes `{"name", "scopes"?, "expires_at"?}`.
+- **Creating a key.** `POST /api/v1/projects/{project_id}/keys` takes `{"name", "scopes"?, "expires_at"?, "password"?, "code"?}`.
+  Read scopes require session-based owner confirmation as described above; write-only keys do not.
   `scopes` is a non-empty list of the values above and defaults to `["ingest:write"]`; repeated values are
   stored once, in the order first given. An unknown scope, an empty list, or an `expires_at` that is not in the
   future is `422 VALIDATION_ERROR` (`errors[].field` is `scopes…` or `expires_at`). `expires_at` is an ISO-8601
@@ -832,13 +934,15 @@ signed-in browser session manages tokens.
 | Route | Auth | Request | Response |
 |---|---|---|---|
 | `GET /api/v1/auth/tokens` | session | none | `[{id, name, prefix, scope, created_at, expires_at, last_used_at}]`, active tokens, newest first |
-| `POST /api/v1/auth/tokens` | session | `{"name", "scope", "expires_at"?}` | `201`, the same object plus `"token"` |
+| `POST /api/v1/auth/tokens` | session | `{"name", "scope", "expires_at"?, "password"?, "code"?}` | `201`, the same object plus `"token"`; `422 INVALID_PASSWORD`, `TOTP_CODE_REQUIRED`, `INVALID_TOTP_CODE`; `403 REAUTH_REQUIRED`; `429 RATE_LIMITED`; `409 NOT_CONFIGURED` |
 | `DELETE /api/v1/auth/tokens/{token_id}` | session | none | `204` |
 
 - **Creating.** `name` is 1 to 100 characters. `scope` is `read` or `write` and has no default: leaving it out,
   or sending another value, is `422 VALIDATION_ERROR`. `expires_at` follows the rules for API keys: an ISO-8601
   time in the future (one without an offset is UTC), or `null` (the default) for a token that never expires.
   The 201 carries `Cache-Control: no-store`.
+- **Reauthentication applies to both scopes.** Creating a token requires the current `password` when the account has one, plus an authenticator or unused recovery `code` when two-factor authentication is enabled; passwordless accounts need a sign-in within the last 10 minutes. Failed password and second-factor proofs are limited to five per user per 15 minutes under `token_create_reauth`; successful proofs do not count; missing two-factor encryption configuration returns `409 NOT_CONFIGURED`.
+  This prevents a stolen password-account session from becoming a durable bearer token; signing out other sessions ends sessions only, so existing tokens must be revoked separately.
 - **The secret is shown once.** `token` is in the 201 response and nowhere else. The list, `GET /auth/me` and
   every later response omit it, and the database keeps only the SHA-256 of the secret. The `prefix`
   (`spl_pat_` and 12 characters) is what the list shows to tell tokens apart. A token cannot be recovered; create
@@ -860,10 +964,12 @@ signed-in browser session manages tokens.
   changing their role, takes effect on the next request. A project or organization the owner does not belong to
   is `404 NOT_FOUND`, the answer a session gets, and that is decided before the scope or the role.
 - **Scope.** Every permission is classed `read` or `write`. `org:read`, `project:read` and `audit:read` are
-  `read`; every other permission is `write`. A `write` token may do whatever its owner's role allows. A `read`
+  `read`; every other permission is `write`. A `write` token may use non-session-only routes allowed by its owner's role; it cannot invite, change member roles, remove members, leave an organization, delete an organization or project, or create API keys with read scopes. A `read`
   token is refused with `403 TOKEN_SCOPE` on a `write` permission, and also on any method other than GET, HEAD
-  and OPTIONS: leaving an organization (`DELETE /orgs/{org_id}/members/{own id}`) needs only `org:read`, and a
-  read-only token must not be able to do it. Note that listing invites needs `member:manage`, which is a
+  and OPTIONS. Member removal (`DELETE /orgs/{org_id}/members/{user_id}`), including self-leave,
+  organization deletion (`DELETE /orgs/{org_id}`) and project deletion (`DELETE /projects/{project_id}`)
+  are session-only, so both token scopes get
+  `403 SESSION_REQUIRED` before permission checks. Note that listing invites needs `member:manage`, which is a
   `write` permission, so a `read` token cannot list invites. The checks run in this order: a non-member is
   `404`, then `403 TWO_FACTOR_REQUIRED`, then `403 FORBIDDEN` for a role without the permission, then
   `403 TOKEN_SCOPE`. A token is therefore never told anything a session of the same user would not be.
@@ -882,15 +988,16 @@ signed-in browser session manages tokens.
 
 **Where a token is accepted**
 
-- Every `/api/v1` route that names an organization or project (guarded by a permission), under the rules above.
+- Organization and project routes guarded by permissions, except session-only routes, including invite creation, member role changes, member removal (also self-leave), organization or project deletion and creating API keys with read scopes, under the rules above.
   These include the read routes an API key with `traces:read` may use, which a token reaches in every project
   its owner belongs to and not only one.
 - `GET /api/v1/auth/me`, which answers with the owner's account and memberships. It does not set cookies for a
   token.
 - Nowhere else. Every route that needs a signed-in session answers a token with `403 SESSION_REQUIRED`: all of
   `/api/v1/auth/*` except `GET /auth/me` (so a token cannot create, list or revoke tokens, change two-factor
-  authentication, or manage sessions or linked accounts), `POST /orgs`, `POST /invites/preview` and
-  `POST /invites/accept`. So do the routes that need no sign-in (signup, login, email verification, password
+  authentication, or manage sessions or linked accounts), `POST /orgs`, `POST /orgs/{org_id}/invites`,
+  `PATCH /orgs/{org_id}/members/{user_id}`, `DELETE /orgs/{org_id}/members/{user_id}`,
+  `DELETE /orgs/{org_id}`, `DELETE /projects/{project_id}`, `POST /invites/preview` and `POST /invites/accept`. So do the routes that need no sign-in (signup, login, email verification, password
   reset, `POST /auth/totp/verify`, `POST /demo/session`, `/auth/oauth/…`): a token is refused there rather than
   served as an anonymous request. An API key gets `403 KEY_SCOPE` on all of these, as before.
 - A token is not an API key: on `POST /v1/traces` and `POST /v1/otlp/traces` it is `401 UNAUTHORIZED`, and an
@@ -905,8 +1012,8 @@ is `429 RATE_LIMITED` with `Retry-After`. Bearer writes and signed-in browsers a
 | Route | Permission | Request | Response |
 |---|---|---|---|
 | `PATCH /api/v1/orgs/{org_id}` | `org:update` (admin, owner); `org:security` (owner) for `require_2fa` | `{"name"?, "require_2fa"?}` | `200` `Org`; audit `org.update` |
-| `DELETE /api/v1/orgs/{org_id}` | `org:delete` (owner) | `{"confirm": "<org slug>"}` | `204` |
-| `DELETE /api/v1/projects/{project_id}` | `project:delete` (admin, owner) | `{"confirm": "<project slug>"}` | `204`; audit `project.delete` |
+| `DELETE /api/v1/orgs/{org_id}` | `org:delete` (owner session and account-owner proof) | `{"confirm": "<org slug>", "password": "<current password>", "code": "<code when 2FA is on>"}` | `204` |
+| `DELETE /api/v1/projects/{project_id}` | `project:delete` (admin or owner session and account-owner proof) | `{"confirm": "<project slug>", "password": "<current password>", "code": "<code when 2FA is on>"}` | `204`; audit `project.delete` |
 
 **Renaming**
 
@@ -942,8 +1049,9 @@ is `429 RATE_LIMITED` with `Retry-After`. Bearer writes and signed-in browsers a
   up. Its slug can be used again by a new project.
 - **The demo organization** cannot be renamed, have its settings changed, or be deleted, and neither can its
   projects: `403 FORBIDDEN`.
-- A personal access token needs the `write` scope for all three routes (all of them are changes), like any
-  other non-GET request. An API key is `403 KEY_SCOPE`.
+- Organization and project deletion are session-only and check account-owner proof after the slug.
+  Every token gets `403 SESSION_REQUIRED`. Renames still accept a personal access token with the
+  `write` scope. An API key is `403 KEY_SCOPE`.
 
 ## Idempotency keys (added 2026-10-09)
 
@@ -1034,6 +1142,13 @@ the OpenAPI document; on any other route the header is ignored.
   (`POST .../{credential_id}/rotate`), checking (`POST .../{credential_id}/check`) and deleting (`DELETE
   .../{credential_id}`) need `credentials:manage`, which only owners hold; an admin is `403`, a non-member `404`.
   The check calls the provider with the organization's key, so it is an owner action too.
+- **Owner proof for a new host.** Creating a credential with `base_url` also requires a session
+  and account-owner confirmation: `password` (or a sign-in within 10 minutes for passwordless
+  accounts), plus `code` when two-factor authentication is enabled. Tokens get
+  `403 SESSION_REQUIRED`. Crypto configuration and URL/host validation precede proof; a
+  service refusal after proof still spends the code. Proof fields never reach the service,
+  audit metadata or logs. Creating without `base_url`, rotating, checking and deleting are
+  unchanged. A credential's base URL cannot be changed; routes only select a `credential_id`.
 - **The key is write-only.** `api_key` is accepted in the create and rotate bodies, trimmed of surrounding
   whitespace, and never returned. Responses that describe a credential carry `Cache-Control: no-store`. The routes
   take no `Idempotency-Key`, so that no copy of a request body with a key in it is kept anywhere.
@@ -1090,7 +1205,14 @@ the OpenAPI document; on any other route the header is ignored.
 
 - **Routes.** Under `/api/v1/projects/{id}/gateway/keys`: `GET` (list, newest first, revoked keys included,
   unpaginated) needs `project:read`; `POST`, `PATCH /{key_id}` and `DELETE /{key_id}` need `gateway:write` (owners
-  and admins).
+  and admins). Creation additionally needs a session and owner confirmation; widening edits
+  need the same proof. Non-widening edits and revocation continue to accept write tokens.
+- **Creator membership.** Responses include `creator_is_member`: false if the creator is missing
+  or no longer belongs to the project's organization. The list computes this in its existing
+  query. Active keys with a departed creator show "Creator left"; they remain usable.
+  Organization member responses and removal audit metadata do not include a gateway-key count:
+  the current project-only RLS policy cannot support the org-wide scalar count without a bypass.
+  No request handler enables that bypass.
 - **The key is shown once.** The `POST` response is the only one with `secret`, the full `spl_gw_…` key, and it
   carries `Cache-Control: no-store`. Every other response shows `prefix` (`spl_gw_` and the key's 12 character id),
   which is not secret.
@@ -1107,7 +1229,14 @@ the OpenAPI document; on any other route the header is ignored.
   VALIDATION_ERROR` on `route_id`. The key keeps its route when the default moves later.
 - **Edits.** `PATCH` changes only the fields sent. `rpm_limit`, `tpm_limit` and `cache_ttl_seconds` are cleared by
   sending `null`, and so is `fault_profile_id` (detach); `null` for any other field is `422`. An edit that changes
-  nothing is not audited. A revoked key cannot be edited (`404`).
+  nothing is not audited. A revoked key cannot be edited (`404`). Widening means changing the
+  route or environment, raising or clearing a set RPM/TPM limit, clearing a restricted model
+  list, or adding a model to it. Restricting an
+  unrestricted list is tightening. Name, tags, cache TTL, fault profiles and tightening need no proof.
+  A fault profile only makes a key fail or slow; Lab can still attach profiles with its multi-key
+  PATCH flow. An invisible or revoked key is refused before proof. The decision is checked again under lock:
+  a concurrent edit that turns an unconfirmed session patch into widening returns
+  `409 KEY_CHANGED` (reload and retry); a token gets `403 SESSION_REQUIRED`.
 - **Revoking.** `DELETE` revokes the key (`204`); revoking a revoked key is a `204` that changes nothing. The key
   stays listed with `revoked_at` set, so the spans sent with it keep their attribution.
 - **On `/api/v1`.** A gateway key authenticates the gateway only. Sent as a bearer to an `/api/v1` route it is an
@@ -1562,6 +1691,10 @@ Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anth
   (and `components` is then empty). Components are `findings`, `errors`, `latency` and `cost`; `observed` and `baseline` are
   decimal strings or `null` (`findings` observes the count of open critical and warning insights; `findings` and `errors`
   have no baseline). `error_rate` is a fraction. `approximate` is true when any metric read was a histogram estimate.
+  Its inputs are the `/metrics/overview` KPIs of the window and the previous window (2026-11-05), so they follow the same
+  split, coverage and pending rules as the Overview tiles: an hour not rolled up yet or awaiting aggregate repair still
+  counts. Alert rules, budgets and the digest keep the alert reader (fixed split `floor_hour(now) - 1 h`, `null` until the
+  aggregates are complete).
 
 ## Users (added 2026-10-10)
 
@@ -3082,9 +3215,19 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
   `{ok, checked, first_seq, head_seq, head_hash, first_broken_seq}`; the oldest stored event is trusted as the
   start, since retention removes older ones. CLI: `spanlight audit-verify [--org <slug>]`, exit `1` on a break.
 - **Audit streaming (MIT, no license gate).** One HTTPS endpoint per org. `GET /orgs/{org_id}/audit/stream`
-  (`audit:read`) → the stream or `null`; `PUT` `{url, enabled}` (`org:security`, owners) creates it, with
+  (`audit:read`) → the stream or `null`; `PUT` `{url, enabled, password?, code?}` (`org:security`, owners) creates it, with
   `secret` returned once, or changes it; `POST …/stream/rotate-secret` returns a new `secret` once; `DELETE`
-  removes it; `POST …/stream/test` sends one `audit.test` event now → `{ok, error}` (10 an hour, `429`). Without a
+  removes it. PUT, rotate and DELETE are session-only and require account-owner proof; rotate and
+  DELETE take a required JSON body `{password?, code?}`. Unknown fields are refused. Password/code
+  values never reach the stream service, audit metadata or logs. PUT checks crypto configuration,
+  then the webhook URL (including DNS), then proof; a bad URL spends no code. Rotate and DELETE
+  check that a stream exists before proof. Any failure after proof keeps the second-factor code
+  spent while rolling back the stream write. With email configured, each gated write queues a
+  notice to the organization's verified owners except the actor in the same transaction. The
+  notice names the actor, change and receiver host only, has no link, and explains how to respond
+  to an unexpected change. A sole owner has no recipient. Change wording uses the state observed
+  by the locked save: set up, URL changed, paused, resumed, secret rotated or removed.
+  `POST …/stream/test` sends one `audit.test` event now → `{ok, error}` (10 an hour, `429`). Without a
   stream, rotate, delete and test answer `409 AUDIT_STREAM_NOT_SET_UP`; a URL the webhook rules refuse is
   `422 UNSAFE_URL`; no CREDENTIALS_KEYS is `409 NOT_CONFIGURED`. The worker job `deliver_audit_streams` (every
   minute) POSTs `{"events": [AuditEventOut…]}` in `seq` order, up to 500 per request and 20 requests per stream
@@ -3124,7 +3267,7 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
 - **Demo account.** `POST /api/v1/orgs` and `POST /api/v1/invites/accept` answer `403 FORBIDDEN` for the shared
   demo user, like tokens and two-factor already did.
 - **Two-factor setup needs the owner.** `POST /api/v1/auth/totp/setup` takes an optional body `{password}`. An
-  account with a password must send its current one: missing or wrong is `422 INVALID_PASSWORD`; five attempts
+  account with a password must send its current one: missing or wrong is `422 INVALID_PASSWORD`; five failed proofs
   per 15 minutes per user, then `429 RATE_LIMITED`. An account without a password (GitHub or Google only) must
   have signed in within the last 10 minutes, else `403 REAUTH_REQUIRED`. `enable` needs a pending setup, so it is
   covered too. **Deviation:** the body was empty before.
@@ -3343,6 +3486,21 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
   Migration 1016 turns the stored zeros that stood for "no usage reported" into `null`. The `tokens` sort of the
   trace and session lists adds the two counts, takes the reported one alone when the other is unknown, and puts a
   trace with neither among the unknown values, last in both directions.
+- **Aggregated token totals are nullable too (2026-11-04).** The same rule now holds wherever tokens are summed
+  for display: a total is the sum of what the contributing calls reported (usage rollups left out), `null` when none
+  of them reported it, never 0. A partial sum stays the partial sum; a call without usage is always counted in
+  `unpriced_calls` already. Fields that became `null`-able: `models` items' `input_tokens` and `output_tokens`;
+  `overview` `current`/`previous` `input_tokens` and `output_tokens` (before, `null` only when the source history was
+  unavailable); `timeseries` `tokens` (an empty bucket is `null`, like its cost); release stats `input_tokens` and
+  `output_tokens` (and so their compare deltas, `null` when either side is unknown); attribution rows, buckets and
+  totals `input_tokens` and `output_tokens` (an empty cell in the attribution CSV export); the Users list `tokens`.
+  A user-detail day or total with no LLM call keeps `tokens` 0, as its cost is 0. Migration 1043 makes the stored
+  token columns of `span_rollups_hourly`, `attribution_rollups_daily` and `user_stats_daily` nullable and turns
+  the stored zeros of hourly and per-user rows whose spans prove nothing was reported into `null`. Rows whose
+  spans retention removed keep their stored value, and attribution days older than yesterday keep theirs until
+  `spanlight attribution backfill` recomputes them. Not changed: alert rules and budgets keep reading an unknown
+  token total as `0` (threshold math; the `tokens` metric was always `0` on an empty window), and the cost
+  rollups behind the token mix keep their per-class sums.
 
 ## UX Phase 6 (added 2026-10-25)
 
@@ -3698,8 +3856,8 @@ belongs to, with the user as actor and target; a user in no org leaves no event.
   unused recovery code (spent). A missing code is `422 TOTP_CODE_REQUIRED`, a wrong one `422 INVALID_TOTP_CODE`;
   both are checked after the password. So a right password with a wrong code answers `INVALID_TOTP_CODE`,
   not `INVALID_PASSWORD`, which tells the caller the password was right. This is accepted: it is throttled,
-  and sign-in and two-factor setup answer the same way. Each action keeps its own throttle of 5 attempts per user per 15 minutes
-  (`429` with `Retry-After`); every attempt counts, password and code alike, and a failed one stays counted. A
+  and sign-in and two-factor setup answer the same way. Each action keeps its own throttle of 5 failed proofs per user per 15 minutes
+  (`429` with `Retry-After`); a refused password or code stays counted, while successful proofs do not count. A
   password-less account with two-factor authentication on is throttled the same way.
 - **`POST /email/change`** `{new_email, password?, code?}` answers `202 {"status": "accepted"}`. Checks, in order:
   `503 EMAIL_NOT_CONFIGURED` without an email provider (the operator's state comes first), the demo refusal, the
@@ -3883,7 +4041,8 @@ Effective from the release that carries this entry (migration 1039).
   UTC midnight (at least 1). Extension members: `quota` (`spans_per_day` | `bytes_per_day`), `limit`, `used` and
   `resets_at` (RFC 3339, UTC). The request is refused whole. The batch that crosses a quota is admitted: refusal is
   on `used >= limit`, never on `used + n > limit`. A request whose every `(trace_id, span_id)` is already stored is
-  admitted (a retry after a lost acknowledgement).
+  admitted only if the pipeline inserts no spans and changes no stored span or trace content (a retry after a lost acknowledgement).
+- **Rewrites and usage.** A batch that inserts spans or changes span or trace content counts its whole decompressed body toward daily bytes, but only inserted spans toward daily spans; a replay that inserts spans or changes span or trace content at the cap is refused whole and rolled back, counted once as refused, with its rate tokens still spent.
 - **`429 RATE_LIMITED`** on the two routes now has two details: `Ingestion rate limit exceeded for this key.`
   (requests per key, unchanged) and `Ingestion rate limit exceeded for this project.` (spans per second per
   project; `Retry-After` is whole seconds, rounded up).
@@ -3952,3 +4111,56 @@ are the behaviours a caller or operator can observe.
 - **Experiment compare.** An item counts as edited between two runs when the stored JSON of its two copies differs
   (compared by SHA-256 in Postgres), so numbers that differ only in formatting (`1.0` and `1.00`) count as an edit.
   Copies written by Spanlight itself always use one form, so this arises only for rows written outside the API.
+
+## Live dashboard stream (2026-11-04)
+
+`GET /api/v1/projects/{project_id}/live` is new: a `text/event-stream` that tells an open dashboard
+tab when its project has new data, so the tab refetches instead of polling.
+
+- **Session cookie only.** It is guarded by `require(project:read)`, so a non-member gets `404
+  NOT_FOUND` as on every project route. Any bearer, an API key or a personal access token, gets
+  `403 LIVE_SESSION_ONLY` whatever the project: the stream is for the dashboard, not for
+  integrations. Not `KEY_SCOPE` or `SESSION_REQUIRED`, so a script sees one code for the route.
+- **Events.** `retry: 3000` first; then `event: changed` with `data: {"seq": n}`, a counter of
+  this stream starting at 1. The data never carries the change marker: its generation is a
+  platform-wide sequence and would leak ingest volume. `event: heartbeat` with `data: {}` every 20 s
+  keeps proxies from closing an idle stream; it is an event, not a comment, because `EventSource`
+  hides comments and the dashboard treats two missed heartbeats as a stalled stream. Events are coalesced to at most one per project per
+  second. Responses carry `Cache-Control: no-store` and `X-Accel-Buffering: no`.
+- **Limits.** A session holds at most 3 streams; a fourth closes the oldest, which ends with a
+  terminal `event: evicted` and `data: {}` (2026-11-07) so the client closes its `EventSource`
+  and polls instead of reconnecting, which would evict the next tab in turn. A process holds at
+  most `LIVE_MAX_STREAMS` (default 2000); past it the request is `503 LIVE_BUSY` with
+  `Retry-After: 30`. Open streams do not count against `API_MAX_IN_FLIGHT`.
+- **Ending.** Every 60 s the stream re-runs the session lookup and the membership check; sign-out,
+  an expired session or a removed membership ends it, and the reconnect gets `401` or `404`. A
+  failed re-check ends it too. Streams end at the shutdown signal.
+- **Off.** With `LIVE_UPDATES_ENABLED=false` the route answers `404 NOT_FOUND` after the
+  authorization check.
+
+- **Users list reads the raw tail; `live`.** `GET /projects/{id}/users` merges, in the same
+  statement, the stored per-user days with the window's user traces that started after their own
+  UTC day's latest recompute (any time for a day without rows) and less than 24 hours ago
+  (`RAW_TAIL_MAX`). The tail is aggregated exactly as `refresh_user_stats` does (same columns,
+  unpriced calls and unknown tokens), so the sort, the keyset and the totals equal a recompute:
+  a user whose only calls are unpriced reads `cost_usd: null`, and one with priced and unpriced
+  calls keeps the lower bound, as after a recompute. `pending_traces` now counts only the
+  traces older than the cap. The tail is left out when aggregate coverage is unavailable
+  (`pending_traces` is then null, as before). `UserListOut.live` is true when the tail was merged
+  and nothing is pending. The user detail merges the same tail for that user, so a user the list
+  shows always opens, and carries the same `live`. Known limit of both: a late span of a trace
+  that started before the recompute is in neither the stored day nor the tail until the next pass
+  (`aggregate_status: pending`). `live` ignores that status, because every new trace after a
+  recompute also sets it, and an active project would then never read live.
+  A trace whose `started_at` lies after the recompute time (stamped up to 10 minutes in the
+  future, or ingested while a refresh waited on a lock) can be in both the stored day and the
+  tail, so it counts twice until the next recompute.
+- **Cached answers may be up to 2 s old.** While a project is watched live, the answers of the five
+  routes a live tab refetches (overview, timeseries, models, health, users) are cached per api
+  process for 2 s, keyed on the request and the project's change marker. A cached answer never
+  survives new data seen by that process, but with several api replicas a refetch can reach
+  another replica and get its earlier entry, up to 2 s old.
+- **`GET /projects/{id}/onboarding` may enqueue jobs.** Within one hour of the project's first
+  trace, the read queues the first-traces page fill (the hourly and daily cost rollups, and the
+  user stats and attribution refreshes when enabled) once, deduplicated per project and job kind.
+  Later reads, and projects whose first trace is older, enqueue nothing.

@@ -45,21 +45,24 @@ async function createMemberInvite(page: Page): Promise<string> {
   const me = await page.request.get("/api/v1/auth/me");
   const { memberships } = (await me.json()) as { memberships: { org: { id: string } }[] };
   const orgId = memberships[0]?.org.id ?? "";
-  const url = await page.evaluate(async (id) => {
-    const csrf = document.cookie
-      .split("; ")
-      .find((cookie) => cookie.startsWith("spl_csrf="))
-      ?.slice("spl_csrf=".length);
-    const response = await fetch(`/api/v1/orgs/${id}/invites`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRF-Token": decodeURIComponent(csrf ?? ""),
-      },
-      body: JSON.stringify({ role: "member" }),
-    });
-    return ((await response.json()) as { url: string }).url;
-  }, orgId);
+  const url = await page.evaluate(
+    async ({ id, password }) => {
+      const csrf = document.cookie
+        .split("; ")
+        .find((cookie) => cookie.startsWith("spl_csrf="))
+        ?.slice("spl_csrf=".length);
+      const response = await fetch(`/api/v1/orgs/${id}/invites`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": decodeURIComponent(csrf ?? ""),
+        },
+        body: JSON.stringify({ role: "member", password }),
+      });
+      return ((await response.json()) as { url: string }).url;
+    },
+    { id: orgId, password: PASSWORD },
+  );
   const { pathname, hash } = new URL(url);
   return `${pathname}${hash}`;
 }

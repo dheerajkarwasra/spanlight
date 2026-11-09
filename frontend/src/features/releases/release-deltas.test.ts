@@ -4,6 +4,7 @@ import type { Comparison, ReleaseStats } from "@/lib/api";
 
 import {
   NO_COST_REASON,
+  NO_USAGE_REASON,
   buildKpiRows,
   formatRelativeMagnitude,
   formatShare,
@@ -56,6 +57,16 @@ describe("buildKpiRows", () => {
     );
     expect(row(rows, "p95_ms").delta).toBeNull();
     expect(row(rows, "p95_ms").changeMagnitude).toBeNull();
+  });
+
+  it("keeps a release's tokens unknown when no call reported usage, not 0", () => {
+    const rows = buildKpiRows(
+      comparison({ a: stats({ input_tokens: null, output_tokens: null, unpriced_calls: 200 }) }),
+    );
+    const input = row(rows, "input_tokens");
+    expect(input.a).toBeNull();
+    expect(input.delta).toBeNull();
+    expect(input.unknownReason).toBe(NO_USAGE_REASON);
   });
 
   it("keeps an unpriced release's cost unknown and explains why", () => {

@@ -3,11 +3,15 @@ import { useEffect, useState, type ReactElement } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
+import { Callout } from "@/components/callout";
+import { DisabledReason } from "@/components/disabled-reason";
+import { MemberReauthFields } from "@/features/settings/member-reauth";
+import { useMemberReauth } from "@/features/settings/use-member-reauth";
 import { DialogHeading } from "@/components/dialog-heading";
 import { RelativeTime } from "@/components/relative-time";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { errorMessage, type GatewayKey } from "@/lib/api";
+import { type GatewayKey } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 
 import { useFaultProfilesQuery, useGatewayRoutesQuery } from "../gateway-queries";
@@ -21,6 +25,7 @@ import {
   formValuesFromKey,
   keyFormSchema,
   toUpdateInput,
+  widens,
   type KeyFormValues,
 } from "./key-form";
 import { useUpdateGatewayKey } from "./keys-queries";
@@ -72,6 +77,8 @@ function EditKeyForm({ gatewayKey, onPendingChange, onDone }: EditKeyFormProps) 
   const routesQuery = useGatewayRoutesQuery();
   const profilesQuery = useFaultProfilesQuery();
   const update = useUpdateGatewayKey();
+  const confirmation = useMemberReauth();
+  const { reset, reauth, formError } = confirmation;
   const pending = update.isPending;
 
   useEffect(() => {
@@ -86,7 +93,13 @@ function EditKeyForm({ gatewayKey, onPendingChange, onDone }: EditKeyFormProps) 
     resolver: zodResolver(keyFormSchema),
     defaultValues: formValuesFromKey(gatewayKey),
   });
-  const environment = useWatch({ control: form.control, name: "environment" });
+  const watched = useWatch({ control: form.control });
+  const values = { ...formValuesFromKey(gatewayKey), ...watched };
+  const environment = values.environment;
+  const needsProof = widens(gatewayKey, toUpdateInput(values, gatewayKey));
+  useEffect(() => {
+    if (!needsProof) reset();
+  }, [needsProof, reset]);
 
   const onSubmit = form.handleSubmit(async (values) => {
     if (drafts.blockSave(form.setError)) {
@@ -107,16 +120,27 @@ function EditKeyForm({ gatewayKey, onPendingChange, onDone }: EditKeyFormProps) 
       onDone();
       return;
     }
+    if (pending) return;
+    const proof = widens(gatewayKey, changes)
+      ? confirmation.proof(confirmation.form.getValues())
+      : {};
+    if (!proof) return;
     try {
-      await update.mutateAsync({ keyId: gatewayKey.id, update: changes });
+      await update.mutateAsync({ keyId: gatewayKey.id, update: { ...changes, ...proof } });
       toast.success(`Saved gateway key "${values.name}".`);
       onDone();
     } catch (error) {
       if (!applyKeyProblem(error, form.setError)) {
-        toast.error(errorMessage(error));
+        confirmation.onError(error);
       }
     }
   });
+
+  const saveButton = (
+    <Button type="submit" variant="primary" loading={pending} disabled={needsProof && reauth}>
+      Save changes
+    </Button>
+  );
 
   return (
     <form onSubmit={onSubmit} noValidate className="grid gap-[22px]">
@@ -152,6 +176,28 @@ function EditKeyForm({ gatewayKey, onPendingChange, onDone }: EditKeyFormProps) 
           />
         )}
       />
+      <p aria-live="polite" className="empty:sr-only">
+        {needsProof ? (
+          <>
+            <span className="text-sm font-semibold text-foreground">Confirm it's you.</span>
+            <span className="text-xs text-muted-foreground">
+              {" This change lets the key spend more."}
+            </span>
+          </>
+        ) : null}
+      </p>
+      {needsProof ? (
+        <MemberReauthFields
+          confirmation={confirmation}
+          pending={pending}
+          action="Widening a gateway key"
+        />
+      ) : null}
+      {formError ? (
+        <Callout tone="danger" role="alert">
+          {formError}
+        </Callout>
+      ) : null}
       <DangerZone gatewayKey={gatewayKey} onRevoked={onDone} />
       <div className="flex justify-end gap-2.5 max-sm:[&>*]:flex-1">
         <SheetClose asChild>
@@ -159,9 +205,11 @@ function EditKeyForm({ gatewayKey, onPendingChange, onDone }: EditKeyFormProps) 
             Cancel
           </Button>
         </SheetClose>
-        <Button type="submit" variant="primary" loading={pending}>
-          Save changes
-        </Button>
+        {needsProof && reauth ? (
+          <DisabledReason reason="Sign in again first.">{saveButton}</DisabledReason>
+        ) : (
+          saveButton
+        )}
       </div>
     </form>
   );

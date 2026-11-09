@@ -2,7 +2,8 @@
 
 Failure modes pinned here: hours whose calls were all unpriced merge to a cost of `0` instead of
 `null` (the spend chart then claims the hours were free); money drifts through binary floats;
-an hour that has traces but no spans loses its traces, or gains a cost or calls it never had.
+an hour that has traces but no spans loses its traces, or gains a cost, tokens or calls it never
+had.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -44,11 +45,11 @@ def test_hours_without_any_priced_cost_combine_to_an_unknown_cost() -> None:
     assert merged.unpriced_calls == 2
 
 
-def test_nothing_to_combine_is_an_unknown_cost_and_zero_counts() -> None:
+def test_nothing_to_combine_is_an_unknown_cost_and_tokens_and_zero_counts() -> None:
     merged = combine(START, [])
 
     assert merged.cost_usd is None
-    assert (merged.traces, merged.llm_calls, merged.tokens) == (0, 0, 0)
+    assert (merged.traces, merged.llm_calls, merged.tokens) == (0, 0, None)
     assert merged.latency_buckets == [0] * BUCKET_COUNT
 
 
@@ -117,6 +118,6 @@ async def test_an_hour_with_traces_but_no_spans_has_an_unknown_cost_and_no_calls
     assert (spans_hour.bucket_start, spans_hour.traces, spans_hour.llm_calls) == (with_spans, 2, 2)
     assert spans_hour.cost_usd is None  # every call was unpriced
     assert traces_hour.bucket_start == trace_only
-    assert (traces_hour.traces, traces_hour.llm_calls, traces_hour.tokens) == (4, 0, 0)
+    assert (traces_hour.traces, traces_hour.llm_calls, traces_hour.tokens) == (4, 0, None)
     assert traces_hour.cost_usd is None
     assert traces_hour.latency_buckets == [0] * BUCKET_COUNT

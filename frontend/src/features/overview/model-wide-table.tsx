@@ -5,7 +5,7 @@ import { formatCompact, formatInteger, formatPercent } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import { ModelCost, ModelLatency, ModelName, NoProviderTag } from "./model-cells";
-import { formatProvider, modelErrorRate, modelRowKey } from "./models";
+import { NO_MODEL_USAGE_REASON, formatProvider, modelErrorRate, modelRowKey } from "./models";
 
 const HEAD_CELL = "py-2.5 text-left text-overline font-semibold text-subtle-foreground uppercase";
 const NUMERIC_HEAD = cn(HEAD_CELL, "text-right");
@@ -95,10 +95,10 @@ function ModelRow({ model }: { model: ModelMetrics }) {
         <ModelLatency value={model.p95_ms} approximate={model.approximate} />
       </td>
       <td className="text-right text-sm text-muted-foreground tabular">
-        {formatCompact(model.input_tokens)}
+        <ValueOrUnknown value={formatCompact(model.input_tokens)} reason={NO_MODEL_USAGE_REASON} />
       </td>
       <td className="text-right text-sm text-muted-foreground tabular">
-        {formatCompact(model.output_tokens)}
+        <ValueOrUnknown value={formatCompact(model.output_tokens)} reason={NO_MODEL_USAGE_REASON} />
       </td>
       <td className="text-right text-sm font-semibold text-foreground tabular">
         <ModelCost model={model} />

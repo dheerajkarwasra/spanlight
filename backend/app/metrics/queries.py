@@ -81,8 +81,8 @@ _SPANS = {False: _RANGES + "    WHERE TRUE\n", True: _RANGES + _IN_ENVIRONMENT}
 
 _SUMS = """
            sum(s.cost_usd) FILTER (WHERE NOT s.usage_rollup)                   AS cost_usd,
-           coalesce(sum(s.input_tokens) FILTER (WHERE NOT s.usage_rollup), 0)  AS input_tokens,
-           coalesce(sum(s.output_tokens) FILTER (WHERE NOT s.usage_rollup), 0) AS output_tokens"""
+           sum(s.input_tokens) FILTER (WHERE NOT s.usage_rollup)               AS input_tokens,
+           sum(s.output_tokens) FILTER (WHERE NOT s.usage_rollup)              AS output_tokens"""
 
 _LLM_COUNTS = """
            count(*) FILTER (WHERE s.kind = 'llm')                              AS llm_calls,

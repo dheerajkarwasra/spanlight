@@ -273,6 +273,14 @@ class Settings(BaseSettings):
     # day; off, those windows go stale while windows of 24 hours or less stay live.
     attribution_enabled: bool = True
 
+    # Live dashboards. `live_updates_enabled` runs, in each api process, the 1 s check of the
+    # change markers of projects with open dashboard tabs; off, no marker is read. A process
+    # holds at most `live_max_streams` live subscriptions, and caches at most
+    # `live_cache_entries` dashboard answers.
+    live_updates_enabled: bool = True
+    live_max_streams: int = Field(default=2000, ge=1, le=10_000)
+    live_cache_entries: int = Field(default=5000, ge=1)
+
     sentry_dsn: str | None = None
 
     # Tracing of the app's own requests, queries and outbound calls. Set the base URL of an OTLP
@@ -379,6 +387,9 @@ class Settings(BaseSettings):
         "audit_retention_days",
         "otel_service_name",
         "attribution_enabled",
+        "live_updates_enabled",
+        "live_max_streams",
+        "live_cache_entries",
         mode="before",
     )
     @classmethod

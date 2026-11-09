@@ -5,7 +5,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.api.schemas.common import FutureTime, Name, UserOut
+from app.api.schemas.common import FutureTime, Name, Password, TotpCode, UserOut
 from app.core.scopes import DEFAULT_KEY_SCOPES, KeyScope
 
 
@@ -32,6 +32,8 @@ class ApiKeyCreateIn(BaseModel):
     scopes: list[KeyScope] = Field(default=list(DEFAULT_KEY_SCOPES), min_length=1)
     # None: the key never expires.
     expires_at: FutureTime | None = None
+    password: Password | None = None
+    code: TotpCode | None = None
 
     @field_validator("scopes")
     @classmethod

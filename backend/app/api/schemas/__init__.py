@@ -42,8 +42,6 @@ from app.api.schemas.auth import (
     LoginTotpRequiredOut,
     MembershipOut,
     MeOut,
-    OAuthIdentityOut,
-    OAuthProviderOut,
     PasswordForgotIn,
     PasswordResetIn,
     SessionOut,
@@ -130,6 +128,7 @@ from app.api.schemas.metrics import (
     TimeseriesPointOut,
     TokenMixOut,
 )
+from app.api.schemas.oauth import OAuthIdentityOut, OAuthLinkIn, OAuthLinkOut, OAuthProviderOut
 from app.api.schemas.orgs import (
     AuditEventOut,
     AuditIntegrityOut,
@@ -300,6 +299,8 @@ __all__ = [
     "MuteRequest",
     "Name",
     "OAuthIdentityOut",
+    "OAuthLinkIn",
+    "OAuthLinkOut",
     "OAuthProviderOut",
     "OnboardingOut",
     "OrgCreateIn",

@@ -53,7 +53,7 @@ class UserStatsDaily(Base):
     errors: Mapped[int] = mapped_column(Integer)
     unpriced_calls: Mapped[int] = mapped_column(Integer)
     cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 8))
-    tokens: Mapped[int] = mapped_column(BigInteger)
+    tokens: Mapped[int | None] = mapped_column(BigInteger)  # NULL: no call reported usage
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

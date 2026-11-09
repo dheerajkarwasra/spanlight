@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, SecretStr, StringConstraints
 
+from app.auth.proof_types import Password, TotpCode
 from app.db.models import ProviderKind
 
 CredentialName = Annotated[
@@ -47,6 +48,9 @@ class CredentialCreate(BaseModel):
     """A new provider credential. `base_url` is only for `openai_compatible`, which needs it."""
 
     model_config = ConfigDict(extra="forbid")
+
+    password: Password | None = None
+    code: TotpCode | None = None
 
     name: CredentialName
     provider: ProviderKind

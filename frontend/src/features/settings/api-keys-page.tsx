@@ -1,5 +1,5 @@
 import { KeyRound } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
@@ -25,6 +25,17 @@ export function ApiKeysPage() {
     canRevokeOwn: usePermission("key:revoke_own"),
     userId: me.user.id,
   };
+  const [creating, setCreating] = useState(false);
+  const createButton = canCreate ? (
+    <Button
+      variant="primary"
+      onClick={() => {
+        setCreating(true);
+      }}
+    >
+      Create key
+    </Button>
+  ) : undefined;
 
   return (
     <div className="flex flex-col gap-5">
@@ -32,15 +43,13 @@ export function ApiKeysPage() {
       <SectionCard
         title="API keys"
         description="Keys let an application send traces to this project or read them through the API. The secret is shown once."
-        actions={<CreateKeyButton canCreate={canCreate} />}
+        actions={createButton}
         className="gap-3"
       >
-        <ApiKeysContent
-          query={keysQuery}
-          ability={ability}
-          emptyAction={canCreate ? <CreateKeyButton canCreate /> : undefined}
-        />
+        <ApiKeysContent query={keysQuery} ability={ability} emptyAction={createButton} />
       </SectionCard>
+      {/* Here, not beside a button: the refresh after creating removes the empty state. */}
+      <CreateApiKeyDialog open={creating} onOpenChange={setCreating} />
     </div>
   );
 }
@@ -92,12 +101,4 @@ function ApiKeysContent({ query, ability, emptyAction }: ApiKeysContentProps) {
       </p>
     </>
   );
-}
-
-function CreateKeyButton({ canCreate }: { canCreate: boolean }) {
-  if (!canCreate) {
-    return null;
-  }
-
-  return <CreateApiKeyDialog trigger={<Button variant="primary">Create key</Button>} />;
 }

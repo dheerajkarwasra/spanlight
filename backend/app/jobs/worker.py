@@ -38,6 +38,7 @@ from app.jobs.worker_lifecycle import run_worker
 from app.jobs.worker_operations import Operation, worker_operation
 from app.jobs.worker_progress import ShortLoopProgress
 from app.process_shutdown import budget_from_settings
+from app.rollups.coverage_status import warn_if_coverage_inactive
 
 logger = structlog.get_logger(__name__)
 
@@ -260,6 +261,7 @@ class Worker:
                 "webhook evaluators fail, Slack, webhook and PagerDuty alerts are not delivered "
                 "and demo traffic is skipped; set CREDENTIALS_KEYS on the worker",
             )
+        await warn_if_coverage_inactive(self.session_factory)
         # Its own task, so a job that runs for hours does not stop the heartbeat readiness reads.
         # The queue gauges ride on the same tick, with the registry frozen here.
         kinds = frozenset(self.handlers)

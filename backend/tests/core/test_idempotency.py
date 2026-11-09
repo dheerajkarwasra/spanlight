@@ -775,7 +775,10 @@ async def test_a_replay_is_authorized_like_the_request_it_replays(
     assert original.status_code == 201
     assert replay.headers["idempotent-replayed"] == "true"
 
-    removed = await owner.delete(f"/api/v1/orgs/{workspace.org_id}/members/{member.user['id']}")
+    removed = await owner.delete(
+        f"/api/v1/orgs/{workspace.org_id}/members/{member.user['id']}",
+        json={"password": "correct horse battery"},
+    )
     assert removed.status_code == 204
     after_removal = await post(member, path=path)
 

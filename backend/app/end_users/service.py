@@ -26,6 +26,7 @@ from app.end_users.days import DayTotals, UserTotals, day_bounds, fill_days, mid
 from app.end_users.queries import UserSort
 from app.explorer.trace_sort import SortOrder
 from app.rollups.coverage_reads import CoverageState
+from app.rollups.queries import known_int
 
 RECENT_SESSIONS = 20
 
@@ -46,7 +47,7 @@ def _user_stats(row: Row[Any]) -> UserStats:
         errors=int(row.errors),
         unpriced_calls=int(row.unpriced_calls),
         cost_usd=_cost(row.cost_usd),
-        tokens=int(row.tokens),
+        tokens=known_int(row.tokens),
         first_seen_day=row.first_seen_day,
         last_seen_day=row.last_seen_day,
     )
@@ -72,10 +73,11 @@ async def list_users(
     """Users with activity in the window whose id contains `q` (case-insensitive), `sort` in
     `order` with unknowns last in both directions (keyset).
 
-    `computed_at` is the latest recompute of any row of the window, whatever the page;
-    `pending_traces` counts the window's user traces that started after the latest recompute of
-    their own day (every trace of a day not computed yet), `None` only when there is neither a
-    row nor a trace.
+    The figures include the raw tail: the traces after their own day's latest recompute, up to
+    `RAW_TAIL_MAX` back. `computed_at` is the latest recompute of any row of the window, whatever
+    the page; `pending_traces` counts the window's user traces that are in neither (older than
+    the cap), `None` only when there is neither a row nor a trace, or coverage is unavailable.
+    `live` says the tail was merged and nothing is pending.
     """
     first_day, end_day = day_bounds(window)
     after = decode_value_cursor(cursor) if cursor else None
@@ -98,6 +100,7 @@ async def list_users(
         pending_traces=None
         if coverage.unavailable or (fresh.computed_at is None and pending == 0)
         else pending,
+        live=not coverage.unavailable and pending == 0,
         **coverage.metadata(),
     )
 
@@ -118,7 +121,7 @@ def _stored_day(row: Row[Any]) -> DayTotals:
         unpriced_calls=int(row.unpriced_calls),
         # No call, nothing to price: that day cost nothing rather than an unknown amount.
         cost_usd=Decimal(0) if cost is None and llm_calls == 0 else cost,
-        tokens=int(row.tokens),
+        tokens=0 if row.tokens is None and llm_calls == 0 else known_int(row.tokens),
     )
 
 
@@ -172,9 +175,9 @@ async def user_detail(
     window: TimeWindow,
     environment: str | None = None,
 ) -> UserDetailOut:
-    """The user's totals, a gapless day series and their latest sessions. `wire_id` is the id
-    as the URL carries it (see `unescape_user_id`). 404 when the user has no activity in the
-    window."""
+    """The user's totals, a gapless day series and their latest sessions, with the raw tail as in
+    `list_users`. `wire_id` is the id as the URL carries it (see `unescape_user_id`). 404 when the
+    user has no activity in the window."""
     external_user_id = unescape_user_id(wire_id)
     if not external_user_id:
         raise not_found("No end user with this id has activity in the window.")
@@ -187,6 +190,7 @@ async def user_detail(
     totals = total(stored)
     if totals is None:
         raise not_found("No end user with this id has activity in the window.")
+    fresh = await queries.read_freshness(db, project_id, first_day, end_day, environment)
     sessions = await queries.read_recent_sessions(
         db, project_id, external_user_id, RECENT_SESSIONS, environment
     )
@@ -211,4 +215,5 @@ async def user_detail(
         recent_sessions=[_session(row) for row in sessions],
         window=_stats_window(first_day, end_day),
         computed_at=_computed_at(rows),
+        live=not coverage.unavailable and int(fresh.pending_traces) == 0,
     )

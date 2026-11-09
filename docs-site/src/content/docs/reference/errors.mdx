@@ -75,6 +75,16 @@ Two things behave in a way you might not expect. A resource that exists but that
 | `ORIGIN_NOT_ALLOWED` | 403 | The `Origin` header is missing or not on the allowed list. | Call from the dashboard origin, or use a bearer token. |
 | `NOT_FOUND` | 404 | The resource does not exist, or you cannot see it. | Check the ID and your membership. |
 
+Member removal (including self-leave), organization and project deletion always require a session:
+all tokens get `403 SESSION_REQUIRED` before permission checks. Removing someone else or deleting
+an organization or project also requires account-owner proof. `422 INVALID_PASSWORD` includes an absent
+removal body for a password account; `422 TOTP_CODE_REQUIRED` or `422 INVALID_TOTP_CODE` asks for
+a valid authenticator or recovery code. `403 REAUTH_REQUIRED` means a passwordless account must
+sign in again and retry within 10 minutes. Five failed proofs per user in 15 minutes are allowed
+under each of `member_remove_reauth`, `org_delete_reauth` and `project_delete_reauth`; the sixth is `429 RATE_LIMITED`.
+Self-leave needs no proof. Demo, permission, missing-resource and last-owner refusals, and a wrong
+organization or project slug (`422 CONFIRMATION_MISMATCH`), happen before proof.
+
 ## Conflicts and server errors
 
 | Code | Status | Meaning | What to do |

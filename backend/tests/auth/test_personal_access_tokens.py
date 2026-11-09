@@ -59,7 +59,9 @@ async def row(factory: SessionFactory, token_id: str, column: str) -> Any:
 async def test_creating_a_token_returns_the_secret_in_the_201(browser_factory: Any) -> None:
     ada: Browser = await browser_factory("ada@example.com")
 
-    response = await ada.post(TOKENS, json={"name": "laptop", "scope": "read"})
+    response = await ada.post(
+        TOKENS, json={"name": "laptop", "scope": "read", "password": "correct horse battery"}
+    )
 
     assert response.status_code == 201, response.text
     body = response.json()
@@ -155,6 +157,19 @@ async def test_an_invalid_request_is_422_and_creates_nothing(
     assert response.status_code == 422, response.text
     assert response.json()["code"] == "VALIDATION_ERROR"
     assert (await ada.get(TOKENS)).json() == []
+
+
+async def test_stolen_session_cannot_create_a_token(
+    browser_factory: Any, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    ada = await browser_factory("ada@example.com")
+
+    response = await ada.post(TOKENS, json={"name": "cli", "scope": "read"})
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "INVALID_PASSWORD"
+    async with session_factory() as db:
+        assert await db.scalar(text("SELECT count(*) FROM personal_access_tokens")) == 0
 
 
 async def test_the_demo_account_cannot_create_tokens(client: httpx.AsyncClient) -> None:
@@ -418,11 +433,10 @@ async def test_a_read_token_cannot_write_and_a_write_token_can(
     assert [project["name"] for project in listed.json()] == ["Chatbot", "Second"]
 
 
-async def test_a_read_token_cannot_remove_members_even_to_leave_an_org(
+async def test_no_token_can_remove_members_even_to_leave_an_org(
     browser_factory: Any, bare_client: httpx.AsyncClient
 ) -> None:
-    # Leaving an organization is a DELETE that needs only `org:read`, so the permission class
-    # alone would let a read-only token do it. The method check is what stops it.
+    # Session authentication runs before permission and scope checks, even for self-leave.
     owner: Browser = await browser_factory("owner@example.com")
     member: Browser = await browser_factory("member@example.com")
     workspace = await create_workspace(owner)
@@ -437,15 +451,16 @@ async def test_a_read_token_cannot_remove_members_even_to_leave_an_org(
             f"{members}/{user.user['id']}", headers=bearer(token["token"])
         )
         assert response.status_code == 403, response.text
-        assert response.json()["code"] == "TOKEN_SCOPE"
+        assert response.json()["code"] == "SESSION_REQUIRED"
     assert len((await owner.get(members)).json()) == 2
 
-    # A write token acts as its user, and a member may leave.
+    # A write token is refused too, including when leaving.
     left = await bare_client.delete(
         f"{members}/{member.user['id']}", headers=bearer(member_write["token"])
     )
-    assert left.status_code == 204
-    assert len((await owner.get(members)).json()) == 1
+    assert left.status_code == 403
+    assert left.json()["code"] == "SESSION_REQUIRED"
+    assert len((await owner.get(members)).json()) == 2
 
 
 async def test_a_token_is_limited_by_its_users_role_as_well_as_its_scope(
@@ -489,7 +504,8 @@ async def test_a_write_token_does_the_things_its_user_may_do(
     invite = await bare_client.post(
         f"/api/v1/orgs/{workspace.org_id}/invites", json={"role": "viewer"}, headers=headers
     )
-    assert invite.status_code == 201
+    assert invite.status_code == 403
+    assert invite.json()["code"] == "SESSION_REQUIRED"
 
     # It acted as its user: the key's creator is the token's owner.
     listed = (await owner.get(f"/api/v1/projects/{workspace.project_id}/keys")).json()
@@ -513,7 +529,9 @@ async def test_pat_loses_access_when_membership_removed(
     write = await bare_client.post(f"{org_url}/projects", json={"name": "P2"}, headers=headers)
     assert write.status_code == 201
 
-    removed = await owner.delete(f"{org_url}/members/{member.user['id']}")
+    removed = await owner.delete(
+        f"{org_url}/members/{member.user['id']}", json={"password": "correct horse battery"}
+    )
     assert removed.status_code == 204
 
     # The very next call: nothing is cached, and nothing says the org ever existed.
@@ -540,7 +558,8 @@ async def test_a_token_follows_its_users_role_when_it_changes(
     assert (await bare_client.post(url, json={"name": "P2"}, headers=headers)).status_code == 201
 
     demoted = await owner.patch(
-        f"/api/v1/orgs/{workspace.org_id}/members/{member.user['id']}", json={"role": "viewer"}
+        f"/api/v1/orgs/{workspace.org_id}/members/{member.user['id']}",
+        json={"password": "correct horse battery", "role": "viewer"},
     )
     assert demoted.status_code == 200
 
@@ -796,7 +815,10 @@ async def test_a_token_cannot_accept_an_invite(
     owner: Browser = await browser_factory("owner@example.com")
     invitee: Browser = await browser_factory("invitee@example.com")
     workspace = await create_workspace(owner)
-    invite = await owner.post(f"/api/v1/orgs/{workspace.org_id}/invites", json={"role": "member"})
+    invite = await owner.post(
+        f"/api/v1/orgs/{workspace.org_id}/invites",
+        json={"password": "correct horse battery", "role": "member"},
+    )
     invite_token = invite.json()["url"].split("#token=", 1)[1]
     token = await create_token(invitee, scope="write")
 

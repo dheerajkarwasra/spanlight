@@ -11,6 +11,8 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
+from app.auth.proof_types import Password, TotpCode
+from app.db.models import GatewayKey
 from app.gateway.route_config import ModelName
 
 MAX_ALLOWED_MODELS = 100
@@ -55,6 +57,9 @@ class GatewayKeyCreate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    password: Password | None = None
+    code: TotpCode | None = None
+
     name: KeyName
     route_id: uuid.UUID | None = None
     environment: Environment
@@ -79,6 +84,9 @@ class GatewayKeyUpdate(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
+
+    password: Password | None = None
+    code: TotpCode | None = None
 
     name: KeyName | None = None
     route_id: uuid.UUID | None = None
@@ -105,4 +113,21 @@ class GatewayKeyUpdate(BaseModel):
 
     def changes(self) -> dict[str, Any]:
         """The fields that were sent, with their values."""
-        return {name: getattr(self, name) for name in self.model_fields_set}
+        return {name: getattr(self, name) for name in self.model_fields_set - {"password", "code"}}
+
+
+def widens(key: GatewayKey, changes: dict[str, Any]) -> bool:
+    """Whether spending authority grows; a fault profile only makes a key fail or slow."""
+    for field in ("route_id", "environment"):
+        if field in changes and changes[field] != getattr(key, field):
+            return True
+    for field in ("rpm_limit", "tpm_limit"):
+        previous = getattr(key, field)
+        if field in changes and previous is not None:
+            proposed = changes[field]
+            if proposed is None or proposed > previous:
+                return True
+    models = changes.get("allowed_models")
+    if models is not None and key.allowed_models:
+        return not models or bool(set(models) - set(key.allowed_models))
+    return False

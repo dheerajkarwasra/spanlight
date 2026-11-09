@@ -123,7 +123,11 @@ async def _build_workspace(app: Any, owner: Browser) -> GatewayWorkspace:
     targets = [{"credential_id": openai["id"]}, {"credential_id": anthropic["id"]}]
     config = {"targets": targets, "retry": {}, "fallback": {}}
     route = await _created(owner, f"{gateway}/routes", {"name": "main", "config": config})
-    key = await _created(owner, f"{gateway}/keys", {"name": "tests", "environment": "test"})
+    key = await _created(
+        owner,
+        f"{gateway}/keys",
+        {"name": "tests", "environment": "test", "password": "correct horse battery"},
+    )
     return GatewayWorkspace(
         owner=owner,
         gw=_client(app, {"Authorization": f"Bearer {key['secret']}"}),

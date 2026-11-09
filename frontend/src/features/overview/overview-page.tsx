@@ -1,11 +1,12 @@
 import { ErrorState } from "@/components/error-state";
 import { SourceHistoryChip } from "@/components/freshness-chip";
+import { LiveIndicator } from "@/components/live-indicator";
 import { Card } from "@/components/ui/card";
 import { useMe } from "@/features/auth/queries";
 import { useProjectQuery } from "@/features/shell/project-context";
 import { describeRange } from "@/lib/time-range";
 
-import { EstimatedChip } from "./estimated-chip";
+import { APPROXIMATE_COPY, EstimatedChip } from "./estimated-chip";
 import { FirstRun } from "./first-run";
 import { formatHeroDate, greetingFor, joinEyebrow, shortRangeLabel } from "./hero";
 import { EmptyRangeState } from "./overview-empty-states";
@@ -44,7 +45,16 @@ export function OverviewPage() {
           compact: joinEyebrow([date, shortRangeLabel(range)]),
           trailing: (
             <>
-              {estimated ? <EstimatedChip /> : null}
+              {/* A custom window is not current, so it does not update live: the chip explains
+                  the "≈" there; otherwise the indicator's tooltip does. */}
+              {range.value !== "custom" ? (
+                <LiveIndicator
+                  status={queries.liveStatus}
+                  note={estimated ? APPROXIMATE_COPY : undefined}
+                />
+              ) : estimated ? (
+                <EstimatedChip />
+              ) : null}
               {history ? (
                 <span className="tracking-normal normal-case">
                   <SourceHistoryChip label={history} />

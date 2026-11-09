@@ -1,4 +1,4 @@
-"""Replaying spans: a changed span replaces, a replay moves only `ingested_at`, prices follow.
+"""Replaying spans: a changed span replaces, an identical replay changes no columns, prices follow.
 
 Ingestion has no idempotency key; it needs none, because spans upsert on their natural key
 `(project_id, trace_id, span_id)` and every trace total is recomputed from the stored spans.
@@ -98,7 +98,7 @@ async def test_replaying_a_changed_span_replaces_not_adds(
     assert (stored.input_tokens, stored.status.value) == (400, "error")
 
 
-async def test_only_ingested_at_changes_on_replay(
+async def test_no_columns_change_on_identical_replay(
     client: httpx.AsyncClient,
     workspace: Workspace,
     session_factory: async_sessionmaker[AsyncSession],
@@ -116,7 +116,7 @@ async def test_only_ingested_at_changes_on_replay(
     spans_after, traces_after = await _tables(session_factory, workspace.project_id)
 
     assert len(spans_before) == 2
-    assert _changed_columns(spans_before, spans_after) == {"ingested_at"}
+    assert _changed_columns(spans_before, spans_after) == set()
     assert _changed_columns(traces_before, traces_after) == set()
 
 

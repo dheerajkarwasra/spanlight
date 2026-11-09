@@ -41,6 +41,7 @@ from app.insights import explain_queries, explain_service, feedback_queries, que
 from app.insights.health_service import project_health
 from app.insights.schemas import InsightStatus, Severity
 from app.insights.service import Actor
+from app.live.cache import cached_answer
 
 logger = structlog.get_logger(__name__)
 
@@ -256,14 +257,19 @@ async def list_detector_runs(
 @router.get("/health", response_model=HealthOut, summary="Score the project's health")
 async def get_health(
     project_id: uuid.UUID,
+    request: Request,
     access: InsightReader,
     db: DbSession,
     window: Window,
     environment: EnvironmentFilter = None,
 ) -> HealthOut:
     """0 to 100 over the window (default the last 24 h); `value` is `null` without LLM calls."""
-    health = await project_health(db, access.require_project().id, window, environment)
-    return health_out(health, window.start, window.end)
+
+    async def compute(_: dict[str, str]) -> HealthOut:
+        health = await project_health(db, access.require_project().id, window, environment)
+        return health_out(health, window.start, window.end)
+
+    return await cached_answer(request, access, compute)
 
 
 def _actor(access: Access, request: Request) -> Actor:

@@ -100,11 +100,13 @@ async def save_stream(
     settings: Settings,
     now: datetime,
     resolver: Resolver | None = None,
-) -> tuple[AuditStream, str | None]:
+) -> tuple[AuditStream, str | None, tuple[str, bool] | None]:
     """Create the org's stream or change its URL and switch; the caller commits.
 
     A new stream starts after the newest event (it streams what happens from now on) and returns
-    its signing secret, the one time it is shown. A new URL clears the failure state. Raises
+    its signing secret, the one time it is shown. Also returns the URL and enabled state seen
+    under the lock (None for setup), so owner notices describe this write. A new URL clears the
+    failure state. Raises
     `UnsafeUrlError` and `CryptoNotConfigured`. The row is locked, so two saves run one at a time.
     """
     await check_webhook_url(
@@ -133,8 +135,9 @@ async def save_stream(
             target_id=org.id,
             metadata={"host": _host(url), "enabled": enabled},
         )
-        return stream, secret
+        return stream, secret, None
 
+    previous = (stream.url, stream.enabled)
     changes: dict[str, Any] = {}
     if url != stream.url:
         changes["host"] = {"from": _host(stream.url), "to": _host(url)}
@@ -156,7 +159,7 @@ async def save_stream(
             target_id=org.id,
             metadata=changes,
         )
-    return stream, None
+    return stream, None, previous
 
 
 async def rotate_secret(
@@ -180,7 +183,7 @@ async def rotate_secret(
     return stream, secret
 
 
-async def delete_stream(db: AsyncSession, org_id: uuid.UUID, actor_id: uuid.UUID) -> None:
+async def delete_stream(db: AsyncSession, org_id: uuid.UUID, actor_id: uuid.UUID) -> str:
     """Stop streaming and forget the endpoint; the caller commits."""
     stream = await db.get(AuditStream, org_id, with_for_update=True)
     if stream is None:
@@ -196,6 +199,8 @@ async def delete_stream(db: AsyncSession, org_id: uuid.UUID, actor_id: uuid.UUID
         target_id=org_id,
         metadata={"host": host},
     )
+
+    return host
 
 
 async def _post(

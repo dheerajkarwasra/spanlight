@@ -10,6 +10,7 @@ import { ErrorState } from "@/components/error-state";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { UnknownValue } from "@/components/unknown-value";
 import { useProjectParams } from "@/features/shell/project-context";
 import { fromPathId, isApiError, type UserDetail } from "@/lib/api";
 import { formatInteger } from "@/lib/format";
@@ -22,6 +23,7 @@ import {
   lastSeenLabel,
   lastSeenPhrase,
   NO_USER_PRICE,
+  NO_USER_USAGE,
   toDailyPoints,
   windowLabel,
 } from "./user-format";
@@ -147,9 +149,9 @@ function UserHeader({ detail, userId }: { detail: UserDetail; userId: string }) 
           First seen in window: {formatUtcDay(user.first_seen_day)} · last seen{" "}
           {lastSeenPhrase(user.last_seen_day)} · window {windowLabel(detail.window)} (UTC days)
         </p>
-        {/* An existing user's detail always carries stored figures. */}
         <ComputedAtChip
           value={detail.computed_at}
+          live={detail.live}
           history={sourceHistoryLabel(detail.aggregate_status, true)}
         />
       </div>
@@ -169,7 +171,9 @@ function UserHeader({ detail, userId }: { detail: UserDetail; userId: string }) 
             unknownTone="on-ink"
           />
         </Stat>
-        <Stat label="Tokens">{formatInteger(user.tokens)}</Stat>
+        <Stat label="Tokens">
+          {formatInteger(user.tokens) ?? <UnknownValue reason={NO_USER_USAGE} tone="on-ink" />}
+        </Stat>
         <Stat label="Last seen">{lastSeenLabel(user.last_seen_day)}</Stat>
       </dl>
     </header>

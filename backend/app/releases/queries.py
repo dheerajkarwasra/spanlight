@@ -59,15 +59,16 @@ _STATS = """
     )
     SELECT r.release, r.first_seen_at, r.last_seen_at, r.traces,
            count(*) FILTER (WHERE s.kind = 'llm')                                AS llm_calls,
-           count(*) FILTER (WHERE s.kind = 'llm' AND s.cost_usd IS NULL)         AS unpriced_calls,
+           count(*) FILTER (WHERE s.kind = 'llm' AND s.cost_usd IS NULL
+                             AND NOT s.usage_rollup)                     AS unpriced_calls,
            count(*) FILTER (WHERE s.kind = 'llm' AND s.status = 'error')         AS llm_errors,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY s.duration_ms)
                FILTER (WHERE s.kind = 'llm')                                     AS p50_ms,
            percentile_cont(0.95) WITHIN GROUP (ORDER BY s.duration_ms)
                FILTER (WHERE s.kind = 'llm')                                     AS p95_ms,
-           sum(s.cost_usd)                                                       AS cost_usd,
-           coalesce(sum(s.input_tokens), 0)                                      AS input_tokens,
-           coalesce(sum(s.output_tokens), 0)                                     AS output_tokens
+           sum(s.cost_usd) FILTER (WHERE NOT s.usage_rollup)                     AS cost_usd,
+           sum(s.input_tokens) FILTER (WHERE NOT s.usage_rollup)                 AS input_tokens,
+           sum(s.output_tokens) FILTER (WHERE NOT s.usage_rollup)                AS output_tokens
     FROM seen AS r
     JOIN scoped AS c ON c.release = r.release
     LEFT JOIN spans AS s

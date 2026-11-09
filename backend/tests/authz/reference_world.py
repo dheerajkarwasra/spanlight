@@ -57,7 +57,11 @@ async def create_key(browser: Browser, project_id: str, credential_id: str) -> s
     gateway = f"/api/v1/projects/{project_id}/gateway"
     route = {"name": "base", "config": route_config(credential_id)}
     await created(browser, f"{gateway}/routes", route)
-    return await created(browser, f"{gateway}/keys", {"name": "key", "environment": "test"})
+    return await created(
+        browser,
+        f"{gateway}/keys",
+        {"name": "key", "environment": "test", "password": "correct horse battery"},
+    )
 
 
 async def build_world(a: Browser, b: Browser) -> World:

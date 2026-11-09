@@ -23,6 +23,7 @@ from tests.helpers import Browser, bearer, create_token, expire_token
 from tests.key_readable import KEY_READABLE
 from tests.keys.conftest import World
 from tests.keys.test_key_route_inventory import (
+    LIVE_ROUTE,
     SKIPPED_METHODS,
     _call,
     _declared_routes,
@@ -36,26 +37,18 @@ pytestmark = pytest.mark.usefixtures("unthrottled_reads", "release_and_user_data
 Route = tuple[str, str]
 
 # Guarded routes on which a read token is refused (403 `TOKEN_SCOPE`) even for an owner: their
-# permission is classed `write`, or they change something under a `read` permission (leaving an
-# organization needs only `org:read`, but it is a DELETE). Adding a route means saying here which
+# permission is classed `write`, or their method is not GET, HEAD or OPTIONS. Member removal and
+# self-leave are session-only. Adding a route means saying here which
 # kind it is: a decision for review, not for a refactor. Not all of these mutate: listing invites
 # needs `member:manage`, which is a write permission.
 WRITE_GUARDED: set[Route] = {
     ("PATCH", "/api/v1/orgs/{org_id}"),
-    ("DELETE", "/api/v1/orgs/{org_id}"),
     # The audit stream: where the organization's audit trail is sent.
-    ("PUT", "/api/v1/orgs/{org_id}/audit/stream"),
-    ("DELETE", "/api/v1/orgs/{org_id}/audit/stream"),
-    ("POST", "/api/v1/orgs/{org_id}/audit/stream/rotate-secret"),
     ("POST", "/api/v1/orgs/{org_id}/audit/stream/test"),
-    ("PATCH", "/api/v1/orgs/{org_id}/members/{user_id}"),
-    ("DELETE", "/api/v1/orgs/{org_id}/members/{user_id}"),
     ("GET", "/api/v1/orgs/{org_id}/invites"),
-    ("POST", "/api/v1/orgs/{org_id}/invites"),
     ("DELETE", "/api/v1/orgs/{org_id}/invites/{invite_id}"),
     ("POST", "/api/v1/orgs/{org_id}/projects"),
     ("PATCH", "/api/v1/projects/{project_id}"),
-    ("DELETE", "/api/v1/projects/{project_id}"),
     ("POST", "/api/v1/projects/{project_id}/keys"),
     ("DELETE", "/api/v1/projects/{project_id}/keys/{key_id}"),
     # Phases 2-5 and Bets 1-5: gateway, alerts, budgets, the Doctor, prompts, scores, datasets,
@@ -128,7 +121,6 @@ WRITE_GUARDED: set[Route] = {
     ("POST", "/api/v1/projects/{project_id}/exports"),
     ("POST", "/api/v1/projects/{project_id}/gateway/cache/purge"),
     ("POST", "/api/v1/projects/{project_id}/gateway/fault-profiles"),
-    ("POST", "/api/v1/projects/{project_id}/gateway/keys"),
     ("POST", "/api/v1/projects/{project_id}/gateway/routes"),
     ("POST", "/api/v1/projects/{project_id}/gateway/routes/{route_id}/default"),
     ("POST", "/api/v1/projects/{project_id}/gateway/routes/{route_id}/revert"),
@@ -214,6 +206,14 @@ def test_every_route_has_exactly_one_kind() -> None:
     assert KINDS["guarded"] >= WRITE_GUARDED
     assert KINDS["guarded"] - WRITE_GUARDED >= KEY_READABLE
     # A broken walk must not pass by finding nothing.
+    assert KINDS["session"] >= {
+        ("DELETE", "/api/v1/projects/{project_id}"),
+        ("DELETE", "/api/v1/orgs/{org_id}"),
+        ("DELETE", "/api/v1/orgs/{org_id}/members/{user_id}"),
+        ("PUT", "/api/v1/orgs/{org_id}/audit/stream"),
+        ("DELETE", "/api/v1/orgs/{org_id}/audit/stream"),
+        ("POST", "/api/v1/orgs/{org_id}/audit/stream/rotate-secret"),
+    }
     assert len(KINDS["session"]) >= 10
     assert len(KINDS["anonymous"]) >= 10
     assert len(KINDS["guarded"]) >= 20
@@ -290,6 +290,13 @@ async def test_a_token_reaches_every_guarded_route_as_its_user_within_its_scope(
         stranger = await _call(bare_client, method, own, **bearer(tokens.stranger))
         stranger_write = await _call(bare_client, method, sibling, **bearer(tokens.stranger))
 
+        if (method, template) == LIVE_ROUTE:
+            # The dashboard's stream refuses every bearer with its own code, member or not.
+            refused = (403, "LIVE_SESSION_ONLY")
+            responses = (read_own, write_own, stranger, stranger_write)
+            if any(_outcome(response) != refused for response in responses):
+                mismatches.append(f"{method} {template}: {[_outcome(r) for r in responses]}")
+            continue
         checks = {
             "read token": _outcome(read_own)[1] == "TOKEN_SCOPE"
             if write_only

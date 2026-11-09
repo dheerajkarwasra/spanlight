@@ -63,6 +63,7 @@ from app.email.templates import render_email_change_confirm, render_email_change
 from app.notifications import NotificationKind, enqueue
 from app.services.audit import record_user_audit_in_each_org
 from app.services.demo import is_demo_user
+from app.services.key_revocation import strip_read_keys
 from app.services.sessions import revoke_all_sessions
 
 logger = structlog.get_logger(__name__)
@@ -282,6 +283,7 @@ async def confirm_email_change(body: EmailChangeConfirmIn, request: Request, db:
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_account(
     body: AccountDeleteIn,
+    request: Request,
     auth: CurrentSession,
     db: DbSession,
     settings: SettingsDep,
@@ -367,10 +369,25 @@ async def delete_account(
             },
         )
 
+    prefixes: list[str] = []
+    for org_id, member_id, _ in locked:
+        if member_id == user.id:
+            stripped = await strip_read_keys(
+                db,
+                org_id=org_id,
+                user_id=user.id,
+                actor_user_id=user.id,
+                ip=client_ip(request),
+                reason="account_delete",
+            )
+            prefixes.extend(stripped.prefixes)
+
     # Before the row goes, so each event still names the actor and their address.
     await record_user_audit_in_each_org(db, user_id=user.id, action=AuditAction.USER_DELETE)
     await db.execute(delete(User).where(User.id == user.id))
     await db.commit()
+    for prefix in prefixes:
+        request.app.state.key_cache.evict(prefix)
     # After the commit, so a rolled-back delete is never reported. Ids only.
     logger.info("account_deleted", user_id=str(user.id))
     response = Response(status_code=status.HTTP_204_NO_CONTENT)

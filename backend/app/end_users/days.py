@@ -28,7 +28,7 @@ class DayTotals:
     errors: int
     unpriced_calls: int
     cost_usd: Decimal | None
-    tokens: int
+    tokens: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,7 +40,7 @@ class UserTotals:
     errors: int
     unpriced_calls: int
     cost_usd: Decimal | None
-    tokens: int
+    tokens: int | None
     first_seen_day: date
     last_seen_day: date
 
@@ -88,21 +88,23 @@ def total(rows: Sequence[DayTotals]) -> UserTotals | None:
     """The rows summed, or `None` when there are none. Rows with no traces are ignored.
 
     The cost is the sum of the days that have one: `None` when calls were made and none was ever
-    priced, a lower bound when only some were.
+    priced, a lower bound when only some were. The tokens follow the same rule.
     """
     seen = [row for row in rows if row.traces > 0]
     if not seen:
         return None
-    priced = [row.cost_usd for row in seen if row.cost_usd is not None]
+    # A day without calls reads cost 0 but priced nothing, so it cannot make a total known either.
+    priced = [row.cost_usd for row in seen if row.cost_usd is not None and row.llm_calls > 0]
     calls = sum(row.llm_calls for row in seen)
     cost = Decimal(sum(priced)) if priced else (Decimal(0) if calls == 0 else None)
+    reported = [row.tokens for row in seen if row.tokens is not None and row.llm_calls > 0]
     return UserTotals(
         traces=sum(row.traces for row in seen),
         llm_calls=calls,
         errors=sum(row.errors for row in seen),
         unpriced_calls=sum(row.unpriced_calls for row in seen),
         cost_usd=cost,
-        tokens=sum(row.tokens for row in seen),
+        tokens=sum(reported) if reported else (0 if calls == 0 else None),
         first_seen_day=min(row.day for row in seen),
         last_seen_day=max(row.day for row in seen),
     )

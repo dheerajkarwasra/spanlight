@@ -93,7 +93,7 @@ def ensure_base(api: Api, state: State) -> None:
 
     pat = state.get("pat")
     if not pat or api.bearer_status("/auth/me", pat) != 200:
-        body = {"name": "pilot", "scope": "write"}
+        body = {"name": "pilot", "scope": "write", "password": state.get("password")}
         state.set("pat", api.expect(api.request("POST", "/auth/tokens", json=body), 201)["token"])
 
 

@@ -5,12 +5,15 @@ import { toast } from "sonner";
 
 import { Callout } from "@/components/callout";
 import { DialogHeading } from "@/components/dialog-heading";
+import { DisabledReason } from "@/components/disabled-reason";
 import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { errorMessage, type ProviderKind } from "@/lib/api";
+import { MemberReauthFields } from "@/features/settings/member-reauth";
+import { useMemberReauth } from "@/features/settings/use-member-reauth";
+import { errorMessage, isApiError, type ProviderKind } from "@/lib/api";
 import { applyMappedFieldErrors } from "@/lib/form-errors";
 
 import {
@@ -30,6 +33,17 @@ import {
 import { NOT_CONFIGURED_COPY, isNameTaken, isNotConfigured } from "./credential-model";
 import { ApiKeyInput } from "./api-key-input";
 import { useCreateCredential } from "./credentials-queries";
+
+const PROOF_REFUSALS = new Set([
+  "INVALID_PASSWORD",
+  "TOTP_CODE_REQUIRED",
+  "INVALID_TOTP_CODE",
+  "REAUTH_REQUIRED",
+]);
+
+function isProofRefusal(error: unknown): boolean {
+  return isApiError(error) && PROOF_REFUSALS.has(error.code);
+}
 
 const PROVIDER_OPTIONS = (Object.keys(PROVIDER_LABELS) as ProviderKind[]).map((value) => ({
   value,
@@ -56,6 +70,8 @@ export function AddCredentialForm({
   onNotConfigured,
 }: AddCredentialFormProps) {
   const createCredential = useCreateCredential();
+  const confirmation = useMemberReauth();
+  const { reauth, formError } = confirmation;
   const pending = createCredential.pending;
   const [revealed, setRevealed] = useState(false);
 
@@ -71,19 +87,27 @@ export function AddCredentialForm({
     defaultValues: { name: "", provider: "openai", apiKey: "", baseUrl: "" },
   });
   const provider = useWatch({ control: form.control, name: "provider" });
+  const needsProof = needsBaseUrl(provider);
   const notConfigured = form.formState.errors.root?.type === "not-configured";
 
   const onSubmit = form.handleSubmit(async (values) => {
-    const result = await createCredential.run(toCredentialCreate(values));
+    if (pending) return;
+    const proof = needsProof ? confirmation.proof(confirmation.form.getValues()) : {};
+    if (!proof) return;
+    const result = await createCredential.run({ ...toCredentialCreate(values), ...proof });
     setRevealed(false);
     if (result.ok) {
+      confirmation.reset();
       form.reset();
       toast.success(`Added credential "${result.value.name}".`);
       onDone();
       return;
     }
-    // The typed key stays out of the page once it has been sent, whatever the answer.
-    form.resetField("apiKey");
+    // The typed key stays out of the page once it has been sent, unless only the proof was
+    // refused: nothing was stored, and a password typo should not cost the key.
+    if (!isProofRefusal(result.error)) {
+      form.resetField("apiKey");
+    }
     if (isNotConfigured(result.error)) {
       form.setError("root", { type: "not-configured" });
       onNotConfigured();
@@ -92,9 +116,15 @@ export function AddCredentialForm({
     } else if (
       !applyMappedFieldErrors(result.error, form.setError, CREDENTIAL_FIELD_OF_API_FIELD)
     ) {
-      toast.error(errorMessage(result.error));
+      confirmation.onError(result.error);
     }
   });
+
+  const createButton = (
+    <Button type="submit" variant="primary" loading={pending} disabled={needsProof && reauth}>
+      Add credential
+    </Button>
+  );
 
   return (
     <form onSubmit={onSubmit} noValidate className="grid gap-[22px]">
@@ -131,6 +161,7 @@ export function AddCredentialForm({
           value={provider}
           options={PROVIDER_OPTIONS}
           onValueChange={(next) => {
+            confirmation.reset();
             form.setValue("provider", next);
             form.clearErrors("baseUrl");
           }}
@@ -165,13 +196,37 @@ export function AddCredentialForm({
           />
         </FormField>
       ) : null}
+      <p aria-live="polite" className="empty:sr-only">
+        {needsProof ? (
+          <>
+            <span className="text-sm font-semibold text-foreground">Confirm it's you.</span>
+            <span className="text-xs text-muted-foreground">
+              {" Prompts and completions on routes using this credential go to this host."}
+            </span>
+          </>
+        ) : null}
+      </p>
+      {needsProof ? (
+        <MemberReauthFields
+          confirmation={confirmation}
+          pending={pending}
+          action="Adding a credential with its own base URL"
+        />
+      ) : null}
+      {formError ? (
+        <Callout tone="danger" role="alert">
+          {formError}
+        </Callout>
+      ) : null}
       <DialogFooter className="flex-row justify-end gap-2.5 max-sm:[&>*]:flex-1">
         <DialogClose asChild>
           <Button disabled={pending}>Cancel</Button>
         </DialogClose>
-        <Button type="submit" variant="primary" loading={pending}>
-          Add credential
-        </Button>
+        {needsProof && reauth ? (
+          <DisabledReason reason="Sign in again first.">{createButton}</DisabledReason>
+        ) : (
+          createButton
+        )}
       </DialogFooter>
     </form>
   );

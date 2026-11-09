@@ -78,6 +78,18 @@ _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
     ),
     # `x-api-key` header values, as a header line or in JSON text.
     (re.compile(r"(?i)x-api-key[\"']?\s*[:=]\s*[\"']?[A-Za-z0-9._~+/=\-]{8,}"), ("x-ap",)),
+    # Basic credentials, labelled: a bare `basic` followed by a word is ordinary prose.
+    (
+        re.compile(r"(?i)authorization[\"']?\s*[:=]\s*[\"']?basic\s+[A-Za-z0-9+/=]+"),
+        ("uthor",),
+    ),
+)
+
+# JSON keys that name a credential header or setting, alone or at the end of a dotted or dashed
+# name (OTel records headers as `http.request.header.<name>`): their string values are replaced
+# whole, since the key and the value are separate strings no text pattern sees together.
+_CREDENTIAL_KEY = re.compile(
+    r"(?:^|[^a-z0-9])(?:authorization|x-api-key|aws_secret_access_key)$", re.IGNORECASE
 )
 
 # With whether each pattern is case-insensitive, worked out once: reading the flag per call
@@ -219,6 +231,25 @@ def redact_text(value: str, *, contacts: bool = False) -> str:
     return _DIGIT_RUN.sub(_redact_cards, value)
 
 
+def is_credential_key(key: str) -> bool:
+    """Whether a JSON key names a credential, so its whole value is one."""
+    return _CREDENTIAL_KEY.search(key) is not None
+
+
+def _redact_credential(value: Any, depth: int) -> Any:
+    """The value of a credential key, whatever its shape (a header can repeat, as a list, or come
+    wrapped in an object): every string and number in it replaced."""
+    if depth >= MAX_DEPTH:
+        return DEPTH_MARKER
+    if isinstance(value, dict):
+        return {key: _redact_credential(item, depth + 1) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_credential(item, depth + 1) for item in value]
+    if isinstance(value, bool) or value is None or value == "":
+        return value
+    return REDACTED if isinstance(value, (str, int, float)) else value
+
+
 def redact_json(value: Any, *, depth: int = 0, contacts: bool = False) -> Any:
     """Return a copy of a JSON-compatible value with secrets in strings replaced."""
     if isinstance(value, str):
@@ -227,9 +258,9 @@ def redact_json(value: Any, *, depth: int = 0, contacts: bool = False) -> Any:
         return DEPTH_MARKER
     if isinstance(value, dict):
         return {
-            redact_text(str(key), contacts=contacts): redact_json(
-                item, depth=depth + 1, contacts=contacts
-            )
+            redact_text(str(key), contacts=contacts): _redact_credential(item, depth + 1)
+            if is_credential_key(str(key))
+            else redact_json(item, depth=depth + 1, contacts=contacts)
             for key, item in value.items()
         }
     if isinstance(value, list):
