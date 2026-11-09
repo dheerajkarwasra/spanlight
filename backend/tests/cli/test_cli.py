@@ -2,6 +2,7 @@
 
 from collections.abc import Iterator
 
+import click
 import psycopg
 import pytest
 from typer.testing import CliRunner
@@ -265,7 +266,8 @@ def test_reset_2fa_keeps_sessions_and_the_password(
 def test_aggregate_activation_requires_explicit_drain_acknowledgement(runner: CliRunner) -> None:
     result = runner.invoke(cli.app, ["activate-aggregate-coverage"])
     assert result.exit_code == 2
-    assert "--writers-drained" in result.output
+    # Rich forces colour under GITHUB_ACTIONS, and its styling splits the option name.
+    assert "--writers-drained" in click.unstyle(result.output)
 
 
 @pytest.mark.parametrize(
