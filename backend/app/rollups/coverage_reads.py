@@ -98,7 +98,9 @@ async def read_covered_groups(
                 CAST(:coverage_starts AS timestamptz[]),
                 CAST(:coverage_ends AS timestamptz[])
             ) AS b(grp, start_at, end_at)
-        ), aggregate_coverage AS (
+        ), aggregate_coverage AS MATERIALIZED (
+            -- Materialized: once per group. Inlined, the planner ran these subqueries once per
+            -- row of the wrapped statement (673 dirty-hour scans for a 30-day overview).
             SELECT b.grp,
                    coalesce((SELECT b.start_at >= p.aggregate_history_unverified_before
                             FROM projects p WHERE p.id = :coverage_project), false)
