@@ -296,6 +296,29 @@ describe("the traces table", () => {
       expect(router.state.location.pathname).toMatch(/\/traces\/t1$/);
     });
   });
+
+  it("fetches the trace the pointer rests on, and not one it only crossed", async () => {
+    mockTraces([trace(1), trace(2)]);
+    const read = vi.spyOn(projectsApi, "trace").mockReturnValue(new Promise(() => undefined));
+    renderApp(TRACES_URL);
+    const user = userEvent.setup();
+
+    const table = await loadedTable();
+    await user.hover(within(table).getByText("trace-1"));
+    await user.hover(within(table).getByText("trace-2"));
+    await waitFor(() => {
+      expect(read).toHaveBeenCalledWith(PROJECT_ID, "t2", expect.anything());
+    });
+    expect(read).toHaveBeenCalledTimes(1);
+
+    // Moving on aborts the fetch nothing is showing.
+    const signal = read.mock.calls[0]?.[2];
+    expect(signal?.aborted).toBe(false);
+    await user.hover(within(table).getByText("trace-1"));
+    await waitFor(() => {
+      expect(signal?.aborted).toBe(true);
+    });
+  });
 });
 
 describe("the phone tiles", () => {

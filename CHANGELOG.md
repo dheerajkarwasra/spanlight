@@ -79,6 +79,7 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 ### Changed
 
+- **A trace opens without a wait.** Resting the mouse on a row of the trace list for a tenth of a second fetches that trace, so the click that follows shows it at once; an open peek also fetches the traces `j` and `k` step to. A trace fetched in the last minute is not fetched again, and nothing is fetched ahead for a browser that asks to save data.
 - **The errors-only trace list is fast on healthy projects.** Migration 1047 adds a small index of the traces that have errors, so the trace list, its sorts and its histogram filtered to errors read only those traces instead of the whole window (about 80 ms to 1 ms over 30 days of 3 million traces with 300 errors). The index is built concurrently and does not block ingestion.
 - **The job queue table is vacuumed sooner.** Migration 1046 sets `jobs` to be vacuumed and analyzed at 2 % dead rows instead of 20 %, so job claims read fewer dead index entries. It rewrites nothing and takes no lock that blocks the worker.
 - **A new landing hero.** The homepage leads with "Understand the cost. Find the cause.", a **Start free** button to sign up (also in the header), **Try the live demo** and a **Self-host Spanlight** link, and a short muted clip of real demo traces in place of the drawn trace. The clip plays on its own unless the visitor prefers reduced motion, and has a play and pause button.

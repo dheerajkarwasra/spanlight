@@ -16,7 +16,7 @@ import { useProjectParams } from "@/features/shell/project-context";
 import { rememberOpenedTrace, useTraceHistoryScope } from "./last-traces-search";
 import { stepPeek } from "./peek-nav";
 import { PeekBody, StepButton } from "./peek-parts";
-import { useTraceQuery } from "./trace-queries";
+import { useTracePrefetch, useTraceQuery } from "./trace-queries";
 import type { PeekSelection } from "./trace-view";
 import { traceRowLink, type Peek } from "./use-peek";
 
@@ -63,6 +63,17 @@ function PeekContent({ peek, peekId }: { peek: Peek; peekId: string }) {
     rememberOpenedTrace(peekId, historyScope);
     traceRowLink(peekId)?.scrollIntoView({ block: "nearest" });
   }, [peekId, historyScope]);
+
+  // Once this trace is shown, fetch the ones j and k step to, so stepping does not wait.
+  const prefetch = useTracePrefetch();
+  const shown = traceQuery.isSuccess;
+  const next = index < 0 ? undefined : ids[index + 1];
+  const previous = index > 0 ? ids[index - 1] : undefined;
+  useEffect(() => {
+    if (!shown) return;
+    prefetch(next, true);
+    prefetch(previous, true);
+  }, [shown, next, previous, prefetch]);
 
   // On the sheet only (WCAG 2.1.4): the keys work while focus is inside it, never page-wide.
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {

@@ -27,11 +27,12 @@ interface DataTableBodyProps<Row> {
   density: Density;
   rowState?: (row: Row) => "selected" | undefined;
   onRowClick?: (row: Row, event: MouseEvent<HTMLDivElement>) => void;
+  onRowHover?: (row: Row | null) => void;
   rowHref?: (row: Row) => LinkProps;
 }
 
 export function DataTableBody<Row>(props: DataTableBodyProps<Row>) {
-  const { rows, rowKey, onRowClick, rowHref } = props;
+  const { rows, rowKey, onRowClick, onRowHover, rowHref } = props;
   const navigate = useNavigate();
   const virtual = rows.length > VIRTUALIZE_ROWS;
   const stride = ROW_PX[props.density];
@@ -124,6 +125,7 @@ export function DataTableBody<Row>(props: DataTableBodyProps<Row>) {
             onClick={(event) => {
               clickRow(event, row);
             }}
+            onHover={onRowHover && ((over) => onRowHover(over ? row : null))}
           />
         );
       })}

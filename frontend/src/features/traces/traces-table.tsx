@@ -8,6 +8,7 @@ import type { TraceSummary } from "@/lib/api";
 
 import { retryCostColumn } from "./retry-format";
 import { TRACE_SORTS, type TraceFilters } from "./search";
+import { useTracePrefetch } from "./trace-queries";
 import { traceColumns } from "./traces-columns";
 import type { TraceSelection } from "./use-trace-selection";
 
@@ -44,6 +45,7 @@ export function TracesTable({
   const { orgId, projectId } = useProjectParams();
   const promotedKeys = useProjectQuery().data?.promoted_metadata_keys ?? NO_KEYS;
   const scoreTypeOf = useScoreTypeOf();
+  const prefetch = useTracePrefetch();
   const columns = traceColumns({
     orgId,
     projectId,
@@ -76,6 +78,9 @@ export function TracesTable({
       rows={traces}
       rowKey={(trace) => trace.trace_id}
       onRowClick={openTrace}
+      onRowHover={(trace) => {
+        prefetch(trace?.trace_id);
+      }}
       rowState={(trace) =>
         trace.trace_id === selectedTraceId || selection?.isSelected(trace.trace_id)
           ? "selected"

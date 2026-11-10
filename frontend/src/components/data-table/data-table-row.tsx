@@ -126,6 +126,8 @@ interface BodyRowProps<Row> {
   clickable: boolean;
   style?: CSSProperties;
   onClick: (event: MouseEvent<HTMLDivElement>) => void;
+  /** Mouse only: touch and pen have no resting pointer to read intent from. */
+  onHover?: (over: boolean) => void;
 }
 
 export function BodyRow<Row>(props: BodyRowProps<Row>) {
@@ -138,6 +140,10 @@ export function BodyRow<Row>(props: BodyRowProps<Row>) {
       data-density={props.density}
       style={{ ...props.style, gridTemplateColumns: layout.template }}
       onClick={props.onClick}
+      onPointerEnter={(event) => {
+        if (event.pointerType === "mouse") props.onHover?.(true);
+      }}
+      onPointerLeave={() => props.onHover?.(false)}
       className={cn(
         "group/row grid min-w-min border-b border-border text-foreground transition-colors",
         ROW_CLASS[props.density],

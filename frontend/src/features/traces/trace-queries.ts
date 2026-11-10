@@ -1,4 +1,11 @@
-import { keepPreviousData, useInfiniteQuery, useQueries, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { useCallback, useEffect, useRef } from "react";
 
 import { useProjectInsights, type InsightQuery } from "@/features/doctor";
 import { useProjectFilters, useProjectParams } from "@/features/shell/project-context";
@@ -212,12 +219,67 @@ export function useTraceComparisonQuery(a: string | undefined, b: string | undef
 /** One trace with all of its spans. Trace data rarely changes once ingested. */
 export function useTraceQuery(traceId: string, options: { enabled?: boolean } = {}) {
   const { projectId } = useProjectParams();
-  return useQuery({
+  return useQuery({ ...traceQuery(projectId, traceId), enabled: options.enabled ?? true });
+}
+
+function traceQuery(projectId: string, traceId: string) {
+  return {
     queryKey: queryKeys.project(projectId).trace(traceId),
-    queryFn: ({ signal }) => projectsApi.trace(projectId, traceId, signal),
+    queryFn: ({ signal }: { signal: AbortSignal }) => projectsApi.trace(projectId, traceId, signal),
     staleTime: 60_000,
-    enabled: options.enabled ?? true,
-  });
+  };
+}
+
+/** How long the pointer rests on a row before its trace is fetched: a sweep across rows is not intent. */
+export const PREFETCH_REST_MS = 100;
+
+/**
+ * Warms `useTraceQuery`'s cache so a trace opens without a wait. The returned function takes the
+ * trace the pointer rests on (fetched after `PREFETCH_REST_MS`, unless it left first) or `null`;
+ * `now` fetches at once (the peek's neighbours). A trace still fresh in the cache is not fetched
+ * again, a rest's fetch is aborted when the pointer moves on with nothing showing that trace, a
+ * failure is left for the real read to report, and nothing is fetched for a viewer who
+ * asked the browser to save data: a trace's detail can be megabytes.
+ */
+export function useTracePrefetch() {
+  const { projectId } = useProjectParams();
+  const queryClient = useQueryClient();
+  const timer = useRef<number | undefined>(undefined);
+  /** The trace a rest began fetching: dropped if the pointer moves on before anything shows it. */
+  const rested = useRef<readonly unknown[] | undefined>(undefined);
+  // Only the timer: a click unmounts the list before the trace page reads the fetch it started.
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  return useCallback(
+    (traceId: string | null | undefined, now = false) => {
+      if (!now) {
+        window.clearTimeout(timer.current);
+        const left = rested.current;
+        rested.current = undefined;
+        if (left !== undefined) {
+          void queryClient.cancelQueries({
+            queryKey: left,
+            exact: true,
+            predicate: (query) => query.getObserversCount() === 0,
+          });
+        }
+      }
+      if (traceId == null || savesData()) return;
+      const query = traceQuery(projectId, traceId);
+      const fetch = () => {
+        if (!now) rested.current = query.queryKey;
+        // A failure is the real read's to report.
+        queryClient.query(query).catch(() => undefined);
+      };
+      if (now) fetch();
+      else timer.current = window.setTimeout(fetch, PREFETCH_REST_MS);
+    },
+    [projectId, queryClient],
+  );
+}
+
+function savesData(): boolean {
+  return (navigator as { connection?: { saveData?: boolean } }).connection?.saveData === true;
 }
 
 /** Findings that still need a person; resolved and muted ones are not a reason to look. */

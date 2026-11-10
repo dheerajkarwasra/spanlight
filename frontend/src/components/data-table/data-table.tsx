@@ -43,6 +43,8 @@ export interface DataTableProps<Row> {
   /** Where a plain row click goes when there is no `onRowClick`. */
   rowHref?: (row: Row) => LinkProps;
   rowState?: (row: Row) => "selected" | undefined;
+  /** The row the mouse pointer rests on, `null` when it leaves: for warming what a click opens. */
+  onRowHover?: (row: Row | null) => void;
   sort?: SortState & { onChange: (key: string, order: SortOrder) => void };
   footer?: ReactNode;
   empty: ReactNode;
@@ -158,6 +160,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
               density={prefs.density}
               rowState={props.rowState}
               onRowClick={props.onRowClick}
+              onRowHover={props.onRowHover}
               rowHref={props.rowHref}
             />
           )}
