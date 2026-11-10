@@ -79,6 +79,7 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 ### Changed
 
+- **The errors-only trace list is fast on healthy projects.** Migration 1047 adds a small index of the traces that have errors, so the trace list, its sorts and its histogram filtered to errors read only those traces instead of the whole window (about 80 ms to 1 ms over 30 days of 3 million traces with 300 errors). The index is built concurrently and does not block ingestion.
 - **The job queue table is vacuumed sooner.** Migration 1046 sets `jobs` to be vacuumed and analyzed at 2 % dead rows instead of 20 %, so job claims read fewer dead index entries. It rewrites nothing and takes no lock that blocks the worker.
 - **A new landing hero.** The homepage leads with "Understand the cost. Find the cause.", a **Start free** button to sign up (also in the header), **Try the live demo** and a **Self-host Spanlight** link, and a short muted clip of real demo traces in place of the drawn trace. The clip plays on its own unless the visitor prefers reduced motion, and has a play and pause button.
 - **A new project's pages fill in about a minute.** When `GET /api/v1/projects/{project_id}/onboarding` first finds traces, it queues one run each of the hourly rollup, the daily cost rollup and, when enabled, the per-user stats and attribution refreshes, 20 seconds later, instead of leaving the Users, attribution and daily cost pages empty until the next 15-minute cycle. Each job is queued once per project.

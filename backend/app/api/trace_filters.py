@@ -6,7 +6,7 @@ The list and the histogram both take it, so a filter added to one reaches the ot
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Annotated, Literal
 
@@ -65,6 +65,11 @@ class TraceListFilters:
         ),
     ] = None
 
+    @property
+    def environment_only(self) -> bool:
+        """No filter but, at most, the environment: what the hourly trace rollups can answer."""
+        return replace(self, environment=None) == _NO_FILTERS
+
     def __post_init__(self) -> None:
         check_score_filters(self.score_name, self.score_min, self.score_max, self.score_value)
         check_metadata_filter(self.metadata_key, self.metadata_value)
@@ -118,4 +123,5 @@ class TraceListFilters:
             raise
 
 
+_NO_FILTERS = TraceListFilters()
 TraceFilters = Annotated[TraceListFilters, Depends()]

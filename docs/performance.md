@@ -190,7 +190,42 @@ The trace list sorts by `duration`, `cost`, `tokens` and `retry_cost_usd` in eit
 
 Over 24 hours, the window the dashboard opens with and the one `traces.js` asks for, a sorted request takes about 1.5 to 2 times a `started_at` request at the median, the existing `retry_cost_usd` sort included; single p95 values reached 2.8 times on this machine. Over 30 days a sorted request takes three to five times a `started_at` request, which reads one page from the index whatever the window. The p95 condition is decided by the `traces.js` run of the load workflow on its runner: compare the p95 of each `sort-*` row of its variant table with the `first-page` row (at most twice), and record the table here when it has run.
 
-**Watch.** The cost is linear in the traces of the window. A project with ten times the traces of this seed in 30 days (100 000 a day) would take about ten times as long for a 30-day sorted page. An index per sort would fix that and is out of scope for this phase.
+**Watch.** The cost is linear in the traces of the window. A project with ten times the traces of this seed in 30 days (100 000 a day) would take about ten times as long for a 30-day sorted page. An index per sort was measured on 2026-11-10 and rejected; see [Sort indexes](#sort-indexes-measured-and-rejected-2026-11-10).
+
+### Sort indexes (measured and rejected, 2026-11-10)
+
+One index per value sort, `(project_id, <value> DESC NULLS LAST, started_at DESC, trace_id DESC)`, was tried on a scratch database with 3 000 000 traces of one project over 30 days (`traces` 880 MB), as the application role under row-level security. Ingest ran through `app.ingest.pipeline.ingest_spans` in batches of 100 spans: 25 new traces of four spans ("whole"), and 50 traces sent as two batches of two spans each ("split"), with one writer and with four.
+
+| | No sort index | Four sort indexes |
+|---|---|---|
+| Sorted first page and keyset page, 30 days, descending, no filter | 170 to 310 ms | 1 to 2 ms |
+| Sorted page, ascending | 180 to 210 ms | 180 to 270 ms (unknown values last is not the index's reverse order) |
+| Sorted page with two filters that never match together | 120 ms | 800 to 2 600 ms |
+| `traces` updates that stay in the page (HOT) | 40 to 85 % | 0 % |
+| Growth of the indexes of `traces` over 200 batches | 0.7 to 2.8 MB | 5 to 21 MB |
+| WAL per batch, split traces | 240 to 550 kB | 540 to 1 310 kB |
+| Indexes of `traces` | 0.6 GB | 1.9 GB |
+| Ingest throughput | 2 200 to 2 700 spans/s (one writer) | 0 to 12 % lower, within the run-to-run noise |
+
+Every ingest batch recomputes a trace's totals, so an index on any of them ends in-page updates for the whole table (the reason for migration 1005), each update then writes an entry into every index, and the indexes triple. One index alone already ends them. The planner also takes the ordered index for a filtered page and walks the whole project when few rows match. The sorts stay unindexed: their cost is bounded by the window and stays under the statement limit at the per-project ingest quota, and writes are the path every user pays for.
+
+### Filters that match few traces (2026-11-10)
+
+The default order reads `(project_id, started_at)` newest first and stops after a page, so a filter is cheap when many traces pass it and costs a read of the whole window when few do. Measured on the scratch database of the sort indexes above (3 000 000 traces over 30 days), default order, first page, median ms of five warm runs:
+
+| Filter | 24 hours | 7 days | 30 days |
+| --- | --- | --- | --- |
+| a name 300 traces have | 10 | 93 | 121 |
+| a name no trace has | 7 | 84 | 94 |
+| a tag 300 traces have | 8 | 88 | 130 |
+| a metadata value 300 traces have | 22 | 191 | 196 |
+| an environment and a name that never occur together | 6 | 61 | 391 |
+| traces with errors, 300 of them (before migration 1047) | 8 | 89 | 80 |
+| traces with errors, 300 of them (migration 1047) | 0.5 | 0.7 | 0.8 |
+
+**Traces with errors** is the filter a healthy project makes slow, and the one people open first, so migration 1047 adds `traces_project_errored_started_idx`: a partial index of the errored traces in the list's order (864 kB here). The list, a value sort of the errored traces (109 ms to 1.2 ms over 30 days) and the errors histogram (83 ms to 0.5 ms) read only those traces. Postgres keeps an update in the page when it leaves `error_count` as it was, so a trace without errors is written as before; only a batch that changes a trace's error count pays for the index.
+
+**The others stay as they are.** Each would need a full index on `traces` (about 300 MB per 3 000 000 traces, one more entry per ingested trace) for a page that takes 0.1 to 0.4 s at ten times the `realistic` profile and under 25 ms over the 24 hours the list opens with. `user_id`, `session_id` and `release` already have indexes.
 
 ### Previews
 
@@ -243,6 +278,22 @@ Taking the last user message in SQL was measured against cutting the whole input
 **Re-measured 2026-10-24** (load average 6.6 to 7.2 on 10 cores): the unfiltered 30-day case still took 210 ms median and 283 ms slowest over nine warm runs, so the miss was the plan, not the machine; a plain `count(*)` of the same rows took 48 ms. Migration 1017 adds expression statistics on the day bucket (`traces_started_day_bin`) and the histogram now writes that bucket with literal constants so the planner matches it: the planner expects 31 groups instead of about 250 000 and aggregates in parallel without a sort. After 1017 the same case takes **58 ms median and 83 ms slowest**, within the budget. Raising `work_mem` alone gave 156 ms median.
 
 **Watch.** The cost is linear in the traces of the window, as for the sorts.
+
+**Since 2026-11-10: read from the hourly rollups when no filter but the environment is set.** `trace_rollups_hourly` holds, per start hour and environment, exactly the two counts the histogram returns. The statement reads an hour from it when the hour is closed (before the project's `next_closed_hour`), verified (from `aggregate_history_unverified_before` on), newer than the oldest rollup row retention has left (rollup retention runs apart from trace retention, oldest first, so traces can outlive their hour's rows) and neither dirty for the hourly rollup nor incomplete, and counts every other hour from `traces`: the window's partial first and last hours, the hours not yet closed, and any hour that fails a condition. It is one statement, so one snapshot, and its rows equal the raw histogram's; every writer that changes a trace marks the trace's hours dirty in its own transaction, and retention records the hours it removed source rows from. Any other filter still counts traces as above.
+
+Measured on a scratch database with ten times the sorts seed: 3 000 000 traces in one project over 30 days (100 000 a day; `traces` 880 MB), the shipped Compose Postgres settings, as an unprivileged role with `app.project_id`, seven warm runs each, median ms, on a laptop with five cores for Docker. The newest two and a half hours were not yet closed, so they were counted from `traces` in both columns.
+
+| Window, filter           | counting traces | rollups + traces |
+| ------------------------ | --------------- | ---------------- |
+| 24 hours, none           | 19.3            | 3.0              |
+| 24 hours, `environment`  | 11.3            | 2.6              |
+| 48 hours, none           | 39.1            | 3.2              |
+| 7 days, none             | 100.5           | 2.9              |
+| 7 days, `environment`    | 83.5            | 1.9              |
+| 30 days, none            | 175.7           | 3.4              |
+| 30 days, `environment`   | 100.3           | 2.3              |
+
+Every case returned the same buckets from both statements. With 100 hours marked dirty and 20 marked incomplete, and their rollup rows made wrong on purpose, the 30-day histogram still equalled the raw one and took 76 ms (the raw one 171 ms): untrusted hours cost what counting them costs. The time no longer grows with the traces of the window, only with its open tail and its untrusted hours. A project whose history is unverified (an install upgraded past migration 1027, for the hours before it activated coverage) is counted from `traces` for those hours, as before.
 
 ### Sessions list
 

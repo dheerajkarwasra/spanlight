@@ -260,8 +260,8 @@ The finite value round-trips through ordinary project ORM/API reads.
 the deploy that removed the pre-1027 writers, run once as the database owner:
 
 ```bash
-# Railway: railway ssh --service api, then
-DATABASE_URL="$MIGRATION_DATABASE_URL" spanlight activate-aggregate-coverage --writers-drained
+# Railway: railway ssh --service api, then (the ssh shell does not have the venv on PATH)
+DATABASE_URL="$MIGRATION_DATABASE_URL" /opt/venv/bin/spanlight activate-aggregate-coverage --writers-drained
 ```
 
 Check it worked: `curl -fsS https://$DOMAIN/health/ready` shows `"aggregate_coverage":"active"`.
