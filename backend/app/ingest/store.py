@@ -6,16 +6,33 @@ cannot deadlock each other. The caller (`app.ingest.pipeline.ingest_spans`) has 
 project and share-locked its row, and commits.
 """
 
+import json
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from enum import Enum
 from typing import Any
 
-from sqlalchemy import Table, exists, func, literal_column, or_, text
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import (
+    DateTime,
+    Table,
+    Text,
+    bindparam,
+    cast,
+    column,
+    exists,
+    func,
+    literal_column,
+    or_,
+    select,
+    text,
+)
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.dml import ReturningInsert
+from sqlalchemy.sql.expression import ColumnClause
+from sqlalchemy.sql.selectable import TableValuedAlias
 
 from app.budgets.buckets import bump_hours_of_traces
 from app.db.models import Score, Span, Trace
@@ -113,35 +130,55 @@ def batch_hours(traces: Sequence[_TraceRow], spans: Sequence[NormalizedSpan]) ->
     )
 
 
-async def _upsert_traces(
-    session: AsyncSession, project_id: uuid.UUID, traces: Sequence[_TraceRow]
-) -> int:
-    statement = insert(Trace).values(
-        [
-            {
-                "project_id": project_id,
-                "trace_id": trace.trace_id,
-                "name": trace.name,
-                "environment": trace.environment,
-                "release": trace.release,
-                "external_user_id": trace.external_user_id,
-                "session_id": trace.session_id,
-                "tags": sorted(trace.tags),
-                "metadata": trace.metadata,
-                "started_at": trace.started_at,
-                "ended_at": trace.ended_at,
-                # A score may have arrived before its trace. On conflict the flag is OR-ed in,
-                # so a later batch also heals a flag a racing score write missed.
-                "has_scores": exists().where(
-                    Score.project_id == project_id, Score.trace_id == trace.trace_id
-                ),
-            }
-            for trace in traces
-        ]
+def _rows(*columns: ColumnClause[Any]) -> TableValuedAlias:
+    """The batch's rows, read from one JSON parameter (`rows`, an array of objects).
+
+    The statement text is then the same for every batch, so SQLAlchemy compiles it once and
+    psycopg parses it once. A multi-row VALUES list has a parameter per column per row: psycopg
+    does not cache a statement that long and parsed it again for every batch, on the event loop
+    (4 ms for 100 spans), and the trace rows, inlined with `.values([...])`, were also compiled
+    again by SQLAlchemy (6 ms for 25 traces).
+    """
+    rows = func.jsonb_to_recordset(cast(bindparam("rows", type_=Text), JSONB))
+    return rows.table_valued(*columns).render_derived(name="batch", with_types=True)
+
+
+def _plain(value: Any) -> Any:
+    """`json.dumps` default for a row: the text Postgres reads the column's type from."""
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    return str(value)  # Decimal and UUID: exact as text.
+
+
+def _trace_upsert() -> ReturningInsert[tuple[bool]]:
+    project_id = bindparam("project_id", type_=UUID(as_uuid=True))
+    batch = _rows(
+        column("trace_id", Text),
+        column("name", Text),
+        column("environment", Text),
+        column("release", Text),
+        column("external_user_id", Text),
+        column("session_id", Text),
+        column("tags", ARRAY(Text)),
+        column("metadata", JSONB),
+        column("started_at", DateTime(timezone=True)),
+        column("ended_at", DateTime(timezone=True)),
+    )
+    # A score may have arrived before its trace. On conflict the flag is OR-ed in, so a later
+    # batch also heals a flag a racing score write missed.
+    has_scores = exists().where(Score.project_id == project_id, Score.trace_id == batch.c.trace_id)
+    # The table, not the mapped class: an ORM insert takes the bulk path, which has no SELECT.
+    traces: Table = Trace.__table__  # type: ignore[assignment]  # mapped classes type it loosely
+    statement = insert(traces).from_select(
+        ["project_id", *batch.c.keys(), "has_scores"],
+        # In byte order, as `_merge_traces` sorted them: the lock order of every batch.
+        select(project_id, *batch.c, has_scores).order_by(batch.c.trace_id.collate("C")),
     )
     excluded = statement.excluded
     # Postgres still locks conflicts when WHERE is false, preserving the trace lock order.
-    upsert: ReturningInsert[tuple[bool]] = statement.on_conflict_do_update(
+    return statement.on_conflict_do_update(
         index_elements=[Trace.project_id, Trace.trace_id],
         set_={
             "name": func.coalesce(excluded.name, Trace.name),
@@ -178,7 +215,32 @@ async def _upsert_traces(
             excluded.has_scores & ~Trace.has_scores,
         ),
     ).returning(literal_column("(xmax = 0)").label("inserted"))
-    result = await session.execute(upsert)
+
+
+_TRACE_UPSERT = _trace_upsert()
+
+
+async def _upsert_traces(
+    session: AsyncSession, project_id: uuid.UUID, traces: Sequence[_TraceRow]
+) -> int:
+    rows = [
+        {
+            "trace_id": trace.trace_id,
+            "name": trace.name,
+            "environment": trace.environment,
+            "release": trace.release,
+            "external_user_id": trace.external_user_id,
+            "session_id": trace.session_id,
+            "tags": sorted(trace.tags),
+            "metadata": trace.metadata,
+            "started_at": trace.started_at,
+            "ended_at": trace.ended_at,
+        }
+        for trace in traces
+    ]
+    result = await session.execute(
+        _TRACE_UPSERT, {"project_id": project_id, "rows": json.dumps(rows, default=_plain)}
+    )
     return sum(1 for row in result if not row.inserted)
 
 
@@ -225,38 +287,50 @@ async def _upsert_spans(
     source_key_id: uuid.UUID | None,
 ) -> tuple[int, int]:
     """Upsert the spans and return the counts of inserted and changed rows."""
-    ordered = sorted(spans, key=lambda span: (span.trace_id, span.span_id))
     rows = [
         {
-            "project_id": project_id,
             "trace_id": span.trace_id,
             "span_id": span.span_id,
-            "source_key_id": source_key_id,
-            **{column: getattr(span, column) for column in _SPAN_COLUMNS},
+            **{name: getattr(span, name) for name in _SPAN_COLUMNS},
         }
-        for span in ordered
+        for span in spans
     ]
     statement = _SPAN_UPSERT_GUARDED if source_key_id is None else _SPAN_UPSERT
-    result = await session.execute(statement, rows)
-    # Summed over every RETURNING page of the insertmanyvalues path.
+    result = await session.execute(
+        statement,
+        {
+            "project_id": project_id,
+            "source_key_id": source_key_id,
+            "rows": json.dumps(rows, default=_plain),
+        },
+    )
     returned = result.all()
     inserted = sum(1 for row in returned if row.inserted)
     return inserted, len(returned) - inserted
 
 
 def _span_upsert(*, guarded: bool) -> ReturningInsert[tuple[str, bool]]:
-    """The span upsert, compiled once and given the rows as parameters.
-
-    `RETURNING` makes SQLAlchemy render the rows into one multi-row INSERT per 1,000 rows
-    ("insertmanyvalues"), in the given order. Inlining the rows with `.values([...])` instead
-    compiled every column of every row again for each batch, the largest CPU cost of ingestion.
+    """The span upsert, compiled once and given the rows as one JSON parameter (`_rows`), written
+    in key order: the lock order of every batch.
 
     `inserted` is `(xmax = 0)`: the usual upsert idiom for "this row was inserted, not updated",
     not documented behaviour (an updated row carries the updating transaction's id in `xmax`).
     A guarded conflict the `WHERE` skips (a gateway-owned or unchanged span) returns no row.
     """
     spans: Table = Span.__table__  # type: ignore[assignment]  # mapped classes type it loosely
-    statement = insert(spans)
+    batch = _rows(
+        column("trace_id", Text),
+        column("span_id", Text),
+        *(column(name, spans.c[name].type) for name in _SPAN_COLUMNS),
+    )
+    statement = insert(spans).from_select(
+        ["project_id", "source_key_id", *batch.c.keys()],
+        select(
+            bindparam("project_id", type_=UUID(as_uuid=True)),
+            bindparam("source_key_id", type_=UUID(as_uuid=True)),
+            *batch.c,
+        ).order_by(batch.c.trace_id.collate("C"), batch.c.span_id.collate("C")),
+    )
     update_columns: dict[str, Any] = {
         column: statement.excluded[column] for column in _SPAN_COLUMNS
     }

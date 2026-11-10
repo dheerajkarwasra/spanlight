@@ -87,6 +87,9 @@ class CostResult:
     pricing_version: str | None
 
 
+_MATCHING_MODELS = 1024
+
+
 class PriceBook:
     """An immutable set of prices and server-tool fees; the seed book is shared by the process."""
 
@@ -98,6 +101,10 @@ class PriceBook:
         self._by_provider: dict[str | None, list[Price]] = {}
         for price in self._prices:
             self._by_provider.setdefault(canonical_provider(price.provider), []).append(price)
+        # The rows whose pattern matches a model, by provider and model: a batch prices the same
+        # few models on every span, and matching each of a provider's rows was a quarter of the
+        # CPU of preparing a span.
+        self._matching: dict[tuple[str | None, str], tuple[Price, ...]] = {}
 
     def find(
         self, provider: str | None, model: str, at: datetime, prompt_tokens: int = 0
@@ -111,11 +118,18 @@ class PriceBook:
         with the highest `min_prompt_tokens` not above it.
         """
         canonical = canonical_provider(provider)
-        if canonical is None:
-            return best_price(self._prices, None, model, at, prompt_tokens)
         # Every row in the bucket already has the span's canonical provider: `best_price` gets
         # no provider, so it does not fold each row's again. The candidates are the same.
-        return best_price(self._by_provider.get(canonical, ()), None, model, at, prompt_tokens)
+        rows = self._matching.get((canonical, model))
+        if rows is None:
+            bucket = self._prices if canonical is None else self._by_provider.get(canonical, ())
+            rows = tuple(price for price in bucket if price.matches(model))
+            # Model names come from clients: the book is shared by the process, so it forgets
+            # them all rather than grow with every name ever sent.
+            if len(self._matching) >= _MATCHING_MODELS:
+                self._matching.clear()
+            self._matching[(canonical, model)] = rows
+        return best_price(rows, None, model, at, prompt_tokens)
 
     def find_by_version(
         self, version: str, provider: str | None, model: str, at: datetime, prompt_tokens: int = 0

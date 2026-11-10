@@ -40,6 +40,37 @@ async def test_hundred_trace_batch_statement_count(
     assert executed <= 12, "\n".join(statements)
 
 
+async def test_write_statements_do_not_grow_with_the_batch(
+    browser_factory: Any, session_factory: SessionFactory
+) -> None:
+    """The rows travel as one parameter: a statement with a placeholder per value is compiled by
+    SQLAlchemy and parsed by psycopg again for every batch, on the event loop."""
+    workspace = await create_workspace(await browser_factory("statement-size@example.com"))
+    target = IngestTarget(uuid.UUID(workspace.project_id), True, uuid.UUID(workspace.org_id))
+    written: list[list[str]] = []
+    for count in (1, 100):
+        statements: list[str] = []
+
+        def record(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
+            if statement.startswith(("INSERT INTO traces", "INSERT INTO spans")):
+                statements.append(statement)  # noqa: B023 - removed before the next round
+
+        async with session_factory() as db:
+            connection = (await db.connection()).sync_connection
+            assert connection is not None
+            event.listen(connection, "before_cursor_execute", record)
+            try:
+                await ingest_spans(
+                    db, target, [span(trace_id=new_trace_id()) for _ in range(count)]
+                )
+            finally:
+                event.remove(connection, "before_cursor_execute", record)
+            await db.commit()
+        written.append(statements)
+    assert len(written[0]) == 2
+    assert written[0] == written[1]
+
+
 async def test_dirty_hours_unchanged_by_derivation(
     browser_factory: Any, session_factory: SessionFactory
 ) -> None:

@@ -489,6 +489,33 @@ Before writing, an ingest batch locks the identity of every trace it touches (`a
 
 Each `ingest.js` request carries 29 traces (1 to 6 spans each), so the change saves 31 of its 43 statements. At 500 spans a second it takes about 3 ms off the median and 10 to 20 ms off the p95. An empty database flatters both; the realistic-seed comparison is still to be run.
 
+## Where an ingest batch spends its time (2026-11-10)
+
+One batch of 100 spans in 25 new traces, through `app.ingest.pipeline.ingest_spans` as the application role, on the scratch database of the trace explorer measurements (3 000 000 traces), one writer, median of 50 to 100 batches. "2 kB" and "8 kB" are the size of each span's prompt as English-like text; the reply is a quarter of it.
+
+| Part of the batch | no content | 2 kB | 8 kB |
+| --- | --- | --- | --- |
+| Insert of the spans, with the content search index | 11 ms | 63 ms | 101 ms |
+| Insert of the spans, without it (scratch only) | 11 ms | 15 ms | 33 ms |
+| Write-ahead log per batch, with / without the index | | 5.0 MB / 0.5 MB | 6.7 MB / 1.0 MB |
+| Validation, redaction and pricing in Python | 5 ms | 13 ms | 32 ms |
+| Every other statement together | 9 ms | 9 ms | 9 ms |
+
+**The content search index is most of an ingest batch.** `spans_content_trgm_idx` (the trigram index behind `q`) takes about half a millisecond per span, nine tenths of the write-ahead log, and 61 % of the size of the spans it indexes (76 MB for 124 MB of spans; the other eight indexes together take 12 MB). It is the price of searching content by substring over any window and stays. Measured and not kept: a larger `gin_pending_list_limit` (the mean moved from 61 ms to 55 ms and single batches stalled for 0.4 to 0.8 s when the list was flushed), `fastupdate = off` (480 ms per batch), and `wal_compression = lz4` (19 % less log, same time).
+
+**Rows as one parameter.** The trace and span upserts sent a placeholder for every column of every row. SQLAlchemy compiled the trace statement again for every batch (6 ms for 25 traces) and psycopg, which caches only short statements, parsed the 107 kB span statement again (4 ms for 100 spans), both on the event loop where every other request waits. They now send the rows as one JSON parameter read with `jsonb_to_recordset`, so the statement text is the same for every batch. The price lookup also keeps the rows that match a model instead of matching each of a provider's rows for every span (a quarter of the Python time).
+
+| Batch of 100 spans, one writer | Before | After |
+| --- | --- | --- |
+| no content | 40 ms | 20 ms |
+| 2 kB | 107 ms | 88 ms |
+| 8 kB | 170 ms | 147 ms |
+| 1 000 spans in 1 000 traces, no content | 661 ms | 237 ms |
+
+Throughput without content, interleaved runs on a laptop under other load (load average 5 to 8), so the ratio matters more than the figures: one writer 1 500 to 2 400 spans/s before and 2 200 to 3 900 after; four writers in one process 1 950 to 2 650 before and 5 200 to 8 750 after. Four writers gained most because the compile and parse ran on the one event loop they share.
+
+In the largest batch the trace upsert alone went from 325 ms to 31 ms, nearly all of it time the event loop was blocked. Two things differ in what is stored, neither visible to a reader: a time to first token of `-0.0` is stored as `0.0` (the number passes through `numeric`), and a batch past 908 spans is one statement where it was two, so a budgeted project gets one budget delta row for it instead of two with the same sum.
+
 ## Speed work, before and after (2026-11-02)
 
 The same local run twice, before and after a set of speed changes (price book and gateway key caching, the trace list's model filter bounded to the window with statistics on `spans (project_id, model)`, the trace-total recompute, read-only gateway cache hits, fewer budget-admission statements, gateway span writes kept below the request pool, the load-test harness fixes): the smoke seed (100 000 spans) plus `seed_gateway.py --budget-spans 1000000`, then every script at its smoke duration with [`settle.sh`](../backend/load/settle.sh) before each, and the gateway pair three times. Apple M4 Mac (10 cores, 16 GB), Docker Desktop with 5 CPUs and 6.4 GB for the VM, PostgreSQL 17 with the shipped settings, k6 1.7.1, one `api` replica; other work ran on the machine (1-minute load average 1.7 to 3.1 before each script). Before: 07:20 UTC, at commit `5342f263` plus the uncommitted tree of the time; after: 10:09 UTC, with the changes. These are local smoke figures, not the `realistic` profile on a CI runner.

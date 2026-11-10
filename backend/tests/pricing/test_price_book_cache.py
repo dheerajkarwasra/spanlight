@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from app.pricing import cost, price_row
 from app.pricing.cost import PriceBook, load_price_book
 from app.pricing.price_row import OVERRIDE_VERSION_PREFIX, Price, best_price
 from app.pricing.prices import ALL_SNAPSHOTS
@@ -138,3 +139,30 @@ async def test_the_provider_index_picks_the_row_a_full_scan_picks(
                     ), (provider, model, at, prompt)
                     checked += 1
     assert checked > 10_000
+
+
+def test_a_model_is_matched_against_the_rows_once(monkeypatch: Any) -> None:
+    """A batch prices the same few models on every span; the names a book keeps are bounded."""
+    at = datetime(2026, 11, 1, tzinfo=UTC)
+    models = ["gpt-4o-mini", *(f"gpt-other-{index}" for index in range(30))]
+    book = PriceBook(
+        Price("openai", model, Decimal(1), Decimal(2), None, at, "2026-11-01") for model in models
+    )
+    first = book.find("openai", "gpt-4o-mini", at)
+    assert first is not None
+    matched: list[str] = []
+    real = price_row.matches_model
+
+    def counting(pattern: str, model: str) -> bool:
+        matched.append(pattern)
+        return real(pattern, model)
+
+    monkeypatch.setattr(price_row, "matches_model", counting)
+    assert book.find("openai", "gpt-4o-mini", at) is first
+    # Only the model's own candidate row, not every row of the provider.
+    assert matched == ["gpt-4o-mini"]
+
+    for index in range(cost._MATCHING_MODELS + 10):
+        book.find("openai", f"unknown-{index}", at)
+    assert len(book._matching) <= cost._MATCHING_MODELS
+    assert book.find("openai", "gpt-4o-mini", at) is first

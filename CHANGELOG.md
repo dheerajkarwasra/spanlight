@@ -79,6 +79,7 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 ### Changed
 
+- **Ingestion spends less time on the api's event loop.** The trace and span writes send a batch's rows as one parameter instead of one per value, so their statements are compiled and parsed once instead of for every batch, and a span's price lookup no longer checks every price row of its provider. A batch of 100 small spans takes about half the time (40 ms to 20 ms), and several concurrent writers in one api process get about three times the throughput. Stored rows are unchanged.
 - **A trace opens without a wait.** Resting the mouse on a row of the trace list for a tenth of a second fetches that trace, so the click that follows shows it at once; an open peek also fetches the traces `j` and `k` step to. A trace fetched in the last minute is not fetched again, and nothing is fetched ahead for a browser that asks to save data.
 - **The errors-only trace list is fast on healthy projects.** Migration 1047 adds a small index of the traces that have errors, so the trace list, its sorts and its histogram filtered to errors read only those traces instead of the whole window (about 80 ms to 1 ms over 30 days of 3 million traces with 300 errors). The index is built concurrently and does not block ingestion.
 - **The job queue table is vacuumed sooner.** Migration 1046 sets `jobs` to be vacuumed and analyzed at 2 % dead rows instead of 20 %, so job claims read fewer dead index entries. It rewrites nothing and takes no lock that blocks the worker.
