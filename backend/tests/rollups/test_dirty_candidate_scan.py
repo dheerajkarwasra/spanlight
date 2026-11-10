@@ -47,8 +47,7 @@ async def test_candidate_streams_oldest_indexes_without_grouping_or_sorting_back
                 FROM aggregate_dirty_hours CROSS JOIN generate_series(0, 1) s
             """),
         )
-        # The plan is only meaningful with true statistics: the suite empties tables by DELETE, so
-        # autovacuum can record `projects` as empty and make the planner drive from it and sort.
+        # The plan is only meaningful with true statistics, which only committed rows give.
         await db.commit()
         async with await psycopg.AsyncConnection.connect(
             admin_libpq_url(), autocommit=True

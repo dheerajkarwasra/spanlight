@@ -76,13 +76,32 @@ _RESET_STATUS_SOURCES = (
     "last_polled_at = NULL, last_success_at = NULL, last_outcome = NULL, "
     "consecutive_failures = 0, last_error_type = NULL"
 )
-# Autovacuum can analyze a table while it holds only the dead rows of the last test and record
-# "0 rows in N pages". The planner then sizes the next test's rows as one and picks plans that
-# are 30 times slower, which failed wall-clock and plan-shape tests in CI. -1 is "never analyzed".
-_FORGET_EMPTY_STATISTICS = (
+# Statistics must not outlive the rows they describe. The suite empties tables by DELETE, so a
+# table analyzed or vacuumed while it held an earlier test's rows keeps their row count and
+# column statistics, or "0 rows in N pages" if autovacuum reached it just after the cleanup. The
+# planner then sizes the next test's rows as one and picks plans many times slower, which failed
+# wall-clock and plan-shape tests in CI about a minute into a run: autovacuum's first visit.
+# So nothing but a test writes statistics: the harness's server runs without autovacuum, and each
+# cleanup returns every table to "never analyzed" (`reltuples = -1`, no column statistics).
+_FORGET_STATISTICS = (
     "; UPDATE pg_class SET reltuples = -1 "
-    "WHERE reltuples = 0 AND relkind = 'r' AND relnamespace = 'public'::regnamespace"
+    "WHERE reltuples <> -1 AND relkind = 'r' AND relnamespace = 'public'::regnamespace"
+    "; DELETE FROM pg_statistic WHERE starelid IN "
+    "(SELECT oid FROM pg_class WHERE relnamespace = 'public'::regnamespace)"
 )
+_NO_AUTOVACUUM = "postgres -c autovacuum=off"
+# Without autovacuum the dead rows stay, and every cleanup's DELETE would read them again. A
+# table past 1 MB is truncated instead: rare, so the cost that made TRUNCATE too slow for every
+# test does not return. CASCADE reaches only tables that reference it, all of them emptied anyway.
+_TRUNCATE_GROWN = """
+DO $$
+DECLARE grown text;
+BEGIN
+    SELECT string_agg(name, ', ') INTO grown FROM unnest(ARRAY[{tables}]) AS name
+    WHERE pg_relation_size(name::regclass) > 1048576;
+    IF grown IS NOT NULL THEN EXECUTE 'TRUNCATE ' || grown || ' CASCADE'; END IF;
+END $$;
+"""
 # `_TABLES_TO_EMPTY` and the tables that reference them, transitively, and the sequences they own.
 _EMPTIED_RELATIONS = """
 WITH RECURSIVE emptied(oid) AS (
@@ -140,7 +159,7 @@ def database_server() -> Iterator[None]:
         password="postgres",
         dbname="spanlight_test",
         driver="psycopg",
-    ) as postgres:
+    ).with_command(_NO_AUTOVACUUM) as postgres:
         _ACTIVE_BASE_URL = postgres.get_connection_url()
         try:
             yield
@@ -240,11 +259,12 @@ async def _empty_tables(
         await admin.commit()
         statements = (
             "SET LOCAL session_replication_role = replica; "
+            + _TRUNCATE_GROWN.format(tables=", ".join(f"'{table}'" for table in tables))
             + "".join(f"DELETE FROM {table}; " for table in tables)
             + "SELECT setval(seqrelid, seqstart, false) FROM pg_sequence "
             + f"WHERE seqrelid = ANY('{{{','.join(sequences)}}}'::regclass[]); "
             + _RESET_STATUS_SOURCES
-            + _FORGET_EMPTY_STATISTICS
+            + _FORGET_STATISTICS
         )
 
         async def empty() -> None:
