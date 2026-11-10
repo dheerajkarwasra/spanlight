@@ -183,9 +183,9 @@ export default defineRailway(() => {
       // Self-tracing: uncomment and set with railway variable set ... to enable.
       // OTEL_EXPORTER_OTLP_ENDPOINT: preserve(),
       // OTEL_SERVICE_NAME: preserve(),
-      // Aggregate correction consumption: set explicitly after the repair cutover procedure.
-      // Off preserves capture but leaves affected materialized observations pending.
-      // AGGREGATE_REPAIR_ENABLED: preserve(),
+      // Aggregate correction consumption, set on the worker on 2026-11-10 after the repair
+      // cutover. Off preserves capture but leaves affected materialized observations pending.
+      AGGREGATE_REPAIR_ENABLED: preserve(),
       // Worker /metrics (needs a scraper in the project): uncomment and set with railway variable
       // set ... to enable. The endpoint answers 404 without METRICS_TOKEN; use the api's value.
       // METRICS_TOKEN: preserve(),

@@ -42,6 +42,8 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -53,7 +55,9 @@ from app.db.session import create_engine, create_session_factory
 from app.end_users.refresh import refresh_user_stats
 from app.ingest.pipeline import IngestTarget, ingest_spans
 from app.ingest.schemas import MAX_SPANS_PER_BATCH
+from app.jobs.context import TaskContext
 from app.rollups.compute import backfill_rollups
+from app.rollups.dirty_jobs import run_repair_aggregates
 from seed_data import SPREAD, build_batch
 from seed_workspace import Workspace, WorkspaceError, create_workspace
 
@@ -290,6 +294,50 @@ async def build_day_aggregates(
     say(f"user stats built: {users:,} rows; attribution built for {attributed} days")
 
 
+PENDING_HOURS = text("SELECT count(*) FROM aggregate_dirty_hours WHERE project_id = :project_id")
+# Passes in a row that cleared nothing before the seeder gives up.
+STALLED_PASSES = 3
+
+
+async def _no_lease() -> None:
+    """The seeder holds no job lease to extend."""
+
+
+async def settle_aggregates(
+    session_factory: async_sessionmaker[AsyncSession], project_id: uuid.UUID
+) -> None:
+    """Run the worker's aggregate repair until no seeded hour is pending.
+
+    Storing spans marks each hour they start in as changed, and a read counts a marked hour from
+    the spans instead of the rollups until the repair job has rebuilt it. The worker repairs at
+    most 100 hours every five minutes, so a freshly seeded month would be read from raw spans
+    for hours, and the scenarios would measure that instead of a settled project.
+    """
+    context = cast(
+        TaskContext,
+        SimpleNamespace(
+            settings=SimpleNamespace(
+                aggregate_repair_enabled=True, attribution_enabled=True, user_stats_enabled=True
+            ),
+            session_factory=session_factory,
+            heartbeat=_no_lease,
+        ),
+    )
+    stalled = 0
+    async with session_factory() as session:
+        pending = await session.scalar(PENDING_HOURS, {"project_id": project_id}) or 0
+    say(f"aggregates: {pending:,} hours to repair")
+    while pending:
+        await run_repair_aggregates(context, {})
+        async with session_factory() as session:
+            left = await session.scalar(PENDING_HOURS, {"project_id": project_id}) or 0
+        stalled = stalled + 1 if left >= pending else 0
+        if stalled == STALLED_PASSES:
+            raise SeedError(f"aggregate repair stopped with {left:,} hours pending")
+        pending = left
+    say("aggregates: every hour repaired")
+
+
 async def vacuum_analyze(engine: AsyncEngine) -> None:
     # VACUUM cannot run inside a transaction.
     async with engine.connect() as connection:
@@ -367,6 +415,7 @@ async def run(options: Options, database_url: str) -> None:
             )
         await build_rollups(session_factory, workspace.project_id, now)
         await build_day_aggregates(session_factory, workspace.project_id, now)
+        await settle_aggregates(session_factory, workspace.project_id)
         await vacuum_analyze(engine)
         await verify_and_report(engine, workspace.project_id, options.spans)
         write_credentials(options.credentials_file, workspace, data_end=now)

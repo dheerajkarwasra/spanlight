@@ -27,6 +27,9 @@ services:
   worker:
     environment:
       DEMO_ENABLED: "false"
+      # Normal service: hours that ingestion changes during a run are rebuilt, as on an install
+      # that has finished the aggregate repair cutover. Off, every such hour is read from spans.
+      AGGREGATE_REPAIR_ENABLED: "true"
       GATEWAY_ALLOW_INSECURE_BASE_URLS: "true"
       CREDENTIALS_KEYS: ${LOAD_CREDENTIALS_KEYS:-load:c3BhbmxpZ2h0LWxvYWQtdGVzdC1vbmx5LWtleS0wMDE=}
 

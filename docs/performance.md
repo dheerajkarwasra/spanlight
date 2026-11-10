@@ -625,6 +625,19 @@ The per-project cap protects storage, not the `api` process: a refused request s
 
 Real provider latency and errors, email delivery, billing fetches from provider APIs, network latency between client and server (k6 ran on the same host), a process crash restarted by Docker, and more than 10 million stored spans.
 
+## Pending hours and what a seeded database measures (2026-11-10)
+
+Storing a span marks the hour it starts in as changed, and a read counts a marked hour from the spans, not from the rollups, until the `repair_aggregates` job has rebuilt it ([aggregate repair](runbooks/aggregate-repair.md)). The job repairs at most 100 hours every five minutes and only runs with `AGGREGATE_REPAIR_ENABLED=true`; the default is `false`.
+
+The seeder stores its spans through ingestion, so it left every one of its 672 hours marked, and each scenario then read the whole window from the spans. A 1 000 000-span run on a 16-core server on 2026-11-10 measured an overview p95 of 243 ms, with a median of 226 ms for the 30-day window alone, against 47.5 ms in the earlier runs above. On a 1 000 000-span scratch seed, one request in process, median ms:
+
+| Request, 30 days | 380 of 672 hours marked | none marked |
+| --- | --- | --- |
+| overview | 100 | 31 |
+| overview with `environment` | 141 | 68 |
+
+Since 2026-11-10 `seed.py` runs the repair itself until no seeded hour is marked, and the load stack sets `AGGREGATE_REPAIR_ENABLED=true`, so a run measures a settled project. An install that leaves the setting off keeps every hour it has ingested into marked, and its reads cost what the left column shows, growing with the data.
+
 ## Known slower paths
 
 These are real requests that the scripts do not send yet, so no threshold covers them.

@@ -43,6 +43,8 @@ async def test_seeder_builds_rollups_and_available_reads_without_install_activat
                 (project_id,),
             ).fetchone()
         assert rollup_hours is not None and rollup_hours[0] > 0
+        with psycopg.connect(_libpq(url)) as db:
+            assert db.execute("SELECT count(*) FROM aggregate_dirty_hours").fetchone() == (0,)
 
         engine = create_engine(url)
         try:
@@ -62,7 +64,7 @@ async def test_seeder_builds_rollups_and_available_reads_without_install_activat
                 )
         finally:
             await engine.dispose()
-        # Coverage is verified; "pending" remains possible while ingestion's correction markers
-        # wait for the repair job, which is off by default (AGGREGATE_REPAIR_ENABLED).
-        assert kpis.current.aggregate_status != "unavailable"
+        # The seeder repaired every hour its own ingestion marked: a marked hour is read from the
+        # spans, and the scenarios would measure that instead of a settled project.
+        assert kpis.current.aggregate_status == "complete"
         assert kpis.current.llm_calls

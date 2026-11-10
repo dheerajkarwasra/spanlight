@@ -4,7 +4,7 @@
 
 | File | What it does |
 |---|---|
-| `seed.py` | Creates an organization, a project, one ingest key and ten read keys, then stores spans through the real ingestion pipeline, oldest first, builds the hourly rollups and runs `VACUUM ANALYZE`. Writes the keys to a JSON file. |
+| `seed.py` | Creates an organization, a project, one ingest key and ten read keys, then stores spans through the real ingestion pipeline, oldest first, builds the hourly rollups, runs the aggregate repair until no seeded hour is pending (a pending hour is read from the spans, which is not what the scenarios should measure) and runs `VACUUM ANALYZE`. Writes the keys to a JSON file. |
 | `seed_data.py`, `seed_workspace.py` | Used by `seed.py` and kept beside it: the generator of the spans (no I/O; each batch holds one slice of the 28 days, and about 2 % of the traces arrive up to an hour late), and the creation of the organization, owner, project and keys. |
 | `seed_alerts.py`, `seed_alert_rules.py` | The alert evaluation test: 50 projects with 20 alert evaluations and 7 days of spans each. See [alerts.md](alerts.md). |
 | `settle.sh` | Waits (at most 2 minutes) until no application query and no job is running. The workflow calls it before each k6 script. |
