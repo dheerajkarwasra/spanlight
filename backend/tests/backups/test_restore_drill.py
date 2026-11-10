@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+import click
 import psycopg
 import pytest
 from testcontainers.core.container import DockerContainer
@@ -329,7 +330,8 @@ def test_reconcile_commands_exist() -> None:
     for command in ("prepare", "apply", "check"):
         result = runner.invoke(cli.app, ["restore-reconcile", command, "--help"])
         assert result.exit_code == 0, result.output
-        assert "--all-services-held" in result.output
+        # Rich forces colour under GITHUB_ACTIONS, and its styling splits the option name.
+        assert "--all-services-held" in click.unstyle(result.output)
 
 
 def _receipt(**overrides: Any) -> dict[str, Any]:
