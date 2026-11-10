@@ -1,7 +1,7 @@
 """Doctor detector: the client drops a rejected parameter and resends.
 
 Reads: llm spans of the last hour, fault-injected ones included (it judges client behaviour).
-Rule: a span with `gateway.fault_scenario == "unsupported_parameter"` (F), followed within 60
+Rule: a span with `spanlight.fault.scenario == "unsupported_parameter"` (F), followed within 60
 seconds in the same trace by a span with a different `request_hash`, whatever its status.
 `rounds` counts such F. One finding per environment, warning.
 Guards: needs one round; F must carry a request hash; follow-ups need a known hash. A 400 with

@@ -8,7 +8,7 @@ Rules every detector follows:
 
 - Pure over its sliced context: no queries, no clock (use `ctx.now`), no LLM, no randomness.
   Below `min_samples` it returns `[]`.
-- Fault exclusion. Spans with `gateway.fault_scenario` set are dropped by detectors that judge
+- Fault exclusion. Spans with `spanlight.fault.scenario` set are dropped by detectors that judge
   traffic or provider health (`error_spike`, `latency_regression`, `cost_spike`,
   `rate_limit_pressure`, `provider_incident`, `unpriced_spend`) before counting, `min_samples`
   included. Detectors that judge client behaviour use them.

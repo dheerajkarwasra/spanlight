@@ -20,6 +20,15 @@ class JobStatus(enum.StrEnum):
 
 class Job(Base):
     __tablename__ = "jobs"
+    # Storage parameters; migration 1046 is the source of truth.
+    __table_args__ = (
+        {
+            "postgresql_with": {
+                "autovacuum_vacuum_scale_factor": "0.02",
+                "autovacuum_analyze_scale_factor": "0.02",
+            }
+        },
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     kind: Mapped[str] = mapped_column(Text)

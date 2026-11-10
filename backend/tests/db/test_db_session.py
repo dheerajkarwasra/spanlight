@@ -40,3 +40,13 @@ async def test_a_pool_without_overflow_gives_up_after_its_timeout(app_database_u
                     pass  # pragma: no cover
     finally:
         await engine.dispose()
+
+
+async def test_connections_bound_the_connect_and_probe_a_silent_peer(engine: AsyncEngine) -> None:
+    """psycopg waits 130 s for a connect by default, and a dead peer hangs a query for minutes."""
+    async with engine.connect() as connection:
+        raw = await connection.get_raw_connection()
+        assert raw.driver_connection is not None
+        parameters = raw.driver_connection.info.get_parameters()
+    assert parameters["connect_timeout"] == "5"
+    assert parameters["keepalives_idle"] == "30"

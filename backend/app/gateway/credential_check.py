@@ -15,6 +15,7 @@ import httpx
 from app.core.egress import BlockedAddress, InsecureUrl
 from app.db.models import ProviderKind
 from app.gateway.adapters import adapter_for
+from app.gateway.adapters.base import UnsupportedEncoding
 from app.gateway.credentials import InvalidBaseUrl, validate_base_url
 from app.gateway.http import host_not_found
 
@@ -70,6 +71,8 @@ async def probe_models(
         return "base URL not allowed"
     except BlockedAddress:
         return "blocked address"
+    except UnsupportedEncoding:
+        return "unsupported content-encoding"
     except httpx.TransportError as error:
         return "host not found" if host_not_found(error) else "connection error"
     except UnicodeEncodeError:

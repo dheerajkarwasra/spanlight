@@ -69,8 +69,8 @@ class UpstreamResponse:
     """A provider's answer whose body has not been read yet.
 
     `headers` are the ones to pass back to the client (see the module docstring). `body` yields
-    the response bytes as they arrive, decoded from any content-encoding (the gateway asks for
-    none). Reading it to the end releases the connection; otherwise the caller must `aclose()`,
+    the raw response bytes as they arrive; any content-encoding other than identity is refused.
+    Reading it to the end releases the connection; otherwise the caller must `aclose()`,
     for example when its own client disconnects mid-stream.
     """
 
@@ -190,6 +190,10 @@ def strict_json(body: Mapping[str, Any]) -> bytes:
         return json.dumps(body, allow_nan=False, separators=(",", ":")).encode()
 
 
+class UnsupportedEncoding(Exception):  # noqa: N818 - reads as the condition, like the egress errors
+    """The provider answered with a content-encoding, though the gateway asks for none."""
+
+
 async def send_upstream(
     http: httpx.AsyncClient, upstream: UpstreamRequest, timeout_s: float
 ) -> UpstreamResponse:
@@ -199,6 +203,7 @@ async def send_upstream(
     pooled connection); the caller owns the total budget. A redirect comes back as it is.
     Raises the httpx transport errors and `app.core.egress.BlockedAddress` (which is not one:
     a blocked destination is a configuration error, not a network failure).
+    A content-encoded answer is closed unread and raises `UnsupportedEncoding`.
     """
     request = http.build_request(
         upstream.method,
@@ -208,10 +213,14 @@ async def send_upstream(
         timeout=httpx.Timeout(timeout_s),
     )
     response = await http.send(request, stream=True, follow_redirects=False)
+    # Refuse compression before decoding can expand a small body past the response cap.
+    if response.headers.get("content-encoding", "identity").strip().lower() != "identity":
+        await response.aclose()
+        raise UnsupportedEncoding
     return UpstreamResponse(
         status=response.status_code,
         headers=client_headers(response.headers),
-        body=response.aiter_bytes(),
+        body=response.aiter_raw(),
         _response=response,
     )
 

@@ -59,7 +59,13 @@ export function shortRangeLabel(range: Pick<ResolvedRange, "value">): string {
 }
 
 export type HeroStatusKind =
-  "first-run" | "empty-window" | "errors" | "findings" | "health-unavailable" | "healthy";
+  | "first-run"
+  | "empty-window"
+  | "errors"
+  | "findings"
+  | "errors-unknown"
+  | "health-unavailable"
+  | "healthy";
 
 /** The status sentence: a plain lead followed by an emphasised (serif) accent. */
 export interface HeroStatus {
@@ -71,8 +77,8 @@ export interface HeroStatus {
 interface HeroStatusInput {
   /** Traces in the selected window. */
   traces: number;
-  /** Failed LLM calls in the selected window. */
-  errors: number;
+  /** Failed LLM calls in the selected window; null when the error rate is unknown. */
+  errors: number | null;
   /** Open Doctor findings (critical + warning); 0 while unknown. */
   findings?: number;
   /** The Doctor's health request failed: never fall through to "behaving". */
@@ -87,6 +93,7 @@ interface HeroStatusInput {
  * - nothing in this window (but older traces exist) → "No traces in this window."
  * - failed calls and open Doctor findings → "3 errors and 1 finding need a look."
  * - open findings only → "1 finding needs a look."
+ * - no finding and the error count unknown → "Error count is unknown."
  * - no failed call but the Doctor's health failed → "Doctor health is unavailable."
  * - otherwise → "Your models are behaving."
  */
@@ -103,7 +110,11 @@ export function heroStatus({
     }
     return { kind: "empty-window", lead: "No traces in", accent: "this window." };
   }
-  const parts = [countOf(errors, "error"), countOf(findings, "finding")].filter(Boolean);
+  const failed = errors ?? 0;
+  const parts = [countOf(failed, "error"), countOf(findings, "finding")].filter(Boolean);
+  if (parts.length === 0 && errors === null) {
+    return { kind: "errors-unknown", lead: "Error count is", accent: "unknown." };
+  }
   if (parts.length === 0 && healthUnavailable) {
     return { kind: "health-unavailable", lead: "Doctor health is", accent: "unavailable." };
   }
@@ -111,9 +122,9 @@ export function heroStatus({
     return { kind: "healthy", lead: "Your models are", accent: "behaving." };
   }
   return {
-    kind: errors > 0 ? "errors" : "findings",
+    kind: failed > 0 ? "errors" : "findings",
     lead: parts.join(" and "),
-    accent: errors + findings === 1 ? "needs a look." : "need a look.",
+    accent: failed + findings === 1 ? "needs a look." : "need a look.",
   };
 }
 

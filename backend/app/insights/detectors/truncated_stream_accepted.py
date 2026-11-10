@@ -1,7 +1,7 @@
 """Doctor detector: a cut-off stream was treated as a complete answer.
 
 Reads: llm spans of the last hour, fault-injected ones included (it judges client behaviour).
-Rule: a span with `gateway.fault_scenario == "truncated_stream"` (F), followed within 5 minutes
+Rule: a span with `spanlight.fault.scenario == "truncated_stream"` (F), followed within 5 minutes
 in the same trace by a span with a different `request_hash`, and by no later span in that trace
 with F's `request_hash`: the client carried on instead of retrying the request or failing.
 `rounds` counts such F. One finding per environment, critical.

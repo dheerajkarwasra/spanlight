@@ -75,7 +75,7 @@ export function parseMoney(value: Maybe<string>): number | null {
 
 export function formatCost(value: Maybe<string | number>): string | null {
   const amount = typeof value === "number" ? value : parseMoney(value);
-  if (amount === null) {
+  if (amount === null || !Number.isFinite(amount)) {
     return null;
   }
   if (amount === 0) {
@@ -83,7 +83,10 @@ export function formatCost(value: Maybe<string | number>): string | null {
   }
   const absolute = Math.abs(amount);
   let digits = 2;
-  if (absolute < 0.01) {
+  if (absolute < 0.000001) {
+    // Costs are stored with 8 decimals; six would show a real cost as zero.
+    digits = 8;
+  } else if (absolute < 0.01) {
     digits = 6;
   } else if (absolute < 1) {
     digits = 4;

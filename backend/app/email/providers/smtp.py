@@ -14,6 +14,7 @@ from pydantic import SecretStr
 
 from app.core.thread_ownership import owned_thread
 from app.email.message import EmailDeliveryError, EmailMessage
+from app.notifications.registry import PermanentDeliveryError
 
 TIMEOUT_SECONDS = 10.0
 # The SMTPS port: the connection is TLS from the start instead of upgraded with STARTTLS.
@@ -46,17 +47,18 @@ class SmtpEmailSender:
             raise EmailDeliveryError(self._describe(exc)) from exc
 
     def _build(self, message: EmailMessage) -> tuple[MimeMessage, str]:
-        """The MIME message and its one validated recipient address."""
+        """The MIME message and its one validated recipient address. A malformed message raises
+        `PermanentDeliveryError`: no retry can fix it."""
         # A line break in a header value would let a subject or address smuggle in headers such
         # as Bcc. `email.message` refuses them too; checking first gives the outbox a clear error.
         extra = dict(message.headers or {})
         for name, value in (("to", message.to), ("subject", message.subject), *extra.items()):
             if "\r" in value or "\n" in value:
-                raise EmailDeliveryError(f"email '{name}' must not contain a line break")
+                raise PermanentDeliveryError(f"email '{name}' must not contain a line break")
         # Exactly one mailbox: "a@x.com, b@y.com" would otherwise address both recipients.
         mailboxes = [address for _, address in getaddresses([message.to]) if address]
         if len(mailboxes) != 1:
-            raise EmailDeliveryError("email 'to' must be exactly one address")
+            raise PermanentDeliveryError("email 'to' must be exactly one address")
         mime = MimeMessage()
         mime["From"] = self._from_address
         mime["To"] = message.to

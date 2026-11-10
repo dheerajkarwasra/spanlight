@@ -146,3 +146,12 @@ async def test_seed_job_creates_everything_then_queues_the_second_run(
         await db.commit()
     await _run_job(session_factory, settings)
     assert (await _counts(session_factory, workspace))["runs"] == 2
+
+
+def test_the_seed_time_limit_fires_before_the_worker_cancels_it() -> None:
+    """At 120 s the worker's 50 s limit cancelled the seed first, so the documented reason for a
+    stuck seed was never recorded."""
+    from app.jobs.tasks.seed_demo_evals import SEED_DEMO_EVALS_JOB, SEED_TIMEOUT_S  # noqa: PLC0415
+    from app.jobs.worker import TASK_TIMEOUT_OVERRIDES, TASK_TIMEOUT_SECONDS  # noqa: PLC0415
+
+    assert TASK_TIMEOUT_OVERRIDES.get(SEED_DEMO_EVALS_JOB, TASK_TIMEOUT_SECONDS) > SEED_TIMEOUT_S

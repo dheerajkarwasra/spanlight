@@ -84,6 +84,17 @@ describe("heroStatus", () => {
     );
   });
 
+  it("never says the models are behaving while the error count is unknown", () => {
+    expect(heroStatus({ traces: 5, errors: null, hasEverReceivedTraces: true })).toEqual({
+      kind: "errors-unknown",
+      lead: "Error count is",
+      accent: "unknown.",
+    });
+    expect(
+      heroStatus({ traces: 5, errors: null, findings: 2, hasEverReceivedTraces: true }).kind,
+    ).toBe("findings");
+  });
+
   it("asks for a look when calls failed", () => {
     expect(heroStatus({ traces: 50, errors: 1203, hasEverReceivedTraces: true })).toEqual({
       kind: "errors",

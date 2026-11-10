@@ -58,6 +58,14 @@ def create_engine(
             # and picks a join that is far slower for a day of spans: a 1 hour overview got ten
             # times slower. Planning each statement afresh costs a fraction of a millisecond.
             "prepare_threshold": None,
+            # psycopg waits 130 s for a connect by default; `pool_timeout` only bounds the wait
+            # for a pool slot. A database host that drops packets (a redeploy, a proxy) would
+            # hang a request that long, and a peer that dies mid-query for the kernel's ~15 min.
+            "connect_timeout": 5,
+            "keepalives": 1,
+            "keepalives_idle": 30,
+            "keepalives_interval": 10,
+            "keepalives_count": 3,
         },
     )
 

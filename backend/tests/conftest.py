@@ -76,6 +76,13 @@ _RESET_STATUS_SOURCES = (
     "last_polled_at = NULL, last_success_at = NULL, last_outcome = NULL, "
     "consecutive_failures = 0, last_error_type = NULL"
 )
+# Autovacuum can analyze a table while it holds only the dead rows of the last test and record
+# "0 rows in N pages". The planner then sizes the next test's rows as one and picks plans that
+# are 30 times slower, which failed wall-clock and plan-shape tests in CI. -1 is "never analyzed".
+_FORGET_EMPTY_STATISTICS = (
+    "; UPDATE pg_class SET reltuples = -1 "
+    "WHERE reltuples = 0 AND relkind = 'r' AND relnamespace = 'public'::regnamespace"
+)
 # `_TABLES_TO_EMPTY` and the tables that reference them, transitively, and the sequences they own.
 _EMPTIED_RELATIONS = """
 WITH RECURSIVE emptied(oid) AS (
@@ -237,6 +244,7 @@ async def _empty_tables(
             + "SELECT setval(seqrelid, seqstart, false) FROM pg_sequence "
             + f"WHERE seqrelid = ANY('{{{','.join(sequences)}}}'::regclass[]); "
             + _RESET_STATUS_SOURCES
+            + _FORGET_EMPTY_STATISTICS
         )
 
         async def empty() -> None:

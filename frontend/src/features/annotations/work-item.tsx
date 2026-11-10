@@ -14,6 +14,8 @@ import { formatDuration, formatInteger } from "@/lib/format";
 
 import { reviewedSpan, reviewingText } from "./queue-format";
 
+const NO_TOKENS = "No call in this trace reported this token count";
+
 /**
  * The left card of work mode (Figma "Annotate — work mode", Trace): the trace's name and chips,
  * a link to the full trace, its numbers, then the reviewed span's input and output.
@@ -88,7 +90,8 @@ function TraceContent({ trace, item }: { trace: TraceDetail; item: QueueItem }) 
         <Metric label="Reviewing">{reviewingText(item)}</Metric>
         <Metric label="Duration">{formatDuration(trace.duration_ms)}</Metric>
         <Metric label="Tokens">
-          {`${formatInteger(trace.input_tokens) ?? "0"} → ${formatInteger(trace.output_tokens) ?? "0"}`}
+          {formatInteger(trace.input_tokens) ?? <UnknownValue reason={NO_TOKENS} />} →{" "}
+          {formatInteger(trace.output_tokens) ?? <UnknownValue reason={NO_TOKENS} />}
         </Metric>
         <Metric label="Cost">
           <CostValue cost={trace.cost_usd} hasUnpriced={trace.has_unpriced} />

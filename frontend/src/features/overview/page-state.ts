@@ -49,7 +49,7 @@ export function statusFor(state: PageState, queries: OverviewQueries): HeroStatu
       const health = queries.health.isError ? undefined : queries.health.data;
       return heroStatus({
         traces: current?.traces ?? 0,
-        errors: current ? (errorCountFrom(current.error_rate, current.llm_calls) ?? 0) : 0,
+        errors: current ? errorCountFrom(current.error_rate, current.llm_calls) : 0,
         findings: (health?.open_critical ?? 0) + (health?.open_warning ?? 0),
         healthUnavailable: health === undefined,
         hasEverReceivedTraces: true,

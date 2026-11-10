@@ -1,6 +1,6 @@
 """rate_limit_pressure: a large share of calls to one provider get rate limited.
 
-Reads: llm spans of the last 15 minutes. Fault-injected spans (`gateway.fault_scenario` set)
+Reads: llm spans of the last 15 minutes. Fault-injected spans (`spanlight.fault.scenario` set)
 and the gateway key limiter's own refusals (`rate_limit_kind == "gateway"`) are dropped before
 counting, `min_samples` included: a simulated 429 says nothing about the real provider limit,
 and a call Spanlight's limiter refused never reached the provider.

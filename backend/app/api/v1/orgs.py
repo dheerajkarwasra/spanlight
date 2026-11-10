@@ -8,7 +8,7 @@ from typing import Annotated, Any
 import structlog
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import Select, and_, func, or_, select
+from sqlalchemy import Select, func, or_, select, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import aliased
 
@@ -717,11 +717,9 @@ async def list_audit_events(
     )
     if cursor:
         created_at, event_id = decode_uuid_cursor(cursor)
+        # A row comparison is an index bound on (org_id, created_at DESC, id DESC); an OR is not.
         query = query.where(
-            or_(
-                AuditEvent.created_at < created_at,
-                and_(AuditEvent.created_at == created_at, AuditEvent.id < event_id),
-            )
+            tuple_(AuditEvent.created_at, AuditEvent.id) < tuple_(created_at, event_id)
         )
 
     rows = (await db.execute(query)).all()

@@ -29,6 +29,7 @@ from app.email.providers.console import ConsoleEmailSender
 from app.email.providers.resend import ResendEmailSender
 from app.email.providers.smtp import SmtpEmailSender
 from app.email.sender import get_email_sender
+from app.notifications.registry import PermanentDeliveryError
 
 TOKEN = "SECRET-TOKEN-0123456789"
 MESSAGE = EmailMessage(
@@ -357,8 +358,18 @@ async def test_smtp_rejects_header_injection(smtp_inbox: SmtpInbox) -> None:
     address = EmailMessage(to="ada@example.com\nBcc: eve@example.com", subject="Hi", text="Hello")
 
     for unsafe in (message, address):
-        with pytest.raises(EmailDeliveryError, match="line break"):
+        with pytest.raises(PermanentDeliveryError, match="line break"):
             await smtp_sender(smtp_inbox).send(unsafe)
+
+    assert smtp_inbox.envelopes == []
+
+
+async def test_smtp_fails_a_message_with_two_recipients_at_once(smtp_inbox: SmtpInbox) -> None:
+    """A malformed message cannot be fixed by retrying: the outbox tried it eight times."""
+    two = EmailMessage(to="ada@example.com, eve@example.com", subject="Hi", text="Hello")
+
+    with pytest.raises(PermanentDeliveryError, match="exactly one address"):
+        await smtp_sender(smtp_inbox).send(two)
 
     assert smtp_inbox.envelopes == []
 
@@ -529,7 +540,7 @@ async def test_smtp_rejects_a_line_break_in_an_extra_header(smtp_inbox: SmtpInbo
         headers={"List-Unsubscribe": "<x>\r\nBcc: eve@example.com"},
     )
 
-    with pytest.raises(EmailDeliveryError, match="line break"):
+    with pytest.raises(PermanentDeliveryError, match="line break"):
         await smtp_sender(smtp_inbox).send(unsafe)
 
     assert smtp_inbox.envelopes == []

@@ -4,6 +4,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+import psycopg
 from prometheus_client import REGISTRY
 from sqlalchemy import event, text
 
@@ -12,6 +13,7 @@ from app.db.rls import bind_project, bypass_rls
 from app.rollups.dirty import HOURLY, mark_dirty_hours
 from app.rollups.dirty_candidates import _CANDIDATE, Candidate, Scan
 from tests.attribution.support import SessionFactory
+from tests.ingest.faults import admin_libpq_url
 from tests.rls.factories import create_project
 from tests.rollups.dirty_support import dirty_rows
 from tests.rollups.test_dirty_repair import repair
@@ -45,6 +47,13 @@ async def test_candidate_streams_oldest_indexes_without_grouping_or_sorting_back
                 FROM aggregate_dirty_hours CROSS JOIN generate_series(0, 1) s
             """),
         )
+        # The plan is only meaningful with true statistics: the suite empties tables by DELETE, so
+        # autovacuum can record `projects` as empty and make the planner drive from it and sort.
+        await db.commit()
+        async with await psycopg.AsyncConnection.connect(
+            admin_libpq_url(), autocommit=True
+        ) as admin:
+            await admin.execute("ANALYZE projects, aggregate_dirty_hours, aggregate_dirty_shards")
         await bypass_rls(db)
         await db.execute(text("SET LOCAL enable_seqscan=off"))
         plan = await db.scalar(

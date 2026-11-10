@@ -19,6 +19,7 @@ import httpx
 
 from app.core.egress import BlockedAddress, InsecureUrl
 from app.gateway.adapters import UpstreamResponse
+from app.gateway.adapters.base import UnsupportedEncoding
 from app.gateway.context import UPSTREAM_ERROR_CODE
 from app.gateway.errors import ErrorKind, GatewayError, upstream_blocked, upstream_timeout
 from app.gateway.fault_apply import MAX_BUFFERED_BYTES
@@ -38,6 +39,7 @@ Spanlight's word, not the provider's, so the span's `provider.error.type` is lef
 
 _INSECURE_URL_MESSAGE = "The provider URL must use https:// on this server."
 _TOO_LARGE_MESSAGE = "The provider's answer exceeds the gateway's 10 MB limit."
+_ENCODED_MESSAGE = "The provider answered with an unsupported content-encoding."
 
 FailureKind = Literal["status", "timeout", "connection_error", "blocked"]
 
@@ -80,7 +82,8 @@ def classify_failure(error: BaseException, timeout_ms: int) -> UpstreamFailure |
 
     A private address or a refused `http://` is `blocked` (never retried: the configuration is
     wrong, not the provider), so is an answer over `MAX_RESPONSE_BYTES` (502
-    `UPSTREAM_UNREACHABLE`); a timeout is `UPSTREAM_TIMEOUT`.
+    `UPSTREAM_UNREACHABLE`) or one with a content-encoding; a timeout is
+    `UPSTREAM_TIMEOUT`.
     """
     if isinstance(error, InsecureUrl):
         return UpstreamFailure("blocked", insecure_url())
@@ -93,6 +96,9 @@ def classify_failure(error: BaseException, timeout_ms: int) -> UpstreamFailure |
     if isinstance(error, ResponseTooLarge):
         too_large = GatewayError(502, "UPSTREAM_UNREACHABLE", _TOO_LARGE_MESSAGE)
         return UpstreamFailure("blocked", too_large, label="response_too_large")
+    if isinstance(error, UnsupportedEncoding):
+        encoded = GatewayError(502, "UPSTREAM_UNREACHABLE", _ENCODED_MESSAGE)
+        return UpstreamFailure("blocked", encoded, label="invalid_response")
     return None
 
 

@@ -46,6 +46,11 @@ describe("money", () => {
   it("keeps unknown cost unknown instead of $0", () => {
     expect(formatCost(null)).toBeNull();
     expect(formatCost("0")).toBe("$0.00");
+    // A number that is not finite is not a cost either.
+    // A real cost below the six shown digits must not read as zero.
+    expect(formatCost("0.00000040")).toBe("$0.00000040");
+    expect(formatCost(Number.NaN)).toBeNull();
+    expect(formatCost(Number.POSITIVE_INFINITY)).toBeNull();
   });
 
   it("uses more precision for small amounts", () => {

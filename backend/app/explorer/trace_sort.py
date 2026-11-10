@@ -95,11 +95,15 @@ def apply[*Ts](
         return query.where(_after_value(sort, order, cursor))
     started_at, trace_id = decode_cursor(cursor)
     after = operator.gt if order == "asc" else operator.lt
+    not_before = operator.ge if order == "asc" else operator.le
     return query.where(
+        # Implied by the OR, which Postgres cannot use as an index bound: without it a deep
+        # page reads and discards every row before the cursor.
+        not_before(Trace.started_at, started_at),
         or_(
             after(Trace.started_at, started_at),
             and_(Trace.started_at == started_at, after(Trace.trace_id, trace_id)),
-        )
+        ),
     )
 
 

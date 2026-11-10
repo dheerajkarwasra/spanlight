@@ -1313,6 +1313,10 @@ Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anth
   client that sets `stream_options` itself, with or without `include_usage`, gets the stream unchanged.
 - **Provider answers over 10 MB.** A non-streaming provider answer longer than 10 MB ends the attempt with `502
   UPSTREAM_UNREACHABLE` (message: the answer exceeds the gateway's 10 MB limit), never retried or fallen back from.
+- **Compressed provider answers.** The gateway asks providers for no content-encoding. An answer that carries one
+  anyway (anything but `identity`) is closed unread and ends the attempt with `502 UPSTREAM_UNREACHABLE` (message:
+  unsupported content-encoding), never retried or fallen back from, so a small compressed body cannot expand past the
+  10 MB limit in memory. A credential check against such a host reports "unsupported content-encoding".
 - **Non-strict JSON.** A request body with `NaN` or an infinite number is `400 INVALID_REQUEST` (`param: null`),
   with no upstream attempt: it cannot be sent as strict JSON. Its span is still recorded, with each such number
   stored as the string `"NaN"`, `"Infinity"` or `"-Infinity"`.

@@ -21,8 +21,10 @@ from app.jobs.context import TaskContext
 logger = structlog.get_logger(__name__)
 
 SEED_DEMO_EVALS_JOB = "seed_demo_evals"
-# Seeding is a few dozen inserts; anything near this long is stuck, not slow.
-SEED_TIMEOUT_S = 120
+# Seeding is a few dozen inserts; anything near this long is stuck, not slow. Below the worker's
+# 50 s task limit (`app.jobs.worker.TASK_TIMEOUT_SECONDS`), so this limit fires first and records
+# its reason; a longer one is cancelled by the worker instead.
+SEED_TIMEOUT_S = 45
 
 
 async def run_seed_demo_evals(context: TaskContext, _: dict[str, Any]) -> None:

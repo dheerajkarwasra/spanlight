@@ -87,8 +87,11 @@ export function Missing({ what }: { what: string }) {
   );
 }
 
-export function Fact({ value, what }: { value: string | null; what: string }) {
-  return value ?? <Missing what={what} />;
+export function Fact({ value, what, href }: { value: string | null; what: string; href?: string }) {
+  if (value === null) {
+    return <Missing what={what} />;
+  }
+  return href ? <a href={href}>{value}</a> : value;
 }
 
 /** Follows every backup claim, and flags it until the owner confirms backups run on the service. */

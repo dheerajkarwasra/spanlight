@@ -287,6 +287,7 @@ export function PrivacyPage() {
           <Fact
             value={LEGAL_FACTS.supervisoryAuthority?.name ?? null}
             what="supervisory authority"
+            href={LEGAL_FACTS.supervisoryAuthority?.url}
           />
           ; or any supervisory authority in the EU.
         </p>
