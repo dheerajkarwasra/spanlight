@@ -4,6 +4,12 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-11
+
+Live dashboards, hard gateway budgets and a hosted service: Overview and Users follow new traces over a server-sent event stream, gateway `block` budgets hold for gateway spend, and spanlight.dev gains legal pages, terms acceptance and account controls. The dashboard is reorganised into 8 hubs with sortable tables and linkable trace pages, each project can have its own ingest caps, and sensitive account actions now need the account owner's proof. The Python SDK is 0.3.0 with `inject()` and `continue_trace()`.
+
+**Breaking for API clients.** Personal access tokens now get `403 SESSION_REQUIRED` on invites and role changes, member removal, organization and project deletion, audit-stream changes, credentials with their own `base_url`, gateway key creation and widening, and keys with read scopes. Creating a token and linking GitHub or Google need the account owner's proof, and the old OAuth link `GET` answers `410`. Span content in very large traces is bounded. Each change is described under Changed and Security below; read Upgrading before you deploy.
+
 ### Added
 
 - **Live dashboards.** Open dashboard tabs can follow new data over `GET /api/v1/projects/{project_id}/live`, a server-sent event stream for signed-in browsers (`403 LIVE_SESSION_ONLY` for API keys and tokens, `503 LIVE_BUSY` with `Retry-After: 30` past `LIVE_MAX_STREAMS`, 3 streams per session). Set `LIVE_UPDATES_ENABLED=false` to turn it off; self-hosted Caddy configs need the new unbuffered `/api/v1/projects/*/live` route from `deploy/Caddyfile`.
