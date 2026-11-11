@@ -138,7 +138,10 @@ function main() {
   for (const page of pages) {
     const raw = read(page.source);
     const title = page.title ?? titleOf(raw) ?? path.basename(page.source, '.md');
-    const body = rewriteLinks(stripTitle(raw), page.source, context, errors).trimEnd();
+    // An empty "[Unreleased]" heading right after a release would publish as a bare title.
+    const body = rewriteLinks(stripTitle(raw), page.source, context, errors)
+      .replace(/^## \[Unreleased\]\n+(?=## )/m, '')
+      .trimEnd();
     const sourceNote = `---\n\nThis page is generated from [\`${page.source}\`](${GITHUB}/blob/main/${page.source}) in the repository.`;
     writeFile(
       page.target,
