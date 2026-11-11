@@ -226,6 +226,8 @@ Live dashboards, hard gateway budgets and a hosted service: Overview and Users f
 
 - **Gateway bodies cannot inflate without bound.** A `gzip` or `deflate` gateway request body that inflates more than 100-fold past 1 MiB is refused with `413` and `spanlight_code: PAYLOAD_TOO_LARGE` in the provider's envelope, the limit ingestion already applies.
 
+- **Release images carry the current zlib, Go and Caddy dependency fixes.** The backend image applies Debian security updates at build time (zlib, CVE-2026-85091), and the Caddy binary in the web image is built with Go 1.27.3, `golang.org/x/net` 0.62.0 and `go-jose` 4.1.6 (CVE-2026-111943, CVE-2026-78661, CVE-2026-116587).
+
 ### Upgrading
 
 Run `spanlight migrate` after upgrading. 1010 adds the copy columns to `experiment_items` and a CHECK on them (catalog only; the CHECK is then validated with one scan of the table that does not block writes); its downgrade drops the columns and loses every stored copy. 1011 adds `datasets.locked_at` (nullable, catalog only) and the `dataset.lock` and `dataset.unlock` audit actions; its downgrade deletes those audit events and forgets which datasets were locked. 1012 builds the partial index `dataset_items_source_trace_idx` `CONCURRENTLY`, which does not block reads or writes but waits for transactions already open on the table to finish; if the build is interrupted, running `spanlight migrate` again recovers (it drops the invalid leftover first). During a rolling deploy, a run finished by an older worker stores no copy and shows as an older run, and an older api replica can miss a new lock for the seconds both versions run.

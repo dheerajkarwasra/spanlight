@@ -85,8 +85,11 @@ RUN /usr/local/bin/python -m pip uninstall --yes pip
 # pinned to the server's (a dump from a newer client cannot be restored by an older one, and
 # pg_dump refuses a server newer than itself). The PGDG key is checked against its published
 # fingerprint before apt trusts it; the tools used to fetch it are removed again.
+# `apt-get upgrade` takes Debian security fixes the base image has not been rebuilt with yet
+# (zlib1g, CVE-2026-85091), which the release scan rejects.
 RUN set -eux; \
     apt-get update; \
+    apt-get upgrade -y; \
     apt-get install -y --no-install-recommends ca-certificates curl gnupg; \
     install -d /usr/share/postgresql-common/pgdg; \
     curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
@@ -117,9 +120,10 @@ CMD ["sh", "-c", "unset MIGRATION_DATABASE_URL; exec python -m app.server"]
 # ---------- Caddy binary ----------
 # The official caddy:2.11-alpine image (Caddy 2.11.7) ships a binary built with Go 1.26.8 and
 # golang.org/x/net 0.59.0, which failed the 0.6.0 release scan (CVE-2026-78667, CVE-2026-78669,
-# CVE-2026-97031). The same Caddy release is rebuilt here with a patched toolchain and x/net.
-# shortcut: pinned by hand, drop this stage once the official image ships Go >= 1.27.2.
-FROM golang:1.27.2-alpine AS caddy-build
+# CVE-2026-97031). The same Caddy release is rebuilt here with a patched toolchain, x/net and
+# go-jose; the 0.8.0 scan raised all three again (CVE-2026-111943, CVE-2026-78661, CVE-2026-116587).
+# shortcut: pinned by hand, drop this stage once the official image ships Go >= 1.27.3.
+FROM golang:1.27.3-alpine AS caddy-build
 WORKDIR /src
 RUN printf '%s\n' 'package main' \
       'import (' \
@@ -128,7 +132,8 @@ RUN printf '%s\n' 'package main' \
       ')' \
       'func main() { caddycmd.Main() }' > main.go \
     && go mod init spanlight/caddy \
-    && go get github.com/caddyserver/caddy/v2@v2.11.7 golang.org/x/net@v0.60.0 \
+    && go get github.com/caddyserver/caddy/v2@v2.11.7 golang.org/x/net@v0.62.0 \
+       github.com/go-jose/go-jose/v4@v4.1.6 \
     && go mod tidy \
     && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /caddy .
 # Licence notices for what the binary statically links: the Go standard library and every module
