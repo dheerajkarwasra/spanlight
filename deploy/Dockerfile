@@ -92,7 +92,8 @@ RUN set -eux; \
     apt-get upgrade -y; \
     apt-get install -y --no-install-recommends ca-certificates curl gnupg; \
     install -d /usr/share/postgresql-common/pgdg; \
-    curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    curl -fsSL --retry 5 --retry-all-errors --max-time 60 \
+        -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
         https://www.postgresql.org/media/keys/ACCC4CF8.asc; \
     gpg --show-keys --with-colons /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
         | grep -q '^fpr:::::::::B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8:'; \
