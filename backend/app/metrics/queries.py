@@ -208,21 +208,28 @@ def _statement(kind: Statement, environment: bool, histogram: bool | Literal["bo
     return statement
 
 
+# Each range is counted in a subquery of its own. Joined to the ranges, the planner sizes each at
+# a ninth of the table and, when the environment keeps it off the index-only scan, reads every
+# trace of every project instead; inside the subquery it sizes the pair of bounds as a range.
 _TRACE_COUNTS = {
     environment: text(
         f"""
-        SELECT w.grp, count(*) AS traces
+        SELECT w.grp, sum(c.traces) AS traces
         FROM unnest(
                  CAST(:starts AS timestamptz[]),
                  CAST(:ends AS timestamptz[]),
                  CAST(:groups AS integer[])
              ) AS w(start_at, end_at, grp)
-        JOIN traces AS t
-          ON t.project_id = :project_id
-         AND t.started_at >= w.start_at
-         AND t.started_at < w.end_at
-        {"WHERE t.environment = :environment" if environment else ""}
+        CROSS JOIN LATERAL (
+            SELECT count(*) AS traces
+            FROM traces AS t
+            WHERE t.project_id = :project_id
+              AND t.started_at >= w.start_at
+              AND t.started_at < w.end_at
+              {"AND t.environment = :environment" if environment else ""}
+        ) AS c
         GROUP BY w.grp
+        HAVING sum(c.traces) > 0
         """
     ).bindparams(
         bindparam("starts", type_=ARRAY(DateTime(timezone=True))),
