@@ -43,10 +43,19 @@ async def test_stalled_claims_warn_while_real_heartbeat_writes_continue(
                     if REGISTRY.get_sample_value("spanlight_worker_short_loop_stalled") == 1:
                         break
                     await asyncio.sleep(0.1)
-            async with session_factory() as db:
-                heartbeat = await db.get(WorkerHeartbeat, worker.worker_id)
-                assert heartbeat is not None
-                assert (heartbeat.last_seen_at - first_seen).total_seconds() >= 60
+            # The stall is reported just before that cycle's beat, so wait for the write to land.
+            async with asyncio.timeout(10):
+                while True:
+                    async with session_factory() as db:
+                        last_seen = await db.scalar(
+                            select(WorkerHeartbeat.last_seen_at).where(
+                                WorkerHeartbeat.worker_id == worker.worker_id
+                            )
+                        )
+                    assert last_seen is not None
+                    if (last_seen - first_seen).total_seconds() >= 60:
+                        break
+                    await asyncio.sleep(0.1)
             warnings = logged(caplog, "worker_short_loop_stalled")
             assert len(warnings) == 1
             assert warnings[0]["claim_poll_age_seconds"] > 65
