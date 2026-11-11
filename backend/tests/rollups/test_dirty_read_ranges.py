@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import event, text
 
 from app.alerts.metrics import metric_series
 from app.alerts.types import Metric, MetricFilters
@@ -152,3 +152,44 @@ async def test_invalid_read_mask_is_rejected_before_sql(
                 datetime.now(UTC),
                 relevant_consumers=mask,
             )
+
+
+async def test_coverage_is_computed_once_per_window_not_once_per_row(
+    browser_factory: Any, session_factory: SessionFactory
+) -> None:
+    """Inlined, the coverage CTE scanned the pending hours once per row of the wrapped statement."""
+    workspace = await create_workspace(await browser_factory("dirty-loops@example.com"))
+    project = uuid.UUID(workspace.project_id)
+    hour = datetime(2026, 10, 20, 10, tzinfo=UTC)
+    captured: list[tuple[str, Any]] = []
+
+    def capture(_conn: Any, _cursor: Any, statement: str, parameters: Any, *_: Any) -> None:
+        if "aggregate_coverage" in statement:
+            captured.append((statement, parameters))
+
+    async with session_factory() as db:
+        await bind_project(db, project)
+        connection = await db.connection()
+        event.listen(connection.sync_connection, "before_cursor_execute", capture)
+        rows = await read_covered(
+            db,
+            text("SELECT g FROM generate_series(1, 20) g"),
+            {},
+            project,
+            hour,
+            hour + timedelta(hours=1),
+            relevant_consumers=COST_DAILY,
+        )
+        assert len(rows) == 20
+        statement, parameters = captured[0]
+        plan = (
+            await connection.exec_driver_sql(
+                "EXPLAIN (ANALYZE, FORMAT JSON) " + statement, parameters
+            )
+        ).scalar_one()
+
+    def scans(node: dict[str, Any]) -> list[int]:
+        own = [node["Actual Loops"]] if node.get("Relation Name") == "aggregate_dirty_hours" else []
+        return own + [loops for child in node.get("Plans", []) for loops in scans(child)]
+
+    assert scans(plan[0]["Plan"]) == [1]
