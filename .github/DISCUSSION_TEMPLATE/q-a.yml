@@ -35,4 +35,4 @@ body:
     attributes:
       label: Spanlight version
       description: Server version, and SDK version if you use it.
-      placeholder: "server 0.8.0, SDK 0.3.0"
+      placeholder: "server 0.8.1, SDK 0.3.0"

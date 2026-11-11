@@ -4,7 +4,7 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 ## [Unreleased]
 
-## [0.8.0] - 2026-11-11
+## [0.8.1] - 2026-11-11
 
 Live dashboards, hard gateway budgets and a hosted service: Overview and Users follow new traces over a server-sent event stream, gateway `block` budgets hold for gateway spend, and spanlight.dev gains legal pages, terms acceptance and account controls. The dashboard is reorganised into 8 hubs with sortable tables and linkable trace pages, each project can have its own ingest caps, and sensitive account actions now need the account owner's proof. The Python SDK is 0.3.0 with `inject()` and `continue_trace()`.
 
@@ -267,6 +267,10 @@ New and changed settings: `INGEST_SPANS_PER_SECOND`, `INGEST_SPANS_PER_DAY`, `IN
 Self-hosted Compose installs: the `migrate` service now runs a third step, `activate-aggregate-coverage --fresh-install --skip-if-projects-exist`, which changes nothing once a project exists. An existing install that never activated aggregate coverage still needs `spanlight activate-aggregate-coverage --writers-drained` once, after draining old writers (see the upgrade guide). API clients that read traces or session turns with very large stored attributes must add `span_content=bounded` and handle `attributes_omitted` and `payload_omitted`, or they receive `422 SPAN_CONTENT_TOO_LARGE` for those traces.
 
 This release also changes what operators and users see once: over https the session and CSRF cookies are renamed with the `__Host-` prefix, so everyone is signed out once after the upgrade. The api and worker refuse to start when `SECRET_KEY` is the development value or shorter than 32 characters on a host other than `localhost`, `127.0.0.1` or `[::1]`. Backup uploads request `AES256` server-side encryption; set `BACKUP_S3_SSE=` (blank) for a store without it, such as MinIO without a KMS. SDK clients configured with a plain `http://` public host stop sending traces until the host uses `https://`.
+
+## [0.8.0] - Tagged, not published; included in 0.8.1
+
+The `v0.8.0` tag exists, but its release stopped at the image vulnerability scan before anything was pushed: there are no 0.8.0 images and no GitHub Release. Use 0.8.1.
 
 ## [0.7.0] - 2026-10-20
 

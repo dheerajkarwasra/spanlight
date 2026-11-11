@@ -33,7 +33,7 @@ If you start the stack with extra files, such as `deploy/compose.minio.yaml`, ad
 
 Check out a release tag or a specific commit, and write down which one. Do not follow `main` on a production instance, because a commit on `main` can include a migration you have not read about.
 
-By default the stack runs the released images named in `deploy/.env`, `SPANLIGHT_IMAGE` and `SPANLIGHT_WEB_IMAGE` (for example `ghcr.io/dheerajkarwasra/spanlight:0.8.0`). Pin both to the same version and change them together; `spl pull` then fetches the new images before `spl up -d`. Postgres (`postgres:17-alpine`) follows the 17 line.
+By default the stack runs the released images named in `deploy/.env`, `SPANLIGHT_IMAGE` and `SPANLIGHT_WEB_IMAGE` (for example `ghcr.io/dheerajkarwasra/spanlight:0.8.1`). Pin both to the same version and change them together; `spl pull` then fetches the new images before `spl up -d`. Postgres (`postgres:17-alpine`) follows the 17 line.
 
 If you build from the checkout instead, comment out both variables: the images are then built on your host (`spanlight:local`, `spanlight-web:local`) and the `--build` steps on this page and in the runbooks apply. Do not build with the variables set, or a local build is tagged with a release version.
 
@@ -44,7 +44,7 @@ The Python SDK has its own version. Upgrade it in your applications with `pip in
 Every release signs both images and both SBOMs with [Sigstore](https://docs.sigstore.dev/) keyless signing, from the release workflow of this repository. Before you run a new version, check those signatures with [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) v2 or later. Replace the version:
 
 ```bash
-VERSION=0.8.0
+VERSION=0.8.1
 for image in spanlight spanlight-web; do
   cosign verify "ghcr.io/dheerajkarwasra/${image}:${VERSION}" \
     --certificate-identity "https://github.com/dheerajkarwasra/spanlight/.github/workflows/release.yml@refs/tags/v${VERSION}" \
@@ -57,15 +57,15 @@ The identity says the signature was made by `.github/workflows/release.yml` in `
 The JSON output names the verified digest (`"docker-manifest-digest": "sha256:..."`). Pin that digest in `deploy/.env`, so the stack runs exactly the bytes you verified even if a tag is moved later:
 
 ```dotenv
-SPANLIGHT_IMAGE=ghcr.io/dheerajkarwasra/spanlight:0.8.0@sha256:<backend digest>
-SPANLIGHT_WEB_IMAGE=ghcr.io/dheerajkarwasra/spanlight-web:0.8.0@sha256:<web digest>
+SPANLIGHT_IMAGE=ghcr.io/dheerajkarwasra/spanlight:0.8.1@sha256:<backend digest>
+SPANLIGHT_WEB_IMAGE=ghcr.io/dheerajkarwasra/spanlight-web:0.8.1@sha256:<web digest>
 ```
 
 Then verify the pinned reference itself:
 
 ```bash
 cosign verify "ghcr.io/dheerajkarwasra/spanlight@sha256:<backend digest>" \
-  --certificate-identity "https://github.com/dheerajkarwasra/spanlight/.github/workflows/release.yml@refs/tags/v0.8.0" \
+  --certificate-identity "https://github.com/dheerajkarwasra/spanlight/.github/workflows/release.yml@refs/tags/v0.8.1" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
 
@@ -81,7 +81,7 @@ The SBOMs (`sbom-spanlight.cdx.json`, `sbom-spanlight-web.cdx.json`) and their S
 ```bash
 cosign verify-blob sbom-spanlight.cdx.json \
   --bundle sbom-spanlight.cdx.json.sigstore.json \
-  --certificate-identity "https://github.com/dheerajkarwasra/spanlight/.github/workflows/release.yml@refs/tags/v0.8.0" \
+  --certificate-identity "https://github.com/dheerajkarwasra/spanlight/.github/workflows/release.yml@refs/tags/v0.8.1" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
 
