@@ -70,11 +70,13 @@ export const LEGAL_PATHS = {
 
 /** Ids of the landing sections that the nav and footer scroll to. */
 export const SECTION_IDS = {
-  cost: "cost",
-  features: "features",
+  see: "see",
+  price: "price",
   diagnose: "diagnose",
-  howItWorks: "how-it-works",
-  openSource: "open-source",
+  route: "route",
+  improve: "improve",
+  start: "start",
+  own: "own",
 } as const;
 
 export interface NavLink {
@@ -84,8 +86,9 @@ export interface NavLink {
 
 /** Header navigation (desktop bar and mobile sheet). */
 export const NAV_LINKS: readonly NavLink[] = [
-  { label: "Product", href: `/#${SECTION_IDS.cost}` },
-  { label: "How it works", href: `/#${SECTION_IDS.howItWorks}` },
-  { label: "Self-hosting", href: `/#${SECTION_IDS.openSource}` },
+  { label: "Product", href: `/#${SECTION_IDS.see}` },
+  { label: "Doctor", href: `/#${SECTION_IDS.diagnose}` },
+  { label: "Gateway", href: `/#${SECTION_IDS.route}` },
+  { label: "Self-hosting", href: `/#${SECTION_IDS.own}` },
   { label: "Docs", href: DOCS_LINKS.quickstart },
 ];

@@ -1,7 +1,6 @@
 import { Link } from "@tanstack/react-router";
 
-import { Callout } from "@/components/callout";
-import { Button } from "@/components/ui/button";
+import { Button, Callout } from "./auth-controls";
 
 interface ForgotPasswordSentProps {
   email: string;
@@ -15,16 +14,16 @@ export function ForgotPasswordSent({ email }: ForgotPasswordSentProps) {
   return (
     <div className="flex flex-col gap-6">
       <Callout tone="success" role="status">
-        If <span className="font-bold">{email}</span> has a Spanlight account, a reset link is on
-        its way.
+        If <span className="font-semibold">{email}</span> has a Spanlight account, a reset link is
+        on its way.
       </Callout>
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-6">
         <Button asChild size="lg">
           <Link to="/login" search={{}}>
             Back to sign in
           </Link>
         </Button>
-        <p className="text-center text-xs font-medium text-muted-foreground">
+        <p className="text-sm leading-normal text-mono-600">
           Didn&apos;t get it? Check your spam folder, then try again in a few minutes.
         </p>
       </div>

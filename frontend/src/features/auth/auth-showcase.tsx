@@ -1,122 +1,188 @@
+import { LightField, Wires, type LightBand } from "@/features/landing/landing-parts";
+import { delay, inViewRef } from "@/features/landing/motion";
 import { cn } from "@/lib/utils";
 
-interface ExampleSpan {
-  name: string;
-  /** Start and length as a share of the trace, in percent. */
-  start: number;
-  length: number;
-  child: boolean;
-  /** The one call the panel is about: lit in lime, like the span in the logo. */
-  lit?: boolean;
-}
-
-/** The landing hero's example trace (`trace-anatomy.tsx`), so both pages tell one story. */
-const EXAMPLE_SPANS: readonly ExampleSpan[] = [
-  { name: "answer_ticket", start: 0, length: 100, child: false },
-  { name: "search_docs", start: 2, length: 16, child: true },
-  { name: "claude-sonnet-5-5 · 429", start: 20, length: 6, child: true },
-  { name: "claude-sonnet-5-5", start: 34, length: 58, child: true, lit: true },
-  { name: "lookup_order", start: 93, length: 6, child: true },
-];
-
-/**
- * The lit call's numbers: 58 % of the 1.42 s trace, and the landing's cost breakdown
- * (input includes the 6,000 cache-read and 1,200 cache-write tokens).
+/*
+ * The landing hero's worked example (`hero-diagram.tsx`), so both pages tell one story: the demo
+ * support bot's `answer_ticket` trace, the cost of its `answer` span and the cause the Doctor
+ * found. The three cards are copied here rather than imported, so the auth pages do not load the
+ * landing hero; keep the numbers in step with it.
  */
-const EXAMPLE_STATS = [
-  { label: "Latency", value: "824 ms" },
-  { label: "Tokens", value: "9,000 → 420" },
-  { label: "Cost", value: "$0.011400" },
+const SPANS = [
+  {
+    kind: "agent",
+    name: "answer_ticket",
+    left: 0,
+    width: 120,
+    duration: "1.42 s",
+    bar: "bg-mono-600",
+  },
+  { kind: "llm", name: "triage", left: 0, width: 26, duration: "0.31 s", bar: "bg-mono-400" },
+  {
+    kind: "tool",
+    name: "help_search",
+    left: 26,
+    width: 14,
+    duration: "0.16 s",
+    bar: "bg-mono-400",
+  },
+  { kind: "llm", name: "answer", left: 40, width: 80, duration: "0.95 s", bar: "bg-mono-white" },
 ] as const;
 
-const INTEGRATIONS = ["Python SDK", "OpenAI", "Anthropic", "OpenTelemetry"] as const;
+const LIT_SPAN = "answer";
+
+const COST_TOTAL = "$0.008420";
+const COST_LINES = [
+  { label: "input", cost: "$0.003680" },
+  { label: "cache read", cost: "$0.000620" },
+  { label: "output", cost: "$0.004120" },
+] as const;
+
+const CAUSE = "The agent repeats `reserve_item` with the same arguments";
+
+/** Trace to cost and trace to cause, from the Figma vectors, in the 840 × 900 stage. */
+const WIRE_PATHS = [
+  "M420 300C420 250 580 270 580 228",
+  "M420 560C420 610 580 590 580 640",
+] as const;
+
+/** Figma "Light band" × 2, placed in the panel. */
+const BANDS: readonly LightBand[] = [
+  {
+    left: -218,
+    top: 122,
+    width: 900,
+    height: 200,
+    opacity: 0.12,
+    rotate: 8,
+    blur: 55,
+    travel: 120,
+    seconds: 9,
+  },
+  {
+    left: 207,
+    top: 513,
+    width: 900,
+    height: 180,
+    opacity: 0.1,
+    rotate: -6,
+    blur: 55,
+    travel: -120,
+    seconds: 12,
+  },
+];
+
+/** The cards rise in once on load, 90ms apart. */
+const RISE_STAGGER_MS = 90;
+
+const MONO_LABEL = "font-mono text-xs leading-[1.4]";
+const CARD = "lp-rise absolute flex flex-col rounded-[14px]";
+const DARK_CARD = "border border-mono-800 bg-mono-900";
 
 /**
- * Right half of the desktop auth split screen: one headline and one drawn trace, with the LLM
- * call lit and priced. It is an illustration, so it is hidden from assistive tech and the
- * paragraph above it says what the product does.
+ * The black panel beside the form on desktop (Figma "Showcase (live figure, decorative)"): the
+ * cost, trace and cause cards joined by two wires, over drifting light bands. It is decoration, so
+ * it is hidden from assistive technology. Motion follows the landing's rules: the loops run only
+ * while the tab is visible, and nothing moves under reduced motion.
  */
 export function AuthShowcase({ className }: { className?: string }) {
   return (
     <aside
-      aria-labelledby="auth-showcase-title"
+      ref={inViewRef}
+      aria-hidden
       className={cn(
-        "relative flex-col gap-12 overflow-hidden rounded-card bg-hero-card p-10 text-hero-card-foreground xl:p-14 dark:border dark:border-border",
+        "auth-showcase sticky top-0 h-dvh min-w-0 flex-1 overflow-clip bg-mono-black select-none",
         className,
       )}
     >
-      <div className="flex flex-1 flex-col justify-center gap-10">
-        <div className="flex max-w-[460px] flex-col gap-3.5">
-          <p className="text-overline text-rail-muted-foreground uppercase">LLM observability</p>
-          <h2 id="auth-showcase-title" className="text-h1 text-rail-foreground">
-            Every LLM call, accounted for.
-          </h2>
-          <p className="text-sm text-rail-muted-foreground">
-            Traces, tokens, cost and errors for every request, with each call priced line by line.
-          </p>
+      <LightField bands={BANDS} />
+
+      <div className="auth-stage absolute top-1/2 left-1/2 h-[900px] w-[840px] -translate-1/2">
+        <Wires
+          paths={WIRE_PATHS}
+          width={840}
+          height={900}
+          stroke="var(--mono-600)"
+          pulse="var(--mono-white)"
+          drawDelay={RISE_STAGGER_MS * 3}
+          pulseDelay={1200}
+          className="top-0 left-0"
+        />
+
+        <div className={cn(CARD, DARK_CARD, "top-[70px] left-[450px] w-[260px] gap-2.5 p-5")}>
+          <span className={cn(MONO_LABEL, "text-mono-400")}>cost · answer span</span>
+          <span className="text-[34px] leading-[1.05] font-medium tracking-[-0.035em] text-mono-white tabular-nums">
+            {COST_TOTAL}
+          </span>
+          <div className="flex flex-col gap-1 border-t border-mono-800 pt-2.5 font-mono text-xs leading-normal">
+            {COST_LINES.map((line) => (
+              <div key={line.label} className="flex justify-between">
+                <span className="text-mono-400">{line.label}</span>
+                <span className="text-mono-white">{line.cost}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
-        <TracePreview />
-      </div>
-
-      <p className="text-sm text-rail-muted-foreground">
-        Works with{" "}
-        {INTEGRATIONS.map((name, index) => (
-          <span key={name}>
-            {index > 0 ? <span className="px-1.5 text-rail-subtle-foreground">·</span> : null}
-            <span className="font-medium text-rail-foreground">{name}</span>
-          </span>
-        ))}
-      </p>
-    </aside>
-  );
-}
-
-function TracePreview() {
-  return (
-    <div aria-hidden className="w-full max-w-[560px] rounded-tile bg-rail-tile">
-      <div className="flex items-center justify-between gap-3 px-6 pt-5 pb-3">
-        <span className="font-mono text-label text-rail-foreground">answer_ticket</span>
-        <span className="text-xs font-medium text-rail-subtle-foreground tabular">
-          5 spans · 1.42 s
-        </span>
-      </div>
-
-      <ul className="flex flex-col gap-1 px-6 pb-5">
-        {EXAMPLE_SPANS.map((span) => (
-          <li key={span.name} className="flex h-7 items-center gap-4">
-            <span
-              className={cn(
-                "w-[196px] shrink-0 truncate font-mono text-label",
-                span.child && "pl-4",
-                span.lit ? "text-rail-foreground" : "text-rail-subtle-foreground",
-              )}
-            >
-              {span.name}
-            </span>
-            <span className="relative h-2 min-w-0 flex-1">
-              <span
-                className={cn(
-                  "absolute inset-y-0 min-w-1.5 rounded-full",
-                  span.lit
-                    ? "bg-lime shadow-[0_0_16px_color-mix(in_srgb,var(--lime)_45%,transparent)]"
-                    : "bg-rail-tile-hover",
-                )}
-                style={{ left: `${span.start}%`, width: `${span.length}%` }}
-              />
-            </span>
-          </li>
-        ))}
-      </ul>
-
-      <dl className="grid grid-cols-3 divide-x divide-rail-tile-hover border-t border-rail-tile-hover">
-        {EXAMPLE_STATS.map((stat) => (
-          <div key={stat.label} className="flex flex-col gap-1 px-6 py-4">
-            <dt className="text-overline text-rail-subtle-foreground uppercase">{stat.label}</dt>
-            <dd className="text-base font-semibold text-rail-foreground tabular">{stat.value}</dd>
+        <div
+          style={delay(RISE_STAGGER_MS)}
+          className={cn(CARD, DARK_CARD, "top-[300px] left-[220px] w-[400px] gap-4 px-6 py-[22px]")}
+        >
+          <div className={cn(MONO_LABEL, "flex justify-between")}>
+            <span className="text-mono-white">trace · answer_ticket</span>
+            <span className="text-mono-400">1.42 s</span>
           </div>
-        ))}
-      </dl>
-    </div>
+          <div className="flex flex-col gap-1">
+            {SPANS.map((span) => (
+              <div
+                key={span.name}
+                className={cn(
+                  MONO_LABEL,
+                  "flex items-center gap-2 rounded-lg p-2.5",
+                  span.name === LIT_SPAN && "bg-mono-800",
+                )}
+              >
+                <span className="w-[34px] text-mono-400">{span.kind}</span>
+                <span className="w-[98px] text-mono-white">{span.name}</span>
+                <span className="relative h-2 w-[120px]">
+                  <span
+                    style={{ left: span.left, width: span.width }}
+                    className={cn("absolute top-0 h-2 rounded-[3px]", span.bar)}
+                  />
+                </span>
+                <span className="flex-1 text-right text-mono-400">{span.duration}</span>
+              </div>
+            ))}
+          </div>
+          <div className={cn(MONO_LABEL, "flex justify-between border-t border-mono-800 pt-3.5")}>
+            <span className="text-mono-400">prompt · completion · tokens · cost</span>
+            <span className="text-mono-white">live</span>
+          </div>
+        </div>
+
+        <div
+          style={delay(RISE_STAGGER_MS * 2)}
+          className={cn(
+            CARD,
+            "top-[640px] left-[450px] w-[260px] items-start gap-3 bg-mono-white p-5",
+          )}
+        >
+          <span className={cn(MONO_LABEL, "text-mono-600")}>cause · tool_loop</span>
+          <span className="text-base leading-[1.3] font-medium tracking-[-0.015em] text-mono-black">
+            {CAUSE}
+          </span>
+          <span className="rounded-full bg-mono-black px-2.5 py-1.5 text-xs leading-[1.3] font-medium text-mono-white">
+            Suggested fix
+          </span>
+        </div>
+
+        <p className="absolute top-[780px] left-16 text-[28px] leading-[1.1] font-medium tracking-[-0.03em] whitespace-nowrap text-mono-white">
+          Every LLM call, accounted for.
+        </p>
+        <p className={cn(MONO_LABEL, "absolute top-[826px] left-16 text-mono-400")}>
+          Worked example: the demo support bot.
+        </p>
+      </div>
+    </aside>
   );
 }

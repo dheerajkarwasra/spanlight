@@ -1,17 +1,18 @@
 import { Link } from "@tanstack/react-router";
-import { Fragment } from "react";
+import { Play } from "lucide-react";
 
-import { Logo } from "@/components/logo";
-import { Button } from "@/components/ui/button";
 import { LEGAL_PAGES_ENABLED } from "@/features/legal/legal-enabled";
 
+import { LightField, type DemoActions, type LightBand } from "./landing-parts";
+import { LandingScope } from "./landing-scope";
+import { inViewRef, useLandingMotion } from "./motion";
 import { DOCS_LINKS, EXTERNAL_LINKS, LEGAL_PATHS, PYPI_URL, SECTION_IDS } from "./links";
 
 const LINK_CLASS =
-  "rounded-sm text-sm whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground";
+  "lp-control inline-flex min-h-11 items-center rounded-sm text-[15px] leading-[1.4] whitespace-nowrap text-mono-white hover:text-mono-400 xl:min-h-0";
 
 const BOTTOM_LINK_CLASS =
-  "inline-flex min-h-6 items-center rounded-sm underline-offset-2 md:min-h-0 transition-colors hover:text-foreground hover:underline";
+  "lp-control inline-flex min-h-11 items-center rounded-sm underline-offset-2 hover:text-mono-white hover:underline xl:min-h-0";
 
 /** A footer entry: a plain link, an in-app route, or the "start the demo" action. */
 type FooterItem =
@@ -28,9 +29,8 @@ const COLUMNS: readonly FooterColumnData[] = [
   {
     heading: "Product",
     items: [
-      { label: "Features", href: `/#${SECTION_IDS.cost}` },
-      { label: "Beyond tracing", href: `/#${SECTION_IDS.features}` },
-      { label: "How it works", href: `/#${SECTION_IDS.howItWorks}` },
+      { label: "The Doctor", href: `/#${SECTION_IDS.diagnose}` },
+      { label: "Gateway", href: `/#${SECTION_IDS.route}` },
       { label: "Live demo", action: "demo" },
       { label: "Sign in", to: "/login" },
       { label: "Get started", to: "/signup" },
@@ -77,7 +77,7 @@ const COLUMNS: readonly FooterColumnData[] = [
   },
 ];
 
-/** Bottom row, after the copyright: in-app legal routes first, then the outbound links. */
+/** Bottom row: in-app legal routes first, then the outbound links. */
 const BOTTOM_LINKS: readonly Exclude<FooterItem, { action: "demo" }>[] = [
   ...(LEGAL_PAGES_ENABLED
     ? [
@@ -91,61 +91,63 @@ const BOTTOM_LINKS: readonly Exclude<FooterItem, { action: "demo" }>[] = [
   { label: "Report an issue", href: EXTERNAL_LINKS.issues },
 ];
 
-interface LandingFooterProps {
-  onTryDemo: () => void;
-  demoPending: boolean;
-}
+/** The lower band of Figma "Close › Light field", behind the wordmark. */
+const FOOTER_BANDS: readonly LightBand[] = [
+  {
+    left: -300,
+    top: 40,
+    fromBottom: true,
+    width: 700,
+    height: 220,
+    opacity: 0.15,
+    rotate: 0,
+    blur: 45,
+    travel: 200,
+    seconds: 8,
+  },
+];
 
-/** Footer card with product, developer, guide and project links. */
-export function LandingFooter({ onTryDemo, demoPending }: LandingFooterProps) {
+/**
+ * The black footer (Figma "Close"): product, developer, guide and project links, the legal row
+ * with the "Pause motion" button, and the clipped wordmark. It carries the landing colour scope
+ * itself, so the legal pages get the same footer.
+ */
+export function LandingFooter({ onTryDemo, demoPending }: DemoActions) {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="px-3 md:px-8">
-      <div className="mx-auto flex max-w-[1200px] flex-col gap-8 overflow-hidden rounded-t-card border-x border-t border-border bg-surface px-6 py-9 md:p-14">
-        <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex flex-col items-start gap-4 lg:w-[340px] lg:gap-[18px]">
-            <Logo />
-            <p className="text-sm text-muted-foreground">
-              Open-source LLM observability: traces, auditable cost, diagnoses, evals and a gateway
-              on one Postgres.
-            </p>
-            <Button asChild className="shadow-none">
-              <a href={EXTERNAL_LINKS.github}>Star on GitHub</a>
-            </Button>
-          </div>
+    <LandingScope
+      as="footer"
+      ref={inViewRef}
+      className="lp-dark relative overflow-clip bg-mono-black px-5 xl:px-6"
+    >
+      <LightField bands={FOOTER_BANDS} />
+      <div className="relative mx-auto flex max-w-[640px] flex-col gap-10 xl:max-w-[1200px] xl:gap-24">
+        <nav
+          aria-label="Footer"
+          className="grid grid-cols-2 gap-x-6 gap-y-10 border-t border-mono-800 pt-10 xl:grid-cols-4 xl:gap-12 xl:pt-12"
+        >
+          {COLUMNS.map((column) => (
+            <div key={column.heading} className="flex flex-col gap-2 xl:gap-4">
+              <h2 className="font-mono text-xs leading-[1.4] font-normal text-mono-400">
+                {column.heading}
+              </h2>
+              <ul className="flex flex-col items-start xl:gap-3">
+                {column.items.map((item) => (
+                  <li key={item.label}>
+                    <FooterLink item={item} onTryDemo={onTryDemo} demoPending={demoPending} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </nav>
 
-          <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-7">
-            {COLUMNS.map((column) => (
-              <div
-                key={column.heading}
-                className="flex w-[136px] flex-col gap-3.5 md:w-[140px] xl:w-[160px]"
-              >
-                <h2 className="text-sm font-semibold text-foreground">{column.heading}</h2>
-                <ul className="flex flex-col items-start gap-3.5">
-                  {column.items.map((item) => (
-                    <li key={item.label}>
-                      <FooterLink item={item} onTryDemo={onTryDemo} demoPending={demoPending} />
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </nav>
-        </div>
-
-        <div className="h-px bg-border" />
-
-        <div className="flex flex-col gap-1.5 text-xs leading-[1.4] font-medium text-subtle-foreground md:flex-row md:justify-between md:text-label md:leading-[1.4]">
-          <p>© {year} Spanlight · MIT core</p>
-          <p className="flex flex-wrap items-center gap-x-4 md:gap-x-2">
-            {BOTTOM_LINKS.map((item, index) => (
-              <Fragment key={item.label}>
-                {index > 0 && (
-                  <span aria-hidden className="hidden md:inline">
-                    ·
-                  </span>
-                )}
+        <div className="flex flex-col gap-1 text-[13px] leading-[1.4] text-mono-400 xl:flex-row xl:items-center xl:justify-between">
+          <p className="order-2 xl:order-none">© {year} Spanlight</p>
+          <ul className="order-1 flex flex-wrap gap-x-5 xl:order-none xl:gap-x-6">
+            {BOTTOM_LINKS.map((item) => (
+              <li key={item.label}>
                 {"to" in item ? (
                   <Link to={item.to} className={BOTTOM_LINK_CLASS}>
                     {item.label}
@@ -155,16 +157,51 @@ export function LandingFooter({ onTryDemo, demoPending }: LandingFooterProps) {
                     {item.label}
                   </a>
                 )}
-              </Fragment>
+              </li>
             ))}
-          </p>
+          </ul>
+          <div className="order-3 xl:order-none">
+            <MotionToggle />
+          </div>
+        </div>
+
+        {/* Decorative: sized from the column width (299px at 1200), clipped at about 65%. */}
+        <div ref={inViewRef} aria-hidden className="lp-view @container">
+          <div className="relative h-[16.33cqw] overflow-clip">
+            <p className="lp-rise lp-enter-range absolute top-[-4.83cqw] left-0 text-[24.9cqw] leading-none font-semibold tracking-[-0.06em] whitespace-nowrap text-mono-800 [--lp-rise:40px]">
+              spanlight
+            </p>
+          </div>
         </div>
       </div>
-    </footer>
+    </LandingScope>
   );
 }
 
-function FooterLink({ item, onTryDemo, demoPending }: { item: FooterItem } & LandingFooterProps) {
+/** WCAG 2.2.2: one button stops every looping motion on the page, and starts it again. */
+function MotionToggle() {
+  const motion = useLandingMotion();
+  return (
+    <button
+      type="button"
+      aria-pressed={motion.paused}
+      onClick={motion.toggle}
+      className="lp-control inline-flex min-h-11 items-center gap-1.5 rounded-sm text-[13px] font-medium text-mono-400 hover:text-mono-white"
+    >
+      {motion.paused ? (
+        <Play aria-hidden className="size-2.5 fill-current" />
+      ) : (
+        <span aria-hidden className="flex gap-1">
+          <span className="h-2.5 w-[3px] bg-current" />
+          <span className="h-2.5 w-[3px] bg-current" />
+        </span>
+      )}
+      {motion.paused ? "Play motion" : "Pause motion"}
+    </button>
+  );
+}
+
+function FooterLink({ item, onTryDemo, demoPending }: { item: FooterItem } & DemoActions) {
   if ("action" in item) {
     return (
       <button

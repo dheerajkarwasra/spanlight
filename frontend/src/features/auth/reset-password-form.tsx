@@ -6,12 +6,10 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 
-import { Callout } from "@/components/callout";
-import { FormField } from "@/components/form-field";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { authApi, errorMessage, isApiError } from "@/lib/api";
 import { applyServerFieldErrors } from "@/lib/form-errors";
+
+import { Button, Callout, FormField, PasswordInput } from "./auth-controls";
 
 const MIN_PASSWORD_LENGTH = 10;
 
@@ -76,29 +74,24 @@ export function ResetPasswordForm({ token, onInvalidLink }: ResetPasswordFormPro
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6" noValidate>
-      <div className="flex flex-col gap-4">
-        <FormField label="New password" error={form.formState.errors.password?.message}>
-          <Input
-            type="password"
-            autoComplete="new-password"
-            autoFocus
-            {...form.register("password")}
-          />
-        </FormField>
-        <FormField
-          label="Confirm new password"
-          error={form.formState.errors.confirm?.message}
-          hint={`At least ${MIN_PASSWORD_LENGTH} characters. Resetting signs you out on every device.`}
-        >
-          <Input type="password" autoComplete="new-password" {...form.register("confirm")} />
-        </FormField>
-      </div>
-
       {formError ? (
         <Callout tone="danger" role="alert">
           {formError}
         </Callout>
       ) : null}
+
+      <div className="flex flex-col gap-6">
+        <FormField
+          label="New password"
+          error={form.formState.errors.password?.message}
+          hint={`At least ${MIN_PASSWORD_LENGTH} characters. Resetting signs you out on every device.`}
+        >
+          <PasswordInput autoComplete="new-password" autoFocus {...form.register("password")} />
+        </FormField>
+        <FormField label="Confirm new password" error={form.formState.errors.confirm?.message}>
+          <PasswordInput autoComplete="new-password" {...form.register("confirm")} />
+        </FormField>
+      </div>
 
       <Button type="submit" variant="primary" size="lg" loading={reset.isPending}>
         Set new password

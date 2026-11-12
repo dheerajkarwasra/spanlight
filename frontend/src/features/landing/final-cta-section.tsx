@@ -1,51 +1,60 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowRight } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { BUTTON_PRIMARY, BUTTON_SECONDARY } from "./button-styles";
+import { LightField, type DemoActions, type LightBand } from "./landing-parts";
+import { inViewRef, stagger } from "./motion";
 
-import { DOCS_LINKS } from "./links";
+/** The upper band of Figma "Close › Light field"; the lower one sits behind the footer wordmark. */
+const CTA_BANDS: readonly LightBand[] = [
+  {
+    left: 600,
+    top: 60,
+    width: 900,
+    height: 140,
+    opacity: 0.06,
+    rotate: 0,
+    blur: 45,
+    travel: -180,
+    seconds: 11,
+  },
+];
 
-interface FinalCtaSectionProps {
-  onTryDemo: () => void;
-  demoPending: boolean;
-}
-
-/** Closing call to action (Figma "Section/Final CTA"). */
-export function FinalCtaSection({ onTryDemo, demoPending }: FinalCtaSectionProps) {
+/** Closing call to action above the footer (Figma "Close › CTA"). */
+export function FinalCtaSection({ onTryDemo, demoPending }: DemoActions) {
   return (
     <section
+      ref={inViewRef}
       aria-labelledby="final-cta-title"
-      className="relative flex flex-col items-center gap-[22px] px-5 py-16 text-center md:px-8 lg:gap-7 lg:py-24"
+      className="lp-dark relative overflow-clip border-t border-mono-800 bg-mono-black px-5 pt-16 pb-10 xl:px-6 xl:pt-[120px] xl:pb-24"
     >
-      <h2
-        id="final-cta-title"
-        className="relative max-w-[340px] text-[40px] leading-[1.04] font-extrabold tracking-[-0.04em] text-foreground md:max-w-none lg:text-display-hero"
-      >
-        See your first trace{" "}
-        <span className="font-serif-accent text-[48px] leading-none text-accent lg:text-serif-hero">
-          in minutes.
-        </span>
-      </h2>
-      <p className="relative max-w-[320px] text-base leading-[1.55] text-muted-foreground md:max-w-[560px] lg:text-[19px]">
-        Explore a sample workspace, or follow the guide to run Spanlight on your own infrastructure.
-      </p>
-      <div className="relative flex w-full flex-col gap-2.5 pt-2 md:w-auto md:flex-row md:items-center md:gap-3 lg:pt-3">
-        <Button asChild variant="primary" size="lg">
-          <Link to="/signup">Start free</Link>
-        </Button>
-        <Button size="lg" className="shadow-none" loading={demoPending} onClick={onTryDemo}>
-          Try the live demo
-        </Button>
-        <Button
-          asChild
-          variant="link"
-          className="h-12 self-center px-2 text-[15px] underline md:pl-3 [&_svg]:size-3.5"
+      <LightField bands={CTA_BANDS} />
+      <div className="lp-view relative mx-auto flex max-w-[640px] flex-col gap-10 xl:max-w-[1200px] xl:flex-row xl:items-end xl:justify-between">
+        <h2
+          id="final-cta-title"
+          className="lp-rise text-[44px] leading-[0.96] font-medium tracking-[-0.05em] text-mono-white xl:text-[104px] xl:whitespace-nowrap"
         >
-          <a href={DOCS_LINKS.selfHosting}>
-            Self-host Spanlight
-            <ArrowRight aria-hidden />
-          </a>
-        </Button>
+          <span className="xl:block">Put a light on</span>{" "}
+          <span className="xl:block">every LLM call.</span>
+        </h2>
+        <div style={stagger(1)} className="lp-rise flex flex-col gap-5 xl:items-end">
+          <p className="hidden w-[340px] text-right text-[17px] leading-[1.5] text-mono-400 xl:block">
+            Explore a sample workspace, or run Spanlight on your own infrastructure.
+          </p>
+          <div className="flex flex-col gap-2.5 xl:flex-row xl:gap-3">
+            <Link to="/signup" className={BUTTON_PRIMARY}>
+              Start free
+            </Link>
+            <button
+              type="button"
+              onClick={onTryDemo}
+              disabled={demoPending}
+              aria-busy={demoPending || undefined}
+              className={BUTTON_SECONDARY}
+            >
+              Try the live demo
+            </button>
+          </div>
+        </div>
       </div>
     </section>
   );

@@ -1,10 +1,8 @@
 import { getRouteApi } from "@tanstack/react-router";
-import { ShieldCheck } from "lucide-react";
 import { useId, useRef } from "react";
 
 import { AuthBackLink } from "./auth-footer";
 import { AuthLayout } from "./auth-layout";
-import { AuthStatusTile } from "./auth-status-tile";
 import { TwoFactorExpired } from "./two-factor-expired";
 import { TwoFactorForm } from "./two-factor-form";
 import { useTwoFactorFlow } from "./use-two-factor-flow";
@@ -35,7 +33,6 @@ export function TwoFactorPage() {
     <AuthLayout
       title="One more"
       accent="step."
-      status={<AuthStatusTile icon={ShieldCheck} tone="accent" />}
       description={<span id={instructionId}>{INSTRUCTIONS[flow.mode]}</span>}
     >
       <TwoFactorForm flow={flow} instructionId={instructionId} inputRef={inputRef} />

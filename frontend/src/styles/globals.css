@@ -260,6 +260,18 @@
   --color-subtle-foreground: var(--subtle-foreground);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
+  /* Landing mono (Figma "Landing mono"): defined on `.landing` in features/landing/landing.css. */
+  --color-mono-white: var(--mono-white);
+  --color-mono-paper: var(--mono-paper);
+  --color-mono-mist: var(--mono-mist);
+  --color-mono-line: var(--mono-line);
+  --color-mono-line-strong: var(--mono-line-strong);
+  --color-mono-400: var(--mono-400);
+  --color-mono-500: var(--mono-500);
+  --color-mono-600: var(--mono-600);
+  --color-mono-800: var(--mono-800);
+  --color-mono-900: var(--mono-900);
+  --color-mono-black: var(--mono-black);
   --color-input: var(--input);
   --color-ink: var(--ink);
   --color-ink-foreground: var(--ink-foreground);

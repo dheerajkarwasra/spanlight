@@ -1,11 +1,8 @@
 import { Link } from "@tanstack/react-router";
-import { CircleAlert, CircleCheck, Loader2 } from "lucide-react";
 
-import { Callout } from "@/components/callout";
-import { Button } from "@/components/ui/button";
+import { AUTH_NOTE, Button, Callout } from "./auth-controls";
 
 import { AuthLayout } from "./auth-layout";
-import { AuthStatusTile } from "./auth-status-tile";
 import { ResendNote } from "./resend-note";
 import { useResendVerification } from "./use-resend-verification";
 
@@ -34,7 +31,6 @@ export function VerifyEmailChecking() {
       title="Verifying your"
       accent="email"
       description={<span role="status">Checking your link…</span>}
-      status={<AuthStatusTile icon={Loader2} tone="accent" spinning />}
     >
       {null}
     </AuthLayout>
@@ -47,7 +43,6 @@ export function VerifyEmailSuccess({ signedIn }: VerifyEmailResultProps) {
       title="Email"
       accent="verified."
       description="You can now turn on two-factor authentication in Settings › Security."
-      status={<AuthStatusTile icon={CircleCheck} tone="success" />}
     >
       <ContinueButton signedIn={signedIn} />
     </AuthLayout>
@@ -62,15 +57,11 @@ interface VerifyEmailRetryProps extends VerifyEmailResultProps {
 /** The check itself failed (offline, a server error). The link may still be good, so try again. */
 export function VerifyEmailRetry({ message, signedIn, onRetry }: VerifyEmailRetryProps) {
   return (
-    <AuthLayout
-      title="Verify your"
-      accent="email"
-      status={<AuthStatusTile icon={CircleAlert} tone="danger" />}
-    >
+    <AuthLayout title="Verify your" accent="email">
       <Callout tone="danger" role="alert">
         {message}
       </Callout>
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-6">
         <Button variant="primary" size="lg" onClick={onRetry}>
           Try again
         </Button>
@@ -91,25 +82,21 @@ export function VerifyEmailRetry({ message, signedIn, onRetry }: VerifyEmailRetr
 export function VerifyEmailFailure({ signedIn }: VerifyEmailResultProps) {
   const resend = useResendVerification();
   return (
-    <AuthLayout
-      title="Verify your"
-      accent="email"
-      status={<AuthStatusTile icon={CircleAlert} tone="danger" />}
-    >
+    <AuthLayout title="Verify your" accent="email">
       <Callout tone="danger" role="alert">
         This verification link is invalid or has expired.
       </Callout>
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-6">
         <ContinueButton signedIn={signedIn} />
         {signedIn ? (
           <>
             <Button size="lg" loading={resend.pending} onClick={resend.resend}>
               Resend link
             </Button>
-            <ResendNote state={resend.state} className="justify-center" />
+            <ResendNote state={resend.state} />
           </>
         ) : (
-          <p className="text-center text-xs font-medium text-muted-foreground">
+          <p className={AUTH_NOTE}>
             Need a new link? Use Resend link in the banner at the top of the app.
           </p>
         )}

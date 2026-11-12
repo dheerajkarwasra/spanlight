@@ -1,10 +1,9 @@
-import { CircleAlert } from "lucide-react";
 import { useId, type RefObject } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
+import { AUTH_LABEL, AUTH_LINK, Button, FieldError, Input } from "./auth-controls";
 import { CodeInput } from "./code-input";
 import { failureMessage } from "./two-factor-flow";
 import type { TwoFactorFlow } from "./use-two-factor-flow";
@@ -15,20 +14,6 @@ interface TwoFactorFormProps {
   instructionId: string;
   /** The field's element, which the flow focuses and selects. */
   inputRef: RefObject<HTMLInputElement | null>;
-}
-
-/** The line under a field saying what went wrong. A live region, so it is read out when it appears. */
-function FieldError({ id, message }: { id: string; message: string }) {
-  return (
-    <p
-      id={id}
-      role="alert"
-      className="flex items-start gap-1.5 text-xs font-medium text-danger-text"
-    >
-      <CircleAlert aria-hidden className="mt-px size-3.5 shrink-0" strokeWidth={2.25} />
-      {message}
-    </p>
-  );
 }
 
 /**
@@ -61,11 +46,17 @@ export function TwoFactorForm({ flow, instructionId, inputRef }: TwoFactorFormPr
               "aria-describedby": message ? errorId : undefined,
             }}
           />
-          {message ? <FieldError id={errorId} message={message} /> : null}
+          {message ? (
+            <FieldError id={errorId} role="alert">
+              {message}
+            </FieldError>
+          ) : null}
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          <Label htmlFor={recoveryId}>Recovery code</Label>
+          <Label htmlFor={recoveryId} className={AUTH_LABEL}>
+            Recovery code
+          </Label>
           <Input
             id={recoveryId}
             ref={inputRef}
@@ -79,13 +70,17 @@ export function TwoFactorForm({ flow, instructionId, inputRef }: TwoFactorFormPr
             spellCheck={false}
             aria-invalid={message ? true : undefined}
             aria-describedby={message ? errorId : undefined}
-            className="font-mono text-[15px] font-medium tracking-[0.04em]"
+            className="font-mono tracking-[0.04em]"
           />
-          {message ? <FieldError id={errorId} message={message} /> : null}
+          {message ? (
+            <FieldError id={errorId} role="alert">
+              {message}
+            </FieldError>
+          ) : null}
         </div>
       )}
 
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-6">
         <Button
           type="submit"
           variant="primary"
@@ -95,7 +90,11 @@ export function TwoFactorForm({ flow, instructionId, inputRef }: TwoFactorFormPr
         >
           Verify
         </Button>
-        <Button variant="link" className="min-h-11 self-center" onClick={flow.switchMode}>
+        <Button
+          variant="link"
+          className={cn(AUTH_LINK, "min-h-11 self-start lg:min-h-0")}
+          onClick={flow.switchMode}
+        >
           {flow.mode === "code"
             ? "Use a recovery code instead"
             : "Use your authenticator app instead"}

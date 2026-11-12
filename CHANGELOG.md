@@ -4,6 +4,11 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Changed
+
+- **A new homepage.** The landing page at `/` is redrawn in black, grey and white around one live figure per section (calls becoming a trace, the cost receipt, the detector scan, the gateway route, the Compose stack), leads with "Every LLM call, accounted for.", and has a **Pause motion** button in the footer; motion starts paused for visitors who prefer reduced motion. The legal pages get the same black header and footer.
+- **Sign-in and account pages match the homepage.** Sign in, sign up, password reset, two-factor, email verification, invites and the terms prompt are redrawn in the same black, grey and white beside a live trace, cost and cause figure, look the same in the light and dark theme, and password fields have a show/hide button.
+
 ### Fixed
 
 - **A stuck final loss flush is always cancelled at shutdown.** When the database did not answer during shutdown, the last write of the telemetry loss counts could miss its cancellation by a few microseconds and keep the api or worker alive past `SHUTDOWN_TIMEOUT_SECONDS` until it was killed. The flush is now cancelled no later than its deadline, so the process logs `process.shutdown_incomplete` and exits on time.

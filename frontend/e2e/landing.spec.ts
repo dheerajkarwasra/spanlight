@@ -8,19 +8,14 @@ test.describe("landing page", () => {
 
     await expect(page).toHaveURL(/\/$/);
     await expect(
-      page.getByRole("heading", { level: 1, name: "Understand the cost. Find the cause." }),
+      page.getByRole("heading", { level: 1, name: "Every LLM call, accounted for." }),
     ).toBeVisible();
 
     const nav = page.getByRole("navigation", { name: "Main" });
-    await expect(nav.getByRole("link", { name: "Product" })).toHaveAttribute("href", "/#cost");
-    await expect(nav.getByRole("link", { name: "How it works" })).toHaveAttribute(
-      "href",
-      "/#how-it-works",
-    );
-    await expect(nav.getByRole("link", { name: "Self-hosting" })).toHaveAttribute(
-      "href",
-      "/#open-source",
-    );
+    await expect(nav.getByRole("link", { name: "Product" })).toHaveAttribute("href", "/#see");
+    await expect(nav.getByRole("link", { name: "Doctor" })).toHaveAttribute("href", "/#diagnose");
+    await expect(nav.getByRole("link", { name: "Gateway" })).toHaveAttribute("href", "/#route");
+    await expect(nav.getByRole("link", { name: "Self-hosting" })).toHaveAttribute("href", "/#own");
 
     const banner = page.getByRole("banner");
     await expect(banner.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
@@ -32,20 +27,18 @@ test.describe("landing page", () => {
     const hero = page.locator("section[aria-labelledby='hero-title']");
     await expect(hero.getByRole("link", { name: "Start free" })).toHaveAttribute("href", "/signup");
     await expect(hero.getByRole("button", { name: "Try the live demo" })).toBeVisible();
-    await expect(hero.getByRole("link", { name: "Self-host Spanlight" })).toHaveAttribute(
-      "href",
-      "/docs/self-hosting/",
-    );
+    await expect(hero.getByText('pip install "spanlight[anthropic]"')).toBeVisible();
+    await expect(hero.getByRole("img", { name: /Model calls become one trace/ })).toBeVisible();
   });
 
-  test("the hero product clip plays muted and can be paused", async ({ page }) => {
+  test("the product clip plays muted and can be paused", async ({ page }) => {
     // The config emulates reduced motion for every test; autoplay needs it off.
     await page.emulateMedia({ reducedMotion: "no-preference" });
-    await page.goto("/");
+    await page.goto("/#see");
 
     const clip = page.getByRole("figure", { name: /Real traces from a demo support bot/ });
     const video = clip.locator("video");
-    await expect(video).toHaveAttribute("aria-label", /two Doctor findings/);
+    await expect(video).toHaveAttribute("aria-label", /repeated tool call/);
     await expect(video).toHaveAttribute("poster", "/landing/hero-poster.jpg");
     await expect(video.locator("source")).toHaveCount(2);
     await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.muted)).toBe(true);
@@ -57,7 +50,7 @@ test.describe("landing page", () => {
 
   test("with reduced motion the clip waits on its poster for a play click", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto("/");
+    await page.goto("/#see");
 
     const clip = page.getByRole("figure", { name: /Real traces from a demo support bot/ });
     const video = clip.locator("video");
@@ -74,9 +67,9 @@ test.describe("landing page", () => {
       .getByRole("navigation", { name: "Main" })
       .getByRole("link", { name: "Product" })
       .click();
-    await expect(page).toHaveURL(/#cost$/);
+    await expect(page).toHaveURL(/#see$/);
     await expect(
-      page.getByRole("heading", { level: 2, name: /Understand the cost/ }),
+      page.getByRole("heading", { level: 2, name: "Watch a call land." }),
     ).toBeInViewport();
   });
 
@@ -91,31 +84,38 @@ test.describe("landing page", () => {
         .locator("a, button")
         .filter({ hasText: /^(Start free|Try the live demo|Self-host Spanlight|Sign in)$/ }),
     ).toHaveText(["Start free", "Try the live demo", "Self-host Spanlight", "Sign in"]);
-    await expect(menu.getByRole("link", { name: "How it works" })).toBeVisible();
-    await menu.getByRole("link", { name: "How it works" }).click();
+    await expect(menu.getByRole("link", { name: "Doctor" })).toBeVisible();
+    await menu.getByRole("link", { name: "Doctor" }).click();
 
     await expect(menu).toBeHidden();
-    await expect(page).toHaveURL(/#how-it-works$/);
+    await expect(page).toHaveURL(/#diagnose$/);
   });
 
-  test("visitors see setup before the product benefits and four supporting features", async ({
-    page,
-  }) => {
+  test("visitors see the seven sections in order, each with one heading", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expect(page.locator("main > section[id]")).toHaveCount(4);
-    await expect(page.locator("main > section[id]").nth(0)).toHaveAttribute("id", "how-it-works");
-    await expect(page.locator("main > section[id]").nth(1)).toHaveAttribute("id", "cost");
-    await expect(page.locator("#cost").getByRole("heading", { level: 3 })).toHaveText([
-      "Know what every call costs",
-      "Find the cause with the Doctor",
-      "Checked against the bill",
-    ]);
-    await expect(page.locator("#diagnose").getByRole("heading", { level: 3 })).toHaveText([
-      "One base URL, no SDK",
-      "Evals with honest error bars",
-      "Prompts, playground, replay",
-      "Sessions",
+    const sections = page.locator("main > section[id]");
+    await expect(sections).toHaveCount(7);
+    for (const [index, id] of [
+      "see",
+      "price",
+      "diagnose",
+      "route",
+      "improve",
+      "start",
+      "own",
+    ].entries()) {
+      await expect(sections.nth(index)).toHaveAttribute("id", id);
+    }
+    await expect(page.locator("main").getByRole("heading", { level: 2 })).toHaveText([
+      "Watch a call land.",
+      "Priced line by line. Checked against the bill.",
+      "Sixteen detectors. No model decides.",
+      "Change one base URL.",
+      "Then make it better.",
+      "Send your first trace.",
+      "One Postgres. Yours to run.",
+      "Put a light on every LLM call.",
     ]);
     await expect(
       page.getByRole("link", { name: "Self-hosting guide", exact: true }),
@@ -128,17 +128,40 @@ test.describe("landing page", () => {
   }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await page.setViewportSize({ width: 375, height: 812 });
-    await page.goto("/#how-it-works");
+    await page.goto("/#start");
     await page.getByRole("tab", { name: "Gateway", exact: true }).click();
     const copy = page.getByRole("button", { name: "Copy the Gateway snippet" });
     await expect(copy).toBeInViewport({ ratio: 1 });
     await copy.click();
     await expect
       .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-      .toBe(
-        'from openai import OpenAI\n\nclient = OpenAI(\n    base_url="…/gw/v1",\n    api_key="<YOUR_GATEWAY_KEY>",\n)',
-      );
+      .toContain('base_url="http://localhost:8080/gw/v1"');
+    // 375px is the minimum width: the page itself never scrolls sideways.
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
     await expectNoAxeViolations(page);
+  });
+
+  test("the footer button pauses and resumes the page's motion", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.goto("/");
+    const root = page.locator(".landing-page");
+    await expect(root).toHaveAttribute("data-motion", "play");
+
+    await page.getByRole("button", { name: "Pause motion" }).click();
+    await expect(root).toHaveAttribute("data-motion", "paused");
+    await expect(page.getByRole("button", { name: "Play motion" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  test("with reduced motion the page starts paused", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/");
+    await expect(page.locator(".landing-page")).toHaveAttribute("data-motion", "paused");
+    await expect(page.getByRole("button", { name: "Play motion" })).toBeVisible();
   });
 
   test("the header and footer link the docs, the repository and PyPI", async ({ page }) => {
@@ -189,6 +212,7 @@ test.describe("landing page", () => {
     await expectNoAxeViolations(page);
   });
 
+  // The landing is black, grey and white in both themes; this guards against theme leaks.
   test("the landing page is accessible in the dark theme", async ({ page }) => {
     await page.addInitScript(() => {
       window.localStorage.setItem("spanlight-theme", "dark");

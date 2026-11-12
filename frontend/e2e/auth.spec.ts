@@ -14,7 +14,7 @@ test.describe("public pages", () => {
     await page.goto("/signup");
     await page.getByLabel("Name").fill("E2E User");
     await page.getByLabel("Work email").fill("someone@example.com");
-    await page.getByLabel("Password").fill("short");
+    await page.getByLabel("Password", { exact: true }).fill("short");
     await page.getByRole("button", { name: "Create account" }).click();
     await expect(page.getByText("Use at least 10 characters.")).toBeVisible();
     await expectNoAxeViolations(page);

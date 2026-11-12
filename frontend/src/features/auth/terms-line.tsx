@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { LEGAL_PATHS } from "@/features/landing/links";
 import { LEGAL_PAGES_ENABLED } from "@/features/legal/legal-enabled";
 
+import { AUTH_NOTE } from "./auth-controls";
 import { useShowsTermsLine } from "./queries";
 
 type LegalPath = (typeof LEGAL_PATHS)[keyof typeof LEGAL_PATHS];
@@ -17,7 +18,10 @@ export function LegalLink({ to, children }: { to: LegalPath; children: ReactNode
     return children;
   }
   return (
-    <Link to={to} className="rounded-xs font-semibold text-accent underline underline-offset-2">
+    <Link
+      to={to}
+      className="lp-control rounded-xs font-medium text-mono-900 underline underline-offset-2 hover:text-mono-600"
+    >
       {children}
     </Link>
   );
@@ -29,7 +33,7 @@ export function TermsLine() {
     return null;
   }
   return (
-    <p className="text-center text-xs font-medium text-muted-foreground">
+    <p className={AUTH_NOTE}>
       By creating an account you agree to the <LegalLink to={LEGAL_PATHS.terms}>Terms</LegalLink>{" "}
       and acknowledge the <LegalLink to={LEGAL_PATHS.privacy}>Privacy policy</LegalLink> and{" "}
       <LegalLink to={LEGAL_PATHS.dpa}>DPA</LegalLink>.

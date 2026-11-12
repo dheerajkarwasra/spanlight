@@ -1,47 +1,61 @@
 import { Link } from "@tanstack/react-router";
-import { Menu } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { Logo } from "@/components/logo";
-import { GithubMark } from "@/features/auth";
-import { Button } from "@/components/ui/button";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetDescription,
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { GithubMark } from "@/features/auth";
+import { cn } from "@/lib/utils";
 
+import { BUTTON_PRIMARY, BUTTON_SECONDARY } from "./button-styles";
+import { type DemoActions } from "./landing-parts";
+import { LandingScope } from "./landing-scope";
 import { DOCS_LINKS, EXTERNAL_LINKS, NAV_LINKS } from "./links";
 
-interface LandingNavProps {
-  onTryDemo: () => void;
-  demoPending: boolean;
+interface LandingNavProps extends DemoActions {
+  /** The landing page keeps the bar in view while scrolling; the legal pages let it scroll away. */
+  sticky?: boolean;
 }
 
+const NAV_LINK = "lp-control rounded-sm text-sm leading-[1.4] font-medium whitespace-nowrap";
+
 /**
- * Floating pill navigation (Figma "Nav bar"): logo, section links, GitHub and the sign-in / sign-up
- * actions on desktop; logo and a menu button that opens a sheet on smaller screens.
+ * The black navigation bar (Figma "Nav"): logo, section links, GitHub and the sign-in and sign-up
+ * actions on desktop; logo, "Start free" and a menu button that opens a sheet on smaller screens.
+ * It carries the landing colour scope itself, so the legal pages get the same bar.
  */
-export function LandingNav({ onTryDemo, demoPending }: LandingNavProps) {
+export function LandingNav({ onTryDemo, demoPending, sticky = false }: LandingNavProps) {
   return (
-    <header className="relative px-4 pt-4 md:px-8 lg:pt-6">
-      <div className="mx-auto flex max-w-[1200px] items-center justify-between rounded-full border border-border bg-surface py-2 pr-2 pl-3.5 lg:p-2.5">
-        <div className="flex lg:flex-1 lg:pl-3">
-          <Link to="/" aria-label="Spanlight home" className="rounded-md">
-            <Logo />
+    <LandingScope
+      as="header"
+      className={cn(
+        "lp-dark z-40 border-b border-mono-800 bg-mono-black px-5 xl:px-6",
+        sticky && "sticky top-0",
+      )}
+    >
+      <div className="mx-auto flex h-[60px] max-w-[640px] items-center justify-between xl:h-[72px] xl:max-w-[1200px]">
+        <div className="flex xl:w-[300px]">
+          <Link
+            to="/"
+            aria-label="Spanlight home"
+            className="lp-control flex min-h-11 items-center rounded-md"
+          >
+            <Logo tone="on-dark" />
           </Link>
         </div>
 
-        <nav aria-label="Main" className="hidden lg:block">
-          <ul className="flex items-center gap-6 xl:gap-7">
+        <nav aria-label="Main" className="hidden xl:block">
+          <ul className="flex items-center gap-9">
             {NAV_LINKS.map((link) => (
               <li key={link.label}>
-                <a
-                  href={link.href}
-                  className="rounded-sm text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground"
-                >
+                <a href={link.href} className={cn(NAV_LINK, "text-mono-400 hover:text-mono-white")}>
                   {link.label}
                 </a>
               </li>
@@ -49,27 +63,37 @@ export function LandingNav({ onTryDemo, demoPending }: LandingNavProps) {
           </ul>
         </nav>
 
-        <div className="hidden flex-1 items-center justify-end gap-1.5 lg:flex">
-          <Button asChild variant="ghost" size="icon">
-            <a href={EXTERNAL_LINKS.github} aria-label="Spanlight on GitHub">
-              <GithubMark className="size-[18px]" />
-            </a>
-          </Button>
-          <Button asChild variant="ghost">
-            <Link to="/login">Sign in</Link>
-          </Button>
-          <Button asChild variant="highlight">
-            <Link to="/signup">Start free</Link>
-          </Button>
+        <div className="hidden w-[300px] items-center justify-end gap-5 xl:flex">
+          <a
+            href={EXTERNAL_LINKS.github}
+            aria-label="Spanlight on GitHub"
+            className="lp-control rounded-full text-mono-white hover:text-mono-400"
+          >
+            <GithubMark className="size-5" />
+          </a>
+          <Link to="/login" className={cn(NAV_LINK, "text-mono-white hover:text-mono-400")}>
+            Sign in
+          </Link>
+          <Link to="/signup" className={cn(BUTTON_PRIMARY, "min-h-0 px-4 py-[9px]")}>
+            Start free
+          </Link>
         </div>
 
-        <MobileMenu onTryDemo={onTryDemo} demoPending={demoPending} />
+        <div className="flex items-center gap-1 xl:hidden">
+          <Link to="/signup" className={cn(BUTTON_PRIMARY, "px-4 py-[9px]")}>
+            Start free
+          </Link>
+          <MobileMenu onTryDemo={onTryDemo} demoPending={demoPending} />
+        </div>
       </div>
-    </header>
+    </LandingScope>
   );
 }
 
-function MobileMenu({ onTryDemo, demoPending }: LandingNavProps) {
+const SHEET_LINK =
+  "lp-control flex h-12 items-center gap-2.5 rounded-lg px-3 text-lg font-medium text-mono-white hover:bg-mono-900";
+
+function MobileMenu({ onTryDemo, demoPending }: DemoActions) {
   const [open, setOpen] = useState(false);
   // Following a section link closes the sheet; focus then stays with the section instead of
   // returning to the menu button (which would scroll the page back to the top).
@@ -78,18 +102,19 @@ function MobileMenu({ onTryDemo, demoPending }: LandingNavProps) {
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button
-          variant="primary"
-          size="icon"
+        <button
+          type="button"
           aria-label="Open menu"
-          className="lg:hidden [&_svg]:size-[18px]"
+          className="lp-control flex size-11 items-center justify-center rounded-full text-mono-white"
         >
-          <Menu aria-hidden />
-        </Button>
+          <Menu aria-hidden className="size-6" />
+        </button>
       </SheetTrigger>
+      {/* The sheet is portalled out of the header, so it carries the landing scope itself. */}
       <SheetContent
         side="right"
-        className="gap-8 p-6"
+        hideClose
+        className="landing lp-dark gap-8 rounded-[14px] border-mono-800 bg-mono-black p-6 text-mono-white shadow-none"
         onCloseAutoFocus={(event) => {
           if (followedLinkRef.current) {
             event.preventDefault();
@@ -97,12 +122,18 @@ function MobileMenu({ onTryDemo, demoPending }: LandingNavProps) {
           }
         }}
       >
-        <div className="flex flex-col gap-1.5 pr-10">
-          <Logo />
+        <div className="flex items-center justify-between">
+          <Logo tone="on-dark" />
           <SheetTitle className="sr-only">Menu</SheetTitle>
           <SheetDescription className="sr-only">
             Jump to a section, start free, try the live demo or sign in.
           </SheetDescription>
+          <SheetClose
+            aria-label="Close"
+            className="lp-control flex size-11 items-center justify-center rounded-full text-mono-white hover:bg-mono-900"
+          >
+            <X aria-hidden className="size-5" />
+          </SheetClose>
         </div>
 
         <nav aria-label="Main">
@@ -115,17 +146,14 @@ function MobileMenu({ onTryDemo, demoPending }: LandingNavProps) {
                     followedLinkRef.current = true;
                     setOpen(false);
                   }}
-                  className="flex h-12 items-center rounded-lg px-3 text-lg font-semibold text-foreground transition-colors hover:bg-surface-hover"
+                  className={SHEET_LINK}
                 >
                   {link.label}
                 </a>
               </li>
             ))}
             <li>
-              <a
-                href={EXTERNAL_LINKS.github}
-                className="flex h-12 items-center gap-2.5 rounded-lg px-3 text-lg font-semibold text-foreground transition-colors hover:bg-surface-hover"
-              >
+              <a href={EXTERNAL_LINKS.github} className={SHEET_LINK}>
                 <GithubMark className="size-5" />
                 GitHub
               </a>
@@ -134,18 +162,24 @@ function MobileMenu({ onTryDemo, demoPending }: LandingNavProps) {
         </nav>
 
         <div className="mt-auto flex flex-col gap-2.5">
-          <Button asChild variant="primary" size="lg">
-            <Link to="/signup">Start free</Link>
-          </Button>
-          <Button size="lg" className="shadow-none" loading={demoPending} onClick={onTryDemo}>
+          <Link to="/signup" className={BUTTON_PRIMARY}>
+            Start free
+          </Link>
+          <button
+            type="button"
+            onClick={onTryDemo}
+            disabled={demoPending}
+            aria-busy={demoPending || undefined}
+            className={BUTTON_SECONDARY}
+          >
             Try the live demo
-          </Button>
-          <Button asChild variant="ghost" size="lg">
-            <a href={DOCS_LINKS.selfHosting}>Self-host Spanlight</a>
-          </Button>
-          <Button asChild variant="ghost" size="lg">
-            <Link to="/login">Sign in</Link>
-          </Button>
+          </button>
+          <a href={DOCS_LINKS.selfHosting} className={cn(SHEET_LINK, "justify-center text-[15px]")}>
+            Self-host Spanlight
+          </a>
+          <Link to="/login" className={cn(SHEET_LINK, "justify-center text-[15px]")}>
+            Sign in
+          </Link>
         </div>
       </SheetContent>
     </Sheet>

@@ -15,7 +15,7 @@ test("delayed project reads never carry previous metrics, traces, sessions or se
   await page.goto("/signup");
   await page.getByLabel("Name").fill("S3 User");
   await page.getByLabel("Work email").fill(uniqueEmail());
-  await page.getByLabel("Password").fill("correct-horse-battery");
+  await page.getByLabel("Password", { exact: true }).fill("correct-horse-battery");
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page).toHaveURL(/onboarding/);
   const { base: baseA, apiKey } = await createWorkspace(page, { apiKey: true });

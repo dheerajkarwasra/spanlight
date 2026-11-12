@@ -1,5 +1,5 @@
 import { Tabs as TabsPrimitive } from "radix-ui";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { CopyButton } from "@/components/copy-button";
 import { useMediaQuery } from "@/lib/use-media-query";
@@ -9,136 +9,195 @@ import {
   CODE_SAMPLE_IDS,
   CODE_SAMPLES,
   codeToText,
+  INSTALL_COMMAND,
   isCodeSampleId,
-  visibleLines,
   type CodeLine,
   type CodeSampleId,
-  type CodeTone,
 } from "./code-samples";
+import { inViewRef } from "./motion";
 
-/** Phones get the compact variants of the landing illustrations (Figma "Landing — Mobile"). */
-const COMPACT_QUERY = "(max-width: 767px)";
-
-const TONE_CLASSES: Record<CodeTone, string | undefined> = {
-  plain: undefined,
-  muted: "text-rail-muted-foreground",
-  accent: "text-lime",
-};
+/** The copy buttons on the black card: mono text that turns white, then reads "Copied". */
+const COPY_CLASS =
+  "lp-control h-auto min-h-11 rounded-sm px-0 font-mono text-xs font-normal text-mono-400 hover:bg-transparent hover:text-mono-white";
 
 /**
- * The dark code card next to the steps (Figma "Code card"): Python / OpenAI / OTLP tabs, a
- * lime copy button, numbered lines and the "trace received" result. Phones get the shorter
- * snippets from the mobile design, and copy exactly what is shown.
+ * The three ways to send a first trace (Figma "Options (tabs)" and "Code card"): the options are
+ * the tab list, the black card shows the selected snippet. While the card is on screen the next
+ * option is selected every six seconds, shown by the active option's rule filling; hovering or
+ * focusing the block holds it, and paused or reduced motion turns it off. All three snippets
+ * share one cell, so the card keeps the height of the tallest one.
  */
-export function CodeSampleCard({ className }: { className?: string }) {
+export function CodeSampleCard() {
   const [selected, setSelected] = useState<CodeSampleId>("python");
-  const compact = useMediaQuery(COMPACT_QUERY);
   const sample = CODE_SAMPLES[selected];
-  const copyText = codeToText(visibleLines(sample, compact));
+  const idPrefix = useId();
+  // The tab list is a column from the `xl` breakpoint up; arrow keys follow it.
+  const desktop = useMediaQuery("(min-width: 1280px)");
+
+  function advance() {
+    const next = CODE_SAMPLE_IDS[(CODE_SAMPLE_IDS.indexOf(selected) + 1) % CODE_SAMPLE_IDS.length];
+    if (next) {
+      setSelected(next);
+    }
+  }
 
   return (
-    <TabsPrimitive.Root
-      value={selected}
-      onValueChange={(value) => {
-        if (isCodeSampleId(value)) {
-          setSelected(value);
-        }
-      }}
-      className={cn(
-        "flex min-w-0 flex-col gap-4 rounded-card bg-hero-card px-[18px] pt-4 pb-[18px] text-hero-card-foreground md:gap-[22px] md:px-7 md:pt-6 md:pb-7 dark:border dark:border-border",
-        className,
-      )}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div ref={inViewRef} className="lp-tabs w-full">
+      <TabsPrimitive.Root
+        value={selected}
+        orientation={desktop ? "vertical" : "horizontal"}
+        onValueChange={(value) => {
+          if (isCodeSampleId(value)) {
+            setSelected(value);
+          }
+        }}
+        className="flex flex-col gap-7 xl:flex-row xl:items-start xl:gap-[72px]"
+      >
         <TabsPrimitive.List
           aria-label="Integration"
-          className="flex gap-0.5 rounded-full bg-rail-tile p-[3px] md:p-1"
+          className="flex border-b border-mono-line-strong xl:w-[440px] xl:shrink-0 xl:flex-col xl:border-b-0"
         >
           {CODE_SAMPLE_IDS.map((id) => (
             <TabsPrimitive.Trigger
               key={id}
               value={id}
-              className={cn(
-                "rounded-full px-2 py-[5px] text-xs font-semibold text-rail-muted-foreground transition-colors md:px-3.5 md:py-1.5 md:text-label",
-                "hover:text-rail-foreground focus-visible:outline-lime",
-                "data-[state=active]:bg-rail-foreground data-[state=active]:text-rail",
-              )}
+              aria-labelledby={`${idPrefix}-${id}-title`}
+              aria-describedby={`${idPrefix}-${id}-summary`}
+              className="group lp-control relative flex min-h-11 flex-1 flex-col items-center justify-center px-1 text-mono-500 hover:text-mono-900 data-[state=active]:text-mono-900 xl:flex-none xl:items-start xl:gap-2 xl:border-t xl:border-mono-line-strong xl:px-0 xl:py-6 xl:text-left"
             >
-              {CODE_SAMPLES[id].label}
+              {/* Underline on phones, top rule on desktop; it fills as the six seconds pass. */}
+              <span
+                aria-hidden
+                onAnimationEnd={advance}
+                className="lp-tabfill absolute inset-x-0 -bottom-px hidden h-0.5 bg-mono-900 group-data-[state=active]:block xl:-top-px xl:bottom-auto xl:h-px"
+              />
+              <span
+                id={`${idPrefix}-${id}-title`}
+                className="text-sm leading-[1.3] font-medium whitespace-nowrap xl:text-[22px] xl:tracking-[-0.02em]"
+              >
+                {CODE_SAMPLES[id].label}
+              </span>
+              <span
+                id={`${idPrefix}-${id}-summary`}
+                className="hidden text-[15px] leading-[1.55] group-data-[state=active]:text-mono-600 xl:block"
+              >
+                {CODE_SAMPLES[id].summary}
+              </span>
             </TabsPrimitive.Trigger>
           ))}
         </TabsPrimitive.List>
-        <CopyButton
-          value={copyText}
-          label="Copy"
-          aria-label={`Copy the ${sample.label} snippet`}
-          showLabel
-          variant="highlight"
-          size="sm"
-          className="ml-auto h-auto gap-[5px] py-1.5 pr-3 pl-2.5 text-xs md:gap-1.5 md:py-[7px] md:pr-3.5 md:pl-3 md:text-label [&_svg]:size-[13px] [&_svg]:text-lime-foreground md:[&_svg]:size-3.5"
-        />
-      </div>
 
-      {CODE_SAMPLE_IDS.map((id) => (
-        <TabsPrimitive.Content
-          key={id}
-          value={id}
-          // The scrollable code inside is the tab stop; the panel itself needn't be one.
-          tabIndex={-1}
-          className="min-w-0 outline-none"
-        >
-          <CodeLines
-            lines={visibleLines(CODE_SAMPLES[id], compact)}
-            label={CODE_SAMPLES[id].description}
-          />
-        </TabsPrimitive.Content>
-      ))}
+        {/* All summaries share one grid cell, so the tallest sets the height and tabs never jump. */}
+        <div className="grid xl:hidden">
+          {CODE_SAMPLE_IDS.map((id) => (
+            <p
+              key={id}
+              aria-hidden={id !== selected}
+              className={cn(
+                "col-start-1 row-start-1 text-[15px] leading-[1.55] text-mono-600",
+                id !== selected && "invisible",
+              )}
+            >
+              {CODE_SAMPLES[id].summary}
+            </p>
+          ))}
+        </div>
 
-      <p className="flex items-center gap-2 rounded-input bg-rail-tile px-3 py-[9px] font-mono text-2xs leading-[1.5] text-rail-foreground md:gap-2.5 md:px-4 md:py-2.5 md:text-xs">
-        <span
-          aria-hidden
-          className="flex size-4 shrink-0 items-center justify-center rounded-full bg-lime md:size-[18px]"
-        >
-          <span className="size-[5px] rounded-full bg-lime-foreground md:size-1.5" />
-        </span>
-        <span className="min-w-0 truncate">
-          Trace <span className="hidden md:inline">answer_ticket </span>received ·{" "}
-          <span className="hidden md:inline">2 spans · </span>1.42 s · $0.0031
-        </span>
-      </p>
-    </TabsPrimitive.Root>
+        <div className="lp-dark flex min-w-0 flex-col overflow-hidden rounded-[14px] bg-mono-black xl:flex-1">
+          <div className="flex items-center gap-6 border-b border-mono-800 px-5 font-mono text-xs leading-[1.4] xl:px-6">
+            {/* A pointer shortcut to the same tabs; keyboard and screen readers use the list. */}
+            {CODE_SAMPLE_IDS.map((id) => (
+              <button
+                key={id}
+                type="button"
+                aria-hidden
+                tabIndex={-1}
+                onClick={() => setSelected(id)}
+                className={cn(
+                  "lp-control hidden py-4 hover:text-mono-white xl:block",
+                  id === selected ? "font-medium text-mono-white" : "text-mono-400",
+                )}
+              >
+                {id}
+              </button>
+            ))}
+            <CopyButton
+              value={codeToText(sample.lines)}
+              label="Copy"
+              aria-label={`Copy the ${sample.label} snippet`}
+              showLabel
+              showIcon={false}
+              variant="ghost"
+              className={cn(COPY_CLASS, "ml-auto")}
+            />
+          </div>
+
+          <div className="grid grid-cols-1">
+            {CODE_SAMPLE_IDS.map((id) => (
+              <TabsPrimitive.Content
+                key={id}
+                value={id}
+                forceMount
+                // The scrollable code inside is the tab stop; the panel itself needn't be one.
+                tabIndex={-1}
+                className="col-start-1 row-start-1 min-w-0 transition-[opacity,visibility] duration-[180ms] ease-out outline-none data-[state=inactive]:invisible data-[state=inactive]:opacity-0"
+              >
+                <CodeLines lines={CODE_SAMPLES[id].lines} label={CODE_SAMPLES[id].description} />
+              </TabsPrimitive.Content>
+            ))}
+          </div>
+
+          {/* Only the Python sample needs an install; the row keeps its place for the others. */}
+          <div
+            className={cn(
+              "flex items-center justify-between gap-4 border-t border-mono-800 px-5 font-mono leading-[1.4] xl:px-6",
+              selected !== "python" && "invisible",
+            )}
+          >
+            <p className="flex min-w-0 gap-3 overflow-x-auto text-[13px] whitespace-nowrap">
+              <span aria-hidden className="text-mono-400">
+                $
+              </span>
+              <code className="text-mono-white">{INSTALL_COMMAND}</code>
+            </p>
+            <CopyButton
+              value={INSTALL_COMMAND}
+              label="Copy"
+              aria-label="Copy the install command"
+              showLabel
+              showIcon={false}
+              variant="ghost"
+              className={cn(COPY_CLASS, "shrink-0")}
+            />
+          </div>
+        </div>
+      </TabsPrimitive.Root>
+    </div>
   );
 }
 
 function CodeLines({ lines, label }: { lines: readonly CodeLine[]; label: string }) {
   return (
-    <div className="flex gap-3.5 font-mono text-xs leading-[1.5] md:gap-5 md:text-code md:leading-[1.7]">
-      <ol
-        aria-hidden
-        className="shrink-0 text-right text-rail-subtle-foreground select-none md:min-w-[22px]"
-      >
-        {lines.map((_, index) => (
-          <li key={index}>{index + 1}</li>
+    // Focusable so keyboard users can scroll long lines sideways.
+    <pre
+      tabIndex={0}
+      aria-label={label}
+      className="overflow-x-auto px-5 py-5 font-mono text-xs leading-[1.75] text-mono-400 xl:px-7 xl:py-[26px] xl:text-[13.5px]"
+    >
+      <code>
+        {lines.map((line, lineIndex) => (
+          <span key={lineIndex} className="block min-h-[1lh]">
+            {line.map((segment, segmentIndex) => (
+              <span
+                key={segmentIndex}
+                className={segment.tone === "accent" ? "text-mono-white" : undefined}
+              >
+                {segment.text}
+              </span>
+            ))}
+          </span>
         ))}
-      </ol>
-      {/* Focusable so keyboard users can scroll long lines horizontally. */}
-      <pre
-        tabIndex={0}
-        aria-label={label}
-        className="min-w-0 flex-1 overflow-x-auto text-rail-foreground focus-visible:outline-offset-2 focus-visible:outline-lime"
-      >
-        <code>
-          {lines.map((line, lineIndex) => (
-            <span key={lineIndex} className="block min-h-[1lh]">
-              {line.map((segment, segmentIndex) => (
-                <span key={segmentIndex} className={TONE_CLASSES[segment.tone]}>
-                  {segment.text}
-                </span>
-              ))}
-            </span>
-          ))}
-        </code>
-      </pre>
-    </div>
+      </code>
+    </pre>
   );
 }

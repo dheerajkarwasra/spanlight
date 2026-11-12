@@ -1,16 +1,13 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
-import { FileText } from "lucide-react";
 import { useState } from "react";
 
-import { Callout } from "@/components/callout";
-import { Button } from "@/components/ui/button";
 import { LEGAL_PATHS } from "@/features/landing/links";
 import { useSignOut } from "@/features/shell/use-sign-out";
 import { authApi, errorMessage, isApiError } from "@/lib/api";
 
+import { Button, Callout } from "./auth-controls";
 import { AuthLayout } from "./auth-layout";
-import { AuthStatusTile } from "./auth-status-tile";
 import { refreshMe, termsPending, useMe } from "./queries";
 import { safeNextPath } from "./search";
 import { LegalLink } from "./terms-line";
@@ -65,7 +62,6 @@ export function AcceptTermsPage() {
     <AuthLayout
       title={first ? "Accept the" : "Review the updated"}
       accent="terms"
-      status={<AuthStatusTile icon={FileText} tone="accent" />}
       description={
         <>
           {first ? (
@@ -106,7 +102,7 @@ export function AcceptTermsPage() {
           Sign out
         </Button>
       </div>
-      <p className="text-center text-xs font-medium text-muted-foreground">
+      <p className="font-mono text-xs leading-normal [overflow-wrap:anywhere] text-mono-600">
         Terms version {version} · Signed in as {me.user.email}
       </p>
     </AuthLayout>

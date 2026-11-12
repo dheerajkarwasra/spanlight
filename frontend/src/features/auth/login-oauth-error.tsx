@@ -1,8 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
-import { Callout } from "@/components/callout";
-
+import { Callout } from "./auth-controls";
 import { signInErrorMessage } from "./login-flow";
 import { recallOAuthProvider } from "./oauth-provider-hint";
 

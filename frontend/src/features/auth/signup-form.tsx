@@ -5,13 +5,10 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
-import { Callout } from "@/components/callout";
-import { FormField } from "@/components/form-field";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { authApi, errorMessage, isApiError, queryKeys } from "@/lib/api";
 import { applyServerFieldErrors } from "@/lib/form-errors";
 
+import { Button, Callout, FormField, Input, PasswordInput } from "./auth-controls";
 import { refreshMe, useShowsTermsLine } from "./queries";
 import { safeNextPath } from "./search";
 import { TermsLine } from "./terms-line";
@@ -79,8 +76,14 @@ export function SignupForm({ next }: SignupFormProps) {
   });
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-6" noValidate>
-      <div className="flex flex-col gap-4">
+    <form onSubmit={onSubmit} className="flex flex-col gap-[18px]" noValidate>
+      {formError ? (
+        <Callout tone="danger" role="alert">
+          {formError}
+        </Callout>
+      ) : null}
+
+      <div className="flex flex-col gap-[18px]">
         <FormField label="Name" error={form.formState.errors.name?.message}>
           <Input autoComplete="name" autoFocus {...form.register("name")} />
         </FormField>
@@ -92,17 +95,11 @@ export function SignupForm({ next }: SignupFormProps) {
           error={form.formState.errors.password?.message}
           hint={`At least ${MIN_PASSWORD_LENGTH} characters.`}
         >
-          <Input type="password" autoComplete="new-password" {...form.register("password")} />
+          <PasswordInput autoComplete="new-password" {...form.register("password")} />
         </FormField>
       </div>
 
-      {formError ? (
-        <Callout tone="danger" role="alert">
-          {formError}
-        </Callout>
-      ) : null}
-
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2.5">
         <Button type="submit" variant="primary" size="lg" loading={signup.isPending}>
           Create account
         </Button>

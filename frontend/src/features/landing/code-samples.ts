@@ -1,9 +1,10 @@
 /**
- * Integration snippets for the "How it works" code card. Lines are pre-split into coloured
- * segments (Figma "Code card": keywords and literals muted, SDK calls and strings lime) so
- * the card renders exactly as designed; `codeToText` rebuilds the plain text for copying.
+ * Integration snippets for the "Start" code card. Lines are pre-split into segments (Figma "Code
+ * card": grey code with the Spanlight calls in white) so the card renders as designed;
+ * `codeToText` rebuilds the plain text for copying.
  *
- * Snippets use the real Python SDK API (`sdks/python`, imported as `spanlight`).
+ * Snippets use the real Python SDK API (`sdks/python`, imported as `spanlight`); the Python one
+ * is the README quickstart.
  */
 
 export type CodeTone = "plain" | "muted" | "accent";
@@ -15,16 +16,17 @@ export interface CodeSegment {
 
 export type CodeLine = readonly CodeSegment[];
 
-export type CodeSampleId = "python" | "openai" | "otlp" | "gateway";
+export type CodeSampleId = "python" | "otlp" | "gateway";
 
 export interface CodeSample {
   id: CodeSampleId;
+  /** Option title, e.g. "Python SDK". */
   label: string;
+  /** The sentence under the option title. */
+  summary: string;
   /** Accessible name of the code region. */
   description: string;
   lines: readonly CodeLine[];
-  /** Shorter version for phones; falls back to `lines`. */
-  compactLines?: readonly CodeLine[];
 }
 
 /** Template tag: `code\`${muted("import")} spanlight\`` → segments. */
@@ -55,58 +57,20 @@ const BLANK: CodeLine = [];
 export const API_KEY_PLACEHOLDER = "<YOUR_API_KEY>";
 
 const PYTHON_LINES: readonly CodeLine[] = [
-  code`${muted("import")} spanlight`,
-  code`${muted("from")} anthropic ${muted("import")} Anthropic`,
+  code`import spanlight`,
+  code`from anthropic import Anthropic`,
   BLANK,
-  code`spanlight.${accent("init")}(environment=${accent('"production"')})`,
-  code`client = spanlight.${accent("wrap_anthropic")}(Anthropic())`,
+  code`${accent("spanlight.init")}(api_key="spl_live_…", host="http://localhost:8080")`,
+  code`client = ${accent("spanlight.wrap_anthropic")}(Anthropic())`,
   BLANK,
-  code`${accent("@spanlight.observe")}(name=${accent('"answer_ticket"')})`,
-  code`${muted("def")} answer_ticket(ticket_id: ${muted("str")}, question: ${muted("str")}) -> ${muted("str")}:`,
-  code`    spanlight.${accent("update_trace")}(session_id=ticket_id)`,
-  code`    reply = client.messages.${accent("create")}(`,
-  code`        model=${accent('"claude-haiku-4-5"')},`,
-  code`        max_tokens=${muted("512")},`,
-  code`        messages=[{${accent('"role"')}: ${accent('"user"')}, ${accent('"content"')}: question}],`,
+  code`${accent("@spanlight.observe()")}`,
+  code`def answer(question: str) -> str:`,
+  code`    reply = client.messages.create(`,
+  code`        model="claude-haiku-5-5",`,
+  code`        max_tokens=300,`,
+  code`        messages=[{"role": "user", "content": question}],`,
   code`    )`,
-  code`    ${muted("return")} reply.content[0].text`,
-];
-
-const PYTHON_COMPACT_LINES: readonly CodeLine[] = [
-  code`${muted("import")} spanlight`,
-  code`${muted("from")} anthropic ${muted("import")} Anthropic`,
-  BLANK,
-  code`spanlight.${accent("init")}()`,
-  code`client = spanlight.${accent("wrap_anthropic")}(`,
-  code`    Anthropic()`,
-  code`)`,
-];
-
-const OPENAI_LINES: readonly CodeLine[] = [
-  code`${muted("import")} spanlight`,
-  code`${muted("from")} openai ${muted("import")} OpenAI`,
-  BLANK,
-  code`spanlight.${accent("init")}(environment=${accent('"production"')})`,
-  code`client = spanlight.${accent("wrap_openai")}(OpenAI())`,
-  BLANK,
-  code`${accent("@spanlight.observe")}(name=${accent('"answer_ticket"')})`,
-  code`${muted("def")} answer_ticket(ticket_id: ${muted("str")}, question: ${muted("str")}) -> ${muted("str")}:`,
-  code`    spanlight.${accent("update_trace")}(session_id=ticket_id)`,
-  code`    response = client.chat.completions.${accent("create")}(`,
-  code`        model=${accent('"gpt-4.1-mini"')},`,
-  code`        messages=[{${accent('"role"')}: ${accent('"user"')}, ${accent('"content"')}: question}],`,
-  code`    )`,
-  code`    ${muted("return")} response.choices[0].message.content ${muted("or")} ${accent('""')}`,
-];
-
-const OPENAI_COMPACT_LINES: readonly CodeLine[] = [
-  code`${muted("import")} spanlight`,
-  code`${muted("from")} openai ${muted("import")} OpenAI`,
-  BLANK,
-  code`spanlight.${accent("init")}()`,
-  code`client = spanlight.${accent("wrap_openai")}(`,
-  code`    OpenAI()`,
-  code`)`,
+  code`    return reply.content[0].text`,
 ];
 
 const OTLP_LINES: readonly CodeLine[] = [
@@ -134,55 +98,41 @@ const GATEWAY_LINES: readonly CodeLine[] = [
   code`)`,
 ];
 
-const GATEWAY_COMPACT_LINES: readonly CodeLine[] = [
-  code`${muted("from")} openai ${muted("import")} OpenAI`,
-  BLANK,
-  code`client = ${accent("OpenAI")}(`,
-  code`    base_url=${accent('"…/gw/v1"')},`,
-  code`    api_key=${accent('"<YOUR_GATEWAY_KEY>"')},`,
-  code`)`,
-];
-
 export const CODE_SAMPLES: Record<CodeSampleId, CodeSample> = {
   python: {
     id: "python",
-    label: "Python",
+    label: "Python SDK",
+    summary:
+      "Wrap your OpenAI or Anthropic client and decorate a function. The SDK never raises into your code.",
     description: "Python SDK with the Anthropic client",
     lines: PYTHON_LINES,
-    compactLines: PYTHON_COMPACT_LINES,
-  },
-  openai: {
-    id: "openai",
-    label: "OpenAI",
-    description: "Python SDK with the OpenAI client",
-    lines: OPENAI_LINES,
-    compactLines: OPENAI_COMPACT_LINES,
   },
   otlp: {
     id: "otlp",
-    label: "OTLP",
+    label: "OpenTelemetry",
+    summary:
+      "Point any OTLP/HTTP exporter at /v1/otlp/traces. The GenAI conventions, OpenInference, OpenLLMetry and the Vercel AI SDK are read as sent.",
     description: "OpenTelemetry exporter environment",
     lines: OTLP_LINES,
   },
   gateway: {
     id: "gateway",
     label: "Gateway",
+    summary:
+      "Set your client’s base URL and change nothing else. It is the only option that sits in the request path.",
     description: "OpenAI client pointed at the Spanlight gateway, no SDK",
     lines: GATEWAY_LINES,
-    compactLines: GATEWAY_COMPACT_LINES,
   },
 };
 
-/** Tab order. */
-export const CODE_SAMPLE_IDS: readonly CodeSampleId[] = ["python", "openai", "otlp", "gateway"];
+/** Tab order. The id is also the lowercase tab name on the code card. */
+export const CODE_SAMPLE_IDS: readonly CodeSampleId[] = ["python", "otlp", "gateway"];
+
+/** The install command shown in the hero and under the Python sample (the README one). */
+export const INSTALL_COMMAND = 'pip install "spanlight[anthropic]"';
 
 export function isCodeSampleId(value: string): value is CodeSampleId {
   return Object.hasOwn(CODE_SAMPLES, value);
-}
-
-/** The lines to show: the compact variant on phones when there is one. */
-export function visibleLines(sample: CodeSample, compact: boolean): readonly CodeLine[] {
-  return compact && sample.compactLines ? sample.compactLines : sample.lines;
 }
 
 /** Plain text of the given lines, as it should land on the clipboard. */

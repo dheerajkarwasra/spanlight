@@ -1,15 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { CircleAlert, CircleCheck, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { Callout } from "@/components/callout";
-import { Button } from "@/components/ui/button";
 import { authApi, errorMessage, isApiError } from "@/lib/api";
 import { readLastProject } from "@/lib/last-project";
 
+import { Button, Callout } from "./auth-controls";
 import { AuthLayout } from "./auth-layout";
-import { AuthStatusTile } from "./auth-status-tile";
 import { clearFragment, readFragmentParam } from "./fragment-token";
 import { isDeadLinkError } from "./verify-email-flow";
 
@@ -55,7 +52,6 @@ export function ConfirmEmailChangePage() {
         title="Email"
         accent="changed."
         description="Sign in again with your new address. For your security, every session was signed out."
-        status={<AuthStatusTile icon={CircleCheck} tone="success" />}
       >
         <Button asChild variant="primary" size="lg">
           <Link to="/login" search={{}}>
@@ -71,7 +67,6 @@ export function ConfirmEmailChangePage() {
         title="Changing your"
         accent="email"
         description={<span role="status">Checking your link…</span>}
-        status={<AuthStatusTile icon={Loader2} tone="accent" spinning />}
       >
         {null}
       </AuthLayout>
@@ -84,17 +79,13 @@ export function ConfirmEmailChangePage() {
   // Settings › Account in the last project this browser opened; home when it opened none.
   const last = readLastProject();
   return (
-    <AuthLayout
-      title="Change your"
-      accent="email"
-      status={<AuthStatusTile icon={CircleAlert} tone="danger" />}
-    >
+    <AuthLayout title="Change your" accent="email">
       <Callout tone="danger" role="alert">
         {retryable || taken
           ? errorMessage(confirm.error)
           : "This link is invalid or has expired. Request a new one in Settings › Account."}
       </Callout>
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-6">
         {retryable ? (
           <Button
             variant="primary"

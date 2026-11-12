@@ -1,15 +1,12 @@
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { CircleAlert, CircleCheck, Mail } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { Callout } from "@/components/callout";
-import { Button } from "@/components/ui/button";
 import { authApi, errorMessage } from "@/lib/api";
 import { readLastProject } from "@/lib/last-project";
 
+import { Button, Callout } from "./auth-controls";
 import { AuthLayout } from "./auth-layout";
-import { AuthStatusTile } from "./auth-status-tile";
 import { clearFragment, readFragmentParam } from "./fragment-token";
 
 // The shape the server mints (`app.alerts.unsubscribe`): a user id in hex, a dot, an HMAC.
@@ -55,11 +52,7 @@ export function UnsubscribePage() {
 
   if (token === null) {
     return (
-      <AuthLayout
-        title="Weekly"
-        accent="digest"
-        status={<AuthStatusTile icon={CircleAlert} tone="danger" />}
-      >
+      <AuthLayout title="Weekly" accent="digest">
         <Callout tone="danger" role="alert">
           This link is not valid. You can turn off the weekly digest in Settings › Account.
         </Callout>
@@ -80,12 +73,11 @@ export function UnsubscribePage() {
             You won&apos;t get the weekly digest anymore. Turn it back on in{" "}
             {accountLink(
               "Settings › Account",
-              "rounded-xs whitespace-nowrap text-foreground underline underline-offset-2",
+              "lp-control rounded-xs whitespace-nowrap text-mono-900 underline underline-offset-2",
             )}
             .
           </>
         }
-        status={<AuthStatusTile icon={CircleCheck} tone="success" />}
       >
         {null}
       </AuthLayout>
@@ -96,7 +88,6 @@ export function UnsubscribePage() {
       title="Weekly"
       accent="digest"
       description="You'll stop getting the Monday summary of each project's week, for every organization you belong to."
-      status={<AuthStatusTile icon={Mail} tone="accent" />}
     >
       {unsubscribe.isError ? (
         <Callout tone="danger" role="alert">

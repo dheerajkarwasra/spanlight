@@ -54,7 +54,7 @@ export const test = baseTest.extend<object, { accountState: string }>({
       await page.goto("/signup");
       await page.getByLabel("Name").fill("E2E User");
       await page.getByLabel("Work email").fill(uniqueEmail());
-      await page.getByLabel("Password").fill("correct-horse-battery");
+      await page.getByLabel("Password", { exact: true }).fill("correct-horse-battery");
       await page.getByRole("button", { name: "Create account" }).click();
       await expect(page).toHaveURL(/\/onboarding/);
       const path =

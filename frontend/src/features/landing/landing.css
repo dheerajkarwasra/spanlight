@@ -1,0 +1,504 @@
+/*
+ * Landing v8 "Live" (Figma page "Landing"). The landing is strictly black, grey and white and
+ * does not follow the app theme: its colours live on `.landing` and are mapped to Tailwind as
+ * `mono-*` in styles/globals.css. The nav and footer carry the scope themselves, so they render
+ * the same on the legal pages.
+ *
+ * Motion contract (Figma "Motion spec and handoff notes"):
+ * - One-shot build-ups (`lp-rise`, `lp-fade`, `lp-slide`, `lp-grow`, `lp-draw`, `lp-scan`) follow
+ *   the scroll position inside an `lp-view` block where `animation-timeline: view()` exists, and
+ *   otherwise play once, timed, when the block is first seen (`data-seen`).
+ * - Loops (`lp-loop`) run only while their block is on screen (`data-onscreen`), the tab is
+ *   visible and motion is not paused.
+ * - Every animated element rests on its final state, so paused and reduced motion show the page
+ *   complete. Only transform, opacity, stroke-dashoffset and the clip's filter are animated.
+ */
+.landing {
+  --mono-white: #ffffff;
+  --mono-paper: #fafafa;
+  --mono-mist: #f4f4f4;
+  --mono-line: #e5e5e5;
+  --mono-line-strong: #d4d4d4;
+  --mono-400: #a3a3a3;
+  --mono-500: #737373;
+  --mono-600: #525252;
+  --mono-800: #262626;
+  --mono-900: #171717;
+  --mono-black: #0a0a0a;
+
+  /* One-colour logo: the lit span of the Cascade mark is grey here, not lime. */
+  --lime: var(--mono-400);
+  --rail-foreground: #f5f5f4;
+
+  /* Entrances; moves that start and end on screen; linear is for loops and scroll progress. */
+  --lp-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --lp-ease-move: cubic-bezier(0.65, 0, 0.35, 1);
+  --lp-enter: 500ms;
+  --lp-micro: 150ms;
+  --lp-press: 100ms;
+  --lp-stagger: 70ms;
+
+  color: var(--mono-900);
+  font-family: var(--font-brand);
+}
+
+/* Anchor links glide on the landing only; the global reduced-motion rule turns this off. */
+html:has(.landing-page) {
+  scroll-behavior: smooth;
+}
+
+/* Section headings clear the sticky nav (72px, 60px on phones). */
+.landing-page section[id] {
+  scroll-margin-top: 72px;
+}
+
+/* Focus: 2px ring, 2px offset; #171717 on light sections, white on black ones. */
+.landing :focus-visible {
+  outline: 2px solid var(--mono-900);
+  outline-offset: 2px;
+}
+
+.landing.lp-dark :focus-visible,
+.landing .lp-dark :focus-visible {
+  outline-color: var(--mono-white);
+}
+
+/* Hover and press feedback shared by links, tabs, chapters and the text buttons. */
+.lp-control {
+  transition:
+    color var(--lp-micro) ease,
+    background-color var(--lp-micro) ease,
+    border-color var(--lp-micro) ease,
+    opacity var(--lp-micro) ease,
+    transform var(--lp-press) var(--lp-ease-out);
+}
+
+.lp-control:active {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-control:active {
+    transform: none;
+  }
+}
+
+/* ── One-shot build-ups ─────────────────────────────────────────────────────────────────── */
+
+@keyframes lp-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--lp-rise, 16px));
+  }
+}
+
+@keyframes lp-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes lp-slide {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+}
+
+@keyframes lp-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* Paths carry pathLength="1" and stroke-dasharray="1". */
+@keyframes lp-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+/*
+ * Scroll-linked twins: the timeline is linear, so the ease-out is baked into the stops and slow
+ * scrolling never shows a jump.
+ */
+@keyframes lp-rise-scroll {
+  0% {
+    opacity: 0;
+    transform: translateY(var(--lp-rise, 16px));
+  }
+  35% {
+    opacity: 0.7;
+    transform: translateY(calc(var(--lp-rise, 16px) * 0.4));
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(calc(var(--lp-rise, 16px) * 0.1));
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes lp-slide-scroll {
+  0% {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  35% {
+    opacity: 0.7;
+    transform: translateX(-10px);
+  }
+  70% {
+    opacity: 1;
+    transform: translateX(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* The detector scan: one highlight block steps through the sixteen cells and stops on tool_loop. */
+@keyframes lp-scan-list {
+  0% {
+    transform: translateY(0%);
+  }
+  5.88% {
+    transform: translateY(100%);
+  }
+  11.76% {
+    transform: translateY(200%);
+  }
+  17.65% {
+    transform: translateY(300%);
+  }
+  23.53% {
+    transform: translateY(400%);
+  }
+  29.41% {
+    transform: translateY(500%);
+  }
+  35.29% {
+    transform: translateY(600%);
+  }
+  41.18% {
+    transform: translateY(700%);
+  }
+  47.06% {
+    transform: translateY(800%);
+  }
+  52.94% {
+    transform: translateY(900%);
+  }
+  58.82% {
+    transform: translateY(1000%);
+  }
+  64.71% {
+    transform: translateY(1100%);
+  }
+  70.59% {
+    transform: translateY(1200%);
+  }
+  76.47% {
+    transform: translateY(1300%);
+  }
+  82.35% {
+    transform: translateY(1400%);
+  }
+  88.24% {
+    transform: translateY(1500%);
+  }
+  94.12% {
+    transform: translateY(1100%);
+  }
+  100% {
+    transform: translateY(1100%);
+  }
+}
+
+@keyframes lp-scan-grid {
+  0% {
+    transform: translate(0%, 0%);
+  }
+  5.88% {
+    transform: translate(100%, 0%);
+  }
+  11.76% {
+    transform: translate(200%, 0%);
+  }
+  17.65% {
+    transform: translate(300%, 0%);
+  }
+  23.53% {
+    transform: translate(0%, 100%);
+  }
+  29.41% {
+    transform: translate(100%, 100%);
+  }
+  35.29% {
+    transform: translate(200%, 100%);
+  }
+  41.18% {
+    transform: translate(300%, 100%);
+  }
+  47.06% {
+    transform: translate(0%, 200%);
+  }
+  52.94% {
+    transform: translate(100%, 200%);
+  }
+  58.82% {
+    transform: translate(200%, 200%);
+  }
+  64.71% {
+    transform: translate(300%, 200%);
+  }
+  70.59% {
+    transform: translate(0%, 300%);
+  }
+  76.47% {
+    transform: translate(100%, 300%);
+  }
+  82.35% {
+    transform: translate(200%, 300%);
+  }
+  88.24% {
+    transform: translate(300%, 300%);
+  }
+  94.12% {
+    transform: translate(300%, 200%);
+  }
+  100% {
+    transform: translate(300%, 200%);
+  }
+}
+
+.lp-rise,
+.lp-fade,
+.lp-slide,
+.lp-grow,
+.lp-draw,
+.lp-scan {
+  animation-duration: var(--lp-enter);
+  animation-timing-function: var(--lp-ease-out);
+  animation-fill-mode: both;
+  /* `--d` is an explicit delay; `--i` is the place in a stagger. */
+  animation-delay: var(--d, calc(var(--i, 0) * var(--lp-stagger)));
+  /* Held on the first frame until the block is seen. */
+  animation-play-state: paused;
+}
+
+.lp-rise {
+  animation-name: lp-rise;
+}
+
+.lp-fade {
+  animation-name: lp-fade;
+}
+
+.lp-slide {
+  animation-name: lp-slide;
+}
+
+.lp-grow {
+  transform-origin: left;
+  animation-name: lp-grow;
+  animation-duration: 650ms;
+}
+
+.lp-draw {
+  stroke-dasharray: 1;
+  animation-name: lp-draw;
+  animation-duration: 650ms;
+}
+
+/* Rests on tool_loop: twelfth row on phones, third row and fourth column on desktop. */
+.lp-scan {
+  transform: translateY(1100%);
+  animation-name: lp-scan-list;
+  animation-duration: 1.2s;
+  animation-timing-function: step-end;
+}
+
+@media (width >= 80rem) {
+  .lp-scan {
+    transform: translate(300%, 200%);
+    animation-name: lp-scan-grid;
+  }
+}
+
+[data-seen] :is(.lp-rise, .lp-fade, .lp-slide, .lp-grow, .lp-draw, .lp-scan),
+[data-seen]:is(.lp-rise, .lp-fade, .lp-slide, .lp-grow, .lp-draw, .lp-scan) {
+  animation-play-state: running;
+}
+
+@supports (animation-timeline: view()) {
+  .lp-view {
+    view-timeline: --lp-view block;
+  }
+
+  .lp-view :is(.lp-rise, .lp-fade, .lp-slide, .lp-grow, .lp-draw, .lp-scan),
+  .lp-view:is(.lp-rise, .lp-fade, .lp-slide, .lp-grow, .lp-draw, .lp-scan) {
+    animation-timeline: --lp-view;
+    /* Later items in a stagger start a little further down the scroll. */
+    animation-range: entry calc(10% + var(--i, 0) * 3%) cover calc(38% + var(--i, 0) * 3%);
+    animation-duration: auto;
+    animation-delay: 0s;
+    animation-timing-function: linear;
+    animation-play-state: running;
+  }
+
+  .lp-view :is(.lp-rise),
+  .lp-view:is(.lp-rise) {
+    animation-name: lp-rise-scroll;
+  }
+
+  .lp-view :is(.lp-slide),
+  .lp-view:is(.lp-slide) {
+    animation-name: lp-slide-scroll;
+  }
+
+  .lp-view .lp-scan {
+    animation-timing-function: step-end;
+  }
+
+  /* The last block of the page can only ever finish entering, so its range ends there. */
+  .lp-view .lp-enter-range {
+    animation-range: entry 0% entry 100%;
+  }
+}
+
+/* ── Loops ──────────────────────────────────────────────────────────────────────────────── */
+
+/* The light dash is hidden before the start of the wire and after its end. */
+@keyframes lp-pulse {
+  from {
+    stroke-dashoffset: 0.32;
+  }
+  to {
+    stroke-dashoffset: -1.02;
+  }
+}
+
+/* One wire of four takes its turn: travel in the first quarter, then wait. */
+@keyframes lp-pulse-turn {
+  0% {
+    stroke-dashoffset: 0.32;
+  }
+  25%,
+  100% {
+    stroke-dashoffset: -1.02;
+  }
+}
+
+@keyframes lp-drift {
+  to {
+    transform: translateX(var(--lp-dx, 120px));
+  }
+}
+
+@keyframes lp-marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.lp-loop {
+  animation-duration: var(--lp-dur, 2.4s);
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  animation-delay: var(--d, 0s);
+  animation-play-state: paused;
+}
+
+[data-onscreen="true"] .lp-loop {
+  animation-play-state: running;
+}
+
+/* An off-screen block wins over an on-screen ancestor (a diagram scrolled out of a tall section). */
+[data-onscreen="false"] :is(.lp-loop, .lp-tabfill) {
+  animation-play-state: paused;
+}
+
+.lp-pulse {
+  stroke-dasharray: 0.3 1.4;
+  stroke-dashoffset: 0.32;
+  animation-name: lp-pulse;
+}
+
+.lp-pulse-turn {
+  animation-name: lp-pulse-turn;
+}
+
+/* Blurred once, then only moved: each band is its own layer and never repaints. */
+.lp-drift {
+  will-change: transform;
+  animation-name: lp-drift;
+  animation-timing-function: var(--lp-ease-move);
+  animation-direction: alternate;
+}
+
+/* 40px a second; pauses under the pointer. */
+.lp-marquee {
+  animation-name: lp-marquee;
+}
+
+.lp-marquee:hover {
+  animation-play-state: paused;
+}
+
+/* The active option's rule fills over six seconds; its end advances the tab. */
+.lp-tabfill {
+  transform-origin: left;
+  animation: lp-grow 6s linear both paused;
+}
+
+[data-onscreen="true"] .lp-tabfill {
+  animation-play-state: running;
+}
+
+.lp-tabs:hover .lp-tabfill,
+.lp-tabs:focus-within .lp-tabfill {
+  animation-play-state: paused;
+}
+
+/* ── Pause motion, hidden tab, reduced motion ───────────────────────────────────────────── */
+
+/* Paused: loops stop where they are, everything else shows its final state. */
+.landing[data-motion="paused"]
+  :is(.lp-rise, .lp-fade, .lp-slide, .lp-grow, .lp-draw, .lp-scan, .lp-tabfill) {
+  animation: none !important;
+}
+
+.landing[data-motion="paused"] .lp-loop,
+[data-lp-hidden] .lp-loop,
+[data-lp-hidden] .lp-tabfill {
+  animation-play-state: paused !important;
+}
+
+/* A paused marquee is a static, wrapped list. */
+.landing[data-motion="paused"] .lp-marquee {
+  width: auto;
+  flex-wrap: wrap;
+  row-gap: 12px;
+  animation: none !important;
+}
+
+.landing[data-motion="paused"] .lp-marquee [aria-hidden="true"] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No build-up travel, scroll-linked or timed, and no auto-advancing tabs. */
+  .landing :is(.lp-rise, .lp-fade, .lp-slide, .lp-grow, .lp-draw, .lp-scan, .lp-tabfill) {
+    animation: none !important;
+  }
+
+  /* The page starts paused; a visitor who presses "Play motion" asked for the loops. */
+  .landing[data-motion="play"] .lp-loop {
+    animation-duration: var(--lp-dur, 2.4s) !important;
+    animation-iteration-count: infinite !important;
+  }
+}

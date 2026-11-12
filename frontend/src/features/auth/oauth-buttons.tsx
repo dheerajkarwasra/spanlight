@@ -1,8 +1,8 @@
 import type { ComponentType, ReactNode, SVGProps } from "react";
 
-import { Button } from "@/components/ui/button";
 import { oauthStartUrl, type OAuthProvider } from "@/lib/api";
 
+import { Button } from "./auth-controls";
 import { rememberOAuthProvider } from "./oauth-provider-hint";
 import { useOAuthProviders } from "./oauth-queries";
 import { GithubMark, GoogleMark } from "./provider-icons";
@@ -40,7 +40,7 @@ export function OAuthButtons({ next, dividerLabel, note }: OAuthButtonsProps) {
 
   return (
     <>
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2.5">
         <div className="flex flex-col gap-2.5">
           {available.map(({ provider }) => {
             const { label, Icon } = PROVIDERS[provider];
@@ -63,12 +63,12 @@ export function OAuthButtons({ next, dividerLabel, note }: OAuthButtonsProps) {
         {note}
       </div>
       <div
-        className="flex items-center gap-3 text-xs font-medium text-muted-foreground"
+        className="flex items-center gap-3.5 font-mono text-xs leading-[1.4] text-mono-600"
         aria-hidden
       >
-        <span className="h-px flex-1 bg-border" />
+        <span className="h-px flex-1 bg-mono-line-strong" />
         {dividerLabel}
-        <span className="h-px flex-1 bg-border" />
+        <span className="h-px flex-1 bg-mono-line-strong" />
       </div>
     </>
   );

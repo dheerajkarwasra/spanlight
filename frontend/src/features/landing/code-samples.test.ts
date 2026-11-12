@@ -4,8 +4,8 @@ import {
   CODE_SAMPLE_IDS,
   CODE_SAMPLES,
   codeToText,
+  INSTALL_COMMAND,
   isCodeSampleId,
-  visibleLines,
   type CodeSample,
 } from "./code-samples";
 
@@ -14,11 +14,11 @@ function sample(id: CodeSample["id"]): CodeSample {
 }
 
 describe("code samples", () => {
-  it("offers Python, OpenAI, OTLP and Gateway tabs in order", () => {
+  it("offers the Python SDK, OpenTelemetry and Gateway options in order", () => {
+    expect(CODE_SAMPLE_IDS).toEqual(["python", "otlp", "gateway"]);
     expect(CODE_SAMPLE_IDS.map((id) => CODE_SAMPLES[id].label)).toEqual([
-      "Python",
-      "OpenAI",
-      "OTLP",
+      "Python SDK",
+      "OpenTelemetry",
       "Gateway",
     ]);
     expect(isCodeSampleId("otlp")).toBe(true);
@@ -27,33 +27,15 @@ describe("code samples", () => {
     expect(isCodeSampleId("toString")).toBe(false);
   });
 
-  it("rebuilds the Python snippet as plain text for the clipboard", () => {
+  it("rebuilds the README Python snippet as plain text for the clipboard", () => {
     const text = codeToText(sample("python").lines);
-    expect(text.split("\n")).toHaveLength(15);
+    expect(text.split("\n")).toHaveLength(14);
     expect(text).toContain("import spanlight\nfrom anthropic import Anthropic\n\n");
-    expect(text).toContain('spanlight.init(environment="production")');
-    expect(text).toContain('@spanlight.observe(name="answer_ticket")');
-    expect(text).toContain("def answer_ticket(ticket_id: str, question: str) -> str:");
+    expect(text).toContain('spanlight.init(api_key="spl_live_…", host="http://localhost:8080")');
+    expect(text).toContain("client = spanlight.wrap_anthropic(Anthropic())");
+    expect(text).toContain("@spanlight.observe()\ndef answer(question: str) -> str:");
     expect(text.endsWith("    return reply.content[0].text")).toBe(true);
-  });
-
-  it("uses the compact snippet on phones when there is one", () => {
-    const python = sample("python");
-    expect(codeToText(visibleLines(python, true))).toBe(
-      [
-        "import spanlight",
-        "from anthropic import Anthropic",
-        "",
-        "spanlight.init()",
-        "client = spanlight.wrap_anthropic(",
-        "    Anthropic()",
-        ")",
-      ].join("\n"),
-    );
-    expect(visibleLines(python, false)).toBe(python.lines);
-
-    const otlp = sample("otlp");
-    expect(visibleLines(otlp, true)).toBe(otlp.lines);
+    expect(INSTALL_COMMAND).toBe('pip install "spanlight[anthropic]"');
   });
 
   it("points the OTLP exporter at the ingestion endpoint with a key placeholder", () => {
@@ -63,13 +45,10 @@ describe("code samples", () => {
   });
 
   it("shows the no-SDK gateway sample with a gateway key placeholder, not an ingest key", () => {
-    const gateway = sample("gateway");
-    const text = codeToText(gateway.lines);
+    const text = codeToText(sample("gateway").lines);
     expect(text).toContain("/gw/v1");
     expect(text).toContain("<YOUR_GATEWAY_KEY>");
     expect(text).not.toContain("import spanlight");
     expect(text).not.toContain("<YOUR_API_KEY>");
-    expect(gateway.compactLines).toBeDefined();
-    expect(codeToText(visibleLines(gateway, true))).toContain("<YOUR_GATEWAY_KEY>");
   });
 });

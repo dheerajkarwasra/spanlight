@@ -5,12 +5,10 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
-import { Callout } from "@/components/callout";
-import { FormField } from "@/components/form-field";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { authApi, errorMessage, isApiError } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
+import { AUTH_LINK, Button, Callout, FormField, Input, PasswordInput } from "./auth-controls";
 import { holdChallenge, releaseChallenge } from "./login-challenge";
 import { nextLoginStep, postLoginDestination, TWO_FACTOR_PATH } from "./login-flow";
 import { refreshMe } from "./queries";
@@ -74,8 +72,14 @@ export function LoginForm({ next }: LoginFormProps) {
   });
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-6" noValidate>
-      <div className="flex flex-col gap-4">
+    <form onSubmit={onSubmit} className="flex flex-col gap-[18px]" noValidate>
+      {formError ? (
+        <Callout tone="danger" role="alert">
+          {formError}
+        </Callout>
+      ) : null}
+
+      <div className="flex flex-col gap-[18px]">
         <FormField label="Email" error={form.formState.errors.email?.message}>
           <Input type="email" autoComplete="email" autoFocus {...form.register("email")} />
         </FormField>
@@ -83,23 +87,14 @@ export function LoginForm({ next }: LoginFormProps) {
           label="Password"
           error={form.formState.errors.password?.message}
           labelAction={
-            <Link
-              to="/forgot-password"
-              className="rounded-sm text-label font-semibold text-accent hover:underline"
-            >
+            <Link to="/forgot-password" className={cn(AUTH_LINK, "text-sm font-normal")}>
               Forgot password?
             </Link>
           }
         >
-          <Input type="password" autoComplete="current-password" {...form.register("password")} />
+          <PasswordInput autoComplete="current-password" {...form.register("password")} />
         </FormField>
       </div>
-
-      {formError ? (
-        <Callout tone="danger" role="alert">
-          {formError}
-        </Callout>
-      ) : null}
 
       <Button type="submit" variant="primary" size="lg" loading={login.isPending}>
         Sign in

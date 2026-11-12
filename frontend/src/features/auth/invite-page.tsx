@@ -1,18 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
-import { MailOpen, MailX, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
-import { Notice } from "@/components/notice";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { authApi, errorMessage, isApiError, queryKeys, type Me } from "@/lib/api";
 import { ROLE_LABELS } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
-import { AuthCenteredLayout } from "./auth-layout";
+import { AUTH_LINK, Button, Callout } from "./auth-controls";
+import { AuthLayout, AuthShell } from "./auth-layout";
 import { clearFragment, readFragmentParam } from "./fragment-token";
 import { refreshMe } from "./queries";
 
@@ -80,28 +77,21 @@ export function InvitePage() {
     }
   }, [token, me]);
 
-  let content: ReactNode;
   if (token === null) {
-    content = <UnusableInvite />;
-  } else if (me) {
-    content = <SignedInInvite token={token} me={me} />;
-  } else {
-    content = <SignedOutInvite />;
+    return <UnusableInvite />;
   }
-  return <AuthCenteredLayout>{content}</AuthCenteredLayout>;
+  return me ? <SignedInInvite token={token} me={me} /> : <SignedOutInvite />;
 }
 
 /** Not signed in: the preview needs a session, so offer sign up / sign in first. */
 function SignedOutInvite() {
   const nextPath = INVITE_PATH;
   return (
-    <InviteCard icon={MailOpen}>
-      <InviteHeading title="You've been invited">
-        <p className="text-sm text-muted-foreground">
-          Sign in or create an account to see the invitation and join the organization.
-        </p>
-      </InviteHeading>
-      <div className="flex flex-col gap-2.5">
+    <AuthLayout
+      title="You've been invited"
+      description="Sign in or create an account to see the invitation and join the organization."
+    >
+      <div className="flex flex-col gap-6">
         <Button asChild variant="primary" size="lg">
           <Link to="/signup" search={{ next: nextPath }}>
             Create an account
@@ -113,7 +103,7 @@ function SignedOutInvite() {
           </Link>
         </Button>
       </div>
-    </InviteCard>
+    </AuthLayout>
   );
 }
 
@@ -188,33 +178,27 @@ function SignedInInvite({ token, me }: { token: string; me: Me }) {
   const { org, role } = preview.data;
 
   return (
-    <InviteCard icon={MailOpen}>
-      <InviteHeading title={`You're invited to join ${org.name}`}>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">You’ll join as</span>
-          <Badge variant="violet">{ROLE_LABELS[role]}</Badge>
-        </div>
-      </InviteHeading>
-
-      <p className="text-sm text-muted-foreground">
-        You’re signed in as <span className="font-semibold text-foreground">{me.user.email}</span>.
+    <AuthLayout
+      title={`You're invited to join ${org.name}`}
+      description="Invite links work once and expire. Your role is set by whoever created the link."
+    >
+      <p className="text-sm leading-normal [overflow-wrap:anywhere] text-mono-600">
+        You’ll join as <span className="font-medium text-mono-900">{ROLE_LABELS[role]}</span>.
+        You’re signed in as <span className="font-medium text-mono-900">{me.user.email}</span>.
         Accepting adds this account to {org.name}.
       </p>
 
-      <Notice>
-        Invite links work once and expire. Your role is set by whoever created the link.
-      </Notice>
-
       {accept.isError ? (
-        <Notice tone="danger" role="alert">
+        <Callout tone="danger" role="alert">
           {inviteErrorMessage(accept.error)}
-        </Notice>
+        </Callout>
       ) : null}
 
-      <div className="flex flex-col gap-2.5">
+      <div className="flex flex-col items-start gap-6">
         <Button
           variant="primary"
           size="lg"
+          className="self-stretch"
           loading={accept.isPending}
           disabled={switchAccount.isPending}
           onClick={() => {
@@ -224,7 +208,8 @@ function SignedInInvite({ token, me }: { token: string; me: Me }) {
           Accept invite
         </Button>
         <Button
-          size="lg"
+          variant="link"
+          className={cn(AUTH_LINK, "min-h-11 lg:min-h-0")}
           loading={switchAccount.isPending}
           disabled={accept.isPending}
           onClick={() => {
@@ -234,7 +219,7 @@ function SignedInInvite({ token, me }: { token: string; me: Me }) {
           Sign in with a different account
         </Button>
       </div>
-    </InviteCard>
+    </AuthLayout>
   );
 }
 
@@ -253,73 +238,28 @@ function InviteProblem({
   children?: ReactNode;
 }) {
   return (
-    <InviteCard icon={MailX} tone="danger">
-      <InviteHeading title={title}>
-        <p className="text-sm text-muted-foreground">{message}</p>
-      </InviteHeading>
-      <div className="flex flex-col gap-2.5">
+    <AuthLayout title={title}>
+      <Callout tone="danger">{message}</Callout>
+      <div className="flex flex-col gap-6">
         {children}
         <Button asChild size="lg">
           <Link to="/">Go to your projects</Link>
         </Button>
       </div>
-    </InviteCard>
-  );
-}
-
-interface InviteCardProps {
-  icon: LucideIcon;
-  tone?: "accent" | "danger";
-  children: ReactNode;
-}
-
-function InviteCard({ icon: Icon, tone = "accent", children }: InviteCardProps) {
-  return (
-    <section
-      aria-labelledby="invite-title"
-      className="flex w-full max-w-[480px] flex-col gap-6 rounded-card border border-border bg-surface p-6 shadow-card sm:p-10"
-    >
-      <span
-        aria-hidden
-        className={cn(
-          "flex size-14 items-center justify-center rounded-tile",
-          tone === "danger" ? "bg-danger-subtle text-danger" : "bg-accent-subtle text-accent",
-        )}
-      >
-        <Icon className="size-6" strokeWidth={2} />
-      </span>
-      {children}
-    </section>
-  );
-}
-
-function InviteHeading({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-3">
-      <p className="text-overline text-subtle-foreground uppercase">Invitation</p>
-      <h1 id="invite-title" className="text-h1 [overflow-wrap:anywhere] text-foreground">
-        {title}
-      </h1>
-      {children}
-    </div>
+    </AuthLayout>
   );
 }
 
 function InviteSkeleton() {
   return (
-    <section
-      aria-busy
-      aria-label="Loading invitation"
-      className="flex w-full max-w-[480px] flex-col gap-6 rounded-card border border-border bg-surface p-6 shadow-card sm:p-10"
-    >
-      <Skeleton className="size-14 rounded-tile" />
-      <div className="flex flex-col gap-3">
-        <Skeleton className="h-3 w-20" />
-        <Skeleton className="h-9 w-4/5" />
-        <Skeleton className="h-6 w-40" />
-      </div>
-      <Skeleton className="h-10 w-full" />
-      <Skeleton className="h-12 w-full rounded-full" />
-    </section>
+    <AuthShell>
+      <section aria-busy aria-label="Loading invitation" className="flex flex-col gap-6">
+        <div className="flex flex-col gap-2.5">
+          <Skeleton className="h-11 w-4/5" />
+          <Skeleton className="h-6 w-full" />
+        </div>
+        <Skeleton className="h-12 w-full rounded-full" />
+      </section>
+    </AuthShell>
   );
 }

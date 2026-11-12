@@ -55,6 +55,9 @@ function Cell({
   return (
     <span
       aria-hidden
+      // Hooks for the auth pages' look (auth.css); nothing else styles them.
+      data-code-cell
+      data-state={state}
       className={cn(
         "flex h-14 min-w-0 flex-1 items-center justify-center rounded-input bg-surface text-h2 text-foreground tabular sm:flex-none",
         CELL_SIZES[size],
@@ -96,7 +99,11 @@ export function CodeInput({ value, onChange, invalid, size = "lg", input }: Code
       {Array.from({ length: CODE_LENGTH }, (_, index) => (
         <Fragment key={index}>
           {index === CODE_LENGTH / 2 ? (
-            <span aria-hidden className="h-0.5 w-3 shrink-0 rounded-full bg-border-strong" />
+            <span
+              aria-hidden
+              data-code-dash
+              className="h-0.5 w-3 shrink-0 rounded-full bg-border-strong"
+            />
           ) : null}
           <Cell digit={value[index]} state={cellState(index)} size={size} />
         </Fragment>

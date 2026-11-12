@@ -4,11 +4,9 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
-import { Callout } from "@/components/callout";
-import { FormField } from "@/components/form-field";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { authApi, errorMessage, isApiError } from "@/lib/api";
+
+import { Button, Callout, FormField, Input } from "./auth-controls";
 
 const forgotSchema = z.object({ email: z.email("Enter a valid email address.") });
 

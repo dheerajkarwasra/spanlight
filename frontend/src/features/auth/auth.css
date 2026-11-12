@@ -1,0 +1,217 @@
+/*
+ * Auth v2 (Figma page "Auth"). The auth pages share the landing's fixed black, grey and white
+ * palette and do not follow the app theme. `.auth` sits on the same element as `.landing`
+ * (see `AuthShell`), so the mono variables, focus ring and motion classes come from landing.css;
+ * this file only adds what the auth forms need on top.
+ */
+.auth {
+  /*
+   * App parts rendered inside an auth page (labels, link buttons, skeletons, the resend note) read
+   * the semantic tokens, so those are pinned to mono here and stay the same in the dark theme.
+   */
+  --canvas: var(--mono-white);
+  --background: var(--mono-white);
+  --surface: var(--mono-white);
+  --surface-muted: var(--mono-mist);
+  --surface-hover: var(--mono-mist);
+  --foreground: var(--mono-900);
+  --muted-foreground: var(--mono-600);
+  --subtle-foreground: var(--mono-600);
+  --border: var(--mono-line-strong);
+  --border-strong: var(--mono-line-strong);
+  --input: var(--mono-line-strong);
+  --ink: var(--mono-black);
+  --ink-foreground: var(--mono-white);
+  --accent: var(--mono-900);
+  --accent-hover: var(--mono-black);
+  --accent-foreground: var(--mono-white);
+  --accent-subtle: var(--mono-mist);
+  --accent-subtle-foreground: var(--mono-900);
+  --success: var(--mono-900);
+  --success-subtle: var(--mono-mist);
+  --warning: var(--mono-900);
+  --warning-subtle: var(--mono-mist);
+  --danger: var(--mono-900);
+  --danger-text: var(--mono-900);
+  --danger-subtle: var(--mono-mist);
+  --ring: var(--mono-900);
+  --ring-soft: transparent;
+  --danger-ring-soft: transparent;
+  --elevation-xs: none;
+
+  color-scheme: light;
+}
+
+/* A field shows focus on its border, and an element focused by script shows none. */
+.auth :is(input, [tabindex="-1"]):focus-visible {
+  outline: none;
+}
+
+/*
+ * Auth/Input: 48px, 10px radius, 16px text. Focus and error are a 2px #171717 border, drawn as the
+ * 1px border plus a 1px inset ring so the text does not move; an error also has its icon and line
+ * of text under the field, so neither state relies on colour.
+ */
+.auth-input {
+  height: 48px;
+  /* #737373 on white is 4.7:1, so an empty field is visible (WCAG 1.4.11 asks for 3:1). */
+  border: 1px solid var(--mono-500);
+  border-radius: 10px;
+  background-color: var(--mono-white);
+  color: var(--mono-900);
+  font-size: 16px;
+  line-height: 1.4;
+  transition:
+    border-color var(--lp-micro) ease,
+    box-shadow var(--lp-micro) ease;
+}
+
+.auth-input:hover {
+  border-color: var(--mono-900);
+}
+
+.auth-input:focus-visible,
+.auth-input[aria-invalid="true"],
+.auth [data-code-cell]:is([data-state="active"], [data-state^="error"]) {
+  border-color: var(--mono-900);
+  box-shadow: inset 0 0 0 1px var(--mono-900);
+}
+
+/* Auth/Code digit: the six cells that picture the one code input (see `CodeInput`). */
+.auth [data-code-cell] {
+  height: 56px;
+  border-width: 1px;
+  border-color: var(--mono-500);
+  border-radius: 10px;
+  color: var(--mono-900);
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+@media (width >= 40rem) {
+  .auth [data-code-cell] {
+    width: 52px;
+  }
+}
+
+.auth [data-code-dash] {
+  display: none;
+}
+
+/* Error lines and form messages fade in; the global reduced-motion rule cuts this to nothing. */
+@keyframes auth-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.auth-fade {
+  animation: auth-fade var(--lp-micro) ease-out;
+}
+
+/*
+ * The showcase is drawn on an 840 × 900 stage (the Figma frame) and scaled down as one piece to
+ * fit the panel beside the 600px form: the smaller of the width step and the height step.
+ */
+.auth-stage {
+  --fit-width: 0.5;
+  --fit-height: 0.5;
+
+  scale: min(var(--fit-width), var(--fit-height));
+}
+
+@media (width >= 1104px) {
+  .auth-stage {
+    --fit-width: 0.6;
+  }
+}
+
+@media (width >= 1188px) {
+  .auth-stage {
+    --fit-width: 0.7;
+  }
+}
+
+@media (width >= 1272px) {
+  .auth-stage {
+    --fit-width: 0.8;
+  }
+}
+
+@media (width >= 1356px) {
+  .auth-stage {
+    --fit-width: 0.9;
+  }
+}
+
+@media (width >= 1440px) {
+  .auth-stage {
+    --fit-width: 1;
+  }
+}
+
+@media (height >= 540px) {
+  .auth-stage {
+    --fit-height: 0.6;
+  }
+}
+
+@media (height >= 630px) {
+  .auth-stage {
+    --fit-height: 0.7;
+  }
+}
+
+@media (height >= 720px) {
+  .auth-stage {
+    --fit-height: 0.8;
+  }
+}
+
+@media (height >= 810px) {
+  .auth-stage {
+    --fit-height: 0.9;
+  }
+}
+
+@media (height >= 900px) {
+  .auth-stage {
+    --fit-height: 1;
+  }
+}
+
+/* A rejected code keeps focus visible: the cell the caret is in gets a ring the other error cells lack. */
+.auth [data-code-cell][data-state="error-active"] {
+  outline: 2px solid var(--mono-900);
+  outline-offset: 2px;
+}
+
+/*
+ * The showcase sits beside a form and has no pause control, so its loops play once and rest
+ * (under five seconds, WCAG 2.2.2) instead of running for as long as the page is open.
+ */
+.auth-showcase .lp-loop {
+  animation-iteration-count: 1 !important;
+  animation-fill-mode: both;
+}
+
+.auth-showcase .lp-drift {
+  animation-duration: 4.5s !important;
+  animation-delay: 0s !important;
+}
+
+/* Text links keep their size but get a 44px tap area on touch screens. */
+@media (pointer: coarse) {
+  .auth-tap {
+    position: relative;
+  }
+
+  .auth-tap::after {
+    position: absolute;
+    inset: -13px -6px;
+    content: "";
+  }
+}

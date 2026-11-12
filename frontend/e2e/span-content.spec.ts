@@ -22,7 +22,7 @@ test("an attributes-heavy trace loads bounded; the selected span fetches its con
   await page.goto("/signup");
   await page.getByLabel("Name").fill("S9 User");
   await page.getByLabel("Work email").fill(uniqueEmail());
-  await page.getByLabel("Password").fill("correct-horse-battery");
+  await page.getByLabel("Password", { exact: true }).fill("correct-horse-battery");
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page).toHaveURL(/onboarding/);
   const { base, apiKey } = await createWorkspace(page, { apiKey: true });

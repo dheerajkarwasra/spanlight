@@ -28,7 +28,7 @@ async function signUp(page: Page, email: string): Promise<void> {
   await expect(page.getByText(/^By creating an account you agree to the/).last()).toBeVisible();
   await page.getByLabel("Name").fill("E2E Terms");
   await page.getByLabel("Work email").fill(email);
-  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
 }
 
