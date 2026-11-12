@@ -65,3 +65,25 @@ async def test_noncreator_closes_first_and_failed_acquisition_releases_nothing()
     assert len(flush.pending_tasks(sessions=creator.sessions)) == 1
     await creator.stop()
     assert flush.pending_tasks() == ()
+
+
+async def test_stop_cancels_a_blocked_flush_no_later_than_the_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The owner reads the clock before `stop` does, so the timeout ends just past the deadline."""
+
+    async def blocked(*_: object) -> int:
+        await asyncio.Event().wait()
+        return 0
+
+    monkeypatch.setattr(flush, "flush_once", blocked)
+    flush.start(async_sessionmaker(), LossCounter())
+    (task,) = flush.pending_tasks()
+    try:
+        deadline = asyncio.get_running_loop().time() + 0.05
+        assert not await flush.stop(timeout_s=0.06, deadline=deadline)
+        await asyncio.wait({task}, timeout=1)
+        assert task.cancelled()
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

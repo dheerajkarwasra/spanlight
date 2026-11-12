@@ -4,6 +4,10 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Fixed
+
+- **A stuck final loss flush is always cancelled at shutdown.** When the database did not answer during shutdown, the last write of the telemetry loss counts could miss its cancellation by a few microseconds and keep the api or worker alive past `SHUTDOWN_TIMEOUT_SECONDS` until it was killed. The flush is now cancelled no later than its deadline, so the process logs `process.shutdown_incomplete` and exits on time.
+
 ## [0.8.1] - 2026-11-11
 
 Live dashboards, hard gateway budgets and a hosted service: Overview and Users follow new traces over a server-sent event stream, gateway `block` budgets hold for gateway spend, and spanlight.dev gains legal pages, terms acceptance and account controls. The dashboard is reorganised into 8 hubs with sortable tables and linkable trace pages, each project can have its own ingest caps, and sensitive account actions now need the account owner's proof. The Python SDK is 0.3.0 with `inject()` and `continue_trace()`.

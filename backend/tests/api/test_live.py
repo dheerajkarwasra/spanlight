@@ -10,7 +10,7 @@ import asyncio
 import json
 import uuid
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -91,6 +91,19 @@ async def streaming(app: Any, browser: Browser, project_id: str) -> AsyncIterato
         yield stream
     finally:
         await stream.close()
+
+
+async def open_in_turn(
+    stack: AsyncExitStack, app: Any, browser: Browser, project_id: str, count: int = 3
+) -> list[Stream]:
+    """Open `count` streams one after another. Requests started together take their session
+    slots in whatever order their access checks finish, so "the oldest" would be any of them."""
+    streams = []
+    for _ in range(count):
+        stream = await stack.enter_async_context(streaming(app, browser, project_id))
+        await opened(stream)
+        streams.append(stream)
+    return streams
 
 
 async def opened(stream: Stream) -> None:
@@ -230,13 +243,8 @@ async def test_live_fourth_stream_closes_oldest(app: Any, browser_factory: Any) 
     workspace = await create_workspace(await browser_factory("owner@example.com"))
     owner, project_id = workspace.owner, workspace.project_id
 
-    async with (
-        streaming(app, owner, project_id) as first,
-        streaming(app, owner, project_id) as second,
-        streaming(app, owner, project_id) as third,
-    ):
-        for stream in (first, second, third):
-            await opened(stream)
+    async with AsyncExitStack() as stack:
+        first, second, _ = await open_in_turn(stack, app, owner, project_id)
         async with streaming(app, owner, project_id) as fourth:
             await opened(fourth)
 
@@ -251,13 +259,8 @@ async def test_live_evicted_stream_says_so_before_ending(app: Any, browser_facto
     workspace = await create_workspace(await browser_factory("owner@example.com"))
     owner, project_id = workspace.owner, workspace.project_id
 
-    async with (
-        streaming(app, owner, project_id) as first,
-        streaming(app, owner, project_id) as second,
-        streaming(app, owner, project_id) as third,
-    ):
-        for stream in (first, second, third):
-            await opened(stream)
+    async with AsyncExitStack() as stack:
+        first, *_ = await open_in_turn(stack, app, owner, project_id)
         async with streaming(app, owner, project_id) as fourth:
             await opened(fourth)
 

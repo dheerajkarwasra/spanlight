@@ -849,13 +849,16 @@ async def test_restore_drill_end_to_end(
         try:
             factory = create_session_factory(engine)
             async with factory() as db:
-                created = await schedule_periodic(db, release, datetime.now(UTC))
+                # One clock reading for both passes: a second reading past a 30 s, 1 min or 5 min
+                # boundary starts a new period, and the scheduler rightly enqueues it.
+                now = datetime.now(UTC)
+                created = await schedule_periodic(db, release, now)
                 assert created and not set(created) & PRODUCER_KINDS
                 claimed: set[int] = set()
                 while (job := await claim_next(db)) is not None:
                     claimed.add(job.id)
                 assert claimed and not claimed & set(ids.values())
-                assert await schedule_periodic(db, release, datetime.now(UTC)) == []
+                assert await schedule_periodic(db, release, now) == []
                 row = await claim_notification(db, release_at + timedelta(seconds=1))
                 assert row is not None and row.id == PENDING
                 assert await claim_notification(db, release_at + timedelta(seconds=1)) is None

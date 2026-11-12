@@ -26,6 +26,10 @@ from tests.jobs.control_loop_support import (
 )
 from tests.jobs.rollback_proxy_support import rollback_proxy
 
+# The worker's own limits bound every case (0.5 s to claim, 250 ms per statement): beside the
+# parallel suite's load a claim through the proxy has timed out on a healthy database.
+pytestmark = pytest.mark.serial
+
 
 @asynccontextmanager
 async def commit_lock(factory: SessionFactory) -> AsyncIterator[int]:

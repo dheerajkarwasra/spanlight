@@ -133,9 +133,13 @@ async def _stop(*, timeout_s: float, deadline: float | None) -> bool:
         if flusher.users > 0:
             return False  # another lifespan still owns a producer
         flusher.stopping.set()
+    # A caller derives `timeout_s` from `deadline` on an earlier clock read, so the sum lands just
+    # past the deadline; `join` would then return without cancelling and the owner's unbounded
+    # join would wait on a flush nobody stops.
+    cancel_at = flusher.loop.time() + timeout_s
     joined = await join(
         lambda: {flusher.task},
-        cancel_at=flusher.loop.time() + timeout_s,
+        cancel_at=cancel_at if deadline is None else min(cancel_at, deadline),
         deadline=deadline,
     )
     complete = joined and not flusher.task.cancelled() and flusher.counter.pending_count() == 0
