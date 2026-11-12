@@ -27688,7 +27688,7 @@
     },
     "/api/v1/projects/{project_id}/detector-sensitivity": {
       "get": {
-        "description": "All fifteen checks in catalogue order; a fixed check has `tunable: false` and no gates.",
+        "description": "All checks in catalogue order; a fixed check has `tunable: false` and no gates.",
         "operationId": "list_sensitivity_api_v1_projects__project_id__detector_sensitivity_get",
         "parameters": [
           {

@@ -37,7 +37,8 @@ src/
   app/            router (all routes + search-param schemas), providers, query client
   components/ui/  design-system primitives (Radix + Tailwind tokens)
   components/     shared app components: UnknownValue, EmptyState, ErrorState, JsonViewer, CopyButton…
-  features/       one folder per area: auth, onboarding, shell, overview, traces, sessions, settings
+  features/       one folder per area: landing, auth, onboarding, shell, overview, traces, sessions, doctor,
+                  alerts, budgets, gateway, prompts, datasets, evaluators, experiments, review, settings, …
   lib/api/        typed API client (CSRF, problem+json → ApiError, 401 → /login), endpoints, query keys
   lib/            formatting, time ranges, permissions, theme
   styles/         globals.css — the single source of design tokens (light + dark)

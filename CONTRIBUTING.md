@@ -5,11 +5,11 @@ Thanks for helping. This file covers how to set up, what a change has to pass, a
 ## Before you start
 
 - Search the existing issues. For anything bigger than a small fix, open an issue first (bug report or feature request) and agree on the approach before you write code.
-- The [What's next](README.md#whats-next) section says what is planned. The [Architecture](README.md#architecture) section and the [decision records](docs/decisions/) say how the system fits together.
+- The [How it works](README.md#how-it-works) section and the [decision records](docs/decisions/) say how the system fits together.
 
 ## Set up
 
-You need Python 3.12+ and [uv](https://docs.astral.sh/uv/) (the SDK supports 3.10+), Node 24 with npm, and Docker.
+You need Python 3.13 (the version the repository pins and the image ships; `backend/pyproject.toml` still accepts 3.12) and [uv](https://docs.astral.sh/uv/) (the SDK supports 3.10+), Node 24 with npm (`.nvmrc`), and Docker.
 
 | Part       | Run it                                                                                                                                                                                                                          |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -37,12 +37,7 @@ cd sdks/python && uv sync --frozen --all-extras
 uv run ruff check && uv run ruff format --check && uv run mypy src && uv run pytest
 ```
 
-**Test database.** Backend tests run against a real Postgres, not a mock. The default `TEST_DATABASE_URL` points at this container:
-
-```bash
-docker run -d --name spanlight-test-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=spanlight_test \
-  -p 55432:5432 postgres:17
-```
+**Test database.** Backend tests run against a real Postgres, not a mock. With Docker running and `TEST_DATABASE_URL` unset, each test run starts its own PostgreSQL 17 container, creates a disposable database per worker and runs the migrations. To use a server you already have, set `TEST_DATABASE_URL` to a database named `spanlight_test` (or `spanlight_test_<suffix>`); the tests create their own child database beside it and never touch your development data. The [backend guide](backend/README.md) has the details.
 
 **API contract.** `backend/openapi.json` is the committed OpenAPI document, and `backend/tests/api/test_openapi_snapshot.py` fails when the app no longer matches it. After an intended API change, run `cd backend && uv run python scripts/update_openapi.py` and commit the updated file with the change.
 
@@ -93,7 +88,7 @@ Reviewers check these. Modules already past a size limit are split when a change
 **Tests**
 
 - Every pure module has unit tests whose names read as sentences (`test_unknown_models_cost_null_never_zero`).
-- Every router and job should have integration tests on the real Postgres fixture; the gateway, alerts, budgets, Doctor and evals packages do not yet, and tests for them are welcome. Each resource has one authorization-matrix test: every role, a non-member, and an API key where the route accepts one.
+- Every router and job should have integration tests on the real Postgres fixture. Each resource has one authorization-matrix test: every role, a non-member, and an API key where the route accepts one.
 - Never mock the unit under test. Fake providers and third parties at the transport, for example with `httpx.MockTransport`.
 - Frontend: Vitest for logic and components, Playwright with axe for each new user flow.
 

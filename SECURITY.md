@@ -12,7 +12,7 @@ Do not open a public issue, pull request or discussion for a vulnerability. No e
 
 A useful report has:
 
-- the affected component (server, web, Python SDK or deploy files) and the version, image tag or commit
+- the affected component (server, web, Python or TypeScript SDK, or deploy files) and the version, image tag or commit
 - the steps to reproduce it, or a proof of concept
 - the impact you believe it has
 - whether you want to be credited, and under what name
@@ -48,6 +48,7 @@ In scope:
 - **Server:** the API, ingestion (native and OTLP), authentication and sessions, API keys, and the tenant isolation enforced by Postgres row-level security (`backend/`).
 - **Web:** the dashboard and the security headers served by the web container (`frontend/`, `deploy/Caddyfile`).
 - **Python SDK:** the `spanlight` package (`sdks/python/`).
+- **TypeScript SDK:** the `spanlight` package for Node.js (`sdks/typescript/`). It is not on npm yet; reports against the source are welcome.
 - **Deploy configs:** the Dockerfile, Compose file and Railway files in `deploy/`, and the images and package built from them.
 
 Out of scope:

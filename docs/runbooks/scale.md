@@ -6,7 +6,7 @@ Add capacity: requests are slow, the api runs out of database connections, backg
 
 ## What scales how
 
-One image, three roles.
+Two images from one Dockerfile, three roles: the backend image runs `api` and `worker`, the web image runs `web`.
 
 | Role | Stateless? | How to add capacity | Notes |
 |---|---|---|---|

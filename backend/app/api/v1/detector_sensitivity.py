@@ -39,7 +39,7 @@ Detector = Annotated[str, Path(min_length=1, max_length=64)]
 async def list_sensitivity(
     project_id: uuid.UUID, access: SensitivityReader, db: DbSession, clock: ClockDep
 ) -> SensitivityListOut:
-    """All fifteen checks in catalogue order; a fixed check has `tunable: false` and no gates."""
+    """All checks in catalogue order; a fixed check has `tunable: false` and no gates."""
     items = await service.list_items(db, access.require_project().id, clock())
     return SensitivityListOut(items=[SensitivityOut(**asdict(item)) for item in items])
 

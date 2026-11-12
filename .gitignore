@@ -21,7 +21,8 @@ docs/ROADMAP.md
 docs/architecture.md
 docs/plans/
 docs/specs/
-docs/design/
+docs/design/*
+!docs/design/diagrams/
 docs/launch/
 docs/feedback/
 

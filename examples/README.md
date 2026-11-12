@@ -6,7 +6,7 @@ Two small OpenAI-SDK clients that show what the Spanlight Doctor looks for.
   ignores `Retry-After`, drops a rejected request parameter and resends, treats the end of a
   stream as the end of the answer, and gives up on a call after 2 seconds only to ask again.
 - `corrected_client.py` is the same client with those habits fixed. It waits out `Retry-After`
-  on a 429 plus 0.1 s (three attempts; a longer wait than 30 s is an error, not a wait), backs off 1 s then 2 s on a 5xx, never retries a 400,
+  on a 429 plus 0.1 s (three attempts; a longer wait than 30 s is an error, not a wait), backs off 1 s then 2 s on a 5xx (each with up to 25% jitter), never retries a 400,
   401 or 403, raises out of `run` on a 400, 401, 403 or a stream with no terminal `finish_reason`
   (`IncompleteStreamError`), and allows a call 60 s without retrying a timeout.
 

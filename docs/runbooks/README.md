@@ -19,17 +19,18 @@ Step-by-step procedures for running a self-hosted Spanlight: Docker Compose (`de
 | The Doctor finds nothing or errors, a project's detector runs time out, an insight needs muting, the explanation budget is spent | [detectors.md](detectors.md) |
 | Running the LLM gateway: embedded or standalone, key rotation, cache purge, the overhead panel | [gateway.md](gateway.md) |
 | Seeding the demo's prompt, dataset, judge and experiments | [demo-evals.md](demo-evals.md) |
+| Turning on rollup-backed reads on an existing install, or aggregate repair falls behind | [aggregate-repair.md](aggregate-repair.md) |
 | Expired data is not going, retention batches time out, or the hourly run reports contended or missing cursors | [retention.md](retention.md) |
 
 ## Services at a glance
 
-One image, three roles, plus Postgres. Postgres is the only datastore and also holds the job queue.
+Two images from one Dockerfile (the backend image runs `api`, `worker` and `migrate`; the web image runs Caddy), plus Postgres. Postgres is the only datastore and also holds the job queue.
 
 | Compose service | Runs | Listens | Health |
 |---|---|---|---|
 | `postgres` | PostgreSQL 17 | 5432 (internal) | `pg_isready` |
 | `migrate` | `spanlight migrate && spanlight ensure-app-role --role spanlight_app && spanlight activate-aggregate-coverage --writers-drained --fresh-install --skip-if-projects-exist`, then exits | none | exits 0 |
-| `api` | `uvicorn app.main:app` | 8000 (internal) | `/health/live`, `/health/ready`, `/metrics` |
+| `api` | `python -m app.server` (the image's default command) | 8000 (internal) | `/health/live`, `/health/ready`, `/metrics` |
 | `worker` | `python -m app.jobs.worker` (retention, cleanup, rollups, notifications, backups, demo traffic) | 9100 (internal, only when `WORKER_METRICS_PORT` is set; Compose sets it) | `worker_heartbeat_age_s` in `/health/ready`; see [the worker check](#is-the-worker-alive) |
 | `web` | Caddy: the dashboard, and a proxy for `/api`, `/v1`, `/health` and `/gw` (the LLM gateway) | `${WEB_PORT:-8080}` | `GET /` |
 | `gateway` (optional) | `python -m app.gateway`, only with the `standalone-gateway` profile; see [gateway.md](gateway.md) | 8000 (internal) | `/health/live` |
@@ -63,7 +64,7 @@ Never paste a secret into a command line that is saved in shell history. These p
    curl -sS "$BASE/health/ready"
    ```
 
-   Healthy: `200` and `{"status":"ok","database":"ok","migrations":"ok","worker_heartbeat_age_s":4.2,"outbox_backlog":0,"gateway_mode":"embedded"}`. `worker_heartbeat_age_s` is how many seconds ago the newest worker reported (it beats every 10 seconds; `null` means none ever has) and `outbox_backlog` is the number of pending notifications (capped at 10000). A `503` with `"database":"unavailable"` means the api cannot reach Postgres. A `503` with a `worker_heartbeat_age_s` over 120 or `null` means no worker is running (the check is on unless `WORKER_REQUIRED=false`); a `503` with the database and migrations `ok` and an `outbox_backlog` over 1000 can also mean the worker is not delivering notifications. After you start or restart the worker, allow up to a couple of minutes before you treat a `503` for that reason as real. `"migrations":"pending"` means the database schema is not the one this build expects, in either direction: a new build on an old schema, or an old build on a newer schema (see [rollback.md](rollback.md)). A connection error or a `502` from `web` means the api itself is down.
+   Healthy: `200` and `{"status":"ok","database":"ok","migrations":"ok","worker_heartbeat_age_s":4.2,"outbox_backlog":0,"gateway_mode":"embedded", …}`. `worker_heartbeat_age_s` is how many seconds ago the newest worker reported (it beats every 10 seconds; `null` means none ever has) and `outbox_backlog` is the number of pending notifications (capped at 10000). A `503` with `"database":"unavailable"` means the api cannot reach Postgres. A `503` with a `worker_heartbeat_age_s` over 120 or `null` means no worker is running (the check is on unless `WORKER_REQUIRED=false`); a `503` with the database and migrations `ok` and an `outbox_backlog` over 1000 can also mean the worker is not delivering notifications. After you start or restart the worker, allow up to a couple of minutes before you treat a `503` for that reason as real. `"migrations":"pending"` means the database schema is not the one this build expects, in either direction: a new build on an old schema, or an old build on a newer schema (see [rollback.md](rollback.md)). A connection error or a `502` from `web` means the api itself is down.
 
 2. What is each container doing?
 

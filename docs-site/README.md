@@ -21,6 +21,7 @@ npm run build     # sync, build, check links and anchors, write the CSP snippet
 | Security | `SECURITY.md` and `docs/security/*.md` |
 | Railway guide | `docs/deploy/railway.md` |
 | Changelog | `CHANGELOG.md` |
+| Price reference | generated from `backend/app/pricing/prices.py` into `reference/prices.md` |
 
 `scripts/sync-docs.mjs` copies the generated pages into `src/content/docs/` before every build, adds the front matter, and rewrites relative links: a link to another published page becomes a site path, and a link to any other file in the repository becomes a GitHub URL. A link to a file that does not exist fails the sync. The copies are git-ignored; edit the source documents, never the copies.
 

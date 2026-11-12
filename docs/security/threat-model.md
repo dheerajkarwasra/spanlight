@@ -10,7 +10,7 @@ To report a vulnerability, follow [SECURITY.md](../../SECURITY.md).
 
 ## 1. System overview
 
-Spanlight ships as one image with three roles, plus Postgres and optional external services:
+Spanlight ships as two images (backend and web) with three roles, plus Postgres and optional external services:
 
 ```mermaid
 flowchart LR

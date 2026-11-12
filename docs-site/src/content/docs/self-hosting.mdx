@@ -10,7 +10,7 @@ sidebar:
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
 
-Spanlight is one Docker image with three roles and Postgres. Postgres is the only datastore, and it also holds the job queue, so there is no Redis or message broker to run.
+Spanlight is two Docker images built from one Dockerfile (the backend, which runs the api and the worker, and the web server) and Postgres. Postgres is the only datastore, and it also holds the job queue, so there is no Redis or message broker to run.
 
 <Prerequisites
   items={[
@@ -28,7 +28,7 @@ Spanlight is one Docker image with three roles and Postgres. Postgres is the onl
 | `migrate` | Applies the database migrations as the database owner, creates the unprivileged `spanlight_app` role, activates aggregate coverage on a fresh install (no project yet), then exits. | none |
 | `api` | The FastAPI application: authentication, ingestion and queries. | 8000, internal |
 | `worker` | Background jobs: retention, cleanup, hourly rollups, the daily attribution rollups, notifications, backups and exports, demo traffic. | 9100 for `/metrics`, internal |
-| `web` | Caddy. Serves the dashboard and this documentation, and proxies `/api`, `/v1` and `/health` to the API. | `WEB_PORT`, 8080 by default |
+| `web` | Caddy. Serves the dashboard and this documentation, and proxies `/api`, `/v1` and `/health` to the API and `/gw` to the gateway. | `WEB_PORT`, 8080 by default |
 
 Licence notices for the third-party packages in each image are at `/app/THIRD_PARTY_NOTICES.txt` in the backend image, and at `/third-party-notices.txt` (dashboard), `/docs/third-party-notices.txt` (documentation) and `/third-party-notices-caddy.txt` (the Caddy binary's Go modules and the Go standard library) on the `web` service.
 

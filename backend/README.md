@@ -6,7 +6,7 @@ Contract clarifications: [`docs/api-deviations.md`](../docs/api-deviations.md).
 
 ## Run locally
 
-Requires Python 3.12+, [uv](https://docs.astral.sh/uv/) and Postgres 17.
+Requires Python 3.13 (pinned in `.python-version` and the Dockerfile; `pyproject.toml` still accepts 3.12), [uv](https://docs.astral.sh/uv/) and Postgres 17.
 
 ```bash
 cd backend
@@ -40,7 +40,7 @@ The `citext` extension is "trusted", so the owning role can create it during the
 | `DATABASE_URL` | `postgresql+psycopg://spanlight_app:spanlight_app@localhost:5432/spanlight` | psycopg 3 URL (async engine) |
 | `APP_BASE_URL` | `http://localhost:8000` | Public origin; Origin allowlist, invite links, `Secure` cookies when https |
 | `ALLOWED_ORIGINS` | – | Extra comma-separated origins (e.g. `http://localhost:5173`) |
-| `SECRET_KEY` | dev default | HMAC key for CSRF tokens; **required** when `APP_BASE_URL` is https, and at least 32 characters unless its host is `localhost`, `127.0.0.1` or `[::1]` |
+| `SECRET_KEY` | dev default | HMAC key for CSRF tokens; **required** when `APP_BASE_URL` is https or its host is not local, and at least 32 characters unless its host is `localhost`, `127.0.0.1` or `[::1]` |
 | `METRICS_TOKEN` | – | Bearer token for `/metrics`; unset disables it |
 | `WORKER_METRICS_PORT` | – | Port on which the worker serves `/metrics` (same token); unset disables it |
 | `CREDENTIALS_KEYS` | – | Master keys that encrypt stored secrets, `<id>:<base64 of 32 bytes>[,…]`; the first entry seals new data. Unset leaves encryption off, and with it two-factor authentication (`409 NOT_CONFIGURED`); a malformed value stops startup. See [ADR 9](../docs/decisions/0009-application-master-key-encryption.md) |
@@ -57,7 +57,7 @@ The `citext` extension is "trusted", so the owning role can create it during the
 | `EMAIL_CONSOLE_FILE` | – | `console` only: append every message to this file as a JSON line. Email counts as configured for `console` only when this is set |
 | `OAUTH_GITHUB_CLIENT_ID` / `OAUTH_GITHUB_CLIENT_SECRET` | – | Sign in with GitHub. On when both are set; setting only one stops startup. Register `<APP_BASE_URL>/api/v1/auth/oauth/github/callback` as the callback URL |
 | `OAUTH_GOOGLE_CLIENT_ID` / `OAUTH_GOOGLE_CLIENT_SECRET` | – | Sign in with Google, the same way. Callback URL `<APP_BASE_URL>/api/v1/auth/oauth/google/callback` |
-| `API_POOL_TIMEOUT_SECONDS` / `API_STATEMENT_TIMEOUT_SECONDS` | `5` / `10` | Seconds an API request waits for a database connection, and the longest one of its statements may run, before it answers `503` with `Retry-After` |
+| `API_POOL_TIMEOUT_SECONDS` / `API_STATEMENT_TIMEOUT_SECONDS` | `1` / `10` | Seconds an API request waits for a database connection, and the longest one of its statements may run, before it answers `503` with `Retry-After` |
 | `RATE_LIMIT_LOCK_TIMEOUT_MS` / `RATE_LIMIT_STATEMENT_TIMEOUT_MS` | `100` / `250` | Dedicated token-bucket SQL lock/statement deadlines in milliseconds; require `0 < lock < statement`. SQL errors fail open and increment unavailable metrics. Checkout (`RATE_LIMIT_POOL_TIMEOUT_SECONDS`, `0.25` s) and request/cancellation cleanup wall time remain separate. Authentication throttles and budgets keep their existing policies. |
 | `IDEMPOTENCY_POOL_SIZE` / `IDEMPOTENCY_POOL_TIMEOUT_SECONDS` | `5` / `5` | Connections the API keeps for idempotency keys, in a pool apart from the main one, and the seconds a request waits for one before failing |
 | `SENTRY_DSN` | – | Optional error reporting (api and worker) |
@@ -117,17 +117,25 @@ network or spends money.
 
 ```
 app/
-  main.py          create_app(): middleware, error handlers, routers
+  main.py          create_app(): middleware, error handlers, routers; create_gateway_app()
+  server.py        the launcher the image runs (`python -m app.server`)
   config.py        Settings (pydantic-settings)
-  api/             routers: auth, orgs, projects, keys, traces, metrics, ingest, health, demo
+  api/             health, ingest (`/v1/traces`, `/v1/otlp/traces`) and gateway (`/gw/v1`) routers, deps
+  api/v1/          the dashboard API, one thin router per domain
   core/            security, crypto, permissions, errors (problem+json), ratelimit, logging, redact, middleware
   db/              models, async engine/session, RLS helpers, migration helpers
-  ingest/          schemas (SpanIn), otlp mapping, normalize, pipeline
-  pricing/         seed prices + cost calculation
+  ingest/          schemas (SpanIn), OTLP mapping, normalize, pipeline, store
+  pricing/         versioned prices + cost calculation
+  gateway/         the LLM gateway: keys, routes, cache, budgets guard, adapters, span recorder
+  insights/        the Doctor: detectors (pure functions), engine, jobs
   jobs/            queue (lease/fence), worker loop, scheduler, tasks
   notifications/   transactional outbox, deliverer registry, delivery job
   email/           message, sender interface, console/Resend/SMTP providers, outbox deliverer
+  <domain>/        one package per area: alerts, budgets, rollups, metrics, explorer, attribution,
+                   reconciliation, prompts, datasets, evals, scores, review, playground, exports,
+                   backups, provider_status, releases, end_users, live, auth, …
   services/        sessions, audit, demo workspace, slugs
+  ee/              license-gated features (own license)
   cli.py           `spanlight`
 alembic/           hand-written migrations (enums, citext, RLS policies, notification outbox)
 tests/

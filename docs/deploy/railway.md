@@ -35,7 +35,7 @@ Why the database items matter: a Postgres superuser bypasses row-level security 
 **Database roles**
 
 - [x] `MIGRATION_DATABASE_URL` is the Postgres owner's URL (`postgres.PGUSER`), set on `api` only. `railway.ts` doesn't set it on `worker` or `web`.
-- [x] Only the pre-deploy step uses it. `preDeploy` copies it into `DATABASE_URL` for that one command. The image's `CMD` runs `unset MIGRATION_DATABASE_URL` before `exec uvicorn`. With the variable set on the container, `/proc/1/environ` of the running uvicorn didn't contain it.
+- [x] Only the pre-deploy step uses it. `preDeploy` copies it into `DATABASE_URL` for that one command. The image's `CMD` runs `unset MIGRATION_DATABASE_URL` before `exec python -m app.server`. With the variable set on the container, `/proc/1/environ` of the running server didn't contain it.
 - [x] `APP_DB_PASSWORD` is set on `api` (`preserve()`), the service whose pre-deploy runs `spanlight ensure-app-role`. The worker only references it as `${{api.APP_DB_PASSWORD}}` inside its `DATABASE_URL`.
 - [x] `DATABASE_URL` connects as `spanlight_app` on `api` and on `worker`. As that role, `pg_roles` shows `rolsuper` and `rolbypassrls` both false, and the api image answered `/health/ready` with `{"status":"ok","database":"ok","migrations":"ok"}` (that was before the response gained `worker_heartbeat_age_s` and `outbox_backlog`; see step 6.1 for the current body).
 
@@ -44,7 +44,7 @@ Why the database items matter: a Postgres superuser bypasses row-level security 
 - [x] `APP_BASE_URL` on `api` is `https://${{web.RAILWAY_PUBLIC_DOMAIN}}`, the public https origin. Generate the domain before the first api deploy (step 4).
 - [x] `API_UPSTREAM` on `web` is `${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}`, the api's private host and port. `deploy/Caddyfile` reads it as `{$API_UPSTREAM}`. `GATEWAY_UPSTREAM` has the same value and is read as `{$GATEWAY_UPSTREAM}` for `/gw/*`; leave it out and every gateway call answers 502.
 - [x] `TRUSTED_PROXIES` on `web` is `0.0.0.0/0 ::/0`, which `deploy/Caddyfile` reads as `{$TRUSTED_PROXIES}`.
-- [x] `SECRET_KEY` (api), `METRICS_TOKEN` (api), `ANTHROPIC_API_KEY` (worker), and `SENTRY_DSN` and `CREDENTIALS_KEYS` (api and worker) are declared with `preserve()`, so `railway config apply` keeps the values you set. A variable that is set in Railway but not declared in `railway.ts` is deleted by the next apply, so every variable you set must be in the file. The optional features are the same, once you uncomment their blocks (see [Optional features](#optional-features)).
+- [x] `SECRET_KEY`, `APP_DB_PASSWORD`, `METRICS_TOKEN`, `GATEWAY_MAX_IN_FLIGHT`, `RATE_LIMIT_LOCK_TIMEOUT_MS` and `RATE_LIMIT_STATEMENT_TIMEOUT_MS` (api), `ANTHROPIC_API_KEY` and `AGGREGATE_REPAIR_ENABLED` (worker), and `SENTRY_DSN` and `CREDENTIALS_KEYS` (api and worker) are declared with `preserve()`, so `railway config apply` keeps the values you set. A variable that is set in Railway but not declared in `railway.ts` is deleted by the next apply, so every variable you set must be in the file. The optional features are the same, once you uncomment their blocks (see [Optional features](#optional-features)).
 - [x] `DEMO_MONTHLY_BUDGET_USD` on `worker` is `1.00`.
 - [x] `railway.ts` is valid. It type-checks under strict TypeScript with the pinned SDK (`railway` 3.13.0), and evaluating it gives the variables above.
 
@@ -52,7 +52,7 @@ Why the database items matter: a Postgres superuser bypasses row-level security 
 
 - [ ] `railway config apply` works against your project: the first apply may stop on the `preserve()` secrets, which can't exist before the services do, so follow the procedure in step 2; after step 3, `railway config plan` should show no changes. The CLI needs your login, so none of this was run.
 - [ ] The api's first pre-deploy succeeds on Railway: the deploy logs show the two lines above (step 5).
-- [ ] `curl -fsS https://$DOMAIN/health/ready` returns `{"status":"ok","database":"ok","migrations":"ok","worker_heartbeat_age_s":4.2,"outbox_backlog":0}` (the age is a few seconds, never `null`) and the landing page loads (step 6.1).
+- [ ] `curl -fsS https://$DOMAIN/health/ready` returns `{"status":"ok","database":"ok","migrations":"ok","worker_heartbeat_age_s":4.2,"outbox_backlog":0, …}` (the age is a few seconds, never `null`) and the landing page loads (step 6.1).
 - [ ] The worker ran the `demo_traffic` job and **Try the live demo** opens a session with real traces (step 6.5).
 - [ ] Sentry and the uptime check are set up ([Monitoring](#monitoring)).
 - [ ] A "Deploy on Railway" template button. Publishing a template needs your Railway account (workspace settings → Templates), so there is no button in the README yet. Add it once the template exists.
@@ -96,7 +96,7 @@ railway config apply --file deploy/railway/railway.ts
 
 The plan should add `database postgres` and the services `api`, `worker` and `web`, with no changes to anything else. Postgres starts on its own. The three services stay empty until you deploy code to them in step 5.
 
-Six variables are declared with `preserve()` because you set their values yourself in step 3: `SECRET_KEY`, `APP_DB_PASSWORD`, `METRICS_TOKEN`, `SENTRY_DSN`, `ANTHROPIC_API_KEY` and `CREDENTIALS_KEYS`. None of them can exist before the services do, so this first apply may stop on them. If it does, comment out the `preserve()` lines in `railway.ts`, apply, do step 3, restore the lines and run `railway config plan` again, which should show no changes (see [Troubleshooting](#troubleshooting)). Once step 3 is done all six exist, so every later apply is safe.
+Ten variables are declared with `preserve()` because you set their values yourself in step 3: the six secrets `SECRET_KEY`, `APP_DB_PASSWORD`, `METRICS_TOKEN`, `SENTRY_DSN`, `ANTHROPIC_API_KEY` and `CREDENTIALS_KEYS`, and four settings, `GATEWAY_MAX_IN_FLIGHT`, `RATE_LIMIT_LOCK_TIMEOUT_MS`, `RATE_LIMIT_STATEMENT_TIMEOUT_MS` and `AGGREGATE_REPAIR_ENABLED`. None of them can exist before the services do, so this first apply may stop on them. If it does, comment out the `preserve()` lines in `railway.ts`, apply, do step 3, restore the lines and run `railway config plan` again, which should show no changes (see [Troubleshooting](#troubleshooting)). Once step 3 is done all ten exist, so every later apply is safe.
 
 The optional settings of later features (object storage, backups, self-tracing, worker metrics, `WORKER_REQUIRED`) are not live in `railway.ts`: they are commented-out opt-in blocks, so the first apply does not wait for them. See [Optional features](#optional-features).
 
@@ -143,6 +143,13 @@ unset keys
 
 # Once the key is safe in your password manager, empty the clipboard.
 pbcopy </dev/null
+
+# Four settings that railway.ts keeps with preserve(). These are the code defaults; change them
+# later with the same command.
+printf 512 | railway variable set GATEWAY_MAX_IN_FLIGHT --stdin --service api --skip-deploys
+printf 100 | railway variable set RATE_LIMIT_LOCK_TIMEOUT_MS --stdin --service api --skip-deploys
+printf 250 | railway variable set RATE_LIMIT_STATEMENT_TIMEOUT_MS --stdin --service api --skip-deploys
+printf false | railway variable set AGGREGATE_REPAIR_ENABLED --stdin --service worker --skip-deploys
 ```
 
 None of these values appears on screen or in your shell history. The commands strip trailing newlines because `APP_DB_PASSWORD` ends up inside a connection URL. To hide the secrets in the dashboard too, seal them: open the service's **Variables** tab, then **⋮ → Seal**. Sealing is permanent, and Railway doesn't return sealed values to `railway run` or `railway variable list`. So seal `SECRET_KEY`, `METRICS_TOKEN` and `ANTHROPIC_API_KEY` now, `CREDENTIALS_KEYS` only once its copy is safe in your password manager (after sealing, nobody can read it back), and `SENTRY_DSN` only after the [Monitoring](#sentry-errors) checks, which need it. Seal `APP_DB_PASSWORD` last: Railway's docs don't say whether references to a sealed variable still resolve, and the database URLs refer to this one. After sealing it, redeploy the api and check that its pre-deploy still succeeds.
@@ -165,6 +172,9 @@ All variables, for reference. Values in `${{ }}` are Railway [reference variable
 | `APP_DB_PASSWORD` | api | random, at least 16 characters, step 3 | yes |
 | `METRICS_TOKEN` | api | random, step 3 | yes |
 | `GATEWAY_ORG_RPM_CEILING` | api | `60`: the most gateway requests per minute one organization may send across its keys (the LLM gateway runs inside the api; see the [gateway runbook](../runbooks/gateway.md)) | no |
+| `GATEWAY_MAX_IN_FLIGHT` | api | `512` (the default), step 3: gateway calls one api process serves at once | no |
+| `RATE_LIMIT_LOCK_TIMEOUT_MS`, `RATE_LIMIT_STATEMENT_TIMEOUT_MS` | api | `100` and `250` (the defaults), step 3: deadlines of the rate-limit SQL; the lock value must be the smaller | no |
+| `AGGREGATE_REPAIR_ENABLED` | worker | `false` (the default), step 3; see [Aggregate correction repair](#aggregate-correction-repair) | no |
 | `DATABASE_URL` | worker | as on api, with `${{api.APP_DB_PASSWORD}}` | holds one |
 | `DEMO_MONTHLY_BUDGET_USD` | worker | `1.00` | no |
 | `ANTHROPIC_API_KEY` | worker | your key, step 3 | yes |
@@ -265,7 +275,7 @@ In the api's deploy logs, the pre-deploy step should print `Database is at the l
 
    ```bash
    curl -fsS https://$DOMAIN/health/ready
-   # {"status":"ok","database":"ok","migrations":"ok","worker_heartbeat_age_s":4.2,"outbox_backlog":0}
+   # {"status":"ok","database":"ok","migrations":"ok","worker_heartbeat_age_s":4.2,"outbox_backlog":0, …}
    ```
 
    `-f` makes curl exit with an error on a 503, which is what the api answers when the database is down, migrations are pending, no worker has reported in the last 120 seconds, or more than 1 000 notifications are overdue by over 10 minutes. `worker_heartbeat_age_s` is how many seconds ago the newest worker reported. `outbox_backlog` counts pending notifications and stops at 10 000. The landing page at `https://$DOMAIN` should load too.
@@ -436,7 +446,7 @@ If `railway config` isn't an option, set the same things in each service's **Set
 | Pre-deploy command | `sh -c 'export DATABASE_URL="$MIGRATION_DATABASE_URL" && spanlight migrate && spanlight ensure-app-role --role spanlight_app && spanlight activate-aggregate-coverage --writers-drained --fresh-install --skip-if-projects-exist'` | none | none |
 | Healthcheck path, timeout | `/health/live`, 120 s | none | `/`, 60 s |
 | Restart policy | On failure, 10 retries | same | same |
-| Draining time | 15 s | 60 s | 10 s |
+| Draining time | 75 s | 75 s | 10 s |
 | Serverless | off | off | off |
 | Public domain | none | none | generated or [custom](#custom-domain), port 8080 |
 
@@ -445,7 +455,7 @@ If `railway config` isn't an option, set the same things in each service's **Set
 | Symptom | Cause and fix |
 |---|---|
 | `railway config plan` fails with a CLI upgrade message, or can't find the package `railway` | The CLI must be 5.42.1 or newer (`brew upgrade railway`), and the SDK must be installed (`npm install --prefix deploy/railway`). Node must be 22 or newer. |
-| `railway config apply` complains about a `preserve()` variable that doesn't exist | The six secrets (`SECRET_KEY`, `APP_DB_PASSWORD`, `METRICS_TOKEN`, `SENTRY_DSN`, `ANTHROPIC_API_KEY`, `CREDENTIALS_KEYS`) can't exist before the services do, and all six are set in step 3. On the first apply, comment out the `preserve()` lines, apply, do step 3, restore the lines and run `railway config plan`: it should show no changes. If it names an optional setting (`S3_BUCKET`, `BACKUP_DATABASE_URL`, `WORKER_METRICS_PORT` and so on), you uncommented its block before setting the variables: set them, or comment the block out again (see [Optional features](#optional-features)). On a later apply, a secret from step 3 is missing: set it with `railway variable set NAME --stdin --service <service>`. |
+| `railway config apply` complains about a `preserve()` variable that doesn't exist | The six secrets (`SECRET_KEY`, `APP_DB_PASSWORD`, `METRICS_TOKEN`, `SENTRY_DSN`, `ANTHROPIC_API_KEY`, `CREDENTIALS_KEYS`) and the four settings (`GATEWAY_MAX_IN_FLIGHT`, `RATE_LIMIT_LOCK_TIMEOUT_MS`, `RATE_LIMIT_STATEMENT_TIMEOUT_MS`, `AGGREGATE_REPAIR_ENABLED`) can't exist before the services do, and all ten are set in step 3. On the first apply, comment out the `preserve()` lines, apply, do step 3, restore the lines and run `railway config plan`: it should show no changes. If it names an optional setting (`S3_BUCKET`, `BACKUP_DATABASE_URL`, `WORKER_METRICS_PORT` and so on), you uncommented its block before setting the variables: set them, or comment the block out again (see [Optional features](#optional-features)). On a later apply, a variable from step 3 is missing: set it with `railway variable set NAME --stdin --service <service>`. |
 | The plan wants to delete a variable | It exists in Railway but not in `railway.ts`. Add it to the file, or let it go. |
 | The api or worker build runs `npm ci` and the service starts Caddy | `SPANLIGHT_TARGET` isn't `backend` on that service, or `deploy/Dockerfile` lacks the `ARG SPANLIGHT_TARGET` line and final `FROM ${SPANLIGHT_TARGET}` stage. |
 | Pre-deploy: `APP_DB_PASSWORD must be set to at least 16 characters` | Do step 3, then `railway up --service api` again. |
@@ -462,7 +472,7 @@ If `railway config` isn't an option, set the same things in each service's **Set
 
 ### Aggregate correction repair
 
-The worker defaults `AGGREGATE_REPAIR_ENABLED` to `false`. This disables consumption only: capture continues and affected materialized observations remain pending. Follow the [aggregate repair runbook](../runbooks/aggregate-repair.md) before normal-service cutover. Set the worker variable, uncomment its `preserve()` line in `deploy/railway/railway.ts`, and verify enabled-product backlog convergence after the approved deployment. Disabling it again deliberately restores degraded materialized observation service; synchronous complete-source live reads remain usable.
+The worker defaults `AGGREGATE_REPAIR_ENABLED` to `false`. This disables consumption only: capture continues and affected materialized observations remain pending. Follow the [aggregate repair runbook](../runbooks/aggregate-repair.md) before normal-service cutover. Set the worker variable to `true` (`railway.ts` already keeps it with `preserve()`), and verify enabled-product backlog convergence after the approved deployment. Disabling it again deliberately restores degraded materialized observation service; synchronous complete-source live reads remain usable.
 
 
 ### Process shutdown
