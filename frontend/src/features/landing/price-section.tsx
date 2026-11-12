@@ -1,18 +1,25 @@
+import { CircleCheck } from "lucide-react";
+
 import { Figure, Section, SectionHeading, TitleSecondLine } from "./landing-parts";
 import { stagger } from "./motion";
 import { SECTION_IDS } from "./links";
 
 /*
- * Worked example from the Spanlight price table, labelled as such on the receipt:
- * claude-sonnet-5-5 at $2.00 / $10.00 / $0.10 per 1M input, output and cache-read tokens.
+ * One real span from the demo support bot, as the product's Cost tab shows it (the 2026-11-05
+ * product recording): claude-sonnet-5-5 priced from price row 2026-10-25.
  */
-const RECEIPT_LINES = [
-  { label: "Input", basis: "1,840 tok × $2.00 / 1M", cost: "$0.003680" },
-  { label: "Cache read", basis: "6,200 tok × $0.10 / 1M", cost: "$0.000620" },
-  { label: "Output", basis: "412 tok × $10.00 / 1M", cost: "$0.004120" },
+const COST_SPAN = "chat claude-sonnet-5-5";
+const PRICE_ROW = "2026-10-25";
+
+const COST_LINES = [
+  { label: "Uncached input", tokens: "443", rate: "$2.00 / MTok", cost: "$0.000886" },
+  { label: "Cache read", tokens: "0", rate: "$0.10 / MTok", cost: "$0" },
+  { label: "Cache write", tokens: "0", rate: "$2.50 / MTok", cost: "$0" },
+  { label: "Cache write · 1 h", tokens: "0", rate: "$4.00 / MTok", cost: "$0" },
+  { label: "Output", tokens: "300", rate: "$10.00 / MTok", cost: "$0.003000" },
 ] as const;
 
-const RECEIPT_TOTAL = "$0.008420";
+const COST_TOTAL = "$0.003886";
 
 /** Spans whose cost cannot be known, with the reason Spanlight records. */
 const UNKNOWN_SPANS = [
@@ -20,11 +27,18 @@ const UNKNOWN_SPANS = [
   { span: "llama-3.1-8b-instruct", reason: "no_price" },
 ] as const;
 
-const RECEIPT_ALT = `Cost receipt for the answer span on claude-sonnet-5-5: ${RECEIPT_LINES.map(
-  (line) => `${line.label} ${line.basis}, ${line.cost}`,
-).join("; ")}; total ${RECEIPT_TOTAL}. Two more spans show no cost: ${UNKNOWN_SPANS.map(
+const COST_ALT = `Cost breakdown for the span ${COST_SPAN}, recomputed from stored usage and price row ${PRICE_ROW}: ${COST_LINES.map(
+  (line) => `${line.label}, ${line.tokens} tokens at ${line.rate}, ${line.cost}`,
+).join(
+  "; ",
+)}; recomputed total ${COST_TOTAL}, which matches the cost stored on the span. Two other spans show no cost: ${UNKNOWN_SPANS.map(
   (unknown) => `${unknown.span}, ${unknown.reason}`,
 ).join("; ")}.`;
+
+/** Zero lines read quieter than the lines that cost something. */
+function tone(value: string) {
+  return value === "0" || value === "$0" ? "text-mono-600" : "text-mono-900";
+}
 
 const FACTS = [
   { value: "32", text: "metadata pairs per trace, for attribution by customer, feature or team" },
@@ -54,7 +68,7 @@ const CLAIMS = [
 
 const CARD = "rounded-md border border-mono-line-strong bg-mono-white";
 
-/** "Price": the cost receipt, the bill check and the attribution and budget facts (Figma "Price"). */
+/** "Price": the cost breakdown, the bill check and the attribution and budget facts (Figma "Price"). */
 export function PriceSection() {
   return (
     <Section id={SECTION_IDS.price} tone="paper">
@@ -68,42 +82,79 @@ export function PriceSection() {
 
       <div className="flex w-full flex-col gap-7 xl:flex-row xl:items-stretch xl:gap-6">
         <Figure
-          label={RECEIPT_ALT}
-          className={`${CARD} flex flex-col gap-[22px] px-5 pt-6 pb-5 xl:w-[480px] xl:shrink-0 xl:px-8 xl:pt-8 xl:pb-7`}
+          label={COST_ALT}
+          className={`${CARD} flex flex-col gap-3.5 px-[18px] pt-5 pb-[18px] xl:w-[560px] xl:shrink-0 xl:gap-[18px] xl:px-7 xl:pt-7 xl:pb-6`}
         >
-          <div className="flex flex-col gap-1 font-mono leading-[1.4]">
-            <span className="text-sm font-medium text-mono-900 xl:text-[15px]">answer</span>
-            <span className="text-xs text-mono-500">llm span · claude-sonnet-5-5</span>
+          <div className="flex flex-col items-start gap-2.5 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-col gap-[3px] font-mono leading-[1.4]">
+              <span className="text-[13px] font-medium text-mono-900 xl:text-sm">{COST_SPAN}</span>
+              <span className="text-xs text-mono-600">llm span · anthropic · standard</span>
+            </div>
+            <span className="flex items-center gap-1.5 rounded-full border border-mono-line-strong bg-mono-mist py-[5px] pr-2.5 pl-2 text-xs leading-[1.4] font-medium text-mono-900">
+              <CircleCheck className="size-3.5" />
+              Matches
+            </span>
           </div>
-          <div className="flex flex-col border-t border-mono-line leading-[1.4]">
-            {RECEIPT_LINES.map((line, index) => (
+          <span className="text-[13px] leading-[1.4] text-mono-600">
+            Recomputed from stored usage and price row {PRICE_ROW}
+          </span>
+          <div className="flex flex-col leading-[1.4]">
+            <div className="hidden gap-3 border-b border-mono-line pb-2 font-mono text-xs text-mono-600 xl:flex">
+              <span className="flex-1">Class</span>
+              <span className="w-16 text-right">Tokens</span>
+              <span className="w-[120px] text-right">Rate</span>
+              <span className="w-9 text-right">×</span>
+              <span className="w-24 text-right">USD</span>
+            </div>
+            {COST_LINES.map((line, index) => (
               <div
                 key={line.label}
                 style={stagger(index)}
-                className="lp-rise flex items-center justify-between border-b border-mono-line py-3.5 [--lp-rise:8px] [--lp-stagger:120ms]"
+                className="lp-rise flex items-center justify-between gap-3 border-b border-mono-line py-2.5 [--lp-rise:8px] [--lp-stagger:120ms] xl:py-[11px]"
               >
-                <span className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium text-mono-900 xl:text-[15px]">
-                    {line.label}
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="text-sm font-medium text-mono-900">{line.label}</span>
+                  <span className="font-mono text-xs text-mono-600 xl:hidden">
+                    {line.tokens} tok × {line.rate}
                   </span>
-                  <span className="font-mono text-xs text-mono-500">{line.basis}</span>
                 </span>
-                <span className="font-mono text-xs text-mono-900 xl:text-sm">{line.cost}</span>
+                <span
+                  className={`hidden w-16 text-right font-mono text-xs xl:block ${tone(line.tokens)}`}
+                >
+                  {line.tokens}
+                </span>
+                <span className="hidden w-[120px] text-right font-mono text-xs text-mono-900 xl:block">
+                  {line.rate}
+                </span>
+                <span className="hidden w-9 text-right font-mono text-xs text-mono-900 xl:block">
+                  ×1
+                </span>
+                <span
+                  className={`w-[74px] text-right font-mono text-xs xl:w-24 ${tone(line.cost)}`}
+                >
+                  {line.cost}
+                </span>
               </div>
             ))}
           </div>
           <div
-            style={stagger(RECEIPT_LINES.length)}
-            className="lp-fade flex items-end justify-between font-medium text-mono-900 [--lp-stagger:120ms]"
+            style={stagger(COST_LINES.length)}
+            className="lp-fade flex flex-col gap-1.5 [--lp-stagger:120ms]"
           >
-            <span className="text-sm leading-[1.4] xl:text-[15px]">Total</span>
-            <span className="text-[32px] leading-none tracking-[-0.035em] tabular-nums xl:text-[44px]">
-              {RECEIPT_TOTAL}
-            </span>
+            <div className="flex items-end justify-between font-medium text-mono-900">
+              <span className="text-sm leading-[1.4] xl:text-[15px]">Recomputed</span>
+              <span className="text-[30px] leading-none tracking-[-0.035em] tabular-nums xl:text-[40px]">
+                {COST_TOTAL}
+              </span>
+            </div>
+            <div className="flex justify-between leading-[1.4] text-mono-600">
+              <span className="text-[13px]">Stored on the span</span>
+              <span className="font-mono text-xs">{COST_TOTAL}</span>
+            </div>
           </div>
-          <div className="flex flex-col gap-2.5 border-t border-mono-line pt-5 leading-[1.4]">
-            <span className="text-xs text-mono-500 xl:text-[13px]">
-              Two more spans, cost unknown
+          <div className="flex flex-col gap-2 border-t border-mono-line pt-4 leading-[1.4]">
+            <span className="text-[13px] text-mono-600">
+              When a cost cannot be known, the span says why
             </span>
             {UNKNOWN_SPANS.map((unknown) => (
               <div
@@ -115,8 +166,8 @@ export function PriceSection() {
               </div>
             ))}
           </div>
-          <span className="text-xs leading-[1.4] text-mono-500">
-            Worked example at list rates from the Spanlight price table.
+          <span className="text-xs leading-[1.4] text-mono-600">
+            A real span from the demo support bot, as the Cost tab shows it.
           </span>
         </Figure>
 

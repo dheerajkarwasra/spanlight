@@ -4,9 +4,11 @@ import { Wires } from "./landing-parts";
 import { delay } from "./motion";
 
 /*
- * Worked example, labelled as such under the figure: the demo support bot's `answer_ticket`
- * trace, with the `answer` span priced at claude-sonnet-5-5 list rates ($2.00 / $10.00 / $0.10
- * per 1M input, output and cache-read tokens). Span bar positions are an illustration.
+ * One real trace from the demo support bot, as the 2026-11-05 product recording shows it:
+ * `support_turn`, 4.10 s, with the cost of its claude-sonnet-5-5 span (price row 2026-10-25).
+ * The same span is broken down line by line in the Price section. The model chips on the left
+ * and the Doctor finding on the right are not part of this trace; they stand for calls coming in
+ * and a cause coming out.
  */
 const CALLS = [
   { model: "claude-sonnet-5-5", priced: true },
@@ -16,35 +18,46 @@ const CALLS = [
   { model: "llama-3.1-8b-instruct", priced: false },
 ] as const;
 
-/** Bar offsets and widths on a 120px track. */
+/** Bar offsets and widths on a 108px track. */
 const SPANS = [
   {
-    kind: "agent",
-    name: "answer_ticket",
+    name: "support_turn",
     left: 0,
-    width: 120,
-    duration: "1.42 s",
+    width: 108,
+    duration: "4.10 s",
     bar: "bg-mono-600",
   },
-  { kind: "llm", name: "triage", left: 0, width: 26, duration: "0.31 s", bar: "bg-mono-400" },
   {
-    kind: "tool",
-    name: "help_search",
-    left: 26,
-    width: 14,
-    duration: "0.16 s",
+    name: "chat claude-haiku-5-5",
+    left: 0,
+    width: 36,
+    duration: "1.36 s",
     bar: "bg-mono-400",
   },
-  { kind: "llm", name: "answer", left: 40, width: 80, duration: "0.95 s", bar: "bg-mono-white" },
+  {
+    name: "chat claude-sonnet-5-5",
+    left: 36,
+    width: 72,
+    duration: "2.74 s",
+    bar: "bg-mono-white",
+  },
+  // The recording shows this name cut off; the full name is not on screen, so it stays cut here.
+  {
+    name: "search_help_c…",
+    left: 36,
+    width: 2,
+    duration: "<1 ms",
+    bar: "bg-mono-400",
+  },
 ] as const;
 
-const LIT_SPAN = "answer";
+const LIT_SPAN = "chat claude-sonnet-5-5";
 
-const COST_TOTAL = "$0.008420";
+const COST_TOTAL = "$0.003886";
 const COST_LINES = [
-  { label: "input", cost: "$0.003680" },
-  { label: "cache read", cost: "$0.000620" },
-  { label: "output", cost: "$0.004120" },
+  { label: "uncached input", cost: "$0.000886" },
+  { label: "cache read", cost: "$0" },
+  { label: "output", cost: "$0.003000" },
 ] as const;
 
 const CAUSE = "The agent repeats `reserve_item` with the same arguments";
@@ -104,8 +117,8 @@ export function HeroDiagram() {
         className="lp-rise absolute top-[90px] left-[400px] flex w-[400px] flex-col gap-4 rounded-[14px] border border-mono-800 bg-mono-900 px-6 py-[22px]"
       >
         <div className={cn(MONO_LABEL, "flex justify-between")}>
-          <span className="text-mono-white">trace · answer_ticket</span>
-          <span className="text-mono-400">1.42 s</span>
+          <span className="text-mono-white">trace · support_turn</span>
+          <span className="text-mono-400">4.10 s</span>
         </div>
         <div className="flex flex-col gap-1">
           {SPANS.map((span, index) => (
@@ -117,9 +130,8 @@ export function HeroDiagram() {
                 span.name === LIT_SPAN && "bg-mono-800",
               )}
             >
-              <span className="w-[34px] text-mono-400">{span.kind}</span>
-              <span className="w-[98px] text-mono-white">{span.name}</span>
-              <span className="relative h-2 w-[120px]">
+              <span className="w-[162px] shrink-0 truncate text-mono-white">{span.name}</span>
+              <span className="relative h-2 w-[108px] shrink-0">
                 <span
                   style={{ left: span.left, width: span.width, ...delay(1900 + index * 90) }}
                   className={cn("lp-grow absolute top-0 h-2 rounded-[3px]", span.bar)}
@@ -150,7 +162,7 @@ export function HeroDiagram() {
         style={delay(3000)}
         className="lp-rise absolute top-10 left-[940px] flex w-[260px] flex-col gap-2.5 rounded-[14px] border border-mono-800 bg-mono-900 p-5"
       >
-        <span className={cn(MONO_LABEL, "text-mono-400")}>cost · answer span</span>
+        <span className={cn(MONO_LABEL, "text-mono-400")}>cost · chat claude-sonnet-5-5</span>
         <span className="text-[34px] leading-[1.05] font-medium tracking-[-0.035em] text-mono-white tabular-nums">
           {COST_TOTAL}
         </span>
@@ -207,13 +219,13 @@ export function HeroDiagramMobile() {
         className="lp-rise flex flex-col gap-3 rounded-[14px] border border-mono-800 bg-mono-900 px-4 py-[18px]"
       >
         <div className={cn(MONO_LABEL, "flex justify-between")}>
-          <span className="text-mono-white">trace · answer_ticket</span>
-          <span className="text-mono-400">1.42 s</span>
+          <span className="text-mono-white">trace · support_turn</span>
+          <span className="text-mono-400">4.10 s</span>
         </div>
         {SPANS.map((span, index) => (
           <div key={span.name} className={cn(MONO_LABEL, "flex items-center justify-between")}>
             <span className="text-mono-white">{span.name}</span>
-            <span className="relative h-2 w-[120px]">
+            <span className="relative h-2 w-[108px] shrink-0">
               <span
                 style={{ left: span.left, width: span.width, ...delay(1100 + index * 90) }}
                 className={cn("lp-grow absolute top-0 h-2 rounded-[3px]", span.bar)}
@@ -227,7 +239,7 @@ export function HeroDiagramMobile() {
         style={delay(1500)}
         className="lp-rise flex items-center justify-between rounded-[14px] border border-mono-800 bg-mono-900 px-4 py-3.5"
       >
-        <span className={cn(MONO_LABEL, "text-mono-400")}>cost · answer span</span>
+        <span className={cn(MONO_LABEL, "text-mono-400")}>cost · chat claude-sonnet-5-5</span>
         <span className="text-2xl leading-[1.05] font-medium tracking-[-0.035em] text-mono-white tabular-nums">
           {COST_TOTAL}
         </span>

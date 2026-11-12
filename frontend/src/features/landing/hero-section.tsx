@@ -125,7 +125,7 @@ export function HeroSection({ onTryDemo, demoPending }: DemoActions) {
         </Figure>
 
         <p className="font-mono text-xs leading-[1.4] text-mono-400">
-          Worked example: the demo support bot, priced at claude-sonnet-5-5 list rates.
+          A real trace from the demo support bot, recorded on Spanlight.
         </p>
       </div>
     </section>
