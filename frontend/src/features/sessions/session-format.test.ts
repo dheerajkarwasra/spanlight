@@ -87,7 +87,9 @@ describe("turnRangeLabel", () => {
     expect(turnRangeLabel(6, 12, false)).toBe("Turns 1–6 of 12");
     expect(turnRangeLabel(12, 12, false)).toBe("12 turns");
     expect(turnRangeLabel(1, 1, false)).toBe("1 turn");
-    expect(turnRangeLabel(10, 100, true)).toBe("Latest 100 turns");
+    // Older turns unloaded: the badge still says how many of the loaded ones are on screen.
+    expect(turnRangeLabel(10, 100, true)).toBe("10 of the latest 100 turns");
+    expect(turnRangeLabel(100, 100, true)).toBe("Latest 100 turns");
   });
 });
 

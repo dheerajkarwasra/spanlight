@@ -46,7 +46,9 @@ export function TargetTable({ targets }: { targets: readonly GatewayTargetUsage[
                 {targets.map((target, index) => (
                   <TableRow key={target.credential_id ?? `deleted-${index}`}>
                     <TableCell className="font-semibold text-foreground">
-                      {target.credential_name}
+                      <span title={target.credential_name} className="block max-w-[16rem] truncate">
+                        {target.credential_name}
+                      </span>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       <ValueOrUnknown value={providerLabel(target.provider)} reason={NO_PROVIDER} />

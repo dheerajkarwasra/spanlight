@@ -156,7 +156,7 @@ function AnnotateWork() {
               claiming={false}
               onClaim={() => void session.claim()}
             />
-          ) : item === null || allConfigs.isPending ? (
+          ) : item === null || allConfigs.isPending || queue.isPending ? (
             <WorkSkeleton />
           ) : (
             <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
@@ -166,7 +166,7 @@ function AnnotateWork() {
               </div>
               <ScoresPanel
                 configs={configs}
-                instructions={queue.data?.instructions ?? null}
+                instructions={queue.data.instructions}
                 draft={draft}
                 lastItem={lastItem}
                 work={{
@@ -210,7 +210,7 @@ function WorkSkeleton() {
   return (
     <div role="status" aria-label="Claiming an item" className="flex flex-col gap-5 lg:flex-row">
       <Skeleton className="h-[480px] flex-1 rounded-card" />
-      <Skeleton className="h-[480px] rounded-card lg:w-[410px]" />
+      <Skeleton className="h-[480px] rounded-card lg:w-[448px]" />
     </div>
   );
 }

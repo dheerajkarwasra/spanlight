@@ -89,6 +89,28 @@ export function configChipText(config: ScoreConfig): string {
   return `${config.data_type} · ${allowedValuesText(config)}`;
 }
 
+/** A chip keeps its text on one line; a longer category list is counted instead. */
+const CHIP_TEXT_LIMIT = 32;
+const VALUES_TEXT_LIMIT = 18;
+
+/** `allowedValuesText` for a pill: a category list too long for one line becomes "11 values". */
+export function allowedValuesSummary(config: ScoreConfig): string {
+  const full = allowedValuesText(config);
+  if (config.data_type !== "categorical" || full.length <= VALUES_TEXT_LIMIT) {
+    return full;
+  }
+  return `${String(config.categories.length)} values`;
+}
+
+/** The one-line chip text: `configChipText`, or "categorical · 11 values" for a long list. */
+export function configChipSummary(config: ScoreConfig): string {
+  const full = configChipText(config);
+  if (config.data_type !== "categorical" || full.length <= CHIP_TEXT_LIMIT) {
+    return full;
+  }
+  return `categorical · ${String(config.categories.length)} values`;
+}
+
 export type ScoreInputCheck =
   { ok: true; input: Pick<ScoreCreate, "value" | "string_value"> } | { ok: false; error: string };
 

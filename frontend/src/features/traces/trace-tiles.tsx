@@ -154,7 +154,7 @@ function TraceTile({ trace, stale, selected, promotedKeys, previews }: TraceTile
 }
 
 /** The "—" placeholder without a focusable tooltip, which a link can't contain. */
-function UnknownInLink({ reason }: { reason: string }) {
+export function UnknownInLink({ reason }: { reason: string }) {
   return (
     <span className="text-muted-foreground">
       <span aria-hidden>—</span>

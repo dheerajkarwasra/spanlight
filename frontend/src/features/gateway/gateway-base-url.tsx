@@ -20,7 +20,9 @@ export function GatewayBaseUrl() {
     const url = gatewayBaseUrl();
     return (
       <div className={`${PILL_CLASS} pr-1.5 pl-4`}>
-        <span className="text-xs font-medium text-subtle-foreground">Base URL</span>
+        <span className="shrink-0 text-xs font-medium whitespace-nowrap text-subtle-foreground">
+          Base URL
+        </span>
         <code className="min-w-0 truncate font-mono text-[13px] text-foreground">{url}</code>
         <CopyButton value={url} label="Copy" showLabel className="shrink-0 bg-surface-muted" />
       </div>
@@ -33,12 +35,12 @@ export function GatewayBaseUrl() {
       {mode === "standalone" ? (
         <span className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-foreground">
           <SquareArrowOutUpRight aria-hidden className="size-3.5 shrink-0" />
-          <span>Standalone gateway · use its own URL</span>
+          <span className="truncate">Standalone gateway · use its own URL</span>
         </span>
       ) : (
         <span className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-muted-foreground">
           <Ban aria-hidden className="size-3.5 shrink-0" />
-          <span>
+          <span className="truncate">
             Gateway off on this server · set <code className="font-mono">GATEWAY_MODE</code>
           </span>
         </span>

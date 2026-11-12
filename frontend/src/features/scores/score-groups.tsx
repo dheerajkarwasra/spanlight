@@ -3,8 +3,8 @@ import { useId } from "react";
 import { useMe } from "@/features/auth";
 import { usePermission } from "@/features/shell";
 import type { Score, ScoreConfig } from "@/lib/api";
-import { configChipText } from "@/lib/score-format";
 
+import { ScoreConfigChip } from "./score-config-chip";
 import { groupScoresByName } from "./score-format";
 import { ScoreRow } from "./score-row";
 
@@ -35,14 +35,13 @@ export function ScoreGroups({ scores, configs }: ScoreGroupsProps) {
         return (
           <section key={group.name} aria-labelledby={headingId} className="flex flex-col gap-2">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <h3 id={headingId} className="text-sm font-semibold text-foreground">
+              <h3
+                id={headingId}
+                className="min-w-0 text-sm font-semibold [overflow-wrap:anywhere] text-foreground"
+              >
                 {group.name}
               </h3>
-              {config ? (
-                <span className="rounded-full border border-border-strong bg-surface px-[9px] py-[3px] text-2xs font-medium text-muted-foreground">
-                  {configChipText(config)}
-                </span>
-              ) : null}
+              {config ? <ScoreConfigChip config={config} /> : null}
             </div>
             <ul aria-label={`${group.name} scores`} className="flex flex-col gap-2">
               {group.scores.map((score) => (

@@ -132,14 +132,24 @@ function Content({ query, status, filtered, onClearFilters, onViewResolved }: Co
       items={items}
       now={now}
       footer={
-        <LoadMoreRow
-          loaded={items.length}
-          hasNextPage={query.hasNextPage}
-          loading={query.isFetchingNextPage}
-          onLoadMore={() => {
-            void query.fetchNextPage();
-          }}
-        />
+        <>
+          <LoadMoreRow
+            loaded={items.length}
+            hasNextPage={query.hasNextPage}
+            loading={query.isFetchingNextPage}
+            onLoadMore={() => {
+              void query.fetchNextPage();
+            }}
+          />
+          {query.isFetchNextPageError ? (
+            <ErrorState
+              compact
+              error={query.error}
+              title="Couldn't load more findings"
+              onRetry={() => void query.fetchNextPage()}
+            />
+          ) : null}
+        </>
       }
     />
   );

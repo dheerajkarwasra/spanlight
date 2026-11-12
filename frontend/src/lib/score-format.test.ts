@@ -4,6 +4,8 @@ import type { ScoreConfig } from "@/lib/api";
 
 import {
   checkScoreInput,
+  allowedValuesSummary,
+  configChipSummary,
   configChipText,
   formatScoreValue,
   rangeText,
@@ -132,5 +134,18 @@ describe("config chips", () => {
     expect(configChipText(config({ data_type: "categorical", categories: ["a", "b"] }))).toBe(
       "categorical · a, b",
     );
+  });
+
+  it("counts a long category list so a pill stays on one line", () => {
+    const long = config({
+      data_type: "categorical",
+      categories: ["none", "wrong_answer", "hallucination", "ignored_instructions"],
+    });
+    expect(configChipSummary(long)).toBe("categorical · 4 values");
+    expect(allowedValuesSummary(long)).toBe("4 values");
+    const short = config({ data_type: "categorical", categories: ["good", "ok", "bad"] });
+    expect(configChipSummary(short)).toBe("categorical · good, ok, bad");
+    expect(allowedValuesSummary(short)).toBe("good, ok, bad");
+    expect(allowedValuesSummary(config({ min_value: 0, max_value: 1 }))).toBe("0 to 1");
   });
 });

@@ -25,7 +25,7 @@ export function ContextPerTurn({ traces }: { traces: readonly TraceSummary[] }) 
   const summary =
     max === 0
       ? "No input tokens recorded"
-      : `Input tokens per turn: ${formatInteger(traces[0]?.input_tokens ?? 0) ?? ""} on the first, ${formatInteger(traces.at(-1)?.input_tokens ?? 0) ?? ""} on the last, peak ${formatInteger(max) ?? ""} on turn ${peak + 1}`;
+      : `Input tokens per turn: ${formatInteger(traces[0]?.input_tokens) ?? "unknown"} on the first, ${formatInteger(traces.at(-1)?.input_tokens) ?? "unknown"} on the last, peak ${formatInteger(max) ?? ""} on turn ${peak + 1}`;
 
   // The values the bars encode, visible without hovering: first → last, and the peak.
   const caption =

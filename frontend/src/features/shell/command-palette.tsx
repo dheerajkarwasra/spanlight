@@ -146,7 +146,8 @@ export function CommandPalette({ open, onOpenChange, onOpenShortcuts }: CommandP
               .map((project) => (
                 <CommandItem
                   key={project.id}
-                  value={`switch project ${project.name}`}
+                  // Names are not unique; the id keeps two same-named projects apart.
+                  value={`switch project ${project.name} ${project.id}`}
                   onSelect={() => {
                     run(() => {
                       void navigate({
@@ -157,7 +158,7 @@ export function CommandPalette({ open, onOpenChange, onOpenShortcuts }: CommandP
                   }}
                 >
                   <FolderOpen aria-hidden />
-                  {project.name}
+                  <span className="truncate">{project.name}</span>
                 </CommandItem>
               ))}
           </CommandGroup>

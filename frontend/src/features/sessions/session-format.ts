@@ -48,11 +48,16 @@ export function formatCompactDuration(ms: number | null | undefined): string | n
   return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
 }
 
-/** "Turns 1–10 of 24", "12 turns", or "Latest 100 turns" while older turns aren't loaded. */
+/**
+ * "Turns 1–10 of 24" or "12 turns"; while older turns aren't loaded, "10 of the latest 100 turns"
+ * or "Latest 100 turns" (turns can't be numbered then).
+ */
 export function turnRangeLabel(visible: number, loaded: number, hasEarlierTurns: boolean): string {
   const loadedLabel = loaded.toLocaleString("en-US");
   if (hasEarlierTurns) {
-    return `Latest ${loadedLabel} turns`;
+    return visible < loaded
+      ? `${visible.toLocaleString("en-US")} of the latest ${loadedLabel} turns`
+      : `Latest ${loadedLabel} turns`;
   }
   if (visible < loaded) {
     return `Turns 1–${visible.toLocaleString("en-US")} of ${loadedLabel}`;

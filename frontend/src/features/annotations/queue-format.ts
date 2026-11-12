@@ -1,6 +1,6 @@
 import type { AnnotationQueue, QueueItem, ReasonProgress, ScoreConfig, Span } from "@/lib/api";
 import { formatInteger, shortId } from "@/lib/format";
-import { allowedValuesText } from "@/lib/score-format";
+import { allowedValuesSummary } from "@/lib/score-format";
 
 /** A claim idle this long goes back to the queue (the backend's rule). */
 export const CLAIM_TIMEOUT_MS = 30 * 60_000;
@@ -21,9 +21,9 @@ export function queueConfigs(
   return queue.score_config_ids.flatMap((id) => byId.get(id) ?? []);
 }
 
-/** "relevance · 0 to 1", "format · yes or no", "tone · good, ok, bad". */
+/** "relevance · 0 to 1", "format · yes or no", "tone · good, ok, bad", "failure_category · 11 values". */
 export function configSummary(config: ScoreConfig): string {
-  return `${config.name} · ${allowedValuesText(config)}`;
+  return `${config.name} · ${allowedValuesSummary(config)}`;
 }
 
 export function progressTotal(progress: ReasonProgress): number {

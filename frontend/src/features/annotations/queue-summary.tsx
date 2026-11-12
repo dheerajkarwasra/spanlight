@@ -6,6 +6,8 @@ import type { AnnotationQueue, ScoreConfig } from "@/lib/api";
 import { formatInteger } from "@/lib/format";
 
 import { ProgressBar } from "./progress-bar";
+import { configChipText } from "@/lib/score-format";
+
 import { configSummary, progressTotal, queueConfigs } from "./queue-format";
 
 function count(value: number): string {
@@ -64,7 +66,8 @@ export function QueueSummary({ queue, configs }: QueueSummaryProps) {
           {chosen.map((config) => (
             <li
               key={config.id}
-              className="rounded-full border border-border-strong bg-surface px-2.5 py-0.5 text-2xs font-medium text-foreground"
+              title={configChipText(config)}
+              className="max-w-full truncate rounded-full border border-border-strong bg-surface px-2.5 py-0.5 text-2xs font-medium text-foreground"
             >
               {configSummary(config)}
             </li>

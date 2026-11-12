@@ -61,12 +61,12 @@ function TraceContent({ trace, item }: { trace: TraceDetail; item: QueueItem }) 
           {trace.name ?? <span className="text-muted-foreground">Unnamed trace</span>}
         </h2>
         {trace.environment ? (
-          <span className="rounded-full border border-border bg-surface-muted px-[9px] py-[3px] text-2xs font-medium text-muted-foreground">
+          <span className="max-w-full truncate rounded-full border border-border bg-surface-muted px-[9px] py-[3px] text-2xs font-medium text-muted-foreground">
             {trace.environment}
           </span>
         ) : null}
         {trace.release ? (
-          <span className="rounded-full border border-border-strong bg-surface px-[9px] py-[3px] font-mono text-2xs font-medium text-muted-foreground">
+          <span className="max-w-full truncate rounded-full border border-border-strong bg-surface px-[9px] py-[3px] font-mono text-2xs font-medium text-muted-foreground">
             {trace.release}
           </span>
         ) : null}

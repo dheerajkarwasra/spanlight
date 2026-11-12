@@ -43,7 +43,11 @@ export function KeyTable({ keys }: { keys: readonly GatewayKeyUsage[] }) {
               <TableBody>
                 {keys.map((key) => (
                   <TableRow key={key.key_id}>
-                    <TableCell className="font-semibold text-foreground">{key.name}</TableCell>
+                    <TableCell className="font-semibold text-foreground">
+                      <span title={key.name} className="block max-w-[16rem] truncate">
+                        {key.name}
+                      </span>
+                    </TableCell>
                     <TableCell>
                       <EnvironmentBadge environment={key.environment} size="md" />
                     </TableCell>

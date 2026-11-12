@@ -39,5 +39,8 @@ export function shareOf(bucket: AttributionBucket, view: AttributionView): numbe
   if (cost === null || total === null || total === 0) {
     return null;
   }
-  return Math.round((cost / total) * 10_000) / 10_000;
+  const share = cost / total;
+  const rounded = Math.round(share * 10_000) / 10_000;
+  // A tiny bucket must not round to 0: `formatShare` shows it as "<0.1%", never as free.
+  return rounded === 0 && share > 0 ? share : rounded;
 }

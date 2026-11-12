@@ -17,15 +17,18 @@ export function KeyChip({ children, className }: { children: string; className?:
   );
 }
 
-/** A work-mode action with its key hint beside it (an empty slot when it has no key). */
+/**
+ * A work-mode action with its key hint inside the button's right edge, so every action is the
+ * same width with or without a key. The hint is hidden below `sm`, where there is no keyboard.
+ */
 export function ActionRow({ keyHint, children }: { keyHint: string | null; children: ReactNode }) {
   return (
-    <div className="flex items-center gap-2.5">
+    <div className="relative flex [&:has(:disabled)>kbd]:opacity-50">
       {children}
-      {keyHint === null ? (
-        <span aria-hidden className="hidden size-6 sm:block" />
-      ) : (
-        <KeyChip className="hidden sm:inline-flex">{keyHint}</KeyChip>
+      {keyHint === null ? null : (
+        <KeyChip className="pointer-events-none absolute top-1/2 right-2 hidden -translate-y-1/2 sm:inline-flex">
+          {keyHint}
+        </KeyChip>
       )}
     </div>
   );

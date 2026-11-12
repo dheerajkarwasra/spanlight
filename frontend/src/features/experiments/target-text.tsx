@@ -51,7 +51,10 @@ export function TargetChips({ target, index }: { target: ExperimentTarget; index
           Ad-hoc messages
         </span>
       )}
-      <span className="rounded-full border border-border-strong px-2.5 py-0.5 font-mono text-[11px] text-foreground">
+      <span
+        title={target.model}
+        className="max-w-full truncate rounded-full border border-border-strong px-2.5 py-0.5 font-mono text-[11px] text-foreground"
+      >
         {target.model}
       </span>
     </>

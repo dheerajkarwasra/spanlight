@@ -71,6 +71,14 @@ export function EventTimeline({ query, rule, now }: EventTimelineProps) {
               Load more
             </Button>
           ) : null}
+          {query.isFetchNextPageError ? (
+            <ErrorState
+              compact
+              error={query.error}
+              title="Couldn't load more events"
+              onRetry={() => void query.fetchNextPage()}
+            />
+          ) : null}
         </>
       ) : null}
     </SectionCard>

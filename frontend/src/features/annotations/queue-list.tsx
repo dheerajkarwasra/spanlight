@@ -86,12 +86,13 @@ function QueueRow({
           {progressSummary(queue.progress)}
         </span>
       </span>
-      <span className="flex flex-wrap gap-1.5">
+      <span className="flex min-w-0 flex-wrap gap-1.5">
         <span className="sr-only">Scores:</span>
         {names.map((name) => (
           <span
             key={name}
-            className="rounded-full border border-border-strong bg-surface px-2.5 py-0.5 text-2xs font-medium text-foreground"
+            title={name}
+            className="max-w-full truncate rounded-full border border-border-strong bg-surface px-2.5 py-0.5 text-2xs font-medium text-foreground"
           >
             {name}
           </span>

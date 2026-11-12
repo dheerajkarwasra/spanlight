@@ -69,11 +69,12 @@ export function TraceAttributeChips({ trace }: { trace: TraceDetail }) {
         </Chip>
       ) : null}
       {trace.tags.length > 0 ? (
-        <Chip label="Tags" className="py-1">
-          <span className="flex flex-wrap gap-1">
+        // Many tags wrap to several lines, which a fully rounded pill would clip.
+        <Chip label="Tags" className="rounded-tile py-1">
+          <span className="flex min-w-0 flex-wrap gap-1">
             {trace.tags.map((tag) => (
-              <Badge key={tag} variant="accent">
-                {tag}
+              <Badge key={tag} variant="accent" title={tag} className="max-w-full min-w-0 shrink">
+                <span className="truncate">{tag}</span>
               </Badge>
             ))}
           </span>

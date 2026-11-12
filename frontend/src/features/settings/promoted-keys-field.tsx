@@ -76,7 +76,8 @@ function ReadOnlyKeys({ keys }: { keys: readonly string[] }) {
             {keys.map((key) => (
               <li
                 key={key}
-                className="rounded-full border border-border bg-surface-muted px-2.5 py-[5px] font-mono text-label text-foreground"
+                title={key}
+                className="max-w-full truncate rounded-full border border-border bg-surface-muted px-2.5 py-[5px] font-mono text-label text-foreground"
               >
                 {key}
               </li>

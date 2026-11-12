@@ -57,7 +57,7 @@ export function ScoresPanel({ configs, instructions, draft, work, lastItem }: Sc
     <Card
       role="region"
       aria-label="Scores"
-      className="flex w-full shrink-0 flex-col gap-4 p-5 sm:p-[22px] lg:w-[410px]"
+      className="flex w-full shrink-0 flex-col gap-4 p-5 sm:p-[22px] lg:w-[448px]"
     >
       {lastItem}
       <div className="flex items-center gap-2">

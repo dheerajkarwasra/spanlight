@@ -1,9 +1,10 @@
 import { Check, CircleAlert } from "lucide-react";
-import { useId } from "react";
+import { Fragment, useId } from "react";
 
 import { Input } from "@/components/ui/input";
 import type { ScoreConfig } from "@/lib/api";
-import { CATEGORY_LIMIT, configChipText, rangeText } from "@/lib/score-format";
+import { ScoreConfigChip } from "@/features/scores";
+import { CATEGORY_LIMIT, rangeText } from "@/lib/score-format";
 import { cn } from "@/lib/utils";
 
 import { KeyChip } from "./key-chip";
@@ -31,14 +32,15 @@ export function ScoreInput({ config, value, onChange, keyed, onFocusWithin }: Sc
 
   return (
     <div className="flex flex-col gap-2" onFocus={onFocusWithin}>
-      <div className="flex items-center gap-2">
-        <span id={`${id}-name`} className="text-sm font-semibold text-foreground">
-          {config.name}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span
+          id={`${id}-name`}
+          className="min-w-0 text-sm font-semibold [overflow-wrap:anywhere] text-foreground"
+        >
+          <Breakable text={config.name} />
         </span>
-        <span className="rounded-full border border-border-strong bg-surface px-[9px] py-[3px] text-2xs font-medium text-muted-foreground">
-          {configChipText(config)}
-        </span>
-        <span className="ml-auto flex items-center gap-1 text-xs font-semibold text-muted-foreground">
+        <ScoreConfigChip config={config} />
+        <span className="ml-auto flex shrink-0 items-center gap-1 text-xs font-semibold text-muted-foreground">
           {isSet ? <Check aria-hidden className="size-3 text-success" strokeWidth={2.5} /> : null}
           {isSet ? "Set" : "Required"}
         </span>
@@ -73,6 +75,16 @@ export function ScoreInput({ config, value, onChange, keyed, onFocusWithin }: Sc
   );
 }
 
+/** A long snake_case name wraps after a separator instead of mid-word. */
+function Breakable({ text }: { text: string }) {
+  return text.split(/(?<=[_\-./])/).map((part, index) => (
+    <Fragment key={index}>
+      {part}
+      <wbr />
+    </Fragment>
+  ));
+}
+
 interface ChoiceOptionsProps {
   config: ScoreConfig;
   choices: readonly string[];
@@ -91,7 +103,7 @@ function ChoiceOptions({
   labelledBy,
 }: ChoiceOptionsProps) {
   return (
-    <div role="group" aria-labelledby={labelledBy} className="flex flex-wrap gap-2">
+    <div role="group" aria-labelledby={labelledBy} className="grid grid-cols-2 gap-2">
       {choices.map((option, index) => {
         const picked = value === option;
         const key = index < 9 ? String(index + 1) : null;
@@ -104,15 +116,35 @@ function ChoiceOptions({
             data-score-option=""
             onClick={() => onChange(option)}
             className={cn(
-              "inline-flex h-11 items-center justify-center gap-2 rounded-input px-3 text-sm text-foreground transition-colors",
+              // One weight in both states: picking an option never reflows its name.
+              "flex min-h-11 min-w-0 items-center gap-1.5 rounded-input py-1.5 text-left text-sm font-medium text-foreground transition-colors",
               picked
-                ? "border-2 border-accent bg-surface-selected font-bold"
-                : "border border-border-strong bg-surface font-medium hover:bg-surface-hover",
+                ? "border-2 border-accent bg-surface-selected px-[9px]"
+                : "border border-border-strong bg-surface px-2.5 hover:bg-surface-hover",
             )}
           >
-            {optionLabel(config, option)}
-            {picked ? <Check aria-hidden className="size-3.5" strokeWidth={2.5} /> : null}
-            {key !== null ? <KeyChip className={cn(!keyed && "opacity-60")}>{key}</KeyChip> : null}
+            <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+              <Breakable text={optionLabel(config, option)} />
+            </span>
+            {/* The picked mark: the filled key chip, or a check where there is no chip. */}
+            {picked ? (
+              <Check
+                aria-hidden
+                className={cn("size-3.5 shrink-0", key !== null && "sm:hidden")}
+                strokeWidth={2.5}
+              />
+            ) : null}
+            {key !== null ? (
+              <KeyChip
+                className={cn(
+                  "hidden sm:inline-flex",
+                  picked && "border-accent bg-accent text-accent-foreground",
+                  !keyed && "opacity-60",
+                )}
+              >
+                {key}
+              </KeyChip>
+            ) : null}
           </button>
         );
       })}
@@ -132,6 +164,8 @@ function NumericField({ config, value, onChange, problem, labelledBy }: NumericF
   const id = useId();
   // The bounds as a hint inside the field; a number without bounds needs none.
   const range = config.min_value !== null || config.max_value !== null ? rangeText(config) : null;
+  // A long range ("-1000000 to 1000000") would sit on top of the typed value: it goes below.
+  const inlineRange = range !== null && range.length <= 12;
   const presets = quickValues(config);
   return (
     <>
@@ -145,9 +179,9 @@ function NumericField({ config, value, onChange, problem, labelledBy }: NumericF
           autoComplete="off"
           value={value ?? ""}
           onChange={(event) => onChange(event.target.value === "" ? null : event.target.value)}
-          className="pr-20 font-mono text-lg font-bold"
+          className={cn("font-mono text-lg font-bold", inlineRange && "pr-20")}
         />
-        {range === null ? null : (
+        {!inlineRange ? null : (
           <span
             aria-hidden
             className="pointer-events-none absolute top-1/2 right-3.5 -translate-y-1/2 text-xs font-medium text-muted-foreground"
@@ -156,6 +190,11 @@ function NumericField({ config, value, onChange, problem, labelledBy }: NumericF
           </span>
         )}
       </div>
+      {range === null || inlineRange ? null : (
+        <p aria-hidden className="text-xs font-medium text-muted-foreground">
+          {range}
+        </p>
+      )}
       {problem === null ? null : (
         <p
           id={`${id}-error`}

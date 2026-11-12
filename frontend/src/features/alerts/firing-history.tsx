@@ -83,6 +83,14 @@ export function FiringHistory({ rules }: { rules: readonly AlertRule[] | undefin
               Load older
             </Button>
           ) : null}
+          {query.isFetchNextPageError ? (
+            <ErrorState
+              compact
+              error={query.error}
+              title="Couldn't load older firings"
+              onRetry={() => void query.fetchNextPage()}
+            />
+          ) : null}
         </>
       ) : null}
     </SectionCard>

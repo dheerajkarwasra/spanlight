@@ -45,7 +45,7 @@ function SelectContent({
         position={position}
         sideOffset={4}
         className={cn(
-          "relative z-50 max-h-(--radix-select-content-available-height) min-w-(--radix-select-trigger-width) animate-scale-in overflow-hidden",
+          "relative z-50 max-h-(--radix-select-content-available-height) max-w-[calc(100vw-2rem)] min-w-(--radix-select-trigger-width) animate-scale-in overflow-hidden",
           "rounded-popover border border-border bg-surface shadow-lg",
           className,
         )}
@@ -76,7 +76,10 @@ function SelectItem({ className, children, leading, trailing, ...props }: Select
       {...props}
     >
       {leading}
-      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      {/* A long option ends in an ellipsis instead of widening the menu past the screen. */}
+      <span className="min-w-0 truncate">
+        <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      </span>
       {trailing}
       <SelectPrimitive.ItemIndicator className="absolute right-3 flex items-center">
         <Check className="size-4 text-muted-foreground" aria-hidden />

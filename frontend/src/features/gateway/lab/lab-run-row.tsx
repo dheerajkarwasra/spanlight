@@ -60,8 +60,13 @@ export function LabRunRow({ run }: { run: LabRun }) {
           {trace.name ?? "Unnamed call"}
         </span>
         {trace.environment ? (
-          <Badge variant="neutral" size="sm">
-            {trace.environment}
+          <Badge
+            variant="neutral"
+            size="sm"
+            title={trace.environment}
+            className="max-w-[50%] min-w-0 shrink"
+          >
+            <span className="truncate">{trace.environment}</span>
           </Badge>
         ) : null}
       </span>

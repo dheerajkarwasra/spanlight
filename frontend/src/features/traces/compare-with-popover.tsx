@@ -2,7 +2,6 @@ import { Link } from "@tanstack/react-router";
 import { GitCompareArrows } from "lucide-react";
 import { useId, useState } from "react";
 
-import { UnknownValue } from "@/components/unknown-value";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,6 +13,7 @@ import { formatDuration, formatRelativeTime, shortId } from "@/lib/format";
 import { PasteForm, type ThisTrace } from "./compare-paste-form";
 import { compareSearch } from "./search";
 import { usePreviousRunsQuery } from "./trace-queries";
+import { UnknownInLink } from "./trace-tiles";
 
 const LABEL = "Compare with…";
 
@@ -136,7 +136,7 @@ function RunList({ title, name, runs, thisId, children }: RunListProps) {
                 <span className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span className="tabular">
                     {formatDuration(run.duration_ms) ?? (
-                      <UnknownValue reason="Duration isn't known yet: the run hasn't ended." />
+                      <UnknownInLink reason="Duration isn't known yet: the run hasn't ended." />
                     )}
                   </span>
                   <span className="font-mono">{shortId(run.trace_id)}</span>

@@ -116,12 +116,17 @@ export function sessionColumns({
       cell: (session) =>
         session.input_tokens === null && session.output_tokens === null ? (
           <UnknownValue reason="No call in this session reported token usage" />
+        ) : session.input_tokens === null || session.output_tokens === null ? (
+          // One side unreported: the other side alone is not the total.
+          <UnknownValue
+            reason={`Total unknown: ${formatInteger(session.input_tokens) ?? "unreported"} input · ${formatInteger(session.output_tokens) ?? "unreported"} output`}
+          />
         ) : (
           <span
             title={`${formatInteger(session.input_tokens) ?? "—"} input · ${formatInteger(session.output_tokens) ?? "—"} output`}
             className="text-muted-foreground"
           >
-            {formatInteger((session.input_tokens ?? 0) + (session.output_tokens ?? 0))}
+            {formatInteger(session.input_tokens + session.output_tokens)}
           </span>
         ),
     },

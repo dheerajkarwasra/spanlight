@@ -102,7 +102,7 @@ export function PromotedKeysInput({
               {keys.map((key) => (
                 <li
                   key={key}
-                  className="flex items-center gap-1.5 rounded-full border border-border bg-surface-muted py-1 pr-1 pl-2.5 max-md:h-11 max-md:justify-between max-md:rounded-[12px] max-md:py-0 max-md:pr-0 max-md:pl-3"
+                  className="flex max-w-full min-w-0 items-center gap-1.5 rounded-full border border-border bg-surface-muted py-1 pr-1 pl-2.5 max-md:h-11 max-md:justify-between max-md:rounded-[12px] max-md:py-0 max-md:pr-0 max-md:pl-3"
                 >
                   <span className="truncate font-mono text-label text-foreground">{key}</span>
                   <button

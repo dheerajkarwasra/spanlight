@@ -13,6 +13,7 @@ export {
 } from "./failure-category";
 export { HasScoresToggle, ScoreFacet } from "./score-facet";
 export { CLEARED_SCORE_FILTER, scoreFilterText, type ScoreFilterParams } from "./score-filter";
+export { ScoreConfigChip } from "./score-config-chip";
 export { ScoreConfigsCard } from "./score-configs-card";
 export { ScoreSettingsLinks } from "./score-settings-links";
 export { ScoresCell } from "./scores-cell";

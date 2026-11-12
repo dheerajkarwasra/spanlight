@@ -5,7 +5,7 @@ import { useId } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectParams } from "@/features/shell";
 import type { ScoreConfig } from "@/lib/api";
-import { configChipText } from "@/lib/score-format";
+import { configChipSummary, configChipText } from "@/lib/score-format";
 import { cn } from "@/lib/utils";
 
 /** The backend's limit on scores per queue. */
@@ -70,11 +70,14 @@ export function ScoreConfigPicker({ configs, picked, onChange }: ScoreConfigPick
                     onChange={(event) => toggle(config.id, event.target.checked)}
                     className="size-4 shrink-0 rounded-checkbox accent-accent"
                   />
-                  <span className="flex-1 font-mono text-label font-semibold text-foreground">
+                  <span className="min-w-0 flex-1 font-mono text-label font-semibold [overflow-wrap:anywhere] text-foreground">
                     {config.name}
                   </span>
-                  <span className="text-right text-2xs font-medium text-muted-foreground">
-                    {configChipText(config)}
+                  <span
+                    title={configChipText(config)}
+                    className="shrink-0 text-right text-2xs font-medium text-muted-foreground"
+                  >
+                    {configChipSummary(config)}
                   </span>
                 </label>
               </li>

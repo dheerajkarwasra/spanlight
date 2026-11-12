@@ -79,7 +79,8 @@ export function ItemTable({ items, canWrite, onOpen }: ItemTableProps) {
             .map(([key, value]) => (
               <span
                 key={key}
-                className="shrink-0 rounded-full border border-border-strong px-2 py-0.5 font-mono text-2xs text-foreground"
+                title={metadataChip(key, value)}
+                className="min-w-0 truncate rounded-full border border-border-strong px-2 py-0.5 font-mono text-2xs text-foreground"
               >
                 {metadataChip(key, value)}
               </span>

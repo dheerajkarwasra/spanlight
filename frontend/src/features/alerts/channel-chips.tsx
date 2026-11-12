@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { KIND_ICONS } from "./channel-kinds";
 
 const CHIP_CLASSES =
-  "inline-flex h-6 max-w-full shrink-0 items-center gap-[5px] rounded-full border border-border bg-surface py-[3px] pr-[9px] pl-[7px] text-xs leading-[1.4] font-medium text-foreground";
+  "inline-flex h-6 max-w-full min-w-0 items-center gap-[5px] rounded-full border border-border bg-surface py-[3px] pr-[9px] pl-[7px] text-xs leading-[1.4] font-medium text-foreground";
 
 function Chip({ icon: Icon, children }: { icon?: LucideIcon; children: ReactNode }) {
   return (

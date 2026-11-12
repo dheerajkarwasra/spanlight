@@ -19,7 +19,7 @@ interface ExperimentHeaderProps {
 
 const LABEL = "text-xs font-medium text-muted-foreground";
 const CHIP =
-  "rounded-full border border-border-strong px-2.5 py-0.5 text-xs font-medium text-foreground";
+  "max-w-full truncate rounded-full border border-border-strong px-2.5 py-0.5 text-xs font-medium text-foreground";
 
 /** The detail page's title, what the experiment runs on and with, and its actions. */
 export function ExperimentHeader({
@@ -35,17 +35,17 @@ export function ExperimentHeader({
       <PageHeader title={experiment.name} actions={actions} />
       <dl className="flex flex-wrap items-center gap-x-2 gap-y-2">
         <dt className={LABEL}>Dataset</dt>
-        <dd className={`${CHIP} font-mono text-[11px]`}>
+        <dd className={`${CHIP} min-w-0 font-mono text-[11px]`}>
           {dataset
             ? `${dataset.name} · ${formatInteger(dataset.item_count)} items`
             : experiment.dataset_id.slice(0, 8)}
         </dd>
         <dt className={`${LABEL} ml-2`}>Target</dt>
-        <dd className="flex flex-wrap gap-2">
+        <dd className="flex min-w-0 flex-wrap gap-2">
           <TargetChips target={experiment.config.target} index={index} />
         </dd>
         <dt className={`${LABEL} ml-2`}>Scored by</dt>
-        <dd className="flex flex-wrap gap-2">
+        <dd className="flex min-w-0 flex-wrap gap-2">
           {scores.length === 0 ? (
             <span className={LABEL}>no evaluators</span>
           ) : (
