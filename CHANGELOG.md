@@ -11,7 +11,12 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 ### Fixed
 
+- **Users and aggregate repair keep their bounded index scans on PostgreSQL 17.12.** Live user totals no longer scan already-recomputed traces while finding each day's tail, and repair discovery streams the oldest pending hours instead of sorting the full backlog.
 - **A stuck final loss flush is always cancelled at shutdown.** When the database did not answer during shutdown, the last write of the telemetry loss counts could miss its cancellation by a few microseconds and keep the api or worker alive past `SHUTDOWN_TIMEOUT_SECONDS` until it was killed. The flush is now cancelled no later than its deadline, so the process logs `process.shutdown_incomplete` and exits on time.
+
+### Security
+
+- Update locked `dnspython` to 2.9.2 and `opentelemetry-api` to 1.45.2, with compatible OpenTelemetry SDK and instrumentation patches, addressing CVE-2026-128089 and CVE-2026-126360.
 
 ## [0.8.1] - 2026-11-11
 

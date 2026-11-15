@@ -38,6 +38,7 @@ _PAIRS = f"""
 # Walk rows of both tables oldest first, as the one-table scan did: a pair is offered at the age
 # of its oldest runnable row, and repair then settles every row of that hour. Ordering is only
 # priority; the attempted list keeps a pair from being offered twice in one pass.
+# Keep discovery ordered through the project lookup; flattening it can sort the whole backlog.
 _CANDIDATE = text(f"""
     SELECT h.project_id, h.bucket_hour, h.first_marked_at
     FROM (
@@ -46,7 +47,10 @@ _CANDIDATE = text(f"""
         UNION ALL
         SELECT project_id, bucket_hour, first_marked_at, pending_consumers
         FROM aggregate_dirty_shards
-    ) h JOIN projects p ON p.id = h.project_id
+    ) h CROSS JOIN LATERAL (
+        SELECT aggregate_history_unverified_before FROM projects WHERE id = h.project_id
+        OFFSET 0
+    ) p
     WHERE ({_RUNNABLE})
       AND NOT (h.project_id = ANY(CAST(:excluded AS uuid[])))
       AND NOT EXISTS (

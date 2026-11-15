@@ -21,7 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.window import TimeWindow
 from app.attribution.aggregate_sql import GroupKind, grouped_cte, money_sum, retry_cost_sum
 from app.end_users.days import midnight
-from app.end_users.queries import PENDING_CAP, pending_sql
+from app.end_users.queries import PENDING_CAP
+from app.end_users.tail_sql import pending_sql
 from app.rollups.compute import floor_hour
 from app.rollups.coverage_reads import CoverageState, read_covered
 from app.rollups.dirty import ATTRIBUTION

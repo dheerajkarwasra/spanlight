@@ -1,10 +1,11 @@
 """Candidate discovery streams oldest indexes and recovers from a failed fetch."""
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import psycopg
+import pytest
 from prometheus_client import REGISTRY
 from sqlalchemy import event, text
 
@@ -19,8 +20,10 @@ from tests.rollups.dirty_support import dirty_rows
 from tests.rollups.test_dirty_repair import repair
 
 
+@pytest.mark.parametrize("cursor_offset", [None, 4000])
 async def test_candidate_streams_oldest_indexes_without_grouping_or_sorting_backlog(
     session_factory: SessionFactory,
+    cursor_offset: int | None,
 ) -> None:
     hour = datetime(2026, 10, 20, 10, tzinfo=UTC)
     async with session_factory() as db:
@@ -62,9 +65,13 @@ async def test_candidate_streams_oldest_indexes_without_grouping_or_sorting_back
                 "excluded": [],
                 "attempt_projects": [],
                 "attempt_hours": [],
-                "cursor_age": None,
-                "cursor_project": None,
-                "cursor_hour": None,
+                "cursor_age": hour + timedelta(seconds=cursor_offset)
+                if cursor_offset is not None
+                else None,
+                "cursor_project": project if cursor_offset is not None else None,
+                "cursor_hour": hour + timedelta(hours=cursor_offset)
+                if cursor_offset is not None
+                else None,
             },
         )
         encoded = json.dumps(plan)
