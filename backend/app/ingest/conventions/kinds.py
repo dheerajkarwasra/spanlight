@@ -90,6 +90,16 @@ def traceloop_kind(value: Any) -> SpanKind:
     return _lookup(_TRACELOOP_KINDS, value, SpanKind.OTHER)
 
 
+def mcp_kind(method_name: Any, attributes: Mapping[str, Any]) -> SpanKind:
+    """Kind of an MCP OTLP span (`tools/call` -> tool, `resources/read` -> retrieval)."""
+    method = _normalize(method_name)
+    if method in ("tools/call", "call_tool") or "mcp.tool.name" in attributes:
+        return SpanKind.TOOL
+    if method in ("resources/read", "read_resource"):
+        return SpanKind.RETRIEVAL
+    return SpanKind.CHAIN
+
+
 def infer_kind(attributes: Mapping[str, Any], *, client_span: bool) -> SpanKind:
     """Kind of a span with no convention: ``http`` for a client span, ``retrieval`` via ``db.``."""
     keys = attributes.keys()

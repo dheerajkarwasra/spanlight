@@ -162,7 +162,7 @@ function judgeIssues(values: EvaluatorFormValues): Issue[] {
     issues.push({ path: "promptVersionId", message: "Pick one of your prompts and its version." });
   }
   if (values.credentialId === "") {
-    issues.push({ path: "credentialId", message: "Pick an Anthropic or OpenAI credential." });
+    issues.push({ path: "credentialId", message: "Pick a judge credential." });
   }
   if (values.model.trim() === "") {
     issues.push({ path: "model", message: "Enter the model the judge calls." });

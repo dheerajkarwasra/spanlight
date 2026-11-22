@@ -34,7 +34,7 @@ async def test_retry_rollback_retains_uncertainty_until_positive_duplicate_confi
     monkeypatch.setattr(recorder, "_writers", None)
     context = await gateway_context(keyed=False)
     writers = recorder._writers_for(context)
-    dialect = context.sessions.kw["bind"].sync_engine.dialect
+    dialect = context.write_sessions.kw["bind"].sync_engine.dialect
     real_commit = dialect.do_commit
     first_commit = True
     attempts = 0

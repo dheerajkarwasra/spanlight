@@ -30,6 +30,7 @@ const MAX_BACKOFF_MS = 30_000;
 
 export interface ExporterOptions {
   url: string;
+  scoresUrl?: string;
   apiKey: string;
   batchSize: number;
   flushIntervalMs: number;
@@ -42,6 +43,13 @@ export interface ExporterOptions {
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   /** A number in [0, 1) that randomizes backoff. Replaced in tests. */
   jitter?: () => number;
+}
+
+type ItemKind = "spans" | "scores";
+
+interface QueueItem {
+  kind: ItemKind;
+  payload: Payload;
 }
 
 export class Exporter {
@@ -59,7 +67,8 @@ export class Exporter {
   private readonly sleep: (ms: number, signal: AbortSignal) => Promise<void>;
   private readonly jitter: () => number;
   private readonly abort = new AbortController();
-  private queue: Payload[] = [];
+  private queue: QueueItem[] = [];
+  private scoresUnsupportedLogged = false;
   private timer: NodeJS.Timeout | undefined;
   private sending: Promise<void> | undefined;
   private closed = false;
@@ -78,6 +87,19 @@ export class Exporter {
 
   /** Enqueue one serialized span. Never blocks and never throws. */
   export(span: Payload): void {
+    this.enqueue("spans", span);
+  }
+
+  /** Enqueue one serialized score. Never blocks and never throws. */
+  exportScore(score: Payload): void {
+    if (!this.options.scoresUrl) {
+      log.debug("No score endpoint configured; dropping a score");
+      return;
+    }
+    this.enqueue("scores", score);
+  }
+
+  private enqueue(kind: ItemKind, payload: Payload): void {
     try {
       if (this.closed) return;
       if (this.queue.length >= this.options.maxQueue) {
@@ -87,11 +109,11 @@ export class Exporter {
           log.warn(`Spanlight queue is full (${this.options.maxQueue} spans); dropping the oldest`);
         }
       }
-      this.queue.push(span);
+      this.queue.push({ kind, payload });
       if (this.queue.length >= this.options.batchSize) this.kick();
       else this.schedule();
     } catch (error) {
-      log.debug("Failed to enqueue a span", error);
+      log.debug(`Failed to enqueue a ${kind.slice(0, -1)}`, error);
     }
   }
 
@@ -143,12 +165,21 @@ export class Exporter {
 
   private async drain(): Promise<void> {
     while (this.queue.length > 0) {
-      const batch = this.queue.splice(0, this.options.batchSize);
+      const head = this.queue[0];
+      if (head === undefined) break;
+      const firstKind = head.kind;
+      const batch: Payload[] = [];
+      while (batch.length < this.options.batchSize) {
+        const next = this.queue[0];
+        if (next === undefined || next.kind !== firstKind) break;
+        this.queue.shift();
+        batch.push(next.payload);
+      }
       try {
-        await this.send(batch);
+        await this.send(firstKind, batch);
       } catch (error) {
         this.failedCount += batch.length;
-        log.warn(`Unexpected error exporting ${batch.length} spans`, error);
+        log.warn(`Unexpected error exporting ${batch.length} ${firstKind}`, error);
       }
     }
   }
@@ -164,9 +195,13 @@ export class Exporter {
     };
   }
 
-  private async send(batch: Payload[]): Promise<void> {
+  private async send(kind: ItemKind, batch: Payload[]): Promise<void> {
     if (batch.length === 0) return;
-    const json = JSON.stringify({ spans: batch, client: this.counters() });
+    const url = kind === "scores" ? this.options.scoresUrl : this.options.url;
+    if (!url) return;
+    const envelope: Payload =
+      kind === "spans" ? { spans: batch, client: this.counters() } : { scores: batch };
+    const json = JSON.stringify(envelope);
     const body = this.options.gzip ? await gzip(json) : json;
 
     for (let attempt = 0; ; attempt += 1) {
@@ -177,7 +212,7 @@ export class Exporter {
       let failure: string;
       let retryAfterMs: number | undefined;
       try {
-        const response = await this.options.fetch(this.options.url, {
+        const response = await this.options.fetch(url, {
           method: "POST",
           headers: this.#headers,
           body,
@@ -185,20 +220,29 @@ export class Exporter {
         });
         const status = response.status;
         if (status >= 200 && status < 300) {
-          await this.handleSuccess(response, batch);
+          await this.handleSuccess(kind, response, batch);
           return;
         }
         if (status === 413 && batch.length > 1) {
           await response.body?.cancel();
           const middle = Math.floor(batch.length / 2);
-          await this.send(batch.slice(0, middle));
-          await this.send(batch.slice(middle));
+          await this.send(kind, batch.slice(0, middle));
+          await this.send(kind, batch.slice(middle));
           return;
         }
         if (status !== 429 && status < 500) {
           this.failedCount += batch.length;
+          if (kind === "scores" && status === 404) {
+            if (!this.scoresUnsupportedLogged) {
+              this.scoresUnsupportedLogged = true;
+              log.warn("This Spanlight server does not accept scores (HTTP 404); dropping them");
+            }
+            return;
+          }
           const text = (await response.text().catch(() => "")).slice(0, 500);
-          log.error(`Spanlight rejected a batch of ${batch.length} spans: HTTP ${status} ${text}`);
+          log.error(
+            `Spanlight rejected a batch of ${batch.length} ${kind}: HTTP ${status} ${text}`,
+          );
           return;
         }
         await response.body?.cancel();
@@ -213,7 +257,7 @@ export class Exporter {
 
       if (attempt >= this.options.maxRetries || this.abort.signal.aborted) {
         this.failedCount += batch.length;
-        log.warn(`Dropping ${batch.length} spans after ${attempt + 1} attempts (${failure})`);
+        log.warn(`Dropping ${batch.length} ${kind} after ${attempt + 1} attempts (${failure})`);
         return;
       }
       const delay = this.retryDelay(attempt, retryAfterMs);
@@ -222,7 +266,7 @@ export class Exporter {
     }
   }
 
-  private async handleSuccess(response: Response, batch: Payload[]): Promise<void> {
+  private async handleSuccess(kind: ItemKind, response: Response, batch: Payload[]): Promise<void> {
     let result: unknown;
     try {
       result = await response.json();
@@ -258,11 +302,14 @@ export class Exporter {
     this.sentCount += accepted;
     this.failedCount += rejected.length;
     if (rejected.length === 0) return;
-    log.warn(`Spanlight rejected ${rejected.length} of ${batch.length} spans`);
+    log.warn(`Spanlight rejected ${rejected.length} of ${batch.length} ${kind}`);
+    const idKey = kind === "scores" ? "id" : "span_id";
+    const singular = kind.slice(0, -1);
     for (const item of rejected.slice(0, MAX_LOGGED_REJECTIONS) as Payload[]) {
-      const spanId = typeof item.span_id === "string" ? item.span_id : "<unspecified>";
+      const rawId = item[idKey];
+      const itemId = typeof rawId === "string" ? rawId : "<unspecified>";
       const reason = typeof item.reason === "string" ? item.reason : "<unspecified>";
-      log.warn(`  span ${spanId} (index ${String(item.index)}): ${reason}`);
+      log.warn(`  ${singular} ${itemId} (index ${String(item.index)}): ${reason}`);
     }
   }
 

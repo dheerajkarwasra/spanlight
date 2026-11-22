@@ -24,8 +24,10 @@ export function RunEstimateLine({ estimate }: { estimate: RunEstimate }) {
             <>
               no price for <code className="font-mono">{first.model}</code>
             </>
-          ) : (
+          ) : first.reason === "no_max_tokens" ? (
             "no max tokens set"
+          ) : (
+            "provider cost unavailable before the call"
           )}
           )
         </p>

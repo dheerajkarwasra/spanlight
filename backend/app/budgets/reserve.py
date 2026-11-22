@@ -32,14 +32,17 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.budgets.compaction import HOUR
+from app.budgets.gemini import reserve_gemini
 from app.budgets.history import read_history
 from app.budgets.periods import next_reset, period_start
+from app.budgets.provider_bounds import provider_cost_ceiling, requires_provider_bound
 from app.budgets.types import BudgetPeriod, BudgetScope
 from app.core.ids import new_id
 from app.core.observability import BUDGET_RESERVE_PATH
 from app.db.models import BudgetBucketDelta, BudgetCounter, BudgetReservation, Span
 from app.db.rls import bind_project
 from app.evals.budget import failed_call_charge
+from app.gateway.provider_billing import NEW_TEXT_PROVIDERS
 from app.gateway.upstream_io import STREAM_TOTAL_TIMEOUT_S
 from app.pricing.cost import MAX_PRICED_TOKENS, PriceBook
 from app.pricing.tiers import normalize_tier
@@ -110,6 +113,11 @@ def _positive_int(value: Any) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
 
 
+def has_output_cap(body: Mapping[str, Any]) -> bool:
+    """Whether `body` sets a positive output token cap (`_OUTPUT_KEYS`)."""
+    return any(_positive_int(body.get(key)) is not None for key in _OUTPUT_KEYS)
+
+
 def output_tokens(body: Mapping[str, Any]) -> int:
     """The most output tokens the call may produce: the requested cap (or the fallback) times
     `n`."""
@@ -151,6 +159,39 @@ def estimate(
         and cost.cost_usd is not None
     ]
     return max(costs) if costs else None
+
+
+def estimate_with_clamp(
+    body: Mapping[str, Any],
+    model: str,
+    target_models: Sequence[str],
+    target_providers: Sequence[str | None],
+    prices: PriceBook,
+    *,
+    at: datetime,
+    native_gemini: bool,
+) -> tuple[Decimal | None, int | None]:
+    if native_gemini:
+        reservation = reserve_gemini(
+            body, target_models, prices, at=at, fallback_cap=OUTPUT_TOKENS_FALLBACK
+        )
+        return (reservation.usd, reservation.clamp) if reservation else (None, None)
+    targets = list(zip(target_providers, target_models, strict=False))
+    if requires_provider_bound(target_providers):
+        bounds: list[Decimal] = []
+        for provider, target in dict.fromkeys(targets):
+            if provider is None or provider not in NEW_TEXT_PROVIDERS:
+                return None, None
+            bound = provider_cost_ceiling(provider, target, body, prices, at)
+            if bound is None:
+                return None, None
+            bounds.append(bound)
+        return (max(bounds), None) if bounds else (None, None)
+    candidates = list(dict.fromkeys([(None, model), *targets]))
+    return (
+        estimate(body, candidates, prices, at=at),
+        None if has_output_cap(body) else OUTPUT_TOKENS_FALLBACK,
+    )
 
 
 _FAST = text("""
@@ -421,10 +462,21 @@ def _admission_hour(expires_at: datetime) -> datetime:
 
 
 def _may_have_billed(span: Mapping[str, Any]) -> bool:
-    """Whether the provider may have billed a call whose cost is unknown: it was sent at least
-    once and the last answer was not an HTTP error status (a timeout, a cut stream or a 200
-    without usage may have been)."""
+    """Whether the provider may have billed a call whose cost is unknown: any non-blocked
+    attempt did not end in an HTTP error status (timeouts, connection drops, cut streams, or a
+    200 without usage all count)."""
     attributes = span.get("attributes") or {}
+    flagged = attributes.get("spanlight.gateway.may_have_billed")
+    if isinstance(flagged, bool):
+        return flagged
+    attempt_log = attributes.get("spanlight.gateway.attempt_log")
+    if isinstance(attempt_log, list) and attempt_log:
+        return any(
+            isinstance(entry, Mapping)
+            and entry.get("error") != "blocked"
+            and not (isinstance(entry.get("status"), int) and entry["status"] >= 400)
+            for entry in attempt_log
+        )
     if not attributes.get("spanlight.gateway.attempts"):
         return False
     status = attributes.get("spanlight.gateway.upstream_status")

@@ -27,6 +27,7 @@ from app.db.rls import bind_project
 from app.insights.context import DetectorContext
 from app.insights.context_queries import load_context
 from app.insights.detectors import (
+    agent_ping_pong_loop,
     cache_opportunity,
     client_timeout_misconfigured,
     context_growth,
@@ -34,11 +35,15 @@ from app.insights.detectors import (
     error_spike,
     latency_regression,
     model_retiring,
+    prefix_cache_busted,
     provider_incident,
     rate_limit_pressure,
     retry_after_ignored,
     retry_storm,
+    subagent_fanout_storm,
+    tool_error_ignored,
     tool_loop,
+    tool_schema_hallucination,
     truncated_outputs,
     truncated_stream_accepted,
     unpriced_spend,
@@ -73,6 +78,11 @@ DETECTORS: tuple[Detector, ...] = (
     unpriced_spend.detector,
     provider_incident.detector,
     model_retiring.detector,
+    agent_ping_pong_loop.detector,
+    tool_error_ignored.detector,
+    tool_schema_hallucination.detector,
+    prefix_cache_busted.detector,
+    subagent_fanout_storm.detector,
 )
 """Every detector, in catalogue order."""
 

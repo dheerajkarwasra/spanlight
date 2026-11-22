@@ -5,7 +5,17 @@
 
 import type { User } from "./types";
 
-export type ProviderKind = "openai" | "anthropic" | "openai_compatible";
+export type ProviderKind =
+  | "openai"
+  | "anthropic"
+  | "gemini"
+  | "openai_compatible"
+  | "azure_openai"
+  | "mistral"
+  | "groq"
+  | "deepseek"
+  | "xai"
+  | "together";
 
 /* ---------- Credentials ---------- */
 

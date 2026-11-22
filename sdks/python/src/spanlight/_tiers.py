@@ -45,6 +45,12 @@ _CANONICAL_PROVIDER: dict[str, str] = {
     **dict.fromkeys(_GOOGLE_ALIASES, "google"),
     **dict.fromkeys(_ANTHROPIC_ALIASES, "anthropic"),
     **dict.fromkeys(_OPENAI_ALIASES, "openai"),
+    "mistralai": "mistral",
+    "grok": "xai",
+    "together_ai": "together",
+    "togetherai": "together",
+    "aws_bedrock": "bedrock",
+    "amazon_bedrock": "bedrock",
 }
 
 # A canonical tier name is accepted as is from every provider: the batch recorders set `batch`
@@ -58,6 +64,8 @@ _CANONICAL_TIER: dict[str, ServiceTier] = {
 # Provider spellings per the Bet 1 spec §7.2, after the canonical names.
 _PROVIDER_SPELLINGS: dict[str, dict[str, ServiceTier]] = {
     "anthropic": {"priority_on_demand": "priority", "flex_discount": "flex"},
+    "azure_openai": {"default": "standard"},
+    "xai": {"default": "standard", "fast": "priority"},
     "openai": {"default": "standard", "auto": "standard", "scale": "standard", "fast": "priority"},
 }
 

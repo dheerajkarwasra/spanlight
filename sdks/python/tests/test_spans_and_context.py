@@ -411,3 +411,11 @@ def test_a_200_kb_input_is_sent_whole_and_a_cut_attribute_flags_the_span(tracer,
     assert "truncated" not in by_name["rag"]
     assert len(by_name["long-attribute"]["attributes"]["note"]) < 40_000
     assert by_name["long-attribute"]["truncated"] is True
+
+
+def test_agent_span_kind_is_preserved(tracer, ingest):
+    with tracer.span("planner", kind="agent"):
+        pass
+
+    exported = flushed_spans(tracer, ingest)[0]
+    assert exported["kind"] == "agent"

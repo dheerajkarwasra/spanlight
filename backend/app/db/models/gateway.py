@@ -30,6 +30,13 @@ from app.db.models.base import Base, _pg_enum
 class ProviderKind(enum.StrEnum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
+    GEMINI = "gemini"
+    AZURE_OPENAI = "azure_openai"
+    MISTRAL = "mistral"
+    GROQ = "groq"
+    DEEPSEEK = "deepseek"
+    XAI = "xai"
+    TOGETHER = "together"
     # Any server that speaks the OpenAI API at a base URL of its own (vLLM, Ollama, a proxy).
     OPENAI_COMPATIBLE = "openai_compatible"
 
@@ -52,8 +59,8 @@ class ProviderCredential(Base):
     """An organization's API key for one provider, sealed with `app.core.crypto`.
 
     Scoped to the organization and not under row-level security: every query filters by
-    `org_id`. The migration's CHECK requires `base_url` for `openai_compatible` and forbids it
-    for the two fixed providers. `ciphertext` and `key_id` together are a `Sealed` value; the
+    `org_id`. The migration's CHECK requires `base_url` for `openai_compatible` and `azure_openai`
+    and forbids it for fixed hosts. `ciphertext` and `key_id` together are a `Sealed` value; the
     clear key is never stored and never returned by the API.
     """
 

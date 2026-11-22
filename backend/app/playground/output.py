@@ -4,6 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
+from app.db.models import ProviderKind
 from app.gateway.context import GatewayResult
 from app.gateway.errors import Surface
 from app.gateway.response_summary import summarize_response
@@ -18,22 +19,41 @@ MAX_ERROR_CHARS = 500
 
 
 def output_text(output: dict[str, Any] | None) -> str | None:
-    """The assistant's text from a span-shaped `output` (a chat message or Anthropic content)."""
+    """The assistant's visible text from a gateway response summary."""
     if output is None:
         return None
     content = output.get("content")
     if isinstance(content, str):
         return content.strip() or None
-    if not isinstance(content, list):
-        return None
-    parts = [
-        block["text"]
-        for block in content
-        if isinstance(block, dict)
-        and block.get("type") == "text"
-        and isinstance(block.get("text"), str)
-    ]
-    return "".join(parts).strip() or None
+    if isinstance(content, list):
+        return _text_parts(content, "text").strip() or None
+    parts = output.get("parts")
+    if isinstance(parts, list):
+        return _text_parts(parts, None).strip() or None
+    items = output.get("output")
+    if isinstance(items, list):
+        return (
+            "".join(
+                _text_parts(item["content"], "output_text")
+                for item in items
+                if isinstance(item, dict)
+                and item.get("type") == "message"
+                and isinstance(item.get("content"), list)
+            ).strip()
+            or None
+        )
+    return None
+
+
+def _text_parts(parts: list[Any], kind: str | None) -> str:
+    return "".join(
+        part["text"]
+        for part in parts
+        if isinstance(part, dict)
+        and part.get("type") == kind
+        and part.get("thought") is not True
+        and isinstance(part.get("text"), str)
+    )
 
 
 def error_text(result: GatewayResult) -> str | None:
@@ -69,7 +89,7 @@ def result_of(
     return PlaygroundResult(
         output=output,
         usage=result.usage,
-        cost_usd=_cost(prices, provider, result.model or model, result.usage, at),
+        cost_usd=usage_cost(prices, provider, result.model or model, result.usage, at),
         latency_ms=latency_ms,
         ttft_ms=None,
         trace_id=result.trace_id,
@@ -78,10 +98,15 @@ def result_of(
     )
 
 
-def _cost(
+def usage_cost(
     prices: PriceBook, provider: str, model: str, usage: Usage | None, at: datetime
 ) -> Decimal | None:
-    if usage is None:
+    if (
+        usage is None
+        or provider == ProviderKind.DEEPSEEK
+        or usage.unpriced_dimensions
+        or usage.service_tier_raw is not None
+    ):
         return None
     priced = prices.cost(
         provider=provider,

@@ -11,18 +11,14 @@ from dataclasses import dataclass
 from typing import Literal
 from uuid import UUID
 
-from app.db.models.gateway import ProviderCredential, ProviderKind
+from app.db.models.gateway import ProviderCredential
+from app.gateway.adapters import supports_surface
 from app.gateway.errors import Surface, no_compatible_target
 from app.gateway.route_config import FallbackCondition, RouteConfig, Target
+from app.gateway.translation import upstream_surface
 
 # A retry must leave this much of the budget for the attempt itself.
 _RETRY_HEADROOM_S = 1.0
-
-_SERVED_BY: dict[ProviderKind, frozenset[Surface]] = {
-    ProviderKind.OPENAI: frozenset({"chat_completions", "responses"}),
-    ProviderKind.OPENAI_COMPATIBLE: frozenset({"chat_completions", "responses"}),
-    ProviderKind.ANTHROPIC: frozenset({"messages"}),
-}
 
 
 @dataclass(frozen=True)
@@ -56,19 +52,23 @@ def compatible_targets(
     surface: Surface,
     credentials: Mapping[UUID, ProviderCredential],
     route_name: str = "",
+    *,
+    translate: bool = False,
 ) -> list[int]:
     """Indices of the targets that can serve `surface`, in config order.
 
-    There is no translation between provider formats, so an OpenAI-shaped surface only reaches
-    OpenAI-style credentials and `messages` only reaches Anthropic ones. `models` is listed per
-    envelope by the caller, so every target counts. A target whose credential is missing from
-    `credentials` is skipped.
+    Without `translate=True` there is no cross-provider translation, so an OpenAI-shaped surface
+    only reaches OpenAI/Gemini/compatible credentials and `messages` only reaches Anthropic.
+    When `translate=True`, `chat_completions` and `messages` can fail over across both families.
     """
     indices = [
         index
         for index, target in enumerate(route.targets)
         if (credential := credentials.get(target.credential_id)) is not None
-        and (surface == "models" or surface in _SERVED_BY[credential.provider])
+        and supports_surface(
+            credential.provider,
+            upstream_surface(surface, credential.provider) if translate else surface,
+        )
     ]
     if not indices:
         raise no_compatible_target(route_name, surface)

@@ -7,6 +7,7 @@ import { FormField } from "@/components/form-field";
 import { Notice } from "@/components/notice";
 import { SectionCard } from "@/components/section-card";
 import { Input } from "@/components/ui/input";
+import { modelSuggestions } from "@/features/playground";
 import type { Credential, ProviderKind } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -22,11 +23,19 @@ import { JudgePromptField } from "./judge-prompt-field";
 const INJECTION_NOTE =
   "The judged text is passed to the model as data, but a model can still be steered by it. Treat scores as a signal, not proof.";
 
-/** A judge calls one of the two fixed providers (spec §8.1). */
+/** Matches the API's supported judge credential kinds. */
 const JUDGE_PROVIDERS: Partial<Record<ProviderKind, string>> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
+  gemini: "Google Gemini",
 };
+
+// The Gemini admission profiles in backend/app/budgets/gemini.py.
+const BOUNDED_GEMINI_MODELS = new Set([
+  "gemini-2.5-flash-lite",
+  "gemini-3.5-flash-lite",
+  "gemini-3.8-flash",
+]);
 
 function credentialOptions(credentials: readonly Credential[]) {
   return credentials.flatMap((credential) => {
@@ -45,9 +54,11 @@ export function JudgeFields({ form }: { form: UseFormReturn<EvaluatorFormValues>
   const credentials = useCredentialsQuery().data ?? [];
   const provider = credentials.find((credential) => credential.id === credentialId)?.provider;
   const prices = usePricesQuery().data ?? [];
-  const models = [
-    ...new Set(prices.filter((price) => price.provider === provider).map((p) => p.model_pattern)),
-  ];
+  const suggestions = modelSuggestions(prices, provider ?? null);
+  const models =
+    provider === "gemini"
+      ? suggestions.filter((model) => BOUNDED_GEMINI_MODELS.has(model))
+      : suggestions;
   const modelListId = useId();
   const [advanced, setAdvanced] = useState(temperature !== "");
   const advancedId = useId();
@@ -75,12 +86,16 @@ export function JudgeFields({ form }: { form: UseFormReturn<EvaluatorFormValues>
             </FormField>
           )}
         />
-        <FormField label="Model" error={errors.model?.message}>
+        <FormField
+          label="Model"
+          error={errors.model?.message}
+          hint={provider === "gemini" ? "Use a model with a supported cost ceiling." : undefined}
+        >
           <Input
             list={modelListId}
             autoComplete="off"
             spellCheck={false}
-            placeholder="claude-haiku-5-5"
+            placeholder={models[0] ?? "Enter a model ID"}
             className="font-mono text-[13px]"
             {...form.register("model")}
           />

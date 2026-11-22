@@ -29,6 +29,7 @@ anthropic = ["anthropic>=0.40"]
 [dependency-groups]
 dev = [
     "anthropic>=0.40",
+    "google-genai>=2.6,<4",
     "mypy>=1.13",
     "openai>=1.66",
     "pytest>=8.3",

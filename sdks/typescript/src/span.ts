@@ -10,10 +10,11 @@
 import { randomBytes } from "node:crypto";
 
 import { log } from "./log.js";
+import { mergeMetadata } from "./metadata.js";
 import { toJsonable } from "./serialize.js";
 import { MAX_RAW_TIER_LENGTH, normalizeTier, type ServiceTier } from "./tiers.js";
 
-export type SpanKind = "llm" | "tool" | "retrieval" | "chain" | "http" | "other";
+export type SpanKind = "llm" | "tool" | "retrieval" | "chain" | "agent" | "http" | "other";
 export type SpanStatus = "ok" | "error" | "unset";
 export type Payload = Record<string, unknown>;
 
@@ -33,7 +34,17 @@ export interface Usage {
   webSearchRequests?: number;
 }
 
-const KINDS: ReadonlySet<string> = new Set(["llm", "tool", "retrieval", "chain", "http", "other"]);
+const KINDS: ReadonlySet<string> = new Set([
+  "llm",
+  "tool",
+  "retrieval",
+  "chain",
+  "agent",
+  "http",
+  "other",
+]);
+const MAX_COUNT = 2_000_000_000;
+const MAX_WEB_SEARCH_REQUESTS = 100_000;
 const MAX_STATUS_MESSAGE = 2_000;
 const MAX_FINISH_REASON = 64;
 
@@ -88,6 +99,7 @@ export class TraceState {
   userId: string | undefined;
   sessionId: string | undefined;
   readonly tags: string[] = [];
+  metadata: Record<string, string> = {};
 
   constructor(
     /** The root span's name until `updateTrace({ name })` sets another. */
@@ -96,8 +108,12 @@ export class TraceState {
     readonly release: string | undefined,
   ) {}
 
+  setMetadata(incoming: Record<string, string>): void {
+    this.metadata = mergeMetadata(this.metadata, incoming);
+  }
+
   toPayload(): Payload {
-    return {
+    const payload: Payload = {
       name: this.name ?? null,
       environment: this.environment ?? null,
       release: this.release ?? null,
@@ -105,6 +121,8 @@ export class TraceState {
       session_id: this.sessionId ?? null,
       tags: [...this.tags],
     };
+    if (Object.keys(this.metadata).length > 0) payload.metadata = { ...this.metadata };
+    return payload;
   }
 }
 
@@ -127,6 +145,8 @@ export class Span {
   webSearchRequests: number | undefined;
   timeToFirstTokenMs: number | undefined;
   finishReason: string | undefined;
+  requestHash: string | undefined;
+  promptVersionId: string | undefined;
   input: unknown = null;
   output: unknown = null;
   readonly attributes: Record<string, unknown> = {};
@@ -190,7 +210,16 @@ export class Span {
     if (!this.mutable) return;
     for (const [field] of COUNT_FIELDS) this.setCount(field, usage[field]);
     if (typeof usage.serviceTier === "string") this.setServiceTier(usage.serviceTier);
-    if (isCount(usage.webSearchRequests)) this.webSearchRequests = usage.webSearchRequests;
+    if (
+      typeof usage.webSearchRequests === "number" &&
+      Number.isSafeInteger(usage.webSearchRequests) &&
+      usage.webSearchRequests >= 0 &&
+      usage.webSearchRequests <= MAX_WEB_SEARCH_REQUESTS
+    ) {
+      this.webSearchRequests = usage.webSearchRequests;
+    } else if (usage.webSearchRequests !== undefined) {
+      log.debug(`Ignoring invalid webSearchRequests ${String(usage.webSearchRequests)}`);
+    }
   }
 
   /** Forget the output count: a stream cut before its final usage has none worth trusting. */
@@ -203,6 +232,18 @@ export class Span {
     if (this.mutable && typeof reason === "string" && reason) {
       this.finishReason = reason.slice(0, MAX_FINISH_REASON);
     }
+  }
+
+  /** Attach the canonical 32-hex SHA-256 request hash of the model prompt/parameters. */
+  setRequestHash(hash: string | undefined): void {
+    if (this.mutable && typeof hash === "string" && hash.length === 32) {
+      this.requestHash = hash;
+    }
+  }
+
+  /** Link this span to a Spanlight prompt version UUID. */
+  setPromptVersion(versionId: string | undefined): void {
+    if (this.mutable) this.promptVersionId = versionId || undefined;
   }
 
   /** Record time-to-first-token as now; only the first call counts. */
@@ -255,11 +296,13 @@ export class Span {
       usage: this.usagePayload(),
       time_to_first_token_ms: this.timeToFirstTokenMs ?? null,
       finish_reason: this.finishReason ?? null,
+      request_hash: this.requestHash ?? null,
       input: this.input,
       output: this.output,
       attributes: { ...this.attributes },
       trace: this.trace.toPayload(),
     };
+    if (this.promptVersionId !== undefined) payload.prompt_version_id = this.promptVersionId;
     if (this.inputCut || this.outputCut) payload.truncated = true;
     return payload;
   }
@@ -297,5 +340,7 @@ export class Span {
 }
 
 function isCount(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+  return (
+    typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= MAX_COUNT
+  );
 }

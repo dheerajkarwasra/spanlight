@@ -9,8 +9,10 @@ are therefore traced too.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypeVar
+from urllib.parse import urlsplit
 
 from .._span import Span
 from ._common import (
@@ -46,6 +48,16 @@ ClientT = TypeVar("ClientT")
 
 # Azure clients, recognised by class name so the module never imports `openai` at load time.
 _AZURE_CLIENTS = frozenset({"AzureOpenAI", "AsyncAzureOpenAI"})
+_AZURE_HOST = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.openai\.azure\.com")
+_PROVIDER_HOSTS = {
+    "generativelanguage.googleapis.com": "google",
+    "api.mistral.ai": "mistral",
+    "api.groq.com": "groq",
+    "api.deepseek.com": "deepseek",
+    "api.x.ai": "xai",
+    "api.together.ai": "together",
+    "api.together.xyz": "together",
+}
 
 
 def wrap_openai(
@@ -62,33 +74,39 @@ def wrap_openai(
     Args:
         client: The OpenAI client to instrument.
         spanlight: Spanlight client to report to; defaults to the global client at call time.
-        provider: Provider name recorded on spans. Defaults to ``"azure_openai"`` for an
-            ``AzureOpenAI``/``AsyncAzureOpenAI`` client (Azure bills its own rates, so the server
-            does not price it at OpenAI's) and ``"openai"`` otherwise. Override it when pointing
-            the OpenAI SDK at a compatible API (e.g. ``"openrouter"``).
+        provider: Provider name recorded on spans. Overrides attribution from the client type
+            or base URL.
 
     Returns:
         The same client object, for convenient chaining.
     """
     try:
-        _instrument(client, spanlight, provider or _default_provider(client))
+        _instrument(client, spanlight, provider)
     except Exception:
         logger.warning("Spanlight: could not instrument OpenAI client", exc_info=True)
     return client
 
 
 def _default_provider(client: object) -> str:
-    """``azure_openai`` for an Azure client or a subclass of one, ``openai`` otherwise."""
-    is_azure = any(cls.__name__ in _AZURE_CLIENTS for cls in type(client).__mro__)
-    return "azure_openai" if is_azure else "openai"
+    """Recognize Azure clients and known provider hostnames."""
+    if any(cls.__name__ in _AZURE_CLIENTS for cls in type(client).__mro__):
+        return "azure_openai"
+    try:
+        host = (urlsplit(str(getattr(client, "base_url", ""))).hostname or "").removesuffix(".")
+    except ValueError:
+        return "openai"
+    if _AZURE_HOST.fullmatch(host):
+        return "azure_openai"
+    return _PROVIDER_HOSTS.get(host, "openai")
 
 
-def _instrument(client: Any, spanlight: Spanlight | None, provider: str) -> None:
+def _instrument(client: Any, spanlight: Spanlight | None, override: str | None) -> None:
     from openai import AsyncStream, Stream
     from openai.resources.chat.completions import AsyncCompletions
     from openai.resources.responses import AsyncResponses
 
     get_client = client_getter(spanlight)
+    provider = override or _default_provider(client)
     stream_types = (Stream, AsyncStream)
     regional = regional_endpoint(client)
     endpoints: list[tuple[Any, Endpoint]] = [
@@ -100,7 +118,7 @@ def _instrument(client: Any, spanlight: Spanlight | None, provider: str) -> None
         _patch_create(
             resource, endpoint, get_client, is_async=isinstance(resource, async_resources)
         )
-    patch_copies(client, lambda copy: wrap_openai(copy, spanlight=spanlight, provider=provider))
+    patch_copies(client, lambda copy: wrap_openai(copy, spanlight=spanlight, provider=override))
 
 
 def _patch_create(

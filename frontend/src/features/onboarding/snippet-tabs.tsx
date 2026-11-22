@@ -36,7 +36,7 @@ export function SnippetTabs({ apiKey, value, onValueChange, orgId, projectId }: 
       }}
       className="flex min-w-0 flex-col"
     >
-      <TabsList aria-label="Integration method" className="self-start">
+      <TabsList aria-label="Integration method" className="flex-wrap self-start rounded-tile">
         {snippets.map((snippet) => (
           <TabsTrigger key={snippet.id} value={snippet.id}>
             {snippet.label}

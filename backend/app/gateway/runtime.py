@@ -58,6 +58,7 @@ class GatewayRuntime:
     sessions: async_sessionmaker[AsyncSession]
     settings: Settings
     recorder: SpanRecorder
+    recorder_sessions: async_sessionmaker[AsyncSession] | None = None
 
 
 def build_runtime(
@@ -66,12 +67,14 @@ def build_runtime(
     *,
     http: httpx.AsyncClient,
     rate_limit_sessions: async_sessionmaker[AsyncSession],
+    recorder_sessions: async_sessionmaker[AsyncSession] | None = None,
 ) -> GatewayRuntime:
     """The runtime over an already built client and session factories.
 
     `rate_limit_sessions` is the rate-limit pool (`app.core.ratelimit`), so a burst of limited
-    calls cannot take the connections the calls themselves need. The guard reads the evaluated
-    state of the project's `block` budgets (`app.budgets.guard`).
+    calls cannot take the connections the calls themselves need. `recorder_sessions` isolates
+    background span writes from foreground requests. The guard reads the evaluated state of the
+    project's `block` budgets (`app.budgets.guard`).
     """
     return GatewayRuntime(
         http=http,
@@ -81,6 +84,7 @@ def build_runtime(
         sessions=sessions,
         settings=settings,
         recorder=BackgroundRecorder(),
+        recorder_sessions=recorder_sessions,
     )
 
 

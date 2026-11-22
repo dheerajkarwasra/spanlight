@@ -27,7 +27,16 @@ from ._span import Span, SpanKind, SpanStatus
 from ._templates import InvalidTemplateError, MissingVariablesError, TemplateTooLargeError
 from ._version import __version__
 from .integrations._openai_batch import record_openai_batch_output
+from .integrations.agents import (
+    SpanlightCallbackHandler,
+    SpanlightTracingProcessor,
+    instrument_langgraph,
+    instrument_mcp,
+    instrument_openai_agents,
+    instrument_pydantic_ai,
+)
 from .integrations.anthropic import wrap_anthropic
+from .integrations.google_genai import wrap_google_genai
 from .integrations.openai import wrap_openai
 
 __all__ = [
@@ -42,6 +51,8 @@ __all__ = [
     "SpanKind",
     "SpanStatus",
     "Spanlight",
+    "SpanlightCallbackHandler",
+    "SpanlightTracingProcessor",
     "TemplateTooLargeError",
     "__version__",
     "continue_trace",
@@ -51,6 +62,10 @@ __all__ = [
     "get_current_trace_id",
     "init",
     "inject",
+    "instrument_langgraph",
+    "instrument_mcp",
+    "instrument_openai_agents",
+    "instrument_pydantic_ai",
     "no_prompt",
     "observe",
     "prompts",
@@ -60,5 +75,6 @@ __all__ = [
     "span",
     "update_trace",
     "wrap_anthropic",
+    "wrap_google_genai",
     "wrap_openai",
 ]

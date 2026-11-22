@@ -19,6 +19,7 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.budgets.reserve import settle
+from app.budgets.run_guard import settle_run
 from app.db.models import GatewayKey, ProviderCredential, Span
 from app.db.rls import bind_project
 from app.gateway.context import GatewayContext
@@ -47,7 +48,7 @@ async def write_span(
     """
     evidence = evidence if evidence is not None else WriteEvidence()
     earlier_unacknowledged = evidence.unacknowledged_commit
-    async with context.sessions() as db:
+    async with context.write_sessions() as db:
         async with db.begin():
             if retry and await _already_stored(db, context.project_id, span):
                 evidence.stored = True
@@ -63,6 +64,7 @@ async def write_span(
             await _touch_credentials(db, context, credential_ids, now)
             # Last: the budget's counter row is the hottest lock of the transaction.
             await settle(db, context.project_id, span, now)
+            await settle_run(db, context.project_id, span, now)
             # An exception leaving the transaction cannot prove whether COMMIT took effect.
             evidence.unacknowledged_commit = True
         if outcome.accepted:

@@ -11,7 +11,9 @@
 
 import { getClient } from "../client.js";
 import { log, safely } from "../log.js";
+import { requestHash } from "../request_hash.js";
 import type { Span } from "../span.js";
+import { providerRequestId, recordResponseDetails } from "./provider_errors.js";
 
 export type Obj = Record<string, unknown>;
 
@@ -64,11 +66,21 @@ export function patchCreate(resource: unknown, endpoint: Endpoint): void {
   const original = target.create;
   if (typeof original !== "function" || (original as { [WRAPPED]?: boolean })[WRAPPED]) return;
   const create = function (this: unknown, ...args: unknown[]): unknown {
-    const span = startLlmSpan(endpoint, args[0]);
-    if (span === undefined) return original.apply(this, args);
+    const first = args[0];
+    let forwardArgs = args;
+    let promptVersionId: string | undefined;
+    if (first !== null && typeof first === "object" && "spanlightPrompt" in first) {
+      const { spanlightPrompt, ...rest } = first as Record<string, unknown>;
+      forwardArgs = [rest, ...args.slice(1)];
+      const versionId = (spanlightPrompt as { promptVersionId?: unknown } | undefined)
+        ?.promptVersionId;
+      if (typeof versionId === "string" && versionId) promptVersionId = versionId;
+    }
+    const span = startLlmSpan(endpoint, forwardArgs[0], promptVersionId);
+    if (span === undefined) return original.apply(this, forwardArgs);
     let result: unknown;
     try {
-      result = original.apply(this, args);
+      result = original.apply(this, forwardArgs);
     } catch (error) {
       finishWithError(span, error);
       throw error;
@@ -80,7 +92,11 @@ export function patchCreate(resource: unknown, endpoint: Endpoint): void {
   target.create = create;
 }
 
-function startLlmSpan(endpoint: Endpoint, body: unknown): Span | undefined {
+export function startLlmSpan(
+  endpoint: Pick<Endpoint, "provider" | "operation" | "requestAttributes">,
+  body: unknown,
+  explicitPromptVersionId?: string,
+): Span | undefined {
   try {
     const client = getClient();
     if (!client.enabled || body === null || typeof body !== "object") return undefined;
@@ -91,7 +107,9 @@ function startLlmSpan(endpoint: Endpoint, body: unknown): Span | undefined {
       "llm",
     );
     span.setModel(model, endpoint.provider);
+    if (explicitPromptVersionId !== undefined) span.setPromptVersion(explicitPromptVersionId);
     span.setInput(request);
+    span.setRequestHash(requestHash(model, request));
     if (request.stream === true) span.setAttribute("request.stream", true);
     const modifier = pricingModifierUnknown(request);
     if (modifier !== undefined) span.setAttribute("usage.pricing_modifier_unknown", modifier);
@@ -203,7 +221,8 @@ export function finishWithError(span: Span, error: unknown): void {
     span.recordError(error);
     const status = asInt(get(error, "status"));
     if (status !== undefined) span.setAttribute("http.status_code", status);
-    const requestId = asStr(get(error, "requestID"));
+    recordResponseDetails(span, error);
+    const requestId = providerRequestId(error);
     if (requestId) span.setAttribute("provider.request_id", requestId);
     // A call that failed before any usage came back was priced at no rate, so it names no modifier.
     if (span.inputTokens === undefined) delete span.attributes["usage.pricing_modifier_unknown"];

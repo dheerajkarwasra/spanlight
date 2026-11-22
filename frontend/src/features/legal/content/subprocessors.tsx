@@ -40,9 +40,9 @@ export function SubprocessorsPage() {
           </li>
           <li>
             <span className="text-foreground">Anthropic</span> receives the public demo&apos;s fixed
-            sample questions, sent on our own API key. No customer data is sent. &ldquo;Explain with
-            Claude&rdquo; runs on your organisation&apos;s own provider key, under your own
-            agreement with that provider.
+            sample questions, sent on our own API key. No customer data is sent by the demo.
+            &ldquo;Explain with AI&rdquo; runs on your organisation&apos;s own provider key, under
+            your own agreement with the configured explanation provider.
           </li>
         </LegalList>
       </LegalSection>

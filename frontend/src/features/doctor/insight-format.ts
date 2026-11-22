@@ -48,6 +48,11 @@ const KIND_LABELS: Record<string, string> = {
   unpriced_spend: "Unpriced spend",
   provider_incident: "Provider incident",
   model_retiring: "Model retiring",
+  agent_ping_pong_loop: "Agent ping-pong loop",
+  tool_error_ignored: "Tool error ignored",
+  tool_schema_hallucination: "Tool schema hallucination",
+  prefix_cache_busted: "Prompt prefix cache busted",
+  subagent_fanout_storm: "Sub-agent fan-out storm",
 };
 
 export const INSIGHT_KINDS: readonly string[] = Object.keys(KIND_LABELS);

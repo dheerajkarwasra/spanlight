@@ -171,7 +171,7 @@ async def test_the_sources_block_carries_each_feeds_poll_state(
 
     assert body["polling"] == "enabled"
     sources = {source["provider"]: source for source in body["sources"]}
-    assert set(sources) == {"anthropic", "google", "openai"}
+    assert set(sources) == {"anthropic", "google", "groq", "mistral", "openai"}
     assert all(set(source) == SOURCE_FIELDS for source in body["sources"])
     assert sources["anthropic"] == {
         "provider": "anthropic",
@@ -198,3 +198,21 @@ async def test_the_route_counts_one_use(incidents_path: tuple[Browser, str]) -> 
     used = metric_delta(FEATURE_USED, feature="provider_incidents")
     assert (await browser.get(path)).status_code == 200
     assert used.value == 1
+
+
+@pytest.mark.parametrize("provider", ["mistral", "groq"])
+async def test_expanded_provider_filter(
+    provider: str,
+    incidents_path: tuple[Browser, str],
+    session_factory: SessionFactory,
+    now: datetime,
+) -> None:
+    browser, path = incidents_path
+    start = now - timedelta(hours=2)
+    matched = await seed_incident(session_factory, provider, start, provider=provider)
+    await seed_incident(session_factory, "openai", start)
+
+    response = await browser.get(path, params=window(start, now, provider=provider))
+
+    assert response.status_code == 200, response.text
+    assert [item["id"] for item in response.json()["items"]] == [matched]

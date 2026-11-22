@@ -25,7 +25,7 @@ const SNAPSHOT_SUFFIX = /^-([0-9]{8}|[0-9]{4}-[0-9]{2}-[0-9]{2}|latest)$/;
 /** Rates and costs as integers of 10^-SCALE, so sums are exact. */
 const SCALE = 18;
 
-export type UnknownReason = "no_price" | "no_max_tokens";
+export type UnknownReason = "no_price" | "no_max_tokens" | "unbounded_provider";
 export type ColumnEstimate = { usd: string } | { unknown: UnknownReason; model: string };
 export type RunEstimate =
   { usd: string } | { unknown: { column: number; reason: UnknownReason; model: string }[] };
@@ -74,7 +74,9 @@ export function pickPrice(
       Date.parse(price.effective_from) > at.getTime() ||
       price.min_prompt_tokens > inputTokens ||
       (provider !== null && price.provider !== provider) ||
-      !matchesModel(price.model_pattern, model)
+      !(provider === "azure_openai"
+        ? price.model_pattern === model
+        : matchesModel(price.model_pattern, model))
     ) {
       continue;
     }
@@ -130,6 +132,9 @@ function columnCost(
   at: Date,
 ): bigint | { unknown: UnknownReason; model: string } {
   const model = column.model.trim();
+  if (provider === "gemini" || provider === "xai" || provider === "deepseek") {
+    return { unknown: "unbounded_provider", model };
+  }
   const inputTokens = estimateTokens(inputText(column));
   const price = provider === null ? null : pickPrice(prices, provider, model, inputTokens, at);
   const inputRate = price ? toScaled(price.input_per_mtok) : null;

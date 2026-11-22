@@ -10,6 +10,7 @@ from pydantic import Field, SecretStr, ValidationInfo, field_validator, model_va
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from app.core.crypto import parse_keyring
+from app.db.models.gateway import ProviderKind
 from app.ee.license import parse_license
 
 DEV_SECRET_KEY = "dev-only-insecure-secret-key-change-me"  # noqa: S105 - documented dev default
@@ -188,6 +189,9 @@ class Settings(BaseSettings):
     # budget must fit one full-size body.
     gateway_max_in_flight_bytes: int = Field(default=83_886_080, ge=10_485_760)
     gateway_max_in_flight_per_key: int = Field(default=256, ge=1)
+    # Pre-auth per-key/per-IP token-bucket flood shedding (0 disables pre-auth rate capping).
+    gateway_preauth_rps_per_key: float = Field(default=200.0, ge=0)
+    gateway_preauth_burst_per_key: int = Field(default=400, ge=0)
     # Whether provider credentials may point at `http://` base URLs and at private, loopback or
     # link-local addresses. Off, a base URL must be `https://` and resolve only to public
     # addresses, so a credential cannot turn the gateway into a way into the private network.
@@ -210,6 +214,10 @@ class Settings(BaseSettings):
     gateway_record_concurrency: int = Field(default=8, ge=1, le=REQUEST_POOL_SIZE)
     gateway_record_backlog: int = Field(default=5000, ge=1, le=100_000)
     gateway_record_backlog_mb: int = Field(default=128, ge=1, le=65_536)
+    # Dedicated pool for GatewayRecorder background span writes so telemetry spikes never exhaust
+    # foreground request connections.
+    recorder_pool_size: int = Field(default=8, ge=1, le=64)
+    recorder_pool_timeout_seconds: float = Field(default=5.0, gt=0)
 
     # Alerts. `alerts_evaluation_enabled` schedules the alert evaluation job (every minute) and
     # `weekly_digest_enabled` the Monday digest email; turn either off to stop it everywhere.
@@ -228,13 +236,14 @@ class Settings(BaseSettings):
 
     # The Doctor. `detectors_enabled` schedules the detector job (every 15 minutes) and
     # `user_stats_enabled` the per-user daily stats refresh; turn either off to stop it
-    # everywhere. "Explain with Claude" calls `explain_model` through the organization's own
-    # Anthropic credential, at most `explain_monthly_budget_usd` per organization per UTC month
+    # everywhere. "Explain with AI" calls `explain_model` through the organization's own
+    # credential for `explain_provider`, at most `explain_monthly_budget_usd` per UTC month
     # (0 turns explanations off). The model must have a price, or the budget cannot be enforced.
     detectors_enabled: bool = True
     # Polls the providers' public status pages every 5 minutes (fixed URLs, never a setting).
     # Off, nothing is fetched (an air-gapped instance) and the incident list says so.
     provider_status_polling_enabled: bool = True
+    explain_provider: ProviderKind = ProviderKind.ANTHROPIC
     explain_model: str = Field(default="claude-sonnet-5-5", min_length=1)
     explain_monthly_budget_usd: Decimal = Field(default=Decimal("1.00"), ge=0)
     user_stats_enabled: bool = True
@@ -362,10 +371,14 @@ class Settings(BaseSettings):
         "gateway_max_in_flight",
         "gateway_max_in_flight_bytes",
         "gateway_max_in_flight_per_key",
+        "gateway_preauth_rps_per_key",
+        "gateway_preauth_burst_per_key",
         "gateway_allow_insecure_base_urls",
         "gateway_record_concurrency",
         "gateway_record_backlog",
         "gateway_record_backlog_mb",
+        "recorder_pool_size",
+        "recorder_pool_timeout_seconds",
         "alerts_evaluation_enabled",
         "weekly_digest_enabled",
         "webhook_allow_private_targets",
@@ -373,6 +386,7 @@ class Settings(BaseSettings):
         "pagerduty_events_url",
         "detectors_enabled",
         "provider_status_polling_enabled",
+        "explain_provider",
         "explain_model",
         "explain_monthly_budget_usd",
         "user_stats_enabled",

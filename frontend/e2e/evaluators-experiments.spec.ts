@@ -79,5 +79,37 @@ test("experiment: without a provider credential the form says so instead of runn
   await expectNoAxeViolations(page);
 });
 
+test("Gemini is selectable for a bounded judge and shows an unknown Playground estimate", async ({
+  page,
+}) => {
+  const { base } = await createWorkspace(page);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto(`${base}/gateway/credentials`);
+  await page.getByRole("button", { name: "Add credential" }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Add credential" });
+  await dialog.getByLabel("Name").fill("gemini-e2e");
+  await dialog.getByRole("combobox", { name: "Provider" }).click();
+  await page.getByRole("option", { name: "Google Gemini" }).click();
+  await dialog.getByLabel("API key").fill("test-gemini-key");
+  await dialog.getByRole("button", { name: "Add credential" }).click();
+  await expect(dialog).toBeHidden();
+
+  await page.goto(`${base}/evaluators/new`);
+  await page.getByRole("radio", { name: "LLM judge" }).click();
+  const credential = page.getByRole("combobox", { name: "Credential" });
+  await credential.click();
+  await page.getByRole("option", { name: "Google Gemini · gemini-e2e" }).click();
+  const model = page.getByLabel("Model", { exact: true });
+  await expect(model).toHaveAccessibleDescription("Use a model with a supported cost ceiling.");
+  await expect(page.locator('datalist option[value="gemini-2.5-flash-lite"]')).toHaveCount(1);
+  await expectNoAxeViolations(page);
+
+  await page.goto(`${base}/playground`);
+  await expect(page.getByRole("combobox", { name: "Credential" })).toContainText("gemini-e2e");
+  await page.getByLabel("Model", { exact: true }).fill("gemini-2.5-flash-lite");
+  await expect(page.getByText(/provider cost unavailable before the call/)).toBeVisible();
+  await expectNoAxeViolations(page);
+});
+
 // The compare page's "Regressions only" switch and "Show diff" need two finished runs, and a run
 // makes real provider calls, so this suite does not reach them (no fake rows on the product path).

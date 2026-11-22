@@ -1,4 +1,4 @@
-"""The request behind "Explain with Claude": the prompt for one insight and its trace excerpts.
+"""The request behind "Explain with AI": the prompt for one insight and its trace excerpts.
 
 Pure: no database, no clock, no I/O. `build_explain_request` turns an insight, its catalogue
 entry and up to `MAX_EXCERPTS` trace excerpts into the gateway request the explain service sends.
@@ -18,11 +18,17 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.core.redact import redact_json, redact_text
-from app.db.models import Insight
+from app.db.models import Insight, ProviderKind
 from app.gateway.context import GatewayRequest
+from app.gateway.errors import Surface
+from app.gateway.response_summary import summarize_response
 from app.gateway.trace_headers import TraceHeaders
 from app.insights.catalogue import KindInfo
+from app.playground.output import output_text
+from app.playground.request import build_body, surface_for
+from app.playground.schemas import Params
 from app.pricing.tokens import estimate_text_tokens
+from app.prompts.templates import Message
 
 SYSTEM_PROMPT = (
     "You are the Spanlight Doctor. Explain the finding below to the engineer who owns this "
@@ -64,21 +70,21 @@ def build_explain_request(
     excerpts: Sequence[TraceExcerpt],
     *,
     model: str,
+    provider: ProviderKind = ProviderKind.ANTHROPIC,
 ) -> GatewayRequest:
-    """The Messages call that asks `model` to explain `insight`.
+    """The provider request that asks `model` to explain `insight`.
 
     `info` is the catalogue entry of the insight's kind (None when the catalogue no longer has
     it). At most `MAX_EXCERPTS` excerpts are used, in the order given. The trace is tagged
     `doctor-explain`; the explain service sets the environment.
     """
+    messages = [
+        Message("system", SYSTEM_PROMPT),
+        Message("user", user_message(insight, info, excerpts)),
+    ]
     return GatewayRequest(
-        surface="messages",
-        body={
-            "model": model,
-            "max_tokens": MAX_OUTPUT_TOKENS,
-            "system": SYSTEM_PROMPT,
-            "messages": [{"role": "user", "content": user_message(insight, info, excerpts)}],
-        },
+        surface=surface_for(provider),
+        body=build_body(provider, model, Params(max_tokens=MAX_OUTPUT_TOKENS), messages),
         stream=False,
         trace=TraceHeaders(tags=[EXPLAIN_TAG]),
     )
@@ -140,25 +146,11 @@ def worst_case_input_tokens(request: GatewayRequest) -> int:
     return estimate_text_tokens("".join(parts))
 
 
-def answer_text(body: bytes | None) -> str | None:
-    """The text of an Anthropic Messages answer; None when there is none or it is unreadable."""
+def answer_text(body: bytes | None, surface: Surface) -> str | None:
+    """The visible text of a provider answer."""
     if body is None:
         return None
-    try:
-        message = json.loads(body)
-    except ValueError:
-        return None
-    content = message.get("content") if isinstance(message, dict) else None
-    if not isinstance(content, list):
-        return None
-    text = "".join(
-        block["text"]
-        for block in content
-        if isinstance(block, dict)
-        and block.get("type") == "text"
-        and isinstance(block.get("text"), str)
-    ).strip()
-    return text or None
+    return output_text(summarize_response(surface, body).output)
 
 
 def _metric_lines(metrics: object) -> list[str]:

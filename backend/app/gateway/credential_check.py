@@ -16,7 +16,7 @@ from app.core.egress import BlockedAddress, InsecureUrl
 from app.db.models import ProviderKind
 from app.gateway.adapters import adapter_for
 from app.gateway.adapters.base import UnsupportedEncoding
-from app.gateway.credentials import InvalidBaseUrl, validate_base_url
+from app.gateway.credentials import InvalidBaseUrl, base_url_for
 from app.gateway.http import host_not_found
 
 CHECK_TIMEOUT_SECONDS = 10.0
@@ -52,11 +52,10 @@ async def probe_models(
     its status line. `http` vets every address it connects to with the resolver it was built
     with.
     """
-    if base_url is not None:
-        try:
-            validate_base_url(base_url, allow_insecure=allow_insecure)
-        except InvalidBaseUrl:
-            return "base URL not allowed"
+    try:
+        base_url = base_url_for(provider, base_url, allow_insecure=allow_insecure)
+    except InvalidBaseUrl:
+        return "base URL not allowed"
     adapter = adapter_for(provider)
     upstream = adapter.check_request(_Endpoint(base_url), api_key)
     try:

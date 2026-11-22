@@ -4,16 +4,19 @@ import { useDeferredValue, useId, useMemo, useRef, type MouseEvent } from "react
 
 import { EmptyState } from "@/components/empty-state";
 import { Card } from "@/components/ui/card";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
 import { UnknownValue } from "@/components/unknown-value";
 import type { Span, TraceDetail } from "@/lib/api";
 import { formatTimestamp } from "@/lib/format";
 import { useStoredChoice } from "@/lib/use-stored-choice";
 import { cn } from "@/lib/utils";
 
+import { AgentTopologyGraph } from "./agent-topology-graph";
 import { SelectedSpanDetail } from "./selected-span-detail";
 import { SpanDetailSkeleton } from "./span-detail-header";
 import { buildSpanTree, findSpanNode } from "./span-tree";
 import { SpanWaterfall } from "./span-waterfall";
+import { TraceAgentTools } from "./trace-agent-tools";
 import { TraceInfoPanel } from "./trace-info-panel";
 import { useTraceInsights } from "./trace-queries";
 import { TraceSummaryBar, TraceSummaryBarSkeleton } from "./trace-summary-bar";
@@ -25,6 +28,13 @@ import { SpanWaterfallSkeleton } from "./waterfall-parts";
 const traceRoute = getRouteApi("/_authed/$orgId/$projectId/traces/$traceId");
 
 const TRACE_INFO_STATES = ["open", "closed"] as const;
+const TRACE_VIEW_MODES = ["waterfall", "topology", "analysis"] as const;
+type TraceViewMode = (typeof TRACE_VIEW_MODES)[number];
+const TRACE_VIEW_OPTIONS: readonly SegmentedOption<TraceViewMode>[] = [
+  { value: "waterfall", label: "Waterfall" },
+  { value: "topology", label: "Topology" },
+  { value: "analysis", label: "Prefix & What-If" },
+];
 
 /** The span and tab selected in the peek; "Open full page" carries them as `span=` / `tab=`. */
 export interface PeekSelection {
@@ -108,6 +118,11 @@ function TraceViewBody({
   const spans = useDeferredValue<Span[] | null>(latestSpans, null);
   const roots = useMemo(() => buildSpanTree(spans ?? []), [spans]);
   const [info, setInfo] = useStoredChoice("spanlight.trace-info", TRACE_INFO_STATES, "closed");
+  const [viewMode, setViewMode] = useStoredChoice(
+    "spanlight.trace-view-mode",
+    TRACE_VIEW_MODES,
+    "waterfall",
+  );
   const infoId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const inspectorRef = useRef<HTMLDivElement>(null);
@@ -180,17 +195,36 @@ function TraceViewBody({
       ) : (
         <div className={PANES}>
           {/* Row clicks bubble here; keyboard moves in the tree don't scroll the page away. */}
-          <div className={TREE_PANE} onClick={revealInspector}>
-            <SpanWaterfall
-              spans={spans}
-              roots={roots}
-              selectedSpanId={selectedSpan?.span_id ?? null}
-              onSelect={onSelectSpan}
-              insights={insights}
-              scrollElement={scrollElement}
-              capRows={stacked}
-              stickyBar={barRef}
-            />
+          <div className={cn(TREE_PANE, "flex flex-col gap-2")} onClick={revealInspector}>
+            <div className="flex items-center justify-between">
+              <SegmentedControl
+                value={viewMode}
+                onValueChange={setViewMode}
+                options={TRACE_VIEW_OPTIONS}
+                aria-label="Trace view mode"
+                tone="surface"
+              />
+            </div>
+            {viewMode === "waterfall" ? (
+              <SpanWaterfall
+                spans={spans}
+                roots={roots}
+                selectedSpanId={selectedSpan?.span_id ?? null}
+                onSelect={onSelectSpan}
+                insights={insights}
+                scrollElement={scrollElement}
+                capRows={stacked}
+                stickyBar={barRef}
+              />
+            ) : viewMode === "topology" ? (
+              <AgentTopologyGraph
+                roots={roots}
+                selectedSpanId={selectedSpan?.span_id ?? null}
+                onSelect={onSelectSpan}
+              />
+            ) : (
+              <TraceAgentTools spans={spans} onSelectSpan={onSelectSpan} />
+            )}
           </div>
           <div ref={inspectorRef} className={cn(INSPECTOR_PANE, offsets.inspector)}>
             {selectedSpan ? (

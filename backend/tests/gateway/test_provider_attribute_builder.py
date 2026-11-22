@@ -253,5 +253,26 @@ def test_cache_hit_records_no_provider_headers() -> None:
         "provider.error.type",
         "provider.error.code",
         "spanlight.gateway.error_code",
+        "spanlight.gateway.may_have_billed",
     ):
         assert absent not in attributes
+
+
+def test_may_have_billed_reflects_earlier_ambiguous_attempts() -> None:
+    timed_out_then_400 = [
+        Attempt(0, OPENAI.id, None, "timeout", 5000.0),
+        Attempt(1, ANTHROPIC.id, 400, None, 120.0),
+    ]
+    all_4xx = [
+        Attempt(0, OPENAI.id, 429, None, 100.0),
+        Attempt(1, ANTHROPIC.id, 400, None, 120.0),
+    ]
+
+    mixed = provider_attributes.build(
+        _result(400, {}, attempts=timed_out_then_400),
+        _context(),
+    )
+    refused = provider_attributes.build(_result(400, {}, attempts=all_4xx), _context())
+
+    assert mixed["spanlight.gateway.may_have_billed"] is True
+    assert refused["spanlight.gateway.may_have_billed"] is False

@@ -17,8 +17,7 @@ import { ExplainButton } from "./explain-button";
 import { explainControl, explainNotice, type ExplainNotice } from "./explain-state";
 import { ExplanationView } from "./explanation-view";
 
-const IDLE_HINT =
-  "Uses your Anthropic credential and counts toward the monthly explanation budget.";
+const IDLE_HINT = "Uses your configured provider and counts toward the monthly explanation budget.";
 const LOADING_STATUS = "Reading the evidence and the example traces…";
 
 interface ExplainSectionProps {
@@ -29,7 +28,7 @@ interface ExplainSectionProps {
 }
 
 /**
- * Figma "Explain with Claude": a disclosure, closed by default, whose summary counts the stored
+ * Figma "Explain with AI": a disclosure, closed by default, whose summary counts the stored
  * explanations. Inside, a button that asks for an advisory explanation, the stored ones under it
  * (each beneath its advisory label), and the reason when asking is not possible. A fresh
  * explanation opens it.
@@ -63,13 +62,13 @@ export function ExplainSection({ insightId, explanations, canManage }: ExplainSe
   }, [blocked, reset]);
 
   return (
-    <Card role="region" aria-label="Explain with Claude">
+    <Card role="region" aria-label="Explain with AI">
       <Collapsible.Root open={open} onOpenChange={setOpen}>
         <h2 className="text-card">
           <Collapsible.Trigger className="group flex min-h-14 w-full items-center gap-3 rounded-card px-5 py-3 text-left sm:px-6">
             <Sparkles aria-hidden className="size-4 shrink-0 text-accent" strokeWidth={2} />
             <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3">
-              <span>Explain with Claude</span>
+              <span>Explain with AI</span>
               <span className="text-xs font-medium text-muted-foreground">
                 {pluralize(explanations.length, "explanation")}
               </span>
@@ -130,7 +129,7 @@ export function ExplainSection({ insightId, explanations, canManage }: ExplainSe
   );
 }
 
-/** The status line and the outlined placeholder lines while Claude answers. */
+/** The status line and the outlined placeholder lines while the provider answers. */
 function PendingBody() {
   return (
     <div className="flex flex-col gap-3">

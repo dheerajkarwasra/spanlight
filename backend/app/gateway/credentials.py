@@ -24,6 +24,7 @@ MAX_BASE_URL_LENGTH = 2048
 RESOLVE_TIMEOUT_SECONDS = 5.0
 
 # A host name: letters, digits, hyphens, underscores and dots, in the ASCII form httpx sends.
+_AZURE_HOST = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.openai\.azure\.com")
 _HOST_NAME = re.compile(r"[a-z0-9_-]+(\.[a-z0-9_-]+)*\.?")
 # A label that URL parsers and resolvers read as a number: `127`, `0177`, `0x7f`.
 _NUMERIC_LABEL = re.compile(r"(0x[0-9a-f]*|[0-9]+)")
@@ -46,7 +47,10 @@ def validate_base_url(url: str, *, allow_insecure: bool) -> str:
         raise InvalidBaseUrl(f"must be at most {MAX_BASE_URL_LENGTH} characters")
     if any(character.isspace() or not character.isprintable() for character in url):
         raise InvalidBaseUrl("must not contain spaces or control characters")
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        raise InvalidBaseUrl("is not a valid URL") from None
     if not scheme_allowed(parts.scheme, allow_insecure=allow_insecure):
         raise InvalidBaseUrl(
             "must start with https:// or http://" if allow_insecure else "must start with https://"
@@ -95,20 +99,37 @@ def _check_host(url: str) -> None:
             raise InvalidBaseUrl("has an IP address that is not in dotted-decimal form") from None
 
 
+def azure_base_url(url: str | None) -> str:
+    """Validate the resource URL before a saved Azure key can use it."""
+    if not url:
+        raise InvalidBaseUrl("is required for Azure OpenAI")
+    normalized = validate_base_url(url, allow_insecure=False)
+    parts = urlsplit(normalized)
+    if (
+        not _AZURE_HOST.fullmatch(parts.hostname or "")
+        or parts.port not in (None, 443)
+        or parts.path != "/openai/v1"
+    ):
+        raise InvalidBaseUrl("must be https://<resource>.openai.azure.com/openai/v1")
+    return normalized
+
+
 def base_url_for(
     provider: ProviderKind, base_url: str | None, *, allow_insecure: bool
 ) -> str | None:
-    """The base URL to store for `provider`: required for OpenAI-compatible, forbidden otherwise.
+    """The base URL to store for `provider`: required for Azure and OpenAI-compatible.
 
     The fixed providers always use their own API host, so a base URL there would be ignored at
     best and, at worst, send OpenAI's key somewhere else.
     """
+    if provider is ProviderKind.AZURE_OPENAI:
+        return azure_base_url(base_url)
     if provider is ProviderKind.OPENAI_COMPATIBLE:
         if base_url is None or not base_url.strip():
             raise InvalidBaseUrl("is required for an OpenAI-compatible provider")
         return validate_base_url(base_url, allow_insecure=allow_insecure)
     if base_url is not None:
-        raise InvalidBaseUrl("is only allowed for an OpenAI-compatible provider")
+        raise InvalidBaseUrl("is only allowed for Azure OpenAI or an OpenAI-compatible provider")
     return None
 
 

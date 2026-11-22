@@ -157,7 +157,7 @@ async def create_credential(
     settings: SettingsDep,
     clock: ClockDep,
 ) -> CredentialOut:
-    """Seal and store the key. `base_url` is required for `openai_compatible`, refused otherwise.
+    """Seal and store the key. Azure OpenAI and OpenAI-compatible credentials require `base_url`.
 
     `409 NOT_CONFIGURED` without CREDENTIALS_KEYS; `422` on `base_url` for a URL that is not
     `https://`, has userinfo, a query or a fragment, or resolves to a private address.

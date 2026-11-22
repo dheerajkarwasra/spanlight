@@ -170,9 +170,14 @@ class AsyncStreamProxy(_StreamProxyBase):
         stopped reading early, which the span records as such.
         """
         try:
-            await self._inner.close()
+            close = getattr(self._inner, "close", None) or self._inner.aclose
+            await close()
         finally:
             self.finalize(closed_early=True)
+
+    async def aclose(self) -> None:
+        """Close an async generator and settle its span."""
+        await self.close()
 
     async def __aenter__(self) -> AsyncStreamProxy:
         return self

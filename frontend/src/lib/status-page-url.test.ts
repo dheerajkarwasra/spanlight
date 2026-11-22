@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 import { statusPageUrl } from "./status-page-url";
 
 describe("statusPageUrl", () => {
-  it("links to the three polled status pages", () => {
+  it("links to the verified status pages", () => {
     for (const url of [
       "https://status.claude.com/incidents/abc",
       "https://status.openai.com/incidents/01J",
       "https://status.cloud.google.com/incidents/xyz",
+      "https://status.mistral.ai/incidents/abc",
+      "https://groqstatus.com/incidents/xyz",
     ]) {
       expect(statusPageUrl(url)).toBe(url);
     }
@@ -20,6 +22,7 @@ describe("statusPageUrl", () => {
       "https://user:pw@status.openai.com/incidents/1",
       "https://status.evil.example/incidents/1",
       "https://status.anthropic.com/incidents/1",
+      "https://groqstatus.com.evil.example/incidents/1",
       "https://notstatus.openai.com/x",
       "https://evil.example/status.openai.com",
       "https://status.openai.com:8443/incidents/1",

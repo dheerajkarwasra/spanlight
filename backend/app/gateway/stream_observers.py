@@ -9,6 +9,7 @@ runaway upstream cannot grow gateway memory; usage and finish reason keep updati
 import json
 from typing import Any
 
+from app.db.models import ProviderKind
 from app.gateway.sse import (
     OutputBudget,
     SseFrame,
@@ -45,7 +46,8 @@ class OpenAiChatObserver:
     usage is unknown: chat chunks carry no input count, so there is nothing to keep.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, provider: ProviderKind | None = None) -> None:
+        self._provider = provider
         self._model: str | None = None
         self._response_id: str | None = None
         self._service_tier: str | None = None
@@ -64,7 +66,10 @@ class OpenAiChatObserver:
         self._model = as_str(chunk.get("model")) or self._model
         self._response_id = as_str(chunk.get("id")) or self._response_id
         self._service_tier = as_str(chunk.get("service_tier")) or self._service_tier
-        usage = chat_usage(dict_at(chunk, "usage"), service_tier=self._service_tier)
+        raw_usage = dict_at(chunk, "usage")
+        if not raw_usage and self._provider is ProviderKind.GROQ:
+            raw_usage = dict_at(dict_at(chunk, "x_groq"), "usage")
+        usage = chat_usage(raw_usage, service_tier=self._service_tier, provider=self._provider)
         self._usage = usage or self._usage
         error = dict_at(chunk, "error")
         if self._error is None and (as_str(error.get("message")) or as_str(error.get("type"))):

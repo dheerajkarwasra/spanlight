@@ -10,7 +10,16 @@ import type { Page, User } from "./types";
  */
 
 export type BillingSourceKind = "anthropic_admin_api" | "openai_costs_api" | "csv_upload";
-export type BillingProvider = "anthropic" | "openai" | "google";
+export type BillingProvider =
+  | "anthropic"
+  | "openai"
+  | "google"
+  | "azure_openai"
+  | "mistral"
+  | "groq"
+  | "deepseek"
+  | "xai"
+  | "together";
 export type BillingSourceStatus = "never_fetched" | "ok" | "failing";
 export type FetchTrigger = "scheduled" | "manual" | "csv_upload";
 export type FetchRunStatus = "running" | "ok" | "failed";

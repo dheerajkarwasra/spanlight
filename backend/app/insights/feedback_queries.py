@@ -72,7 +72,7 @@ async def delete_vote(
 
 
 async def feedback_summary(
-    db: AsyncSession, project_id: uuid.UUID, insight_id: uuid.UUID, user_id: uuid.UUID
+    db: AsyncSession, project_id: uuid.UUID, insight_id: uuid.UUID, user_id: uuid.UUID | None
 ) -> FeedbackSummary:
     """The caller's vote and the counts of right and wrong votes on one insight."""
     of_insight = (
@@ -87,7 +87,11 @@ async def feedback_summary(
             ).where(*of_insight)
         )
     ).one()
-    mine = await db.scalar(
-        select(InsightFeedback).where(*of_insight, InsightFeedback.user_id == user_id)
+    mine = (
+        None
+        if user_id is None
+        else await db.scalar(
+            select(InsightFeedback).where(*of_insight, InsightFeedback.user_id == user_id)
+        )
     )
     return FeedbackSummary(mine=mine, right=counts[0], wrong=counts[1])

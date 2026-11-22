@@ -11,19 +11,32 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
-Surface = Literal["chat_completions", "responses", "messages", "models"]
-Envelope = Literal["openai", "anthropic"]
+Surface = Literal[
+    "chat_completions",
+    "responses",
+    "messages",
+    "embeddings",
+    "models",
+    "generate_content",
+    "gemini_models",
+]
+Envelope = Literal["openai", "anthropic", "google"]
 KeyLimitKind = Literal["rpm", "tpm", "org"]
 """Which gateway key limit refused a call (not `app.ingest.rate_limit_kind.RateLimitKind`)."""
 
 
 def surface_for_path(path: str) -> Surface:
     """Map a request path to its surface; anything unrecognised is chat completions."""
-    tail = path.rstrip("/").rsplit("/", 1)[-1]
+    path = path.rstrip("/")
+    if path == "/gw/v1beta" or path.startswith("/gw/v1beta/"):
+        return "gemini_models" if path == "/gw/v1beta/models" else "generate_content"
+    tail = path.rsplit("/", 1)[-1]
     if tail == "messages":
         return "messages"
     if tail == "responses":
         return "responses"
+    if tail == "embeddings":
+        return "embeddings"
     if tail == "models":
         return "models"
     return "chat_completions"
@@ -31,6 +44,8 @@ def surface_for_path(path: str) -> Surface:
 
 def envelope_for(surface: Surface, headers: Mapping[str, str]) -> Envelope:
     """Pick the error envelope. ``models`` is Anthropic when ``anthropic-version`` is sent."""
+    if surface in ("generate_content", "gemini_models"):
+        return "google"
     if surface == "messages":
         return "anthropic"
     if surface == "models" and any(name.lower() == "anthropic-version" for name in headers):
@@ -251,6 +266,22 @@ class RenderedError:
     headers: dict[str, str]
 
 
+_GOOGLE_STATUS = {
+    400: "INVALID_ARGUMENT",
+    401: "UNAUTHENTICATED",
+    402: "PERMISSION_DENIED",
+    403: "PERMISSION_DENIED",
+    404: "NOT_FOUND",
+    405: "UNIMPLEMENTED",
+    413: "INVALID_ARGUMENT",
+    415: "INVALID_ARGUMENT",
+    422: "INVALID_ARGUMENT",
+    429: "RESOURCE_EXHAUSTED",
+    503: "UNAVAILABLE",
+    504: "DEADLINE_EXCEEDED",
+}
+
+
 def render_error(error: GatewayError, envelope: Envelope, request_id: str) -> RenderedError:
     """Render ``error`` in the provider envelope, with the gateway's error headers."""
     row = _TABLE.get(error.spanlight_code)
@@ -272,7 +303,7 @@ def render_error(error: GatewayError, envelope: Envelope, request_id: str) -> Re
                 "spanlight_code": error.spanlight_code,
             }
         }
-    else:
+    elif envelope == "anthropic":
         body = {
             "type": "error",
             "error": {
@@ -282,6 +313,9 @@ def render_error(error: GatewayError, envelope: Envelope, request_id: str) -> Re
             },
             "request_id": request_id,
         }
+    else:
+        status = _GOOGLE_STATUS.get(error.status, "INTERNAL")
+        body = {"error": {"code": error.status, "message": error.message, "status": status}}
 
     headers = {"X-Request-ID": request_id, "X-Spanlight-Code": error.spanlight_code}
     if error.retry_after is not None:

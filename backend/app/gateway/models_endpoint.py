@@ -27,11 +27,13 @@ from app.gateway.context import UPSTREAM_ERROR_CODE
 from app.gateway.credentials import decrypt_api_key
 from app.gateway.errors import (
     Envelope,
+    Surface,
     internal,
     no_compatible_target,
     upstream_redirect,
     upstream_unreachable,
 )
+from app.gateway.gemini import valid_model_id
 from app.gateway.key_context import KeyContext
 from app.gateway.routing import compatible_targets
 from app.gateway.upstream_io import classify_failure, close_quietly, read_all
@@ -42,8 +44,9 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 _PROVIDERS_BY_ENVELOPE: dict[Envelope, frozenset[ProviderKind]] = {
-    "openai": frozenset({ProviderKind.OPENAI, ProviderKind.OPENAI_COMPATIBLE}),
+    "openai": frozenset(ProviderKind) - {ProviderKind.ANTHROPIC},
     "anthropic": frozenset({ProviderKind.ANTHROPIC}),
+    "google": frozenset({ProviderKind.GEMINI}),
 }
 
 
@@ -65,6 +68,13 @@ def listed_models(key: KeyContext) -> list[str]:
 
 def local_body(models: list[str], envelope: Envelope) -> dict[str, Any]:
     """The model list in the envelope's shape. `models` is not empty."""
+    if envelope == "google":
+        return {
+            "models": [
+                {"name": f"models/{model}", "supportedGenerationMethods": ["generateContent"]}
+                for model in models
+            ]
+        }
     if envelope == "anthropic":
         return {
             "data": [
@@ -97,11 +107,12 @@ async def answer_models(
     settings: "Settings",
     client_headers: Mapping[str, str],
     request_id: str,
+    pagination: Mapping[str, str | int] | None = None,
 ) -> ModelsAnswer:
     """The answer to `GET /models`. Raises `GatewayError` for a failure the gateway names."""
     base = {"X-Request-ID": request_id}
-    models = listed_models(key)
-    if models:
+    models = _gemini_models(key) if envelope == "google" else listed_models(key)
+    if models or (envelope == "google" and key.key.allowed_models):
         body = json.dumps(local_body(models, envelope), separators=(",", ":")).encode()
         return ModelsAnswer(200, body, {**base, "content-type": "application/json"})
     return await _forward(
@@ -112,7 +123,16 @@ async def answer_models(
         client_headers=client_headers,
         request_id=request_id,
         headers=base,
+        pagination=pagination,
     )
+
+
+def _gemini_models(key: KeyContext) -> list[str]:
+    targets = compatible_targets(key.route, "gemini_models", key.credentials, key.route_name)
+    names = set(key.key.allowed_models) or {
+        name for index in targets for name in key.route.targets[index].model_aliases
+    }
+    return sorted(name for name in names if valid_model_id(name))
 
 
 async def _forward(
@@ -124,15 +144,17 @@ async def _forward(
     client_headers: Mapping[str, str],
     request_id: str,
     headers: dict[str, str],
+    pagination: Mapping[str, str | int] | None,
 ) -> ModelsAnswer:
     providers = _PROVIDERS_BY_ENVELOPE[envelope]
+    surface: Surface = "gemini_models" if envelope == "google" else "models"
     indices = [
         index
-        for index in compatible_targets(key.route, "models", key.credentials, key.route_name)
+        for index in compatible_targets(key.route, surface, key.credentials, key.route_name)
         if key.credentials[key.route.targets[index].credential_id].provider in providers
     ]
     if not indices:
-        raise no_compatible_target(key.route_name, "models")
+        raise no_compatible_target(key.route_name, surface)
     credential = key.credentials[key.route.targets[indices[0]].credential_id]
     adapter = adapter_for(credential.provider)
     try:
@@ -144,7 +166,7 @@ async def _forward(
             error_type=type(failure).__name__,
         )
         raise internal(request_id) from None
-    upstream = adapter.prepare(credential, "models", {}, client_headers, api_key)
+    upstream = adapter.prepare(credential, surface, pagination or {}, client_headers, api_key)
     timeout_ms = key.route.timeout_ms
     response: UpstreamResponse | None = None
     try:
@@ -164,4 +186,17 @@ async def _forward(
     failed = not 200 <= response.status < 300
     if failed:
         answer_headers["X-Spanlight-Code"] = UPSTREAM_ERROR_CODE
+    elif credential.provider is ProviderKind.TOGETHER:
+        body = _together_models(body)
     return ModelsAnswer(response.status, body, answer_headers, upstream_error=failed)
+
+
+def _together_models(body: bytes) -> bytes:
+    """Together can return a bare model array; OpenAI clients require a list envelope."""
+    try:
+        models = json.loads(body)
+    except (ValueError, RecursionError):
+        return body
+    if not isinstance(models, list):
+        return body
+    return json.dumps({"object": "list", "data": models}, separators=(",", ":")).encode()

@@ -48,5 +48,10 @@ KEY_READABLE: frozenset[Route] = frozenset(
         # Stage E C5: the project's ingest caps and refusals, for a sender checking its own quota
         # (spec: "session or API key as the other project reads").
         ("GET", "/api/v1/projects/{project_id}/ingest-quota"),
+        # P1.3 MCP server / CI Doctor reads with `traces:read`.
+        ("GET", "/api/v1/projects/{project_id}/insights"),
+        ("GET", "/api/v1/projects/{project_id}/insights/summary"),
+        ("GET", "/api/v1/projects/{project_id}/detector-runs"),
+        ("GET", "/api/v1/projects/{project_id}/health"),
     }
 )

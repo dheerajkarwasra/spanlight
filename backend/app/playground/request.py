@@ -1,8 +1,7 @@
 """The provider request of one playground run. Pure: no database, no I/O.
 
-A prompt version or typed messages become the messages of the provider's own API: OpenAI-style
-providers get `chat_completions`, Anthropic gets `messages` with its `system` messages moved to
-the top-level `system` field.
+A prompt version or typed messages become the provider's request. Gemini uses Generate Content,
+xAI uses Responses, and Anthropic uses Messages. The other providers use Chat Completions.
 """
 
 from typing import Any
@@ -20,6 +19,10 @@ DEFAULT_ANTHROPIC_MAX_TOKENS = 1024
 
 
 def surface_for(provider: ProviderKind) -> Surface:
+    if provider == ProviderKind.GEMINI:
+        return "generate_content"
+    if provider == ProviderKind.XAI:
+        return "responses"
     return "messages" if provider == ProviderKind.ANTHROPIC else "chat_completions"
 
 
@@ -48,11 +51,22 @@ def missing_variables_error(error: MissingVariablesError) -> str:
 
 
 def build_body(
-    provider: ProviderKind, model: str, params: Params, messages: list[Message]
+    provider: ProviderKind,
+    model: str,
+    params: Params,
+    messages: list[Message],
 ) -> dict[str, Any]:
     """The JSON body for `surface_for(provider)`."""
+    surface = surface_for(provider)
+    if surface == "generate_content":
+        return _gemini_body(model, params, messages)
     body: dict[str, Any] = {"model": model}
-    if provider == ProviderKind.ANTHROPIC:
+    if surface == "responses":
+        body["input"] = [_wire(m) for m in messages]
+        body["store"] = False
+        if params.max_tokens is not None:
+            body["max_output_tokens"] = params.max_tokens
+    elif surface == "messages":
         system = "\n\n".join(m.content for m in messages if m.role == "system")
         body["messages"] = [_wire(m) for m in messages if m.role != "system"]
         if system:
@@ -62,12 +76,43 @@ def build_body(
         body["messages"] = [_wire(m) for m in messages]
         if params.max_tokens is not None:
             # OpenAI's newer models reject `max_tokens`; other servers only know that one.
-            field = "max_completion_tokens" if provider == ProviderKind.OPENAI else "max_tokens"
-            body[field] = params.max_tokens
+            body[chat_cap_field(provider)] = params.max_tokens
     if params.temperature is not None:
         body["temperature"] = params.temperature
     if params.top_p is not None:
         body["top_p"] = params.top_p
+    return body
+
+
+def chat_cap_field(provider: ProviderKind) -> str:
+    if provider in (ProviderKind.OPENAI, ProviderKind.AZURE_OPENAI, ProviderKind.GROQ):
+        return "max_completion_tokens"
+    return "max_tokens"
+
+
+def _gemini_body(model: str, params: Params, messages: list[Message]) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "model": model,
+        "contents": [
+            {"role": "model" if m.role == "assistant" else "user", "parts": [{"text": m.content}]}
+            for m in messages
+            if m.role != "system"
+        ],
+    }
+    system = "\n\n".join(m.content for m in messages if m.role == "system")
+    if system:
+        body["systemInstruction"] = {"parts": [{"text": system}]}
+    config = {
+        key: value
+        for key, value in (
+            ("maxOutputTokens", params.max_tokens),
+            ("temperature", params.temperature),
+            ("topP", params.top_p),
+        )
+        if value is not None
+    }
+    if config:
+        body["generationConfig"] = config
     return body
 
 

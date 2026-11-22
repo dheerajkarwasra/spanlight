@@ -7,6 +7,7 @@ from typing import Any
 
 import structlog
 
+from app.backups.retention import BACKUP_PREFIX, prune_backups
 from app.backups.service import BackupResult, run_backup
 from app.backups.storage import get_backup_object_store
 from app.jobs.context import TaskContext
@@ -42,7 +43,28 @@ async def run_backup_database(context: TaskContext, _: dict[str, Any]) -> JobOut
         size_bytes=result.size_bytes,
         seconds=round(asyncio.get_running_loop().time() - started, 1),
     )
+    await _prune_retained(store, now)
     return JobOutcome.OK
+
+
+async def _prune_retained(store: ObjectStore, now: datetime) -> None:
+    """Apply the backup retention schedule after a completed backup; never fail the backup job."""
+    try:
+        keys = prune_backups(await store.list(BACKUP_PREFIX), now)
+    except Exception:
+        logger.warning("backup_prune_list_failed", exc_info=True)
+        return
+    if not keys:
+        return
+    deleted = 0
+    for key in keys:
+        try:
+            await store.delete(key)
+        except Exception:
+            logger.warning("backup_prune_delete_failed", key=key, exc_info=True)
+        else:
+            deleted += 1
+    logger.info("backup_pruned", selected=len(keys), deleted=deleted)
 
 
 async def _backup_with_heartbeat(

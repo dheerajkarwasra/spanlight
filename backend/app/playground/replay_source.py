@@ -9,32 +9,25 @@ holds a redaction or depth marker anywhere (any key, any string, any depth) is r
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from app.core.redact import DEPTH_MARKER, REDACTED
 from app.db.models import ProviderKind, SpanKind
+from app.gateway.adapters import supports_surface
 from app.gateway.errors import Surface
 from app.playground.replay_errors import REFUSALS
 
 Fidelity = Literal["exact", "modified", "messages_only"]
-CredentialFamily = Literal["openai", "anthropic"]
+CredentialFamily = Literal["openai", "anthropic", "gemini"]
 """Which credential kinds can carry the request: `openai` is any server speaking the OpenAI API."""
 
 SURFACE_ATTRIBUTE = "spanlight.gateway.surface"
-_REQUEST_SURFACES: frozenset[str] = frozenset({"chat_completions", "responses", "messages"})
+_REQUEST_SURFACES = ("chat_completions", "responses", "messages", "generate_content")
 
 
-def accepts(family: CredentialFamily, provider: ProviderKind) -> bool:
-    """Whether a credential of `provider` can carry a request of `family`."""
-    if family == "anthropic":
-        return provider == ProviderKind.ANTHROPIC
-    return provider in (ProviderKind.OPENAI, ProviderKind.OPENAI_COMPATIBLE)
-
-
-def family_of(provider: str | None) -> CredentialFamily:
-    """`anthropic` for Anthropic; everything else (`openai`, `azure`, `groq`, `ollama`, unknown)
-    speaks the OpenAI API."""
-    return "anthropic" if provider == "anthropic" else "openai"
+def accepts(surface: Surface, provider: ProviderKind) -> bool:
+    """Whether the chosen credential can send the stored request on its original surface."""
+    return supports_surface(provider, surface)
 
 
 @dataclass(frozen=True)
@@ -84,13 +77,15 @@ def contains_markers(value: Any) -> bool:
     return False
 
 
-def is_request_body(value: Any) -> bool:
-    """Rule 5: a JSON object with a string `model` and a `messages` list or an `input` field."""
+def is_request_body(value: Any, surface: Surface) -> bool:
+    """Rule 5: a model and the request field for the recorded surface."""
     if not isinstance(value, Mapping) or not isinstance(value.get("model"), str):
         return False
-    if "messages" in value:
-        return isinstance(value["messages"], list)
-    return "input" in value
+    if surface == "generate_content":
+        return isinstance(value.get("contents"), list)
+    if surface == "responses":
+        return isinstance(value.get("input"), (str, list))
+    return isinstance(value.get("messages"), list)
 
 
 def _is_message_list(value: Any) -> bool:
@@ -102,18 +97,27 @@ def _is_message_list(value: Any) -> bool:
     )
 
 
-def surface_of(
-    body: Mapping[str, Any], family: CredentialFamily, attributes: Mapping[str, Any]
-) -> Surface:
+def surface_of(body: Mapping[str, Any], span: SpanFacts) -> Surface:
     """The gateway's recorded surface when present, else by provider and body shape."""
-    recorded = attributes.get(SURFACE_ATTRIBUTE)
-    if isinstance(recorded, str) and recorded in _REQUEST_SURFACES:
-        return recorded  # type: ignore[return-value]  # membership checked above
-    if family == "anthropic":
+    recorded = span.attributes.get(SURFACE_ATTRIBUTE)
+    if recorded in _REQUEST_SURFACES:
+        return cast(Surface, recorded)
+    if "contents" in body:
+        return "generate_content"
+    if span.provider == "anthropic":
         return "messages"
     if "input" in body and "messages" not in body:
         return "responses"
     return "chat_completions"
+
+
+def _source(fidelity: Fidelity, surface: Surface, body: dict[str, Any]) -> ReplaySource:
+    family: CredentialFamily = "openai"
+    if surface == "generate_content":
+        family = "gemini"
+    elif surface == "messages":
+        family = "anthropic"
+    return ReplaySource(fidelity, surface, family, body)
 
 
 def classify(span: SpanFacts) -> ReplaySource | Refusal:
@@ -128,15 +132,18 @@ def classify(span: SpanFacts) -> ReplaySource | Refusal:
         return _refusal("REPLAY_PAYLOAD_TRUNCATED")
     if contains_markers(span.input):
         return _refusal("REPLAY_PAYLOAD_REDACTED")
-    family = family_of(span.provider)
-    if is_request_body(span.input):
+    if isinstance(span.input, Mapping):
         body = dict(span.input)
-        return ReplaySource("exact", surface_of(body, family, span.attributes), family, body)
+        surface = surface_of(body, span)
+        if surface == "generate_content" and "model" not in body:
+            body["model"] = span.model
+        if is_request_body(body, surface):
+            return _source("exact", surface, body)
     if _is_message_list(span.input):
-        body = {"model": span.model, "messages": span.input}
-        return ReplaySource(
-            "messages_only", surface_of(body, family, span.attributes), family, body
-        )
+        surface = surface_of({}, span)
+        if surface != "generate_content":
+            key = "input" if surface == "responses" else "messages"
+            return _source("messages_only", surface, {"model": span.model, key: span.input})
     return _refusal("REPLAY_UNSUPPORTED_INPUT")
 
 
@@ -154,7 +161,10 @@ def classify_edit(span: SpanFacts, edited_body: Mapping[str, Any]) -> ReplaySour
     """
     source = classify(span)
     if isinstance(source, Refusal) and source.code in EDITABLE_REFUSALS:
-        family = family_of(span.provider)
         body = dict(edited_body)
-        return ReplaySource("modified", surface_of(body, family, span.attributes), family, body)
+        original = span.input if isinstance(span.input, Mapping) else body
+        surface = surface_of(original, span)
+        if surface == "generate_content" and "model" not in body:
+            body["model"] = span.model
+        return _source("modified", surface, body)
     return source

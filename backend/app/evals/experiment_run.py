@@ -8,7 +8,7 @@ is dispatched the cost cap must hold:
     accumulated cost + the estimates of the calls in flight + this call's estimate ≤ max_cost_usd
 
 where an estimate is the price book's ceiling for the compiled prompt and the output-token limit
-(`app.evals.budget.estimate_call_cost`) and a finished item counts its real cost (its estimate
+(`app.evals.experiment_request.item_request`) and a finished item counts its real cost (its estimate
 when the cost is unknown). When the cap would be passed, the calls in flight finish and the check
 is repeated with their real costs; if it still fails, no further item runs and the run ends
 `failed` with `cost_cap_reached`. The stored items stay. The attached evaluators spend under their

@@ -10,6 +10,8 @@ const STATUS_HOSTS: ReadonlySet<string> = new Set([
   "status.claude.com",
   "status.openai.com",
   "status.cloud.google.com",
+  "status.mistral.ai",
+  "groqstatus.com",
 ]);
 
 export function statusPageUrl(value: string | null): string | null {

@@ -14,24 +14,17 @@ REFUSALS: dict[str, str] = {
         "replaying."
     ),
     "REPLAY_UNSUPPORTED_INPUT": (
-        "The stored input is not a provider request body (a model with messages or input), "
-        "so there is nothing to send as it was."
+        "The stored input does not contain a usable request body for its recorded provider surface."
     ),
-    "REPLAY_PROVIDER_MISMATCH": (
-        "Replay sends the stored request as it is. Pick a {provider} credential, or open the "
-        "messages in the playground to try another provider (not an exact replay)."
-    ),
+    "REPLAY_PROVIDER_MISMATCH": ("Pick a credential that supports the stored {provider} request."),
     "REPLAY_MODEL_UNPRICED": (
-        "No price is known for this model, so the replay budget could not count it."
+        "The replay budget needs a verified cost bound for this provider and model."
     ),
     "REPLAY_BODY_TOO_LARGE": "The edited request is larger than 256 KB.",
-    "REPLAY_UNPRICED_OPTION": (
-        "The request uses {option}, which is billed beyond tokens, so the replay budget could "
-        "not count it."
-    ),
+    "REPLAY_UNPRICED_OPTION": ("The replay budget cannot bound the cost of this option: {option}."),
 }
 """The nine refusal codes and their detail copy; `REPLAY_PROVIDER_MISMATCH` is formatted with
-the credential family the span needs, `REPLAY_UNPRICED_OPTION` with the option."""
+the surface the span needs, `REPLAY_UNPRICED_OPTION` with the option."""
 
 
 class ReplayRefusedError(Exception):

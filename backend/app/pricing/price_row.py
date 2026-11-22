@@ -36,7 +36,7 @@ from decimal import Decimal
 from typing import Literal
 
 from app.core.model_match import matches_model
-from app.pricing.provider_alias import canonical_provider
+from app.pricing.provider_alias import AZURE_PROVIDER_NAMES, canonical_provider
 
 _PER_MILLION = Decimal(1_000_000)
 
@@ -64,6 +64,9 @@ class Price:
     min_prompt_tokens: int = 0
 
     def matches(self, model: str) -> bool:
+        # A deployment name is chosen by the Azure customer. A date suffix has no special meaning.
+        if canonical_provider(self.provider) in AZURE_PROVIDER_NAMES:
+            return self.model_pattern == model
         return matches_model(self.model_pattern, model)
 
     @property

@@ -27,7 +27,10 @@ IGNORED_FIELDS: dict[Surface, frozenset[str]] = {
     "chat_completions": _OPENAI_IGNORED,
     "responses": _OPENAI_IGNORED,
     "messages": frozenset({"stream", "metadata"}),
+    "embeddings": frozenset(),
     "models": frozenset(),
+    "generate_content": frozenset({"stream"}),
+    "gemini_models": frozenset(),
 }
 
 

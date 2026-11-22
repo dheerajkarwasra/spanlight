@@ -25,16 +25,20 @@ The span is written by a background task, so it survives the cancellation of the
 import asyncio
 import contextlib
 from collections.abc import AsyncGenerator, AsyncIterator
+from dataclasses import replace
 from datetime import datetime
 from typing import cast
 
 import httpx
 import structlog
 
-from app.gateway.adapters import UpstreamResponse
+from app.db.models import ProviderKind
+from app.gateway.adapters import UpstreamResponse, adapter_for
 from app.gateway.context import GatewayContext, GatewayRequest, GatewayResult
 from app.gateway.errors import Surface
 from app.gateway.fault_apply import StreamCutByFault
+from app.gateway.gemini import candidate_count
+from app.gateway.gemini_response import GeminiObserver
 from app.gateway.recorder import credentials_used, record_soon
 from app.gateway.responses_observer import OpenAiResponsesObserver
 from app.gateway.span_losses import span_not_built
@@ -68,12 +72,16 @@ def _finalized(task: asyncio.Task[None]) -> None:
         logger.error("gateway.stream_finalization_failed")
 
 
-def observer_for(surface: Surface) -> StreamObserver:
+def observer_for(
+    surface: Surface, *, candidates: int = 1, provider: ProviderKind | None = None
+) -> StreamObserver:
+    if surface == "generate_content":
+        return GeminiObserver(candidates)
     if surface == "messages":
         return AnthropicMessagesObserver()
     if surface == "responses":
-        return OpenAiResponsesObserver()
-    return OpenAiChatObserver()
+        return OpenAiResponsesObserver(provider=provider)
+    return OpenAiChatObserver(provider=provider)
 
 
 class GatewayStream:
@@ -92,16 +100,30 @@ class GatewayStream:
         upstream: AsyncIterator[bytes],
         response: UpstreamResponse | None,
         *,
+        provider: ProviderKind,
         started: float,
         started_at: datetime,
     ) -> None:
         self._request, self._context, self._result = request, context, result
         self._response = response
+        self._provider = provider
         self._started, self._started_at = started, started_at
-        self._observer = observer_for(request.surface)
+        self._observer = observer_for(
+            request.surface,
+            provider=provider,
+            candidates=candidate_count(request.body)
+            if request.surface == "generate_content"
+            else 1,
+        )
         self.completion_task: asyncio.Task[None] | None = None
         self._forwarding = _forward(
-            request, context, result, upstream, self._observer, started=started
+            request,
+            context,
+            result,
+            upstream,
+            self._observer,
+            started=started,
+            hide_usage=adapter_for(provider).chat_stream_usage,
         )
         self._state = "new"  # new, open (iteration began) or closed
 
@@ -131,7 +153,12 @@ class GatewayStream:
         try:
             if began:
                 await self._forwarding.aclose()
-                _take_summary(result, self._observer)
+                _take_summary(
+                    result,
+                    self._observer,
+                    native_gemini=self._request.surface == "generate_content",
+                    keep_model=self._provider is ProviderKind.AZURE_OPENAI,
+                )
             elif result.stream_error is None:
                 result.client_disconnected = True
                 result.disconnected_after_ms = (self._context.monotonic() - self._started) * 1000
@@ -152,10 +179,16 @@ async def _forward(
     observer: StreamObserver,
     *,
     started: float,
+    hide_usage: bool,
 ) -> AsyncGenerator[bytes, None]:
     """The upstream bytes through the observer; the span is written when this ends."""
     # The usage chunk the gateway asked for itself is read by the observer, not forwarded.
-    hidden = UsageChunkFilter() if injects_usage(request.surface, True, request.body) else None
+    hidden = (
+        UsageChunkFilter()
+        if hide_usage
+        and injects_usage(request.surface, request.body.get("stream") is True, request.body)
+        else None
+    )
     try:
         # Close the observer iterator here; the retained finalizer owns provider closure.
         observing = cast(AsyncGenerator[bytes, None], observe_stream(upstream, observer, _ignore))
@@ -193,7 +226,13 @@ async def _forward(
         result.stream_error = "the gateway failed while forwarding the stream"
 
 
-def _take_summary(result: GatewayResult, observer: StreamObserver) -> None:
+def _take_summary(
+    result: GatewayResult,
+    observer: StreamObserver,
+    *,
+    native_gemini: bool = False,
+    keep_model: bool = False,
+) -> None:
     """What the observer read: the model, usage, finish reason and reassembled output.
 
     A stream that ended before the provider's final usage keeps what it had (the input count
@@ -201,10 +240,16 @@ def _take_summary(result: GatewayResult, observer: StreamObserver) -> None:
     rather than a cheap one.
     """
     summary = observer.summary()
-    result.model = summary.model or result.model
+    if native_gemini and (result.client_disconnected or result.stream_error or result.cut_by_fault):
+        usage = replace(summary.usage, output_tokens=None) if summary.usage is not None else None
+        summary = replace(summary, usage=usage, usage_complete=False)
+    if not keep_model:
+        result.model = summary.model or result.model
     result.usage = summary.usage
     result.finish_reason = summary.finish_reason
     result.output = summary.output
+    if native_gemini:
+        result.provider_response_id = summary.response_id
     if summary.error is not None and result.stream_error is None:  # a transport error wins
         result.stream_error = f"the provider sent an error event ({summary.error})"
     if result.model is not None and (summary.usage is None or not summary.usage_complete):

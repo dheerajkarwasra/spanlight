@@ -2434,7 +2434,13 @@
                 "enum": [
                   "anthropic",
                   "openai",
-                  "google"
+                  "google",
+                  "azure_openai",
+                  "mistral",
+                  "groq",
+                  "deepseek",
+                  "xai",
+                  "together"
                 ],
                 "type": "string"
               },
@@ -2566,7 +2572,13 @@
             "enum": [
               "anthropic",
               "openai",
-              "google"
+              "google",
+              "azure_openai",
+              "mistral",
+              "groq",
+              "deepseek",
+              "xai",
+              "together"
             ],
             "title": "Provider",
             "type": "string"
@@ -4316,7 +4328,7 @@
       },
       "CredentialCreate": {
         "additionalProperties": false,
-        "description": "A new provider credential. `base_url` is only for `openai_compatible`, which needs it.",
+        "description": "A credential. Azure OpenAI and OpenAI-compatible providers require `base_url`.",
         "properties": {
           "api_key": {
             "format": "password",
@@ -7844,6 +7856,31 @@
         "title": "FiltersOut",
         "type": "object"
       },
+      "ForbiddenToolsRule": {
+        "additionalProperties": false,
+        "properties": {
+          "forbidden": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Forbidden",
+            "type": "array"
+          },
+          "rule": {
+            "const": "forbidden_tools",
+            "title": "Rule",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule",
+          "forbidden"
+        ],
+        "title": "ForbiddenToolsRule",
+        "type": "object"
+      },
       "GatesOut": {
         "properties": {
           "balanced": {
@@ -8986,10 +9023,14 @@
               "mapping": {
                 "contains": "#/components/schemas/ContainsRule",
                 "exact_match": "#/components/schemas/ExactMatchRule",
+                "forbidden_tools": "#/components/schemas/ForbiddenToolsRule",
                 "json_valid": "#/components/schemas/JsonValidRule",
                 "length": "#/components/schemas/LengthRule",
                 "levenshtein": "#/components/schemas/LevenshteinRule",
-                "regex": "#/components/schemas/RegexRule"
+                "max_tool_calls": "#/components/schemas/MaxToolCallsRule",
+                "regex": "#/components/schemas/RegexRule",
+                "step_efficiency": "#/components/schemas/StepEfficiencyRule",
+                "tool_sequence_matches": "#/components/schemas/ToolSequenceMatchesRule"
               },
               "propertyName": "rule"
             },
@@ -9011,6 +9052,18 @@
               },
               {
                 "$ref": "#/components/schemas/LevenshteinRule"
+              },
+              {
+                "$ref": "#/components/schemas/ToolSequenceMatchesRule"
+              },
+              {
+                "$ref": "#/components/schemas/ForbiddenToolsRule"
+              },
+              {
+                "$ref": "#/components/schemas/MaxToolCallsRule"
+              },
+              {
+                "$ref": "#/components/schemas/StepEfficiencyRule"
               }
             ],
             "title": "Check"
@@ -10740,6 +10793,28 @@
           }
         },
         "title": "MalformedJsonParams",
+        "type": "object"
+      },
+      "MaxToolCallsRule": {
+        "additionalProperties": false,
+        "properties": {
+          "max_calls": {
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Max Calls",
+            "type": "integer"
+          },
+          "rule": {
+            "const": "max_tool_calls",
+            "title": "Rule",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule",
+          "max_calls"
+        ],
+        "title": "MaxToolCallsRule",
         "type": "object"
       },
       "MeOut": {
@@ -13886,6 +13961,13 @@
         "enum": [
           "openai",
           "anthropic",
+          "gemini",
+          "azure_openai",
+          "mistral",
+          "groq",
+          "deepseek",
+          "xai",
+          "together",
           "openai_compatible"
         ],
         "title": "ProviderKind",
@@ -15372,7 +15454,13 @@
             "enum": [
               "anthropic",
               "openai",
-              "google"
+              "google",
+              "azure_openai",
+              "mistral",
+              "groq",
+              "deepseek",
+              "xai",
+              "together"
             ],
             "title": "Provider",
             "type": "string"
@@ -18189,6 +18277,28 @@
         "title": "StatusSourceOut",
         "type": "object"
       },
+      "StepEfficiencyRule": {
+        "additionalProperties": false,
+        "properties": {
+          "optimal_steps": {
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Optimal Steps",
+            "type": "integer"
+          },
+          "rule": {
+            "const": "step_efficiency",
+            "title": "Rule",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule",
+          "optimal_steps"
+        ],
+        "title": "StepEfficiencyRule",
+        "type": "object"
+      },
       "StepOut": {
         "description": "A span of trace A and its counterpart in trace B, paired by name and occurrence.",
         "properties": {
@@ -18721,6 +18831,39 @@
         ],
         "title": "TokenScope",
         "type": "string"
+      },
+      "ToolSequenceMatchesRule": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_tools": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Expected Tools",
+            "type": "array"
+          },
+          "mode": {
+            "default": "exact",
+            "enum": [
+              "exact",
+              "subsequence",
+              "prefix"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "rule": {
+            "const": "tool_sequence_matches",
+            "title": "Rule",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule"
+        ],
+        "title": "ToolSequenceMatchesRule",
+        "type": "object"
       },
       "TotalsOut": {
         "properties": {
@@ -23995,7 +24138,7 @@
         ]
       },
       "post": {
-        "description": "Seal and store the key. `base_url` is required for `openai_compatible`, refused otherwise.\n\n`409 NOT_CONFIGURED` without CREDENTIALS_KEYS; `422` on `base_url` for a URL that is not\n`https://`, has userinfo, a query or a fragment, or resolves to a private address.\nAdding a credential with `base_url` also requires a session and account-owner proof:\n`password` (or a sign-in within 10 minutes for passwordless accounts), plus `code` when\ntwo-factor authentication is enabled. Tokens get `403 SESSION_REQUIRED` for this action.\nURL validation precedes proof; credentials without `base_url` and existing credentials\nare unchanged.",
+        "description": "Seal and store the key. Azure OpenAI and OpenAI-compatible credentials require `base_url`.\n\n`409 NOT_CONFIGURED` without CREDENTIALS_KEYS; `422` on `base_url` for a URL that is not\n`https://`, has userinfo, a query or a fragment, or resolves to a private address.\nAdding a credential with `base_url` also requires a session and account-owner proof:\n`password` (or a sign-in within 10 minutes for passwordless accounts), plus `code` when\ntwo-factor authentication is enabled. Tokens get `403 SESSION_REQUIRED` for this action.\nURL validation precedes proof; credentials without `base_url` and existing credentials\nare unchanged.",
         "operationId": "create_credential_api_v1_orgs__org_id__credentials_post",
         "parameters": [
           {
@@ -30889,7 +31032,7 @@
     },
     "/api/v1/projects/{project_id}/insights/{insight_id}/explain": {
       "post": {
-        "description": "Claude explains the insight from its evidence; the answer is advisory plain text.\n\nSent with the organization's oldest Anthropic credential and counted against its monthly\nexplain budget. `409 NOT_CONFIGURED` without a credential, `CREDENTIALS_KEYS` or a budget;\n`409 EXPLAIN_MODEL_UNPRICED`; `402 EXPLAIN_BUDGET_EXCEEDED`; `502 EXPLAIN_FAILED`.",
+        "description": "The configured provider explains the insight from its evidence in advisory plain text.\n\nSent with the organization's oldest matching provider credential and counted against its monthly\nexplain budget. `409 NOT_CONFIGURED` without a credential, `CREDENTIALS_KEYS` or a budget;\n`409 EXPLAIN_MODEL_UNPRICED`; `402 EXPLAIN_BUDGET_EXCEEDED`; `502 EXPLAIN_FAILED`.",
         "operationId": "explain_insight_api_v1_projects__project_id__insights__insight_id__explain_post",
         "parameters": [
           {
@@ -30935,7 +31078,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Ask Claude to explain an insight",
+        "summary": "Generate an AI explanation for an insight",
         "tags": [
           "insights"
         ]
@@ -32898,7 +33041,9 @@
                   "enum": [
                     "anthropic",
                     "openai",
-                    "google"
+                    "google",
+                    "mistral",
+                    "groq"
                   ],
                   "type": "string"
                 },
@@ -36568,6 +36713,48 @@
         ]
       }
     },
+    "/gw/v1/embeddings": {
+      "post": {
+        "description": "OpenAI-shaped Embeddings through the key's route.",
+        "operationId": "embeddings_gw_v1_embeddings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "properties": {
+                  "model": {
+                    "type": "string"
+                  },
+                  "stream": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "model"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Embeddings",
+        "tags": [
+          "gateway"
+        ]
+      }
+    },
     "/gw/v1/messages": {
       "post": {
         "description": "Anthropic Messages through the key's route; streams when `stream` is true.",
@@ -36667,6 +36854,178 @@
           }
         },
         "summary": "Responses",
+        "tags": [
+          "gateway"
+        ]
+      }
+    },
+    "/gw/v1beta/models": {
+      "get": {
+        "description": "List the Gemini models visible to the gateway key's route.",
+        "operationId": "models_gw_v1beta_models_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pagesize"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageToken",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pagetoken"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Models",
+        "tags": [
+          "gateway"
+        ]
+      }
+    },
+    "/gw/v1beta/models/{model}:generateContent": {
+      "post": {
+        "description": "Generate content on the Gemini route using the model or alias in the URL.",
+        "operationId": "generate_gw_v1beta_models__model__generateContent_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model",
+            "required": true,
+            "schema": {
+              "title": "Model",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Generate",
+        "tags": [
+          "gateway"
+        ]
+      }
+    },
+    "/gw/v1beta/models/{model}:streamGenerateContent": {
+      "post": {
+        "description": "Stream Gemini content as server-sent events.",
+        "operationId": "stream_generate_gw_v1beta_models__model__streamGenerateContent_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model",
+            "required": true,
+            "schema": {
+              "title": "Model",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Generate",
         "tags": [
           "gateway"
         ]

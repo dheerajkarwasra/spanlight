@@ -17,6 +17,7 @@ import {
   type Span,
   type TraceListQuery,
 } from "@/lib/api";
+import { useLiveProject } from "@/lib/live/use-live-project";
 
 import { fillBuckets } from "./histogram";
 import type { TraceFilters } from "./search";
@@ -70,6 +71,7 @@ export function toTraceListQuery(
 export function useTraceListQuery(search: TraceFilters, preview = false) {
   const { projectId } = useProjectParams();
   const { range, environment } = useProjectFilters();
+  const { refetchInterval } = useLiveProject(projectId, range.value !== "custom");
   const query = toTraceListQuery(search, range, environment, preview);
 
   return useInfiniteQuery({
@@ -79,6 +81,7 @@ export function useTraceListQuery(search: TraceFilters, preview = false) {
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor,
     placeholderData: keepPreviousData,
+    refetchInterval,
   });
 }
 
@@ -90,6 +93,7 @@ export function useTraceListQuery(search: TraceFilters, preview = false) {
 export function useTraceHistogramQuery(search: TraceFilters) {
   const { projectId } = useProjectParams();
   const { range, environment } = useProjectFilters();
+  const { refetchInterval } = useLiveProject(projectId, range.value !== "custom");
   const {
     sort: _sort,
     order: _order,
@@ -106,6 +110,7 @@ export function useTraceHistogramQuery(search: TraceFilters) {
       return { bucket: histogram.bucket, bars, window: { from: query.from, to: query.to } };
     },
     placeholderData: keepPreviousData,
+    refetchInterval,
   });
 }
 
@@ -116,12 +121,14 @@ export function useTraceHistogramQuery(search: TraceFilters) {
 export function useTraceCountQuery() {
   const { projectId } = useProjectParams();
   const { range, environment } = useProjectFilters();
+  const { refetchInterval } = useLiveProject(projectId, range.value !== "custom");
   const metricsWindow: MetricsQuery = { from: range.from, to: range.to, environment };
 
   return useQuery({
     queryKey: queryKeys.project(projectId).overview(metricsWindow),
     queryFn: ({ signal }) => projectsApi.overview(projectId, metricsWindow, signal),
     select: (overview) => overview.current.traces,
+    refetchInterval,
   });
 }
 
@@ -216,10 +223,12 @@ export function useTraceComparisonQuery(a: string | undefined, b: string | undef
   });
 }
 
-/** One trace with all of its spans. Trace data rarely changes once ingested. */
+/** One trace with all of its spans; updates live while open unless disabled. */
 export function useTraceQuery(traceId: string, options: { enabled?: boolean } = {}) {
   const { projectId } = useProjectParams();
-  return useQuery({ ...traceQuery(projectId, traceId), enabled: options.enabled ?? true });
+  const enabled = options.enabled ?? true;
+  const { refetchInterval } = useLiveProject(projectId, enabled);
+  return useQuery({ ...traceQuery(projectId, traceId), enabled, refetchInterval });
 }
 
 function traceQuery(projectId: string, traceId: string) {

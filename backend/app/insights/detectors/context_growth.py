@@ -60,11 +60,12 @@ def _qualifying_session(calls: list[LlmSpanRow]) -> _GrowingSession | None:
 
 
 def _growing_sessions(ctx: DetectorContext) -> list[_GrowingSession]:
-    by_session: dict[str, list[LlmSpanRow]] = defaultdict(list)
+    by_flow: dict[str, list[LlmSpanRow]] = defaultdict(list)
     for span in ctx.llm_spans:
-        if span.session_id is not None and span.input_tokens is not None:
-            by_session[span.session_id].append(span)
-    found = (_qualifying_session(calls) for calls in by_session.values())
+        if span.input_tokens is not None:
+            flow_key = span.session_id if span.session_id is not None else f"trace:{span.trace_id}"
+            by_flow[flow_key].append(span)
+    found = (_qualifying_session(calls) for calls in by_flow.values())
     return [session for session in found if session is not None]
 
 

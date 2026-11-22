@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Date, DateTime, ForeignKey, Integer, Numeric, Text, func
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, Text, func
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -139,3 +139,26 @@ class AggregateIncompleteHour(Base):
     recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class SessionSummary(Base):
+    """Incremental session-level rollup updated on trace insert (migration 1050)."""
+
+    __tablename__ = "sessions_summary"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
+    )
+    environment: Mapped[str] = mapped_column(Text, primary_key=True)
+    session_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    first_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    trace_count: Mapped[int] = mapped_column(BigInteger)
+    error_count: Mapped[int] = mapped_column(BigInteger)
+    cost_usd: Mapped[Decimal] = mapped_column(Numeric(14, 8))
+    input_tokens: Mapped[int] = mapped_column(BigInteger)
+    output_tokens: Mapped[int] = mapped_column(BigInteger)
+    has_unpriced: Mapped[bool] = mapped_column(Boolean)
+    external_user_id: Mapped[str | None] = mapped_column(Text)
+    multi_user: Mapped[bool] = mapped_column(Boolean)
+    last_trace_id: Mapped[str | None] = mapped_column(Text)

@@ -59,7 +59,7 @@ const INSIGHT: InsightDetail = {
   feedback: { mine: null, right: 0, wrong: 0 },
 };
 
-const TOGGLE = /Explain with Claude.*explanation/;
+const TOGGLE = /Explain with AI.*explanation/;
 
 const PRECISION: PrecisionKind = {
   kind: "error_spike",
@@ -153,7 +153,7 @@ describe("InsightDetailPage", () => {
   it("puts Explain last, collapsed, with the number of stored explanations", async () => {
     renderApp(PATH);
     const evidence = await screen.findByRole("region", { name: "Evidence" });
-    const explain = screen.getByRole("region", { name: "Explain with Claude" });
+    const explain = screen.getByRole("region", { name: "Explain with AI" });
     expect(
       evidence.compareDocumentPosition(explain) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -174,7 +174,7 @@ describe("InsightDetailPage", () => {
       }),
     );
     renderApp(PATH);
-    const region = await screen.findByRole("region", { name: "Explain with Claude" });
+    const region = await screen.findByRole("region", { name: "Explain with AI" });
     const toggle = within(region).getByRole("button", { name: TOGGLE });
     // The ask itself lives inside the disclosure; open it, ask, close it, and the answer reopens it.
     await userEvent.click(toggle);

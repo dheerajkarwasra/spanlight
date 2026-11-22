@@ -48,9 +48,13 @@ def _same_flow(a: LlmSpanRow, b: LlmSpanRow) -> bool:
 
 def _delay_and_end(span: LlmSpanRow) -> tuple[Decimal, datetime] | None:
     """`(retry_after_s, ended_at)` of a rate-limited span that asked for a delay, else `None`."""
-    if span.error_class != "rate_limit" or span.duration_ms is None or span.gateway is None:
+    if span.error_class != "rate_limit" or span.duration_ms is None:
         return None
-    delay = span.gateway.retry_after_s
+    delay = (
+        span.gateway.retry_after_s
+        if span.gateway is not None and span.gateway.retry_after_s is not None
+        else span.provider_retry_after_s
+    )
     if delay is None:
         return None
     return delay, span.started_at + timedelta(milliseconds=span.duration_ms)

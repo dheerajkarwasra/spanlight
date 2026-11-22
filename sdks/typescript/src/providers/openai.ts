@@ -21,8 +21,7 @@ import {
 
 export interface WrapOpenAIOptions {
   /**
-   * Provider recorded on spans. Defaults to `azure_openai` for an `AzureOpenAI` client (Azure
-   * bills its own rates) and `openai` otherwise; set it when pointing the SDK at a compatible API.
+   * Provider recorded on spans. Overrides attribution from the client type or base URL.
    */
   provider?: string;
 }
@@ -34,13 +33,39 @@ export interface WrapOpenAIOptions {
  */
 export function wrapOpenAI<T>(client: T, options: WrapOpenAIOptions = {}): T {
   try {
-    const provider = options.provider ?? (isAzure(client) ? "azure_openai" : "openai");
+    const provider = options.provider ?? defaultProvider(client);
     patchCreate(get(client, "chat", "completions"), chatEndpoint(provider));
     patchCreate(get(client, "responses"), responsesEndpoint(provider));
   } catch (error) {
     log.warn("Could not instrument the OpenAI client", error);
   }
   return client;
+}
+
+const PROVIDER_HOSTS = new Map([
+  ["generativelanguage.googleapis.com", "google"],
+  ["api.mistral.ai", "mistral"],
+  ["api.groq.com", "groq"],
+  ["api.deepseek.com", "deepseek"],
+  ["api.x.ai", "xai"],
+  ["api.together.ai", "together"],
+  ["api.together.xyz", "together"],
+]);
+
+function defaultProvider(client: unknown): string {
+  if (isAzure(client)) return "azure_openai";
+  const baseURL = asStr(get(client, "baseURL"));
+  if (!baseURL) return "openai";
+  let hostname: string;
+  try {
+    hostname = new URL(baseURL).hostname.replace(/\.$/, "");
+  } catch {
+    return "openai";
+  }
+  if (/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.openai\.azure\.com$/.test(hostname)) {
+    return "azure_openai";
+  }
+  return PROVIDER_HOSTS.get(hostname) ?? "openai";
 }
 
 function isAzure(client: unknown): boolean {

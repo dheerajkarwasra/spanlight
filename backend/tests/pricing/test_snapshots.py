@@ -24,6 +24,7 @@ from app.pricing.prices import (
     SNAPSHOT_2026_10_15,
     SNAPSHOT_2026_10_16,
     SNAPSHOT_2026_10_19,
+    SNAPSHOT_2026_10_25,
     SeedFee,
     SeedPrice,
     seed_price_book,
@@ -125,6 +126,7 @@ def test_snapshots_are_ordered_and_frozen() -> None:
         SNAPSHOT_2026_10_15,
         SNAPSHOT_2026_10_16,
         SNAPSHOT_2026_10_19,
+        SNAPSHOT_2026_10_25,
     )
     dates = [snapshot.effective_from for snapshot in ALL_SNAPSHOTS]
     assert dates == sorted(dates) and len(set(dates)) == len(dates)
@@ -243,7 +245,7 @@ def test_2026_10_19_adds_openai_models() -> None:
 
 def test_2026_10_19_prices_openai_cache_writes_and_long_prompts() -> None:
     book = seed_price_book()
-    at = datetime(2026, 10, 25, 12, tzinfo=UTC)  # the 2026-10-19 rows, carried into 2026-10-25
+    at = EFFECTIVE_FROM  # Existing rows carry into the current snapshot.
 
     def cost(model: str, **usage: int) -> Decimal | None:
         result = book.cost(provider="openai", model=model, at=at, **usage)  # type: ignore[arg-type]
@@ -281,7 +283,7 @@ async def test_sync_writes_every_snapshot_once(
     expected_rows = sum(len(snapshot.prices) for snapshot in ALL_SNAPSHOTS)
     # 2026-10-01 (18), 2026-10-15 (19), 2026-10-16 (19 carried + 8 Anthropic + 11 Gemini),
     # 2026-10-19 (the 32 non-OpenAI rows carried + 56 OpenAI), 2026-10-25 (all 88 carried).
-    assert expected_rows == 18 + 19 + (19 + 8 + 11) + (32 + 56) + 88
+    assert expected_rows == 18 + 19 + (19 + 8 + 11) + (32 + 56) + 88 + (88 + 7)
     assert len(book._prices) == expected_rows
 
 
@@ -303,9 +305,23 @@ async def test_sync_writes_fees_once(
     ] == [
         ("anthropic", "web_search", Decimal("10.000000"), OCT_16, "2026-10-16"),
         ("anthropic", "web_search", Decimal("10.000000"), OCT_19, "2026-10-19"),
+        (
+            "anthropic",
+            "web_search",
+            Decimal("10.000000"),
+            SNAPSHOT_2026_10_25.effective_from,
+            "2026-10-25",
+        ),
         ("anthropic", "web_search", Decimal("10.000000"), EFFECTIVE_FROM, PRICING_VERSION),
         ("openai", "web_search", Decimal("10.000000"), OCT_16, "2026-10-16"),
         ("openai", "web_search", Decimal("10.000000"), OCT_19, "2026-10-19"),
+        (
+            "openai",
+            "web_search",
+            Decimal("10.000000"),
+            SNAPSHOT_2026_10_25.effective_from,
+            "2026-10-25",
+        ),
         ("openai", "web_search", Decimal("10.000000"), EFFECTIVE_FROM, PRICING_VERSION),
     ]
 

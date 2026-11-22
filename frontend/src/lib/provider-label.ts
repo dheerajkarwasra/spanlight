@@ -19,7 +19,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   cohere: "Cohere",
   groq: "Groq",
   ollama: "Ollama",
-  together: "Together",
+  together: "Together AI",
   deepseek: "DeepSeek",
   xai: "xAI",
 };

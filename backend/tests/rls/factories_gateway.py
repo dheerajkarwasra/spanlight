@@ -54,6 +54,14 @@ GATEWAY = (
         parents=(parent("gateway_keys", key_id="id"),),
     ),
     RowFactory(
+        table="run_reservations",
+        sql=(
+            "INSERT INTO run_reservations (project_id, trace_id, expires_at) "
+            f"VALUES (:project_id, {HEX32}, now() + interval '1 hour') RETURNING *"
+        ),
+        touch="step_count",
+    ),
+    RowFactory(
         table="gateway_cache",
         sql=(
             "INSERT INTO gateway_cache (project_id, cache_key, model, body, content_type, usage, "

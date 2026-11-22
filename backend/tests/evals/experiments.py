@@ -57,6 +57,8 @@ async def create_experiment(
     items: int,
     max_cost_usd: str,
     evaluator_ids: Sequence[uuid.UUID] = (),
+    credential_id: uuid.UUID | None = None,
+    model: str = MODEL,
 ) -> ExperimentRef:
     project = f"/api/v1/projects/{workspace.project_id}"
     dataset = await workspace.owner.post(f"{project}/datasets", json={"name": "cap-items"})
@@ -70,8 +72,8 @@ async def create_experiment(
     config = {
         "target": {
             "kind": "messages",
-            "credential_id": str(workspace.openai_credential_id),
-            "model": MODEL,
+            "credential_id": str(credential_id or workspace.openai_credential_id),
+            "model": model,
             "messages": [{"role": "user", "content": PROMPT}],
             "params": {"max_tokens": MAX_TOKENS},
         },

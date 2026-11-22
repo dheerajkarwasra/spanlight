@@ -86,11 +86,12 @@ async def create_judge(
     budget: str,
     max_tokens: int = 256,
     credential: Literal["openai", "anthropic"] = "openai",
+    credential_id: uuid.UUID | None = None,
     model: str = JUDGE_MODEL,
 ) -> Judge:
     """A relevance judge with this monthly budget and output allowance."""
     workspace = world.workspace
-    credential_id = (
+    credential_id = credential_id or (
         workspace.openai_credential_id
         if credential == "openai"
         else workspace.anthropic_credential_id

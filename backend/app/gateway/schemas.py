@@ -8,6 +8,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, SecretStr, St
 
 from app.auth.proof_types import Password, TotpCode
 from app.db.models import ProviderKind
+from app.gateway.adapters import supports_surface
 
 CredentialName = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
@@ -44,8 +45,14 @@ after trimming.
 """
 
 
+def _check_provider(provider: ProviderKind) -> ProviderKind:
+    if not supports_surface(provider, "models"):
+        raise ValueError("provider is not available for credentials")
+    return provider
+
+
 class CredentialCreate(BaseModel):
-    """A new provider credential. `base_url` is only for `openai_compatible`, which needs it."""
+    """A credential. Azure OpenAI and OpenAI-compatible providers require `base_url`."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -53,7 +60,7 @@ class CredentialCreate(BaseModel):
     code: TotpCode | None = None
 
     name: CredentialName
-    provider: ProviderKind
+    provider: Annotated[ProviderKind, AfterValidator(_check_provider)]
     api_key: ProviderApiKey
     base_url: Annotated[str, StringConstraints(max_length=2048)] | None = None
 

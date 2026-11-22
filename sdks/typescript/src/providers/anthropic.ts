@@ -32,6 +32,7 @@ const PROVIDER = "anthropic";
 export function wrapAnthropic<T>(client: T): T {
   try {
     patchCreate(get(client, "messages"), messagesEndpoint);
+    patchCreate(get(client, "beta", "messages"), messagesEndpoint);
   } catch (error) {
     log.warn("Could not instrument the Anthropic client", error);
   }

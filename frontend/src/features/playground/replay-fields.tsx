@@ -4,7 +4,7 @@ import { FieldSelect } from "@/components/field-select";
 import { FormField } from "@/components/form-field";
 import { Notice } from "@/components/notice";
 import { Input } from "@/components/ui/input";
-import type { Credential, ReplayProviderKind } from "@/lib/api";
+import type { Credential } from "@/lib/api";
 import { formatInteger } from "@/lib/format";
 
 import { MAX_TOKENS_RULE, parseParam } from "./config-state";
@@ -20,17 +20,11 @@ export interface ReplayDraft {
   maxTokens: string;
 }
 
-const KIND_NAMES: Record<ReplayProviderKind, string> = {
-  openai: "OpenAI or OpenAI-compatible",
-  anthropic: "Anthropic",
-};
-
 interface ReplayFieldsProps {
   draft: ReplayDraft;
   onChange: (patch: Partial<ReplayDraft>) => void;
   /** The organization's credentials of the span's provider family only. */
   credentials: readonly Credential[];
-  kind: ReplayProviderKind;
   storedMaxTokens: number | null;
 }
 
@@ -42,13 +36,7 @@ function maxTokensHint(stored: number | null): string {
 }
 
 /** Figma "Playground / Replay column": credential (with its base URL), model and max tokens. */
-export function ReplayFields({
-  draft,
-  onChange,
-  credentials,
-  kind,
-  storedMaxTokens,
-}: ReplayFieldsProps) {
+export function ReplayFields({ draft, onChange, credentials, storedMaxTokens }: ReplayFieldsProps) {
   const listId = useId();
   const prices = usePricesQuery();
   const selected = credentials.find((credential) => credential.id === draft.credentialId) ?? null;
@@ -59,8 +47,8 @@ export function ReplayFields({
     <div className="flex flex-col gap-3.5">
       {credentials.length === 0 ? (
         <Notice>
-          This organization has no {KIND_NAMES[kind]} credential, which this span's request needs.
-          An owner adds one under Gateway, Credentials.
+          This organization has no credential that supports this span's request. An owner can add
+          one under Gateway, Credentials.
         </Notice>
       ) : (
         <FormField

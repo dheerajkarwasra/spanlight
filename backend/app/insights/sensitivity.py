@@ -50,6 +50,11 @@ GATES: Mapping[str, Gate] = MappingProxyType(
         "cache_opportunity": Gate("repeated calls", Decimal(25), Decimal(50)),
         "client_timeout_misconfigured": Gate("aborted calls", Decimal(25), Decimal(50)),
         "retry_after_ignored": Gate("early retries", Decimal(5), Decimal(10)),
+        "agent_ping_pong_loop": Gate("alternating cycles", Decimal(4), Decimal(6)),
+        "tool_error_ignored": Gate("ignored tool errors", Decimal(4), Decimal(8)),
+        "tool_schema_hallucination": Gate("schema failures", Decimal(5), Decimal(10)),
+        "prefix_cache_busted": Gate("affected traces", Decimal(4), Decimal(8)),
+        "subagent_fanout_storm": Gate("max LLM calls in one trace", Decimal(20), Decimal(35)),
     }
 )
 TUNABLE: frozenset[str] = frozenset(GATES)
@@ -69,6 +74,11 @@ _METRIC: Mapping[str, str] = MappingProxyType(
         "cache_opportunity": "repeated_calls",
         "client_timeout_misconfigured": "aborts",
         "retry_after_ignored": "pairs",
+        "agent_ping_pong_loop": "max_cycles",
+        "tool_error_ignored": "ignored_calls",
+        "tool_schema_hallucination": "errors",
+        "prefix_cache_busted": "traces",
+        "subagent_fanout_storm": "max_calls",
     }
 )
 

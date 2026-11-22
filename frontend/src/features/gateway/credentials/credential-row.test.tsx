@@ -24,13 +24,13 @@ const credential: Credential = {
   rotated_at: null,
 };
 
-function renderRow() {
+function renderRow(row = credential) {
   render(
     <QueryClientProvider client={new QueryClient()}>
       <TooltipProvider>
         <ul>
           <CredentialRow
-            credential={credential}
+            credential={row}
             canManage
             uses={undefined}
             routes={[]}
@@ -48,5 +48,19 @@ describe("CredentialRow", () => {
 
     expect(screen.getByText(credential.id)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Copy anthropic-prod ID" })).toBeInTheDocument();
+  });
+
+  it.each([
+    [
+      "azure_openai",
+      "Verify the key belongs to this Azure resource, then rotate it and check again.",
+    ],
+    ["mistral", "Verify the key's access in Mistral, then rotate it and check again."],
+  ] as const)("shows recovery steps after a %s credential check fails", (provider, advice) => {
+    renderRow({ ...credential, provider, last_error: "401 Unauthorized" });
+
+    expect(screen.getAllByText("Failing · 401 Unauthorized")[0]).toBeInTheDocument();
+    expect(screen.getAllByText(advice)[0]).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Rotate anthropic-prod" })).toBeInTheDocument();
   });
 });

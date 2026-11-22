@@ -10,10 +10,11 @@ import type { Page } from "./types";
  */
 export type ReplayFidelity = "exact" | "modified" | "messages_only";
 
-export type ReplaySurface = "chat_completions" | "responses" | "messages" | "models";
+export type ReplaySurface =
+  "chat_completions" | "responses" | "messages" | "generate_content" | "models";
 
-/** The credential family a replay needs: `openai` (any OpenAI-compatible server) or `anthropic`. */
-export type ReplayProviderKind = "openai" | "anthropic";
+/** The credential family a replay needs. The surface further limits compatible credentials. */
+export type ReplayProviderKind = "openai" | "anthropic" | "gemini";
 
 export type ReplayStatus = "running" | "done" | "failed";
 

@@ -104,7 +104,7 @@ export function runEndReason(error: string | null): string {
     case "cancelled":
       return "Cancelled before it finished";
     case "model_unpriced":
-      return "Not started: the model has no price, so the cost limit can't be enforced";
+      return "Not started: the cost limit can't be enforced for this model";
     case "credential_missing":
       return "Not started: the credential was deleted";
     case "credentials_not_configured":

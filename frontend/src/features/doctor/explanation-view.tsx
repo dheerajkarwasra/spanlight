@@ -33,7 +33,7 @@ interface ExplanationViewProps {
 
 /**
  * One stored explanation: the advisory label, the text, then model, cost and time. The text is
- * Claude's output and is rendered as plain text only: no HTML, no Markdown.
+ * the provider's output and is rendered as plain text only: no HTML, no Markdown.
  */
 export function ExplanationView({ explanation, now }: ExplanationViewProps) {
   const cost = formatCost(explanation.cost_usd);

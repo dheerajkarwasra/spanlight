@@ -75,6 +75,17 @@ test("setup traffic verifies ingestion; only an instrumented app completes onboa
   await expectNoAxeViolations(page);
 
   await capture("waiting-desktop");
+  await page.setViewportSize({ width: 375, height: 900 });
+  await page.getByRole("tab", { name: "Gemini (Python)" }).click();
+  await expect(
+    page.getByRole("button", { name: "Copy Gemini (Python): Instrument" }),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Gemini (TypeScript)" }).click();
+  await expect(
+    page.getByRole("button", { name: "Copy Gemini (TypeScript): Instrument" }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
   const projectId = new URL(page.url()).searchParams.get("project");
   expect(projectId).toBeTruthy();
   const projectApi = `/api/v1/projects/${projectId}`;

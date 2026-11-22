@@ -1,7 +1,7 @@
 """The gateway context of an explanation: one credential, a route built in memory, no key.
 
 An explanation is not a call through one of the project's routes (the organization's oldest
-Anthropic credential may serve no route at all), so the route is built in memory by
+matching provider credential may serve no route at all), so the route is built in memory by
 `app.gateway.in_process.single_credential_context`: a single target on that credential, one
 attempt and no fallbacks (the budget reserves the cost of exactly one call, and a retry after a
 dropped connection could be billed twice). `key=None` means no cache, no faults and no key limits;

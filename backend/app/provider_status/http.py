@@ -18,7 +18,7 @@ from app.core.egress_http import EgressPolicyTransport, VettedTransport
 from app.jobs.worker_heartbeat import backend_version
 
 TIMEOUT_SECONDS = 10.0
-# Three feeds polled one after the other: a connection each is plenty.
+# Polls run sequentially and the pool keeps only a few idle connections.
 POOL_SIZE = 3
 KEEPALIVE_EXPIRY_SECONDS = 5.0
 

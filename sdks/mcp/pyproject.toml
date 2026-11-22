@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "spanlight-mcp"
+version = "0.1.0"
+description = "Model Context Protocol (MCP) server for querying Spanlight traces, Doctor insights, spend metrics, and prompts."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dependencies = ["httpx>=0.27.0"]
+
+[project.scripts]
+spanlight-mcp = "spanlight_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/spanlight_mcp"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true

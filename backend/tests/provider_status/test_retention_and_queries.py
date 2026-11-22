@@ -174,6 +174,6 @@ async def test_list_sources_returns_the_three_feeds(session_factory: SessionFact
     async with session_factory() as db:
         sources = await list_sources(db)
 
-    assert [row.provider for row in sources] == ["anthropic", "google", "openai"]
+    assert [row.provider for row in sources] == ["anthropic", "google", "groq", "mistral", "openai"]
     assert {row.consecutive_failures for row in sources} == {0}
     assert {row.last_polled_at for row in sources} == {None}

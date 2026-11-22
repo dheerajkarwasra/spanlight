@@ -1,6 +1,7 @@
 import type { DeltaPillProps } from "@/components/delta-pill";
 import { GATEWAY_TIME_RANGE_OPTIONS } from "@/features/shell";
 import type { FaultScenario, FaultScenarioCount, GatewayOverview, ProviderKind } from "@/lib/api";
+import { PROVIDER_LABELS } from "./credentials/credential-form";
 import {
   formatDuration,
   formatInteger,
@@ -73,12 +74,6 @@ export function labErrorCount(faults: readonly FaultScenarioCount[]): number {
 export function sortedFaults(faults: readonly FaultScenarioCount[]): FaultScenarioCount[] {
   return [...faults].sort((a, b) => b.count - a.count || a.scenario.localeCompare(b.scenario));
 }
-
-const PROVIDER_LABELS: Record<ProviderKind, string> = {
-  openai: "OpenAI",
-  anthropic: "Anthropic",
-  openai_compatible: "OpenAI-compatible",
-};
 
 export function providerLabel(provider: ProviderKind | null): string | null {
   return provider === null ? null : PROVIDER_LABELS[provider];

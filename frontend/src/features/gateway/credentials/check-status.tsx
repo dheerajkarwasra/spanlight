@@ -6,7 +6,7 @@ import { formatRelativeTime, formatTimestamp } from "@/lib/format";
 import type { Credential } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-import { checkState } from "./credential-model";
+import { checkAdvice, checkState } from "./credential-model";
 
 interface CheckStatusProps {
   credential: Credential;
@@ -43,15 +43,20 @@ export function CheckStatus({ credential, checking, className }: CheckStatusProp
           </span>
         </Chip>
       );
-    case "failing":
+    case "failing": {
+      const advice = checkAdvice(credential);
       return (
-        <Chip tone="danger" className={className}>
-          <CircleAlert aria-hidden />
-          <span title={state.error} className="truncate">
-            Failing · {state.error}
-          </span>
-        </Chip>
+        <div className={cn("min-w-0 space-y-1", className)}>
+          <Chip tone="danger">
+            <CircleAlert aria-hidden />
+            <span title={state.error} className="truncate">
+              Failing · {state.error}
+            </span>
+          </Chip>
+          {advice ? <p className="text-xs text-muted-foreground">{advice}</p> : null}
+        </div>
       );
+    }
     case "never":
       return (
         <Chip tone="neutral" className={className}>

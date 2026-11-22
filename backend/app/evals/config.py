@@ -4,9 +4,8 @@
 equals the `kind` column:
 
 * `heuristic` wraps one rule of `app.evals.evaluators.heuristic` in `check`;
-* `llm_judge` names a chat prompt version, an organization credential (Anthropic or OpenAI) and a
-  model; the call goes through the gateway on a route built in memory, under the evaluator's
-  monthly budget;
+* `llm_judge` names a chat prompt version, an organization credential (Anthropic, OpenAI, or
+  Gemini) and a model. The call goes through the gateway under the evaluator's monthly budget;
 * `webhook` names an organization alert channel of kind `webhook`.
 
 These models validate shape only; the service checks every id against the project and the

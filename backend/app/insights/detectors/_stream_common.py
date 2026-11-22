@@ -9,7 +9,7 @@ correct client behaviour.
 
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from datetime import timedelta
 
 from app.insights.context import DetectorContext, LlmSpanRow
@@ -24,27 +24,32 @@ def fault_rounds(
     horizon: timedelta,
     *,
     forbid_resend: bool = False,
+    predicate: Callable[[LlmSpanRow], bool] | None = None,
 ) -> list[LlmSpanRow]:
-    """Fault spans of `scenario` that the client answered with a different request.
+    """Fault spans of `scenario` (or matching `predicate`) answered with a different request.
 
     A round qualifies when a span of the same trace starts after the fault, no later than
     `horizon` after the fault's start, with a known request hash other than the fault's. With
     `forbid_resend`, it also needs no later span in the trace (at any time) with the fault's own
     hash. A fault without a request hash never qualifies.
     """
+    matches = predicate or (lambda s: s.fault_scenario == scenario)
     by_trace: dict[str, list[LlmSpanRow]] = defaultdict(list)
     for span in spans:
         by_trace[span.trace_id].append(span)
     rounds: list[LlmSpanRow] = []
     for trace_spans in by_trace.values():
-        if any(s.fault_scenario == scenario for s in trace_spans):
+        if any(matches(s) for s in trace_spans):
             ordered = sorted(trace_spans, key=lambda s: s.started_at)
-            rounds.extend(_trace_rounds(ordered, scenario, horizon, forbid_resend))
+            rounds.extend(_trace_rounds(ordered, matches, horizon, forbid_resend))
     return rounds
 
 
 def _trace_rounds(
-    ordered: Sequence[LlmSpanRow], scenario: str, horizon: timedelta, forbid_resend: bool
+    ordered: Sequence[LlmSpanRow],
+    matches: Callable[[LlmSpanRow], bool],
+    horizon: timedelta,
+    forbid_resend: bool,
 ) -> list[LlmSpanRow]:
     """Rounds of one trace, in O(n log n): positions per hash and a prefix count of hashed spans."""
     times = [s.started_at for s in ordered]
@@ -56,7 +61,7 @@ def _trace_rounds(
         hashed_before.append(hashed_before[-1] + (span.request_hash is not None))
     rounds: list[LlmSpanRow] = []
     for fault in ordered:
-        if fault.fault_scenario != scenario or fault.request_hash is None:
+        if not matches(fault) or fault.request_hash is None:
             continue
         start = bisect_right(times, fault.started_at)  # strictly after the fault
         stop = bisect_right(times, fault.started_at + horizon)

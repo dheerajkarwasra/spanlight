@@ -70,6 +70,8 @@ test("CSV source → upload → settled day with zero residual → CSV download"
   await createDialog.getByRole("radio", { name: "CSV upload" }).click();
   await createDialog.getByLabel("Name").fill(SOURCE_NAME);
   await createDialog.getByRole("combobox", { name: "Provider" }).click();
+  await expect(page.getByRole("option")).toHaveCount(9);
+  await expect(page.getByRole("option", { name: "DeepSeek" })).toBeVisible();
   await page.getByRole("option", { name: "Anthropic" }).click();
   await createDialog.getByRole("checkbox", { name: "E2E Project" }).click();
   await expect(createDialog.getByRole("checkbox", { name: "E2E Project" })).toBeChecked();

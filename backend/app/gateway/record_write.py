@@ -95,7 +95,7 @@ async def _write_with_retries(
                     return None
                 _write_lost(context.project_id, span, failure, tries=tries + 1)
                 evidence.counted = True
-                await settle_unstored(context.sessions, context.project_id, span)
+                await settle_unstored(context.write_sessions, context.project_id, span)
                 return None
             logger.warning(
                 "gateway.record_retry",

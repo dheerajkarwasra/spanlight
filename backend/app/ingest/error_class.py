@@ -34,6 +34,7 @@ from types import MappingProxyType
 from typing import Any
 
 from app.db.models import SpanStatus
+from app.pricing.provider_alias import canonical_provider
 
 
 class ErrorClass(enum.StrEnum):
@@ -148,7 +149,11 @@ _SPEND_LIMIT_400_ERROR_TYPE = "invalid_request_error"
 
 
 def classify_error(
-    status: SpanStatus, status_message: str | None, attributes: Mapping[str, Any]
+    status: SpanStatus,
+    status_message: str | None,
+    attributes: Mapping[str, Any],
+    *,
+    provider: str | None = None,
 ) -> ErrorClass | None:
     """The span's error class, or None when the span did not fail (see the module docstring)."""
     if status != SpanStatus.ERROR:
@@ -165,6 +170,8 @@ def classify_error(
     )
     code = numeric_status(attributes)
     if code is not None:
+        if code == 402 and canonical_provider(provider) == "deepseek":
+            return ErrorClass.RATE_LIMIT
         from_status = _class_from_status(code)
         if from_status == ErrorClass.CLIENT:
             refined = _refine_client(code, status_message, from_message, attributes)

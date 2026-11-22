@@ -122,7 +122,11 @@ function RotateForm({ credential, onPendingChange, onDone, onNotConfigured }: Ro
       ) : null}
       <FormField
         label="New API key"
-        hint={API_KEY_HINT}
+        hint={
+          credential.provider === "azure_openai"
+            ? "Use a key from the resource listed on this credential. Stored encrypted."
+            : API_KEY_HINT
+        }
         error={form.formState.errors.apiKey?.message}
       >
         <ApiKeyInput

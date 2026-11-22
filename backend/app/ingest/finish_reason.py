@@ -28,6 +28,7 @@ _CANONICAL = {
     "end_turn": "stop",
     "stop_sequence": "stop",
     "max_tokens": "length",
+    "max_output_tokens": "length",
     "tool_use": "tool_calls",
     "refusal": "content_filter",
     "pause_turn": "other",
@@ -41,6 +42,12 @@ _CANONICAL = {
     "recitation": "content_filter",
     "blocklist": "content_filter",
     "malformed_function_call": "other",
+    # Mistral
+    "model_length": "length",
+    # DeepSeek chat and Responses status.
+    "insufficient_system_resource": "other",
+    "aborted": "other",
+    "completed": "stop",
     # OpenTelemetry GenAI semantic conventions (singular)
     "tool_call": "tool_calls",
 }

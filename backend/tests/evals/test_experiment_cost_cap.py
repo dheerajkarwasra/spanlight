@@ -6,6 +6,8 @@ costs exactly its estimate, so the outcome does not depend on how the calls inte
 """
 
 import asyncio
+import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -63,3 +65,29 @@ async def test_experiment_cost_cap_counts_in_flight(judge_world: JudgeWorld) -> 
     assert Decimal(body["totals"]["cost_usd"]) == 2 * estimate
     items = await world.workspace.owner.get(f"{experiment.url}/runs/{run_id}/items")
     assert len(items.json()["items"]) == 2
+
+
+async def test_experiment_reserves_expanded_provider_ceiling(judge_world: JudgeWorld) -> None:
+    world = judge_world
+    world.clock.advance((datetime(2026, 11, 20, tzinfo=UTC) - world.clock.wall()).total_seconds())
+    workspace = world.workspace
+    added = await workspace.owner.post(
+        f"/api/v1/orgs/{workspace.org_id}/credentials",
+        json={"name": "Mistral", "provider": "mistral", "api_key": "test-mistral-key"},
+    )
+    assert added.status_code == 201, added.text
+    experiment = await create_experiment(
+        workspace,
+        items=1,
+        max_cost_usd="0.001",
+        credential_id=uuid.UUID(added.json()["id"]),
+        model="mistral-small-2603",
+    )
+    run_id = await queue_run(workspace, experiment)
+    reply(world.fake, (20, 1))
+    await execute_run(world.deps, run_id, workspace.project_id)
+
+    assert world.fake.requests == []
+    stored = await workspace.owner.get(f"{experiment.url}/runs/{run_id}")
+    assert stored.status_code == 200, stored.text
+    assert (stored.json()["status"], stored.json()["error"]) == ("failed", COST_CAP_REACHED)

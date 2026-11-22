@@ -25,12 +25,14 @@ function ingestSnippets(snippets: Snippet[]): Snippet[] {
 }
 
 describe("buildSnippets", () => {
-  it("returns the six tabs in order, with the no-SDK gateway tab last", () => {
+  it("returns the eight tabs in order, with the no-SDK gateway tab last", () => {
     const snippets = buildSnippets({ apiKey: null, host: HOST });
     expect(snippets.map((item) => item.label)).toEqual([
       "Python SDK",
       "OpenAI",
       "Anthropic",
+      "Gemini (Python)",
+      "Gemini (TypeScript)",
       "OpenTelemetry",
       "curl",
       "No SDK",
@@ -109,6 +111,23 @@ describe("buildSnippets", () => {
 
     expect(snippet(snippets, "openai")).toContain("client = wrap_openai(OpenAI())");
     expect(snippet(snippets, "anthropic")).toContain("client = wrap_anthropic(Anthropic())");
+  });
+
+  it("instruments native Gemini in both SDKs with a separate Gemini API key", () => {
+    const snippets = buildSnippets({ apiKey: SECRET, host: HOST });
+    const python = snippet(snippets, "gemini-python");
+    expect(python).toContain('python -m pip install "/path/to/spanlight/sdks/python" google-genai');
+    expect(python).toContain("spanlight.wrap_google_genai(genai.Client())");
+    expect(python).toContain("client.models.generate_content(");
+    const typescript = snippet(snippets, "gemini-typescript");
+    expect(typescript).toContain(
+      'npm pack --silent --ignore-scripts "$SPANLIGHT_CHECKOUT/sdks/typescript"',
+    );
+    expect(typescript).toContain('npm install "./$SPANLIGHT_TARBALL" @google/genai');
+    expect(typescript).toContain("wrapGoogleGenAI(new GoogleGenAI(");
+    expect(typescript).toContain("process.env.GEMINI_API_KEY");
+    expect(typescript).toContain("client.models.generateContent(");
+    expect(typescript).toContain("await flush()");
   });
 
   it("configures the OTLP exporter for this instance", () => {

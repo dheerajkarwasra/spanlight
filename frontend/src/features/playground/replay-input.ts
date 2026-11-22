@@ -1,4 +1,4 @@
-import type { ReplayInput, ReplayProviderKind } from "@/lib/api";
+import type { ReplayInput, ReplaySurface, Span } from "@/lib/api";
 
 import { MAX_TOKENS_RULE, parseParam } from "./config-state";
 import { parseRequestBody } from "./replay-state";
@@ -16,12 +16,21 @@ export interface ReplayRequestPair {
   after: Body;
 }
 
-/**
- * The credential family a span's provider needs when the server could not say (a refused source
- * carries none): Anthropic speaks its own API; every other provider string speaks OpenAI's.
- */
-export function providerKindOf(provider: string | null | undefined): ReplayProviderKind {
-  return provider === "anthropic" ? "anthropic" : "openai";
+/** The surface of an editable refusal, whose source response omits the stored request. */
+export function replaySurfaceOf(span: Span): ReplaySurface {
+  const recorded = span.attributes["spanlight.gateway.surface"];
+  if (
+    recorded === "generate_content" ||
+    recorded === "messages" ||
+    recorded === "responses" ||
+    recorded === "chat_completions"
+  )
+    return recorded;
+  if (span.input && typeof span.input === "object" && !Array.isArray(span.input)) {
+    if ("contents" in span.input) return "generate_content";
+    if ("input" in span.input && !("messages" in span.input)) return "responses";
+  }
+  return span.provider === "anthropic" ? "messages" : "chat_completions";
 }
 
 /** The request as editable text: the stored body, else the span's raw input (a cut string). */
@@ -84,6 +93,7 @@ export function requestPair(input: ReplayInput, stored: Body): ReplayRequestPair
       max_tokens: cap,
       max_completion_tokens: cap,
       max_output_tokens: cap,
+      generationConfig: { maxOutputTokens: cap },
     },
   };
 }

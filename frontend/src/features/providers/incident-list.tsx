@@ -6,6 +6,7 @@ import { TileListSkeleton } from "@/components/tile-list";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardTitle } from "@/components/ui/card";
 import type { ProviderIncident } from "@/lib/api";
+import { feedLabel } from "@/lib/provider-label";
 import { statusPageUrl } from "@/lib/status-page-url";
 import { cn } from "@/lib/utils";
 
@@ -57,7 +58,7 @@ function IncidentRow({ incident }: { incident: ProviderIncident }) {
       <div className="flex min-w-[min(100%,260px)] flex-1 flex-col gap-1">
         <p className="flex items-start gap-2 text-sm">
           <span className={cn("font-mono text-[13px]", !muted && "text-muted-foreground")}>
-            {incident.provider}
+            {feedLabel(incident.provider)}
           </span>
           <span className={cn("min-w-0 flex-1 font-semibold", !muted && "text-foreground")}>
             {incident.title}
@@ -132,6 +133,9 @@ export function IncidentList({ now }: { now: Date }) {
             </p>
           )}
           <FeedStatusLine sources={data?.sources ?? []} now={now} />
+          <p className="text-xs text-muted-foreground">
+            No monitored feed for Azure OpenAI, DeepSeek, xAI or Together AI.
+          </p>
         </>
       )}
     </Card>

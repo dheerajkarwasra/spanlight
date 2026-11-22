@@ -4,7 +4,7 @@
   which online traces never have, so it cannot sample (`RULE_NEEDS_EXPECTED_OUTPUT`);
 * a judge needs a positive monthly budget (`BUDGET_REQUIRED`), a chat prompt version of the
   project whose variables are among `input`, `output` and `expected_output`
-  (`JUDGE_TEMPLATE_VARIABLES`), an Anthropic or OpenAI credential of the organization, and a
+  (`JUDGE_TEMPLATE_VARIABLES`), a supported judge credential of the organization, and a
   model with a price, without which the budget could not be enforced (`EVALUATOR_MODEL_UNPRICED`);
 * a webhook names a `webhook` alert channel of the organization (`CHANNEL_KIND`).
 
@@ -18,17 +18,16 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AlertChannelKind, PromptKind, ProviderKind
+from app.db.models import AlertChannelKind, PromptKind
 from app.evals import queries
-from app.evals.budget import estimate_call_cost
 from app.evals.config import HeuristicEvaluatorConfig, JudgeConfig, WebhookEvaluatorConfig
 from app.evals.errors import EvaluatorConfigError, EvaluatorReferenceNotFoundError
+from app.evals.evaluators.judge import JUDGE_PROVIDERS, estimate_judge
 from app.gateway import service as gateway_service
 from app.pricing.cost import load_price_book
 from app.prompts import service as prompt_service
 
 JUDGE_VARIABLES = frozenset({"input", "output", "expected_output"})
-JUDGE_PROVIDERS = frozenset({ProviderKind.ANTHROPIC, ProviderKind.OPENAI})
 
 AnyConfig = HeuristicEvaluatorConfig | JudgeConfig | WebhookEvaluatorConfig
 
@@ -98,13 +97,11 @@ async def _check_judge(
     if credential.provider not in JUDGE_PROVIDERS:
         raise EvaluatorConfigError(
             "VALIDATION_ERROR",
-            "A judge calls Anthropic or OpenAI; pick a credential of one of them.",
+            "Pick an Anthropic, OpenAI, or Gemini credential for the judge.",
             "config.credential_id",
         )
     prices = await load_price_book(db, org_id)
-    estimate = estimate_call_cost(
-        config.model, 1, config.max_tokens, prices, provider=credential.provider.value, at=now
-    )
+    estimate = estimate_judge(credential.provider, config, None, prices, now)
     # A zero price (an organization's override, say) would make every call free to the budget.
     if estimate is None or estimate <= 0:
         raise EvaluatorConfigError(

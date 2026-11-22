@@ -1,6 +1,6 @@
 """Status feed adapters: pure parsers, bytes in, `ParsedIncident`s out.
 
-Each adapter pins its feed URL (a constant, never a setting) and the `https://status.<host>/`
+Each adapter pins its feed URL (a constant, never a setting) and the HTTPS incident URL
 prefix every stored incident url must start with. The poller fetches; nothing here does I/O.
 """
 
@@ -14,8 +14,9 @@ from app.provider_status.adapters.types import (
     ParseReport,
     ParseResult,
 )
+from app.provider_status.adapters.verified import groq, mistral
 
-ADAPTERS: tuple[FeedAdapter, ...] = (anthropic, openai, google)
+ADAPTERS: tuple[FeedAdapter, ...] = (anthropic, openai, google, mistral, groq)
 
 __all__ = [
     "ADAPTERS",

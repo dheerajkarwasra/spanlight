@@ -1,0 +1,29 @@
+{
+  "request": {
+    "model": "gemini-2.5-flash-lite",
+    "contents": [{"role": "user", "parts": [{"text": "Hello"}]}],
+    "systemInstruction": {"role": "user", "parts": [{"text": "Answer briefly"}]},
+    "generationConfig": {"maxOutputTokens": 40, "temperature": 0}
+  },
+  "response": {
+    "responseId": "gemini-test",
+    "modelVersion": "gemini-2.5-flash-lite",
+    "candidates": [{"index": 0, "finishReason": "STOP", "content": {"role": "model", "parts": [{"text": "Hello world"}]}}],
+    "usageMetadata": {"promptTokenCount": 32, "cachedContentTokenCount": 12, "candidatesTokenCount": 4, "thoughtsTokenCount": 3}
+  },
+  "chunks": [
+    {
+      "responseId": "gemini-test",
+      "modelVersion": "gemini-2.5-flash-lite",
+      "candidates": [{"index": 0, "content": {"role": "model", "parts": [{"text": "Hello"}]}}],
+      "usageMetadata": {"promptTokenCount": 32, "cachedContentTokenCount": 12, "candidatesTokenCount": 1}
+    },
+    {
+      "responseId": "gemini-test",
+      "modelVersion": "gemini-2.5-flash-lite",
+      "candidates": [{"index": 0, "finishReason": "STOP", "content": {"role": "model", "parts": [{"text": " world"}]}}],
+      "usageMetadata": {"promptTokenCount": 32, "cachedContentTokenCount": 12, "candidatesTokenCount": 4, "thoughtsTokenCount": 3}
+    }
+  ],
+  "usage": {"input_tokens": 32, "cached_tokens": 12, "output_tokens": 7}
+}

@@ -14,11 +14,14 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
+from app.budgets.gemini import reserve_gemini
+from app.budgets.provider_bounds import provider_cost_ceiling
 from app.db.models import PromptVersion, ProviderKind
 from app.evals.budget import estimate_call_cost
 from app.evals.evaluators.heuristic import text_of
 from app.evals.experiment_config import AdHocTarget, PromptVersionTarget
 from app.gateway.context import GatewayRequest
+from app.gateway.provider_billing import NEW_TEXT_PROVIDERS
 from app.gateway.trace_headers import TraceHeaders
 from app.playground import request as build
 from app.playground.schemas import Params
@@ -80,14 +83,7 @@ def item_request(
     max_tokens = output_ceiling(target.params)
     params = target.params.model_copy(update={"max_tokens": max_tokens})
     body = build.build_body(provider, target.model, params, messages)
-    estimate = estimate_call_cost(
-        target.model,
-        "".join(m.content for m in messages),
-        max_tokens,
-        prices,
-        provider=provider.value,
-        at=at,
-    )
+    estimate = _estimate(provider, target.model, messages, body, max_tokens, prices, at)
     request = GatewayRequest(
         surface=build.surface_for(provider),
         body=body,
@@ -95,6 +91,30 @@ def item_request(
         trace=TraceHeaders(tags=[run_tag]),
     )
     return ItemRequest(request, estimate, None)
+
+
+def _estimate(
+    provider: ProviderKind,
+    model: str,
+    messages: list[Message],
+    body: dict[str, Any],
+    max_tokens: int,
+    prices: PriceBook,
+    at: datetime,
+) -> Decimal | None:
+    if provider == ProviderKind.GEMINI:
+        reservation = reserve_gemini(body, [model], prices, at=at, fallback_cap=max_tokens)
+        return reservation.usd if reservation else None
+    if provider in NEW_TEXT_PROVIDERS:
+        return provider_cost_ceiling(provider, model, body, prices, at)
+    return estimate_call_cost(
+        model,
+        "".join(message.content for message in messages),
+        max_tokens,
+        prices,
+        provider=provider.value,
+        at=at,
+    )
 
 
 def run_tag(run_id: object) -> str:
@@ -107,8 +127,10 @@ def priced(
     prices: PriceBook,
     at: datetime,
 ) -> bool:
-    """Whether the target's model has a positive price, so the cost cap can be enforced."""
-    estimate = estimate_call_cost(
-        target.model, 1, output_ceiling(target.params), prices, provider=provider.value, at=at
-    )
+    """Whether one text call on the target has a positive reservation."""
+    max_tokens = output_ceiling(target.params)
+    params = target.params.model_copy(update={"max_tokens": max_tokens})
+    messages = [Message("user", "x")]
+    body = build.build_body(provider, target.model, params, messages)
+    estimate = _estimate(provider, target.model, messages, body, max_tokens, prices, at)
     return estimate is not None and estimate > 0

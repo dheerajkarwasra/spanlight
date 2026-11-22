@@ -4,7 +4,7 @@ import { useId, useState } from "react";
 import { ErrorState } from "@/components/error-state";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { isApiError, type ReplayInput, type ReplayProviderKind, type TraceDetail } from "@/lib/api";
+import { isApiError, type ReplayInput, type ReplaySurface, type TraceDetail } from "@/lib/api";
 import { parseMoney } from "@/lib/format";
 
 import { replayCredentials } from "./credential-options";
@@ -26,7 +26,7 @@ export interface ReplayStart {
   stored: Record<string, unknown> | null;
   /** The request as editable text (the stored body, or the span's raw input). */
   text: string;
-  kind: ReplayProviderKind;
+  surface: ReplaySurface;
   model: string;
 }
 
@@ -57,7 +57,7 @@ export function ReplayForm({ start, editing, trace }: ReplayFormProps) {
   const credentialsQuery = useCredentialsQuery();
   const { budget, off } = useReplayOff();
   const { outcome, running, run } = useReplayRun();
-  const credentials = replayCredentials(credentialsQuery.data ?? [], start.kind);
+  const credentials = replayCredentials(credentialsQuery.data ?? [], start.surface);
   const credentialId = draft.credentialId ?? credentials[0]?.id ?? null;
   const text = edited ?? start.text;
   const state = { ...draft, text, credentialId, running, budget: budget.data, replayOff: off };
@@ -100,7 +100,6 @@ export function ReplayForm({ start, editing, trace }: ReplayFormProps) {
           draft={{ ...draft, credentialId }}
           onChange={(patch) => setDraft((current) => ({ ...current, ...patch }))}
           credentials={credentials}
-          kind={start.kind}
           storedMaxTokens={stored}
         />
       ) : null}

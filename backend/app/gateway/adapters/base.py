@@ -26,12 +26,13 @@ import httpx
 
 from app.db.models import ProviderKind
 from app.gateway.errors import Surface
+from app.gateway.usage_chunk import injects_usage
 
 _RESPONSE_HEADERS = frozenset(
     {"content-type", "retry-after", "retry-after-ms", "openai-processing-ms"}
 )
 _RESPONSE_HEADER_PREFIXES = ("x-ratelimit-", "anthropic-ratelimit-", "anthropic-priority-")
-_REQUEST_ID_HEADERS = frozenset({"request-id", "x-request-id"})
+_REQUEST_ID_HEADERS = frozenset({"request-id", "x-request-id", "apim-request-id"})
 UPSTREAM_REQUEST_ID_HEADER = "x-upstream-request-id"
 
 
@@ -87,6 +88,9 @@ class ProviderAdapter(Protocol):
     @property
     def provider(self) -> ProviderKind: ...
 
+    @property
+    def chat_stream_usage(self) -> bool: ...
+
     def supports(self, surface: Surface) -> bool:
         """Whether the provider serves `surface` (and so whether a target can be routed to)."""
         ...
@@ -123,9 +127,10 @@ class ProviderAdapter(Protocol):
 class HttpAdapter:
     """The shared implementation. Subclasses set the class attributes and the auth header."""
 
-    provider: ClassVar[ProviderKind]
+    provider: ProviderKind
+    chat_stream_usage = False
     # Path appended to the base URL, per served surface.
-    paths: ClassVar[Mapping[Surface, str]]
+    paths: Mapping[Surface, str]
     # Client headers copied upstream, besides `accept` and `user-agent`.
     provider_headers: ClassVar[frozenset[str]] = frozenset()
     # Sent when the client does not send them.
@@ -151,6 +156,17 @@ class HttpAdapter:
         path = self.paths.get(surface)
         if path is None:
             raise UnsupportedSurface(f"{self.provider.value} does not serve {surface}")
+        headers = self.forward_headers(client_headers)
+        url = f"{self.base_url(credential)}{path}"
+        if surface == "models":
+            return UpstreamRequest("GET", url, {**headers, **self.auth_headers(api_key)})
+        headers["content-type"] = "application/json"
+        if self.chat_stream_usage and injects_usage(surface, body.get("stream") is True, body):
+            body = {**body, "stream_options": {"include_usage": True}}
+        content = strict_json(body)
+        return UpstreamRequest("POST", url, {**headers, **self.auth_headers(api_key)}, content)
+
+    def forward_headers(self, client_headers: Mapping[str, str]) -> dict[str, str]:
         forwarded = {"accept", "user-agent", *self.provider_headers}
         headers: dict[str, str] = {}
         for name, value in client_headers.items():
@@ -158,12 +174,7 @@ class HttpAdapter:
                 headers.setdefault(name.lower(), value)
         for name, value in self.default_headers.items():
             headers.setdefault(name, value)
-        url = f"{self.base_url(credential)}{path}"
-        if surface == "models":
-            return UpstreamRequest("GET", url, {**headers, **self.auth_headers(api_key)})
-        headers["content-type"] = "application/json"
-        content = strict_json(body)
-        return UpstreamRequest("POST", url, {**headers, **self.auth_headers(api_key)}, content)
+        return headers
 
     async def send(
         self, http: httpx.AsyncClient, upstream: UpstreamRequest, timeout_s: float

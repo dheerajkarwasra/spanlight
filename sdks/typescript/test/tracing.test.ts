@@ -4,6 +4,7 @@ import { inspect } from "node:util";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  currentSpan,
   flush,
   getCurrentTraceId,
   init,
@@ -103,6 +104,31 @@ describe("observe and withSpan", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledOnce();
     warn.mockRestore();
+  });
+});
+
+describe("agent spans and usage bounds", () => {
+  it("preserves the agent span kind and ignores out-of-range usage counts", async () => {
+    const capture = captureSpanlight();
+    withSpan(
+      "planner",
+      () => {
+        currentSpan()?.setUsage({
+          inputTokens: 2_000_000_001,
+          outputTokens: 42,
+          webSearchRequests: 100_001,
+        });
+      },
+      { kind: "agent" },
+    );
+    await flush();
+
+    const spans = capture.spans();
+    expect(spans).toHaveLength(1);
+    const span = spans[0];
+    expect(span).toMatchObject({ kind: "agent", usage: { output_tokens: 42 } });
+    expect((span?.usage as Json | undefined)?.input_tokens).toBeUndefined();
+    expect(span?.attributes).not.toHaveProperty("llm.usage.web_search_requests");
   });
 });
 

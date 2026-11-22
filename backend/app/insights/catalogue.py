@@ -282,6 +282,70 @@ KIND_INFO: dict[str, KindInfo] = {
             "experiment on a dataset first to compare quality and cost.",
             "No calls to the model in the next 24 hours.",
         ),
+        KindInfo(
+            "agent_ping_pong_loop",
+            "Agent ping-pong loop",
+            L.AGENT,
+            C.MEASURED,
+            S.WARNING,
+            "Agent alternates {pair} up to {max_cycles} cycles",
+            "{traces} alternated between `{pair}` repeatedly with identical arguments in the "
+            "last hour without converging.",
+            "Enforce a per-run step circuit breaker (`X-Spanlight-Max-Steps`), inspect the "
+            "handoff/tool exit condition, and prevent circular tool delegation.",
+            "No traces show repeated alternating cycles over the next hour.",
+        ),
+        KindInfo(
+            "tool_error_ignored",
+            "Tool error ignored",
+            L.AGENT,
+            C.INFERRED,
+            S.WARNING,
+            "Agent ignored errors from {name} in {traces}",
+            "Tool `{name}` failed {ignored_calls} across {traces} in the last hour, yet the "
+            "agent proceeded to finish without retrying the tool.",
+            "Surface structured tool errors cleanly to the model and instruct it to ask the user "
+            "or recover instead of silently hallucinating completion.",
+            "Tool failures in those traces are retried or surfaced cleanly.",
+        ),
+        KindInfo(
+            "tool_schema_hallucination",
+            "Tool schema hallucination",
+            L.AGENT,
+            C.MEASURED,
+            S.WARNING,
+            "Schema validation failed {errors} on {name}",
+            "Calls to `{name}` failed validation ({errors} across {traces}) in the last hour "
+            "due to unknown tool names or malformed arguments.",
+            "Simplify the tool's JSON schema, add concrete argument examples in the description, "
+            "or enable strict structured tool outputs where supported.",
+            "Schema error rate for `{name}` drops to zero.",
+        ),
+        KindInfo(
+            "prefix_cache_busted",
+            "Prompt prefix cache busted",
+            L.REQUEST,
+            C.MEASURED,
+            S.WARNING,
+            "Prompt cache broke mid-trace on {model}",
+            "{traces} calling `{model}` hit prompt cache initially and then dropped cached tokens "
+            "mid-trace, losing roughly {lost_cached_tokens} cached input tokens.",
+            "Keep timestamps, volatile metadata, and dynamic tool definitions out of the system "
+            "prefix; append changing state only at the end of the message history.",
+            "Subsequent multi-turn traces maintain consistent `cached_tokens` across turns.",
+        ),
+        KindInfo(
+            "subagent_fanout_storm",
+            "Sub-agent fan-out storm",
+            L.AGENT,
+            C.MEASURED,
+            S.WARNING,
+            "Runaway agent fan-out reached {max_calls} LLM calls in one trace",
+            "{traces} spawned up to {max_calls} model calls within one trace in the last hour.",
+            "Set a hard per-run cost/step ceiling (`X-Spanlight-Run-Budget-USD` / "
+            "`X-Spanlight-Max-Steps`) and bound parallel sub-agent fan-out.",
+            "Max LLM calls per trace stays below the fan-out threshold.",
+        ),
     )
 }
 

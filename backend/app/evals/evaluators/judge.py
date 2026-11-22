@@ -3,10 +3,9 @@
 A judge compiles its prompt version with the evaluation's `input`, `output` and `expected_output`
 (`app.evals.judge_templates.judge_variables`) and sends one call through the gateway in process,
 on a route built in memory with the configured credential and nothing else (one attempt, no
-fallbacks): OpenAI gets `chat_completions` with the system message first, Anthropic `messages`
-with the system message in `system`. Both get one tool, `record_verdict`, and a closing system
-sentence that overrides any stored "reply with JSON": OpenAI is forced to call it; Anthropic gets
-`auto`, since its newest models reject a forced tool. The call's trace has environment `evals`, name
+fallbacks). Each provider gets its native request, one `record_verdict` tool and a closing system
+instruction to use it. OpenAI and Gemini are forced to call it. Anthropic gets `auto` because newer
+models reject a forced tool. The call's trace has environment `evals`, name
 `judge:<evaluator name>` and tag `spanlight:judge` (the sampler never samples it); its span is
 written into the project like any other call and awaited before the judge returns.
 
@@ -32,6 +31,7 @@ from typing import Any
 
 import structlog
 
+from app.budgets.gemini import reserve_gemini
 from app.db.models import Project, PromptVersion, ProviderCredential, ProviderKind
 from app.evals.budget import estimate_call_cost, failed_call_charge
 from app.evals.config import JudgeConfig
@@ -40,13 +40,15 @@ from app.evals.judge_templates import judge_variables
 from app.evals.schemas import EvalInput, EvalResult
 from app.evals.verdict import VERDICT_TOOL_NAME, VerdictUnparseable, parse_verdict_arguments
 from app.gateway.context import GatewayContext, GatewayRequest, GatewayResult, GatewayServices
-from app.gateway.errors import Surface
 from app.gateway.execute import execute as gateway_execute
 from app.gateway.in_process import single_credential_context
 from app.gateway.recorder import DirectSpans
 from app.gateway.response_summary import summarize_response
 from app.gateway.settle_helpers import may_have_billed
 from app.gateway.trace_headers import TraceHeaders
+from app.playground.output import usage_cost
+from app.playground.request import build_body, surface_for
+from app.playground.schemas import Params
 from app.pricing.cost import PriceBook
 from app.prompts.templates import (
     InvalidTemplateError,
@@ -71,8 +73,9 @@ CALL_TIMEOUT_MS = 30_000
 _THINKS_BY_DEFAULT = re.compile(
     r"claude-(?:fable|mythos)-|claude-(?:opus|sonnet|haiku)-(?:[5-9]|\d\d)"
 )
-# Finish reasons of an answer cut off by its token limit: Anthropic's, then OpenAI's.
-_TRUNCATED = ("max_tokens", "length")
+# Finish reasons for an answer cut off by the provider's output token limit.
+_TRUNCATED = ("max_tokens", "length", "MAX_TOKENS")
+JUDGE_PROVIDERS = frozenset({ProviderKind.ANTHROPIC, ProviderKind.OPENAI, ProviderKind.GEMINI})
 _VERDICT_SCHEMA = {
     "type": "object",
     "properties": {"score": {"type": "number"}, "reasoning": {"type": "string"}},
@@ -161,23 +164,16 @@ class JudgeEvaluator:
         `evaluator_model_unpriced`."""
         messages = _compile(self._version, judge_variables(input))
         provider = self._credential.provider
-        if provider not in (ProviderKind.OPENAI, ProviderKind.ANTHROPIC):
+        if provider not in JUDGE_PROVIDERS:
             raise EvaluatorError("judge_provider_unsupported")
         input_chars = sum(len(message.content) for message in messages)
         body = _body(provider, self.config, messages)
-        estimate = estimate_call_cost(
-            self.config.model,
-            _prompt_text(body),
-            self.config.max_tokens,
-            self._prices,
-            provider=provider.value,
-            at=self._clock(),
-        )
+        estimate = estimate_judge(provider, self.config, body, self._prices, self._clock())
         # A zero price (an organization's override) would make every call free to the budget.
         if estimate is None or estimate <= 0:
             raise EvaluatorError("evaluator_model_unpriced")
         request = GatewayRequest(
-            surface=_surface(provider),
+            surface=surface_for(provider),
             body=body,
             stream=False,
             trace=TraceHeaders(tags=[JUDGE_TAG]),
@@ -209,47 +205,40 @@ class JudgeEvaluator:
     def _read(self, prepared: JudgeCall, result: GatewayResult) -> EvalResult:
         if result.budget is not None:  # a project `block` budget stopped it before sending
             raise JudgeCallError("gateway_budget_blocked", Decimal(0))
-        usage_cost = self._usage_cost(prepared, result)
+        cost = usage_cost(
+            self._prices,
+            self._credential.provider,
+            result.model or self.config.model,
+            result.usage,
+            self._clock(),
+        )
         if result.error is not None or result.status != 200 or result.body is None:
             billed = may_have_billed(result)
             charge = failed_call_charge(
-                may_have_billed=billed, usage_cost=usage_cost, estimate=prepared.estimate
+                may_have_billed=billed, usage_cost=cost, estimate=prepared.estimate
             )
             raise JudgeCallError(_failure_code(result), charge)
         summary = summarize_response(prepared.request.surface, result.body)
         truncated = summary.finish_reason in _TRUNCATED
         try:
-            arguments = _verdict_arguments(summary.output)
+            arguments: Mapping[str, Any] | str | None
+            if prepared.request.surface == "generate_content":
+                arguments = None if truncated else _gemini_verdict_arguments(summary.output)
+            else:
+                arguments = _verdict_arguments(summary.output)
             if arguments is None:
                 raise VerdictUnparseable
             verdict = parse_verdict_arguments(arguments)
         except VerdictUnparseable as error:
             charge = failed_call_charge(
-                may_have_billed=True, usage_cost=usage_cost, estimate=prepared.estimate
+                may_have_billed=True, usage_cost=cost, estimate=prepared.estimate
             )
             raise JudgeCallError("judge_truncated" if truncated else error.code, charge) from None
         return EvalResult(
             scores=[_score(prepared.input, self.name, verdict.score, verdict.reasoning)],
-            cost_usd=prepared.estimate if usage_cost is None else usage_cost,
+            cost_usd=prepared.estimate if cost is None else cost,
             reasoning=verdict.reasoning,
         )
-
-    def _usage_cost(self, prepared: JudgeCall, result: GatewayResult) -> Decimal | None:
-        """The price book's cost of the call's reported usage; None when unknown."""
-        usage = result.usage
-        if usage is None:
-            return None
-        priced = self._prices.cost(
-            provider=self._credential.provider.value,
-            model=result.model or self.config.model,
-            at=self._clock(),
-            input_tokens=usage.input_tokens,
-            output_tokens=usage.output_tokens,
-            cached_tokens=usage.cached_tokens,
-            cache_write_tokens=usage.cache_write_tokens,
-            cache_write_1h_tokens=usage.cache_write_1h_tokens,
-        )
-        return None if priced is None else priced.cost_usd
 
     async def _write_spans(self, spans: DirectSpans, context: GatewayContext) -> None:
         if not await spans.write(context):
@@ -273,8 +262,27 @@ def _compile(version: PromptVersion, variables: dict[str, str]) -> list[Message]
     return compiled.messages or []
 
 
-def _surface(provider: ProviderKind) -> Surface:
-    return "messages" if provider == ProviderKind.ANTHROPIC else "chat_completions"
+def estimate_judge(
+    provider: ProviderKind,
+    config: JudgeConfig,
+    body: dict[str, Any] | None,
+    prices: PriceBook,
+    at: datetime,
+) -> Decimal | None:
+    """Check price at configuration time and estimate spend for the rendered request."""
+    if provider == ProviderKind.GEMINI:
+        if body is None:
+            body = _body(provider, config, [Message("user", "Evaluate the response.")])
+        bound = reserve_gemini(body, [config.model], prices, at=at, fallback_cap=config.max_tokens)
+        return bound.usd if bound is not None else None
+    return estimate_call_cost(
+        config.model,
+        1 if body is None else _prompt_text(body),
+        config.max_tokens,
+        prices,
+        provider=provider,
+        at=at,
+    )
 
 
 def _body(provider: ProviderKind, config: JudgeConfig, messages: list[Message]) -> dict[str, Any]:
@@ -284,9 +292,31 @@ def _body(provider: ProviderKind, config: JudgeConfig, messages: list[Message]) 
     non-default sampling parameters. A Claude model that thinks by default gets `low` effort: a
     verdict needs little reasoning, and the thinking shares `max_tokens` with the answer.
     """
+    if provider == ProviderKind.GEMINI:
+        body = build_body(
+            provider,
+            config.model,
+            Params(max_tokens=config.max_tokens, temperature=config.temperature),
+            [*messages, Message("system", _USE_TOOL)],
+        )
+        body["tools"] = [
+            {
+                "functionDeclarations": [
+                    {
+                        "name": VERDICT_TOOL_NAME,
+                        "description": _VERDICT_DESCRIPTION,
+                        "parametersJsonSchema": {**_VERDICT_SCHEMA, "additionalProperties": False},
+                    }
+                ],
+            }
+        ]
+        body["toolConfig"] = {
+            "functionCallingConfig": {"mode": "ANY", "allowedFunctionNames": [VERDICT_TOOL_NAME]},
+        }
+        return body
     system = [m.content for m in messages if m.role == "system"] + [_USE_TOOL]
     rest = [{"role": m.role, "content": m.content} for m in messages if m.role != "system"]
-    body: dict[str, Any] = {"model": config.model}
+    body = {"model": config.model}
     if config.temperature is not None:
         body["temperature"] = float(config.temperature)
     if provider == ProviderKind.ANTHROPIC:
@@ -345,6 +375,31 @@ def _verdict_arguments(output: dict[str, Any] | None) -> Mapping[str, Any] | str
             arguments = block.get("input")
             return arguments if isinstance(arguments, Mapping) else None
     return None
+
+
+def _gemini_verdict_arguments(output: dict[str, Any] | None) -> Mapping[str, Any] | None:
+    parts = output.get("parts") if output is not None else None
+    if not isinstance(parts, list):
+        return None
+    if any(not isinstance(part, dict) for part in parts):
+        return None
+    visible = [part for part in parts if part.get("thought") is not True or "functionCall" in part]
+    if len(visible) != 1:
+        return None
+    call = visible[0].get("functionCall")
+    if not isinstance(call, dict) or call.get("name") != VERDICT_TOOL_NAME:
+        return None
+    args = call.get("args")
+    if not isinstance(args, dict) or args.keys() != {"score", "reasoning"}:
+        return None
+    score = args["score"]
+    if (
+        type(score) not in (int, float)
+        or not 0 <= score <= 1
+        or not isinstance(args["reasoning"], str)
+    ):
+        return None
+    return args
 
 
 def _failure_code(result: GatewayResult) -> str:

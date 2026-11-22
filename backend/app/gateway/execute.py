@@ -23,10 +23,15 @@ first upstream byte has arrived. The overhead and time to first token count from
 """
 
 import asyncio
-from typing import Any
+from dataclasses import replace
+from decimal import Decimal
 
 import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.budgets.gemini import UNBOUNDED_GEMINI
+from app.budgets.provider_bounds import UNBOUNDED_PROVIDER, requires_provider_bound
+from app.budgets.run_guard import estimate_run_cost, reserve_run
 from app.core.db_errors import is_busy
 from app.core.errors import RETRY_AFTER_SECONDS
 from app.db.rls import bind_project
@@ -48,7 +53,7 @@ from app.gateway.response_summary import summarize_response
 from app.gateway.routing import compatible_targets, order_targets, resolve_model
 from app.gateway.sse import StreamSummary
 from app.gateway.tracing import default_trace_name
-from app.gateway.usage_chunk import injects_usage
+from app.gateway.translation import translate_response_body
 
 logger = structlog.get_logger(__name__)
 
@@ -88,9 +93,16 @@ async def _run(call: Call) -> GatewayResult:
         return call.from_cache(cached)
     decision = await _check_budget(call, plan)
     call.budgeted = decision.reserved or not decision.allowed
+    call.run_reserved_usd = decision.run_reserved_usd
     if not decision.allowed:
         call.budget = decision
         return call.fail(blocked_error(decision))
+    if decision.clamp_output_tokens is not None or decision.single_attempt:
+        plan = replace(
+            plan,
+            clamp_output_tokens=decision.clamp_output_tokens,
+            single_attempt=decision.single_attempt,
+        )
     call.fault = _decide_fault(call)
     if call.fault is not None and call.fault.scenario in BEFORE_SCENARIOS:
         error = await apply_before(
@@ -114,7 +126,13 @@ async def _run(call: Call) -> GatewayResult:
     )
     summary = StreamSummary()
     if loop.succeeded and loop.body is not None:
-        summary = summarize_response(request.surface, loop.body)
+        native_surface = loop.upstream_surface or request.surface
+        provider = context.credentials[loop.attempts[-1].credential_id].provider
+        summary = summarize_response(native_surface, loop.body, provider=provider)
+        if native_surface != request.surface:
+            loop.body = translate_response_body(
+                request.surface, native_surface, loop.body, summary.model or plan.model
+            )
         await _store_cache(call, plan, loop, summary)
     return call.from_loop(loop, plan, summary)
 
@@ -128,24 +146,15 @@ def plan_route(request: GatewayRequest, context: GatewayContext) -> RoutePlan:
         raise model_not_allowed(model[:MAX_ECHOED_MODEL])
     route = context.route
     indices = compatible_targets(
-        route, request.surface, context.credentials, route_name=context.route_name
+        route,
+        request.surface,
+        context.credentials,
+        route_name=context.route_name,
+        translate=request.trace.translate,
     )
     weights = [route.targets[index].weight for index in indices]
     order = order_targets(indices, weights, context.rng)
-    return RoutePlan(model=model, order=order, body=upstream_body(request))
-
-
-def upstream_body(request: GatewayRequest) -> dict[str, Any]:
-    """The body sent upstream: a streaming chat completion asks for usage unless it says itself.
-
-    Without `stream_options.include_usage` OpenAI sends no usage on a stream, and the span would
-    have no tokens or cost. No other change is made. The usage chunk this adds is kept from the
-    client (`app.gateway.usage_chunk`).
-    """
-    body = request.body
-    if injects_usage(request.surface, request.stream, body):
-        return {**body, "stream_options": {"include_usage": True}}
-    return body
+    return RoutePlan(model=model, order=order, body=request.body, translate=request.trace.translate)
 
 
 async def _check_budget(call: Call, plan: RoutePlan) -> BudgetDecision:
@@ -165,7 +174,7 @@ async def _check_budget(call: Call, plan: RoutePlan) -> BudgetDecision:
     async with context.sessions() as db, db.begin():
         await bind_project(db, context.project_id)
         metadata, trace_name = (None, None) if context.key is None else _dimensions(call)
-        return await context.budget_guard.check(
+        decision = await context.budget_guard.check(
             db,
             context.project_id,
             context.key_id,
@@ -185,7 +194,65 @@ async def _check_budget(call: Call, plan: RoutePlan) -> BudgetDecision:
                 if context.key is not None and (not metadata or trace_name is None)
                 else None
             ),
+            surface=call.request.surface,
         )
+        return await _check_run_budget(db, call, plan, decision, target_providers, target_models)
+
+
+async def _check_run_budget(
+    db: AsyncSession,
+    call: Call,
+    plan: RoutePlan,
+    decision: BudgetDecision,
+    target_providers: list[str | None],
+    target_models: list[str],
+) -> BudgetDecision:
+    max_steps = call.request.trace.max_steps
+    run_budget_usd = call.request.trace.run_budget_usd
+    if not decision.allowed or (max_steps is None and run_budget_usd is None):
+        return decision
+    est = Decimal(0)
+    clamp = decision.clamp_output_tokens
+    native_gemini = call.request.surface == "generate_content"
+    if run_budget_usd is not None:
+        cost, run_clamp = await estimate_run_cost(
+            db,
+            call.context.org_id,
+            call.request.body,
+            plan.model,
+            target_providers,
+            target_models,
+            call.now,
+            native_gemini=native_gemini,
+        )
+        if cost is None:
+            reason = UNBOUNDED_GEMINI if native_gemini else UNBOUNDED_PROVIDER
+            return BudgetDecision(allowed=False, reason=reason)
+        est = cost
+        if clamp is None:
+            clamp = run_clamp
+    refusal = await reserve_run(
+        db,
+        call.context.project_id,
+        call.trace_id,
+        max_steps=max_steps,
+        run_budget_usd=run_budget_usd,
+        estimate_usd=est,
+        now=call.now,
+    )
+    if refusal is not None:
+        return BudgetDecision(allowed=False, reason=refusal)
+    return replace(
+        decision,
+        reserved=True,
+        clamp_output_tokens=clamp,
+        run_reserved_usd=est,
+        single_attempt=decision.single_attempt
+        or (
+            run_budget_usd is not None
+            and (native_gemini or requires_provider_bound(target_providers))
+        ),
+    )
 
 
 def _dimensions(call: Call) -> tuple[dict[str, str], str | None]:

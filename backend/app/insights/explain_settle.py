@@ -28,7 +28,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ProblemError, not_found
-from app.db.models import AuditAction, InsightExplanation, ProviderCredential, ProviderKind
+from app.db.models import AuditAction, InsightExplanation, ProviderCredential
 from app.db.rls import bind_project
 from app.gateway.context import GatewayContext, GatewayRequest, GatewayResult, GatewayServices
 from app.gateway.recorder import DirectSpans
@@ -36,12 +36,12 @@ from app.gateway.settle_helpers import may_have_billed
 from app.insights import explain_queries
 from app.insights.explain import answer_text
 from app.insights.service import Actor
+from app.playground.output import output_text, usage_cost
 from app.pricing.cost import PriceBook
 from app.services.audit import record_audit
 
 logger = structlog.get_logger(__name__)
 
-PROVIDER = ProviderKind.ANTHROPIC
 MAX_TEXT_CHARS = 20_000  # the column's CHECK; 600 output tokens stay far below it
 
 
@@ -77,7 +77,11 @@ async def settle(
     """Settle a call that returned (see the module docstring)."""
     await _write_spans(spans, context, reservation)
     answered = result.error is None and result.status == 200
-    text = answer_text(result.body) if answered else None
+    text = (
+        output_text(result.output) or answer_text(result.body, prepared.request.surface)
+        if answered
+        else None
+    )
     if text is None and not may_have_billed(result):
         await _release(services, reservation)
         _log_failure(reservation, result)
@@ -163,22 +167,14 @@ async def _write_spans(
 
 def _real_cost(prepared: Prepared, result: GatewayResult, now: datetime) -> Decimal:
     """The call's cost from its usage; the reserved worst case when it cannot be priced."""
-    usage = result.usage
-    if usage is None:
-        return prepared.worst_case
-    priced = prepared.prices.cost(
-        provider=PROVIDER.value,
-        model=result.model or prepared.model,
-        at=now,
-        input_tokens=usage.input_tokens,
-        output_tokens=usage.output_tokens,
-        cached_tokens=usage.cached_tokens,
-        cache_write_tokens=usage.cache_write_tokens,
-        cache_write_1h_tokens=usage.cache_write_1h_tokens,
+    cost = usage_cost(
+        prepared.prices,
+        prepared.credential.provider,
+        result.model or prepared.model,
+        result.usage,
+        now,
     )
-    if priced is None or priced.cost_usd is None:
-        return prepared.worst_case
-    return priced.cost_usd
+    return prepared.worst_case if cost is None else cost
 
 
 def _log_failure(reservation: Reservation, result: GatewayResult) -> None:
@@ -193,4 +189,4 @@ def _log_failure(reservation: Reservation, result: GatewayResult) -> None:
 
 
 def _failed() -> ProblemError:
-    return ProblemError(502, "EXPLAIN_FAILED", "Claude could not explain this insight.")
+    return ProblemError(502, "EXPLAIN_FAILED", "The provider could not explain this insight.")

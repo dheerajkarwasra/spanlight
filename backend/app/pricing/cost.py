@@ -50,7 +50,7 @@ from app.db.models import ModelPrice, PriceOverride
 from app.db.models import ServerToolFee as ServerToolFeeRow
 from app.pricing.fees import FEE_QUANTUM, FeeBook, ServerToolFee
 from app.pricing.price_row import OVERRIDE_VERSION_PREFIX, Price, best_price, token_cost
-from app.pricing.provider_alias import canonical_provider
+from app.pricing.provider_alias import AZURE_PROVIDER_NAMES, canonical_provider
 from app.pricing.seed_sync import sync_seed_prices
 from app.pricing.tiers import multipliers_for
 
@@ -123,7 +123,15 @@ class PriceBook:
         rows = self._matching.get((canonical, model))
         if rows is None:
             bucket = self._prices if canonical is None else self._by_provider.get(canonical, ())
-            rows = tuple(price for price in bucket if price.matches(model))
+            rows = tuple(
+                price
+                for price in bucket
+                if price.matches(model)
+                and (
+                    canonical is not None
+                    or canonical_provider(price.provider) not in AZURE_PROVIDER_NAMES
+                )
+            )
             # Model names come from clients: the book is shared by the process, so it forgets
             # them all rather than grow with every name ever sent.
             if len(self._matching) >= _MATCHING_MODELS:
@@ -135,8 +143,50 @@ class PriceBook:
         self, version: str, provider: str | None, model: str, at: datetime, prompt_tokens: int = 0
     ) -> Price | None:
         """As `find`, among the rows of `version` only: the row that priced a stored cost."""
-        rows = [price for price in self._prices if price.version == version]
+        canonical = canonical_provider(provider)
+        rows = [
+            price
+            for price in self._prices
+            if price.version == version
+            and (
+                canonical is not None
+                or canonical_provider(price.provider) not in AZURE_PROVIDER_NAMES
+            )
+        ]
         return best_price(rows, provider, model, at, prompt_tokens)
+
+    def token_cost_ceiling(
+        self,
+        provider: str,
+        model: str,
+        at: datetime,
+        max_prompt: int,
+        max_output: int,
+        *,
+        service_tier: str | None = None,
+    ) -> Decimal | None:
+        """Maximum token cost across prompt bands and cache rates, including overrides."""
+        rows = self._by_provider.get(canonical_provider(provider), ())
+        points = {0, max_prompt}
+        points.update(
+            row.min_prompt_tokens - 1
+            for row in rows
+            if 0 < row.min_prompt_tokens <= max_prompt
+            and row.matches(model)
+            and row.effective_from <= at
+        )
+        costs: list[Decimal] = []
+        for count in points:
+            price = self.find(provider, model, at, prompt_tokens=count)
+            if price is None:
+                return None
+            input_rate = max(
+                price.input_per_mtok, price.cached_rate, price.write_5m_rate, price.write_1h_rate
+            )
+            factor = multipliers_for(price.version, at).factor(provider, service_tier)
+            tokens = (count * input_rate + max_output * price.output_per_mtok) / Decimal(1_000_000)
+            costs.append(_quantize(tokens * factor))
+        return max(costs)
 
     @property
     def fees(self) -> FeeBook:

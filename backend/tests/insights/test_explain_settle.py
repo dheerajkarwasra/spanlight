@@ -15,6 +15,7 @@ from typing import Any
 import httpx
 import pytest
 
+from app.db.models import ProviderKind
 from app.gateway.context import GatewayContext
 from app.gateway.settle_helpers import drain_settling
 from app.insights import explain_service
@@ -41,6 +42,59 @@ REFUSED = {"type": "error", "error": {"type": "invalid_request_error", "message"
 
 def _failed(response: httpx.Response) -> bool:
     return response.status_code == 502 and response.json().get("code") == "EXPLAIN_FAILED"
+
+
+async def test_explain_uses_oldest_matching_provider_and_its_rates(
+    explain_world: ExplainWorld,
+) -> None:
+    world = explain_world
+    world.settings.explain_provider = ProviderKind.GEMINI
+    world.settings.explain_model = "gemini-2.5-flash-lite"
+    project_id = world.workspace.project_id
+    insight_id = await seed_insight(world.sessions, project_id, world.clock.wall())
+    for name in ("first", "second"):
+        created = await world.workspace.owner.post(
+            f"/api/v1/orgs/{world.org_id}/credentials",
+            json={"name": name, "provider": "gemini", "api_key": f"test-key-{name}"},
+        )
+        assert created.status_code == 201, created.text
+        world.clock.advance(1)
+
+    world.fake.reply_json(
+        {
+            "modelVersion": "gemini-2.5-flash-lite",
+            "candidates": [
+                {
+                    "content": {"role": "model", "parts": [{"text": ANSWER}]},
+                    "finishReason": "STOP",
+                }
+            ],
+            "usageMetadata": {"promptTokenCount": 30, "candidatesTokenCount": 10},
+        }
+    )
+    response = await explain(world, project_id, insight_id)
+
+    assert response.status_code == 201, response.text
+    [sent] = world.fake.requests
+    assert sent.headers["x-goog-api-key"] == "test-key-first"
+    assert sent.url.endswith("/gemini-2.5-flash-lite:generateContent")
+    assert sent.json["generationConfig"]["maxOutputTokens"] == 600
+    [row] = await explanation_rows(world.sessions, world.org_id)
+    assert (row["text"], row["cost_usd"]) == (ANSWER, Decimal("0.000007"))
+
+
+async def test_explain_does_not_use_another_providers_price(explain_world: ExplainWorld) -> None:
+    world = explain_world
+    world.settings.explain_provider = ProviderKind.OPENAI
+    # The existing Anthropic default has a list price, under Anthropic only.
+    project_id = world.workspace.project_id
+    insight_id = await seed_insight(world.sessions, project_id, world.clock.wall())
+
+    response = await explain(world, project_id, insight_id)
+
+    assert (response.status_code, response.json()["code"]) == (409, "EXPLAIN_MODEL_UNPRICED")
+    assert world.fake.requests == []
+    assert await explanation_rows(world.sessions, world.org_id) == []
 
 
 @pytest.mark.parametrize(

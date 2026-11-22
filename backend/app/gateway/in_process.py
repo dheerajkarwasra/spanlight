@@ -68,6 +68,7 @@ def single_credential_context(
         cache=services.cache,
         http=services.http,
         sessions=services.sessions,
+        recorder_sessions=getattr(services, "recorder_sessions", None),
         settings=services.settings,
         rng=new_rng(),
         span_sink=span_sink,
@@ -134,6 +135,7 @@ async def context_for_project(
         cache=services.cache,
         http=services.http,
         sessions=services.sessions,
+        recorder_sessions=getattr(services, "recorder_sessions", None),
         settings=services.settings,
         rng=rng if rng is not None else new_rng(),
     )

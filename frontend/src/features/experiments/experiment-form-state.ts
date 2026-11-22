@@ -216,8 +216,7 @@ export function serverErrors(error: unknown): FormErrors {
       return { name: "An experiment with this name already exists. Pick another name." };
     case "EXPERIMENT_MODEL_UNPRICED":
       return {
-        model:
-          "This model has no price, so the cost limit can't be enforced. Pick a priced model or add a price override.",
+        model: "Choose a model with supported pricing and a cost ceiling for this credential.",
       };
     case "VALIDATION_ERROR": {
       const field = error.fieldErrors[0]?.field ?? "";

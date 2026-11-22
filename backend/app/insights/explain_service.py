@@ -1,11 +1,10 @@
-"""Explain with Claude: one insight explained through the gateway, under a monthly budget.
+"""Explain with AI: one insight explained through the gateway, under a monthly budget.
 
 `explain` runs in four steps, and no transaction is open while the provider answers:
 
 1. **Prepare**, in the request's project-bound transaction: the insight, the organization's
-   oldest Anthropic credential, the price book, the trace excerpts and the request
-   (`app.insights.explain`), and the call's worst-case cost (the prompt's characters ÷ 3 input
-   tokens and `MAX_OUTPUT_TOKENS` output tokens). The transaction is then committed, which
+   oldest credential for the configured provider, the price book, the trace excerpts, the
+   request (`app.insights.explain`) and the call's cost ceiling. The transaction is committed, which
    returns its connection to the pool.
 2. **Reserve**, in one short transaction bound to the project and under an advisory lock per
    organization: the organization's month-to-date explanation cost (reservations included,
@@ -31,14 +30,18 @@ Prompts and answers are never logged.
 import uuid
 from collections.abc import Callable
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.budgets.gemini import reserve_gemini
+from app.budgets.provider_bounds import provider_cost_ceiling
 from app.core.errors import ProblemError, not_configured, not_found
-from app.db.models import InsightExplanation, Project
+from app.db.models import InsightExplanation, Project, ProviderKind
 from app.db.rls import bind_project
-from app.gateway.context import GatewayServices
+from app.gateway.context import GatewayRequest, GatewayServices
 from app.gateway.execute import execute
+from app.gateway.provider_billing import NEW_TEXT_PROVIDERS
 from app.gateway.recorder import DirectSpans
 from app.gateway.settle_helpers import shielded
 from app.insights import explain_queries, queries
@@ -51,14 +54,13 @@ from app.insights.explain import (
 )
 from app.insights.explain_context import explain_context
 from app.insights.explain_settle import (
-    PROVIDER,
     Prepared,
     Reservation,
     settle,
     settle_abandoned,
 )
 from app.insights.service import Actor
-from app.pricing.cost import load_price_book
+from app.pricing.cost import PriceBook, load_price_book
 
 
 async def explain(
@@ -73,7 +75,7 @@ async def explain(
     """Explain one insight of `project` and store the answer. Commits `db` (more than once).
 
     Errors: `404` for an insight that is not the project's; `409 NOT_CONFIGURED` without the
-    gateway runtime, a budget, `CREDENTIALS_KEYS` or an Anthropic credential; `409
+    gateway runtime, a budget, `CREDENTIALS_KEYS` or a matching credential; `409
     EXPLAIN_MODEL_UNPRICED`; `402 EXPLAIN_BUDGET_EXCEEDED`; `502 EXPLAIN_FAILED`.
     """
     now = clock()
@@ -103,30 +105,54 @@ async def _prepare(
     if insight is None:
         raise not_found()
     services = _configured(services)
-    credential = await explain_queries.oldest_credential(db, project.org_id, PROVIDER)
+    provider = services.settings.explain_provider
+    credential = await explain_queries.oldest_credential(db, project.org_id, provider)
     if credential is None:
-        raise not_configured("Add an Anthropic provider credential to the organization.")
+        raise not_configured(f"Add a provider credential for EXPLAIN_PROVIDER={provider}.")
     model = services.settings.explain_model
     prices = await load_price_book(db, project.org_id)
     trace_ids = [str(trace_id) for trace_id in insight.evidence.get("trace_ids", [])]
     excerpts = await explain_queries.trace_excerpts(db, project.id, trace_ids[:MAX_EXCERPTS])
-    request = build_explain_request(insight, KIND_INFO.get(insight.kind), excerpts, model=model)
-    worst = prices.cost(
-        provider=PROVIDER.value,
+    request = build_explain_request(
+        insight,
+        KIND_INFO.get(insight.kind),
+        excerpts,
+        model=model,
+        provider=provider,
+    )
+    worst = _estimate(provider, model, request, prices, now)
+    # A zero price (an organization's override, say) would make every call free to the budget.
+    if worst is None or worst <= 0:
+        raise ProblemError(
+            409,
+            "EXPLAIN_MODEL_UNPRICED",
+            f"EXPLAIN_MODEL {model} has no verified cost bound for {provider}.",
+        )
+    return Prepared(request, model, credential, prices, worst), services
+
+
+def _estimate(
+    provider: ProviderKind, model: str, request: GatewayRequest, prices: PriceBook, now: datetime
+) -> Decimal | None:
+    if provider == ProviderKind.GEMINI:
+        bound = reserve_gemini(
+            request.body, [model], prices, at=now, fallback_cap=MAX_OUTPUT_TOKENS
+        )
+        return bound.usd if bound is not None else None
+    if provider in NEW_TEXT_PROVIDERS:
+        # DeepSeek has an admission-only bound. Doctor requires a price under the selected provider.
+        if prices.find(provider, model, now) is None:
+            return None
+        return provider_cost_ceiling(provider, model, request.body, prices, now)
+    priced = prices.cost(
+        provider=provider,
         model=model,
         at=now,
         input_tokens=worst_case_input_tokens(request),
         output_tokens=MAX_OUTPUT_TOKENS,
         cached_tokens=None,
     )
-    # A zero price (an organization's override, say) would make every call free to the budget.
-    if worst is None or worst.cost_usd is None or worst.cost_usd <= 0:
-        raise ProblemError(
-            409,
-            "EXPLAIN_MODEL_UNPRICED",
-            f"EXPLAIN_MODEL {model} has no price, so the explain budget cannot be enforced.",
-        )
-    return Prepared(request, model, credential, prices, worst.cost_usd), services
+    return priced.cost_usd if priced is not None else None
 
 
 def _configured(services: GatewayServices | None) -> GatewayServices:

@@ -32,7 +32,17 @@ from app.db.models.base import Base
 from app.pricing.tiers import ServiceTier
 
 BillingSourceKind = Literal["anthropic_admin_api", "openai_costs_api", "csv_upload"]
-BillingProvider = Literal["anthropic", "openai", "google"]
+BillingProvider = Literal[
+    "anthropic",
+    "openai",
+    "google",
+    "azure_openai",
+    "mistral",
+    "groq",
+    "deepseek",
+    "xai",
+    "together",
+]
 SourceStatus = Literal["never_fetched", "ok", "failing"]
 FetchTrigger = Literal["scheduled", "manual", "csv_upload"]
 RunStatus = Literal["running", "ok", "failed"]

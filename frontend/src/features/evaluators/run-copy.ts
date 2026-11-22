@@ -45,7 +45,7 @@ const ERROR_COPY: Record<string, string> = {
     "With this trace filled in, the judge prompt is larger than 256 KB, so it was not sent.",
   judge_prompt_missing: "The judge prompt version no longer exists.",
   judge_credential_missing: "The judge's credential no longer exists.",
-  judge_provider_unsupported: "The judge's credential is not an Anthropic or OpenAI key.",
+  judge_provider_unsupported: "Pick an Anthropic, OpenAI, or Gemini credential for the judge.",
   evaluator_model_unpriced: "The judge model has no price, so its budget cannot be enforced.",
   webhook_invalid_reply: "Your endpoint's reply was not in the expected format.",
   webhook_unreachable: "Your endpoint could not be reached.",

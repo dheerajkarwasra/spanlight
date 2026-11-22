@@ -1,4 +1,4 @@
-"""The Doctor's insights: list and read them, act on them, and ask Claude to explain one.
+"""The Doctor's insights: list and read them, act on them, and request an AI explanation.
 
 Anyone who can read the project reads insights, their explanations and the detector runs
 (`project:read`; an API key does not); owners and admins act on them and ask for explanations
@@ -13,7 +13,7 @@ from typing import Annotated
 import structlog
 from fastapi import APIRouter, Depends, Query, Request
 
-from app.api.deps import Access, ClockDep, DbSession, client_ip, require
+from app.api.deps import Access, ClockDep, DbSession, ReadAccess, client_ip, require
 from app.api.locks import lock_project_of
 from app.api.params import NO_NUL
 from app.api.schemas import Page
@@ -47,7 +47,8 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["insights"])
 
-InsightReader = Annotated[Access, Depends(require(Permission.PROJECT_READ))]
+InsightReader = Annotated[ReadAccess, Depends(require(Permission.PROJECT_READ, allow_api_key=True))]
+SessionInsightReader = Annotated[ReadAccess, Depends(require(Permission.PROJECT_READ))]
 InsightManager = Annotated[Access, Depends(require(Permission.INSIGHTS_MANAGE))]
 
 MAX_RUNS = 100
@@ -102,7 +103,7 @@ async def insights_summary(
 
 @router.get("/insights/{insight_id}", response_model=InsightDetailOut, summary="Read one insight")
 async def get_insight(
-    project_id: uuid.UUID, insight_id: uuid.UUID, access: InsightReader, db: DbSession
+    project_id: uuid.UUID, insight_id: uuid.UUID, access: SessionInsightReader, db: DbSession
 ) -> InsightDetailOut:
     """The insight, its completed explanations, newest first (at most 20), and the feedback:
     the caller's own vote (`mine`, `null` when they have not voted) and every member's counts."""
@@ -113,7 +114,8 @@ async def get_insight(
     explanations = await explain_queries.list_completed(
         db, project_id, insight_id, MAX_EXPLANATIONS
     )
-    feedback = await feedback_queries.feedback_summary(db, project_id, insight_id, access.user_id)
+    user_id = access.user_id if isinstance(access, Access) else None
+    feedback = await feedback_queries.feedback_summary(db, project_id, insight_id, user_id)
     detail = insight_out(insight)
     spans = await explain_queries.evidence_spans(db, project_id, detail.evidence.trace_ids)
     return InsightDetailOut(
@@ -208,7 +210,7 @@ async def unmute_insight(
     "/insights/{insight_id}/explain",
     response_model=ExplanationOut,
     status_code=201,
-    summary="Ask Claude to explain an insight",
+    summary="Generate an AI explanation for an insight",
 )
 async def explain_insight(
     project_id: uuid.UUID,
@@ -218,9 +220,9 @@ async def explain_insight(
     db: DbSession,
     clock: ClockDep,
 ) -> ExplanationOut:
-    """Claude explains the insight from its evidence; the answer is advisory plain text.
+    """The configured provider explains the insight from its evidence in advisory plain text.
 
-    Sent with the organization's oldest Anthropic credential and counted against its monthly
+    Sent with the organization's oldest matching provider credential and counted against its monthly
     explain budget. `409 NOT_CONFIGURED` without a credential, `CREDENTIALS_KEYS` or a budget;
     `409 EXPLAIN_MODEL_UNPRICED`; `402 EXPLAIN_BUDGET_EXCEEDED`; `502 EXPLAIN_FAILED`.
     """

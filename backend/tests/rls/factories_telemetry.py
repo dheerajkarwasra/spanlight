@@ -31,6 +31,14 @@ TELEMETRY = (
         parents=(parent("traces", trace_id="trace_id"),),
     ),
     RowFactory(
+        table="sessions_summary",
+        sql=(
+            "INSERT INTO sessions_summary (project_id, session_id, first_at, last_at) "
+            f"VALUES (:project_id, {HEX32}, now(), now()) RETURNING *"
+        ),
+        touch="trace_count",
+    ),
+    RowFactory(
         table="span_rollups_hourly",
         sql=(
             "INSERT INTO span_rollups_hourly (project_id, bucket_start, kind, span_count, errors, "

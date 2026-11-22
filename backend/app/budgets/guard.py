@@ -30,8 +30,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.alerts.formatting import format_money
 from app.alerts.types import RuleStateName
+from app.budgets.gemini import UNBOUNDED_GEMINI
 from app.budgets.periods import period_start
-from app.budgets.reserve import BlockBudget, Refusal, estimate, reserve
+from app.budgets.provider_bounds import UNBOUNDED_PROVIDER, requires_provider_bound
+from app.budgets.reserve import (
+    BlockBudget,
+    Refusal,
+    estimate_with_clamp,
+    reserve,
+)
 from app.budgets.types import BudgetAction, BudgetPeriod, BudgetScope
 from app.config import Settings
 from app.core.model_match import SNAPSHOT_SUFFIX_REGEX
@@ -41,6 +48,7 @@ from app.db.models.budgets import Budget
 from app.db.models.pricing import PriceOverride
 from app.db.models.telemetry import Trace
 from app.gateway.budget import BudgetDecision, BudgetGuard
+from app.gateway.errors import Surface
 from app.pricing.cost import load_price_book
 
 # How often the budgets' alert rules measure spend; the block message quotes it. Re-measured
@@ -183,6 +191,7 @@ class StateBudgetGuard:
         span_id: str | None = None,
         org_id: UUID | None = None,
         stored_trace_id: str | None = None,
+        surface: Surface | None = None,
     ) -> BudgetDecision:
         # The model asked for, then each target's name after its alias, without repeats.
         models = list(dict.fromkeys([model, *target_models]))
@@ -265,12 +274,30 @@ class StateBudgetGuard:
             return BudgetDecision(allowed=True)  # nothing to estimate or settle against
         with BUDGET_RESERVE_DURATION.time():
             prices = await load_price_book(db, org_id, overrides=list(overrides.values()))
-            targets = zip(target_providers, target_models, strict=False)  # () from old callers
-            candidates = list(dict.fromkeys([(None, model), *targets]))
-            estimate_usd = estimate(body, candidates, prices, at=now)
+            native_gemini = surface == "generate_content"
+            strict = native_gemini or requires_provider_bound(target_providers)
+            estimate_usd, clamp = estimate_with_clamp(
+                body,
+                model,
+                target_models,
+                target_providers,
+                prices,
+                at=now,
+                native_gemini=native_gemini,
+            )
+            if estimate_usd is None and strict:
+                BUDGET_BLOCKS.labels(
+                    "unbounded_gemini" if native_gemini else "unbounded_provider"
+                ).inc()
+                reason = UNBOUNDED_GEMINI if native_gemini else UNBOUNDED_PROVIDER
+                return BudgetDecision(allowed=False, budget_id=rows[0].id, reason=reason)
             if estimate_usd is None or estimate_usd <= 0:
                 # Unpriced: admitted as unknown (ADR 0012). Free ($0 override): nothing to hold.
-                return BudgetDecision(allowed=True)
+                return BudgetDecision(
+                    allowed=True,
+                    clamp_output_tokens=clamp if strict else None,
+                    single_attempt=strict,
+                )
             budgets = [
                 BlockBudget(
                     id=row.id,
@@ -286,7 +313,9 @@ class StateBudgetGuard:
                 db, project_id, budgets, estimate_usd, trace_id=trace_id, span_id=span_id, now=now
             )
         if refusal is None:
-            return BudgetDecision(allowed=True, reserved=True)
+            return BudgetDecision(
+                allowed=True, reserved=True, clamp_output_tokens=clamp, single_attempt=strict
+            )
         BUDGET_BLOCKS.labels("reserved").inc()
         return BudgetDecision(
             allowed=False, budget_id=refusal.budget.id, reason=refused_reason(refusal)

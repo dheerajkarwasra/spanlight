@@ -72,9 +72,10 @@ async def rolled(
     async with await psycopg.AsyncConnection.connect(admin_libpq_url()) as admin:
         hours = await (
             await admin.execute(
-                "SELECT count(DISTINCT bucket_start), (SELECT count(*) FROM aggregate_dirty_hours "
-                "WHERE (pending_consumers & 1) <> 0) FROM trace_rollups_hourly "
-                "WHERE project_id = %s",
+                "SELECT count(DISTINCT bucket_start), "
+                "(SELECT count(*) FROM aggregate_dirty_hours WHERE (pending_consumers & 1) <> 0) + "
+                "(SELECT count(*) FROM aggregate_dirty_shards WHERE (pending_consumers & 1) <> 0) "
+                "FROM trace_rollups_hourly WHERE project_id = %s",
                 (workspace.project_id,),
             )
         ).fetchone()

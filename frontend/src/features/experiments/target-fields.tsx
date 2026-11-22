@@ -4,19 +4,13 @@ import { FieldSelect } from "@/components/field-select";
 import { FormField } from "@/components/form-field";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import type { Credential, ProviderKind } from "@/lib/api";
+import { credentialLabel, modelSuggestions } from "@/features/playground";
 
 import type { FormErrors, FormState, TargetSource } from "./experiment-form-state";
 import { useCredentialsQuery, usePricesQuery } from "./experiment-queries";
 import { LoadFailed } from "./load-failed";
 import { MessagesFields } from "./messages-fields";
 import { PromptTargetFields } from "./prompt-target-fields";
-
-const PROVIDERS: Record<ProviderKind, string> = {
-  openai: "OpenAI",
-  anthropic: "Anthropic",
-  openai_compatible: "OpenAI-compatible",
-};
 
 const SOURCES = [
   { value: "prompt_version", label: "Prompt version" },
@@ -29,26 +23,13 @@ interface TargetFieldsProps {
   onChange: (patch: Partial<FormState>) => void;
 }
 
-function credentialLabel(credential: Credential): string {
-  return `${PROVIDERS[credential.provider]} · ${credential.name}`;
-}
-
 /** The Target card's fields: what runs on every item, with which credential and model. */
 export function TargetFields({ state, errors, onChange }: TargetFieldsProps) {
   const listId = useId();
   const credentials = useCredentialsQuery();
   const prices = usePricesQuery();
   const provider = credentials.data?.find((item) => item.id === state.credentialId)?.provider;
-  const suggestions =
-    provider === undefined || provider === "openai_compatible"
-      ? []
-      : [
-          ...new Set(
-            (prices.data ?? [])
-              .filter((price) => price.provider === provider)
-              .map((p) => p.model_pattern),
-          ),
-        ];
+  const suggestions = modelSuggestions(prices.data ?? [], provider ?? null);
 
   return (
     <div className="flex flex-col gap-4">
@@ -98,7 +79,11 @@ export function TargetFields({ state, errors, onChange }: TargetFieldsProps) {
             />
           </FormField>
         )}
-        <FormField label="Model" error={errors.model}>
+        <FormField
+          label="Model"
+          error={errors.model}
+          hint="The model must support a cost ceiling for this credential."
+        >
           <Input
             value={state.model}
             onChange={(event) => onChange({ model: event.target.value })}

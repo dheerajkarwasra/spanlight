@@ -16,6 +16,7 @@ from typing import Any
 from app.gateway import attempt_log
 from app.gateway.adapters.base import UPSTREAM_REQUEST_ID_HEADER
 from app.gateway.context import UPSTREAM_ERROR_CODE, GatewayContext, GatewayResult
+from app.gateway.settle_helpers import may_have_billed
 from app.gateway.upstream_io import UPSTREAM_ERROR_TYPE
 from app.ingest.ratelimit_headers import snapshot_headers
 
@@ -26,10 +27,13 @@ def build(result: GatewayResult, context: GatewayContext) -> dict[str, Any]:
     attributes.update(_error_attributes(result))
     if _provider_answered(result):
         attributes.update(_header_attributes(result))
+        if result.provider_response_id:
+            attributes["provider.response_id"] = result.provider_response_id[:256]
     if result.attempts:
         attributes["spanlight.gateway.attempt_log"] = attempt_log.build(
             result.attempts, target_names(context)
         )
+        attributes["spanlight.gateway.may_have_billed"] = may_have_billed(result)
     return attributes
 
 

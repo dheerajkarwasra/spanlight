@@ -47,11 +47,37 @@ def _anthropic_with(**changes: Any) -> bytes:
 # --- registry ---------------------------------------------------------------------------------
 
 
-def test_adapters_are_anthropic_openai_google_with_https_status_prefixes() -> None:
-    assert [adapter.provider for adapter in ADAPTERS] == ["anthropic", "openai", "google"]
+@pytest.mark.parametrize(
+    ("provider", "host", "affected"),
+    [
+        ("mistral", "status.mistral.ai", [True, False]),
+        ("groq", "groqstatus.com", [True, False, True]),
+    ],
+)
+def test_expanded_feed_from_recorded_incidents(
+    provider: str, host: str, affected: list[bool]
+) -> None:
+    adapters = {adapter.provider: adapter for adapter in ADAPTERS}
+    adapter = adapters[provider]
+    assert adapter.url == f"https://{host}/api/v2/incidents.json"
+    incidents, report = adapter.parse_with_report(_bytes(f"{provider}-incidents-2026-11-20.json"))
+    assert [incident.api_affected for incident in incidents] == affected
+    assert report == ParseReport(kept=len(affected), skipped_naive=0, skipped_url=0)
+    for incident in incidents:
+        assert incident.url == f"https://{host}/incidents/{incident.external_id}"
+
+
+def test_registry_only_includes_verified_https_feeds() -> None:
+    assert [adapter.provider for adapter in ADAPTERS] == [
+        "anthropic",
+        "openai",
+        "google",
+        "mistral",
+        "groq",
+    ]
     for adapter in ADAPTERS:
-        assert adapter.url.startswith("https://")
-        assert adapter.url_prefix.startswith("https://status.")
+        assert adapter.url.startswith(adapter.url_prefix)
+        assert adapter.url_prefix.startswith("https://")
         assert adapter.url_prefix.endswith("/")
     assert anthropic.url == "https://status.claude.com/api/v2/incidents.json"
     assert openai.url == "https://status.openai.com/api/v2/incidents.json"

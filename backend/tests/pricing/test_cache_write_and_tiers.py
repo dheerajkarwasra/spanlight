@@ -4,7 +4,6 @@ The expected costs of the three pilot cases are Anthropic's own billed amounts f
 made on 2026-10-14 (`docs/plans/reports/pilot-2026-10-14.md`, D1 and D2), exact to 1e-8.
 """
 
-from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -12,7 +11,7 @@ import pytest
 from app.pricing.cost import OVERRIDE_VERSION_PREFIX, Price, PriceBook
 from app.pricing.prices import EFFECTIVE_FROM, PRICING_VERSION, SEED_PRICES
 
-AT = datetime(2026, 10, 25, 12, tzinfo=UTC)
+AT = EFFECTIVE_FROM
 
 HAIKU_45 = "claude-haiku-4-5"
 HAIKU_55 = "claude-haiku-5-5"

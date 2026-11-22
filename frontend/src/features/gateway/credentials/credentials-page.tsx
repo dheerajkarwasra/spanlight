@@ -147,8 +147,8 @@ function CredentialsContent({
         title="No provider credentials"
         description={
           notConfigured
-            ? "Once the server key is set, add an OpenAI, Anthropic or OpenAI-compatible key here."
-            : "Add an OpenAI, Anthropic or OpenAI-compatible key so routes can call providers."
+            ? "Once the server key is set, add a provider API key here."
+            : "Add a provider API key so routes can call that provider."
         }
         action={addAction ?? undefined}
       />

@@ -1,0 +1,19 @@
+# Zero-config local quickstart overlay for deploy/compose.yaml.
+#
+# Use the local environment file for interpolation and a compact Postgres configuration:
+#
+#   docker compose --env-file deploy/quickstart.env.example \
+#     -f deploy/compose.yaml -f deploy/compose.quickstart.yaml up -d
+#
+services:
+  postgres:
+    command:
+      - postgres
+      - -c
+      - jit=off
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=768MB
+      - -c
+      - max_connections=100

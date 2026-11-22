@@ -30,7 +30,13 @@ export const KIND_CHOICES: readonly {
 export const PROVIDER_LABELS: Record<BillingProvider, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
-  google: "Google",
+  google: "Google Gemini",
+  azure_openai: "Azure OpenAI",
+  mistral: "Mistral",
+  groq: "Groq",
+  deepseek: "DeepSeek",
+  xai: "xAI",
+  together: "Together AI",
 };
 
 const UTC_FORMAT = new Intl.DateTimeFormat("en-US", {

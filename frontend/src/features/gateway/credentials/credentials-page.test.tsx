@@ -5,6 +5,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, authApi, credentialsApi, gatewayApi } from "@/lib/api";
 import { makeProject, ME, mockSignedIn, ORG_ID, renderApp } from "@/test/render-app";
 
+async function selectProvider(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await user.click(screen.getByRole("combobox", { name: "Provider" }));
+  await user.click(await screen.findByRole("option", { name }));
+}
+
 const PATH = `/${ORG_ID}/proj_1/gateway/credentials`;
 
 describe("GatewayCredentialsPage", () => {
@@ -67,7 +72,7 @@ describe("GatewayCredentialsPage", () => {
     await user.click(add as HTMLElement);
     const fields = within(await screen.findByRole("dialog", { name: "Add credential" }));
     await user.type(fields.getByLabelText("Name"), "custom-host");
-    await user.click(fields.getByRole("radio", { name: "OpenAI-compatible" }));
+    await selectProvider(user, "OpenAI-compatible");
     await user.type(fields.getByLabelText("Base URL"), "https://llm.example.com/v1");
     await user.type(fields.getByLabelText("API key"), "sk-test");
     const password = fields.getByLabelText("Password");
@@ -105,7 +110,7 @@ describe("GatewayCredentialsPage", () => {
     const fields = within(dialog);
     expect(fields.queryByLabelText("Password")).not.toBeInTheDocument();
     await user.type(fields.getByLabelText("Name"), "custom-host");
-    await user.click(fields.getByRole("radio", { name: "OpenAI-compatible" }));
+    await selectProvider(user, "OpenAI-compatible");
     await user.type(fields.getByLabelText("Base URL"), "https://llm.example.com/v1");
     await user.type(fields.getByLabelText("API key"), "sk-test");
     const password = fields.getByLabelText("Password");
@@ -128,11 +133,12 @@ describe("GatewayCredentialsPage", () => {
     expect(screen.getByText("No provider credentials")).toBeInTheDocument();
     expect(credentialsApi.list).toHaveBeenCalledTimes(1);
 
-    await user.click(fields.getByRole("radio", { name: "OpenAI" }));
+    await selectProvider(user, "OpenAI");
     expect(fields.queryByLabelText("Password")).not.toBeInTheDocument();
-    await user.click(fields.getByRole("radio", { name: "OpenAI-compatible" }));
+    expect(fields.getByLabelText("API key")).toHaveValue("");
+    await selectProvider(user, "OpenAI-compatible");
     expect(fields.getByLabelText("Password")).toHaveValue("");
-    await user.click(fields.getByRole("radio", { name: "OpenAI" }));
+    await selectProvider(user, "OpenAI");
     await user.clear(fields.getByLabelText("API key"));
     await user.type(fields.getByLabelText("API key"), "sk-openai");
     create.mockResolvedValueOnce({

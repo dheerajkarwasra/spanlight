@@ -54,6 +54,9 @@ class LlmSpanRow:
     # `gateway` when Spanlight's own key limiter refused the call: no provider was asked.
     rate_limit_kind: str | None = None
     trace_name: str | None = None
+    parent_span_id: str | None = None
+    provider_retry_after_s: Decimal | None = None
+    unreported_reason: str | None = None
 
     @property
     def fault_scenario(self) -> str | None:
@@ -76,6 +79,8 @@ class ToolSpanRow:
     name: str
     input_hash: str | None
     status: str
+    status_message: str | None = None
+    parent_span_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

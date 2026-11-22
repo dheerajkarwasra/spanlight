@@ -11,10 +11,12 @@ OPENAI_API_BASE = "https://api.openai.com/v1"
 
 
 class OpenAiAdapter(HttpAdapter):
-    provider: ClassVar[ProviderKind] = ProviderKind.OPENAI
-    paths: ClassVar[Mapping[Surface, str]] = {
+    chat_stream_usage = True
+    provider: ProviderKind = ProviderKind.OPENAI
+    paths: Mapping[Surface, str] = {
         "chat_completions": "/chat/completions",
         "responses": "/responses",
+        "embeddings": "/embeddings",
         "models": "/models",
     }
     provider_headers: ClassVar[frozenset[str]] = frozenset({"openai-beta"})

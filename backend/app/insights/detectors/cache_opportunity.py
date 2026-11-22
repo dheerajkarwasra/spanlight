@@ -25,7 +25,17 @@ KIND = "cache_opportunity"
 WINDOW = timedelta(hours=24)
 MIN_SAMPLES = 1  # one qualifying hash
 
-CACHE_CAPABLE_PREFIXES = ("claude-", "gpt-4o", "gpt-4.1", "gpt-5", "o1", "o3", "o4")
+CACHE_CAPABLE_PREFIXES = (
+    "claude-",
+    "gpt-4o",
+    "gpt-4.1",
+    "gpt-5",
+    "gpt-6",
+    "gemini-",
+    "o1",
+    "o3",
+    "o4",
+)
 MIN_INPUT_TOKENS = 2_000
 MIN_REPEATS = 10
 MIN_TRACES = 2

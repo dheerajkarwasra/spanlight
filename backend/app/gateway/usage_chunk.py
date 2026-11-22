@@ -12,6 +12,7 @@ Pure: bytes in, bytes out.
 """
 
 import re
+from collections.abc import Mapping
 from typing import Any
 
 from app.gateway.sse import FRAME_END, MAX_FRAME_BYTES, json_object
@@ -19,7 +20,7 @@ from app.gateway.sse import FRAME_END, MAX_FRAME_BYTES, json_object
 _LINE_END = re.compile(rb"\r\n|\r|\n")
 
 
-def injects_usage(surface: str, stream: bool, body: dict[str, Any]) -> bool:
+def injects_usage(surface: str, stream: bool, body: Mapping[str, Any]) -> bool:
     """Whether the gateway adds `stream_options.include_usage` to this call's upstream body."""
     return surface == "chat_completions" and stream and "stream_options" not in body
 

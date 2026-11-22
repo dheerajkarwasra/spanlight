@@ -6,6 +6,8 @@ raises: a frame it cannot make sense of is skipped and the summary simply carrie
 
 from typing import Any
 
+from app.db.models import ProviderKind
+from app.gateway.response_summary import responses_finish_reason
 from app.gateway.sse import (
     SseFrame,
     StreamSummary,
@@ -28,7 +30,8 @@ class OpenAiResponsesObserver:
     of type `web_search_call` with `status == "completed"` (a failed search is not billed).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, provider: ProviderKind | None = None) -> None:
+        self._provider = provider
         self._model: str | None = None
         self._response_id: str | None = None
         self._usage: Usage | None = None
@@ -54,7 +57,7 @@ class OpenAiResponsesObserver:
             self._error = error_text(error.get("code"), error.get("message"))
         if kind not in _RESPONSES_TERMINAL:
             return
-        self._status = as_str(response.get("status")) or self._status
+        self._status = responses_finish_reason(response) or self._status
         output = response.get("output")
         searches: int | None = None
         if isinstance(output, list):
@@ -65,6 +68,7 @@ class OpenAiResponsesObserver:
             dict_at(response, "usage"),
             service_tier=as_str(response.get("service_tier")),
             web_search_requests=searches,
+            provider=self._provider,
         )
         self._usage = usage or self._usage
 

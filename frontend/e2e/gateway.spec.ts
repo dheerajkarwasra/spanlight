@@ -97,3 +97,37 @@ test("the New fault profile dialog passes axe", async ({ page }) => {
   await expect(page.getByRole("dialog", { name: "New fault profile" })).toBeVisible();
   await expectNoAxeViolations(page);
 });
+
+test("provider credentials show Azure resource fields and fixed-host options at 375 px", async ({
+  page,
+}) => {
+  const { base } = await createWorkspace(page);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto(`${base}/gateway/credentials`);
+  await page.getByRole("button", { name: "Add credential" }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Add credential" });
+  const provider = dialog.getByRole("combobox", { name: "Provider" });
+  await provider.click();
+  await expect(page.getByRole("option")).toHaveCount(10);
+  await page.getByRole("option", { name: "Azure OpenAI" }).click();
+  await expect(dialog.getByLabel("Resource URL")).toHaveAccessibleDescription(/openai\/v1/);
+  await expect(dialog.getByLabel("Password")).toBeVisible();
+  await expectNoAxeViolations(page);
+  await dialog.getByLabel("Name").fill("mistral-e2e");
+  await provider.click();
+  await page.getByRole("option", { name: "Mistral" }).click();
+  await expect(dialog.getByLabel("Resource URL")).toHaveCount(0);
+  await expect(dialog.getByLabel("Password")).toHaveCount(0);
+  await dialog.getByLabel("API key").fill(FAKE_PROVIDER_KEY);
+  await dialog.getByRole("button", { name: "Add credential" }).click();
+  await expect(dialog).toBeHidden();
+  const credentials = page.getByRole("list", { name: "Provider credentials" });
+  await expect(credentials).toContainText("mistral-e2e");
+  await expect(credentials).toContainText("api.mistral.ai");
+  await credentials.getByRole("button", { name: "Rotate mistral-e2e" }).click();
+  const rotate = page.getByRole("dialog", { name: "Rotate mistral-e2e" });
+  await rotate.getByLabel("New API key").fill(`${FAKE_PROVIDER_KEY}-new`);
+  await rotate.getByRole("button", { name: "Rotate key" }).click();
+  await expect(rotate).toBeHidden();
+  await expectNoAxeViolations(page);
+});

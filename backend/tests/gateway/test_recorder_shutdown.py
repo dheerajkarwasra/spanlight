@@ -66,7 +66,7 @@ async def test_lost_commit_ack_survives_cancel_before_retry_lookup(
 ) -> None:
     context = await gateway_context(keyed=False)
     writers = recorder._writers_for(context)
-    dialect = context.sessions.kw["bind"].sync_engine.dialect
+    dialect = context.write_sessions.kw["bind"].sync_engine.dialect
     real_commit = dialect.do_commit
     committed = False
 

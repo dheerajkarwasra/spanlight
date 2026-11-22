@@ -14,7 +14,12 @@ import uuid
 from app.insights import context_queries
 from app.insights.context import DetectorContext
 from app.insights.context_queries import CONTEXT_WINDOW, TOOL_WINDOW, load_context
-from app.insights.detectors import tool_loop
+from app.insights.detectors import (
+    agent_ping_pong_loop,
+    tool_error_ignored,
+    tool_loop,
+    tool_schema_hallucination,
+)
 from app.insights.detectors.base import Detector
 from app.insights.engine import DETECTORS
 from app.insights.schemas import Window
@@ -44,7 +49,12 @@ def _reads_tool_spans(detector: Detector) -> bool:
 def test_each_kind_is_read_for_the_longest_window_its_detectors_declare() -> None:
     assert max(detector.window for detector in DETECTORS) == CONTEXT_WINDOW
     tool_readers = [detector for detector in DETECTORS if _reads_tool_spans(detector)]
-    assert [detector.kind for detector in tool_readers] == [tool_loop.detector.kind]
+    assert [detector.kind for detector in tool_readers] == [
+        tool_loop.detector.kind,
+        agent_ping_pong_loop.detector.kind,
+        tool_error_ignored.detector.kind,
+        tool_schema_hallucination.detector.kind,
+    ]
     assert max(detector.window for detector in tool_readers) == TOOL_WINDOW
     assert TOOL_WINDOW < CONTEXT_WINDOW
 

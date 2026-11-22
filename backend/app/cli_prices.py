@@ -28,6 +28,12 @@ PROVIDERS: Mapping[str, tuple[str, str]] = {
     "openai": ("openai", ""),
     "anthropic": ("anthropic", ""),
     "google": ("gemini", "gemini/"),
+    "azure_openai": ("azure", "azure/"),
+    "mistral": ("mistral", "mistral/"),
+    "groq": ("groq", "groq/"),
+    "deepseek": ("deepseek", "deepseek/"),
+    "xai": ("xai", "xai/"),
+    "together": ("together_ai", "together_ai/"),
 }
 # Seed field -> LiteLLM per-token field.
 FIELDS: Mapping[str, str] = {
@@ -52,6 +58,22 @@ def _feed_rate(entry: Mapping[str, Any], field: str, min_prompt_tokens: int) -> 
     return _per_mtok(entry.get(FIELDS[field] + suffix))
 
 
+def _seed_feed_entry(seed: SeedPrice, feed: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    provider, prefix = PROVIDERS.get(seed.provider, (seed.provider, ""))
+    wanted = seed.model_pattern
+    for key in (prefix + wanted, wanted):
+        entry = feed.get(key)
+        if isinstance(entry, dict) and entry.get("litellm_provider") == provider:
+            return entry
+    # The feed can list only dated snapshots or omit a provider prefix.
+    for key in sorted(feed, reverse=True):
+        if matches_model(wanted, key.removeprefix(prefix)):
+            entry = feed[key]
+            if isinstance(entry, dict) and entry.get("litellm_provider") == provider:
+                return entry
+    return None
+
+
 def rate_differences(
     seeds: Iterable[SeedPrice], feed: Mapping[str, Any]
 ) -> tuple[list[str], list[str]]:
@@ -62,12 +84,8 @@ def rate_differences(
     differences: list[str] = []
     absent: list[str] = []
     for seed in seeds:
-        _, prefix = PROVIDERS.get(seed.provider, (seed.provider, ""))
-        entry = feed.get(prefix + seed.model_pattern) or feed.get(seed.model_pattern)
-        if entry is None:  # the feed may list only dated snapshots of the model
-            dated = sorted(key for key in feed if matches_model(seed.model_pattern, key))
-            entry = feed[dated[-1]] if dated else None
-        if not isinstance(entry, dict):
+        entry = _seed_feed_entry(seed, feed)
+        if entry is None:
             absent.append(f"{seed.provider} {seed.model_pattern}")
             continue
         for field in FIELDS:
@@ -95,7 +113,7 @@ def missing_models(seeds: Iterable[SeedPrice], feed: Mapping[str, Any]) -> list[
             if entry.get("mode") not in CHAT_MODES or not key.startswith(prefix):
                 continue
             model = key.removeprefix(prefix)
-            if "/" in model or model.startswith("ft:"):
+            if model.startswith("ft:") or ("/" in model and provider not in {"groq", "together"}):
                 continue
             if any(matches_model(pattern, model) for pattern in patterns):
                 continue

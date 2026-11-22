@@ -7,15 +7,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { Credential, ProviderKind } from "@/lib/api";
+import type { Credential } from "@/lib/api";
+import { PROVIDER_LABELS } from "../credentials/credential-form";
 
 import type { RouteFormValues } from "./route-form";
-
-const PROVIDER_LABELS: Record<ProviderKind, string> = {
-  openai: "OpenAI",
-  anthropic: "Anthropic",
-  openai_compatible: "OpenAI-compatible",
-};
 
 interface CredentialSelectProps {
   index: number;

@@ -41,16 +41,24 @@ It then goes past tracing. It prices each call line by line and checks the total
 
 ### 1. Start Spanlight
 
+**Zero-config local quickstart** (serves on localhost with development secrets and a 256 MB Postgres buffer pool):
+
 ```bash
 git clone https://github.com/dheerajkarwasra/spanlight.git
 cd spanlight
-cp deploy/.env.example deploy/.env    # fill in POSTGRES_PASSWORD, APP_DB_PASSWORD and SECRET_KEY
+docker compose --env-file deploy/quickstart.env.example \
+  -f deploy/compose.yaml -f deploy/compose.quickstart.yaml up -d
+```
+
+For production, copy `deploy/.env.example` to `deploy/.env`, fill in strong secrets (`POSTGRES_PASSWORD`, `APP_DB_PASSWORD`, `SECRET_KEY`), and run:
+
+```bash
 docker compose -f deploy/compose.yaml --env-file deploy/.env up -d
 ```
 
 This pulls the released images named in `deploy/.env` (`SPANLIGHT_IMAGE` and `SPANLIGHT_WEB_IMAGE`). To build from the checkout instead, comment out those two lines and add `--build`.
 
-Open http://localhost:8080, create an account, and follow the setup wizard to create a project and an API key.
+Open http://localhost:8080, create an account, and follow the setup wizard to create a project and an API key. (When running the backend dev server directly without Caddy, use port `8000` instead of `8080`.)
 
 > [!TIP]
 > Generate each secret with `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`. To host it instead, see [deploy to Railway](docs/deploy/railway.md).

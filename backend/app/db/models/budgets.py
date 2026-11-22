@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Integer,
     Numeric,
     Text,
     func,
@@ -190,3 +191,20 @@ class BudgetBucketDelta(Base):
         BigInteger, primary_key=True, server_default=text("nextval('budget_bucket_delta_seq')")
     )
     amount_usd: Mapped[Decimal] = mapped_column(Numeric(18, 8))
+
+
+class RunReservation(Base):
+    """Per-trace budget and step counters enforced by `x-spanlight-run-budget-usd` and
+    `x-spanlight-max-steps` on `/gw/v1/*` (migration 1048). RLS applies.
+    """
+
+    __tablename__ = "run_reservations"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
+    )
+    trace_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    step_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    reserved_usd: Mapped[Decimal] = mapped_column(Numeric(18, 8), server_default=text("0"))
+    settled_usd: Mapped[Decimal] = mapped_column(Numeric(18, 8), server_default=text("0"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

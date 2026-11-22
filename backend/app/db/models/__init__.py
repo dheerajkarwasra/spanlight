@@ -111,6 +111,7 @@ from app.db.models.rollups import (
     AggregateIncompleteHour,
     CostRollupDaily,
     ErrorRollupHourly,
+    SessionSummary,
     SpanRollupHourly,
     TraceRollupHourly,
 )
@@ -225,6 +226,7 @@ __all__ = [
     "SdkExporterCounter",
     "ServerToolFee",
     "Session",
+    "SessionSummary",
     "SourceStatus",
     "Span",
     "SpanKind",

@@ -1,0 +1,136 @@
+{
+  "page": {
+    "id": "01K053E2FA7DSQPVGWM7A75WHX",
+    "name": "Groq Status: Real-Time Visibility Into GroqCloud's System Health and ",
+    "url": "https://groqstatus.com/",
+    "updated_at": "2026-10-12T18:36:13Z"
+  },
+  "incidents": [
+    {
+      "id": "01K9ASV40Q6E0REQHZ0NWDDRKV",
+      "name": "Cloud API Degradation",
+      "status": "resolved",
+      "created_at": "2025-11-05T20:03:00Z",
+      "updated_at": "2026-03-12T18:22:51Z",
+      "resolved_at": "2025-11-05T20:37:51Z",
+      "impact": "minor",
+      "page_id": "01K053E2FA7DSQPVGWM7A75WHX",
+      "incident_updates": [
+        {
+          "id": "01K9AVTY44BRB5TDBXE0W8J143",
+          "body": "The issues causing degraded performance have been **resolved**. All models are now operating normally. Upon investigation we learned the issue was scoped to an internal feature yet to be released that is still in development. At this time we don't believe there was any customer impact as a direct result of this issue. We apologize for the disruption and thank you for your patience.",
+          "created_at": "2025-11-05T20:37:51Z",
+          "display_at": "2025-11-05T20:37:51Z",
+          "incident_id": "01K9ASV40Q6E0REQHZ0NWDDRKV",
+          "status": "resolved",
+          "updated_at": "2025-11-05T20:37:51Z"
+        },
+        {
+          "id": "01K9AV2MT1E7CFFEJ5ZQQN85Y7",
+          "body": "We have **implemented a fix** for the performance degradation of our Cloud API and performance is improving. We’re now **monitoring** the fix to ensure stability persists. If all remains normal, we will resolve the incident in the next update.",
+          "created_at": "2025-11-05T20:24:35Z",
+          "display_at": "2025-11-05T20:24:35Z",
+          "incident_id": "01K9ASV40Q6E0REQHZ0NWDDRKV",
+          "status": "monitoring",
+          "updated_at": "2025-11-05T20:43:23Z"
+        },
+        {
+          "id": "01K9ATEV4JG3YTSAJSYYDMHKF6",
+          "body": "We have **identified the problem** causing performance degradation of our Cloud API. A fix is in progress, users may still see elevated error rates and or slow responses until the fix completes. Our team is working on getting this fix rolled out as soon as possible.",
+          "created_at": "2025-11-05T20:13:47Z",
+          "display_at": "2025-11-05T20:13:47Z",
+          "incident_id": "01K9ASV40Q6E0REQHZ0NWDDRKV",
+          "status": "identified",
+          "updated_at": "2025-11-05T20:43:12Z"
+        },
+        {
+          "id": "01K9ASV40Q7Y6G5XVEP5S4XBC1",
+          "body": "We are currently investigating an issue resulting in a performance degradation of our Cloud API. Users may be experiencing **elevated error rates and or slow responses**. Our team is analyzing logs and infrastructure to identify the cause and implement a fix as soon as possible.",
+          "created_at": "2025-11-05T20:03:00Z",
+          "display_at": "2025-11-05T20:03:00Z",
+          "incident_id": "01K9ASV40Q6E0REQHZ0NWDDRKV",
+          "status": "investigating",
+          "updated_at": "2025-11-05T20:42:06Z"
+        }
+      ]
+    },
+    {
+      "id": "01M4Q2YY67TVYM451RE835DJAK",
+      "name": "GroqCloud Console Errors Affecting Multiple Regions",
+      "status": "resolved",
+      "created_at": "2026-10-12T03:37:05Z",
+      "updated_at": "2026-10-12T04:00:32Z",
+      "resolved_at": "2026-10-12T04:00:32Z",
+      "impact": "minor",
+      "page_id": "01K053E2FA7DSQPVGWM7A75WHX",
+      "incident_updates": [
+        {
+          "id": "01M4Q49WJV2YN40272VPMQRZ6C",
+          "body": "The **Groqcloud console issue has been resolved**. All services are operating normally. We apologize for the disruption and **appreciate your patience**.",
+          "created_at": "2026-10-12T04:00:32Z",
+          "display_at": "2026-10-12T04:00:32Z",
+          "incident_id": "01M4Q2YY67TVYM451RE835DJAK",
+          "status": "resolved",
+          "updated_at": "2026-10-12T04:00:32Z"
+        },
+        {
+          "id": "01M4Q3JW7666Y1MVWDP1Y6QPQD",
+          "body": "We've **mitigated the errors** on the GroqCloud console and functionality has been restored. Inference API requests are not affected, and we will provide additional updates here.",
+          "created_at": "2026-10-12T03:47:58Z",
+          "display_at": "2026-10-12T03:47:58Z",
+          "incident_id": "01M4Q2YY67TVYM451RE835DJAK",
+          "status": "monitoring",
+          "updated_at": "2026-10-12T03:56:28Z"
+        },
+        {
+          "id": "01M4Q2YY67NMY1MM1A4P7SZSFS",
+          "body": "We are currently investigating **increased error rates** on our GroqCloud console (including metrics, /models API endpoints, and API key creation). **Users may receive 500 errors** when making requests to **console.groq.com**. Our engineers are isolating the issue.",
+          "created_at": "2026-10-12T03:37:05Z",
+          "display_at": "2026-10-12T03:37:05Z",
+          "incident_id": "01M4Q2YY67TVYM451RE835DJAK",
+          "status": "investigating",
+          "updated_at": "2026-10-12T03:37:05Z"
+        }
+      ]
+    },
+    {
+      "id": "01KM32CYZ56PGADEJ94BTVWJH4",
+      "name": "openai/gpt-oss-120b Performance Issue",
+      "status": "resolved",
+      "created_at": "2026-03-19T12:51:18Z",
+      "updated_at": "2026-03-19T13:50:26Z",
+      "resolved_at": "2026-03-19T13:50:25Z",
+      "impact": "minor",
+      "page_id": "01K053E2FA7DSQPVGWM7A75WHX",
+      "incident_updates": [
+        {
+          "id": "01KM35S73XCC3E6E3524HCGQ47",
+          "body": "The issues affecting openai/gpt-oss-120b have been **resolved**. The model is operating normally. Actions were taken to cancel billing plans and restrict verification status of organizations engaged in coordinated abuse. We apologize for the disruption and thank you for your patience.",
+          "created_at": "2026-03-19T13:50:26Z",
+          "display_at": "2026-03-19T13:50:25Z",
+          "incident_id": "01KM32CYZ56PGADEJ94BTVWJH4",
+          "status": "resolved",
+          "updated_at": "2026-03-19T13:50:26Z"
+        },
+        {
+          "id": "01KM3479X8ZX1V3DSWNFH4MX7X",
+          "body": "We have implemented a fix for openai/gpt-oss-120b and performance is improving. We’re now monitoring the model to ensure stability persists. If all remains normal, we will resolve the incident in the next update.",
+          "created_at": "2026-03-19T13:23:10Z",
+          "display_at": "2026-03-19T13:23:10Z",
+          "incident_id": "01KM32CYZ56PGADEJ94BTVWJH4",
+          "status": "monitoring",
+          "updated_at": "2026-03-19T13:23:10Z"
+        },
+        {
+          "id": "01KM32CYZ56KXE423Y6K15B5FS",
+          "body": "We have identified the problem affecting the openai/gpt-oss-120b model. The issue has been traced to malicious traffic patterns. A fix is in progress,  we are working to block the source of these requests. Users may still see degraded performance from requests made to openai/gpt-oss-120b as we identify and block the orgs from which this traffic is originating.",
+          "created_at": "2026-03-19T12:51:18Z",
+          "display_at": "2026-03-19T12:51:18Z",
+          "incident_id": "01KM32CYZ56PGADEJ94BTVWJH4",
+          "status": "identified",
+          "updated_at": "2026-03-19T12:51:18Z"
+        }
+      ]
+    }
+  ]
+}

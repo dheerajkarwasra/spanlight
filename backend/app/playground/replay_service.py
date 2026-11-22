@@ -33,6 +33,8 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.budgets.gemini import reserve_gemini
+from app.budgets.provider_bounds import provider_cost_ceiling
 from app.config import Settings
 from app.core.errors import not_configured, not_found
 from app.core.idempotency_store import (
@@ -50,6 +52,7 @@ from app.gateway import service as gateway_service
 from app.gateway.context import Clock, GatewayRequest, GatewayServices
 from app.gateway.execute import execute as gateway_execute
 from app.gateway.in_process import single_credential_context
+from app.gateway.provider_billing import NEW_TEXT_PROVIDERS
 from app.gateway.settle_helpers import may_have_billed, shielded
 from app.gateway.trace_headers import TraceHeaders
 from app.playground.output import result_of
@@ -196,14 +199,22 @@ async def _prepare(db: AsyncSession, project: Project, body: ReplayIn, now: date
         edited_body=body.edited_body,
     )
     prices = await load_price_book(db, project.org_id)
-    estimate = estimate_call_cost(
-        plan.model,
-        json.dumps(plan.body, ensure_ascii=False),
-        plan.max_tokens,
-        prices,
-        provider=credential.provider.value,
-        at=now,
-    )
+    if plan.surface == "generate_content":
+        bound = reserve_gemini(
+            plan.body, [plan.model], prices, at=now, fallback_cap=plan.max_tokens
+        )
+        estimate = bound.usd if bound is not None else None
+    elif credential.provider in NEW_TEXT_PROVIDERS:
+        estimate = provider_cost_ceiling(credential.provider, plan.model, plan.body, prices, now)
+    else:
+        estimate = estimate_call_cost(
+            plan.model,
+            json.dumps(plan.body, ensure_ascii=False),
+            plan.max_tokens,
+            prices,
+            provider=credential.provider.value,
+            at=now,
+        )
     # A zero price (an organization's override) would make every replay free to the budget.
     if estimate is None or estimate <= 0:
         raise ReplayRefusedError("REPLAY_MODEL_UNPRICED", REFUSALS["REPLAY_MODEL_UNPRICED"])

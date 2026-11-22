@@ -2,7 +2,6 @@
  * Service-tier normalization: the SDK's copy of the server's table
  * (`backend/app/pricing/tiers.py::normalize_tier`, as copied in the Python SDK's `_tiers.py`).
  * The copies are kept in step by `sdks/fixtures/service-tier-cases.json`, which every suite runs.
- * Only the OpenAI and Anthropic spellings matter here, because those are the providers wrapped.
  */
 
 export type ServiceTier = "standard" | "batch" | "priority" | "flex";
@@ -17,6 +16,7 @@ const CANONICAL_PROVIDER: ReadonlyMap<string, string> = new Map([
   ["anthropic", "anthropic"],
   ["claude", "anthropic"],
   ["openai", "openai"],
+  ["grok", "xai"],
 ]);
 
 // Maps, not object literals, so a spelling such as "constructor" never finds a prototype member.
@@ -34,6 +34,14 @@ const PROVIDER_SPELLINGS: ReadonlyMap<string, ReadonlyMap<string, ServiceTier>> 
       ["default", "standard"],
       ["auto", "standard"],
       ["scale", "standard"],
+      ["fast", "priority"],
+    ]),
+  ],
+  ["azure_openai", new Map<string, ServiceTier>([["default", "standard"]])],
+  [
+    "xai",
+    new Map<string, ServiceTier>([
+      ["default", "standard"],
       ["fast", "priority"],
     ]),
   ],

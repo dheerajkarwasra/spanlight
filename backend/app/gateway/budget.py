@@ -10,12 +10,13 @@ implementation is ``app.budgets.guard.StateBudgetGuard``.
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Protocol
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.gateway.errors import GatewayError, budget_exceeded
+from app.gateway.errors import GatewayError, Surface, budget_exceeded
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,9 @@ class BudgetDecision:
     budget_id: UUID | None = None
     reason: str | None = None
     reserved: bool = False  # an admitted call whose estimate was reserved against a budget
+    clamp_output_tokens: int | None = None
+    run_reserved_usd: Decimal | None = None
+    single_attempt: bool = False  # the reservation covers one provider invocation
 
 
 class BudgetGuard(Protocol):
@@ -67,6 +71,7 @@ class BudgetGuard(Protocol):
         span_id: str | None = None,
         org_id: UUID | None = None,
         stored_trace_id: str | None = None,
+        surface: Surface | None = None,
     ) -> BudgetDecision: ...
 
 

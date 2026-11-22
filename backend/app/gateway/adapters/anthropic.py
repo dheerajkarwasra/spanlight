@@ -13,8 +13,8 @@ ANTHROPIC_VERSION = "2023-06-01"
 
 
 class AnthropicAdapter(HttpAdapter):
-    provider: ClassVar[ProviderKind] = ProviderKind.ANTHROPIC
-    paths: ClassVar[Mapping[Surface, str]] = {
+    provider: ProviderKind = ProviderKind.ANTHROPIC
+    paths: Mapping[Surface, str] = {
         "messages": "/v1/messages",
         "models": "/v1/models",
     }

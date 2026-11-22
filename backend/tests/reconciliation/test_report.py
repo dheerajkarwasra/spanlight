@@ -25,7 +25,8 @@ from app.main import create_app
 from app.reconciliation.arithmetic import NO_PROVIDER_LINE_NOTE
 from app.reconciliation.backfill import BACKFILL_JOB, backfill_payload
 from tests.gateway_support import ManualClock
-from tests.helpers import Browser, create_workspace
+from tests.helpers import Browser, create_workspace, new_trace_id, span
+from tests.ingest.support import ingest_native
 from tests.reconciliation.report_support import (
     D0,
     D1,
@@ -48,6 +49,7 @@ from tests.reconciliation.report_support import (
     set_run_finished,
     upload,
 )
+from tests.reconciliation.sources_support import create_source, sources_url
 
 NEXT_DAY = timedelta(days=1)
 
@@ -628,3 +630,79 @@ async def test_csv_only_bill_with_no_traced_call_is_a_suspected_bypass(world: Wo
     assert day["bypass_suspected"] is True
     untraced = explained(group_of(day, SONNET))["untraced_traffic"]
     assert (untraced["usd"], untraced["note"]) == (None, "no span with this model")
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "observed_usd"),
+    [
+        ("anthropic", "claude-sonnet-4-6", "0.075"),
+        ("openai", "gpt-4.1-mini", "0.0096"),
+        ("google", "gemini-2.5-flash-lite", "0.0024"),
+        ("azure_openai", "gpt-4.1-mini", None),
+        ("mistral", "mistral-small-2603", "0.0036"),
+        ("groq", "openai/gpt-oss-120b", "0.0036"),
+        ("deepseek", "deepseek-flash", None),
+        ("xai", "grok-4.7", "0.046"),
+        ("together", "openai/gpt-oss-120b", "0.0036"),
+    ],
+)
+async def test_csv_reconciles_provider_bill_with_native_span(
+    provider: str,
+    model: str,
+    observed_usd: str | None,
+    browser_factory: Any,
+    client: httpx.AsyncClient,
+    session_factory: Any,
+    clock: ManualClock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bill_day = date(2026, 11, 19)
+    start = datetime(2026, 11, 19, 10, tzinfo=UTC)
+    now = datetime(2026, 11, 22, 12, tzinfo=UTC)
+    move_clock(clock, now)
+    pin_ingest_clock(monkeypatch, now)
+    owner: Browser = await browser_factory("owner@example.com")
+    workspace = await create_workspace(owner)
+    source = await create_source(
+        owner,
+        workspace.org_id,
+        kind="csv_upload",
+        name="Provider export",
+        provider=provider,
+        project_ids=[workspace.project_id],
+    )
+    assert source["provider"] == provider
+    result = await ingest_native(
+        client,
+        workspace,
+        [
+            span(
+                trace_id=new_trace_id(),
+                start=start,
+                provider=provider,
+                model=model,
+                usage={"input_tokens": 20_000, "output_tokens": 1_000, "cached_tokens": 0},
+            )
+        ],
+    )
+    assert result.json() == {"accepted": 1, "rejected": []}
+    url = f"{sources_url(workspace.org_id)}/{source['id']}"
+    line = csv_line(
+        bill_day, "tokens", "0.05", model, provider=provider, token_type="uncached_input"
+    )
+    upload_response = await owner.post(
+        f"{url}/upload", files={"file": ("costs.csv", csv_file([line]), "text/csv")}
+    )
+    assert upload_response.status_code == 200, upload_response.text
+    await set_run_finished(session_factory, upload_response.json()["run_id"], now)
+    response = await owner.get(
+        f"{url}/reconciliation",
+        params={"from": "2026-11-19T00:00:00Z", "to": "2026-11-20T00:00:00Z"},
+    )
+    report = report_of(response)
+    assert report["source"]["provider"] == provider
+    [group] = day_of(report, bill_day)["groups"]
+    assert group["provider_models"] == [model]
+    assert group["spanlight_models"] == [model]
+    assert usd(group["provider_usd"]) == Decimal("0.05")
+    assert usd(group["spanlight_usd"]) == usd(observed_usd)

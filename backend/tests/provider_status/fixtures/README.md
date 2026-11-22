@@ -30,3 +30,11 @@ Hostile fixtures, written by hand:
   The parser must refuse it with `FeedParseError`.
 - `script-title.json`: a Statuspage-shaped feed whose single incident has the title
   `<script>alert(1)</script>`. The title must be stored as text with the tags removed.
+
+On 2026-11-20, Mistral (`status.mistral.ai`) and Groq (`groqstatus.com`) returned
+JSON from both `/api/v2/incidents.json` and `/api/v2/components.json` without
+redirects. The new fixtures preserve selected incidents and the original page
+metadata. The reports omit component arrays. The adapter uses Mistral's named
+API components and Groq's API and model components, plus Groq's published model
+incident title, when classifying reports. Vibe Work and GroqCloud Console
+fixtures cover incidents classified as outside the API.

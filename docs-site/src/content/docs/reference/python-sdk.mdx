@@ -419,7 +419,7 @@ For streamed Chat Completions, ask OpenAI for usage with `stream_options={"inclu
 
 A Chat Completions call that passes `web_search_options` gets the attribute `usage.fee_unknown` set to `openai_chat_web_search`: the answer does not say how many searches were billed, so the fee is not priced. A Responses call counts its completed `web_search_call` items.
 
-### Native Gemini wrapper (preview)
+### `wrap_google_genai` (preview)
 
 ```python
 spanlight.wrap_google_genai(

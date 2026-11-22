@@ -14,7 +14,7 @@ interface ExplainButtonProps {
 }
 
 /**
- * "Explain with Claude". While busy it stays full ink with a spinner and `aria-busy`; when
+ * "Explain with AI". While busy it stays full ink with a spinner and `aria-busy`; when
  * locked it is `aria-disabled` but still focusable, so the reason beside it can be reached by
  * keyboard. A locked button does nothing on click.
  */

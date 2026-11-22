@@ -50,6 +50,8 @@ _CANONICAL: dict[str, ServiceTier] = {
 # Provider spellings per spec §7.2, after the canonical names.
 _PROVIDER_SPELLINGS: dict[str, dict[str, ServiceTier]] = {
     "anthropic": {"priority_on_demand": "priority", "flex_discount": "flex"},
+    "azure_openai": {"default": "standard"},
+    "xai": {"default": "standard", "fast": "priority"},
     "openai": {"default": "standard", "auto": "standard", "scale": "standard", "fast": "priority"},
 }
 

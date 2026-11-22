@@ -16,6 +16,7 @@ import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Protocol
 
 import httpx
@@ -159,6 +160,13 @@ class GatewayContext:
     sleep: Sleep = asyncio.sleep
     span_sink: SpanSink | None = None  # None: spans go to the background recorder
     redact_contact_info: bool = False  # `projects.redact_contact_info`, for the recorded spans
+    # Dedicated async sessionmaker for background span writes; falls back to `sessions` when unset.
+    recorder_sessions: async_sessionmaker[AsyncSession] | None = None
+
+    @property
+    def write_sessions(self) -> async_sessionmaker[AsyncSession]:
+        """Dedicated recorder pool when configured, otherwise the caller's session factory."""
+        return self.recorder_sessions or self.sessions
 
     @property
     def key_id(self) -> uuid.UUID | None:
@@ -209,6 +217,7 @@ def context_for_key(
         cache=services.cache,
         http=services.http,
         sessions=services.sessions,
+        recorder_sessions=getattr(services, "recorder_sessions", None),
         settings=services.settings,
         rng=rng if rng is not None else new_rng(),
         clock=clock,
@@ -267,3 +276,5 @@ class GatewayResult:
     # Why a successful answer's usage is unknown (`usage.unreported_reason`): a stream cut short,
     # or a complete answer without its output count. None when the usage is complete.
     usage_unreported_reason: str | None = None
+    run_reserved_usd: Decimal | None = None
+    provider_response_id: str | None = None

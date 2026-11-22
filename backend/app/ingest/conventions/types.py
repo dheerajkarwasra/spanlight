@@ -12,6 +12,7 @@ class Convention(enum.StrEnum):
     OPENINFERENCE = "openinference"
     VERCEL_AI = "vercel_ai"
     TRACELOOP = "traceloop"
+    MCP = "mcp"
     NONE = "none"
 
 

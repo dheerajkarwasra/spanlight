@@ -34,6 +34,17 @@ export function stripComments(source) {
     .join('\n');
 }
 const SEED_BLOCK = /^SEED_PRICES\b[^=\n]*=\s*\(\n([\s\S]*?)^\)/m;
+// Snapshot tuples and multiplier maps may carry an earlier frozen literal forward.
+function expandBlock(source, block, readBlock, seen = new Set()) {
+  return block.replace(/^\s*\*{1,2}([A-Z_][A-Z_0-9]*),\s*$/gm, (_, name) => {
+    const inherited = readBlock(name).exec(source)?.[1];
+    if (inherited === undefined || seen.has(name)) {
+      throw new Error(`prices.py: invalid inherited block ${name}`);
+    }
+    return expandBlock(source, inherited, readBlock, new Set([...seen, name]));
+  });
+}
+
 const POSITIONAL = ['provider', 'modelPattern', 'input', 'output', 'cachedInput'];
 const KEYWORDS = { write_5m: 'cacheWrite5m', write_1h: 'cacheWrite1h', min_prompt_tokens: 'minPromptTokens' };
 
@@ -103,8 +114,11 @@ export function parsePrices(pricesPySource) {
   const version = /^PRICING_VERSION\s*=\s*"([^"]+)"/m.exec(pricesPySource)?.[1];
   if (!version) throw new Error('prices.py: PRICING_VERSION not found');
   const source = stripComments(pricesPySource);
-  const block = SEED_BLOCK.exec(source)?.[1];
-  if (block === undefined) throw new Error('prices.py: SEED_PRICES block not found');
+  const seed = SEED_BLOCK.exec(source)?.[1];
+  if (seed === undefined) throw new Error('prices.py: SEED_PRICES block not found');
+  const block = expandBlock(source, seed, (name) =>
+    new RegExp(SEED_BLOCK.source.replace('SEED_PRICES', name), 'm'),
+  );
   const prices = [...block.matchAll(PRICE_CALL)].map((match) => parseCall(match[1]));
   if (prices.length === 0) throw new Error('prices.py: no prices found');
   const calls = (block.match(/\b_price\(/g) ?? []).length;
@@ -126,8 +140,11 @@ const FEE_CALL = /\b_fee\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)/g;
  * @param {string} source the price table with its comments stripped
  */
 function parseTierMultipliers(source) {
-  const block = TIER_BLOCK.exec(source)?.[1];
-  if (block === undefined) return [];
+  const tiers = TIER_BLOCK.exec(source)?.[1];
+  if (tiers === undefined) return [];
+  const block = expandBlock(source, tiers, (name) =>
+    new RegExp(TIER_BLOCK.source.replace('TIER_MULTIPLIERS', name), 'm'),
+  );
   const committed = new Set(
     [...(COMMITMENT_BLOCK.exec(source)?.[1] ?? '').matchAll(PAIR)].map((match) => `${match[1]}/${match[2]}`),
   );
@@ -230,7 +247,7 @@ A row is written for a model name. A span's model matches the row when it is:
 - The same name exactly, or
 - The name followed by one snapshot suffix: \`-YYYYMMDD\`, \`-YYYY-MM-DD\` or \`-latest\`.
 
-A plain prefix does not match. Matching is case-sensitive. When the span names a provider, the provider must also equal the row's provider. The span's provider is trimmed and lower-cased first, and known aliases are folded onto the provider the table uses: \`gemini\`, \`vertex_ai\` and the other Google spellings find the \`google\` rows, and \`claude\` finds the \`anthropic\` rows. The row's provider is folded the same way, so an override saved as \`gemini\` matches a span sent as \`google\`. \`azure\` and \`azure_openai\` are not aliases of \`openai\`: Azure bills its own rates, and no Azure row is built in. The span keeps the provider it was sent with. A span with no provider can match a row of any provider. When more than one row matches, the longest name wins. [Which provider names match which price](/docs/concepts/cost/#which-provider-names-match-which-price) lists every alias.
+A plain prefix does not match. Matching is case-sensitive. When the span names a provider, the provider must also equal the row's provider. The span's provider is trimmed and lower-cased first, and known aliases are folded onto the provider the table uses: \`gemini\`, \`vertex_ai\` and the other Google spellings find the \`google\` rows, and \`claude\` finds the \`anthropic\` rows. The row's provider is folded the same way, so an override saved as \`gemini\` matches a span sent as \`google\`. \`azure\` and \`azure_openai\` are not aliases of \`openai\`: Azure bills its own rates, and no Azure row is built in. The span keeps the provider it was sent with. Providerless spans can match non-Azure rows. Azure overrides match the full deployment name. When more than one row matches, the longest name wins. [Which provider names match which price](/docs/concepts/cost/#which-provider-names-match-which-price) lists every alias.
 
 A model with a prompt-size tier has one row per tier. The **Prompt** column says which prompts the row prices: **Any size** is the base row, and **Over N tokens** is the row used when the span's \`input_tokens\` is larger than N. The row with the largest size not above the span's input tokens prices the whole prompt.
 

@@ -47,10 +47,10 @@ export function DpaPage() {
       <LegalSection id="nature" title={SECTIONS.nature}>
         <p>
           We store, display, analyse and delete your traces, and send on the gateway requests you
-          send us. &ldquo;Explain with Claude&rdquo; runs only when one of your users clicks it, and
-          then sends secret-redacted trace excerpts to Anthropic on your organisation&apos;s own
-          Anthropic credential. Evaluation runs with an LLM judge send the items being scored to the
-          model provider on your organisation&apos;s own stored credential.
+          send us. &ldquo;Explain with AI&rdquo; runs only when one of your users requests it. It
+          sends secret-redacted trace excerpts to the configured explanation provider on your
+          organisation&apos;s own credential. Evaluation runs with an LLM judge send the items being
+          scored to the model provider on your organisation&apos;s own stored credential.
         </p>
       </LegalSection>
 

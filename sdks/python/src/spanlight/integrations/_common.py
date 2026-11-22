@@ -60,6 +60,10 @@ class Endpoint(ABC):
         """Attributes the request alone determines, set when the span starts."""
         return {}
 
+    def request_body(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        """Provider request fields worth persisting."""
+        return sanitize_request(request)
+
     @abstractmethod
     def record_response(self, span: Span, response: Any) -> None:
         """Copy model, usage and output from a non-streaming response onto ``span``."""
@@ -144,6 +148,8 @@ def record_provider_error(span: Span, error: BaseException) -> None:
     """
     span.record_error(error)
     status_code = as_int(getattr(error, "status_code", None))
+    if status_code is None:
+        status_code = as_int(get_field(error, "response", "status_code"))
     if status_code is not None:
         span.set_attribute("http.status_code", status_code)
     request_id = provider_request_id(error)
@@ -186,7 +192,7 @@ def start_llm_span(
         span = client.start_span(endpoint.span_name(kwargs), kind="llm")
         model = kwargs.get("model")
         span.set_model(model if isinstance(model, str) else None, provider=endpoint.provider)
-        span.set_input(sanitize_request(kwargs))
+        span.set_input(endpoint.request_body(kwargs))
         # From the request as recorded, the same JSON values the server hashes.
         span.set_request_hash(_request_hash_or_none(model, span.input))
         if kwargs.get("stream") is True:

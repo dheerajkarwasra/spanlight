@@ -21,6 +21,7 @@ from app.jobs.queue import ClaimedJob
 from app.provider_status.adapters.anthropic import anthropic
 from app.provider_status.adapters.google import google
 from app.provider_status.adapters.openai import openai
+from app.provider_status.adapters.verified import groq, mistral
 from app.provider_status.http import build_status_client
 
 SessionFactory = async_sessionmaker[AsyncSession]
@@ -73,6 +74,9 @@ class FeedServer:
         self.answer(anthropic.url, httpx.Response(200, content=fixture(ANTHROPIC_FEED)))
         self.answer(openai.url, httpx.Response(200, content=fixture(OPENAI_FEED)))
         self.answer(google.url, httpx.Response(200, content=fixture(GOOGLE_FEED)))
+        for adapter in (mistral, groq):
+            body = fixture(f"{adapter.provider}-incidents-2026-11-20.json")
+            self.answer(adapter.url, httpx.Response(200, content=body))
 
     def requests_to(self, url: str) -> list[httpx.Request]:
         return [request for request in self.requests if str(request.url) == url]

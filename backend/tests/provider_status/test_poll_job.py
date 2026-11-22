@@ -61,8 +61,10 @@ async def test_two_concurrent_runs_are_harmless(
         "anthropic": 10,
         "openai": 10,
         "google": 1,
+        "mistral": 2,
+        "groq": 3,
     }
-    for provider in ("anthropic", "openai", "google"):
+    for provider in ("anthropic", "openai", "google", "mistral", "groq"):
         feed = await source(session_factory, provider)
         assert (feed["last_outcome"], feed["consecutive_failures"]) == ("fetched", 0)
 
@@ -92,7 +94,7 @@ async def test_one_feed_failing_never_stops_the_others_and_each_poll_is_counted(
     assert (openai_parse.value, openai_fetched.value) == (1, 1)
     assert len(await incidents(session_factory, "google")) == 1
     lines = {line["provider"]: line for line in logged(caplog, "provider_status_polled")}
-    assert set(lines) == {"anthropic", "openai", "google"}
+    assert set(lines) == {"anthropic", "openai", "google", "mistral", "groq"}
     assert lines["anthropic"]["outcome"] == "http_error"
     assert lines["anthropic"]["status_code"] == 503
     assert lines["openai"]["fell_back_from"] == "parse_error"
@@ -165,7 +167,7 @@ async def test_log_lines_never_carry_the_body(
     await run_poll_provider_status(task_context(session_factory, settings), {})
 
     assert MARKER not in caplog.text
-    assert len(logged(caplog, "provider_status_polled")) == 3
+    assert len(logged(caplog, "provider_status_polled")) == 5
     [row] = await incidents(session_factory, "anthropic")
     assert MARKER in row["title"]
 

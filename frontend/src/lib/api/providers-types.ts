@@ -123,7 +123,8 @@ export interface ErrorSamplesQuery extends ProviderHealthQuery {
 /* ---------- Provider incidents ---------- */
 
 /** The providers whose status pages the server polls. */
-export type StatusProvider = "anthropic" | "openai" | "google";
+export type StatusProvider =
+  "anthropic" | "openai" | "google" | "mistral" | "groq" | "deepseek" | "together";
 
 export interface ProviderIncident {
   id: string;

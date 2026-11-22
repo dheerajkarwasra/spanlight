@@ -122,6 +122,14 @@ describe("pickPrice", () => {
 });
 
 describe("estimateColumn", () => {
+  it.each(["gemini", "xai", "deepseek"])("keeps the preflight price unknown for %s", (provider) => {
+    const column = messagesColumn("hello", { model: "provider-model", maxTokens: "100" });
+    expect(estimateColumn(column, provider, PRICES, AT)).toEqual({
+      unknown: "unbounded_provider",
+      model: "provider-model",
+    });
+  });
+
   it("counts input from the messages and output up to max tokens", () => {
     // 2 input tokens at $2.50 + 100 output tokens at $10.00 per million.
     const column = messagesColumn("abcdef", { model: "gpt-4o", maxTokens: "100" });

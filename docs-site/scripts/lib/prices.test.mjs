@@ -133,11 +133,14 @@ test('parses the real price table', () => {
   const { version, prices } = parsePrices(source);
   assert.match(version, /^\d{4}-\d{2}-\d{2}$/);
   assert.ok(prices.length > 0);
-  const seedBlock = /^SEED_PRICES\b[^=\n]*=\s*\(\n([\s\S]*?)^\)/m.exec(source)[1];
-  const calls = [...seedBlock.matchAll(/^\s+_price\(/gm)].length;
-  assert.equal(prices.length, calls, 'every _price call in SEED_PRICES is parsed');
-  const allCalls = [...source.matchAll(/^\s+_price\(/gm)].length;
-  assert.ok(allCalls > calls, 'the historical snapshot rows are _price calls outside SEED_PRICES');
+  const counts = new Map();
+  for (const name of ['_PRICES_2026_10_25', 'SEED_PRICES']) {
+    const declaration = new RegExp(`^${name}\\b[^=\\n]*=\\s*\\(\\n([\\s\\S]*?)^\\)`, 'm');
+    counts.set(name, [...declaration.exec(source)[1].matchAll(/^\s+_price\(/gm)].length);
+  }
+  assert.equal(prices.length, counts.get('_PRICES_2026_10_25') + counts.get('SEED_PRICES'));
+  assert.ok(prices.some((price) => price.modelPattern === 'Qwen/Qwen3.5-9B'));
+  assert.ok(prices.some((price) => price.modelPattern === 'grok-4.7' && price.minPromptTokens === 200_000));
 
   const anthropic = prices.filter((price) => price.provider === 'anthropic');
   assert.ok(anthropic.length >= 12, `expected the Anthropic rows, found ${anthropic.length}`);

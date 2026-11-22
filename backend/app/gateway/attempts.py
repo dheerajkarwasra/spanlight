@@ -22,6 +22,7 @@ import structlog
 from app.core.crypto import CryptoError
 from app.core.observability import GATEWAY_ATTEMPTS, GATEWAY_UPSTREAM_DURATION
 from app.db.models import ProviderCredential
+from app.db.models.gateway import ProviderKind
 from app.gateway.adapters import (
     InvalidUpstreamBody,
     ProviderAdapter,
@@ -33,6 +34,7 @@ from app.gateway.context import Attempt, GatewayContext, GatewayRequest
 from app.gateway.credentials import decrypt_api_key
 from app.gateway.errors import (
     GatewayError,
+    Surface,
     internal,
     invalid_request,
     upstream_timeout,
@@ -41,6 +43,8 @@ from app.gateway.errors import (
 from app.gateway.faults import AppliedFault
 from app.gateway.routing import Fallback, Retry, next_action
 from app.gateway.single_attempt import AttemptEnd, attempt_once
+from app.gateway.sse import dict_at
+from app.gateway.translation import translate_request, upstream_surface
 
 logger = structlog.get_logger(__name__)
 
@@ -52,6 +56,9 @@ class RoutePlan:
     model: str
     order: list[int]
     body: dict[str, Any]
+    clamp_output_tokens: int | None = None
+    translate: bool = False
+    single_attempt: bool = False
 
 
 @dataclass
@@ -84,6 +91,7 @@ class LoopResult:
     upstream_s: float = 0.0
     stream_deadline: float | None = None
     first_byte_at: float | None = None  # `context.monotonic()` when a stream's first byte came
+    upstream_surface: Surface | None = None
 
     @property
     def succeeded(self) -> bool:
@@ -106,7 +114,7 @@ async def run_attempts(
     made when the loop is cancelled.
     """
     loop_result = result if result is not None else LoopResult()
-    run = _Run(request, context, fault, deadline, waits, loop_result)
+    run = _Run(request, context, fault, deadline, waits, loop_result, plan.single_attempt)
     for position, index in enumerate(plan.order):
         target = _prepare(request, context, plan, index)
         if isinstance(target, GatewayError):
@@ -133,6 +141,7 @@ class _Run:
     deadline: float
     waits: Waits
     result: LoopResult
+    single_attempt: bool
 
 
 @dataclass(frozen=True)
@@ -143,6 +152,7 @@ class _Target:
     credential: ProviderCredential
     adapter: ProviderAdapter
     upstream: UpstreamRequest
+    surface: Surface
 
 
 async def _try_target(run: _Run, target: _Target, *, targets_left: int) -> bool:
@@ -159,7 +169,10 @@ async def _try_target(run: _Run, target: _Target, *, targets_left: int) -> bool:
         tries += 1
         step = await _attempt_and_count(run, target)
         if step.outcome is None:
+            result.upstream_surface = target.surface
             result.first_byte_at = context.monotonic() if run.request.stream else None
+            return False
+        if run.single_attempt:
             return False
         action = next_action(
             context.route,
@@ -198,6 +211,25 @@ async def _attempt_and_count(run: _Run, target: _Target) -> AttemptEnd:
     return step
 
 
+def _clamp_cap_key(surface: Surface, provider: ProviderKind) -> str | None:
+    if surface == "messages":
+        return "max_tokens"
+    if surface == "responses":
+        return "max_output_tokens"
+    if surface == "chat_completions":
+        return "max_completion_tokens" if provider == ProviderKind.OPENAI else "max_tokens"
+    return None
+
+
+def _clamp_output(
+    body: dict[str, Any], target_surface: Surface, provider: ProviderKind, limit: int
+) -> None:
+    if target_surface == "generate_content":
+        body["generationConfig"] = {**dict_at(body, "generationConfig"), "maxOutputTokens": limit}
+    elif (key := _clamp_cap_key(target_surface, provider)) is not None:
+        body[key] = limit
+
+
 def _prepare(
     request: GatewayRequest, context: GatewayContext, plan: RoutePlan, index: int
 ) -> _Target | GatewayError:
@@ -206,6 +238,15 @@ def _prepare(
     credential = context.credentials[target.credential_id]
     adapter = adapter_for(credential.provider)
     body = {**plan.body, "model": target.model_aliases.get(plan.model, plan.model)}
+    target_surface = (
+        upstream_surface(request.surface, credential.provider)
+        if plan.translate
+        else request.surface
+    )
+    if target_surface != request.surface:
+        body = translate_request(request.surface, credential.provider, body)
+    if plan.clamp_output_tokens is not None:
+        _clamp_output(body, target_surface, credential.provider, plan.clamp_output_tokens)
     try:
         api_key = decrypt_api_key(credential, settings=context.settings)
     except CryptoError as failure:
@@ -217,12 +258,12 @@ def _prepare(
         return internal(request.request_id)
     try:
         upstream = adapter.prepare(
-            credential, request.surface, body, request.client_headers, api_key
+            credential, target_surface, body, request.client_headers, api_key
         )
     except InvalidUpstreamBody:
         message = "Request body must be strict JSON: NaN and infinite numbers are not allowed."
         return invalid_request(message, param=None)
-    return _Target(index, credential, adapter, upstream)
+    return _Target(index, credential, adapter, upstream, target_surface)
 
 
 def _count(

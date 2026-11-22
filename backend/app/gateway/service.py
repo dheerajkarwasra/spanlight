@@ -31,7 +31,6 @@ from app.gateway.credentials import (
     check_base_url_host,
     decrypt_api_key,
     seal_api_key,
-    validate_base_url,
 )
 from app.gateway.schemas import CredentialCheck, CredentialCreate
 from app.services.audit import record_audit
@@ -155,11 +154,10 @@ async def rotate_credential(
     found = await queries.get_credential(db, org_id, credential_id)
     if found is None:
         raise CredentialNotFoundError
-    base_url = found.base_url
+    allow_insecure = settings.gateway_allow_insecure_base_urls
+    base_url = base_url_for(found.provider, found.base_url, allow_insecure=allow_insecure)
     if base_url is not None:
         # Outside the row lock: resolving a host can take seconds.
-        allow_insecure = settings.gateway_allow_insecure_base_urls
-        validate_base_url(base_url, allow_insecure=allow_insecure)
         await check_base_url_host(base_url, allow_insecure=allow_insecure, resolver=resolver)
 
     if not await lock_org_for_write(db, org_id):

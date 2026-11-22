@@ -6,19 +6,20 @@ import { toast } from "sonner";
 import { Callout } from "@/components/callout";
 import { DialogHeading } from "@/components/dialog-heading";
 import { DisabledReason } from "@/components/disabled-reason";
+import { FieldSelect } from "@/components/field-select";
 import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { SegmentedControl } from "@/components/ui/segmented-control";
 import { MemberReauthFields } from "@/features/settings/member-reauth";
 import { useMemberReauth } from "@/features/settings/use-member-reauth";
-import { errorMessage, isApiError, type ProviderKind } from "@/lib/api";
+import { errorMessage, isApiError } from "@/lib/api";
 import { applyMappedFieldErrors } from "@/lib/form-errors";
 
 import {
   API_KEY_HINT,
   API_KEY_MAX_LENGTH,
+  AZURE_URL_HINT,
   BASE_URL_HINT,
   BASE_URL_MAX_LENGTH,
   CREDENTIAL_FIELD_OF_API_FIELD,
@@ -45,9 +46,9 @@ function isProofRefusal(error: unknown): boolean {
   return isApiError(error) && PROOF_REFUSALS.has(error.code);
 }
 
-const PROVIDER_OPTIONS = (Object.keys(PROVIDER_LABELS) as ProviderKind[]).map((value) => ({
+const PROVIDER_OPTIONS = Object.entries(PROVIDER_LABELS).map(([value, label]) => ({
   value,
-  label: PROVIDER_LABELS[value],
+  label,
 }));
 
 interface AddCredentialFormProps {
@@ -58,11 +59,7 @@ interface AddCredentialFormProps {
   onNotConfigured: () => void;
 }
 
-/**
- * Figma "Credentials — Add credential dialog" (Anthropic and OpenAI-compatible variants): name,
- * provider, API key and, for OpenAI-compatible servers only, a base URL. The key field is a
- * password input that is never filled back in, and the form clears once the key is stored.
- */
+/** Custom and Azure hosts also require account-owner proof. */
 export function AddCredentialForm({
   orgName,
   onPendingChange,
@@ -88,6 +85,7 @@ export function AddCredentialForm({
   });
   const provider = useWatch({ control: form.control, name: "provider" });
   const needsProof = needsBaseUrl(provider);
+  const isAzure = provider === "azure_openai";
   const notConfigured = form.formState.errors.root?.type === "not-configured";
 
   const onSubmit = form.handleSubmit(async (values) => {
@@ -151,26 +149,19 @@ export function AddCredentialForm({
           {...form.register("name")}
         />
       </FormField>
-      <div className="flex flex-col gap-2">
-        <p className="text-sm font-semibold text-foreground" id="credential-provider-label">
-          Provider
-        </p>
-        <SegmentedControl
-          aria-label="Provider"
-          tone="surface"
+      <FormField label="Provider" hint={PROVIDER_HINTS[provider]}>
+        <FieldSelect
           value={provider}
           options={PROVIDER_OPTIONS}
-          onValueChange={(next) => {
+          onChange={(next) => {
             confirmation.reset();
-            form.setValue("provider", next);
-            form.clearErrors("baseUrl");
+            form.resetField("apiKey");
+            setRevealed(false);
+            form.resetField("baseUrl");
+            form.setValue("provider", next as CredentialValues["provider"]);
           }}
-          className="max-w-full flex-wrap self-start"
         />
-        {PROVIDER_HINTS[provider] ? (
-          <p className="text-xs font-medium text-muted-foreground">{PROVIDER_HINTS[provider]}</p>
-        ) : null}
-      </div>
+      </FormField>
       <FormField label="API key" hint={API_KEY_HINT} error={form.formState.errors.apiKey?.message}>
         <ApiKeyInput
           revealed={revealed}
@@ -181,8 +172,8 @@ export function AddCredentialForm({
       </FormField>
       {needsBaseUrl(provider) ? (
         <FormField
-          label="Base URL"
-          hint={BASE_URL_HINT}
+          label={isAzure ? "Resource URL" : "Base URL"}
+          hint={isAzure ? AZURE_URL_HINT : BASE_URL_HINT}
           error={form.formState.errors.baseUrl?.message}
         >
           <Input
@@ -191,7 +182,11 @@ export function AddCredentialForm({
             autoComplete="off"
             spellCheck={false}
             maxLength={BASE_URL_MAX_LENGTH}
-            placeholder="https://llm.example.com/v1"
+            placeholder={
+              isAzure
+                ? "https://my-resource.openai.azure.com/openai/v1"
+                : "https://llm.example.com/v1"
+            }
             {...form.register("baseUrl")}
           />
         </FormField>

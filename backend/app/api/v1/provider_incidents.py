@@ -20,7 +20,7 @@ from app.provider_status import service
 router = APIRouter(prefix="/projects/{project_id}", tags=["providers"])
 
 ProjectReader = Annotated[Access, Depends(require(Permission.PROJECT_READ))]
-StatusProvider = Literal["anthropic", "openai", "google"]
+StatusProvider = Literal["anthropic", "openai", "google", "mistral", "groq"]
 
 
 @router.get("/provider-incidents", response_model=IncidentListOut, summary="Provider incidents")

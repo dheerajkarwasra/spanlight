@@ -367,3 +367,28 @@ def test_explicit_provider_wins_over_azure_detection(tracer, ingest):
     client.chat.completions.create(model="gpt-4o-mini", messages=MESSAGES)
 
     assert flushed_spans(tracer, ingest)[0]["provider"] == "openai"
+
+
+def _attribution_cases():
+    from pathlib import Path
+
+    return json.loads(
+        (Path(__file__).resolve().parents[2] / "fixtures/provider-attribution.json").read_text()
+    )
+
+
+@pytest.mark.parametrize("case", _attribution_cases())
+def test_openai_compatible_attribution_uses_exact_host_and_service_tier(tracer, ingest, case):
+    response = {**OPENAI_CHAT_COMPLETION, "service_tier": case["raw"]}
+    transport = MockProvider(json_response(response))
+    with openai.OpenAI(
+        api_key=API_KEY, base_url=case["url"], http_client=transport.sync_client(), max_retries=0
+    ) as client:
+        spanlight.wrap_openai(client, spanlight=tracer, provider=case.get("override"))
+        client.chat.completions.create(model="gpt-4o-mini", messages=MESSAGES)
+
+    [span] = flushed_spans(tracer, ingest)
+    assert span["provider"] == case["provider"]
+    assert span["usage"].get("service_tier") == case["tier"]
+    if case["tier"] is None:
+        assert span["attributes"]["usage.service_tier_raw"] == case["raw"]

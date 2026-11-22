@@ -10,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.alerts.channels import register_channel_deliverers
-from app.api import gw, health, ingest, scores_ingest, v1
+from app.api import gw, gw_gemini, health, ingest, scores_ingest, v1
 from app.api.deps import Clock, utcnow
 from app.api.gw_errors import install_gateway_error_handlers
 from app.api.key_cache import CachedKey, KeyCache
@@ -85,6 +85,8 @@ def create_app(  # noqa: PLR0915 - keep application composition and ordered reso
     )
     rate_limit_engine = _rate_limit_engine(settings)
     rate_limit_session_factory = create_session_factory(rate_limit_engine)
+    recorder_engine = _recorder_engine(settings)
+    recorder_session_factory = create_session_factory(recorder_engine)
     live_hub = (
         LiveHub(session_factory, max_streams=settings.live_max_streams)
         if settings.live_updates_enabled
@@ -98,6 +100,7 @@ def create_app(  # noqa: PLR0915 - keep application composition and ordered reso
             cleanup.push_async_callback(
                 shutdown_tracing, getattr(application.state, "tracer_provider", None)
             )
+            cleanup.push_async_callback(recorder_engine.dispose)
             cleanup.push_async_callback(rate_limit_engine.dispose)
             cleanup.push_async_callback(idempotency_engine.dispose)
             cleanup.push_async_callback(engine.dispose)
@@ -115,6 +118,7 @@ def create_app(  # noqa: PLR0915 - keep application composition and ordered reso
                     settings,
                     session_factory,
                     rate_limit_session_factory,
+                    recorder_sessions=recorder_session_factory,
                     transport=gateway_transport,
                     resolver=gateway_resolver,
                 )
@@ -188,6 +192,7 @@ def create_app(  # noqa: PLR0915 - keep application composition and ordered reso
     # In `standalone` and `disabled` mode `/gw/*` stays unmounted and answers 404 problem+json.
     if embedded_gateway:
         app.include_router(gw.router)
+        app.include_router(gw_gemini.router)
     return app
 
 
@@ -205,6 +210,8 @@ def _install_gateway_admission(app: FastAPI, settings: Settings) -> None:
         limit=settings.gateway_max_in_flight,
         limit_bytes=settings.gateway_max_in_flight_bytes,
         limit_per_key=settings.gateway_max_in_flight_per_key,
+        rate_per_second=settings.gateway_preauth_rps_per_key,
+        burst=settings.gateway_preauth_burst_per_key,
     )
 
 
@@ -230,6 +237,8 @@ def create_gateway_app(
     session_factory = create_session_factory(engine)
     rate_limit_engine = _rate_limit_engine(settings)
     rate_limit_session_factory = create_session_factory(rate_limit_engine)
+    recorder_engine = _recorder_engine(settings)
+    recorder_session_factory = create_session_factory(recorder_engine)
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -238,6 +247,7 @@ def create_gateway_app(
             cleanup.push_async_callback(
                 shutdown_tracing, getattr(application.state, "tracer_provider", None)
             )
+            cleanup.push_async_callback(recorder_engine.dispose)
             cleanup.push_async_callback(rate_limit_engine.dispose)
             cleanup.push_async_callback(engine.dispose)
             async with disposal_gate(flush_owned=True):
@@ -247,6 +257,7 @@ def create_gateway_app(
                     settings,
                     session_factory,
                     rate_limit_session_factory,
+                    recorder_sessions=recorder_session_factory,
                     transport=gateway_transport,
                     resolver=gateway_resolver,
                 )
@@ -279,7 +290,7 @@ def create_gateway_app(
     _install_gateway_admission(app, settings)
     app.add_middleware(RequestContextMiddleware)
 
-    for router in (gw.router, health.router):
+    for router in (gw.router, gw_gemini.router, health.router):
         app.include_router(router)
     return app
 
@@ -318,12 +329,26 @@ def _rate_limit_engine(settings: Settings) -> AsyncEngine:
     )
 
 
+def _recorder_engine(settings: Settings) -> AsyncEngine:
+    # Dedicated pool for GatewayRecorder background span writes and settle-on-loss work so bursts
+    # never consume foreground API/gateway connection slots.
+    return create_engine(
+        settings.database_url,
+        pool_size=settings.recorder_pool_size,
+        max_overflow=0,
+        pool_timeout=settings.recorder_pool_timeout_seconds,
+        pre_ping=False,
+        statement_timeout_ms=round(settings.api_statement_timeout_seconds * 1000),
+    )
+
+
 async def _start_gateway(
     application: FastAPI,
     settings: Settings,
     sessions: async_sessionmaker[AsyncSession],
     rate_limit_sessions: async_sessionmaker[AsyncSession],
     *,
+    recorder_sessions: async_sessionmaker[AsyncSession] | None = None,
     transport: httpx.AsyncBaseTransport | None,
     resolver: Resolver | None,
 ) -> GatewayRuntime:
@@ -336,7 +361,11 @@ async def _start_gateway(
     http = build_http_client(settings, transport=transport, resolver=resolver)
     try:
         runtime = build_runtime(
-            settings, sessions, http=http, rate_limit_sessions=rate_limit_sessions
+            settings,
+            sessions,
+            http=http,
+            rate_limit_sessions=rate_limit_sessions,
+            recorder_sessions=recorder_sessions,
         )
         application.state.gateway_http = http
         application.state.gateway_runtime = runtime

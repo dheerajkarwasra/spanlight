@@ -24,14 +24,20 @@ GOOGLE_ALIASES: frozenset[str] = frozenset(
     }
 )
 ANTHROPIC_ALIASES: frozenset[str] = frozenset({"anthropic", "claude"})
-# Azure is not an OpenAI alias: Azure bills its own rates and none are seeded, so `azure` and
-# `azure_openai` stay as they are and an Azure span is unpriced (NULL), not priced at OpenAI's.
+# Azure bills its own rates. Preserve the two spellings for existing overrides.
+AZURE_PROVIDER_NAMES: frozenset[str] = frozenset({"azure", "azure_openai"})
 OPENAI_ALIASES: frozenset[str] = frozenset({"openai"})
 
 _CANONICAL: dict[str, str] = {
     **dict.fromkeys(GOOGLE_ALIASES, "google"),
     **dict.fromkeys(ANTHROPIC_ALIASES, "anthropic"),
     **dict.fromkeys(OPENAI_ALIASES, "openai"),
+    "mistralai": "mistral",
+    "grok": "xai",
+    "together_ai": "together",
+    "togetherai": "together",
+    "aws_bedrock": "bedrock",
+    "amazon_bedrock": "bedrock",
 }
 
 

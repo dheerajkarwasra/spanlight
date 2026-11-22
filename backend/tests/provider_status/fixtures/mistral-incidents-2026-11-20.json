@@ -1,0 +1,71 @@
+{
+  "page": {
+    "id": "ae27f3c4-86a4-4290-a053-87252545d7f9",
+    "name": "Mistral AI Status",
+    "url": "https://status.mistral.ai",
+    "time_zone": "Etc/UTC",
+    "updated_at": "2026-10-15T11:30:27-07:00"
+  },
+  "incidents": [
+    {
+      "id": "ec4a02b2-a4a3-4201-864d-b146d80519a9",
+      "name": "Completion API Degraded",
+      "status": "resolved",
+      "created_at": "2026-03-16T13:48:53-07:00",
+      "updated_at": "2026-09-08T09:51:08-07:00",
+      "monitoring_at": null,
+      "resolved_at": "2026-03-16T13:49:44-07:00",
+      "impact": "minor",
+      "shortlink": "https://status.mistral.ai/incidents/0a936999-9aea-4cc1-b567-2112ee005e0f",
+      "started_at": "2026-03-16T13:48:53-07:00",
+      "page_id": "ae27f3c4-86a4-4290-a053-87252545d7f9",
+      "incident_updates": [
+        {
+          "id": "ec4a02b2-a4a3-4201-864d-b146d80519a9-auto-resolved",
+          "status": "resolved",
+          "body": "This incident has been resolved.",
+          "incident_id": "ec4a02b2-a4a3-4201-864d-b146d80519a9",
+          "created_at": "2026-03-16T13:49:44-07:00",
+          "updated_at": "2026-09-08T09:51:08-07:00",
+          "display_at": "2026-03-16T13:49:44-07:00",
+          "deliver_notifications": false
+        }
+      ]
+    },
+    {
+      "id": "b8cc1988-7510-45cc-bb41-bd2d10e730ec",
+      "name": "Vibe Work issues with GLM 5.3 Short",
+      "status": "monitoring",
+      "created_at": "2026-11-19T07:06:46-08:00",
+      "updated_at": "2026-11-19T09:23:43-08:00",
+      "monitoring_at": "2026-11-19T09:23:43-08:00",
+      "resolved_at": null,
+      "impact": "minor",
+      "shortlink": "https://status.mistral.ai/incidents/b8cc1988-7510-45cc-bb41-bd2d10e730ec",
+      "started_at": "2026-11-19T07:06:46-08:00",
+      "page_id": "ae27f3c4-86a4-4290-a053-87252545d7f9",
+      "incident_updates": [
+        {
+          "id": "e13a4c33-0820-41bc-bf9b-1d6fe86c3b22",
+          "status": "monitoring",
+          "body": "Performance healing - monitoring and continuing to apply improvements",
+          "incident_id": "b8cc1988-7510-45cc-bb41-bd2d10e730ec",
+          "created_at": "2026-11-19T09:23:43-08:00",
+          "updated_at": "2026-11-19T09:23:43-08:00",
+          "display_at": "2026-11-19T09:23:43-08:00",
+          "deliver_notifications": true
+        },
+        {
+          "id": "dc1ed6c7-8087-45db-a4fe-9066ea91ba10",
+          "status": "investigating",
+          "body": "Vibe Work users may face intermittent issues - cause identified and mitigation in progress",
+          "incident_id": "b8cc1988-7510-45cc-bb41-bd2d10e730ec",
+          "created_at": "2026-11-19T07:06:46-08:00",
+          "updated_at": "2026-11-19T08:45:38-08:00",
+          "display_at": "2026-11-19T07:06:46-08:00",
+          "deliver_notifications": true
+        }
+      ]
+    }
+  ]
+}

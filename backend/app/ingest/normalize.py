@@ -24,6 +24,7 @@ from app.ingest.schemas import SpanIn
 from app.ingest.trace_fields import TraceFields, trace_fields
 from app.pricing.cost import PriceBook
 from app.pricing.modifiers import flag_unpriced_modifiers, reported_modifiers
+from app.pricing.provider_alias import canonical_provider
 from app.pricing.tiers import multipliers_for
 
 MAX_PAYLOAD_BYTES = 1024 * 1024
@@ -108,7 +109,7 @@ def normalize_span(
     status_message = (
         redact_text(span.status_message, contacts=redact_contacts) if span.status_message else None
     )
-    error_class = classify_error(span.status, status_message, attributes)
+    error_class = classify_error(span.status, status_message, attributes, provider=span.provider)
     return NormalizedSpan(
         trace_id=span.trace_id,
         span_id=span.span_id,
@@ -208,6 +209,19 @@ def _cost(
     A fee is known without the token cost (a cut stream that still counted searches): the fee is
     then stored while the cost and version stay None, never a partial total.
     """
+    if (
+        span.provider == "google"
+        and span.attributes.get("spanlight.gateway.surface") == "generate_content"
+        and span.attributes.get("usage.unpriced_reason") == "gemini_billing_dimensions"
+    ):
+        return None, None, None
+    if span.attributes.get("spanlight.gateway.surface") in ("chat_completions", "responses"):
+        reason = span.attributes.get("usage.unpriced_reason")
+        if reason == "provider_billing_dimensions" or (
+            reason == "deepseek_billing_schedule"
+            and canonical_provider(span.provider) == "deepseek"
+        ):
+            return None, None, None
     cost = prices.cost(
         provider=span.provider,
         model=span.model,

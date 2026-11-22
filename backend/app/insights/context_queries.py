@@ -34,6 +34,7 @@ from app.insights.context_build import (
     blank_to_none,
     build_baselines,
     gateway_attrs,
+    parse_retry_after,
 )
 from app.insights.schemas import Window
 from app.provider_status import service as provider_status
@@ -61,10 +62,13 @@ _GATEWAY_COLUMNS = ",\n".join(
 # own limiter, and a refusal flood must not push real calls out of the read.
 _LLM_SPANS = text(
     f"""
-    SELECT s.trace_id, s.span_id, t.session_id, t.external_user_id, t.environment, t.release,
-           t.name AS trace_name, s.started_at, s.duration_ms, s.status, s.error_class,
-           s.provider, s.model, s.input_tokens, s.output_tokens, s.cached_tokens, s.cost_usd,
-           s.request_hash, s.finish_reason, s.status_message, s.rate_limit_kind,
+    SELECT s.trace_id, s.span_id, s.parent_span_id, t.session_id, t.external_user_id,
+           t.environment, t.release, t.name AS trace_name, s.started_at, s.duration_ms,
+           s.status, s.error_class, s.provider, s.model, s.input_tokens, s.output_tokens,
+           s.cached_tokens, s.cost_usd, s.request_hash, s.finish_reason, s.status_message,
+           s.rate_limit_kind,
+           s.attributes ->> 'provider.retry_after_s' AS provider_retry_after_s,
+           s.attributes ->> 'usage.unreported_reason' AS unreported_reason,
            {_GATEWAY_COLUMNS},
            EXISTS (
                SELECT 1 FROM jsonb_object_keys(s.attributes) AS attribute_key
@@ -90,7 +94,8 @@ _LLM_SPANS = text(
 # a JSON null has no hash.
 _TOOL_SPANS = text(
     """
-    SELECT s.trace_id, s.span_id, t.session_id, s.started_at, s.name, s.status,
+    SELECT s.trace_id, s.span_id, s.parent_span_id, t.session_id, s.started_at, s.name,
+           s.status, s.status_message,
            CASE WHEN s.input IS NULL OR jsonb_typeof(s.input) = 'null' THEN NULL
                 ELSE left(encode(sha256(convert_to(s.input::text, 'UTF8')), 'hex'), 32)
            END AS input_hash
@@ -217,6 +222,9 @@ def _llm_row(values: RowMapping) -> LlmSpanRow:
         gateway=gateway_attrs(gateway_values, is_gateway=bool(values["is_gateway"])),
         rate_limit_kind=values["rate_limit_kind"],
         trace_name=blank_to_none(values["trace_name"]),
+        parent_span_id=blank_to_none(values["parent_span_id"]),
+        provider_retry_after_s=parse_retry_after(values["provider_retry_after_s"]),
+        unreported_reason=blank_to_none(values["unreported_reason"]),
     )
 
 
@@ -239,6 +247,8 @@ async def _tool_spans(
             name=row.name,
             input_hash=row.input_hash,
             status=str(row.status),
+            status_message=blank_to_none(row.status_message),
+            parent_span_id=blank_to_none(row.parent_span_id),
         )
         for row in rows[:SPAN_CAP]
     ]

@@ -10,6 +10,9 @@ import { BlockList, isIP } from "node:net";
 
 import { Exporter } from "./exporter.js";
 import { log } from "./log.js";
+import { cleanMetadata } from "./metadata.js";
+import { getCurrentPromptVersionId, PromptClient } from "./prompts.js";
+import { buildScore, type ScoreOptions, type ScoreValue } from "./scores.js";
 import { normalizeKind, Span, type SpanKind, TraceState } from "./span.js";
 
 export interface SpanlightOptions {
@@ -37,6 +40,8 @@ export interface SpanlightOptions {
   maxRetries?: number;
   /** Time budget for the flush when the process is about to exit. Default 5000. */
   shutdownTimeoutMs?: number;
+  /** Seconds a fetched prompt is served from cache before revalidating with ETag. Default 60. */
+  promptCacheTtlSeconds?: number;
   /** The `fetch` used to reach Spanlight. Defaults to the global `fetch`. */
   fetch?: typeof fetch;
 }
@@ -65,6 +70,8 @@ export interface TraceUpdate {
   sessionId?: string;
   /** Tags accumulate across calls. */
   tags?: string[];
+  /** Key/value metadata entries (up to 32 keys); merges per key onto the trace. */
+  metadata?: Record<string, unknown>;
 }
 
 const DISABLED_VALUES: ReadonlySet<string> = new Set(["false", "0", "no", "off"]);
@@ -114,6 +121,7 @@ export const context = new AsyncLocalStorage<Span>();
 
 export class Client {
   readonly exporter: Exporter | undefined;
+  readonly prompts: PromptClient;
   private readonly environment: string | undefined;
   private readonly release: string | undefined;
   private readonly shutdownTimeoutMs: number;
@@ -124,19 +132,30 @@ export class Client {
     this.environment = options.environment ?? (env.SPANLIGHT_ENVIRONMENT || undefined);
     this.release = options.release ?? (env.SPANLIGHT_RELEASE || undefined);
     this.shutdownTimeoutMs = options.shutdownTimeoutMs ?? 5_000;
+    const timeoutMs = options.timeoutMs ?? 10_000;
+    const promptCacheTtlMs = (options.promptCacheTtlSeconds ?? 60) * 1000;
+    const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
     const enabled =
       options.enabled ?? !DISABLED_VALUES.has((env.SPANLIGHT_ENABLED ?? "").trim().toLowerCase());
     const apiKey = options.apiKey ?? (env.SPANLIGHT_API_KEY || undefined);
+    let host = options.host ?? (env.SPANLIGHT_HOST || "http://localhost:8000");
+    // A loop, not /\/+$/: that pattern backtracks quadratically on a long run of slashes.
+    while (host.endsWith("/")) host = host.slice(0, -1);
+    const safeHost = isSafeHost(host);
+    this.prompts = new PromptClient(
+      `${host}/v1/prompts`,
+      apiKey && safeHost ? apiKey : undefined,
+      timeoutMs,
+      promptCacheTtlMs,
+      fetchFn,
+    );
     if (!enabled) return;
     if (!apiKey) {
       log.warn("No API key: set SPANLIGHT_API_KEY or pass apiKey to init(). Tracing is disabled.");
       return;
     }
-    let host = options.host ?? (env.SPANLIGHT_HOST || "http://localhost:8000");
-    // A loop, not /\/+$/: that pattern backtracks quadratically on a long run of slashes.
-    while (host.endsWith("/")) host = host.slice(0, -1);
     // The key is a bearer credential: never send it in clear text to another machine.
-    if (!isSafeHost(host)) {
+    if (!safeHost) {
       log.warn(
         "The host must be an https:// URL (plain http:// is allowed only for local and " +
           "private-network hosts). " +
@@ -146,14 +165,15 @@ export class Client {
     }
     this.exporter = new Exporter({
       url: `${host}/v1/traces`,
+      scoresUrl: `${host}/v1/scores`,
       apiKey,
       batchSize: Math.min(Math.max(Math.trunc(options.batchSize ?? 100), 1), 1000),
       flushIntervalMs: options.flushIntervalMs ?? 2_000,
       maxQueue: options.maxQueue ?? 10_000,
       gzip: options.gzip ?? true,
-      timeoutMs: options.timeoutMs ?? 10_000,
+      timeoutMs,
       maxRetries: options.maxRetries ?? 5,
-      fetch: options.fetch ?? globalThis.fetch.bind(globalThis),
+      fetch: fetchFn,
     });
     // The batch timer is unref'd, so a script reaches `beforeExit` with spans still queued.
     let exiting = false;
@@ -186,7 +206,22 @@ export class Client {
       ? parent.trace
       : new TraceState(name, this.environment, this.release);
     const parentId = parent?.recording ? parent.spanId : undefined;
-    return new Span(name, kind, trace, parentId, (span) => exporter.export(span.toPayload()));
+    const span = new Span(name, kind, trace, parentId, (s) => exporter.export(s.toPayload()));
+    const promptVersionId = getCurrentPromptVersionId();
+    if (promptVersionId !== undefined) span.setPromptVersion(promptVersionId);
+    return span;
+  }
+
+  /** Record a numeric, boolean, or categorical score on a trace (or one span). Never throws. */
+  score(traceId: string, name: string, value: ScoreValue, options: ScoreOptions = {}): void {
+    const exporter = this.exporter;
+    if (exporter === undefined) return;
+    try {
+      const payload = buildScore(traceId, name, value, options);
+      if (payload !== undefined) exporter.exportScore(payload);
+    } catch (error) {
+      log.debug(`Failed to record score ${name}`, error);
+    }
   }
 
   flush(timeoutMs?: number): Promise<boolean> {
@@ -240,6 +275,20 @@ export function updateTrace(update: TraceUpdate): void {
   for (const tag of update.tags ?? []) {
     if (!trace.tags.includes(tag)) trace.tags.push(tag);
   }
+  if (update.metadata !== undefined) {
+    const cleaned = cleanMetadata(update.metadata);
+    if (Object.keys(cleaned).length > 0) trace.setMetadata(cleaned);
+  }
+}
+
+/** Record a score for a trace (or a specific span) using the global client. */
+export function score(
+  traceId: string,
+  name: string,
+  value: ScoreValue,
+  options: ScoreOptions = {},
+): void {
+  getClient().score(traceId, name, value, options);
 }
 
 /** Send every span ended so far. Resolves `true` when everything was delivered in time. */

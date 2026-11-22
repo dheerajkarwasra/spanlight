@@ -122,7 +122,8 @@ export function storedMaxTokens(body: Record<string, unknown> | null): number | 
       return value;
     }
   }
-  return null;
+  const cap = generationConfig(body)?.maxOutputTokens;
+  return typeof cap === "number" && Number.isInteger(cap) ? cap : null;
 }
 
 function budgetUsed(budget: ReplayBudget): string | null {
@@ -168,6 +169,13 @@ export function budgetSpentDetail(budget: ReplayBudget | undefined): string {
 
 type Body = Record<string, unknown> | null;
 
+function generationConfig(body: Body): Body {
+  const config = body?.generationConfig;
+  return config && typeof config === "object" && !Array.isArray(config)
+    ? (config as Record<string, unknown>)
+    : null;
+}
+
 function capChange(key: string, before: Body, after: Body): string {
   const stored = before?.[key];
   const asked = after?.[key];
@@ -185,6 +193,7 @@ const CHANGE_WORDS: Record<string, string> = {
   n: "n set to 1",
   model: "model changed",
   body: "request edited",
+  "generationConfig.candidateCount": "candidateCount set to 1",
 };
 
 /**
@@ -194,11 +203,13 @@ const CHANGE_WORDS: Record<string, string> = {
  */
 export function changedText(changed: readonly string[], before: Body, after: Body): string {
   return changed
-    .map((key) =>
-      key.startsWith("max_")
-        ? capChange(key, before, after)
-        : (CHANGE_WORDS[key] ?? `${key} changed`),
-    )
+    .map((key) => {
+      if (key === "generationConfig.maxOutputTokens") {
+        return capChange("maxOutputTokens", generationConfig(before), generationConfig(after));
+      }
+      if (key.startsWith("max_")) return capChange(key, before, after);
+      return CHANGE_WORDS[key] ?? `${key} changed`;
+    })
     .join(", ");
 }
 

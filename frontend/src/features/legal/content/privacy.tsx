@@ -262,10 +262,10 @@ export function PrivacyPage() {
       <LegalSection id="llm" title={SECTIONS.llm}>
         <p>
           Gateway calls go to the model provider your organisation configures, on your
-          organisation&apos;s own credentials. &ldquo;Explain with Claude&rdquo; runs only when a
-          user clicks it, and sends secret-redacted trace excerpts to Anthropic on your
-          organisation&apos;s own Anthropic credential. Evaluation runs with an LLM judge send the
-          items being scored to the model provider on your organisation&apos;s own stored
+          organisation&apos;s own credentials. &ldquo;Explain with AI&rdquo; runs only when a user
+          requests it. It sends secret-redacted trace excerpts to the configured explanation
+          provider on your organisation&apos;s own credential. Evaluation runs with an LLM judge
+          send the items being scored to the model provider on your organisation&apos;s own stored
           credential. All of these run under your own agreement with that provider.
         </p>
         <p>

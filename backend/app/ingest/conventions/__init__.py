@@ -12,6 +12,7 @@ from typing import Any
 from app.db.models.telemetry import SpanKind
 from app.ingest.conventions.gen_ai import map_gen_ai
 from app.ingest.conventions.kinds import infer_kind, is_embeddings_operation
+from app.ingest.conventions.mcp import map_mcp
 from app.ingest.conventions.openinference import map_openinference
 from app.ingest.conventions.read import first, has_prefix
 from app.ingest.conventions.traceloop import map_traceloop
@@ -25,6 +26,7 @@ _MAPPERS = {
     Convention.OPENINFERENCE: map_openinference,
     Convention.VERCEL_AI: map_vercel_ai,
     Convention.TRACELOOP: map_traceloop,
+    Convention.MCP: map_mcp,
 }
 # Fields with their own merge rule in `fill_gaps`; every other field is taken from the fallback
 # when the primary mapper left it `None`.
@@ -41,6 +43,12 @@ def detect(attributes: Mapping[str, Any]) -> Convention:
         return Convention.VERCEL_AI
     if first(attributes, "traceloop.span.kind") is not None:
         return Convention.TRACELOOP
+    if (
+        first(attributes, "rpc.system") == "mcp"
+        or first(attributes, "mcp.method.name") is not None
+        or first(attributes, "mcp.tool.name") is not None
+    ):
+        return Convention.MCP
     if has_prefix(attributes, "gen_ai."):
         return Convention.GEN_AI
     return Convention.NONE

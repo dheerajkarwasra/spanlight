@@ -10,21 +10,41 @@ export const API_KEY_HINT = "Stored encrypted. Never shown again.";
 export const BASE_URL_HINT =
   "HTTPS only. Private and local addresses are blocked unless your administrator allows them.";
 
+export const AZURE_URL_HINT = "Use the Azure OpenAI resource URL ending in /openai/v1.";
+const PROVIDERS = [
+  "openai",
+  "anthropic",
+  "gemini",
+  "azure_openai",
+  "mistral",
+  "groq",
+  "deepseek",
+  "xai",
+  "together",
+  "openai_compatible",
+] as const satisfies readonly ProviderKind[];
+
 export const PROVIDER_LABELS: Record<ProviderKind, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",
+  gemini: "Google Gemini",
   openai_compatible: "OpenAI-compatible",
+  azure_openai: "Azure OpenAI",
+  mistral: "Mistral",
+  groq: "Groq",
+  deepseek: "DeepSeek",
+  xai: "xAI",
+  together: "Together AI",
 };
 
-export const PROVIDER_HINTS: Record<ProviderKind, string | null> = {
-  openai: null,
+export const PROVIDER_HINTS: Partial<Record<ProviderKind, string>> = {
   anthropic: "Serves the Messages API. Point the Anthropic SDK at /gw.",
+  gemini: "Supports native Gemini and OpenAI-compatible requests.",
   openai_compatible: "Any server that speaks the OpenAI Chat Completions API.",
 };
 
-/** Only an OpenAI-compatible credential has a base URL; the others use their provider's host. */
 export function needsBaseUrl(provider: ProviderKind): boolean {
-  return provider === "openai_compatible";
+  return provider === "openai_compatible" || provider === "azure_openai";
 }
 
 const apiKeySchema = z
@@ -48,6 +68,18 @@ export function isHttpsUrl(value: string): boolean {
   }
 }
 
+function isAzureResourceUrl(value: string): boolean {
+  const url = new URL(value);
+  return (
+    /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.openai\.azure\.com$/.test(url.hostname) &&
+    /^\/openai\/v1\/?$/.test(url.pathname) &&
+    !url.port &&
+    !url.username &&
+    !url.password &&
+    !/[?#]/.test(value)
+  );
+}
+
 export const credentialSchema = z
   .object({
     name: z
@@ -55,12 +87,11 @@ export const credentialSchema = z
       .trim()
       .min(1, "Enter a name for this credential.")
       .max(CREDENTIAL_NAME_MAX_LENGTH, `Use ${CREDENTIAL_NAME_MAX_LENGTH} characters or fewer.`),
-    provider: z.enum(["openai", "anthropic", "openai_compatible"]),
+    provider: z.enum(PROVIDERS),
     apiKey: apiKeySchema,
     baseUrl: z.string().trim().max(BASE_URL_MAX_LENGTH, "This URL is too long."),
   })
   .superRefine((values, context) => {
-    // The base URL is required for OpenAI-compatible servers and does not exist for the others.
     if (!needsBaseUrl(values.provider)) {
       return;
     }
@@ -76,6 +107,8 @@ export const credentialSchema = z
         path: ["baseUrl"],
         message: "Use an https:// URL.",
       });
+    } else if (values.provider === "azure_openai" && !isAzureResourceUrl(values.baseUrl)) {
+      context.addIssue({ code: "custom", path: ["baseUrl"], message: AZURE_URL_HINT });
     }
   });
 

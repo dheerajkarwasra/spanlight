@@ -62,6 +62,7 @@ from app.gateway.errors import (
     surface_for_path,
 )
 from app.gateway.execute import execute
+from app.gateway.gemini import normalize_request
 from app.gateway.http_response import GatewayStreamingResponse
 from app.gateway.key_context import KeyContext, authenticated_context
 from app.gateway.key_limits import check_limits
@@ -80,7 +81,8 @@ MAX_REQUEST_BYTES = 10 * 1024 * 1024
 BODY_READ_TIMEOUT_S = 30.0
 # Client headers that are credentials. They are dropped before the request reaches `execute`,
 # whose adapters copy only an allowlist upstream anyway.
-_CREDENTIAL_HEADERS = frozenset({"authorization", "x-api-key", "cookie"})
+_KEY_HEADERS = ("x-api-key", "x-goog-api-key")
+_CREDENTIAL_HEADERS = frozenset({"authorization", *_KEY_HEADERS, "cookie"})
 
 _REQUEST_BODY_DOC: dict[str, Any] = {
     "requestBody": {
@@ -115,7 +117,7 @@ def presented_key(headers: Headers) -> str:
     for value in headers.getlist("authorization"):
         scheme, _, credential = value.strip().partition(" ")
         values.append(credential.strip() if scheme.lower() == "bearer" else value.strip())
-    values.extend(value.strip() for value in headers.getlist("x-api-key"))
+    values.extend(value.strip() for name in _KEY_HEADERS for value in headers.getlist(name))
     if len(set(values)) > 1:
         raise invalid_key(conflicting=True)
     if not values or not values[0]:
@@ -186,7 +188,9 @@ GatewayKey = Annotated[KeyContext, Depends(authenticate_gateway_key)]
 ModelsKey = Annotated[KeyContext, Depends(authenticate_models_key)]
 
 
-async def read_model_call(request: Request) -> tuple[dict[str, Any], int]:
+async def read_model_call(
+    request: Request, *, path_model: str | None = None, stream: bool = False
+) -> tuple[dict[str, Any], int]:
     """The body as a JSON object with a string `model`, at most `MAX_REQUEST_BYTES`, and its
     size. A compressed body may inflate at most `MAX_COMPRESSION_RATIO`-fold, as on ingest."""
     try:
@@ -211,7 +215,11 @@ async def read_model_call(request: Request) -> tuple[dict[str, Any], int]:
         body = json.loads(raw)
     except (ValueError, RecursionError):
         raise invalid_request() from None
-    if not isinstance(body, dict) or not isinstance(body.get("model"), str):
+    if not isinstance(body, dict):
+        raise invalid_request()
+    if path_model is not None:
+        normalize_request(body, path_model, stream=stream)
+    if not isinstance(body.get("model"), str):
         raise invalid_request()
     if clean_text(body["model"]) != body["model"]:
         # A NUL or a lone surrogate: no provider serves such a model, and Postgres cannot take
@@ -224,9 +232,16 @@ def forwardable_headers(headers: Headers) -> dict[str, str]:
     return {name: value for name, value in headers.items() if name not in _CREDENTIAL_HEADERS}
 
 
-async def _serve(request: Request, surface: Surface, key: KeyContext) -> Response:
+async def serve_model_call(
+    request: Request,
+    surface: Surface,
+    key: KeyContext,
+    *,
+    path_model: str | None = None,
+    stream: bool = False,
+) -> Response:
     runtime = get_runtime(request)
-    body, body_bytes = await read_model_call(request)
+    body, body_bytes = await read_model_call(request, path_model=path_model, stream=stream)
     call = GatewayRequest(
         surface=surface,
         body=body,
@@ -247,19 +262,25 @@ async def _serve(request: Request, surface: Surface, key: KeyContext) -> Respons
 @router.post("/chat/completions", openapi_extra=_REQUEST_BODY_DOC)
 async def chat_completions(request: Request, key: GatewayKey) -> Response:
     """OpenAI Chat Completions through the key's route; streams when `stream` is true."""
-    return await _serve(request, "chat_completions", key)
+    return await serve_model_call(request, "chat_completions", key)
 
 
 @router.post("/responses", openapi_extra=_REQUEST_BODY_DOC)
 async def responses(request: Request, key: GatewayKey) -> Response:
     """OpenAI Responses through the key's route; streams when `stream` is true."""
-    return await _serve(request, "responses", key)
+    return await serve_model_call(request, "responses", key)
 
 
 @router.post("/messages", openapi_extra=_REQUEST_BODY_DOC)
 async def messages(request: Request, key: GatewayKey) -> Response:
     """Anthropic Messages through the key's route; streams when `stream` is true."""
-    return await _serve(request, "messages", key)
+    return await serve_model_call(request, "messages", key)
+
+
+@router.post("/embeddings", openapi_extra=_REQUEST_BODY_DOC)
+async def embeddings(request: Request, key: GatewayKey) -> Response:
+    """OpenAI-shaped Embeddings through the key's route."""
+    return await serve_model_call(request, "embeddings", key)
 
 
 @router.get("/models")

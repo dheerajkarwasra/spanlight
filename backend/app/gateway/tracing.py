@@ -17,8 +17,9 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import urlsplit
 
+from app.budgets.gemini import supports_text_billing
 from app.core.text import storable_json
-from app.db.models import FaultScenario, ProviderCredential
+from app.db.models import FaultScenario, ProviderCredential, ProviderKind
 from app.gateway import provider_attributes
 from app.gateway.context import (
     UPSTREAM_ERROR_CODE,
@@ -27,6 +28,7 @@ from app.gateway.context import (
     GatewayResult,
 )
 from app.gateway.faults import BEFORE_SCENARIOS, fault_code, lab_tag
+from app.gateway.provider_billing import NEW_TEXT_PROVIDERS, supports_text_rates
 from app.gateway.span_usage import span_usage, usage_dict
 from app.gateway.trace_headers import MAX_TAGS
 from app.ingest.request_hash import request_hash
@@ -79,7 +81,7 @@ def build_span(
         "status_message": message,
         "start_time": started_at.isoformat(),
         "end_time": max(ended_at, started_at).isoformat(),
-        "provider": credential.provider.value if credential is not None else None,
+        "provider": _provider_name(request, credential),
         "model": model[:MAX_NAME_LENGTH] if model else None,
         "usage": span_usage(result),
         "time_to_first_token_ms": result.ttft_ms if request.stream else None,
@@ -201,7 +203,7 @@ def _attributes(
         "spanlight.gateway.route": context.route_name,
         "spanlight.gateway.route_version": context.route_version,
         "spanlight.gateway.target": credential.name if credential is not None else None,
-        "spanlight.gateway.provider": credential.provider.value if credential else None,
+        "spanlight.gateway.provider": _provider_name(request, credential),
         "spanlight.gateway.attempts": len(result.attempts),
         "spanlight.gateway.fallbacks": max(0, len(targets_tried) - 1),
         "spanlight.gateway.overhead_ms": result.overhead_ms,
@@ -221,6 +223,8 @@ def _attributes(
         attributes["spanlight.budget.blocked"] = True
         budget_id = result.budget.budget_id
         attributes["spanlight.budget.id"] = str(budget_id) if budget_id is not None else None
+    if result.run_reserved_usd is not None:
+        attributes["spanlight.run_reserved_usd"] = str(result.run_reserved_usd)
     return attributes
 
 
@@ -244,6 +248,21 @@ def _usage_attributes(
         # Only a call that reported usage was billed; one that never reached the provider, or
         # that it refused, must not count as priced at a modifier Spanlight does not model.
         return attributes
+    if request.surface == "generate_content" and not supports_text_billing(request.body):
+        attributes["usage.unpriced_reason"] = "gemini_billing_dimensions"
+    if credential is not None and credential.provider in NEW_TEXT_PROVIDERS:
+        if credential.provider is ProviderKind.DEEPSEEK:
+            attributes["usage.unpriced_reason"] = "deepseek_billing_schedule"
+        elif (
+            result.usage.unpriced_dimensions
+            or result.usage.service_tier_raw is not None
+            or not supports_text_rates(request.body)
+            or (
+                request.body.get("service_tier") in ("auto", "fast", "priority")
+                and result.usage.service_tier is None
+            )
+        ):
+            attributes["usage.unpriced_reason"] = "provider_billing_dimensions"
     if result.usage.service_tier_raw is not None:
         attributes["usage.service_tier_raw"] = result.usage.service_tier_raw
     if result.usage.inference_geo is not None:
@@ -319,6 +338,12 @@ def _upstream_status(result: GatewayResult) -> tuple[int | None, float | None]:
     ):
         return error.status, error.retry_after
     return None, None
+
+
+def _provider_name(request: GatewayRequest, credential: ProviderCredential | None) -> str | None:
+    if credential is None:
+        return None
+    return "google" if request.surface == "generate_content" else credential.provider.value
 
 
 def _credential(result: GatewayResult, context: GatewayContext) -> ProviderCredential | None:

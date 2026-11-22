@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import OpenAI, { RateLimitError } from "openai";
 import { describe, expect, it } from "vitest";
 
@@ -347,4 +349,31 @@ describe("wrapOpenAI with Azure", () => {
 
     expect(capture.spans()[0]).toMatchObject({ provider: "azure_openai" });
   });
+});
+
+const attribution = JSON.parse(
+  readFileSync(new URL("../../fixtures/provider-attribution.json", import.meta.url), "utf8"),
+) as { url: string; override?: string; provider: string; raw: string; tier: string | null }[];
+
+it.each(attribution)("attributes OpenAI-compatible $url (override $override)", async (testCase) => {
+  const capture = captureSpanlight();
+  const transport = mockProvider(() =>
+    jsonResponse({ ...CHAT_COMPLETION, service_tier: testCase.raw }),
+  );
+  const client = wrapOpenAI(
+    new OpenAI({ apiKey: "test-openai-key", baseURL: testCase.url, fetch: transport.fetch }),
+    { provider: testCase.override },
+  );
+
+  await client.chat.completions.create({ model: "test-model", messages: [] });
+  await flush();
+  expect(capture.spans()).toHaveLength(1);
+  const span = capture.spans()[0] ?? {};
+  expect(span.provider).toBe(testCase.provider);
+  if (testCase.tier === null) {
+    expect(span.usage).not.toHaveProperty("service_tier");
+    expect(span.attributes).toMatchObject({ "usage.service_tier_raw": testCase.raw });
+  } else {
+    expect(span.usage).toMatchObject({ service_tier: testCase.tier });
+  }
 });

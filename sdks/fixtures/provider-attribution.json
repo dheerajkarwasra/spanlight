@@ -1,0 +1,14 @@
+[
+  {"url":"https://generativelanguage.googleapis.com/v1beta/openai/","provider":"google","raw":"scale","tier":null},
+  {"url":"https://team-01.openai.azure.com/openai/v1/","provider":"azure_openai","raw":"scale","tier":null},
+  {"url":"https://api.mistral.ai/v1/","provider":"mistral","raw":"default","tier":null},
+  {"url":"https://api.groq.com/openai/v1/","provider":"groq","raw":"default","tier":null},
+  {"url":"https://api.deepseek.com/v1/","provider":"deepseek","raw":"fast","tier":null},
+  {"url":"https://api.x.ai/v1/","provider":"xai","raw":"scale","tier":null},
+  {"url":"https://api.x.ai/v1/","override":"grok","provider":"grok","raw":"fast","tier":"priority"},
+  {"url":"https://api.together.ai/v1/","provider":"together","raw":"default","tier":null},
+  {"url":"https://api.together.xyz/v1/","provider":"together","raw":"default","tier":null},
+  {"url":"https://api.groq.com.example/v1/","provider":"openai","raw":"default","tier":"standard"},
+  {"url":"https://nested.team.openai.azure.com/openai/v1/","provider":"openai","raw":"fast","tier":"priority"},
+  {"url":"https://api.x.ai/v1/","override":"openai","provider":"openai","raw":"scale","tier":"standard"}
+]

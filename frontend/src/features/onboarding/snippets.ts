@@ -19,8 +19,16 @@ export const DEFAULT_ENVIRONMENT = "production";
 
 export const GATEWAY_KEY_PLACEHOLDER = "<YOUR_GATEWAY_KEY>";
 
-export type SnippetId = "python" | "openai" | "anthropic" | "otel" | "curl" | "gateway";
-export type SnippetLanguage = "shell" | "python";
+export type SnippetId =
+  | "python"
+  | "openai"
+  | "anthropic"
+  | "gemini-python"
+  | "gemini-typescript"
+  | "otel"
+  | "curl"
+  | "gateway";
+export type SnippetLanguage = "shell" | "python" | "javascript";
 
 export interface SnippetBlock {
   /** Short heading used in the block's accessible name, e.g. "Install". */
@@ -176,6 +184,86 @@ spanlight.flush()`,
   };
 }
 
+const GEMINI_DESCRIPTION =
+  "Set GEMINI_API_KEY to your Google Gemini key. The wrapper traces native Generate Content calls, including streaming.";
+
+function geminiPythonSnippet(apiKey: string, host: string, environment: string): Snippet {
+  return {
+    id: "gemini-python",
+    label: "Gemini (Python)",
+    description: GEMINI_DESCRIPTION,
+    blocks: [
+      {
+        title: "Install",
+        filename: TERMINAL,
+        language: "shell",
+        code: `# Use the Spanlight checkout that matches your server.
+python -m pip install "/path/to/spanlight/sdks/python" google-genai`,
+      },
+      {
+        title: "Instrument",
+        filename: QUICKSTART,
+        language: "python",
+        code: `from google import genai
+import spanlight
+
+${initCall(apiKey, host, environment)}
+
+client = spanlight.wrap_google_genai(genai.Client())
+response = client.models.generate_content(
+    model="gemini-2.5-flash-lite",
+    contents="Say hello",
+)
+print(response.text)
+client.close()
+spanlight.flush()`,
+      },
+    ],
+  };
+}
+
+function geminiTypeScriptSnippet(apiKey: string, host: string, environment: string): Snippet {
+  return {
+    id: "gemini-typescript",
+    label: "Gemini (TypeScript)",
+    description: GEMINI_DESCRIPTION,
+    blocks: [
+      {
+        title: "Install",
+        filename: TERMINAL,
+        language: "shell",
+        code: `# Run from your app directory with the matching Spanlight checkout.
+SPANLIGHT_CHECKOUT="/path/to/spanlight"
+npm --prefix "$SPANLIGHT_CHECKOUT/sdks/typescript" ci &&
+  npm --prefix "$SPANLIGHT_CHECKOUT/sdks/typescript" run build &&
+  SPANLIGHT_TARBALL=$(npm pack --silent --ignore-scripts "$SPANLIGHT_CHECKOUT/sdks/typescript") &&
+  npm install "./$SPANLIGHT_TARBALL" @google/genai`,
+      },
+      {
+        title: "Instrument",
+        filename: "quickstart.mts",
+        language: "javascript",
+        code: `import { GoogleGenAI } from "@google/genai";
+import { flush, init, wrapGoogleGenAI } from "spanlight";
+
+init({
+  apiKey: ${JSON.stringify(apiKey)},
+  host: ${JSON.stringify(host)},
+  environment: ${JSON.stringify(environment)},
+});
+
+const client = wrapGoogleGenAI(new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }));
+const response = await client.models.generateContent({
+  model: "gemini-2.5-flash-lite",
+  contents: "Say hello",
+});
+console.log(response.text);
+await flush();`,
+      },
+    ],
+  };
+}
+
 function otelSnippet(apiKey: string, host: string, environment: string): Snippet {
   return {
     id: "otel",
@@ -305,6 +393,8 @@ export function buildSnippets({
     pythonSnippet(key, origin, environment),
     openAiSnippet(key, origin, environment),
     anthropicSnippet(key, origin, environment),
+    geminiPythonSnippet(key, origin, environment),
+    geminiTypeScriptSnippet(key, origin, environment),
     otelSnippet(key, origin, environment),
     curlSnippet(key, origin, environment),
     gatewaySnippet(origin, gatewayMode),

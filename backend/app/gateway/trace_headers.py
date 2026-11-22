@@ -9,6 +9,7 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
 import structlog
@@ -26,6 +27,12 @@ TAGS_HEADER = "x-spanlight-tags"
 RELEASE_HEADER = "x-spanlight-release"
 METADATA_HEADER = "x-spanlight-metadata"
 TRACE_NAME_HEADER = "x-spanlight-trace-name"
+RUN_BUDGET_HEADER = "x-spanlight-run-budget-usd"
+MAX_STEPS_HEADER = "x-spanlight-max-steps"
+TRANSLATE_HEADER = "x-spanlight-translate"
+
+MAX_RUN_BUDGET_USD = Decimal("100000")
+MAX_STEPS_CEILING = 10_000
 
 MAX_TAGS = 20
 MAX_TAG_LENGTH = 64
@@ -110,6 +117,33 @@ def _header_object(value: str) -> dict[str, Any] | HeaderDrop:
     return parsed
 
 
+def parse_run_budget(value: str | None) -> Decimal | None:
+    """Parse `x-spanlight-run-budget-usd` into a finite positive Decimal up to $100k."""
+    if value is None:
+        return None
+    text = value.strip()
+    if not text or len(text) > 32:
+        return None
+    try:
+        amount = Decimal(text)
+    except InvalidOperation:
+        return None
+    if not amount.is_finite() or amount <= 0 or amount > MAX_RUN_BUDGET_USD:
+        return None
+    return amount.quantize(Decimal("0.00000001"))
+
+
+def parse_max_steps(value: str | None) -> int | None:
+    """Parse `x-spanlight-max-steps` into a positive integer up to 10,000."""
+    if value is None:
+        return None
+    text = value.strip()
+    if not text.isascii() or not text.isdigit() or len(text) > 6:
+        return None
+    steps = int(text)
+    return steps if 1 <= steps <= MAX_STEPS_CEILING else None
+
+
 @dataclass(frozen=True)
 class TraceHeaders:
     """The trace a gateway call joins, read from the `x-spanlight-*` request headers."""
@@ -122,6 +156,9 @@ class TraceHeaders:
     release: str | None = None
     metadata: dict[str, str] = field(default_factory=dict)
     trace_name: str | None = None
+    run_budget_usd: Decimal | None = None
+    max_steps: int | None = None
+    translate: bool = False
 
     @classmethod
     def from_headers(cls, headers: Mapping[str, str]) -> "TraceHeaders":
@@ -152,4 +189,7 @@ class TraceHeaders:
             release=_bounded_text(lowered.get(RELEASE_HEADER), MAX_RELEASE),
             metadata=_metadata(lowered.get(METADATA_HEADER)),
             trace_name=_bounded_text(lowered.get(TRACE_NAME_HEADER)),
+            run_budget_usd=parse_run_budget(lowered.get(RUN_BUDGET_HEADER)),
+            max_steps=parse_max_steps(lowered.get(MAX_STEPS_HEADER)),
+            translate=lowered.get(TRANSLATE_HEADER, "").strip().lower() == "true",
         )

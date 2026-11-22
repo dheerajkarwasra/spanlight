@@ -95,7 +95,7 @@ def _small_int(raw: str | None) -> int | None:
     return int(value)
 
 
-def _retry_after(raw: str | None) -> Decimal | None:
+def parse_retry_after(raw: str | None) -> Decimal | None:
     """Seconds in `[0, MAX_RETRY_AFTER_S]` to the millisecond; None otherwise. Quantizing also
     drops an extreme exponent (`0E-999999`) that later arithmetic could trip on."""
     value = _decimal(raw)
@@ -104,6 +104,9 @@ def _retry_after(raw: str | None) -> Decimal | None:
     if not Decimal(0) <= value <= MAX_RETRY_AFTER_S:
         return None
     return value.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+
+
+_retry_after = parse_retry_after
 
 
 def _bool(raw: str | None) -> bool:

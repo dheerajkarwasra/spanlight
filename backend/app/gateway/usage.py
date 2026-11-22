@@ -16,6 +16,8 @@ from typing import Any
 
 import structlog
 
+from app.db.models import ProviderKind
+from app.gateway.provider_billing import NEW_TEXT_PROVIDERS
 from app.gateway.sse import Usage, as_int, as_str, dict_at
 from app.pricing.tiers import MAX_RAW_TIER_LENGTH, normalize_tier, unknown_tier_spelling
 
@@ -35,6 +37,8 @@ def _openai_usage(
     input_field: str,
     output_field: str,
     details_field: str,
+    output_details_field: str,
+    provider: ProviderKind | None,
     service_tier: str | None,
     web_search_requests: int | None,
 ) -> Usage | None:
@@ -47,7 +51,27 @@ def _openai_usage(
     tokens_out = as_int(usage.get(output_field))
     details = dict_at(usage, details_field)
     cached = as_int(details.get("cached_tokens"))
-    tier, raw = _tier("openai", service_tier)
+    if provider is ProviderKind.DEEPSEEK and cached is None:
+        cached = as_int(usage.get("prompt_cache_hit_tokens"))
+    if provider is ProviderKind.MISTRAL:
+        service_tier = as_str(usage.get("service_tier")) or service_tier
+    tier_provider = provider if provider in NEW_TEXT_PROVIDERS else "openai"
+    tier, raw = _tier(tier_provider or "openai", service_tier)
+    output_details = dict_at(usage, output_details_field)
+    if provider is ProviderKind.XAI and tokens_out is not None:
+        # Older xAI payloads report reasoning outside the completion count.
+        reasoning = as_int(output_details.get("reasoning_tokens")) or 0
+        if as_int(usage.get("total_tokens")) == tokens_in + tokens_out + reasoning:
+            tokens_out += reasoning
+    unpriced = provider in (ProviderKind.AZURE_OPENAI, ProviderKind.XAI) and any(
+        (as_int(value) or 0) > 0
+        for value in (
+            details.get("image_tokens"),
+            details.get("audio_tokens"),
+            output_details.get("audio_tokens"),
+            usage.get("num_server_side_tools_used"),
+        )
+    )
     return Usage(
         tokens_in,
         tokens_out,
@@ -56,16 +80,24 @@ def _openai_usage(
         service_tier=tier,
         web_search_requests=web_search_requests,
         service_tier_raw=raw,
+        unpriced_dimensions=unpriced,
     )
 
 
-def chat_usage(usage: Mapping[str, Any], *, service_tier: str | None = None) -> Usage | None:
+def chat_usage(
+    usage: Mapping[str, Any],
+    *,
+    service_tier: str | None = None,
+    provider: ProviderKind | None = None,
+) -> Usage | None:
     """`service_tier` is the response's top-level field, which chat usage does not carry."""
     return _openai_usage(
         usage,
         input_field="prompt_tokens",
         output_field="completion_tokens",
         details_field="prompt_tokens_details",
+        output_details_field="completion_tokens_details",
+        provider=provider,
         service_tier=service_tier,
         web_search_requests=None,
     )
@@ -76,6 +108,7 @@ def responses_usage(
     *,
     service_tier: str | None = None,
     web_search_requests: int | None = None,
+    provider: ProviderKind | None = None,
 ) -> Usage | None:
     """`service_tier` is the response's top-level field; `web_search_requests` is the caller's
     count of completed `web_search_call` output items, which the usage block does not carry."""
@@ -84,6 +117,8 @@ def responses_usage(
         input_field="input_tokens",
         output_field="output_tokens",
         details_field="input_tokens_details",
+        output_details_field="output_tokens_details",
+        provider=provider,
         service_tier=service_tier,
         web_search_requests=web_search_requests,
     )

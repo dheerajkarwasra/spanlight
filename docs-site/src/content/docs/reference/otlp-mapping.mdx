@@ -3,7 +3,7 @@ title: OTLP attribute mapping
 description: How Spanlight turns an OpenTelemetry span into a Spanlight span. Which exporter conventions it reads (OpenTelemetry GenAI, OpenInference, the Vercel AI SDK and Traceloop), which attribute fills which field, how usage is counted once, and how the finish reason and error class are worked out.
 ---
 
-{/* Sources: backend/app/ingest/otlp.py, backend/app/ingest/otlp_span.py, backend/app/ingest/conventions/__init__.py, backend/app/ingest/conventions/types.py, backend/app/ingest/conventions/read.py, backend/app/ingest/conventions/flatten.py, backend/app/ingest/conventions/kinds.py, backend/app/ingest/conventions/gen_ai.py, backend/app/ingest/conventions/openinference.py, backend/app/ingest/conventions/vercel_ai.py, backend/app/ingest/conventions/traceloop.py, backend/app/ingest/otlp_metadata.py, backend/app/ingest/otlp_usage.py, backend/app/ingest/otlp_values.py, backend/app/ingest/otlp_fit.py, backend/app/ingest/finish_reason.py, backend/app/ingest/error_class.py, backend/app/ingest/rate_limit_kind.py, backend/app/ingest/provider_fields.py, backend/app/ingest/jsondepth.py, backend/app/ingest/normalize.py, backend/app/ingest/usage_rollup.py, backend/app/ingest/usage_state.py, backend/app/ingest/store.py, backend/app/api/ingest.py, backend/app/api/schemas/traces.py, backend/app/pricing/tiers.py, backend/app/pricing/provider_alias.py, backend/app/pricing/fees.py, backend/app/pricing/prices.py, backend/app/rollups/usage_rollup_cli.py */}
+{/* Sources: backend/app/ingest/otlp.py, backend/app/ingest/otlp_span.py, backend/app/ingest/conventions/__init__.py, backend/app/ingest/conventions/types.py, backend/app/ingest/conventions/read.py, backend/app/ingest/conventions/flatten.py, backend/app/ingest/conventions/kinds.py, backend/app/ingest/conventions/gen_ai.py, backend/app/ingest/conventions/mcp.py, backend/app/ingest/conventions/openinference.py, backend/app/ingest/conventions/vercel_ai.py, backend/app/ingest/conventions/traceloop.py, backend/app/ingest/otlp_metadata.py, backend/app/ingest/otlp_usage.py, backend/app/ingest/otlp_values.py, backend/app/ingest/otlp_fit.py, backend/app/ingest/finish_reason.py, backend/app/ingest/error_class.py, backend/app/ingest/rate_limit_kind.py, backend/app/ingest/provider_fields.py, backend/app/ingest/jsondepth.py, backend/app/ingest/normalize.py, backend/app/ingest/usage_rollup.py, backend/app/ingest/usage_state.py, backend/app/ingest/store.py, backend/app/api/ingest.py, backend/app/api/schemas/traces.py, backend/app/pricing/tiers.py, backend/app/pricing/provider_alias.py, backend/app/pricing/fees.py, backend/app/pricing/prices.py, backend/app/rollups/usage_rollup_cli.py */}
 
 This page lists, attribute by attribute, how Spanlight reads a span sent to `POST /v1/otlp/traces`. To send traces, see [OTLP ingestion](/docs/otlp/). Both encodings, protobuf and JSON, are decoded to the same shape and then mapped by the same code, so the result does not depend on the encoding.
 
@@ -19,19 +19,20 @@ This page lists, attribute by attribute, how Spanlight reads a span sent to `POS
 
 ## Conventions
 
-Exporters describe a model call in different vocabularies. Spanlight reads four of them, and decides for each span on its own which one it speaks. The first rule that matches wins:
+Exporters describe a model call in different vocabularies. Spanlight recognizes these conventions, and decides for each span on its own which one it speaks. The first rule that matches wins:
 
 | Rule | Convention | Who writes it |
 | --- | --- | --- |
 | The span has `openinference.span.kind` | `openinference` | The OpenInference instrumentations (Arize Phoenix) |
 | The span has `ai.operationId`, or any `ai.*` attribute together with `ai.model.id` | `vercel_ai` | The Vercel AI SDK's own attributes (`ai` 5 and 6, and 7 through its legacy telemetry) |
 | The span has `traceloop.span.kind` | `traceloop` | Traceloop and OpenLLMetry workflow, task, agent and tool spans |
+| `rpc.system` is `mcp`, or the span has `mcp.method.name` or `mcp.tool.name` | `mcp` | Model Context Protocol clients and servers |
 | The span has any `gen_ai.*` attribute | `gen_ai` | The OpenTelemetry GenAI conventions: the official instrumentations, LiteLLM, the GenAI mode of the Vercel AI SDK 7, and Traceloop's provider spans |
 | None of the above | `none` | Any other span |
 
 The OpenTelemetry `gen_ai.*` attributes are the shared vocabulary that the Vercel AI SDK, Traceloop and LiteLLM all borrow, so they are the fallback rather than the signal. When a span is detected as another convention and also carries `gen_ai.*` attributes, the detected convention fills each field first, and the `gen_ai` reading fills only the fields it left empty. This is how a Vercel AI SDK provider span gets its billed model from `gen_ai.response.model` when `ai.response.model` is absent, and how an OpenInference span with `gen_ai.usage.*` attributes is still priced. The span kind always comes from the detected convention.
 
-Detection never looks at the parent span, so the spans of one trace may use different conventions and a batch can arrive in any order. Spanlight stores the convention it used on every span as the attribute `spanlight.convention` (one of the five values above), and the convention's finer kind of operation, when it has one, as `spanlight.operation`. Both are set by Spanlight only: a value a client sends under either name is replaced or removed.
+Detection never looks at the parent span, so the spans of one trace may use different conventions and a batch can arrive in any order. Spanlight stores the convention it used on every span as the attribute `spanlight.convention` (one of the values above), and the convention's finer kind of operation, when it has one, as `spanlight.operation`. Both are set by Spanlight only: a value a client sends under either name is replaced or removed.
 
 ## Which attribute fills which field
 
@@ -74,6 +75,16 @@ These are read the same way whatever the convention.
 Include the cached tokens and the cache-write tokens in the input token count. Spanlight prices the cache reads at the cached rate, the cache writes at the model's cache-write rate and the rest at the input rate; see [How cost is calculated](/docs/concepts/cost/). OpenTelemetry has no attribute for the lifetime of a cache write, so every cache write sent over OTLP is priced at the 5-minute rate and the span's `cache_write_1h_tokens` stays unknown. Cost is worked out on the server from the model and the token counts. It is never read from the span. A span with an unknown model, or without token counts, has an unknown cost, not zero. The [price table](/docs/reference/prices/) lists the models that have a price.
 
 LiteLLM writes this convention in both of its modes. In LiteLLM 1.105.1 both write `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.input.messages` and `gen_ai.output.messages`; the default mode names the provider with `gen_ai.system` and the span `litellm_request`, and the newer mode (`OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental`) uses `gen_ai.provider.name` and names the span `chat <model>`. LiteLLM sends `gen_ai.response.finish_reasons` as text holding a JSON array, which is read like a list; see [Finish reason](#finish-reason). In its default mode LiteLLM also opens a `raw_gen_ai_request` child span that carries only `llm.<provider>.*` copies of the request and no usage. It is detected as `none`, stored for inspection, and never counted as a model call.
+
+### Model Context Protocol (`mcp`)
+
+| Spanlight field | Read from |
+| --- | --- |
+| Operation | `mcp.tool.name`, then `mcp.method.name`, then `mcp` |
+| Span kind | `tool` for a named tool or tool call, `retrieval` for a resource read, `chain` otherwise |
+| Input | `mcp.input`, then `mcp.request.arguments` |
+| Output | `mcp.output`, then `mcp.response.result` |
+| Trace metadata fields | `mcp.session.id`, `mcp.server.name` and `mcp.resource.uri` populate `mcp.session_id`, `mcp.server_name` and `mcp.resource_uri` |
 
 ### OpenInference
 
@@ -306,6 +317,8 @@ Every span in the trace API has a `usage_state` that says what its usage and cos
 
 A rollup is `rollup` even when it has a cost, because its usage is counted on the spans below it.
 
+For Spanlight gateway spans, `spanlight.gateway.surface` identifies the request surface. The gateway sets `usage.unpriced_reason` when reported usage does not establish a reliable cost, for example for an unsupported Gemini billing dimension or the DeepSeek billing schedule. These spans can keep token counts with an unknown cost.
+
 ## Finish reason
 
 The finish reason says why the model stopped. Spanlight stores one value from a fixed set: `stop`, `length`, `tool_calls`, `content_filter` or `other`. It reads the first of these that holds a non-empty string:
@@ -327,11 +340,11 @@ Steps 6 to 10 also serve spans sent to the native endpoint, and OTLP spans whose
 
 | Raw value | Stored value |
 | --- | --- |
-| `stop`, `end_turn`, `stop_sequence` | `stop` |
-| `length`, `max_tokens` | `length` |
+| `stop`, `end_turn`, `stop_sequence`, `completed` | `stop` |
+| `length`, `max_tokens`, `max_output_tokens`, `model_length` | `length` |
 | `tool_calls`, `function_call`, `tool_use`, `tool-calls`, `tool_call` | `tool_calls` |
 | `content_filter`, `refusal`, `content-filter`, `safety`, `recitation`, `blocklist` | `content_filter` |
-| `pause_turn`, `error`, `unknown`, `malformed_function_call`, and any value not listed here | `other` |
+| `pause_turn`, `error`, `unknown`, `malformed_function_call`, `insufficient_system_resource`, `aborted`, and any value not listed here | `other` |
 
 `tool-calls`, `content-filter`, `error` and `unknown` are the Vercel AI SDK's spellings; `tool_call` is the singular of the OpenTelemetry GenAI conventions, which Traceloop sends; `safety`, `recitation`, `blocklist` and `malformed_function_call` are Gemini's (its `STOP` and `MAX_TOKENS` are covered by lower-casing). A span with no finish reason has an unknown one, not `other`.
 

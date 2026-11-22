@@ -14,7 +14,7 @@ import { isApiError, type ReplayRefusal, type ReplaySource } from "@/lib/api";
 import { ReplayBudgetMeter } from "./replay-budget-meter";
 import { ReplayForm, type ReplayStart } from "./replay-form";
 import { ReplayHeader } from "./replay-header";
-import { providerKindOf, requestText } from "./replay-input";
+import { replaySurfaceOf, requestText } from "./replay-input";
 import { useReplaySourceQuery } from "./replay-queries";
 import { ReplayRequest } from "./replay-request";
 
@@ -51,7 +51,7 @@ function Replayable({ source, props }: { source: ReplaySource; props: ReplayColu
     spanId: props.spanId,
     stored: body,
     text: requestText(body, undefined),
-    kind: source.provider_kind ?? "openai",
+    surface: source.surface ?? "chat_completions",
     model: typeof body.model === "string" ? body.model : "",
   };
   const notExact =
@@ -99,7 +99,7 @@ function EditToReplay({ refusal, props }: { refusal: ReplayRefusal; props: Repla
     spanId: props.spanId,
     stored: null,
     text: requestText(null, span.input),
-    kind: providerKindOf(span.provider),
+    surface: replaySurfaceOf(span),
     model: span.model ?? "",
   };
   return (

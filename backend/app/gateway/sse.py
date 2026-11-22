@@ -62,6 +62,7 @@ class Usage:
     # Anthropic's `usage.inference_geo` and `usage.speed`: where and how fast it ran, as billed.
     inference_geo: str | None = None
     speed: str | None = None
+    unpriced_dimensions: bool = False
 
 
 @dataclass(frozen=True, slots=True)

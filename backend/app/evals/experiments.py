@@ -156,7 +156,7 @@ async def _check(
     if not priced(target, credential.provider, prices, now):
         raise ExperimentConfigError(
             "EXPERIMENT_MODEL_UNPRICED",
-            f"The model {target.model} has no price, so the run's cost cap cannot be enforced.",
+            f"Spend cannot be bounded for model {target.model} under the run's cost cap.",
             "config.target.model",
         )
 

@@ -9,10 +9,10 @@ import pytest
 from app.pricing.cost import CostResult, Price, PriceBook
 from app.pricing.explain import SpanCostInputs, explain_span
 from app.pricing.fees import FeeBook, ServerToolFee
-from app.pricing.prices import ALL_SNAPSHOTS, PRICING_VERSION
+from app.pricing.prices import ALL_SNAPSHOTS, EFFECTIVE_FROM, PRICING_VERSION
 from app.pricing.tiers import multipliers_for
 
-AT = datetime(2026, 10, 25, 12, tzinfo=UTC)
+AT = EFFECTIVE_FROM
 SONNET_46 = "claude-sonnet-4-6"
 
 

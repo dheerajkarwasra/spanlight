@@ -18,10 +18,9 @@ The rules, first match wins:
   its kind is `overloaded`). Its message may still name tokens or requests, but those kinds mean
   the caller's quota and would charge a provider outage to the caller's limit.
 - Then, for `rate_limit` spans only, the provider's table, the provider name compared
-  lowercased: `anthropic`, `openai` (also used by `openai_compatible`, whose envelope is
-  OpenAI's) or the generic table for any other or unknown provider. Money rules come first
-  because a spend-cap message can also mention tokens; header rules come last because headers
-  are the easiest thing for a compatible upstream to get wrong. Every table ends in `unknown`.
+  by its canonical spelling. Providers without a specific table use the generic table. Money
+  rules come first because a spend-cap message can mention tokens. Header rules come last
+  because compatible upstreams can report them incorrectly. The fallback kind is `unknown`.
 """
 
 import enum
@@ -30,6 +29,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from app.ingest.error_class import ErrorClass
+from app.pricing.provider_alias import canonical_provider
 
 
 class RateLimitKind(enum.StrEnum):
@@ -116,8 +116,8 @@ _O1_CODES = frozenset(
 )
 _O2 = _pattern(r"exceeded your current quota|billing|spend limit|usage limit|credit")
 _O3 = _pattern(r"slow down|ramp")
-_O4 = _pattern(r"tokens per (min|day)|\bTPM\b")
-_O5 = _pattern(r"requests per (min|day)|\bRPM\b|Rate limit reached for requests")
+_O4 = _pattern(r"tokens per (min|day)|\b(?:[IO]?TPM|TPD)\b")
+_O5 = _pattern(r"requests per (sec|min|day)|\b(?:RPS|RPM|RPD)\b|Rate limit reached for requests")
 
 
 def _openai_overloaded(facts: _Facts) -> bool:
@@ -169,7 +169,24 @@ _GENERIC: tuple[_Rule, ...] = (
 # provider (lowercased) -> (its rules, its "overloaded" condition)
 _TABLES: Mapping[str, tuple[tuple[_Rule, ...], Callable[[_Facts], bool]]] = {
     "anthropic": (_ANTHROPIC, _anthropic_overloaded),
+    "azure_openai": (_OPENAI, _openai_overloaded),
+    "groq": (_OPENAI, _openai_overloaded),
+    "mistral": ((*_OPENAI, *_GENERIC), _openai_overloaded),
+    "xai": (_OPENAI, _openai_overloaded),
+    "together": (
+        ((lambda f: f.status == 429, RateLimitKind.REQUESTS), *_GENERIC),
+        lambda f: f.status == 503 or _generic_overloaded(f),
+    ),
+    "deepseek": (
+        (
+            (lambda f: f.status == 402, RateLimitKind.SPEND_CAP),
+            (lambda f: f.status == 429, RateLimitKind.REQUESTS),
+            *_GENERIC,
+        ),
+        _generic_overloaded,
+    ),
     "openai": (_OPENAI, _openai_overloaded),
+    "google": (_OPENAI, _openai_overloaded),
     "openai_compatible": (_OPENAI, _openai_overloaded),
 }
 _GENERIC_TABLE = (_GENERIC, _generic_overloaded)
@@ -187,7 +204,7 @@ def classify_rate_limit(
     gateway_error_code: str | None,
 ) -> RateLimitKind | None:
     """The kind of capacity refusal, or None when the span is not one (module docstring)."""
-    rules, overloaded = _TABLES.get((provider or "").lower(), _GENERIC_TABLE)
+    rules, overloaded = _TABLES.get(canonical_provider(provider) or "", _GENERIC_TABLE)
     facts = _Facts(status, error_type, error_code, message or "", headers)
     refused = (
         error_class == ErrorClass.RATE_LIMIT

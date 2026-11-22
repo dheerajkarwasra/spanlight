@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 import pytest
 
+from tests.half_sent_body import response_status, send_half_and_leave
 from tests.helpers import Workspace, bearer, new_trace_id, span
 from tests.ingest.support import (
     another_project,
@@ -18,17 +19,19 @@ from tests.ingest.support import (
 )
 
 
-async def test_project_concurrency_refuses_before_body_read_and_releases_after_completion(
-    app: Any,
-    client: httpx.AsyncClient,
-    workspace: Workspace,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+@pytest.fixture(autouse=True)
+def single_ingest_slot(app: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         app.state,
         "settings",
         app.state.settings.model_copy(update={"ingest_max_in_flight_per_project": 1}),
     )
+
+
+async def test_project_concurrency_refuses_before_body_read_and_releases_after_completion(
+    client: httpx.AsyncClient,
+    workspace: Workspace,
+) -> None:
     other = await another_project(workspace, "Other project")
     same_project = await workspace_for_project(
         workspace.owner, workspace.org_id, workspace.project_id
@@ -97,3 +100,46 @@ async def test_project_concurrency_refuses_before_body_read_and_releases_after_c
         )
         assert again_otlp.status_code == 200
         assert again_otlp.json() == {}
+
+
+async def test_cancelled_ingest_releases_the_project_slot(
+    client: httpx.AsyncClient, workspace: Workspace
+) -> None:
+    reading = asyncio.Event()
+
+    async def held_body() -> AsyncIterator[bytes]:
+        yield b'{"spans":['
+        reading.set()
+        await asyncio.Future[None]()
+
+    async with asyncio.timeout(10):
+        pending = asyncio.create_task(
+            client.post(
+                "/v1/traces",
+                content=held_body(),
+                headers={**bearer(workspace.api_key), "Content-Type": "application/json"},
+            )
+        )
+        try:
+            await reading.wait()
+        finally:
+            pending.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await pending
+
+    response = await ingest_native(client, workspace, [span(trace_id=new_trace_id())])
+    assert response.status_code == 200
+    assert response.json() == {"accepted": 1, "rejected": []}
+
+
+@pytest.mark.parametrize("path", ["/v1/traces", "/v1/otlp/traces"])
+async def test_disconnected_ingest_releases_the_project_slot(
+    app: Any, client: httpx.AsyncClient, workspace: Workspace, path: str
+) -> None:
+    headers = [*bearer(workspace.api_key).items(), ("Content-Type", "application/json")]
+    sent = await send_half_and_leave(app, path, headers, b'{"spans":[')
+    assert response_status(sent) == 400
+
+    response = await ingest_native(client, workspace, [span(trace_id=new_trace_id())])
+    assert response.status_code == 200
+    assert response.json() == {"accepted": 1, "rejected": []}

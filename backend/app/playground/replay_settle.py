@@ -27,6 +27,7 @@ from app.db.rls import bind_project
 from app.evals.budget import failed_call_charge
 from app.gateway.context import Clock, GatewayContext, GatewayServices
 from app.gateway.recorder import DirectSpans
+from app.ingest.request_hash import request_hash
 from app.playground.output import BUDGET_EXCEEDED as GATEWAY_BLOCK
 from app.playground.output import output_text
 from app.playground.replay_queries import settle_replay
@@ -131,7 +132,7 @@ class Settlement:
                 result_span_id=outcome.span_id,
                 now=self.clock(),
             )
-            same_hash = await _same_request_hash(db, self.project.id, self.prepared.span, outcome)
+            same_hash = await _same_request_hash(db, self.project.id, self.prepared, outcome)
             await self._audit(db, charge)
             result = self._outcome(outcome, same_hash)
             if self.receipt is not None:
@@ -192,7 +193,7 @@ def _outcome_label(error: str | None) -> str:
 
 
 async def _same_request_hash(
-    db: AsyncSession, project_id: uuid.UUID, source: Span, outcome: PlaygroundResult
+    db: AsyncSession, project_id: uuid.UUID, prepared: Prepared, outcome: PlaygroundResult
 ) -> bool | None:
     """Whether the stored replayed span hashes to the same request as the source; None when no
     span was stored to compare."""
@@ -205,4 +206,17 @@ async def _same_request_hash(
             Span.span_id == outcome.span_id,
         )
     )
-    return replayed is not None and replayed == source.request_hash
+    source = prepared.span
+    original = source.input
+    source_hash = source.request_hash
+    if (
+        prepared.plan.surface == "generate_content"
+        and isinstance(original, dict)
+        and "model" not in original
+        and source.model is not None
+        and source_hash == request_hash(source.model, original)
+    ):
+        # Native ingest can store the path model only on the span. The gateway needs it in
+        # its internal body and removes it before sending the provider request.
+        source_hash = request_hash(source.model, {**original, "model": source.model})
+    return replayed is not None and replayed == source_hash

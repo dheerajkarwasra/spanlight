@@ -74,6 +74,9 @@ function connect(
     [...keys.doctor, "health"],
     [...keys.all, "users"],
     [...keys.all, "latest-traces"],
+    [...keys.all, "traces"],
+    [...keys.all, "trace-histogram"],
+    [...keys.all, "trace"],
   ];
   let source: EventSource | null = null;
   let retryTimer: number | undefined;

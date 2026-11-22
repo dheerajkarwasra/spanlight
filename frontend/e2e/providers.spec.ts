@@ -144,6 +144,12 @@ test.describe("provider path", () => {
     // The status page title is text, never markup.
     const incidents = page.getByRole("region", { name: "Provider incidents" });
     await expect(incidents.getByText(HOSTILE_TITLE, { exact: true })).toBeVisible();
+    const feeds = incidents.getByRole("list", { name: "Status feeds" });
+    await expect(feeds).toContainText("Mistral feed");
+    await expect(feeds).toContainText("Groq feed");
+    await expect(incidents).toContainText(
+      "No monitored feed for Azure OpenAI, DeepSeek, xAI or Together AI.",
+    );
     await expect(incidents.locator("script, img")).toHaveCount(0);
     expect(await hostileFlag(page)).toBeUndefined();
 

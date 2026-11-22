@@ -11,6 +11,9 @@ from tests.process_shutdown.support import child
 
 pytestmark = pytest.mark.serial
 
+# The API owns separate pools for requests, idempotency, rate limits, and recorder writes.
+API_POOL_COUNT = 4
+
 
 async def test_startup_failure_reverse_closes_acquired_resources(settings: Settings) -> None:
     async with child(
@@ -23,7 +26,7 @@ async def test_startup_failure_reverse_closes_acquired_resources(settings: Setti
         await run.finish()
         assert run.process.returncode == 3, "".join(run.lines)
         names = [item.get("event") for item in run.events]
-        assert names.count("pool_end") == 3
+        assert names.count("pool_end") == API_POOL_COUNT
         assert names.index("channel_end") < names.index("pool_start")
         assert max(i for i, name in enumerate(names) if name == "pool_end") < names.index(
             "tracing_start"
@@ -45,7 +48,7 @@ async def test_close_failure_does_not_skip_later_safe_callbacks(settings: Settin
         run.process.send_signal(signal.SIGTERM)
         await run.finish()
         names = [item.get("event") for item in run.events]
-        assert names.count("pool_end") == 3 and "tracing_end" in names
+        assert names.count("pool_end") == API_POOL_COUNT and "tracing_end" in names
         assert "process.shutdown_incomplete" in names
         assert not (await run.event("finished"))["accounting_complete"]
         assert run.process.returncode == -signal.SIGTERM

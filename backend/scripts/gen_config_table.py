@@ -17,6 +17,7 @@ import argparse
 import re
 import sys
 import types
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal, Union, get_args, get_origin
 from urllib.parse import urlsplit, urlunsplit
@@ -140,11 +141,15 @@ GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             "gateway_max_in_flight",
             "gateway_max_in_flight_bytes",
             "gateway_max_in_flight_per_key",
+            "gateway_preauth_rps_per_key",
+            "gateway_preauth_burst_per_key",
             "gateway_allow_insecure_base_urls",
             "gateway_org_rpm_ceiling",
             "gateway_record_concurrency",
             "gateway_record_backlog",
             "gateway_record_backlog_mb",
+            "recorder_pool_size",
+            "recorder_pool_timeout_seconds",
         ),
     ),
     (
@@ -164,12 +169,13 @@ GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "Doctor",
         "Detectors read each project's recent spans every 15 minutes and turn what they find "
-        'into insights with a cause and a fix. "Explain with Claude" sends one insight\'s '
-        "evidence to Claude through the organization's own Anthropic gateway credential, so it "
-        "is real spend in that organization, capped by the monthly budget.",
+        'into insights with a cause and a fix. "Explain with AI" sends an insight\'s '
+        "evidence to the configured provider through the organization's own gateway credential. "
+        "The organization's monthly budget caps this spend.",
         (
             "detectors_enabled",
             "provider_status_polling_enabled",
+            "explain_provider",
             "explain_model",
             "explain_monthly_budget_usd",
             "aggregate_repair_enabled",
@@ -464,6 +470,13 @@ DESCRIPTIONS: dict[str, str] = {
         "authentication reads it from `Authorization` or `x-api-key`, so one caller cannot take "
         "every slot. Excess requests get the same 503."
     ),
+    "gateway_preauth_rps_per_key": (
+        "Pre-auth per-key or per-IP token bucket refill rate (requests per second) applied before "
+        "database authentication to shed flood traffic with `429 RATE_LIMITED`. `0` disables it."
+    ),
+    "gateway_preauth_burst_per_key": (
+        "Maximum burst size allowed by the pre-auth per-key or per-IP flood-shedding token bucket."
+    ),
     "gateway_allow_insecure_base_urls": (
         "Allow provider credentials to use `http://` base URLs and private, loopback or "
         "link-local addresses, for a local model server. Off, a base URL must be `https://` and "
@@ -494,6 +507,14 @@ DESCRIPTIONS: dict[str, str] = {
         "like one past `GATEWAY_RECORD_BACKLOG`, unless it is the only one waiting. With "
         "ordinary payloads the span count binds first; this bounds a backlog of large ones."
     ),
+    "recorder_pool_size": (
+        "Dedicated PostgreSQL connection pool size used by the gateway's background span recorder "
+        "so telemetry write bursts cannot starve foreground API or gateway calls."
+    ),
+    "recorder_pool_timeout_seconds": (
+        "Seconds a background gateway span write waits for a connection from the dedicated "
+        "recorder pool before failing and retrying."
+    ),
     "alerts_evaluation_enabled": (
         "Schedule the alert evaluation job, which checks every enabled rule once a minute. Off, "
         "no alert fires."
@@ -514,14 +535,16 @@ DESCRIPTIONS: dict[str, str] = {
         "every 15 minutes. Off, no new insights appear."
     ),
     "provider_status_polling_enabled": (
-        "Schedule the poll of the Anthropic, OpenAI and Google public status pages every 5 "
-        "minutes, whose incidents the provider pages and the Doctor cite. The feed URLs are "
-        "fixed. Off, nothing is fetched (an air-gapped instance) and the incident list says "
-        "polling is disabled."
+        "Poll the public status feeds for Anthropic, OpenAI, Google, Mistral and Groq every "
+        "5 minutes. Provider Health and the Doctor use these incidents. The feed URLs are "
+        "fixed. Set to false to turn off polling on an air-gapped instance."
+    ),
+    "explain_provider": (
+        "Gateway credential kind for explanations. Uses the oldest matching credential."
     ),
     "explain_model": (
-        "Claude model that explains an insight. It must have a price, or explanations answer "
-        "`409 EXPLAIN_MODEL_UNPRICED`."
+        "Model used by the configured provider. Its cost must be bounded under that provider, "
+        "or explanations answer `409 EXPLAIN_MODEL_UNPRICED`."
     ),
     "explain_monthly_budget_usd": (
         "Most an organization may spend on explanations per UTC month, in US dollars. `0` turns "
@@ -706,6 +729,8 @@ def _type_label(name: str, field: FieldInfo) -> str:
         return "secret"
     if get_origin(inner) is Literal:
         return " \\| ".join(f"`{value}`" for value in get_args(inner))
+    if isinstance(inner, type) and issubclass(inner, StrEnum):
+        return " \\| ".join(f"`{value}`" for value in inner)
     if get_origin(inner) is list:
         return "comma-separated list"
     labels = {

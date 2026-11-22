@@ -14,7 +14,7 @@ ATTRIBUTION = 4
 USER_DAILY = 8
 ALL = 15
 DIRTY_SHARDS = 16
-WRITE_SHARDS = False  # Release 2 sets True; see sharded dirty-hours spec section 4.
+WRITE_SHARDS = True  # Release 2 sets True; see sharded dirty-hours spec section 4.
 
 
 def _hour(value: datetime) -> datetime:

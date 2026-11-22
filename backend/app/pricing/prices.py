@@ -81,8 +81,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.pricing.cost import PriceBook
 
-PRICING_VERSION = "2026-10-25"
-EFFECTIVE_FROM = datetime(2026, 10, 25, tzinfo=UTC)
+PRICING_VERSION = "2026-11-18"
+EFFECTIVE_FROM = datetime(2026, 11, 18, tzinfo=UTC)
 
 
 @dataclass(frozen=True)
@@ -152,7 +152,7 @@ def _fee(provider: str, tool: str, rate: str) -> SeedFee:
     return SeedFee(provider=provider, tool=tool, usd_per_1k_requests=Decimal(rate))
 
 
-SEED_PRICES: tuple[SeedPrice, ...] = (
+_PRICES_2026_10_25: tuple[SeedPrice, ...] = (
     # Anthropic. Cached = prompt-cache read rate; writes = 1.25x (5 m) and 2x (1 h) the input rate.
     _price(
         "anthropic", "claude-haiku-4-5", "1.00", "5.00", "0.10", write_5m="1.25", write_1h="2.00"
@@ -351,7 +351,7 @@ SEED_PRICES: tuple[SeedPrice, ...] = (
 
 # (provider, tier) -> factor on the token cost. A pair missing here is priced at the standard
 # rate; OpenAI priority is missing on purpose (see the module docstring).
-TIER_MULTIPLIERS: Mapping[tuple[str, str], Decimal] = MappingProxyType(
+_TIERS_2026_10_25: Mapping[tuple[str, str], Decimal] = MappingProxyType(
     {
         ("anthropic", "batch"): Decimal("0.5"),
         ("anthropic", "priority"): Decimal("1.0"),
@@ -377,6 +377,32 @@ MODIFIER_MULTIPLIERS: Mapping[tuple[str, str], Decimal] = MappingProxyType(
     }
 )
 
+# USD per million text tokens, checked against the first-party catalogs on 2026-11-18.
+# Azure deployments need their own override. DeepSeek's time and holiday schedule is not flat.
+SEED_PRICES: tuple[SeedPrice, ...] = (
+    *_PRICES_2026_10_25,
+    # https://docs.mistral.ai/inference/pricing
+    _price("mistral", "mistral-small-2603", "0.15", "0.60", "0.015"),
+    # https://console.groq.com/docs/models and the linked model cards
+    _price("groq", "openai/gpt-oss-20b", "0.075", "0.30", "0.037"),
+    _price("groq", "openai/gpt-oss-120b", "0.15", "0.60", "0.075"),
+    # https://docs.together.ai/docs/serverless/models
+    _price("together", "Qwen/Qwen3.5-9B", "0.17", "0.25", None),
+    _price("together", "openai/gpt-oss-120b", "0.15", "0.60", None),
+    # https://docs.x.ai/developers/pricing
+    _price("xai", "grok-4.7", "2.00", "6.00", "0.50"),
+    _price("xai", "grok-4.7", "4.00", "12.00", "1.00", min_prompt_tokens=200_000),
+)
+
+TIER_MULTIPLIERS: Mapping[tuple[str, str], Decimal] = MappingProxyType(
+    {
+        **_TIERS_2026_10_25,
+        ("mistral", "priority"): Decimal("1.75"),
+        ("xai", "priority"): Decimal("2.0"),
+        ("xai", "batch"): Decimal("0.8"),
+    }
+)
+
 CURRENT_SNAPSHOT = PriceSnapshot(
     version=PRICING_VERSION,
     effective_from=EFFECTIVE_FROM,
@@ -388,15 +414,26 @@ CURRENT_SNAPSHOT = PriceSnapshot(
 )
 
 
+SNAPSHOT_2026_10_25 = PriceSnapshot(
+    version="2026-10-25",
+    effective_from=datetime(2026, 10, 25, tzinfo=UTC),
+    prices=_PRICES_2026_10_25,
+    tier_multipliers=_TIERS_2026_10_25,
+    commitment_billed=COMMITMENT_BILLED,
+    fees=SEED_FEES,
+    modifier_multipliers=MODIFIER_MULTIPLIERS,
+)
+
+
 # Released 2026-10-19 (sources checked that day). Its rows, multipliers, commitment flags and fees
-# are the current ones, unchanged in 2026-10-25, which only adds the modifier multipliers; a
+# are the 2026-10-25 rows, unchanged in that release, which only adds the modifier multipliers; a
 # snapshot that changes them must freeze a copy here. It priced every modifier at the standard
 # rate, so it carries none.
 SNAPSHOT_2026_10_19 = PriceSnapshot(
     version="2026-10-19",
     effective_from=datetime(2026, 10, 19, tzinfo=UTC),
-    prices=SEED_PRICES,
-    tier_multipliers=TIER_MULTIPLIERS,
+    prices=_PRICES_2026_10_25,
+    tier_multipliers=_TIERS_2026_10_25,
     commitment_billed=COMMITMENT_BILLED,
     fees=SEED_FEES,
 )
@@ -519,7 +556,7 @@ SNAPSHOT_2026_10_16 = PriceSnapshot(
     version="2026-10-16",
     effective_from=datetime(2026, 10, 16, tzinfo=UTC),
     prices=_PRICES_2026_10_16,
-    tier_multipliers=TIER_MULTIPLIERS,
+    tier_multipliers=_TIERS_2026_10_25,
     commitment_billed=COMMITMENT_BILLED,
     fees=SEED_FEES,
 )
@@ -625,6 +662,7 @@ HISTORICAL_SNAPSHOTS: tuple[PriceSnapshot, ...] = (
     SNAPSHOT_2026_10_15,
     SNAPSHOT_2026_10_16,
     SNAPSHOT_2026_10_19,
+    SNAPSHOT_2026_10_25,
 )
 ALL_SNAPSHOTS: tuple[PriceSnapshot, ...] = (*HISTORICAL_SNAPSHOTS, CURRENT_SNAPSHOT)
 

@@ -8,12 +8,14 @@ metrics) and its span is arranged: written now for a complete answer, or when a 
 
 import json
 from datetime import datetime
+from decimal import Decimal
 from functools import cached_property
 from typing import Any
 
 import structlog
 
 from app.core.observability import GATEWAY_OVERHEAD, GATEWAY_REQUESTS
+from app.db.models import ProviderKind
 from app.gateway.attempts import LoopResult, RoutePlan, Waits
 from app.gateway.budget import BudgetDecision
 from app.gateway.cache import CachedResponse, CacheStatus
@@ -57,6 +59,7 @@ class Call:
         self.fault: AppliedFault | None = None
         self.budget: BudgetDecision | None = None
         self.budgeted = False  # a blocking budget reserved this call's estimate or refused it
+        self.run_reserved_usd: Decimal | None = None
         self.cache: CacheStatus = _cache_status(request, context)
         self.loop: LoopResult | None = None  # the attempt loop's result, once the loop has begun
 
@@ -120,9 +123,15 @@ class Call:
             result.headers["X-Spanlight-Code"] = UPSTREAM_ERROR_CODE
             result.output = _json_or_none(loop.body)
         target = self.context.route.targets[loop.target_index or 0]
-        result.model = summary.model or resolve_model(target, plan.model)
+        provider = self.context.credentials[target.credential_id].provider
+        deployment = resolve_model(target, plan.model)
+        result.model = (
+            deployment if provider is ProviderKind.AZURE_OPENAI else summary.model or deployment
+        )
         result.usage, result.finish_reason = summary.usage, summary.finish_reason
         result.output = summary.output or result.output
+        if self.request.surface == "generate_content":
+            result.provider_response_id = summary.response_id
         if _answer_without_final_usage(loop, result.model, summary):
             result.usage_unreported_reason = "no_final_usage"
         if loop.first_byte_at is not None:
@@ -154,6 +163,7 @@ class Call:
             cache=cache,
             fault=self.fault,
             budget=self.budget,
+            run_reserved_usd=self.run_reserved_usd,
         )
 
     def _finish(self, result: GatewayResult, loop: LoopResult | None) -> GatewayResult:
@@ -173,6 +183,7 @@ class Call:
                 result,
                 loop.stream,
                 loop.response,
+                provider=self.context.credentials[loop.attempts[-1].credential_id].provider,
                 started=self.started,
                 started_at=self.started_at,
             )

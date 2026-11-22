@@ -1,4 +1,4 @@
-"""The SQL behind "Explain with Claude": credentials, trace excerpts, the budget and the rows.
+"""The SQL behind "Explain with AI": credentials, trace excerpts, the budget and the rows.
 
 Reads and writes of a project's own rows (`insight_explanations`, `spans`) rely on the
 transaction being bound to the project. The budget's month-to-date sum covers every project of

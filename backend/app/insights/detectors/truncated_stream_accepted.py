@@ -11,7 +11,7 @@ Evidence: the traces of the rounds, most recent first.
 
 from datetime import timedelta
 
-from app.insights.context import DetectorContext
+from app.insights.context import DetectorContext, LlmSpanRow
 from app.insights.detectors._stream_common import (
     fault_rounds,
     findings_per_environment,
@@ -23,6 +23,15 @@ WINDOW = timedelta(hours=1)
 MIN_ROUNDS = 1
 FAULT_SCENARIO = "truncated_stream"
 FOLLOW_UP_WITHIN = timedelta(minutes=5)
+_STREAM_CUT_REASONS = frozenset({"stream_error", "stream_cut"})
+
+
+def _is_cut_stream(span: LlmSpanRow) -> bool:
+    if span.fault_scenario == FAULT_SCENARIO:
+        return True
+    if span.gateway is not None and span.gateway.client_disconnected:
+        return False
+    return span.unreported_reason in _STREAM_CUT_REASONS
 
 
 class TruncatedStreamAccepted:
@@ -31,7 +40,13 @@ class TruncatedStreamAccepted:
     min_samples = MIN_ROUNDS
 
     def run(self, ctx: DetectorContext) -> list[Finding]:
-        rounds = fault_rounds(ctx.llm_spans, FAULT_SCENARIO, FOLLOW_UP_WITHIN, forbid_resend=True)
+        rounds = fault_rounds(
+            ctx.llm_spans,
+            FAULT_SCENARIO,
+            FOLLOW_UP_WITHIN,
+            forbid_resend=True,
+            predicate=_is_cut_stream,
+        )
         if len(rounds) < MIN_ROUNDS:
             return []
         return findings_per_environment(ctx, KIND, Severity.CRITICAL, rounds)

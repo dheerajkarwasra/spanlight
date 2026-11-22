@@ -24,7 +24,7 @@ from ._usage import SpanUsage
 
 logger = logging.getLogger("spanlight")
 
-SpanKind = Literal["llm", "tool", "retrieval", "chain", "http", "other"]
+SpanKind = Literal["llm", "tool", "retrieval", "chain", "agent", "http", "other"]
 SpanStatus = Literal["ok", "error", "unset"]
 
 _VALID_KINDS: frozenset[str] = frozenset(get_args(SpanKind))

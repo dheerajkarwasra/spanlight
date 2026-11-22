@@ -1,9 +1,18 @@
 import { isApiError, type Credential, type ProviderKind, type Route } from "@/lib/api";
 
+import { PROVIDER_LABELS } from "./credential-form";
+
 /** Hosts the gateway calls when a credential has no base URL of its own. */
-const DEFAULT_HOSTS: Record<Exclude<ProviderKind, "openai_compatible">, string> = {
+const DEFAULT_HOSTS: Record<Exclude<ProviderKind, "openai_compatible">, string | null> = {
   openai: "api.openai.com",
   anthropic: "api.anthropic.com",
+  gemini: "generativelanguage.googleapis.com",
+  azure_openai: null,
+  mistral: "api.mistral.ai",
+  groq: "api.groq.com",
+  deepseek: "api.deepseek.com",
+  xai: "api.x.ai",
+  together: "api.together.ai",
 };
 
 /**
@@ -18,7 +27,8 @@ export function baseUrlLabel(credential: Credential): string | null {
   if (credential.provider === "openai_compatible") {
     return null;
   }
-  return `Default · ${DEFAULT_HOSTS[credential.provider]}`;
+  const host = DEFAULT_HOSTS[credential.provider];
+  return host === null ? null : `Default · ${host}`;
 }
 
 export type CheckState =
@@ -33,6 +43,32 @@ export function checkState(credential: Credential): CheckState {
     return { kind: "working", checkedAt: credential.last_checked_at };
   }
   return { kind: "never" };
+}
+
+/** Recovery guidance for the provider's status code, never content from its response body. */
+export function checkAdvice(credential: Credential): string | null {
+  const status = credential.last_error?.split(" ", 1)[0];
+  if (status === "401" || status === "403") {
+    return credential.provider === "azure_openai"
+      ? "Verify the key belongs to this Azure resource, then rotate it and check again."
+      : `Verify the key's access in ${PROVIDER_LABELS[credential.provider]}, then rotate it and check again.`;
+  }
+  if (status === "404" && credential.provider === "azure_openai") {
+    return "Verify the Azure resource URL ends in /openai/v1 and that the resource is active.";
+  }
+  if (status === "429") {
+    return "Check the provider's quota, then retry.";
+  }
+  if (credential.last_error && credential.provider === "azure_openai") {
+    return "Verify the Azure resource URL and check the provider's status, then retry.";
+  }
+  if (
+    credential.last_error &&
+    !["openai", "anthropic", "gemini", "openai_compatible"].includes(credential.provider)
+  ) {
+    return `Check ${PROVIDER_LABELS[credential.provider]}'s status and the key's access, then retry.`;
+  }
+  return null;
 }
 
 /** A route of the current project that sends calls through a credential. */

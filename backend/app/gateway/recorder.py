@@ -291,7 +291,8 @@ def _settle_lost(writers: _Writers, context: GatewayContext, span: dict[str, Any
     """Release the budget reservations of a span that will never be written, in the background
     (one short transaction; `drain` waits for it like a write). Not for an overflow: the backlog
     is full because the database is slow, so that settle waits for the reaper instead."""
-    task = writers.loop.create_task(settle_unstored(context.sessions, context.project_id, span))
+    coro = settle_unstored(context.write_sessions, context.project_id, span)
+    task = writers.loop.create_task(coro)
     writers.pending.add(task)
     task.add_done_callback(writers.pending.discard)
 

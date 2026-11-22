@@ -19,10 +19,11 @@ from app.playground.output import result_of
 from app.pricing.cost import Price, PriceBook
 from app.pricing.fees import FeeBook, ServerToolFee
 from app.pricing.modifiers import reported_modifiers
-from app.pricing.prices import EFFECTIVE_FROM, PRICING_VERSION, SEED_PRICES
+from app.pricing.prices import SNAPSHOT_2026_10_25
 from tests.gateway_support import PILOT_COST, PILOT_NATIVE
 
 AT = datetime(2026, 10, 25, 12, tzinfo=UTC)
+SNAPSHOT = SNAPSHOT_2026_10_25
 
 
 def _seed_book(*, fees: FeeBook | None = None) -> PriceBook:
@@ -34,13 +35,13 @@ def _seed_book(*, fees: FeeBook | None = None) -> PriceBook:
                 input_per_mtok=seed.input_per_mtok,
                 output_per_mtok=seed.output_per_mtok,
                 cached_input_per_mtok=seed.cached_input_per_mtok,
-                effective_from=EFFECTIVE_FROM,
-                version=PRICING_VERSION,
+                effective_from=SNAPSHOT.effective_from,
+                version=SNAPSHOT.version,
                 cache_write_5m_per_mtok=seed.cache_write_5m_per_mtok,
                 cache_write_1h_per_mtok=seed.cache_write_1h_per_mtok,
                 min_prompt_tokens=seed.min_prompt_tokens,
             )
-            for seed in SEED_PRICES
+            for seed in SNAPSHOT.prices
         ),
         fees=fees,
     )
@@ -117,7 +118,11 @@ def test_playground_preserves_billing_dimensions(tier, searches, geo, speed) -> 
         fees=FeeBook(
             [
                 ServerToolFee(
-                    "anthropic", "web_search", Decimal("10"), EFFECTIVE_FROM, PRICING_VERSION
+                    "anthropic",
+                    "web_search",
+                    Decimal("10"),
+                    SNAPSHOT.effective_from,
+                    SNAPSHOT.version,
                 )
             ]
         ),

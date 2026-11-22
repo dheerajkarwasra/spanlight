@@ -34,7 +34,7 @@ def _classify(case: Case) -> tuple[ErrorClass | None, RateLimitKind | None]:
     if case.error_type is not None:
         attributes["provider.error.type"] = case.error_type
     span_status = SpanStatus.OK if case.ok else SpanStatus.ERROR
-    error_class = classify_error(span_status, case.message, attributes)
+    error_class = classify_error(span_status, case.message, attributes, provider=case.provider)
     kind = classify_rate_limit(
         provider=case.provider,
         status=numeric_status(attributes),
@@ -332,6 +332,7 @@ def test_provider_name_is_matched_case_insensitively() -> None:
 def test_unknown_provider_uses_generic_table() -> None:
     message = "token limit hit"
 
+    assert _classify(Case("custom_provider", 429, message=message))[1] == RateLimitKind.TOKENS
     assert _classify(Case("mistral", 429, message=message))[1] == RateLimitKind.TOKENS
     # The Anthropic table has no bare "token" rule, so the same span there is unknown.
     assert _classify(Case("anthropic", 429, message=message))[1] == RateLimitKind.UNKNOWN
@@ -400,3 +401,46 @@ def test_overloaded_fault_is_still_unknown() -> None:
     )
 
     assert _classify(case) == (ErrorClass.PROVIDER_5XX, RateLimitKind.UNKNOWN)
+
+
+@pytest.mark.parametrize(
+    ("provider", "header", "kind"),
+    [
+        ("azure_openai", "x-ratelimit-remaining-requests", RateLimitKind.REQUESTS),
+        ("groq", "x-ratelimit-remaining-tokens", RateLimitKind.TOKENS),
+    ],
+)
+def test_verified_limit_headers(provider: str, header: str, kind: RateLimitKind) -> None:
+    assert (
+        classify_rate_limit(
+            provider=provider,
+            status=429,
+            error_class=ErrorClass.RATE_LIMIT,
+            error_type=None,
+            error_code=None,
+            message="Rate limit exceeded",
+            headers={header: "0"},
+            gateway_error_code=None,
+        )
+        == kind
+    )
+
+
+@pytest.mark.parametrize(
+    ("case", "error_class", "kind"),
+    [
+        (
+            Case("mistral", 429, message="RPS exceeded"),
+            ErrorClass.RATE_LIMIT,
+            RateLimitKind.REQUESTS,
+        ),
+        (Case("xai", 429, message="TPM exceeded"), ErrorClass.RATE_LIMIT, RateLimitKind.TOKENS),
+        (Case("deepseek", 402), ErrorClass.RATE_LIMIT, RateLimitKind.SPEND_CAP),
+        (Case("deepseek", 429), ErrorClass.RATE_LIMIT, RateLimitKind.REQUESTS),
+        (Case("together", 503), ErrorClass.PROVIDER_5XX, RateLimitKind.OVERLOADED),
+    ],
+)
+def test_expanded_provider_refusals(
+    case: Case, error_class: ErrorClass, kind: RateLimitKind
+) -> None:
+    assert _classify(case) == (error_class, kind)
