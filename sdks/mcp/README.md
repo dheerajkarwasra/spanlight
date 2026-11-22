@@ -1,7 +1,5 @@
 # Spanlight MCP Server (`spanlight-mcp`)
 
-> **Release preview.** The stdio server and the installation steps below are a release preview. The implementation is awaiting publication.
-
 Give Claude Code, Cursor, Codex, and Antigravity direct read access to your Spanlight traces, Doctor insights, spend overview, and prompts over stdio JSON-RPC.
 
 ## Install from a checkout

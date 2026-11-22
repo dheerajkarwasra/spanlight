@@ -5,7 +5,7 @@ any documented shape. This file is the reference for where the original design w
 ambiguous, and for the decisions the backend made. Items marked **Deviation** depart from the
 original design; everything else is a clarification.
 
-The provider expansion entries dated 2026-11-18 describe the upcoming release. The [hosted OpenAPI schema](https://spanlight.dev/api/openapi.json) describes the deployed routes.
+The [hosted OpenAPI schema](https://spanlight.dev/api/openapi.json) describes the deployed routes.
 
 ## Versioning
 

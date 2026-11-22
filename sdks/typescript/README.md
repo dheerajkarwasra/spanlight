@@ -1,7 +1,5 @@
 # Spanlight TypeScript SDK
 
-> **Release preview.** The Google Gen AI wrapper, prompts, scores, trace metadata and OpenTelemetry helpers are awaiting release.
-
 Tracing for Node.js LLM applications. Wrap your OpenAI, Anthropic or Gemini client, trace your own
 functions, and every request shows up in
 [Spanlight](https://github.com/dheerajkarwasra/spanlight/blob/main/README.md) with latency,

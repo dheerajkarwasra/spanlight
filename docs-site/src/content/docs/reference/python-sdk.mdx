@@ -1,6 +1,4 @@
 ---
-banner:
-  content: "Native Gemini and the agent instrumentation helpers documented here are release previews."
 title: Python SDK reference
 description: Every public name of the spanlight Python package, with its signature, parameters, defaults, errors and an example, plus the limits of the provider wrappers.
 ---
@@ -419,7 +417,7 @@ For streamed Chat Completions, ask OpenAI for usage with `stream_options={"inclu
 
 A Chat Completions call that passes `web_search_options` gets the attribute `usage.fee_unknown` set to `openai_chat_web_search`: the answer does not say how many searches were billed, so the fee is not priced. A Responses call counts its completed `web_search_call` items.
 
-### `wrap_google_genai` (preview)
+### `wrap_google_genai`
 
 ```python
 spanlight.wrap_google_genai(

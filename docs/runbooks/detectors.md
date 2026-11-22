@@ -1,7 +1,5 @@
 # Run the Doctor: detector runs, stuck projects, tuning, explanation budget
 
-> **Release preview.** The hosted Doctor runs 16 checks and polls three status feeds. Five additional checks, two additional feeds and configurable AI explanations are documented here for the next release.
-
 ## Purpose and when to use
 
 The Doctor's detectors run in the worker every 15 minutes. For each project with a span in the last 24 hours they read the recent spans, apply 21 fixed rules, and open, update or resolve insights (what an insight is and how it is opened, muted and resolved is in [the Doctor guide](../../docs-site/src/content/docs/doctor.mdx); what each detector looks for is in [the detector catalogue](../../docs-site/src/content/docs/reference/detectors.md)). Use this page when:

@@ -2,7 +2,7 @@ import { Figure, Section, SectionHeading, TitleSecondLine } from "./landing-part
 import { inViewRef, stagger } from "./motion";
 import { DOCS_LINKS, SECTION_IDS } from "./links";
 
-/** A selection of Doctor detectors in the animated grid. */
+/** Doctor detectors in display order. */
 const DETECTORS = [
   "cache_opportunity",
   "client_timeout_misconfigured",
@@ -20,6 +20,11 @@ const DETECTORS = [
   "truncated_stream_accepted",
   "unpriced_spend",
   "unsupported_parameter_retried",
+  "agent_ping_pong_loop",
+  "tool_error_ignored",
+  "tool_schema_hallucination",
+  "prefix_cache_busted",
+  "subagent_fanout_storm",
 ] as const;
 
 /** The finding the scan stops on; its title comes from the demo workspace. */
@@ -43,12 +48,14 @@ export function DiagnoseSection() {
         id={SECTION_IDS.diagnose}
         dark
         label="Diagnose"
-        title={<TitleSecondLine first="21 detectors." second="No model decides." />}
-        description="The 16 checks below run today. Five preview checks cover alternating tool calls, ignored tool errors, invalid tool arguments, lost prompt caching and excessive agent fan-out."
+        title={
+          <TitleSecondLine first={`${DETECTORS.length} detectors.`} second="No model decides." />
+        }
+        description="Every 15 minutes, the Doctor checks your spans for these patterns."
       />
 
       <Figure
-        label={`A selection of the Doctor's 21 detectors: ${DETECTORS.join(", ")}. A scan stops on tool_loop.`}
+        label={`All ${DETECTORS.length} Doctor checks: ${DETECTORS.join(", ")}. A scan stops on tool_loop.`}
         className="relative isolate order-2 grid w-full grid-cols-1 border-t border-mono-800 bg-mono-black xl:order-none xl:grid-cols-4 xl:border-l"
       >
         {DETECTORS.map((detector) => (
@@ -59,13 +66,13 @@ export function DiagnoseSection() {
             {detector}
           </span>
         ))}
-        <span className="lp-scan pointer-events-none absolute top-0 left-0 h-[calc(100%/16)] w-full bg-mono-white mix-blend-difference xl:h-1/4 xl:w-1/4" />
+        <span className="lp-scan pointer-events-none absolute top-0 left-0 h-[39px] w-full bg-mono-white mix-blend-difference xl:h-[92px] xl:w-1/4" />
       </Figure>
       <a
         className="order-3 self-start text-sm text-mono-white underline underline-offset-4 xl:order-none xl:self-center"
         href={DOCS_LINKS.detectors}
       >
-        See all 21 Doctor checks
+        See all {DETECTORS.length} Doctor checks
       </a>
 
       <div className="order-1 flex w-full flex-col gap-7 xl:order-none xl:w-auto xl:flex-row xl:items-center xl:gap-14">

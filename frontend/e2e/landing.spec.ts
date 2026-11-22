@@ -94,6 +94,9 @@ test.describe("landing page", () => {
   test("visitors see the seven sections in order, each with one heading", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    const detectorGrid = page.getByRole("img", { name: /^All 21 Doctor checks:/ });
+    await expect(detectorGrid.locator("span").filter({ hasText: /^[a-z_]+$/ })).toHaveCount(21);
+    await expect(detectorGrid.getByText("subagent_fanout_storm", { exact: true })).toBeVisible();
     const sections = page.locator("main > section[id]");
     await expect(sections).toHaveCount(7);
     for (const [index, id] of [

@@ -29,7 +29,7 @@ It then goes past tracing. It prices each call line by line and checks the total
 > Want to look before you install? The [live demo](https://spanlight.dev) runs on real Claude calls under a small monthly budget.
 
 > [!NOTE]
-> Spanlight is pre-1.0. The current server release is 0.8.1 ([changelog](CHANGELOG.md)), and the Python SDK on PyPI is 0.3.0. The [Doctor catalogue](https://spanlight.dev/docs/reference/detectors/) lists the 16 hosted checks and five in preview. Expanded gateway routes and native Gemini wrappers are also in preview.
+> Spanlight is pre-1.0. The current server release is 0.8.1 ([changelog](CHANGELOG.md)), and the Python SDK on PyPI is 0.3.0. This README describes the current source tree, including [all 21 Doctor checks](https://spanlight.dev/docs/reference/detectors/). For native Gemini tracing, use the SDK from the matching checkout.
 
 ## Quickstart
 
@@ -194,7 +194,7 @@ Everything above, the job queue included, runs on a single Postgres database. Th
 | [`frontend/`](frontend/)       | React 19, TypeScript, TanStack Router and Query, Tailwind v4, Radix, Recharts |
 | [`sdks/python/`](sdks/python/) | The `spanlight` SDK: `@observe`, spans, and the OpenAI, Anthropic and Gemini wrappers |
 | [`sdks/typescript/`](sdks/typescript/) | The `spanlight` npm package for Node.js: `observe`, `withSpan`, and the OpenAI, Anthropic and Gemini wrappers |
-| [`sdks/mcp/`](sdks/mcp/) | Release preview of read access to traces, Doctor findings, spend and prompts over stdio |
+| [`sdks/mcp/`](sdks/mcp/) | Read project traces, Doctor findings, spend and prompts from an MCP client over stdio |
 | [`deploy/`](deploy/)           | Dockerfile, Caddyfile, Compose file, Prometheus example and Grafana dashboard |
 | [`docs-site/`](docs-site/)     | The documentation site, served by every instance at `/docs/`                  |
 | [`docs/`](docs/)               | Decision records, runbooks, security documents and API notes                  |

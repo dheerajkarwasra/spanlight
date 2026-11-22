@@ -1,7 +1,5 @@
 # Run the LLM gateway
 
-> **Release preview.** Native Gemini routes are included for the next release. See the [gateway quickstart](../../docs-site/src/content/docs/gateway/quickstart.mdx) for routes available today.
-
 ## Purpose and when to use
 
 The gateway serves OpenAI-style and Anthropic requests under `/gw/v1` and native Gemini requests under `/gw/v1beta/models`. Applications authenticate with a gateway key (`spl_gw_...`). The gateway traces calls, prices supported usage and applies the configured limits and routing rules. Use this page to:

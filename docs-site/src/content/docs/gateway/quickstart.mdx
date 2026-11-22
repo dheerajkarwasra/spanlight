@@ -12,7 +12,7 @@ import Prerequisites from '../../../components/Prerequisites.astro';
 
 The gateway is an HTTP proxy for LLM providers. Point your client at Spanlight and authenticate with a gateway key. Each call is then recorded as a trace in Spanlight with the prompt, completion, tokens, latency and cost (the span is written after the answer is sent; the [gateway runbook](/docs/runbooks/gateway/) names the metric that counts any that could not be), and the gateway can retry, fall back to another provider, cache answers and inject faults on the way.
 
-On spanlight.dev you can use the four routes below. For a self-hosted instance, check its `/api/openapi.json` for the routes available in that build.
+Use these routes for OpenAI and Anthropic clients. The next table covers embeddings and native Gemini. To see which routes your instance supports, open its `/api/openapi.json`.
 
 | Path | Surface | Errors come back as |
 | --- | --- | --- |
@@ -21,9 +21,9 @@ On spanlight.dev you can use the four routes below. For a self-hosted instance, 
 | `POST /gw/v1/messages` | Anthropic Messages | Anthropic |
 | `GET /gw/v1/models` | Model list | OpenAI, or Anthropic when the request carries `anthropic-version` |
 
-### Release preview routes
+### Embeddings and native Gemini
 
-The next gateway adds embeddings and native Gemini generation, streaming and model discovery. These routes are awaiting release on spanlight.dev. The preview also supports opt-in translation between Chat Completions and Anthropic Messages. See [Routes, retries and fallbacks](/docs/gateway/routing/).
+The gateway routes native Generate Content requests to Gemini. Chat Completions and Anthropic Messages also support opt-in translation. See [Routes, retries and fallbacks](/docs/gateway/routing/).
 
 | Path | Surface | Errors come back as |
 | --- | --- | --- |
@@ -103,7 +103,7 @@ curl -sS "<host>/gw/v1/chat/completions" \
   -d '{"model": "gpt-4.1-mini", "messages": [{"role": "user", "content": "Say hello."}]}'
 ```
 
-### Native Gemini (release preview)
+### Native Gemini
 
 Create a route with a **Google Gemini** credential, then send the gateway key in `x-goog-api-key`.
 The model or route alias goes in the URL.

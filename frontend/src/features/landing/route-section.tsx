@@ -13,7 +13,7 @@ const GATEWAY_STEPS = [
 const PROVIDERS = [
   { name: "OpenAI", note: null, top: 57 },
   { name: "Anthropic", note: "fallback route", top: 147 },
-  { name: "Gemini", note: "Native in preview", top: 237 },
+  { name: "Gemini", note: "Native or compatible", top: 237 },
   { name: "Bedrock", note: "OpenAI-compatible", top: 327 },
 ] as const;
 
@@ -39,7 +39,7 @@ const CAPABILITIES = [
 ] as const;
 
 const DIAGRAM_ALT =
-  "Your app, using the official SDK unchanged, sends requests through base_url to the Spanlight gateway, which traces every request and applies an exact-match cache, a per-key rate limit, a budget check and retry then fallback, before routing to OpenAI, Anthropic as the fallback route, Gemini through its compatible API (native support is in preview), or Bedrock through an OpenAI-compatible endpoint.";
+  "Your app, using the official SDK unchanged, sends requests through base_url to the Spanlight gateway, which traces every request and applies an exact-match cache, a per-key rate limit, a budget check and retry then fallback, before routing to OpenAI, Anthropic as the fallback route, Gemini using its native or compatible API, or Bedrock through an OpenAI-compatible endpoint.";
 
 const WIRE = "var(--mono-line-strong)";
 const PULSE = "var(--mono-900)";
@@ -56,7 +56,7 @@ export function RouteSection() {
         id={SECTION_IDS.route}
         label="Route"
         title="Change one base URL."
-        description="Use OpenAI and Anthropic clients today. The gateway preview adds native Gemini, Azure OpenAI, Mistral, Groq, DeepSeek, xAI and Together AI."
+        description="Route OpenAI, Anthropic and Gemini calls, plus Chat Completions from Azure OpenAI, Mistral, Groq, DeepSeek, xAI and Together AI."
       />
 
       {/* Desktop: requests run the wires; the four provider wires pulse in turn. */}
@@ -180,8 +180,8 @@ export function RouteSection() {
           ))}
         </ul>
         <p className="text-xs leading-[1.5] text-mono-500">
-          Use an OpenAI-compatible endpoint for Gemini or Bedrock today. The gateway guide also
-          covers native Gemini in preview.
+          Gemini accepts native and OpenAI-compatible requests. Bedrock uses an OpenAI-compatible
+          endpoint. Pricing depends on the model and reported usage.
         </p>
       </div>
       <a

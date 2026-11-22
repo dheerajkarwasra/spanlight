@@ -1,7 +1,5 @@
 # Spanlight Python SDK
 
-> **Release preview.** The Google Gen AI wrapper and expanded provider attribution are awaiting release.
-
 Tracing for LLM applications. Instrument your code with a decorator, wrap your
 OpenAI, Anthropic or Google Gen AI client, and traced calls show up in
 [Spanlight](https://github.com/dheerajkarwasra/spanlight/blob/main/README.md) with latency, tokens, cost, errors and the

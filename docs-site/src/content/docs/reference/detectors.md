@@ -3,7 +3,7 @@ title: Detector catalogue
 description: The Doctor's 21 detectors, with the layer, certainty and severity of each, what triggers it, and the fix and check for every finding.
 ---
 
-The hosted [Doctor](/docs/doctor/) runs 16 checks. This catalogue covers those checks and the five listed below in **release preview**. Each entry explains what triggers a finding and how to verify a fix.
+The [Doctor](/docs/doctor/) checks your traces for 21 patterns. Each entry explains what triggers a finding and how to verify a fix.
 
 The table lists all 21 checks. **Where it fails** names the layer an insight points at: `client` is how your code calls the API, `request` is what it sends, `agent` is tool orchestration, `provider` is the model provider, `platform` is Spanlight's own setup, and `traffic` is a symptom whose cause is still open. **Certainty** is *Measured* when the insight restates numbers Spanlight observed and *Inferred* when a pattern strongly suggests a cause that you should confirm in the traces.
 
@@ -25,11 +25,11 @@ The table lists all 21 checks. **Where it fails** names the layer an insight poi
 | `unpriced_spend` | Unpriced spend | platform | Measured | info |
 | `provider_incident` | Provider incident | provider | Measured | warning, critical at 50 % |
 | `model_retiring` | Model retiring | provider | Measured | warning, critical 14 days before the date |
-| `agent_ping_pong_loop` | Agent ping-pong loop (preview) | agent | Measured | warning, critical at 6 cycles |
-| `tool_error_ignored` | Tool error ignored (preview) | agent | Inferred | warning, critical at 10 ignored errors |
-| `tool_schema_hallucination` | Tool schema hallucination (preview) | agent | Measured | warning, critical at 15 failures |
-| `prefix_cache_busted` | Prompt prefix cache busted (preview) | request | Measured | warning, critical at 10 affected traces |
-| `subagent_fanout_storm` | Sub-agent fan-out storm (preview) | agent | Measured | warning, critical at 40 LLM calls in one trace |
+| `agent_ping_pong_loop` | Agent ping-pong loop | agent | Measured | warning, critical at 6 cycles |
+| `tool_error_ignored` | Tool error ignored | agent | Inferred | warning, critical at 10 ignored errors |
+| `tool_schema_hallucination` | Tool schema hallucination | agent | Measured | warning, critical at 15 failures |
+| `prefix_cache_busted` | Prompt prefix cache busted | request | Measured | warning, critical at 10 affected traces |
+| `subagent_fanout_storm` | Sub-agent fan-out storm | agent | Measured | warning, critical at 40 LLM calls in one trace |
 
 In the entries below, "calls" means LLM spans, a "window" ends at the moment the detector runs, and shares and rates are shown to one decimal place in the insight text.
 

@@ -167,7 +167,7 @@ html:has(.landing-page) {
   }
 }
 
-/* The detector scan: one highlight block steps through the sixteen cells and stops on tool_loop. */
+/* The detector scan: one highlight block steps through a sample of the checks and stops on tool_loop. */
 @keyframes lp-scan-list {
   0% {
     transform: translateY(0%);
