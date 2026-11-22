@@ -294,7 +294,13 @@ async def build_day_aggregates(
     say(f"user stats built: {users:,} rows; attribution built for {attributed} days")
 
 
-PENDING_HOURS = text("SELECT count(*) FROM aggregate_dirty_hours WHERE project_id = :project_id")
+PENDING_HOURS = text("""
+    SELECT count(*) FROM (
+        SELECT bucket_hour FROM aggregate_dirty_hours WHERE project_id = :project_id
+        UNION
+        SELECT bucket_hour FROM aggregate_dirty_shards WHERE project_id = :project_id
+    ) AS dirty_hours
+""")
 # Passes in a row that cleared nothing before the seeder gives up.
 STALLED_PASSES = 3
 

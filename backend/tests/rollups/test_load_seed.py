@@ -45,6 +45,7 @@ async def test_seeder_builds_rollups_and_available_reads_without_install_activat
         assert rollup_hours is not None and rollup_hours[0] > 0
         with psycopg.connect(_libpq(url)) as db:
             assert db.execute("SELECT count(*) FROM aggregate_dirty_hours").fetchone() == (0,)
+            assert db.execute("SELECT count(*) FROM aggregate_dirty_shards").fetchone() == (0,)
 
         engine = create_engine(url)
         try:

@@ -58,10 +58,11 @@ async def test_history_deletion_and_project_deletion_do_not_deadlock(
         assert all(task.done() for task in tasks)
         async with world.sessions() as probe:
             await bind_project(probe, world.workspace.project_id)
-            await probe.execute(
+            remaining = await probe.scalar(
                 text("SELECT id FROM projects WHERE id = :id FOR UPDATE NOWAIT"),
                 {"id": world.workspace.project_id},
             )
+            assert remaining == (world.workspace.project_id if observer_failure else None)
     finally:
         # Keep a broken cleanup regression from leaking work into the next test.
         await _cancel_tasks(tasks)
@@ -124,10 +125,9 @@ async def _history_deletion_race(
             _, response = await asyncio.wait_for(asyncio.gather(retention, deletion), timeout=10)
             assert response.status_code == 204, response.text
         finally:
-            try:
-                await locker.rollback()
-            finally:
-                await _cancel_tasks(tasks)
+            # On observer failure, stop the blocked writers before leaving the locker session.
+            # Releasing the trace first lets a writer take the project lock during cleanup.
+            await _cancel_tasks(tasks)
 
 
 async def _cancel_tasks(tasks: list[asyncio.Task]) -> None:
