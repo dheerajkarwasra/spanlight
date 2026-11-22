@@ -1,5 +1,7 @@
 # Run the LLM gateway
 
+The [gateway quickstart](../../docs-site/src/content/docs/gateway/quickstart.mdx) identifies the four hosted routes and the four additional routes available in a source build.
+
 ## Purpose and when to use
 
 The gateway serves OpenAI-style and Anthropic requests under `/gw/v1` and native Gemini requests under `/gw/v1beta/models`. Applications authenticate with a gateway key (`spl_gw_...`). The gateway traces calls, prices supported usage and applies the configured limits and routing rules. Use this page to:

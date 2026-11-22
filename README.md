@@ -29,7 +29,7 @@ It then goes past tracing. It prices each call line by line and checks the total
 > Want to look before you install? The [live demo](https://spanlight.dev) runs on real Claude calls under a small monthly budget.
 
 > [!NOTE]
-> Spanlight is pre-1.0. The current server release is 0.8.1 ([changelog](CHANGELOG.md)), and the Python SDK on PyPI is 0.3.0. This README describes the current source tree, including [all 21 Doctor checks](https://spanlight.dev/docs/reference/detectors/). For native Gemini tracing, use the SDK from the matching checkout.
+> Spanlight is pre-1.0. The current server release is 0.8.1 ([changelog](CHANGELOG.md)), and the Python SDK on PyPI is 0.3.0. This README describes the current source tree. The [Doctor catalogue](https://spanlight.dev/docs/reference/detectors/) marks the five checks that require a source build alongside the 16 available on spanlight.dev. For native Gemini tracing, use the SDK from the matching checkout.
 
 ## Quickstart
 

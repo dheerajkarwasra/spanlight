@@ -1,5 +1,7 @@
 # Run the Doctor: detector runs, stuck projects, tuning, explanation budget
 
+The [catalogue](../../docs-site/src/content/docs/reference/detectors.md) identifies the 16 hosted checks and the five additional checks available in a source build.
+
 ## Purpose and when to use
 
 The Doctor's detectors run in the worker every 15 minutes. For each project with a span in the last 24 hours they read the recent spans, apply 21 fixed rules, and open, update or resolve insights (what an insight is and how it is opened, muted and resolved is in [the Doctor guide](../../docs-site/src/content/docs/doctor.mdx); what each detector looks for is in [the detector catalogue](../../docs-site/src/content/docs/reference/detectors.md)). Use this page when:

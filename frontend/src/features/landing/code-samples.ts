@@ -102,7 +102,8 @@ export const CODE_SAMPLES: Record<CodeSampleId, CodeSample> = {
   python: {
     id: "python",
     label: "Python SDK",
-    summary: "Wrap an OpenAI, Anthropic or Google Gen AI client and trace your own functions.",
+    summary:
+      "Wrap an OpenAI or Anthropic client and trace your own functions. The SDK source also includes Google Gen AI.",
     description: "Python SDK with the Anthropic client",
     lines: PYTHON_LINES,
   },

@@ -1,4 +1,6 @@
 ---
+banner:
+  content: "The settings table describes the source build. Provider selection for Doctor explanations requires this version."
 title: Configuration
 description: Every environment variable the Spanlight API and worker read, and the variables of the Compose file.
 sidebar:
