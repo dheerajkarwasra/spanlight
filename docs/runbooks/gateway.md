@@ -1,6 +1,6 @@
 # Run the LLM gateway
 
-The [gateway quickstart](../../docs-site/src/content/docs/gateway/quickstart.mdx) identifies the four hosted routes and the four additional routes available in a source build.
+The [gateway quickstart](../../docs-site/src/content/docs/gateway/quickstart.mdx) lists all eight hosted routes and shows how to call them.
 
 ## Purpose and when to use
 

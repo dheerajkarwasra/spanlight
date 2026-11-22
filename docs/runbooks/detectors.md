@@ -1,6 +1,6 @@
 # Run the Doctor: detector runs, stuck projects, tuning, explanation budget
 
-The [catalogue](../../docs-site/src/content/docs/reference/detectors.md) identifies the 16 hosted checks and the five additional checks available in a source build.
+The [Doctor catalogue](../../docs-site/src/content/docs/reference/detectors.md) lists all 21 checks on spanlight.dev and explains when each one raises a finding.
 
 ## Purpose and when to use
 

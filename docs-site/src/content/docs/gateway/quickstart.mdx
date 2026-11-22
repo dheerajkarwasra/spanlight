@@ -12,7 +12,7 @@ import Prerequisites from '../../../components/Prerequisites.astro';
 
 The gateway is an HTTP proxy for LLM providers. Point your client at Spanlight and authenticate with a gateway key. Each call is then recorded as a trace in Spanlight with the prompt, completion, tokens, latency and cost (the span is written after the answer is sent; the [gateway runbook](/docs/runbooks/gateway/) names the metric that counts any that could not be), and the gateway can retry, fall back to another provider, cache answers and inject faults on the way.
 
-These four routes are available on spanlight.dev. The [live API schema](https://spanlight.dev/api/openapi.json) lists the routes the hosted gateway currently serves.
+All eight gateway routes are available on spanlight.dev. The tables below cover OpenAI, Anthropic and native Gemini clients. To confirm the routes on your own instance, open `/api/openapi.json`. The [hosted API schema](https://spanlight.dev/api/openapi.json) lists the production routes.
 
 | Path | Surface | Errors come back as |
 | --- | --- | --- |
@@ -23,7 +23,7 @@ These four routes are available on spanlight.dev. The [live API schema](https://
 
 ### Embeddings and native Gemini
 
-Build the gateway from the current source checkout to use the four additional routes below. That build also supports opt-in translation between Chat Completions and Anthropic Messages. See [Routes, retries and fallbacks](/docs/gateway/routing/).
+The gateway routes native Generate Content requests to Gemini. Chat Completions and Anthropic Messages also support opt-in translation. See [Routes, retries and fallbacks](/docs/gateway/routing/).
 
 | Path | Surface | Errors come back as |
 | --- | --- | --- |
@@ -105,7 +105,7 @@ curl -sS "<host>/gw/v1/chat/completions" \
 
 ### Native Gemini
 
-On a gateway built from the current source checkout, create a route with a **Google Gemini** credential and send the gateway key in `x-goog-api-key`.
+Create a route with a **Google Gemini** credential, then send the gateway key in `x-goog-api-key`.
 The model or route alias goes in the URL.
 
 ```bash

@@ -51,7 +51,7 @@ export function DiagnoseSection() {
         title={
           <TitleSecondLine first={`${DETECTORS.length} detectors.`} second="No model decides." />
         }
-        description="On spanlight.dev, the first 16 checks run every 15 minutes. Build from source to run all 21."
+        description="The Doctor runs all 21 checks every 15 minutes on spanlight.dev."
       />
 
       <Figure
