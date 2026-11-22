@@ -162,7 +162,7 @@ const TILES: readonly Tile[] = [
 /** "Improve": prompts, evals and the daily review as three tiles (Figma "Improve"). */
 export function ImproveSection() {
   return (
-    <Section id={SECTION_IDS.improve} tone="paper">
+    <Section id={SECTION_IDS.improve} tone="white">
       <SectionHeading
         id={SECTION_IDS.improve}
         label="Improve"

@@ -1,4 +1,6 @@
 ---
+banner:
+  content: "Native Gemini, expanded provider routes and opt-in API translation are in release preview."
 title: Routes, retries and fallbacks
 description: Choose which provider credentials serve a gateway key, how failures are retried, when to fall back to another target, and how to change a route safely.
 sidebar:
@@ -63,7 +65,9 @@ A target is a [provider credential](/docs/gateway/credentials/) of the route's o
 
 **Picking a target.** The first target tried is chosen at random in proportion to the weights of the targets that can serve the call. If it fails and the failure allows a fallback, the remaining targets are tried in the order they are listed. So weights spread the load, and the list order is the fallback order.
 
-**Which targets can serve a call.** There is no translation between provider formats. A chat completions or responses call can only use `openai` and `openai_compatible` credentials, and a messages call can only use `anthropic` ones. Other targets are skipped. If none is left, the call fails with `400 NO_COMPATIBLE_TARGET`.
+**Which targets can serve a call.** By default, Chat Completions uses compatible credentials from the [provider list](/docs/gateway/credentials/#providers). Responses uses OpenAI, xAI or an OpenAI-compatible credential whose server supports Responses. Messages uses Anthropic. Embeddings uses OpenAI, Gemini or an OpenAI-compatible credential with embeddings support. Native Generate Content uses Gemini. If no target can serve the surface, the call fails with `400 NO_COMPATIBLE_TARGET`.
+
+Set `x-spanlight-translate: true` to allow translation between Chat Completions and Anthropic Messages on eligible targets. If a blocking project or per-run budget covers a native Gemini call or an expanded-provider route, Spanlight requires a verified bound before dispatch and permits one upstream attempt. See [budgets](/docs/budgets/).
 
 ### Model aliases
 
@@ -105,7 +109,7 @@ An empty list means never fall back. By default the first four are on, and `auth
 
 ### Falling back to Gemini
 
-A chat completions route can survive an OpenAI outage on Gemini: list the OpenAI credential first and a Gemini [`openai_compatible` credential](/docs/gateway/credentials/#gemini-and-bedrock) second, and map the model your application asks for to a Gemini model on the second target:
+A chat completions route can survive an OpenAI outage on Gemini: list the OpenAI credential first and a [Google Gemini credential](/docs/gateway/credentials/#gemini) second, and map the model your application asks for to a Gemini model on the second target:
 
 ```json
 {
@@ -121,7 +125,7 @@ A chat completions route can survive an OpenAI outage on Gemini: list the OpenAI
 }
 ```
 
-The first try is a weighted random pick and the lowest weight is 1, so with these weights 100 of every 101 calls try OpenAI first; the others try Gemini first and fall back to OpenAI. When OpenAI answers `5xx` or `429`, times out or cannot be reached, the call is sent to Gemini with the model `gemini-2.5-flash`, and the span records the attempt on each target. A fallback span has an unknown cost ("—") until the organization has a [price override](/docs/concepts/cost/#price-overrides) for the Gemini model under provider `openai_compatible`. Use the chat completions API: Gemini's compatibility layer has no Responses endpoint.
+The first try is a weighted random pick and the lowest weight is 1, so with these weights 100 of every 101 calls try OpenAI first; the others try Gemini first and fall back to OpenAI. When OpenAI answers `5xx` or `429`, times out or cannot be reached, the call is sent to Gemini with the model `gemini-2.5-flash`, and the span records the attempt on each target. The Gemini attempt uses `google` pricing when a matching rate and supported usage are available. Use Chat Completions for this route.
 
 ### Falling back on a rejected key
 
@@ -177,7 +181,7 @@ The response carries `X-Spanlight-Attempts` with the same attempt count.
 ## Troubleshooting
 
 - **A call goes to a credential you did not expect.** Weights pick the first target at random among the targets that can serve the surface. Check the route version in the span (`spanlight.gateway.route_version`) and that the key uses this route. See [Targets](#targets).
-- **`400 NO_COMPATIBLE_TARGET`.** No target can serve the surface: chat completions and responses need an `openai` or `openai_compatible` credential, messages needs an `anthropic` one.
+- **`400 NO_COMPATIBLE_TARGET`.** No target can serve the request surface with its current credentials and translation setting.
 - **A `4xx` from the provider is not retried and no fallback happens.** By design: another try or another provider would not fix a bad request. Only `on_statuses` are retried, and fallbacks follow `fallback.on`. See [Retries](#retries) and [Fallbacks](#fallbacks).
 - **A `401` or `403` does not fall back to the next credential.** `auth_error` is off by default. Add it to `fallback.on`, with a second target on another credential that serves the same surface. See [Falling back on a rejected key](#falling-back-on-a-rejected-key).
 - **Saving answers `409 ROUTE_VERSION_CONFLICT`** ("Someone saved version N while you were editing."). In the editor, **Reload latest**, then apply your change again.

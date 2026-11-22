@@ -1,4 +1,6 @@
 ---
+banner:
+  content: "Native Gemini and expanded gateway providers are in release preview."
 title: Frequently asked questions
 description: Short answers to common questions about Spanlight, such as the hosted service at spanlight.dev and self-hosting, which languages work, where data is stored, why a cost shows a dash and whether you can import from another tool, each with a link to the page that explains it.
 sidebar:
@@ -17,7 +19,7 @@ Yes. [spanlight.dev](https://spanlight.dev) is a free hosted service for busines
 
 ### Which languages work?
 
-The [Python SDK](/docs/python-sdk/) covers Python and the [TypeScript SDK](/docs/typescript-sdk/) covers Node.js. From any other language you can send traces over [OTLP](/docs/otlp/), or point an OpenAI-style or Anthropic client at the gateway, as the JavaScript and cURL examples in [OpenAI](/docs/integrations/openai/#gateway) and [Anthropic](/docs/integrations/anthropic/#gateway) show. [Ways to send data](/docs/concepts/ingest-paths/) compares them.
+The [Python SDK](/docs/python-sdk/) covers Python and the [TypeScript SDK](/docs/typescript-sdk/) covers Node.js. From any other language you can send traces over [OTLP](/docs/otlp/), or send OpenAI-style, Anthropic or native Gemini requests to the gateway, as the JavaScript and cURL examples in [OpenAI](/docs/integrations/openai/#gateway) and [Anthropic](/docs/integrations/anthropic/#gateway) show. [Ways to send data](/docs/concepts/ingest-paths/) compares them.
 
 ### Should I use port 8000 or 8080?
 
@@ -45,7 +47,7 @@ The cost is unknown, which is not the same as zero. A span is priced only when i
 
 ### Is the cost the same as my provider invoice?
 
-No. It is an estimate from your own token counts and a dated price table that leaves out batch discounts, regional modifiers, server-tool fees and taxes; see [The price table is versioned](/docs/concepts/cost/#the-price-table-is-versioned). You can add your own rate for a model with a price override.
+No. Spanlight estimates each call from its reported usage and the price in effect when it started. Supported service tiers, modifiers and web search fees can change the estimate. Use [cost reconciliation](/docs/guides/reconciliation/) to compare it with billed spend. See [how cost is calculated](/docs/concepts/cost/) for coverage and price overrides.
 
 ## Integrations
 
@@ -67,7 +69,7 @@ No. Spanlight has no importer for traces from those tools. To switch, send new t
 
 ### Does it work with OpenAI and Anthropic?
 
-Yes. The Python SDK wraps both clients, and the gateway proxies both APIs; see [Integrations](/docs/integrations/).
+Yes. The Python and TypeScript SDKs wrap the official OpenAI, Anthropic and Google Gen AI clients. The gateway accepts requests from all three and several other providers. See [Integrations](/docs/integrations/) and [Gateway credentials](/docs/gateway/credentials/).
 
 ## Self-hosting
 

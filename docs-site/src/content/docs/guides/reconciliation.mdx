@@ -1,4 +1,6 @@
 ---
+banner:
+  content: "Expanded billing CSV support across nine providers is in release preview."
 title: Reconcile cost with your provider bill
 description: Connect an Anthropic or OpenAI admin key, or upload a cost CSV, and compare what the provider billed each day with the cost Spanlight computed for your projects.
 ---
@@ -8,13 +10,13 @@ description: Connect an Anthropic or OpenAI admin key, or upload a cost CSV, and
 import NextSteps from '../../../components/NextSteps.astro';
 import Prerequisites from '../../../components/Prerequisites.astro';
 
-Spanlight prices every model call from its token counts (see [How cost is calculated](/docs/concepts/cost/)). Your provider bills from its own meters. A **billing source** brings the provider's side in, so you can see, for each UTC day and model, whether the two agree and why they do not.
+Spanlight prices model calls when reported usage and a matching rate are available (see [How cost is calculated](/docs/concepts/cost/)). Your provider bills from its own meters. A **billing source** brings the provider's side in, so you can see, for each UTC day and model, whether the two agree and why they do not.
 
 A billing source is one of three kinds:
 
 - **Anthropic Admin API**: Spanlight fetches the cost report and the usage report of your Anthropic organization with an Admin API key.
 - **OpenAI Admin API**: Spanlight fetches the costs and the completions usage of your OpenAI organization with an admin key.
-- **CSV upload**: you upload the provider's costs in Spanlight's CSV format. Use it for Google, or when you cannot give Spanlight an admin key.
+- **CSV upload**: you upload the provider's costs in Spanlight's CSV format. Use CSV for providers without a billing API integration or when you cannot share an admin key.
 
 Each source is compared with the projects you map to it. The result is the **reconciliation report**: the provider's amount, Spanlight's amount, the known causes of the difference, and what is left.
 
@@ -31,13 +33,15 @@ Each source is compared with the projects you map to it. The result is the **rec
 
 Open **Settings**, then **Billing sources** under **Organization**, and press **Add source**.
 
-1. Pick the **Kind**: **Anthropic Admin API**, **OpenAI Admin API** or **CSV upload**. For a CSV source, also pick the **Provider** (Anthropic, OpenAI or Google); every row of its files must name it in the `provider` column.
+1. Pick the **Kind**: **Anthropic Admin API**, **OpenAI Admin API** or **CSV upload**. For a CSV source, also pick the **Provider**. Use its canonical name in every CSV row: `anthropic`, `openai`, `google`, `azure_openai`, `mistral`, `groq`, `deepseek`, `xai` or `together`.
 2. Give the source a **Name**, such as "Prod account". Names are unique in the organization.
-3. Paste the **Admin API key**. An administrator of the provider organization creates admin keys, in the Anthropic Console or in the OpenAI platform settings.
+3. For an Admin API source, paste the **Admin API key**. An administrator of the provider organization creates admin keys, in the Anthropic Console or in the OpenAI platform settings.
 4. Optionally set a **Provider scope** (see [Scope a source](#scope-a-source)).
 5. Tick the **Projects to compare** (see [Map projects](#map-projects)) and press **Add source**.
 
-The key is handled like a password:
+If the span has no matching price or its billing dimensions are unsupported, the observed amount stays unknown. The uploaded amount remains available.
+
+An admin key is handled like a password:
 
 - It is encrypted with the server's `CREDENTIALS_KEYS` before it is stored, and it is never shown again. No response, audit event or log line carries it; the source only says whether a key is stored.
 - Spanlight sends only read requests with it, to two fixed hosts (`https://api.anthropic.com` and `https://api.openai.com`): the cost report and the usage report. An admin key can usually do more than that at the provider, so treat it like any other admin credential, and limit it to read access if your provider lets you.

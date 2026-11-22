@@ -52,6 +52,13 @@ html:has(.landing-page) {
   scroll-margin-top: 72px;
 }
 
+/* A single inset dark stage interrupts the continuous light canvas. */
+.landing-page #diagnose {
+  margin-inline: clamp(0.75rem, 3vw, 3rem);
+  padding-block: clamp(3rem, 6.6667vw, 6rem);
+  padding-inline: clamp(0.5rem, 2vw, 1.5rem);
+}
+
 /* Focus: 2px ring, 2px offset; #171717 on light sections, white on black ones. */
 .landing :focus-visible {
   outline: 2px solid var(--mono-900);

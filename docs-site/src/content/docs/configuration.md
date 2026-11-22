@@ -1,4 +1,6 @@
 ---
+banner:
+  content: "The settings tables follow the current server. The upcoming gateway adds provider selection for Doctor explanations."
 title: Configuration
 description: Every environment variable the Spanlight API and worker read, and the variables of the Compose file.
 sidebar:

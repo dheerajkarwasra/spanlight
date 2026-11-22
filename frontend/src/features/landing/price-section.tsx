@@ -71,7 +71,7 @@ const CARD = "rounded-md border border-mono-line-strong bg-mono-white";
 /** "Price": the cost breakdown, the bill check and the attribution and budget facts (Figma "Price"). */
 export function PriceSection() {
   return (
-    <Section id={SECTION_IDS.price} tone="paper">
+    <Section id={SECTION_IDS.price} tone="white">
       <SectionHeading
         id={SECTION_IDS.price}
         label="Price"

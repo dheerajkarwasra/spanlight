@@ -1,6 +1,6 @@
 ---
 title: Gateway quickstart
-description: Point the OpenAI or Anthropic SDK at the Spanlight gateway with one base URL and get every call traced, priced and, if you choose, routed, retried and cached.
+description: Send OpenAI-compatible, Anthropic and native Gemini requests through the Spanlight gateway to trace usage, cost and routing.
 sidebar:
   order: 1
 ---
@@ -10,9 +10,9 @@ sidebar:
 import NextSteps from '../../../components/NextSteps.astro';
 import Prerequisites from '../../../components/Prerequisites.astro';
 
-The gateway is an HTTP proxy for LLM providers. Your application keeps using the official OpenAI or Anthropic client; you change its `base_url` and its API key. Each call is then recorded as a trace in Spanlight with the prompt, completion, tokens, latency and cost (the span is written after the answer is sent; the [gateway runbook](/docs/runbooks/gateway/) names the metric that counts any that could not be), and the gateway can retry, fall back to another provider, cache answers and inject faults on the way.
+The gateway is an HTTP proxy for LLM providers. Point your client at Spanlight and authenticate with a gateway key. Each call is then recorded as a trace in Spanlight with the prompt, completion, tokens, latency and cost (the span is written after the answer is sent; the [gateway runbook](/docs/runbooks/gateway/) names the metric that counts any that could not be), and the gateway can retry, fall back to another provider, cache answers and inject faults on the way.
 
-Nothing is translated: an OpenAI-style request goes to an OpenAI-style provider (`openai` or `openai_compatible` credentials) and a Messages request goes to Anthropic. The response is forwarded as the provider sent it, streams included.
+On spanlight.dev you can use the four routes below. For a self-hosted instance, check its `/api/openapi.json` for the routes available in that build.
 
 | Path | Surface | Errors come back as |
 | --- | --- | --- |
@@ -21,12 +21,23 @@ Nothing is translated: an OpenAI-style request goes to an OpenAI-style provider 
 | `POST /gw/v1/messages` | Anthropic Messages | Anthropic |
 | `GET /gw/v1/models` | Model list | OpenAI, or Anthropic when the request carries `anthropic-version` |
 
+### Release preview routes
+
+The next gateway adds embeddings and native Gemini generation, streaming and model discovery. These routes are awaiting release on spanlight.dev. The preview also supports opt-in translation between Chat Completions and Anthropic Messages. See [Routes, retries and fallbacks](/docs/gateway/routing/).
+
+| Path | Surface | Errors come back as |
+| --- | --- | --- |
+| `POST /gw/v1/embeddings` | OpenAI Embeddings | OpenAI |
+| `POST /gw/v1beta/models/{model}:generateContent` | Gemini Generate Content | Google |
+| `POST /gw/v1beta/models/{model}:streamGenerateContent` | Gemini Generate Content with SSE | Google |
+| `GET /gw/v1beta/models` | Native Gemini model list | Google |
+
 <Prerequisites
   items={[
     'The gateway enabled: GATEWAY_MODE is embedded (the default) or standalone, not disabled',
     'CREDENTIALS_KEYS set on the server, so provider keys can be stored',
     'An organization owner to add the provider credential, and an admin or owner to create the route and the gateway key',
-    'An OpenAI or Anthropic API key, and the official Python SDK or any HTTP client',
+    'A provider API key and its client SDK or an HTTP client',
   ]}
 />
 
@@ -92,9 +103,23 @@ curl -sS "<host>/gw/v1/chat/completions" \
   -d '{"model": "gpt-4.1-mini", "messages": [{"role": "user", "content": "Say hello."}]}'
 ```
 
+### Native Gemini (release preview)
+
+Create a route with a **Google Gemini** credential, then send the gateway key in `x-goog-api-key`.
+The model or route alias goes in the URL.
+
+```bash
+curl -sS "<host>/gw/v1beta/models/gemini-2.5-flash-lite:generateContent" \
+  -H "x-goog-api-key: spl_gw_…" \
+  -H "Content-Type: application/json" \
+  -d '{"contents":[{"role":"user","parts":[{"text":"Say hello."}]}]}'
+```
+
+Use `streamGenerateContent` for SSE or `GET /gw/v1beta/models` for discovery. Existing Gemini integrations that use the OpenAI SDK can keep their gateway URL at `<host>/gw/v1`.
+
 ### How the key is sent
 
-Send the key as `Authorization: Bearer spl_gw_…` or as `x-api-key: spl_gw_…` (the Anthropic SDK uses the second). If both headers are present and carry different values, the call is refused with `401`. The error body follows the path, not the header: a call to `/gw/v1/messages` always gets an Anthropic-shaped error.
+The accepted key headers are `Authorization: Bearer spl_gw_…`, `x-api-key: spl_gw_…` and `x-goog-api-key: spl_gw_…`. Conflicting values are refused with `401`. The error body follows the path, not the header: a call to `/gw/v1/messages` always gets an Anthropic-shaped error.
 
 ## Check it worked
 
@@ -108,7 +133,7 @@ A gateway span carries the usual fields (provider, model, input and output, toke
 | --- | --- |
 | `spanlight.gateway.key_id` | The gateway key that made the call |
 | `spanlight.gateway.request_id` | The `X-Request-ID` of the call |
-| `spanlight.gateway.surface` | `chat_completions`, `responses` or `messages` |
+| `spanlight.gateway.surface` | `chat_completions`, `responses`, `messages`, `embeddings` or `generate_content` |
 | `spanlight.gateway.route`, `spanlight.gateway.route_version` | The route and the saved version that served the call |
 | `spanlight.gateway.target`, `spanlight.gateway.provider` | The credential name and provider that answered |
 | `spanlight.gateway.attempts`, `spanlight.gateway.fallbacks` | How many upstream attempts were made and how many other targets were used |

@@ -29,7 +29,7 @@ It then goes past tracing. It prices each call line by line and checks the total
 > Want to look before you install? The [live demo](https://spanlight.dev) runs on real Claude calls under a small monthly budget.
 
 > [!NOTE]
-> Spanlight is pre-1.0. The current server release is 0.8.1 ([changelog](CHANGELOG.md)), and the Python SDK on PyPI is 0.3.0.
+> Spanlight is pre-1.0. The current server release is 0.8.1 ([changelog](CHANGELOG.md)), and the Python SDK on PyPI is 0.3.0. The [Doctor catalogue](https://spanlight.dev/docs/reference/detectors/) lists the 16 hosted checks and five in preview. Expanded gateway routes and native Gemini wrappers are also in preview.
 
 ## Quickstart
 
@@ -37,7 +37,7 @@ It then goes past tracing. It prices each call line by line and checks the total
 
 - [Docker](https://docs.docker.com/get-docker/) with Compose v2
 - Python 3.10 or newer for the SDK
-- An OpenAI or Anthropic API key in your own application
+- An Anthropic API key to run the Python example below
 
 ### 1. Start Spanlight
 
@@ -112,8 +112,8 @@ The wizard shows your first trace live. From there you have the overview dashboa
 - **Cost you can audit.** Prices come from a versioned table that covers cache writes, long-prompt tiers, batch, flex and priority rates, and web search fees. Every call has a line-by-line cost breakdown. A cost that cannot be known shows as _unknown_ with the reason, never as $0.
 - **Checked against the bill.** Connect an Anthropic or OpenAI admin key, or upload a CSV, and Spanlight compares traced spend with what the provider billed, every day.
 - **Attribution and budgets.** Tag traces with up to 32 metadata pairs (customer, feature, team) and see spend, calls and errors per value. Budgets can alert on, or block, spend per project, gateway key, user, model, metadata pair or trace name.
-- **The Doctor and provider health.** Sixteen deterministic detectors flag known failure patterns (retry storms, ignored `Retry-After`, truncated outputs, tool loops, cost and latency spikes and more), each with its evidence and a suggested fix. Provider health tells a provider outage or rate limit apart from your own bug, with the provider's status page incidents alongside.
-- **A gateway for OpenAI and Anthropic.** Gemini and Bedrock work through their OpenAI-compatible endpoints, with cost unknown until you add a price for their models. The official SDKs work against it unchanged, streaming and tool calls included. It adds sealed provider credentials, routes with retries and fallbacks, per-key rate limits, an exact-match cache, and an Integration Lab that injects real provider failures on non-production keys.
+- **The Doctor and provider health.** 21 deterministic detectors flag known failure patterns (retry storms, ignored `Retry-After`, truncated outputs, tool loops, cost and latency spikes and more), each with its evidence and a suggested fix. Provider health tells a provider outage or rate limit apart from your own bug, with the provider's status page incidents alongside.
+- **A multi-provider gateway.** Use OpenAI, Anthropic, native or OpenAI-compatible Gemini, Azure OpenAI, Mistral, Groq, DeepSeek, xAI and Together through the gateway. You can also point an OpenAI-compatible credential at a server such as Bedrock. Cost is recorded when usage and a matching rate are available. It adds sealed provider credentials, routes with retries and fallbacks, per-key rate limits, an exact-match cache, and an Integration Lab that injects real provider failures on non-production keys.
 - **Prompts, evals and a daily review.** Versioned prompts with labels, a playground, exact replay of any recorded call, datasets, experiments with 95% confidence intervals on pass rates, and a nightly queue of the traces worth reading. LLM judges show their agreement with your reviewers (κ, F1, confusion matrix).
 - **OpenTelemetry native.** `POST /v1/otlp/traces` (OTLP over HTTP, as JSON or protobuf; gRPC through an [OpenTelemetry Collector](https://spanlight.dev/docs/otlp/#sending-from-a-grpc-exporter)) reads the GenAI conventions (`gen_ai.*`, also written by LiteLLM), OpenInference, OpenLLMetry (Traceloop) and the Vercel AI SDK, and counts usage once across nested spans. Recorded fixtures cover LangChain, LangGraph, LlamaIndex, Pydantic AI and the OpenAI Agents SDK. A Python SDK is on PyPI; a TypeScript SDK for Node.js is in [`sdks/typescript/`](sdks/typescript/) (its npm release job is ready; install it from a tarball until the first release).
 - **Built for teams, private by design.** Organizations, projects, roles, scoped API keys and an audit log. Postgres row-level security isolates every project's data, and secrets are redacted from payloads before storage.
@@ -133,7 +133,7 @@ Pick one of three ways in. They all end up in the same place:
 
 | Way in | What you change | Good for |
 | --- | --- | --- |
-| **Python SDK** | `spanlight.init()` and wrap your OpenAI or Anthropic client | Python apps; adds your own steps with `@observe` |
+| **Python or TypeScript SDK** | Initialize Spanlight and wrap your OpenAI, Anthropic or Google Gen AI client | Trace your own functions alongside model calls in Python or Node.js |
 | **OpenTelemetry** | Point any OTLP/HTTP exporter at `/v1/otlp/traces` | Any language or framework (LangChain, LlamaIndex, Vercel AI SDK, …) |
 | **Gateway** | Change your client's `base_url` to Spanlight | No code changes; also adds retries, fallbacks, caching and budgets |
 
@@ -160,7 +160,7 @@ The worker runs on its own schedule, so the dashboard stays fast:
 | 30 seconds | send alert and notification emails, Slack and webhook messages |
 | minute | evaluate alert rules; pick traces for automatic evaluation |
 | 5 minutes | hourly rollups for charts; read provider status pages |
-| 15 minutes | the Doctor's 16 detectors (retry storms, truncated outputs, cost spikes, …); spend by customer or feature; daily cost totals |
+| 15 minutes | the Doctor's 21 detectors (retry storms, truncated outputs, cost spikes, …); spend by customer or feature; daily cost totals |
 | hour | delete traces past the project's retention; clean expired sessions and gateway cache |
 | day | fetch the provider's bill and compare it with traced spend; queue yesterday's traces worth reviewing |
 
@@ -184,8 +184,9 @@ Everything above, the job queue included, runs on a single Postgres database. Th
 | ------------------------------ | ----------------------------------------------------------------------------- |
 | [`backend/`](backend/)         | FastAPI, SQLAlchemy 2 (async), Alembic, the Postgres job queue and the CLI    |
 | [`frontend/`](frontend/)       | React 19, TypeScript, TanStack Router and Query, Tailwind v4, Radix, Recharts |
-| [`sdks/python/`](sdks/python/) | The `spanlight` SDK: `@observe`, spans, and the OpenAI and Anthropic wrappers |
-| [`sdks/typescript/`](sdks/typescript/) | The `spanlight` npm package for Node.js: `observe`, `withSpan`, and the OpenAI and Anthropic wrappers |
+| [`sdks/python/`](sdks/python/) | The `spanlight` SDK: `@observe`, spans, and the OpenAI, Anthropic and Gemini wrappers |
+| [`sdks/typescript/`](sdks/typescript/) | The `spanlight` npm package for Node.js: `observe`, `withSpan`, and the OpenAI, Anthropic and Gemini wrappers |
+| [`sdks/mcp/`](sdks/mcp/) | Release preview of read access to traces, Doctor findings, spend and prompts over stdio |
 | [`deploy/`](deploy/)           | Dockerfile, Caddyfile, Compose file, Prometheus example and Grafana dashboard |
 | [`docs-site/`](docs-site/)     | The documentation site, served by every instance at `/docs/`                  |
 | [`docs/`](docs/)               | Decision records, runbooks, security documents and API notes                  |

@@ -1,4 +1,6 @@
 ---
+banner:
+  content: "Per-run step and spend limits are in release preview. Project and gateway-key budgets are available today."
 title: Budgets and the weekly digest
 description: Set spend limits per project, gateway key, end user, model, metadata pair or trace name, notify or block gateway calls before they are forwarded, and get a weekly summary by email.
 sidebar:
@@ -117,6 +119,12 @@ Both carry the header `X-Spanlight-Code: BUDGET_EXCEEDED`. Match on `spanlight_c
 ### Rollover
 
 At 00:00 UTC on the first day of a new period, a blocking budget stops blocking, even before the next evaluation has resolved it. The first evaluation of the new period resolves the budget whatever the new spend is (spend of blocked or unpriced calls is not known), and it fires again only if the new period's spend is already above the amount. The `state` of a budget in the first minute of a period shows "—" until it is evaluated.
+
+## Limit one agent run
+
+Send the same `X-Spanlight-Trace-Id` on every gateway request in the run. Use 32 lowercase hexadecimal characters with at least one nonzero digit. Include `X-Spanlight-Max-Steps` (1 to 10,000) or `X-Spanlight-Run-Budget-USD` (a positive dollar amount up to 100,000), or both, on each call you want guarded. Invalid limit headers are ignored. For example, send `X-Spanlight-Max-Steps: 12` to cap the run at twelve admitted steps. Concurrent calls sharing the project and trace ID reserve against the same counter.
+
+A call that would exceed the limit is refused before dispatch. A spend cap also accounts for outstanding reservations. See [gateway routing](/docs/gateway/routing/) for provider-specific pricing requirements.
 
 ## Read a budget's burn
 

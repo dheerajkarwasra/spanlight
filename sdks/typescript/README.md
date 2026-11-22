@@ -1,6 +1,8 @@
 # Spanlight TypeScript SDK
 
-Tracing for Node.js LLM applications. Wrap your OpenAI or Anthropic client, trace your own
+> **Release preview.** The Google Gen AI wrapper, prompts, scores, trace metadata and OpenTelemetry helpers are awaiting release.
+
+Tracing for Node.js LLM applications. Wrap your OpenAI, Anthropic or Gemini client, trace your own
 functions, and every request shows up in
 [Spanlight](https://github.com/dheerajkarwasra/spanlight/blob/main/README.md) with latency,
 tokens, cost, errors and the full prompt and completion.
@@ -31,8 +33,8 @@ npm pack
 
 Then install the tarball in your app with `npm install /path/to/spanlight-0.1.0.tgz`.
 
-Node.js 22 or newer is required. The wrappers are tested with `openai` 7.39 and
-`@anthropic-ai/sdk` 0.135.
+Node.js 22 or newer is required. The wrappers are tested with `openai` 7.39,
+`@anthropic-ai/sdk` 0.135 and `@google/genai` 1.44.
 
 ## Quickstart
 
@@ -97,9 +99,10 @@ promises started inside a span are its children without passing anything around.
 
 `wrapOpenAI(client)` instruments `chat.completions.create` and `responses.create` on the client it
 is given, including `stream: true`. The SDK's `chat.completions.stream()`, `responses.stream()` and
-`.parse()` helpers call `create`, so they are traced too. An `AzureOpenAI` client is recorded with
-the provider `azure_openai`, which the server does not price at OpenAI's rates. If you point the
-SDK at a compatible API, name the provider: `wrapOpenAI(client, { provider: "openrouter" })`.
+`.parse()` helpers call `create`, so they are traced too. The wrapper recognizes Azure clients
+and the official compatible hosts for Gemini, Azure OpenAI, Mistral, Groq, DeepSeek, xAI and
+Together AI. An explicit provider takes precedence, for example
+`wrapOpenAI(client, { provider: "openrouter" })`.
 
 Chat Completions streams report usage only when you ask for it:
 
@@ -155,6 +158,27 @@ const final = await anthropic.messages
 
 `wrapAnthropic(client)` instruments `messages.create`, plain and `stream: true`, and so
 `messages.stream()`.
+
+## Gemini
+
+Install `@google/genai` and wrap your client to trace `generateContent` and
+`generateContentStream`.
+
+```ts
+import { GoogleGenAI } from "@google/genai";
+import { init, wrapGoogleGenAI } from "spanlight";
+
+init();
+const gemini = wrapGoogleGenAI(new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }));
+const answer = await gemini.models.generateContent({
+  model: "gemini-2.5-flash-lite",
+  contents: "Hello",
+});
+console.log(answer.text);
+```
+
+The wrapper records native Generate Content input and includes reported thinking tokens in the
+output count. Streams that close before final usage leave the output count unknown.
 
 ## What gets recorded
 
@@ -303,6 +327,10 @@ shows under telemetry completeness. It holds no span content.
 
 Set `SPANLIGHT_DEBUG=1` to see what the SDK is doing.
 
+## Prompts, scores and trace metadata
+
+Fetch a versioned prompt with `await getClient().prompts.get(name, { label: "production" })`. Inside a trace, call `updateTrace({ metadata: { team: "support" } })` to attach attribution fields. Use `score(traceId, name, value)` to record an evaluation. Import these functions from `spanlight`.
+
 ## Limitations
 
 - The wrappers instrument the client instance you pass in. A call read only through
@@ -310,8 +338,7 @@ Set `SPANLIGHT_DEBUG=1` to see what the SDK is doing.
 - A stream you never read to the end, never break out of and never abort keeps its span open, so
   the span is not sent.
 - Node.js only: edge runtimes and browsers are not supported.
-- Not in this SDK yet (the Python SDK has them): prompts, scores, trace metadata, batch results and
-  the rate-limit headers on error spans.
+- For provider batch-result ingestion, use the Python SDK.
 
 ## Development
 

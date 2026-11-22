@@ -1,4 +1,6 @@
 ---
+banner:
+  content: "Native Google Gen AI wrappers, expanded gateway providers and the stdio MCP server are release previews."
 title: Integrations
 description: Send traces to Spanlight from the provider SDK, OpenTelemetry instrumentation or CI system you already use. Every guide states the package versions it was tested with and what Spanlight records and leaves out.
 ---
@@ -9,13 +11,13 @@ Spanlight reads traces that your application sends it. This section shows how to
 
 ## Built in
 
-Two ways to send traces need no framework guide. They work with any stack, and the guides below build on them.
+Use the [TypeScript SDK](/docs/typescript-sdk/) in Node.js, the Python SDK in Python, or an OTLP exporter in any language.
 
 <CardGrid>
   <LinkCard
     title="Python SDK"
     href="/docs/python-sdk/"
-    description="<span class='spl-lang'><span class='sr-only'>Language: </span>Python<span class='sr-only'>. </span></span>Wrap the OpenAI and Anthropic clients, trace your own functions and set sessions and users."
+    description="<span class='spl-lang'><span class='sr-only'>Language: </span>Python<span class='sr-only'>. </span></span>Wrap OpenAI, Anthropic and Google Gen AI clients, trace your own functions and set sessions and users."
   />
   <LinkCard
     title="OpenTelemetry (OTLP)"
@@ -26,7 +28,7 @@ Two ways to send traces need no framework guide. They work with any stack, and t
 
 ## Providers
 
-Send the calls you make to a model provider. Each guide covers the Python SDK, the gateway and OpenTelemetry.
+For Gemini, see the native [Python wrapper](/docs/python-sdk/#gemini), [TypeScript wrapper](/docs/typescript-sdk/#trace-gemini-calls) or [gateway setup](/docs/gateway/credentials/#gemini). The [gateway credential guide](/docs/gateway/credentials/) lists the request formats each provider accepts. The OpenAI and Anthropic guides below also cover OpenTelemetry.
 
 <CardGrid>
   <LinkCard
@@ -87,6 +89,10 @@ Send the spans an OpenTelemetry instrumentation library already writes. Each gui
     description="<span class='spl-lang'><span class='sr-only'>Language: </span>Python<span class='sr-only'>. </span></span>Trace agent workflow steps, tools and model calls with the OpenInference LlamaIndex instrumentation."
   />
 </CardGrid>
+
+## Read Spanlight from an MCP client
+
+Install the stdio server from the same checkout as your Spanlight instance with `python -m pip install ./sdks/mcp` (Python 3.11 or newer). Set your MCP client’s command to `spanlight-mcp`, then pass `SPANLIGHT_HOST`, `SPANLIGHT_PROJECT_ID` and `SPANLIGHT_API_KEY` in its environment. Give the project key `traces:read` for traces, findings, health and spend, and `prompts:read` to fetch a prompt by name and label.
 
 ## CI
 

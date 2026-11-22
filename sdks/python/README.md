@@ -1,7 +1,9 @@
 # Spanlight Python SDK
 
+> **Release preview.** The Google Gen AI wrapper and expanded provider attribution are awaiting release.
+
 Tracing for LLM applications. Instrument your code with a decorator, wrap your
-OpenAI or Anthropic client, and every request shows up in
+OpenAI, Anthropic or Google Gen AI client, and traced calls show up in
 [Spanlight](https://github.com/dheerajkarwasra/spanlight/blob/main/README.md) with latency, tokens, cost, errors and the
 full prompt and completion.
 
@@ -32,6 +34,8 @@ repository's `sdks/python` subdirectory:
 ```bash
 pip install "spanlight[anthropic] @ git+https://github.com/dheerajkarwasra/spanlight#subdirectory=sdks/python"
 ```
+
+For the native [Gemini wrapper](#gemini), install Spanlight from the checkout matching your server and add `google-genai` to your app.
 
 Python 3.10 or newer is required.
 
@@ -225,6 +229,26 @@ Each result becomes one `llm` span named `batch <model>`, in a trace named
   the span back to the batch.
 - Trace and span ids are derived from the batch id and `custom_id`, so reading
   the same batch again updates the same spans instead of adding new ones.
+
+## Gemini
+
+Install `google-genai` and wrap your client to trace `generate_content` and
+`generate_content_stream`, including calls through `client.aio.models`.
+
+```python
+from google import genai
+import spanlight
+
+spanlight.init()
+client = spanlight.wrap_google_genai(genai.Client())
+answer = client.models.generate_content(model="gemini-2.5-flash-lite", contents="Hello")
+print(answer.text)
+client.close()
+```
+
+The wrapper records the native Generate Content request. Gemini's output token count includes
+reported thinking tokens. Streams that close before final usage leave the output token count
+unknown.
 
 ## Prompts
 

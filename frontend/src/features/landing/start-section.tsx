@@ -9,6 +9,7 @@ import { SECTION_IDS } from "./links";
 const STACK = [
   "OpenAI",
   "Anthropic",
+  "Gemini",
   "OpenTelemetry",
   "OpenInference",
   "Vercel AI SDK",
@@ -27,7 +28,7 @@ export function StartSection() {
         id={SECTION_IDS.start}
         label="Start"
         title="Send your first trace."
-        description="The Python SDK, any OTLP exporter, or the gateway."
+        description="Use the Python or TypeScript SDK, an OTLP exporter, or the gateway."
         mobileDescription={null}
       />
       <CodeSampleCard />

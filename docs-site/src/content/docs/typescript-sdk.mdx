@@ -1,6 +1,8 @@
 ---
+banner:
+  content: "The Gemini wrapper, prompt and score clients, metadata and spanlight/otel helpers require the upcoming TypeScript SDK."
 title: TypeScript SDK
-description: Trace OpenAI and Anthropic calls and your own functions from Node.js, and understand what is recorded and how spans are delivered.
+description: Trace OpenAI, Anthropic and Gemini calls and your own functions from Node.js, and understand what is recorded and how spans are delivered.
 sidebar:
   order: 3
 ---
@@ -11,7 +13,7 @@ import { Aside } from '@astrojs/starlight/components';
 import NextSteps from '../../components/NextSteps.astro';
 import Prerequisites from '../../components/Prerequisites.astro';
 
-The `spanlight` package traces Node.js LLM applications. It wraps the official `openai` and `@anthropic-ai/sdk` clients and traces your own functions, and sends spans to the same `POST /v1/traces` endpoint as the [Python SDK](/docs/python-sdk/), with the same fields.
+The `spanlight` package traces Node.js LLM applications. It wraps the official `openai`, `@anthropic-ai/sdk` and `@google/genai` clients and traces your own functions. It sends spans to the same `POST /v1/traces` endpoint as the [Python SDK](/docs/python-sdk/), with the same fields.
 
 - **Low overhead.** Spans are queued in memory and sent in batches in the background; tracing never waits on the network.
 - **Tracing never breaks your app.** SDK failures are logged and swallowed. Errors from your code and from the providers are recorded and reach your code as the same object.
@@ -64,7 +66,7 @@ const completion = await openai.chat.completions.create({
 });
 ```
 
-`wrapOpenAI` instruments `chat.completions.create` and `responses.create` on the client you pass, including `stream: true`. The SDK's `chat.completions.stream()`, `responses.stream()` and `.parse()` helpers call `create`, so they are traced too. The promise and stream you get back are the provider's own objects, so `.withResponse()`, `tee()` and `controller.abort()` keep working. An `AzureOpenAI` client is recorded as `azure_openai`; for another compatible API pass `wrapOpenAI(client, { provider: 'openrouter' })`.
+`wrapOpenAI` instruments `chat.completions.create` and `responses.create` on the client you pass, including `stream: true`. The SDK's `chat.completions.stream()`, `responses.stream()` and `.parse()` helpers call `create`, so they are traced too. The promise and stream you get back are the provider's own objects, so `.withResponse()`, `tee()` and `controller.abort()` keep working. The wrapper recognizes Azure clients and the official compatible hosts for Gemini, Azure OpenAI, Mistral, Groq, DeepSeek, xAI and Together AI. For a custom host, set the provider with `wrapOpenAI(client, { provider: 'openrouter' })`.
 
 A Chat Completions stream reports usage only with `stream_options: { include_usage: true }`. Without it, the span's output count is unknown and `usage.unreported_reason` is `include_usage_not_set`.
 
@@ -85,6 +87,25 @@ const message = await anthropic.messages.create({
 ```
 
 `wrapAnthropic` instruments `messages.create`, plain and `stream: true`. `messages.stream()` calls `create`, so it is traced as well.
+
+## Trace Gemini calls
+
+Build and install the Spanlight package from your checkout as shown above. Install `@google/genai` in your app and wrap your `GoogleGenAI` client.
+
+```ts
+import { GoogleGenAI } from '@google/genai';
+import { init, wrapGoogleGenAI } from 'spanlight';
+
+init();
+const gemini = wrapGoogleGenAI(new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }));
+const chunks = await gemini.models.generateContentStream({
+  model: 'gemini-2.5-flash-lite',
+  contents: 'Summarize our refund policy.',
+});
+for await (const chunk of chunks) process.stdout.write(chunk.text ?? '');
+```
+
+`wrapGoogleGenAI` traces `generateContent` and `generateContentStream`. Spans record native Generate Content input and include reported thinking tokens in output usage. Breaking out of the loop closes the stream. When final usage is missing, the span leaves the output count unknown.
 
 ## Trace your own code
 
@@ -158,7 +179,13 @@ Each provider call is an `llm` span named after the operation and the requested 
 - `time_to_first_token_ms` for streams, and `usage.unreported_reason` when a stream ended without its usage;
 - on failure, `status: error`, the provider's message, `error.type`, `http.status_code` and `provider.request_id`.
 
-Not recorded by this SDK yet: prompts, scores, trace metadata, batch results, and the rate-limit headers the Python SDK keeps on error spans. A call read only through `.asResponse()` is not recorded.
+The OpenAI and Anthropic wrappers also capture supported rate-limit headers on provider errors. Calls read only through `.asResponse()` are not recorded. For provider batch results, use the Python SDK.
+
+### Prompts, scores and metadata
+
+Import `getClient`, `score` and `updateTrace` from `spanlight`. Use `await getClient().prompts.get(name, { label: 'production' })` to fetch a prompt. On an active trace, `updateTrace({ metadata: { team: 'support' } })` adds attribution fields. Call `score(traceId, name, value)` to record an evaluation. See [Prompts](/docs/prompts/) and [Scores](/docs/scores/) for permissions and accepted values.
+
+The `spanlight/otel` entry point provides `otlpTraceConfig()` for OTLP/HTTP exporters, `vercelAiTelemetry()` for Vercel AI SDK settings, and `withMcpToolCall()` and `traceMcpServerTool()` for trace propagation across MCP.
 
 ## Delivery
 

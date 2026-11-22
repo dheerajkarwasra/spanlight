@@ -1,4 +1,6 @@
 ---
+banner:
+  content: "The four agent trajectory rules and Gemini judges are in release preview."
 title: Evaluators
 description: Score traces automatically with rules, an LLM judge under a monthly budget, or your own endpoint. How sampling works, what a judge sees, how the budget is reserved, and how to verify a webhook evaluator.
 sidebar:
@@ -25,7 +27,7 @@ Anyone who can see the project can read evaluators and their runs. Only organiza
 <Prerequisites
   items={[
     'The admin or owner role in the project. Every role can read evaluators and their runs',
-    'For an LLM judge: an Anthropic or OpenAI credential in your organization, CREDENTIALS_KEYS set on the server, a model with a known price and a monthly budget',
+    'For an LLM judge: an Anthropic, OpenAI, or Gemini credential in your organization, CREDENTIALS_KEYS set on the server, a model with a known price and a monthly budget',
     'For online sampling: the worker running, with EVALS_ENABLED on (the default)',
     'For a webhook evaluator: a webhook channel under Settings, Notification channels, and an https endpoint on a public address',
   ]}
@@ -61,7 +63,7 @@ Online runs have no expected output, so rules that compare with one cannot sampl
 
 ## Heuristic evaluators
 
-A heuristic evaluator applies one rule and writes one score: a boolean score (`1` or `0`) for a yes/no rule and a numeric score for `length` and `levenshtein`.
+A heuristic evaluator applies one rule and writes one score: a boolean score (`1` or `0`) for a yes/no rule and a numeric score for `length`, `levenshtein` and `step_efficiency`.
 
 | Rule | Score | Settings |
 | --- | --- | --- |
@@ -71,6 +73,12 @@ A heuristic evaluator applies one rule and writes one score: a boolean score (`1
 | `contains` | 1 if the text contains the string | `needle` (up to 500 characters), `target`, `case_sensitive` (off by default) |
 | `exact_match` | 1 if the answer equals the expected output | `normalize_whitespace` (on by default), `case_sensitive` (on by default) |
 | `levenshtein` | Similarity to the expected output from 0 to 1 (`1 - distance / longest length`; 1 when both are empty) | none |
+| `tool_sequence_matches` | 1 when tool names match in the requested order | `expected_tools` or tool calls in the expected output, and `mode` (`exact`, `prefix` or `subsequence`) |
+| `forbidden_tools` | 1 when the sequence contains none of the forbidden tools | `forbidden` (tool names) |
+| `max_tool_calls` | 1 when the number of tool calls is within the limit | `max_calls` |
+| `step_efficiency` | 1 up to the optimal step count, then optimal divided by actual | `optimal_steps` |
+
+For the four agent rules, the evaluator reads the ordered tool names from `metadata.tool_sequence`, then `metadata.steps`, then tool calls in the output. Step efficiency uses the length of a nonempty steps list. Otherwise it counts tool calls, with a minimum of one step.
 
 - **`exact_match` and `levenshtein` need an expected output.** Live traces have none, so these two cannot sample: creating one with a sampling rate above 0 answers `422 RULE_NEEDS_EXPECTED_OUTPUT`. Set the rate to 0 and attach it to an experiment, where the dataset item's expected output is used. An item without one gets no score. `levenshtein` compares at most the first 2 000 characters of each side, and runs off the worker's event loop.
 - **Patterns have a time limit.** A `regex` runs with a 1 second limit on the first 10 000 characters of the text, so a pattern that backtracks without end fails its run with `regex_timeout` instead of holding a worker.
@@ -82,7 +90,9 @@ A judge sends the trace to a model with a scoring prompt and reads a score and a
 
 **What the judge sees.** The input (a chat is shown as `role: content` lines, system messages included), the output text and, when the item has one, the expected output (otherwise `(none)`). Each is cut to 8000 characters with a `…[truncated]` marker before it is sent.
 
-**What it needs.** A credential of your organization for **Anthropic or OpenAI**, a model with a known price (without a price the budget could not be enforced, so a model that costs nothing or has no price answers `422 EVALUATOR_MODEL_UNPRICED`), `max_tokens` (1024 by default, up to 4096), and a monthly budget. `temperature` is not sent unless you set it, because the newest Claude models reject non-default sampling settings. Claude models that think by default (generation 5 and later) are asked for `low` effort, since their thinking counts against `max_tokens`. It needs `CREDENTIALS_KEYS` to be set.
+**What it needs.** A credential of your organization for **Anthropic, OpenAI, or Gemini**, a model with a known price (without a price the budget could not be enforced, so a model that costs nothing or has no price answers `422 EVALUATOR_MODEL_UNPRICED`), `max_tokens` (1024 by default, up to 4096), and a monthly budget. `temperature` is not sent unless you set it, because the newest Claude models reject non-default sampling settings. Claude models that think by default (generation 5 and later) are asked for `low` effort, since their thinking counts against `max_tokens`. It needs `CREDENTIALS_KEYS` to be set.
+
+Gemini judges require a model with a verified spend bound. They request one `record_verdict` function call with a numeric score and string reasoning. A response that hits Gemini's output limit fails with `judge_truncated`.
 
 ### The four built-in judges
 

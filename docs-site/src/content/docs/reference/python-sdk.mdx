@@ -1,4 +1,6 @@
 ---
+banner:
+  content: "Native Gemini and the agent instrumentation helpers documented here are release previews."
 title: Python SDK reference
 description: Every public name of the spanlight Python package, with its signature, parameters, defaults, errors and an example, plus the limits of the provider wrappers.
 ---
@@ -378,7 +380,7 @@ A type alias: `Literal["ok", "error", "unset"]`. `Span.status` starts as `unset`
 
 ## Wrap a provider
 
-Both wrappers patch methods on one client instance and return that same client. Wrapping a client twice is harmless. They need the matching extra: `spanlight[openai]` or `spanlight[anthropic]`. Importing `spanlight` does not import either provider package.
+The provider wrappers patch methods on one instance and return the same client. Wrapping a client twice is harmless. OpenAI and Anthropic have optional SDK extras. Install `google-genai` separately for the Gemini wrapper.
 
 If a wrapper cannot instrument the client, it logs a warning and returns the client unchanged.
 
@@ -399,7 +401,7 @@ Instruments `chat.completions.create` and `responses.create` of an `OpenAI`, `As
 | --- | --- |
 | `client` | The client to instrument. |
 | `spanlight` | The `Spanlight` client to report to. It defaults to the global client, looked up on every call, so `init` may run after wrapping. |
-| `provider` | The provider name recorded on spans. It defaults to `"azure_openai"` for an `AzureOpenAI` or `AsyncAzureOpenAI` client and `"openai"` for any other. Azure spans stay unpriced unless you add a [price override](/docs/concepts/cost/#price-overrides) for `azure_openai`, because Azure bills its own rates. Set it when you point the OpenAI SDK at a compatible API, for example `"openrouter"`. |
+| `provider` | Overrides attribution from the client type or exact endpoint hostname. Unknown hosts default to `"openai"`. Azure spans need a [price override](/docs/concepts/cost/#price-overrides) for `azure_openai`. |
 
 ```python
 import spanlight
@@ -416,6 +418,21 @@ completion = client.chat.completions.create(
 For streamed Chat Completions, ask OpenAI for usage with `stream_options={"include_usage": True}`. Without it the span has no token counts and carries the attribute `usage.unreported_reason` set to `include_usage_not_set`. SDK 0.1.2 and earlier set `usage.missing_reason` instead.
 
 A Chat Completions call that passes `web_search_options` gets the attribute `usage.fee_unknown` set to `openai_chat_web_search`: the answer does not say how many searches were billed, so the fee is not priced. A Responses call counts its completed `web_search_call` items.
+
+### Native Gemini wrapper (preview)
+
+```python
+spanlight.wrap_google_genai(
+    client: ClientT,
+    *,
+    spanlight: Spanlight | None = None,
+    provider: str = "google",
+) -> ClientT
+```
+
+Instruments `models.generate_content` and `models.generate_content_stream` on a `google.genai.Client` and its `aio` async client. It also accepts an async client directly. It returns the same object, and wrapping it again is harmless. The optional `spanlight` argument selects the tracer. The `provider` argument changes the provider name recorded on spans.
+
+The request uses native Generate Content fields. The response records the provider's model version, response ID, first candidate and finish reason. Input usage includes cache reads. Output usage includes reported thinking tokens. An iterator that closes before final usage keeps any reported input count and leaves output usage unknown.
 
 ### `wrap_anthropic`
 
@@ -502,6 +519,17 @@ API keys, `extra_headers`, `extra_query`, `extra_body`, `timeout` and `http_clie
 ### `spanlight_prompt`
 
 A wrapped call accepts one extra keyword, `spanlight_prompt=compiled`, where `compiled` is a `CompiledPrompt`. The span is linked to that prompt version. The wrapper removes the keyword before the provider SDK sees it. Passing a fallback prompt, which has no version, clears a link inherited from an enclosing `with compiled:` block.
+
+## Agent integrations
+
+These interfaces are available from the Python SDK source checkout.
+
+| Export | Behavior |
+| --- | --- |
+| `instrument_openai_agents` | Creates a `SpanlightTracingProcessor`. It registers it when the OpenAI Agents SDK is installed and `register=True`. Pass `register=False` to manage registration yourself. |
+| `instrument_langgraph` | Attaches a `SpanlightCallbackHandler` to a runnable with `with_config`. With no runnable, it returns the callback handler for you to register. |
+| `instrument_pydantic_ai` | Sets the OTLP traces endpoint and, when a key is available, bearer header if those environment variables are unset. It enables instrumentation on a supplied agent or calls Pydantic AI's global instrumentation helper when installed. An exporter still needs to be configured. |
+| `instrument_mcp` | Wraps a client's or server's sync or async `call_tool` to capture a tool span and follow supplied trace metadata. Returns the same target. |
 
 ## Prompts
 

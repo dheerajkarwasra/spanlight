@@ -1,8 +1,8 @@
 import { Figure, Section, SectionHeading, TitleSecondLine } from "./landing-parts";
 import { inViewRef, stagger } from "./motion";
-import { SECTION_IDS } from "./links";
+import { DOCS_LINKS, SECTION_IDS } from "./links";
 
-/** The sixteen detector modules in backend/app/insights/detectors, in file order. */
+/** A selection of Doctor detectors in the animated grid. */
 const DETECTORS = [
   "cache_opportunity",
   "client_timeout_misconfigured",
@@ -43,13 +43,12 @@ export function DiagnoseSection() {
         id={SECTION_IDS.diagnose}
         dark
         label="Diagnose"
-        title={<TitleSecondLine first="Sixteen detectors." second="No model decides." />}
-        description="Fixed rules run over your spans every 15 minutes."
-        mobileDescription="Fixed rules run over your spans every 15 minutes. Each finding carries its evidence, a suggested fix and a way to check that it worked."
+        title={<TitleSecondLine first="21 detectors." second="No model decides." />}
+        description="The 16 checks below run today. Five preview checks cover alternating tool calls, ignored tool errors, invalid tool arguments, lost prompt caching and excessive agent fan-out."
       />
 
       <Figure
-        label={`The Doctor's sixteen detectors: ${DETECTORS.join(", ")}. A scan stops on tool_loop.`}
+        label={`A selection of the Doctor's 21 detectors: ${DETECTORS.join(", ")}. A scan stops on tool_loop.`}
         className="relative isolate order-2 grid w-full grid-cols-1 border-t border-mono-800 bg-mono-black xl:order-none xl:grid-cols-4 xl:border-l"
       >
         {DETECTORS.map((detector) => (
@@ -62,6 +61,12 @@ export function DiagnoseSection() {
         ))}
         <span className="lp-scan pointer-events-none absolute top-0 left-0 h-[calc(100%/16)] w-full bg-mono-white mix-blend-difference xl:h-1/4 xl:w-1/4" />
       </Figure>
+      <a
+        className="order-3 self-start text-sm text-mono-white underline underline-offset-4 xl:order-none xl:self-center"
+        href={DOCS_LINKS.detectors}
+      >
+        See all 21 Doctor checks
+      </a>
 
       <div className="order-1 flex w-full flex-col gap-7 xl:order-none xl:w-auto xl:flex-row xl:items-center xl:gap-14">
         <Figure

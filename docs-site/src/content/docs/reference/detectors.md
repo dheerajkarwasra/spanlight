@@ -1,11 +1,11 @@
 ---
 title: Detector catalogue
-description: The Doctor's sixteen detectors, with the layer, certainty and severity of each, what triggers it, and the fix and check for every finding.
+description: The Doctor's 21 detectors, with the layer, certainty and severity of each, what triggers it, and the fix and check for every finding.
 ---
 
-The [Doctor](/docs/doctor/) runs these detectors over your traces. This page lists each one with what it reads, when it fires, and the fix and check it suggests.
+The hosted [Doctor](/docs/doctor/) runs 16 checks. This catalogue covers those checks and the five listed below in **release preview**. Each entry explains what triggers a finding and how to verify a fix.
 
-Sixteen kinds, in five groups. **Where it fails** names the layer an insight points at: `client` is how your code calls the API, `request` is what it sends, `agent` is tool orchestration, `provider` is the model provider, `platform` is Spanlight's own setup, and `traffic` is a symptom whose cause is still open. **Certainty** is *Measured* when the insight restates numbers Spanlight observed and *Inferred* when a pattern strongly suggests a cause that you should confirm in the traces.
+The table lists all 21 checks. **Where it fails** names the layer an insight points at: `client` is how your code calls the API, `request` is what it sends, `agent` is tool orchestration, `provider` is the model provider, `platform` is Spanlight's own setup, and `traffic` is a symptom whose cause is still open. **Certainty** is *Measured* when the insight restates numbers Spanlight observed and *Inferred* when a pattern strongly suggests a cause that you should confirm in the traces.
 
 | Kind | Label | Layer | Certainty | Severity |
 | --- | --- | --- | --- | --- |
@@ -25,6 +25,11 @@ Sixteen kinds, in five groups. **Where it fails** names the layer an insight poi
 | `unpriced_spend` | Unpriced spend | platform | Measured | info |
 | `provider_incident` | Provider incident | provider | Measured | warning, critical at 50 % |
 | `model_retiring` | Model retiring | provider | Measured | warning, critical 14 days before the date |
+| `agent_ping_pong_loop` | Agent ping-pong loop (preview) | agent | Measured | warning, critical at 6 cycles |
+| `tool_error_ignored` | Tool error ignored (preview) | agent | Inferred | warning, critical at 10 ignored errors |
+| `tool_schema_hallucination` | Tool schema hallucination (preview) | agent | Measured | warning, critical at 15 failures |
+| `prefix_cache_busted` | Prompt prefix cache busted (preview) | request | Measured | warning, critical at 10 affected traces |
+| `subagent_fanout_storm` | Sub-agent fan-out storm (preview) | agent | Measured | warning, critical at 40 LLM calls in one trace |
 
 In the entries below, "calls" means LLM spans, a "window" ends at the moment the detector runs, and shares and rates are shown to one decimal place in the insight text.
 
@@ -251,7 +256,29 @@ slow = client.with_options(timeout=180.0)
 - **Fix:** put the stable prefix (system prompt, tools, documents) first. On Anthropic mark it with `cache_control: {"type": "ephemeral"}`; OpenAI caches identical prefixes of 1,024 tokens or more automatically. For exact repeats, enable the [gateway cache](/docs/gateway/cache/) on the key.
 - **Verify:** the next calls show cached tokens in the trace's usage card.
 
+### `prefix_cache_busted` — a growing conversation loses its cached prefix
+
+Over 24 hours, the Doctor looks for traces with at least three calls to the same cache-capable model. After a peak of at least 1,000 cached tokens, a later prompt of equal or greater size has fewer than 1,000 cached tokens and less than 10% of the peak. Gateway cache hits are excluded. Two affected traces for the same model trigger a warning. Ten trigger a critical finding.
+
+Compare consecutive prompts in **Prefix & What-If** on an evidence trace. Move timestamps and changing tool definitions out of the shared prefix, then check that comparable later turns retain cached tokens.
+
 ## Agents and setup
+
+### `agent_ping_pong_loop` — two tools keep calling each other
+
+Within one trace in the past hour, two distinct tool names alternate with the same arguments for each tool. Three consecutive cycles (six calls) trigger a warning. Six cycles trigger a critical finding. Inspect the handoff condition and cap the run's steps. Verify that the next hour has no repeated cycle.
+
+### `tool_error_ignored` — the agent continues after a tool failure
+
+The Doctor looks for a failed tool call followed by a successful LLM call in the same trace without a retry of that tool. It groups by tool name over one hour. Two affected traces or five ignored errors trigger a warning. Ten ignored errors trigger a critical finding. Check the evidence for intentional recovery. Where the failure was lost, pass the structured error back to the model and verify that the next failure is retried or surfaced.
+
+### `tool_schema_hallucination` — a tool name or its arguments fail validation
+
+Three failed calls to the same tool in an hour with error messages indicating an unknown tool or a validation failure trigger a warning. Fifteen trigger a critical finding. Compare the failed arguments with the advertised schema, add a valid example and check for further failures.
+
+### `subagent_fanout_storm` — one trace makes too many model calls
+
+Fifteen LLM calls in one trace within an hour trigger a warning. Forty trigger a critical finding. The check excludes gateway cache hits and lab faults. Inspect the trace for repeated or excessive delegation, bound concurrency or steps, then verify that later traces stay under the threshold.
 
 ### `tool_loop`: the agent repeats a tool call
 

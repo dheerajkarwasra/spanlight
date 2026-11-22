@@ -5,6 +5,8 @@ any documented shape. This file is the reference for where the original design w
 ambiguous, and for the decisions the backend made. Items marked **Deviation** depart from the
 original design; everything else is a clarification.
 
+The provider expansion entries dated 2026-11-18 describe the upcoming release. The [hosted OpenAPI schema](https://spanlight.dev/api/openapi.json) describes the deployed routes.
+
 ## Versioning
 
 - The dashboard API is served under `/api/v1`, for example `GET /api/v1/projects/{project_id}/traces`.
@@ -1296,6 +1298,21 @@ the OpenAPI document; on any other route the header is ignored.
 
 ## Gateway HTTP layer: `/gw/` (added 2026-10-09)
 
+### Native Gemini (2026-11-18)
+
+- `POST /gw/v1beta/models/{model}:generateContent` accepts Gemini REST bodies. `POST /gw/v1beta/models/{model}:streamGenerateContent` always streams SSE. `GET /gw/v1beta/models` lists key-visible Gemini models. These routes are mounted in the embedded and standalone gateway.
+- Send the Spanlight gateway key in `x-goog-api-key`. Conflicting credential headers produce 401. The upstream Gemini key is sent only in the provider header. The URL identifies the requested model and streaming action. Conflicting body fields return 400. The gateway checks the key allowlist before resolving a route alias.
+- `GET /gw/v1beta/models` uses the key allowlist when present, then aliases on eligible Gemini targets. When neither restricts results, it forwards only `pageSize` and `pageToken` to Google's model listing. Gateway-generated errors use `{ "error": { "code", "message", "status" } }` and retain `X-Spanlight-Code` for the stable gateway code.
+- Protected native calls use conservative project and per-run reservations, including the documented prompt bound, each output candidate and thinking headroom. The gateway injects a missing output cap and dispatches at most once per reservation. Supported models and text request shapes are defined in `app/budgets/gemini.py`. Requests with unknown exposure return 402 before dispatch. Unprotected requests with unmodeled billing dimensions still record reported usage, with cost left unknown.
+- Native spans use provider `google`. Reported cached tokens are included in the prompt total, and thoughts count as output. Incomplete SSE usage leaves the output count and cost unknown even when intermediate frames reported a count. The original Google prompt-block reason and reported response id are retained as span attributes.
+
+### Azure and fixed-host providers (2026-11-18)
+
+- Azure OpenAI and Mistral, Groq, DeepSeek, xAI and Together support `/gw/v1/chat/completions` and OpenAI-shaped discovery at `/gw/v1/models`. xAI also supports JSON and SSE on `/gw/v1/responses`, its preferred surface for new integrations. Use the Spanlight gateway key for incoming requests. Fixed-host credentials send the stored provider key as bearer auth. Azure sends its stored key in `api-key` on the resource's versionless `/openai/v1` API. [Azure v1](https://learn.microsoft.com/en-us/azure/foundry/openai/api-version-lifecycle) · [xAI Responses](https://docs.x.ai/developers/rest-api-reference/inference/responses) · [Together compatibility](https://docs.together.ai/docs/inference/openai-compatibility)
+- Azure credentials require `https://<resource>.openai.azure.com/openai/v1` on the default HTTPS port. Creating one requires the existing session and owner proof. The upstream `model` and the stored accounting model are the deployment name resolved from the route. Azure charges use an exact `azure_openai` deployment price override. A successful `GET /openai/v1/models` probe verifies key access to the model list.
+- Groq and Together forward streamed chat without injecting OpenAI usage options. The gateway reads Groq's terminal `x_groq.usage` when needed. Together's bare model arrays are wrapped in the OpenAI list envelope. DeepSeek cache hits are part of the reported prompt total. [Groq SDK stream example](https://github.com/groq/groq-python/blob/main/examples/chat_completion_streaming.py) · [DeepSeek usage](https://api-docs.deepseek.com/api/create-chat-completion/)
+- When a project or run spend limit applies, the route needs a verified bound for every eligible target. Admission reserves the full documented text windows and allows one upstream attempt. DeepSeek uses published peak rates for reservation. Its stored cost stays unknown because actual rates vary by time and Chinese public holidays. Hosted tools and unsupported billing dimensions on the expanded providers retain reported usage with unknown cost. [DeepSeek pricing](https://api-docs.deepseek.com/quick_start/pricing/) · [xAI pricing](https://docs.x.ai/developers/pricing)
+
 Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anthropic for `/messages` and for `/models` with `anthropic-version`), with `X-Request-ID` and `X-Spanlight-Code`, never problem+json. The design's error table covers the gateway's own checks; these cover the HTTP layer around them.
 
 - **Unknown path.** `404`, `spanlight_code: "NOT_FOUND"`, message `Invalid URL (<METHOD> <path>).` with the path cut to 200 characters. OpenAI type `invalid_request_error`, Anthropic type `not_found_error`. A known path with a trailing slash (`/gw/v1/messages/`) is such an unknown path, not the framework's bare `307` redirect (2026-10-19).
@@ -1306,7 +1323,7 @@ Every error under `/gw/` uses the provider envelope of the path (OpenAI, or Anth
 - **`/models`.** No `X-Spanlight-Cache` header: listing models is never cached and is not a model call. A passed-through answer carries `X-Spanlight-Attempts: 1`.
 - **Compressed bodies.** A request body may be sent with `Content-Encoding: gzip` or `deflate`; the 10 MB limit applies to the decompressed size as well (`413 PAYLOAD_TOO_LARGE`). Another encoding, or a body that does not decompress, is `400 INVALID_REQUEST` with `param: null`.
 - **Streams.** Streamed answers add `Cache-Control: no-cache` and `X-Accel-Buffering: no`, so no cache keeps them and no proxy buffers them. A `truncated_stream` fault ends the response with a clean end of stream after the last forwarded frame (the connection is not aborted); the stream lacks its final event (`[DONE]` or `message_stop`). Its span is recorded as failed (`status = error`, message `200 FAULT_TRUNCATED_STREAM: …`, error class `unknown`) when the fault withheld anything; a stream with no more frames than `after_chunks` passes whole and its span stays `ok`.
-- **Usage chunk the client did not ask for.** A streaming chat completion without `stream_options` is sent upstream
+- **Usage chunk the client did not ask for.** On adapters that request final usage, a streaming chat completion without `stream_options` is sent upstream
   with `stream_options.include_usage: true`, so its span has tokens and a cost. OpenAI then ends the stream with a
   chunk whose `choices` is empty and which carries `usage`. The gateway reads that chunk for the span and does not
   forward it, so the client gets the stream it asked for (code that reads `chunk.choices[0]` keeps working). A
@@ -1896,8 +1913,9 @@ members hold `prompts:write`, `datasets:write`, `scores:write`, `annotations:wri
   the built-in template as the chat prompt `judges/<name>` version 1 on first use and stores that version's id, so a
   stored judge always names a prompt version.
 - **Checks.** A judge needs a positive `monthly_budget_usd` (`422 BUDGET_REQUIRED`), a chat prompt version of the project
-  using only the variables `input`, `output` and `expected_output` (`422 JUDGE_TEMPLATE_VARIABLES`), an Anthropic or
-  OpenAI credential of the organization, and a model with a positive price (`422 EVALUATOR_MODEL_UNPRICED`).
+  using only the variables `input`, `output` and `expected_output` (`422 JUDGE_TEMPLATE_VARIABLES`), an Anthropic,
+  OpenAI or Gemini credential of the organization, and a model with a supported positive cost bound
+  (`422 EVALUATOR_MODEL_UNPRICED`).
   `exact_match` and `levenshtein` with `sampling_rate > 0` are `422 RULE_NEEDS_EXPECTED_OUTPUT`. Yes/no rules (`regex`,
   `json_valid`, `contains`, `exact_match`) write boolean scores; `length` and `levenshtein` numeric ones.
   **`levenshtein` compares at most 2 000 characters of each side** (the spec said 10 000): the pure-Python distance
@@ -1909,8 +1927,8 @@ members hold `prompts:write`, `datasets:write`, `scores:write`, `annotations:wri
   sampler's overlapping windows queue nothing twice, while tests and experiment items may repeat a trace. All three
   sources write real run rows, so every judge call counts against the evaluator's monthly budget.
 - **Budget.** The month is the UTC calendar month by `started_at`. Before a judge call the run reserves an estimate
-  (`ceil(ASCII characters / 3) + non-ASCII characters` input tokens plus `max_tokens` output tokens, at the model's price) under
-  an advisory lock per evaluator. Admitted when settled spend + reservations of running runs + the estimate
+  under an advisory lock per evaluator. Anthropic and OpenAI use the prompt and output-token estimate. Gemini
+  uses a conservative ceiling including thinking tokens. Admitted when settled spend + reservations of running runs + the estimate
   ≤ the budget; otherwise the run is `failed` with `budget_exceeded` and no request is sent. A `running` run with no heartbeat
   for 10 minutes becomes `failed`, `abandoned`, charged its reservation. `GET …/budget` returns `monthly_budget_usd`,
   `spent_usd`, `reserved_usd`, `remaining_usd` (null without a budget) and `month_start`.
@@ -1942,7 +1960,7 @@ members hold `prompts:write`, `datasets:write`, `scores:write`, `annotations:wri
 
 - **Targets.** `config.target` is `{kind: "prompt_version", prompt_version_id, credential_id, model, params?}` or
   `{kind: "messages", credential_id, model, messages, params?}`. `max_cost_usd` is above 0 and at most 1000 (default 5);
-  `max_items` defaults to 1000 and may not exceed `EXPERIMENT_MAX_ITEMS` (`422`). An unpriced model is
+  `max_items` defaults to 1000 and may not exceed `EXPERIMENT_MAX_ITEMS` (`422`). A model without a positive supported cost bound returns
   `422 EXPERIMENT_MODEL_UNPRICED`. An experiment cannot be edited or deleted.
 - **One run at a time.** `POST …/{id}/runs` answers `202` with a `queued` run and supports `Idempotency-Key`. A second
   run while one is queued or running is **`409 RUN_IN_PROGRESS`**, enforced by a partial unique index. A run whose worker died is
@@ -2144,8 +2162,9 @@ Calls made after the full test pass on behaviour the spec left open.
   permission of admins and owners. A non-member gets `404`. Every response that describes a source carries
   `Cache-Control: no-store`, and no route takes an `Idempotency-Key` (a kept request could only be matched by keeping
   something derived from the key). `kind` is `anthropic_admin_api`, `openai_costs_api` or `csv_upload`; `provider` is
-  derived for the API kinds (`422` on `provider` when sent and different) and required for `csv_upload` (`anthropic`,
-  `openai` or `google`). `admin_key` is required for the API kinds and refused for `csv_upload` (`422` on `admin_key`);
+  derived for the API kinds (`422` on `provider` when sent and different) and required for `csv_upload`. CSV providers
+  are `anthropic`, `openai`, `google`, `azure_openai`, `mistral`, `groq`, `deepseek`, `xai` and `together`.
+  The CSV row's provider must match the source. Recorded cost may be `null` even when a provider billed a line. `admin_key` is required for the API kinds and refused for `csv_upload` (`422` on `admin_key`);
   it is trimmed and must be at most 512 characters of visible ASCII starting with `sk-ant-admin` (Anthropic) or
   `sk-admin` (OpenAI), else `422` on `admin_key` with "does not look like an Admin API key" (the value is never
   echoed). The key is write-only: no response, audit event or log line carries it; a source shows `key_set` and
@@ -2507,8 +2526,10 @@ Calls made after the full test pass on behaviour the spec left open.
   its last state after. A `304` counts as a successful poll (it resets `consecutive_failures`). Incidents are deleted
   730 days after they started.
 - **`GET /projects/{id}/provider-incidents`.** An incident overlaps `[from, to)` when it started before `to` and was
-  not resolved by `from`; `api_only` defaults to `true`; `provider` is `anthropic`, `openai` or `google` (else `422`);
-  `limit` 1 to 100 (default 50), newest first by `(started_at, id)`. `sources` gives each feed's `last_success_at`,
+  not resolved by `from`; `api_only` defaults to `true`. The `provider` filter accepts `anthropic`, `openai`,
+  `google`, `mistral` and `groq` (else `422`). Mistral and Groq use their verified public
+  `/api/v2/incidents.json` feeds. Azure OpenAI, DeepSeek, xAI and Together AI have no automatic feed.
+  The `limit` is 1 to 100 (default 50), newest first by `(started_at, id)`. `sources` gives each feed's `last_success_at`,
   `last_polled_at`, `last_outcome` and `consecutive_failures`. With `PROVIDER_STATUS_POLLING_ENABLED=false` the answer
   says `"polling": "disabled"` and still lists what was stored.
 - **`provider_incident` citation.** The finding cites the newest incident of its provider that touched the API and
@@ -3541,11 +3562,11 @@ reference is `docs-site/src/content/docs/reference/otlp-mapping.mdx`.
 
 ### Doctor sensitivity
 
-- **Routes.** `GET /projects/{p}/detector-sensitivity` returns `{items}` for all sixteen checks in catalogue order:
+- **Routes.** `GET /projects/{p}/detector-sensitivity` returns `{items}` for every registered check in catalogue order:
   `detector`, `tunable`, `level` (`high_recall`, `balanced` or `high_precision`; a check with no saved row is
   `high_recall`), `metric_label`, `gates` (`{balanced, high_precision}` as decimal strings, such as `"0.10"` or
   `"50000"`), `findings_30d` and `updated_at`. A fixed check (`provider_incident`, `unpriced_spend`,
-  `truncated_stream_accepted`, `unsupported_parameter_retried`) has `tunable: false`, `metric_label: null` and
+  `truncated_stream_accepted`, `unsupported_parameter_retried`, `model_retiring`) has `tunable: false`, `metric_label: null` and
   `gates: null`; `updated_at` is `null` until the setting is first changed. `GET …/{detector}/preview` returns
   `{detector, windows: [{days: 7, high_recall, balanced, high_precision}, {days: 30, …}]}`. Both need `project:read`;
   API keys are refused (`403 KEY_SCOPE`). `PUT …/{detector}` with `{level}` (no other field: `422`) needs
@@ -4115,6 +4136,24 @@ are the behaviours a caller or operator can observe.
 - **Experiment compare.** An item counts as edited between two runs when the stored JSON of its two copies differs
   (compared by SHA-256 in Postgres), so numbers that differ only in formatting (`1.0` and `1.00`) count as an edit.
   Copies written by Spanlight itself always use one form, so this arises only for rows written outside the API.
+
+## Provider-aware Playground, Replay, Judge and Doctor (2026-11-18)
+
+- Playground sends Gemini configurations to Generate Content and xAI configurations to Responses.
+  Their results expose visible answer text and report cost only when the usage can be priced.
+- Replay derives the recorded surface before checking the selected credential. Native Gemini
+  reports `surface: generate_content` and `provider_kind: gemini`, with the span's model supplied
+  when absent from the stored body. The budget caps output and candidates. A surface mismatch,
+  unbounded request option or unpriced model returns its `REPLAY_*` refusal before reserving spend.
+- Judge creation and execution accept Anthropic, OpenAI and bounded Gemini models. Gemini verdicts
+  require the exact `record_verdict` function call, with a numeric score from 0 to 1 and string
+  reasoning. Gemini `MAX_TOKENS` fails with `judge_truncated`.
+- Experiments send Gemini targets to native Generate Content and xAI targets to Responses.
+  Gemini and expanded-provider experiments reserve using the provider's verified spend ceiling before
+  dispatch. The run accounts for the reservation when a call's actual cost is unknown.
+- Doctor uses the organization's oldest matching credential for `EXPLAIN_PROVIDER` (default
+  `anthropic`) and prices `EXPLAIN_MODEL` under that provider. A missing cost bound returns
+  `409 EXPLAIN_MODEL_UNPRICED` before any provider call.
 
 ## Live dashboard stream (2026-11-04)
 

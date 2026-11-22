@@ -1,4 +1,6 @@
 ---
+banner:
+  content: "New provider-specific prices, Azure deployment pricing and expanded-provider settlement rules are in release preview."
 title: How cost is calculated
 description: How Spanlight prices an LLM call. The versioned price table, the token convention, service tiers, web search fees, streams cut before their usage, the cost explanation, model and provider matching, price overrides, and why an unknown cost is shown as a dash and never as zero.
 sidebar:
@@ -188,9 +190,9 @@ Integrations name the same provider in several ways: a Gemini call can arrive as
 | `openai` | `openai` |
 | Any other name | Rows of that name, compared in lower case |
 
-The provider is stored as it was sent: the folding is used only to find the price and the fee. Filters, alert rules, budgets and the per-model tables compare the provider as stored. A span with no provider can match a price of any provider, but it gets no web search fee, because each provider bills searches at its own rate. Whitespace around a provider is removed when the span is stored, and a provider that is only whitespace is stored as no provider.
+The provider is stored as it was sent: the folding is used only to find the price and the fee. Filters, alert rules, budgets and the per-model tables compare the provider as stored. A span with no provider can match non-Azure price rows and leaves search fees unknown. Whitespace around a provider is removed when the span is stored, and a provider that is only whitespace is stored as no provider.
 
-`azure` and `azure_openai` are not folded onto `openai`: Azure bills its own rates and the built-in table has no Azure prices, so an Azure OpenAI call has no cost ("—") until you add a price override for `azure` or `azure_openai` with your model or deployment name. The Python SDK's `wrap_openai` records an `AzureOpenAI` or `AsyncAzureOpenAI` client as `azure_openai` unless you pass `provider=`.
+`azure` and `azure_openai` are not folded onto `openai`: Azure bills its own rates and the built-in table has no Azure prices, so an Azure OpenAI call has no cost ("—") until you add a price override for `azure` or `azure_openai` with the exact deployment name. The Python SDK's `wrap_openai` records an `AzureOpenAI` or `AsyncAzureOpenAI` client as `azure_openai` unless you pass `provider=`.
 
 ### The price table is versioned
 

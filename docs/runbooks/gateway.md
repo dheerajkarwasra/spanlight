@@ -1,8 +1,10 @@
 # Run the LLM gateway
 
+> **Release preview.** Native Gemini routes are included for the next release. See the [gateway quickstart](../../docs-site/src/content/docs/gateway/quickstart.mdx) for routes available today.
+
 ## Purpose and when to use
 
-The gateway serves `/gw/v1/*`: applications point an OpenAI or Anthropic client at it with a gateway key (`spl_gw_...`), and every call is traced, priced, rate limited and, if you configure it, routed, retried, cached and fault-injected. Use this page to:
+The gateway serves OpenAI-style and Anthropic requests under `/gw/v1` and native Gemini requests under `/gw/v1beta/models`. Applications authenticate with a gateway key (`spl_gw_...`). The gateway traces calls, prices supported usage and applies the configured limits and routing rules. Use this page to:
 
 - decide whether the gateway runs inside the api or as its own process, and switch between the two;
 - rotate `CREDENTIALS_KEYS`, the master keys that seal provider credentials;

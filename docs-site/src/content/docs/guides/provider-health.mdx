@@ -1,9 +1,11 @@
 ---
+banner:
+  content: "The hosted service monitors Anthropic, OpenAI and Google. Mistral and Groq feeds are in release preview."
 title: Provider health
 description: Tell a provider's outage or limit from your own bug or Spanlight's gateway limiter. Read failures by error class, the kinds of 429, retry cost, sample failed calls and the providers' own status page incidents.
 ---
 
-{/* Sources: backend/app/api/v1/providers.py, backend/app/api/v1/provider_incidents.py, backend/app/api/schemas/providers.py, backend/app/providers/service.py, backend/app/providers/queries.py, backend/app/providers/sample_queries.py, backend/app/ingest/error_class.py, backend/app/ingest/rate_limit_kind.py, backend/app/ingest/provider_attributes.py, backend/app/ingest/ratelimit_headers.py, backend/app/ingest/store.py, backend/app/gateway/refusal_span.py, backend/app/provider_status/adapters/anthropic.py, backend/app/provider_status/adapters/openai.py, backend/app/provider_status/adapters/google.py, backend/app/provider_status/queries.py, backend/app/insights/detectors/provider_incident.py, frontend/src/lib/rate-limit-kind.ts, frontend/src/features/providers/providers-format.ts, frontend/src/lib/provider-label.ts, frontend/src/lib/status-page-url.ts, frontend/src/lib/error-class.ts, frontend/src/features/traces/provider-error-block.tsx, backend/app/gateway/refusal_sampler.py, docs/api-deviations.md */}
+{/* Sources: backend/app/api/v1/providers.py, backend/app/api/v1/provider_incidents.py, backend/app/api/schemas/providers.py, backend/app/providers/service.py, backend/app/providers/queries.py, backend/app/providers/sample_queries.py, backend/app/ingest/error_class.py, backend/app/ingest/rate_limit_kind.py, backend/app/ingest/provider_attributes.py, backend/app/ingest/ratelimit_headers.py, backend/app/ingest/store.py, backend/app/gateway/refusal_span.py, backend/app/provider_status/adapters/anthropic.py, backend/app/provider_status/adapters/openai.py, backend/app/provider_status/adapters/google.py, backend/app/provider_status/adapters/__init__.py, backend/app/provider_status/queries.py, backend/app/insights/detectors/provider_incident.py, frontend/src/lib/rate-limit-kind.ts, frontend/src/features/providers/providers-format.ts, frontend/src/lib/provider-label.ts, frontend/src/lib/status-page-url.ts, frontend/src/lib/error-class.ts, frontend/src/features/traces/provider-error-block.tsx, backend/app/gateway/refusal_sampler.py, docs/api-deviations.md */}
 
 import NextSteps from '../../../components/NextSteps.astro';
 import Prerequisites from '../../../components/Prerequisites.astro';
@@ -96,13 +98,19 @@ Spanlight polls the providers' public status pages every five minutes and keeps 
 | --- | --- |
 | Anthropic | `https://status.claude.com/api/v2/incidents.json` |
 | OpenAI | `https://status.openai.com/api/v2/incidents.json`, with `https://status.openai.com/history.rss` when that is not available |
-| Google | `https://status.cloud.google.com/incidents.json`, only the incidents of Vertex AI and Gemini products |
+| Google Cloud | `https://status.cloud.google.com/incidents.json`, filtered to Vertex AI and Gemini products |
+| Mistral | `https://status.mistral.ai/api/v2/incidents.json` |
+| Groq | `https://groqstatus.com/api/v2/incidents.json` |
+
+Azure OpenAI, DeepSeek, xAI and Together AI have no monitored feed. Their error and retry data still comes from your spans.
 
 The **Provider incidents** card lists the incidents that overlap the window, newest first, with title, provider, impact, status, start and end ("ongoing" while open), and a link to the provider's page. An incident that did not touch the provider's API is greyed out and marked **Not API**:
 
 - **Anthropic**: an incident touches the API when a component name contains `API`.
 - **OpenAI**: the feed has no components, so the title or the newest update must name an API product (`API`, Chat Completions, Responses, Embeddings, Batch, Realtime, Agents, Fine-tuning, Moderations, Files).
-- **Google**: always, since only Vertex AI and Gemini incidents are kept.
+- **Google Cloud**: always, since only Vertex AI and Gemini incidents are kept.
+- **Mistral**: the affected components, title or newest update name an API service, such as Completion API.
+- **Groq**: the affected components, title or newest update name the API or a recognized model. The feed also uses the title "Model Performance or Availability Issue" for model incidents.
 
 Under the list, one line per feed says when it was last fetched, such as "Anthropic feed: last fetched 3 min ago", with the number of failed polls in a row, and a **Stale** badge when the feed has not been fetched for 30 minutes or its last poll failed. Incidents come from the providers' status pages: they explain failures, and nothing is hidden or resolved because of them, here, in the Doctor or in alerts.
 

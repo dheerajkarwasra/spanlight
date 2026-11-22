@@ -47,6 +47,7 @@ export const DOCS_LINKS = {
   selfHosting: docsLink("self-hosting/"),
   gateway: docsLink("gateway/quickstart/"),
   doctor: docsLink("doctor/"),
+  detectors: docsLink("reference/detectors/"),
   prompts: docsLink("prompts/"),
   alerts: docsLink("alerts/"),
   evaluators: docsLink("evaluators/"),

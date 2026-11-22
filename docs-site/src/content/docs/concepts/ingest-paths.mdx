@@ -1,6 +1,8 @@
 ---
+banner:
+  content: "The native Gemini gateway and Google Gen AI wrappers described here are in release preview."
 title: Ways to send data
-description: Compare the three ways traces reach Spanlight, the Python SDK, OTLP and the gateway. What each captures, where it sits in your request path, and what happens when something fails.
+description: Compare the three ways traces reach Spanlight, the Python and TypeScript SDKs, OTLP and the gateway. What each captures, where it sits in your request path, and what happens when something fails.
 sidebar:
   order: 2
 ---
@@ -13,7 +15,7 @@ Spanlight can learn about your model calls in three ways. They end in the same p
 
 ## The idea
 
-- The **Python SDK** lives inside your process and reports what your code does.
+- The **Python and TypeScript SDKs** run inside your process and report what your code does.
 - **OTLP** is the open OpenTelemetry protocol. Any exporter that speaks it can report, in any language.
 - The **gateway** sits between your application and the model provider and reports every call that passes through it.
 
@@ -25,7 +27,7 @@ You can use more than one. The gateway and the SDK can join the same trace, and 
 
 The SDK is a library you initialize once with `spanlight.init()`. It records spans in memory and a background thread sends them to `POST /v1/traces`.
 
-**What it captures.** It sees your own code as well as the model calls. `@spanlight.observe` and `spanlight.span()` create spans for functions and steps of your choice, and `wrap_openai` and `wrap_anthropic` turn each call of a client into an LLM span with the model, token usage, time to first token for streams, the request parameters and the response. It records errors and re-raises them unchanged. It also sets trace fields (environment, release, user, session, tags), links a call to the prompt version it used, and sends scores.
+**What it captures.** It sees your own code as well as the model calls. `@spanlight.observe` and `spanlight.span()` create spans for functions and steps of your choice, and `wrap_openai`, `wrap_anthropic` and `wrap_google_genai` turn supported calls on a client into LLM spans with the model, token usage, time to first token for streams, the request parameters and the response. It records errors and re-raises them unchanged. It also sets trace fields (environment, release, user, session, tags), links a call to the prompt version it used, and sends scores.
 
 **Where it sits.** Inside your process, off the hot path. Recording a span only appends to an in-memory queue under a lock. All network work happens on a daemon thread. A batch goes out when it reaches 100 spans or after 2 seconds, whichever comes first, and the SDK flushes what is left when the process exits, waiting at most 5 seconds.
 
@@ -39,6 +41,10 @@ The SDK is a library you initialize once with `spanlight.init()`. It records spa
 - A killed process loses what is still queued.
 
 All of these numbers are defaults that you can change in `init`.
+
+### The TypeScript SDK
+
+In Node.js, use `observe` or `withSpan` for your own steps. Wrap the OpenAI, Anthropic or Google Gen AI client to record its model calls under the active span. The exporter batches spans in the background. For a short-lived process, await `flush()` before exit. See the [TypeScript SDK guide](/docs/typescript-sdk/).
 
 ### OTLP
 
@@ -54,7 +60,7 @@ Things to know: the endpoint takes traces only, so scores go through the SDK or 
 
 ### The gateway
 
-The gateway is an HTTP proxy for OpenAI-style and Anthropic APIs. You change your client's base URL to the gateway and use a gateway key. The gateway forwards the call with a provider credential stored in Spanlight and sends the provider's answer back, streams included.
+The gateway is an HTTP proxy for OpenAI-style, Anthropic and native Gemini APIs. You change your client's base URL to the gateway and use a gateway key. The gateway forwards the call with a provider credential stored in Spanlight and sends the provider's answer back, streams included.
 
 **What it captures.** Every call that passes through, with no instrumentation in your code, and including the calls your own code would not see: each attempt, retry and fallback, cache hits, calls blocked by a budget and faults injected by the [Integration Lab](/docs/gateway/lab/). A call becomes exactly one `llm` span with the usual fields plus `spanlight.gateway.*` attributes that record the route, the target that answered, the number of attempts, the last provider status and the time spent in Spanlight (`overhead_ms`). It sees only model calls. Your own functions, tools and retrieval steps are not visible to it, unless you send the trace headers to join the call to a trace you started with the SDK.
 
@@ -69,10 +75,10 @@ The gateway is an HTTP proxy for OpenAI-style and Anthropic APIs. You change you
 
 ### Side by side
 
-| | Python SDK | OTLP | Gateway |
+| | Spanlight SDKs | OTLP | Gateway |
 | --- | --- | --- | --- |
 | Change to your code | Initialize, wrap the client, optionally decorate functions | Configure an exporter | Change the base URL and the key |
-| Languages | Python | Any with OpenTelemetry | Any HTTP client |
+| Languages | Python or Node.js | Any with OpenTelemetry | Any HTTP client |
 | Sees your own code | Yes | Yes, if instrumented | No |
 | Sees retries and fallbacks | Only what the provider SDK shows | Only what the instrumentation shows | Yes, every attempt |
 | In your request path | No | No | Yes |
@@ -81,8 +87,8 @@ The gateway is an HTTP proxy for OpenAI-style and Anthropic APIs. You change you
 
 ## What it means for you
 
-- Start with the SDK if you use Python and want to see inside your own code.
-- Use OTLP when your application is not in Python, or you already collect OpenTelemetry data.
+- Start with the SDK if you use Python or Node.js and want to see inside your own code.
+- Use OTLP when your language has an exporter or you already collect OpenTelemetry data.
 - Use the gateway when you want routing, fallbacks, caching, budgets or a Lab, or when you cannot change application code. Pair it with the SDK to see the whole trace.
 - All three produce the same spans, so dashboards, cost and the Doctor work the same way whichever you pick.
 - Remember the key types. The SDK and OTLP use a project API key (`spl_live_…`) and the gateway uses a gateway key (`spl_gw_…`). A gateway key cannot send traces to `/v1/traces`.

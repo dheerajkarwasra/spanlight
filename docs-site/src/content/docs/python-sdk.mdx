@@ -1,4 +1,6 @@
 ---
+banner:
+  content: "The Google Gen AI wrapper and expanded compatible-host attribution require the upcoming Python SDK."
 title: Python SDK
 description: Install the spanlight package, trace functions and provider calls, and understand what is recorded and how spans are delivered.
 sidebar:
@@ -142,7 +144,26 @@ openai_client = spanlight.wrap_openai(OpenAI())
 
 `wrap_anthropic` instruments `messages.create` (including `stream=True`) and `messages.stream` on `Anthropic` and `AsyncAnthropic`. In the next SDK release it also instruments `messages.parse`, the same methods of `client.beta.messages` (where fast mode, compaction and the tool runner live), and the clients that `with_options(...)` and `copy(...)` return. `wrap_openai` instruments `chat.completions.create` and `responses.create` on `OpenAI`, `AsyncOpenAI` and the Azure variants; an Azure client is recorded with the provider `azure_openai`, which stays unpriced until you add a price override for it. Streaming works without changes to your code and records time to first token. For OpenAI Chat Completions, ask for usage in the stream with `stream_options={"include_usage": True}`.
 
-If you point the OpenAI client at a compatible API, name the provider yourself: `wrap_openai(client, provider="openrouter")`.
+The OpenAI wrapper recognizes the official hosts for Gemini, Azure OpenAI, Mistral, Groq, DeepSeek, xAI and Together AI. For a custom host, set the provider explicitly with `wrap_openai(client, provider="openrouter")`. An explicit value takes precedence over host detection.
+
+### Gemini
+
+Install `google-genai` alongside the Spanlight Python package from the checkout that matches your server. Wrap a `Client` to trace both `client.models` and `client.aio.models`. You can also wrap the async client directly.
+
+```python
+from google import genai
+import spanlight
+
+spanlight.init()
+with spanlight.wrap_google_genai(genai.Client()) as client:
+    answer = client.models.generate_content(
+        model="gemini-2.5-flash-lite",
+        contents="Summarize our refund policy.",
+    )
+    print(answer.text)
+```
+
+The wrapper traces `generate_content` and `generate_content_stream`. The span records native Generate Content input for Replay and includes reported thinking tokens in the output count. Closing a stream before final usage leaves its output count unknown. Use `close()` for sync streams and `await stream.aclose()` for async streams.
 
 For every LLM call the SDK records the provider, the model (from the response, falling back to the requested one), token usage, time to first token for streams, the request parameters and the assistant message, and the provider's error message when the call fails. API keys, headers and `extra_*` arguments are never recorded.
 

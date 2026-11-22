@@ -1,4 +1,6 @@
 ---
+banner:
+  content: "The hosted Doctor runs 16 checks. The five additional agent and cache checks are in release preview."
 title: How the Doctor works
 description: The ideas behind the Doctor. Deterministic detectors, windows and baselines, evidence, the layer a problem lives in, how an insight is kept, fixed and verified, and the health score.
 sidebar:
@@ -25,7 +27,7 @@ Three choices shape it.
 
 ### Detectors, windows and baselines
 
-There are sixteen detectors, one per kind of problem. A detector is a pure function: it receives the spans of its **window** and returns findings. It runs no queries, reads no clock and calls no model, which is why each one can be tested on a handful of rows.
+There are 21 detectors, one per kind of problem. A detector is a pure function: it receives the spans of its **window** and returns findings. It runs no queries, reads no clock and calls no model, which is why each one can be tested on a handful of rows.
 
 Every 15 minutes the worker takes each project that received a span in the last 24 hours, loads the last 24 hours of its LLM and tool spans once, and gives each detector the slice that is its window. The windows range from 15 minutes to 24 hours.
 
@@ -74,7 +76,7 @@ An input that is unknown costs nothing, and a window with no LLM calls has no sc
 
 ### Where a model is involved
 
-Only in one place, and only when someone asks. **Explain with Claude** sends an insight and at most five example traces, redacted, to a Claude model through your own gateway credential, under a monthly budget. The answer is labelled as advisory and stored beside the finding. Nothing about whether a problem exists depends on it.
+Only in one place, and only when someone asks. **Explain with AI** sends an insight and at most five example traces, redacted, to the configured model provider through your own gateway credential, under a monthly budget. The answer is labelled as advisory and stored beside the finding. Nothing about whether a problem exists depends on it.
 
 ## What it means for you
 
@@ -88,7 +90,7 @@ Only in one place, and only when someone asks. **Explain with Claude** sends an 
 
 <CardGrid>
   <LinkCard title="The Doctor guide" href="/docs/doctor/" description="Run it, read an insight, mute it and ask for an explanation." />
-  <LinkCard title="Detector catalogue" href="/docs/reference/detectors/" description="All sixteen detectors, their thresholds, fixes and checks." />
+  <LinkCard title="Detector catalogue" href="/docs/reference/detectors/" description="All 21 detectors, their thresholds, fixes and checks." />
   <LinkCard title="Integration Lab" href="/docs/gateway/lab/" description="Reproduce client failures on purpose." />
   <LinkCard title="Detectors runbook" href="/docs/runbooks/detectors/" description="Detector runs, stuck projects and the explanation budget." />
 </CardGrid>

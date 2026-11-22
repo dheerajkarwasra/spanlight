@@ -4,8 +4,17 @@ All notable changes to Spanlight are recorded here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Added
+
+- **Agent runs.** Gateway requests can share per-trace step and spend limits. Trace details include a topology view, prompt prefix comparisons and model cost estimates. Four heuristic evaluator rules score tool sequences, forbidden tools, tool counts and step efficiency.
+- **Five more Doctor checks.** The Doctor flags alternating tool loops, ignored tool errors, tool schema failures, prompt cache loss and excessive LLM fan-out. Each check includes trace evidence and adjustable sensitivity.
+- **First-class gateway providers.** Azure OpenAI, Mistral, Groq, DeepSeek, xAI and Together accept Chat Completions and support model discovery. xAI also accepts Responses. Azure pricing uses the deployment's own override, and the new price snapshot covers selected text models with verified rates.
+- **Native Gemini.** The gateway serves Generate Content, SSE and model discovery alongside existing compatibility routes. Python and TypeScript SDKs trace the official Gemini clients. Gemini works in Playground, Replay and budgeted judges.
+- **Provider reconciliation and status.** Billing CSVs support nine providers. Provider Health and Doctor can use verified Mistral and Groq incident feeds. Gateway credential checks show recovery steps.
+
 ### Changed
 
+- **Calmer homepage backgrounds.** The product sections share a continuous white canvas, with the Doctor framed as an inset dark panel and self-hosting flowing into the dark footer. Panel gutters and spacing adapt to screen width.
 - **A new homepage.** The landing page at `/` is redrawn in black, grey and white around one live figure per section (calls becoming a trace, the cost receipt, the detector scan, the gateway route, the Compose stack), leads with "Every LLM call, accounted for.", and has a **Pause motion** button in the footer; motion starts paused for visitors who prefer reduced motion. The legal pages get the same black header and footer.
 - **Sign-in and account pages match the homepage.** Sign in, sign up, password reset, two-factor, email verification, invites and the terms prompt are redrawn in the same black, grey and white beside a live trace, cost and cause figure, look the same in the light and dark theme, and password fields have a show/hide button.
 

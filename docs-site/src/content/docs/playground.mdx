@@ -1,4 +1,6 @@
 ---
+banner:
+  content: "Native Gemini and the expanded provider and replay capabilities described here are in release preview."
 title: Playground
 description: Run a prompt or typed messages against up to three models side by side, or replay a stored request exactly, with real provider calls recorded as traces, and learn what it costs and how it is limited.
 sidebar:
@@ -28,9 +30,11 @@ Each configuration has:
 
 | Part | Meaning |
 | --- | --- |
-| Credential | A [provider credential](/docs/gateway/credentials/) of your organization (OpenAI, Anthropic or an OpenAI-compatible server). The key is used on the server and never shown. |
+| Credential | A [provider credential](/docs/gateway/credentials/) of your organization. The key is used on the server and never shown. |
 | Model | The model name sent to the provider. |
 | Parameters | `temperature` (0 to 2), `max_tokens` (1 to 4096) and `top_p` (0 to 1). A parameter you leave unset is not sent, so the provider's default applies. Anthropic requires `max_tokens`, so an unset value becomes 1024. |
+
+Gemini configurations use its native Generate Content API. xAI configurations use Responses.
 | Source | Either a **prompt version** with a value for each of its variables, or **typed messages** (1 to 50, each with a role of `system`, `user` or `assistant`) that are sent as they are. |
 
 A text prompt is sent as one `user` message. Choosing a version fills the model from its [model advice](/docs/prompts/) when the model field is empty; you can change it freely.
@@ -43,7 +47,7 @@ Once you have a configuration you like, you can save it as a new version of a pr
 
 The run button says how many calls it makes: **Run** for one configuration, **Run 3 calls** for three. Under it, a line such as "Est. up to $0.004 at list prices" gives the most the run can cost. Input tokens are counted as characters ÷ 3 (a character outside ASCII counts as one token), output tokens as each configuration's `max_tokens` (1024 on Anthropic when unset), and both are priced from the [price table](/docs/concepts/cost/). The info button beside it (**How the estimate works**) explains the method. Your organization's price overrides and cached-token discounts are not included, so what the run is charged can differ.
 
-When a configuration cannot be estimated, the line names it (the configurations are lettered Run A, Run B and Run C) instead of guessing, for example "Est. unavailable for Run B (no price for `my-model`)", or "(no max tokens set)" for a configuration on another provider than Anthropic with no `max_tokens`. It never shows $0. The line appears once every configuration has a credential and a model.
+When a configuration cannot be estimated, the line names it (the configurations are lettered Run A, Run B and Run C). It may report a missing price, a missing output cap or a provider cost that is unavailable before the call. Gemini, xAI and DeepSeek use that last state. The line appears once every configuration has a credential and a model.
 
 ## What a run does
 
@@ -64,7 +68,7 @@ Open a result's trace from the run to see the exact request and response, or sel
 
 ## Cost and limits
 
-- **The playground has no spend cap of its own.** It is a person typing, and each call is bounded by `max_tokens`, which is at most 4096. The cost still counts: it appears in the project's spend and in any [budget](/docs/budgets/). A budget set to **block** stops the call, and the column shows `BUDGET_EXCEEDED`.
+- **The playground has no spend cap of its own.** The output setting allows up to 4096 tokens, and providers can bill for additional usage such as thinking tokens. The cost counts toward the project's spend and [budgets](/docs/budgets/). A budget set to **block** stops a refused call, and the column shows `BUDGET_EXCEEDED`.
 - **30 runs a minute per person.** A run is one request of up to three configurations. Over the limit the API answers `429 RATE_LIMITED` with `Retry-After`.
 - It needs `CREDENTIALS_KEYS` to be set so credentials can be opened, and the gateway to be running in the API process; otherwise the API answers `409 NOT_CONFIGURED`.
 - The prompts and answers are never written to Spanlight's logs. They exist as the trace's spans, and follow the project's payload capture and retention settings like any other trace.
@@ -132,7 +136,7 @@ A **replay** sends the request a span recorded to the provider once more, as it 
 Open a span on a trace's page and select **Replay**, or **Replay failing span** while you [review a queue](/docs/review/#work-the-queue). The playground opens a replay column with:
 
 - the stored request, read-only, with **Edit** to change it as JSON;
-- a credential of the span's provider, each shown with its base URL so you can see where the request goes;
+- a credential that supports the span's recorded API format, shown with its base URL;
 - an optional model of the same provider, and the most output tokens (at most 4096, the stored value by default);
 - the project's replay budget for the month, for example "$1.20 of $5.00 this month".
 
@@ -145,9 +149,9 @@ Open a span on a trace's page and select **Replay**, or **Replay failing span** 
 | The Python SDK (`wrap_openai`, `wrap_anthropic`) | The provider request body, without transport options such as the API key or timeouts | Exact |
 | The gateway, including the playground, judges, experiments and replays | The request body as the client sent it | Exact |
 | OTLP | Only the messages: no tools and no parameters | Not exact: the messages, sent to the model the span names. Add tools and parameters yourself with **Edit** |
-| `POST /v1/traces` from another client | Whatever it sent | Exact when the input is a request body with a `model` and `messages` or `input` |
+| `POST /v1/traces` from another client | Whatever it sent | Exact when the span contains a supported request body and model |
 
-A span from Anthropic needs an Anthropic credential. A span from OpenAI or any server that speaks its API (`azure`, `groq`, `ollama` and others) needs an OpenAI or OpenAI-compatible credential. The request is never converted from one provider's format to the other's: that would rewrite the tools, the system prompt, the stop sequences and the response format, and the result would no longer be the request that failed. To try the messages on another provider, use a playground run instead.
+Replay keeps the recorded API format. Anthropic Messages requires an Anthropic credential. Native Gemini requires a Gemini credential, and Replay takes the model from the span when the stored body only contains `contents` and other request fields. A Responses replay requires a credential that supports Responses, such as OpenAI or xAI. Chat-only credentials can replay supported Chat Completions requests.
 
 ### What a replay changes
 
@@ -157,6 +161,8 @@ Every field of the stored request is sent untouched, the tools, `tool_choice`, `
 | --- | --- | --- |
 | `stream`, `stream_options` | Removed | A replay is never streamed, so its usage is certain. First token is "—" |
 | `n` | Set to 1 when above 1 | It multiplies the bill |
+| `generationConfig.candidateCount` | Set to 1 when above 1 | Bounds Gemini candidate spend |
+| `generationConfig.maxOutputTokens` | Set or lowered to the replay cap | Bounds Gemini output |
 | `max_tokens`, `max_completion_tokens`, `max_output_tokens` | Lowered to the smaller of the stored value, your value and 4096 | A replay is bounded like a playground run |
 | `max_tokens` on an Anthropic request that has none | Set to 1024, or your value when lower | Anthropic requires it |
 | `model` | Replaced when you pick another model | |
@@ -174,13 +180,14 @@ The **Replay** button says why a span cannot be replayed, and the API answers `4
 | `REPLAY_PAYLOAD_TRUNCATED` | Was cut at the 1 MB payload limit when it was stored | Edit the request into a complete one |
 | `REPLAY_PAYLOAD_REDACTED` | Holds `[REDACTED]` or `[MAX_DEPTH]` where a secret or a too-deep value was removed at ingest | Edit those parts out. **Run replay** stays disabled while a marker remains |
 | `REPLAY_UNSUPPORTED_INPUT` | Is not a provider request (a plain text prompt, a body without a model), or an edit is not one, or an OTLP span has no model and none was picked | Pick a model, or fix the edit |
-| `REPLAY_PROVIDER_MISMATCH` | Needs a credential of the other provider | Pick a credential of the span's provider |
-| `REPLAY_MODEL_UNPRICED` | Uses a model with no price | Add a price override, or pick a priced model |
+| `REPLAY_PROVIDER_MISMATCH` | Uses a format the selected credential cannot send | Pick a credential that supports the recorded API format |
+| `REPLAY_MODEL_UNPRICED` | Uses a provider or model without a verified cost bound | Pick a model with a verified bound and price |
+| `REPLAY_UNPRICED_OPTION` | Uses a hosted tool or another request feature outside the replay budget's pricing | Remove the unsupported feature before replaying |
 | `REPLAY_BODY_TOO_LARGE` | Your edited request is larger than 256 KB | Shorten it |
 
 ### The replay budget
 
-Replays are a paid call anyone with the member role can repeat with one click, so each project has a **monthly replay budget**, `REPLAY_MONTHLY_BUDGET_USD` on the server (5 US dollars by default, per UTC month). Before each call Spanlight reserves the most it could cost (the request's text counted as input tokens, plus every allowed output token) and refuses the replay when that would pass the budget: nothing is sent, the API answers `409 REPLAY_BUDGET_EXCEEDED` with the month's figures, and the column says "Skipped: this month's replay budget is spent." After the call the replay is charged its real cost. A call that broke after it was sent is charged the reservation, because the provider may have billed it. Setting the budget to `0` turns replay off (`409 NOT_CONFIGURED`).
+Each project has a **monthly replay budget**, `REPLAY_MONTHLY_BUDGET_USD` on the server (5 US dollars by default, per UTC month). Spanlight reserves an estimate from the request and the selected provider's limits before sending it. A replay that would exceed the budget returns `409 REPLAY_BUDGET_EXCEEDED` with the month's figures. Settlement charges reported usage when Spanlight can price it, or keeps the reservation when the provider may have billed the call and cost is unknown. Setting the budget to `0` turns replay off (`409 NOT_CONFIGURED`).
 
 The budget is the replay's own. The project's [budgets](/docs/budgets/) still apply: one set to block stops the call, and the result shows `BUDGET_EXCEEDED`. Replays also share the limit of 30 playground runs a minute per person.
 

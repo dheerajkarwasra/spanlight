@@ -1,6 +1,8 @@
 ---
+banner:
+  content: "Native Gemini errors and preview-provider admission rules apply to the upcoming gateway."
 title: Gateway error responses
-description: Every error the gateway itself produces, with its Spanlight code, HTTP status and the OpenAI and Anthropic response shapes.
+description: Every error the gateway itself produces, with its Spanlight code, HTTP status and the OpenAI, Anthropic and Google response shapes.
 sidebar:
   order: 6
 ---
@@ -12,7 +14,7 @@ import Prerequisites from '../../../components/Prerequisites.astro';
 
 Errors under `/gw/` never use the dashboard's `problem+json`. The gateway answers in the shape of the provider SDK you are using, so the official clients raise their usual exceptions and retry the statuses they normally retry.
 
-Which shape you get follows the **path**: `/gw/v1/messages` gets the Anthropic shape, and `/gw/v1/chat/completions` and `/gw/v1/responses` get the OpenAI shape. `GET /gw/v1/models` gets the Anthropic shape when the request carries an `anthropic-version` header.
+Which shape you get follows the **path**: `/gw/v1/messages` gets the Anthropic shape, and `/gw/v1/chat/completions` and `/gw/v1/responses` get the OpenAI shape. `GET /gw/v1/models` gets the Anthropic shape when the request carries an `anthropic-version` header. Native Gemini routes under `/gw/v1beta/models` use the Google shape.
 
 Every error response carries:
 
@@ -27,7 +29,7 @@ Every error response carries:
   ]}
 />
 
-## The two shapes
+## Error shapes
 
 OpenAI:
 
@@ -57,13 +59,25 @@ Anthropic:
 }
 ```
 
-`spanlight_code` is added to both. Match on it, not on the message, which can change.
+Native Gemini:
+
+```json
+{
+  "error": {
+    "code": 429,
+    "message": "Rate limit reached for gateway key spl_gw_abcdefghijkl: 60 requests per minute.",
+    "status": "RESOURCE_EXHAUSTED"
+  }
+}
+```
+
+Read `X-Spanlight-Code` for the stable gateway code across all three shapes. The OpenAI and Anthropic bodies also include `spanlight_code`.
 
 ## Codes the gateway produces
 
 | `spanlight_code` | Status | OpenAI `type` / `code` | Anthropic `type` | When |
 | --- | --- | --- | --- | --- |
-| `UNAUTHORIZED` | 401 | `invalid_request_error` / `invalid_api_key` | `authentication_error` | The key is missing, malformed, unknown, revoked or has the wrong secret, or `Authorization` and `x-api-key` carry different keys |
+| `UNAUTHORIZED` | 401 | `invalid_request_error` / `invalid_api_key` | `authentication_error` | The key is missing, malformed, unknown, revoked or has the wrong secret, or the key headers carry different values |
 | `RATE_LIMITED` | 429 | `requests` / `rate_limit_exceeded` (`tokens` when the tokens-per-minute limit was hit) | `rate_limit_error` | The organization ceiling, the key's requests per minute or its tokens per minute was exceeded. Has `Retry-After` |
 | `BUDGET_EXCEEDED` | 402 | `insufficient_quota` / `insufficient_quota` | `billing_error` | A blocking [budget](/docs/budgets/) was exceeded and the call was refused before it reached a provider |
 | `MODEL_NOT_ALLOWED` | 404 | `invalid_request_error` / `model_not_found` (`param: "model"`) | `not_found_error` | The model is not in the key's `allowed_models` |

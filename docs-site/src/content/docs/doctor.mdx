@@ -1,6 +1,8 @@
 ---
+banner:
+  content: "The hosted Doctor runs 16 checks. The five additional checks, their sensitivity settings and provider-selectable AI explanations are in release preview."
 title: The Doctor
-description: Findings about how your application calls LLMs, found from your own traces. What the Doctor reads, when it runs, how an insight is opened, muted and resolved, the health score, and how to ask Claude for an explanation.
+description: Findings about how your application calls LLMs, found from your own traces. What the Doctor reads, when it runs, how an insight is opened, muted and resolved, the health score, and how to request an AI explanation.
 sidebar:
   order: 1
 ---
@@ -15,7 +17,7 @@ import Prerequisites from '../../components/Prerequisites.astro';
 
 The **Doctor** reads the traces Spanlight already stores and opens an **insight** when it finds a pattern that usually costs money, time or correctness: a client that hammers a failing endpoint, a timeout that cuts off healthy calls, a conversation that grows without bound. Every insight carries the measured evidence, the layer where the problem lives, a suggested fix and a way to check that the fix worked.
 
-The Doctor is deterministic. Sixteen detectors apply fixed rules to your spans; no language model decides whether something is a problem. An optional, clearly labelled [explanation from Claude](#explain-with-claude) can be asked for on demand, and that is the only place a model is involved.
+The Doctor is deterministic. 21 detectors apply fixed rules to your spans; no language model decides whether something is a problem. An optional, clearly labelled [AI explanation](#explain-with-ai) can be asked for on demand, and that is the only place a model is involved.
 
 The thresholds are constants in the code, the same for every project and not tuned to yours, so a finding can be a false alarm for your traffic; the evidence traces are there so you can check.
 
@@ -26,7 +28,7 @@ The **Doctor** screen lists a project's insights. The Overview shows a [health s
     'Traces from the last 24 hours in the project',
     'The worker running, with DETECTORS_ENABLED on (the default). The detectors run every 15 minutes',
     'The admin or owner role, to acknowledge, resolve or mute an insight. The member role or above, to mark one right or wrong. Every role can read them',
-    'To ask Claude for an explanation: an Anthropic credential under Gateway, Credentials, CREDENTIALS_KEYS set on the server, and the gateway running in the API process (GATEWAY_MODE=embedded, the default)',
+    'To request an AI explanation: a credential for the configured provider under Gateway, Credentials, CREDENTIALS_KEYS set on the server, and the gateway running in the API process (GATEWAY_MODE=embedded, the default)',
   ]}
 />
 
@@ -130,9 +132,9 @@ Each insight page also shows its check's **track record** from the same votes, f
 
 ## Sensitivity
 
-When a check opens too many findings you consider wrong, you can ask it for stronger signals instead of muting each one. The **Sensitivity** tab of the Doctor (`?tab=sensitivity`), also linked from the foot of the Precision tab as "Too many wrong findings? Change sensitivity", lists all sixteen checks with their setting and the number of their findings seen in the last 30 days at that setting.
+When a check opens too many findings you consider wrong, you can ask it for stronger signals instead of muting each one. The **Sensitivity** tab of the Doctor (`?tab=sensitivity`), also linked from the foot of the Precision tab as "Too many wrong findings? Change sensitivity", lists all 21 checks with their setting and the number of their findings seen in the last 30 days at that setting.
 
-Eleven checks have three settings:
+You can tune 16 of the 21 checks.
 
 | Setting | Means |
 | --- | --- |
@@ -155,6 +157,11 @@ Each setting is a minimum on one reading the check already records:
 | `cache_opportunity` | Repeated calls | 25 or more | 50 or more |
 | `client_timeout_misconfigured` | Aborted calls | 25 or more | 50 or more |
 | `retry_after_ignored` | Early retries | 5 or more | 10 or more |
+| `agent_ping_pong_loop` | Alternating cycles | 4 or more | 6 or more |
+| `tool_error_ignored` | Ignored tool errors | 4 or more | 8 or more |
+| `tool_schema_hallucination` | Schema failures | 5 or more | 10 or more |
+| `prefix_cache_busted` | Affected traces | 4 or more | 8 or more |
+| `subagent_fanout_storm` | Most LLM calls in one trace | 20 or more | 35 or more |
 
 A stricter setting can only remove findings: the check's own rule still decides first. A finding whose reading is missing is never hidden. The other five checks show **Fixed** ("One setting"): `provider_incident` is organization-wide, `unpriced_spend` must never be hidden or cost would look complete, for `truncated_stream_accepted` and `unsupported_parameter_retried` one occurrence is the whole signal, and for `model_retiring` one call to a model that is about to stop working is enough.
 
@@ -191,21 +198,23 @@ The window is the one you picked on the Overview (24 hours by default) and the b
 
 The score is a prompt to look, not a grade: two open critical insights alone take it to 70.
 
-## Explain with Claude
+<span id="explain-with-claude"></span>
 
-Each insight page has an **Explain with Claude** section, closed by default, whose summary counts the stored explanations; open it for the **Explain with Claude** button. The button asks a Claude model to explain the finding to the engineer who owns the application: the likely cause, how to confirm it in the listed traces, and a concrete fix.
+## Explain with AI
 
-- **Opt-in.** Nothing is sent anywhere until an admin or owner presses the button. It needs an Anthropic provider credential under **Gateway, Credentials**, `CREDENTIALS_KEYS` on the server and the gateway running in the API process (`GATEWAY_MODE=embedded`, the default); without them the button explains what is missing (`409 NOT_CONFIGURED`).
+Each insight page has an **Explain with AI** section, closed by default, whose summary counts the stored explanations; open it for the **Explain with AI** button. The button asks the configured model to explain the finding to the engineer who owns the application: the likely cause, how to confirm it in the listed traces, and a concrete fix.
+
+- **Opt-in.** Nothing is sent anywhere until an admin or owner presses the button. It needs a credential for the configured provider under **Gateway, Credentials**, `CREDENTIALS_KEYS` on the server and the gateway running in the API process (`GATEWAY_MODE=embedded`, the default); without them the button explains what is missing (`409 NOT_CONFIGURED`).
 - **Admins and owners only.** Members and viewers read the explanations already stored, and see the button disabled.
-- **A monthly budget.** Each organization may spend `EXPLAIN_MONTHLY_BUDGET_USD` (default $1.00) per UTC month on explanations; an explanation typically costs a few cents (the worst case is reserved up front). When the budget is spent the request is refused with `402 EXPLAIN_BUDGET_EXCEEDED` and nothing is sent. The cost of an explanation in flight is reserved up front, so concurrent requests cannot overspend. The budget `0` turns explanations off. The model is `EXPLAIN_MODEL` (default `claude-sonnet-5-5`); it needs a price, otherwise the budget cannot be enforced (`409 EXPLAIN_MODEL_UNPRICED`).
-- **Labelled advisory.** Every explanation is shown under "Advisory — generated by Claude from the evidence above; verify before acting." and is rendered as plain text. It is a second opinion on measured data, not a measurement.
+- **A monthly budget.** Each organization may spend `EXPLAIN_MONTHLY_BUDGET_USD` (default $1.00) per UTC month on explanations. When the budget is spent the request is refused with `402 EXPLAIN_BUDGET_EXCEEDED` and nothing is sent. The cost of an explanation in flight is reserved up front, so concurrent requests cannot overspend. The budget `0` turns explanations off. The model is `EXPLAIN_MODEL` (default `claude-sonnet-5-5`); its cost must be bounded under the configured provider (`409 EXPLAIN_MODEL_UNPRICED`).
+- **Labelled advisory.** Every explanation is shown under "AI-generated from the evidence above. Verify before acting." and is rendered as plain text.
 - **What is sent.** The insight's label, title, summary, layer, metrics and window, the catalogue fix, and at most five example traces: model, status, error class, status message, finish reason, token counts and the first 1 KB of each trace's input and output. Every piece of text passes through the same secret redaction as ingestion before it leaves. A project that does not capture payloads has no prompts or completions to send. No other data, and nothing from other projects, is included.
-- **It is traced.** The call goes through the gateway to your own Anthropic credential and is recorded as a normal LLM span in the project, in the environment `doctor` with the tag `doctor-explain`. It is real spend in that project.
-- **Failures usually cost nothing.** A failed call answers `502 EXPLAIN_FAILED`. When the request never left, or Anthropic answered an error before generating, the reservation is removed and nothing is counted. When the provider may have billed the call (a timeout or a lost connection after the request was sent), the worst-case cost stays in the month's spend, so the budget errs high.
+- **It is traced.** The call goes through the gateway using your organization's oldest credential for the configured provider and is recorded as a normal LLM span in the project, in the environment `doctor` with the tag `doctor-explain`. It is real spend in that project.
+- **Failures usually cost nothing.** A failed call answers `502 EXPLAIN_FAILED`. When the request never left, or the provider returned an error before generating, the reservation is removed and nothing is counted. When the provider may have billed the call (a timeout or a lost connection after the request was sent), the worst-case cost stays in the month's spend, so the budget errs high.
 
 ## The catalogue
 
-The sixteen detectors, with the layer, certainty and severity of each and the fix and check for every finding, are listed in the [detector catalogue](/docs/reference/detectors/).
+The 21 detectors, with the layer, certainty and severity of each and the fix and check for every finding, are listed in the [detector catalogue](/docs/reference/detectors/).
 
 ## Trying it on purpose
 
@@ -226,7 +235,8 @@ The corrected client runs the same scenarios and is written to open no finding; 
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `DETECTORS_ENABLED` | `true` | Schedule the detector job. Off, no new insights appear. |
-| `EXPLAIN_MODEL` | `claude-sonnet-5-5` | The model behind "Explain with Claude". It needs a price. |
+| `EXPLAIN_PROVIDER` | `anthropic` | Gateway credential kind for explanations. Spanlight selects the oldest matching organization credential. |
+| `EXPLAIN_MODEL` | `claude-sonnet-5-5` | The model behind "Explain with AI". It needs a price. |
 | `EXPLAIN_MONTHLY_BUDGET_USD` | `1.00` | Most an organization may spend on explanations per UTC month. `0` turns them off. |
 | `USER_STATS_ENABLED` | `true` | Schedule the refresh behind the [Users](/docs/releases-and-users/#users) page. |
 
@@ -245,7 +255,7 @@ Open **Doctor** after your project has had traffic for 15 minutes or more. The p
 | An insight does not go away | It resolves after 24 hours without a sighting. Resolve it by hand if you have fixed the cause; it reopens if the problem is seen again. |
 | A critical insight did not notify | The project needs insight channels under Settings, Project. A muted insight does not notify until its mute ends, and only the first opening notifies. |
 | The **Right** and **Wrong** buttons are disabled | You are a viewer. Members, admins and owners can vote. |
-| "Explain with Claude" is disabled | You are not an admin or owner, no Anthropic credential is set, or the monthly budget is spent. The message says which. |
+| "Explain with AI" is disabled | You are not an admin or owner, no credential matches the configured provider, or the monthly budget is spent. The message says which. |
 | The pill reads "Not checked yet", or "Last check failed" with a time | No detector run has finished, or the last one failed. Check that the worker is running and `DETECTORS_ENABLED` is on, then see the [detectors runbook](/docs/runbooks/detectors/). |
 | Detector runs show errors | See the [detectors runbook](/docs/runbooks/detectors/). |
 
@@ -253,7 +263,7 @@ Open **Doctor** after your project has had traffic for 15 minutes or more. The p
 
 <NextSteps
   links={[
-    { title: 'Detector catalogue', href: '/docs/reference/detectors/', description: 'What each of the sixteen detectors reads and the fix it suggests.' },
+    { title: 'Detector catalogue', href: '/docs/reference/detectors/', description: 'What each detector reads and the fix it suggests.' },
     { title: 'Alert rules and channels', href: '/docs/alerts/', description: 'Get told when error rate, latency, volume or cost crosses a line.' },
     { title: 'Alert webhooks', href: '/docs/webhooks/', description: 'Signed requests for alerts, budgets and critical insights.' },
     { title: 'Run the Doctor', href: '/docs/runbooks/detectors/', description: 'Detector runs, stuck projects and the explanation budget.' },

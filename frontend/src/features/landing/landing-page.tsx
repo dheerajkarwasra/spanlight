@@ -28,7 +28,7 @@ export function LandingPage() {
   return (
     <LandingScope className="landing-page relative min-h-dvh overflow-x-clip bg-mono-black">
       <LandingNav {...demoActions} sticky />
-      <main>
+      <main className="bg-mono-white">
         <HeroSection {...demoActions} />
         <SeeSection />
         <PriceSection />

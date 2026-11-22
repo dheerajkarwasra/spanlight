@@ -1,14 +1,16 @@
 # Run the Doctor: detector runs, stuck projects, tuning, explanation budget
 
+> **Release preview.** The hosted Doctor runs 16 checks and polls three status feeds. Five additional checks, two additional feeds and configurable AI explanations are documented here for the next release.
+
 ## Purpose and when to use
 
-The Doctor's detectors run in the worker every 15 minutes. For each project with a span in the last 24 hours they read the recent spans, apply 16 fixed rules, and open, update or resolve insights (what an insight is and how it is opened, muted and resolved is in [the Doctor guide](../../docs-site/src/content/docs/doctor.mdx); what each detector looks for is in [the detector catalogue](../../docs-site/src/content/docs/reference/detectors.md)). Use this page when:
+The Doctor's detectors run in the worker every 15 minutes. For each project with a span in the last 24 hours they read the recent spans, apply 21 fixed rules, and open, update or resolve insights (what an insight is and how it is opened, muted and resolved is in [the Doctor guide](../../docs-site/src/content/docs/doctor.mdx); what each detector looks for is in [the detector catalogue](../../docs-site/src/content/docs/reference/detectors.md)). Use this page when:
 
 - no insights appear and you expect some, or the Doctor looks late;
 - a detector shows errors in `GET /detector-runs`, or `spanlight_detector_runs_total{outcome="error"}` grows;
 - one project's runs time out, so none of its detectors report;
 - an insight is too noisy and you want to mute it, or the whole feature must be switched off;
-- "Explain with Claude" is refused, or the monthly explanation budget needs a look;
+- "Explain with AI" is refused, or the monthly explanation budget needs a look;
 - the provider status feeds show a stale badge, or `spanlight_provider_status_polls_total{outcome="parse_error"}` rises.
 
 Detectors are deterministic code over your stored spans. They call no model, send nothing anywhere, and write only to `insights` and `detector_runs` (plus notification rows for a critical insight that opens). Switching them off loses nothing already found.
@@ -174,7 +176,7 @@ While the detectors are off nothing is opened or resolved, so open insights stay
 
 ## Provider status feeds
 
-The worker polls the status pages of Anthropic, OpenAI and Google every 5 minutes (job `poll_provider_status`, one attempt, deduplicated per period like the detectors), so the Provider health page and the `provider_incident` insight can cite official incidents. The feeds are fixed in `backend/app/provider_status/adapters/`. Each feed is polled on its own: one failing never stops the others, and incidents already stored are kept whatever happens.
+The worker polls the status pages of Anthropic, OpenAI, Google, Mistral and Groq every 5 minutes (job `poll_provider_status`, one attempt, deduplicated per period like the detectors), so the Provider health page and the `provider_incident` insight can cite official incidents. The feeds are fixed in `backend/app/provider_status/adapters/`. Each feed is polled on its own: one failing never stops the others, and incidents already stored are kept whatever happens.
 
 Every request is counted in `spanlight_provider_status_polls_total{provider,outcome}` and logged as one `provider_status_polled` line per provider and run, with the outcome and counts, never the feed body:
 
@@ -216,14 +218,14 @@ Incidents are kept for 730 days, then deleted by the retention job.
 
 ## Explanation budget
 
-"Explain with Claude" is paid for by the organization's own Anthropic credential and capped per UTC month by `EXPLAIN_MONTHLY_BUDGET_USD` (default `1.00`). Explanations are opt-in, admin-only, and sent only on a click; see the guide for what is sent.
+"Explain with AI" is paid for by the organization's oldest credential matching `EXPLAIN_PROVIDER` (default `anthropic`) and capped per UTC month by `EXPLAIN_MONTHLY_BUDGET_USD` (default `1.00`). Explanations are opt-in, admin-only, and sent only on a click; see the guide for what is sent.
 
 | Answer | Meaning and fix |
 | --- | --- |
 | `402 EXPLAIN_BUDGET_EXCEEDED` | The month's explanation cost plus this request's worst case (reservations for requests in flight included) is over the budget. It resets on the 1st, UTC. To allow more, raise `EXPLAIN_MONTHLY_BUDGET_USD` on the api and the worker and restart them. |
-| `409 NOT_CONFIGURED` | The organization has no Anthropic credential (add one under Gateway, Credentials), `CREDENTIALS_KEYS` is not set, or the budget is `0`, which turns explanations off. |
+| `409 NOT_CONFIGURED` | The organization has no credential for the configured provider (add one under Gateway, Credentials), `CREDENTIALS_KEYS` is not set, or the budget is `0`, which turns explanations off. |
 | `409 EXPLAIN_MODEL_UNPRICED` | `EXPLAIN_MODEL` has no price, so the budget cannot be enforced. Use a priced model or add a price override. |
-| `502 EXPLAIN_FAILED` | The call to Anthropic failed. Usually nothing is counted: when the gateway never sent the request, or Anthropic answered an error before generating, the reservation is removed. When the provider may have billed the call (a timeout or a lost connection after the request was sent), its worst-case cost stays in the month's spend. Check the credential with **Check** on Gateway, Credentials, and the gateway log. |
+| `502 EXPLAIN_FAILED` | The provider call failed. Usually nothing is counted: when the gateway never sent the request, or the provider returned an error before generating, the reservation is removed. When the provider may have billed the call (a timeout or a lost connection after the request was sent), its worst-case cost stays in the month's spend. Check the credential with **Check** on Gateway, Credentials, and the gateway log. |
 
 How much has been spent this month, by organization:
 

@@ -110,7 +110,7 @@ test.describe("landing page", () => {
     await expect(page.locator("main").getByRole("heading", { level: 2 })).toHaveText([
       "Watch a call land.",
       "Priced line by line. Checked against the bill.",
-      "Sixteen detectors. No model decides.",
+      "21 detectors. No model decides.",
       "Change one base URL.",
       "Then make it better.",
       "Send your first trace.",

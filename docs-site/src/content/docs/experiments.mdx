@@ -1,4 +1,6 @@
 ---
+banner:
+  content: "Native Gemini and expanded-provider experiments are in release preview."
 title: Experiments
 description: Replay a dataset through a prompt version or typed messages, score every answer with evaluators, and compare two runs item by item. Targets, the cost limit, how evaluators are budgeted, and the demo seed.
 sidebar:
@@ -18,7 +20,7 @@ An **experiment** answers "is this prompt better than that one?" with your own t
   items={[
     'The member, admin or owner role in the project. Viewers can read',
     'A dataset with items. Evaluators are optional, and an admin or owner creates them',
-    'A provider credential in your organization, a model with a known price, and CREDENTIALS_KEYS set on the server',
+    'A provider credential in your organization, a model with a supported cost ceiling, and CREDENTIALS_KEYS set on the server',
     'The worker running, because it executes the runs',
     'To use the API or the command line: a personal access token with the write scope',
   ]}
@@ -258,7 +260,7 @@ Unknown values are shown as "—", never 0.
 
 ### The cost limit
 
-The cost limit protects you from a run that is larger than you thought. Before it sends an item, a run checks that **what has been spent, plus the estimates of the calls in flight, plus this item's estimate** stays within `max_cost_usd`. The estimate is a ceiling made from the prompt, the model's price and the output limit. When the next item would pass the limit, the in-flight calls finish, the check is repeated with their real costs, and if it still fails the run ends `failed` with `cost_cap_reached`. The UI says "Stopped: cost limit reached". The items already stored stay, so a stopped run is still readable.
+The cost limit protects you from a run that is larger than you thought. Before it sends an item, a run checks that **what has been spent, plus the estimates of the calls in flight, plus this item's estimate** stays within `max_cost_usd`. Gemini experiments use native Generate Content and xAI experiments use Responses. These and the other expanded providers reserve from verified provider limits and prices before dispatch. If the ceiling cannot be calculated, the run cannot send the call. When billed cost is unknown after a call, the cap accounts for the reservation. When the next item would pass the limit, the in-flight calls finish, the check is repeated with their real costs, and if it still fails the run ends `failed` with `cost_cap_reached`. The UI says "Stopped: cost limit reached". The items already stored stay, so a stopped run is still readable.
 
 **The limit covers the target's calls only.** Evaluators spend under their own budgets: a judge draws on its [monthly budget](/docs/evaluators/#the-monthly-budget), which this experiment shares with everything else that judge does that month. A judge that is out of budget leaves that item's score out; it does not fail the item or the run. So the most an experiment can spend is its cost limit plus what its judges have left in their budgets.
 

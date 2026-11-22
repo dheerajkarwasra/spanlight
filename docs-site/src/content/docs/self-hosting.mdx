@@ -1,4 +1,6 @@
 ---
+banner:
+  content: "Mistral and Groq status polling applies to the upcoming five-feed release."
 title: Self-hosting
 description: Run Spanlight with Docker Compose or on Railway, and what each service does.
 sidebar:
@@ -69,11 +71,13 @@ Each is switched on by its own variables; see [Configuration](/docs/configuratio
 
 Spanlight sends no telemetry to its maintainers. Its only built-in outbound calls go to the services you configure (LLM providers, email, sign-in providers, Slack, PagerDuty and webhook alert channels, object storage, error reporting and self-tracing), to the provider status pages below, and to LiteLLM's public price file on GitHub, which `spanlight prices diff` downloads only when you run it.
 
-Spanlight connects out to the providers your gateway credentials, judges and demo traffic use, and to the services you configure (email, sign-in providers, object storage, Sentry). One more connection is on by default: every five minutes the worker polls the public status pages of three providers, so the [Provider health](/docs/guides/provider-health/#status-page-incidents) page and the Doctor can show their incidents. If your network restricts egress, allow these hosts on port 443:
+Spanlight connects out to the providers your gateway credentials, judges and demo traffic use, and to the services you configure (email, sign-in providers, object storage, Sentry). One more connection is on by default: every five minutes the worker polls five public provider status feeds, so the [Provider health](/docs/guides/provider-health/#status-page-incidents) page and the Doctor can show their incidents. If your network restricts egress, allow these hosts on port 443:
 
 - `status.claude.com`
 - `status.openai.com`
 - `status.cloud.google.com`
+- `status.mistral.ai`
+- `groqstatus.com`
 
 The feed addresses are fixed in the code; no setting changes them. The requests use https only, follow no redirects, give up after 10 seconds, read at most 2 MB, refuse any host that resolves to a private or local address, and connect directly: `HTTP_PROXY` and `HTTPS_PROXY` are not read.
 
