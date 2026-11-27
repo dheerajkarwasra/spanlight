@@ -124,7 +124,7 @@ CMD ["sh", "-c", "unset MIGRATION_DATABASE_URL; exec python -m app.server"]
 # CVE-2026-97031). The same Caddy release is rebuilt here with a patched toolchain, x/net and
 # go-jose; the 0.8.0 scan raised all three again (CVE-2026-111943, CVE-2026-78661, CVE-2026-116587).
 # shortcut: pinned by hand, drop this stage once the official image ships Go >= 1.27.3.
-FROM golang:1.27.3-alpine AS caddy-build
+FROM golang:1.27.4-alpine AS caddy-build
 WORKDIR /src
 RUN printf '%s\n' 'package main' \
       'import (' \
